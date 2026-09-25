@@ -331,11 +331,15 @@ ureq = "3.4.1"
 # thing under test. Both are dev-dependencies of `obelus-lsp` alone, and
 # each only on the platform whose question it answers.
 libc = "0.2.189"
+# Also the window's, for the one thing only Windows has a call for: how
+# fast a caret blinks. Features are additive, so the list is what every
+# member that names this crate needs between them.
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     "Win32_Storage_FileSystem",
     "Win32_System_IO",
     "Win32_System_Threading",
+    "Win32_UI_WindowsAndMessaging",
 ] }
 
 # Nothing but cargo's own defaults.

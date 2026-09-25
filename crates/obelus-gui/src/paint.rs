@@ -372,6 +372,7 @@ impl Painter {
         page: &Page,
         fonts: &mut Fonts,
         spelling: Option<&Spelling>,
+        caret: bool,
     ) -> Result<()> {
         let cell = fonts.cell();
         self.quads.clear();
@@ -381,7 +382,11 @@ impl Painter {
         // going in at the caret, so the caret belongs at the place in it
         // the input method says.
         self.spelling(page, fonts, spelling);
-        self.caret(page, fonts, spelling);
+        // Off for half of every cycle, which is the blink. What is under it
+        // is drawn either way, by the pass above.
+        if caret {
+            self.caret(page, fonts, spelling);
+        }
 
         #[expect(
             clippy::cast_precision_loss,

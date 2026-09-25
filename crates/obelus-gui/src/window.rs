@@ -19,9 +19,12 @@
 //! event to the loop it is parked in. That is what the proxy is for, and it
 //! is why the backend holds one.
 
-use std::sync::{
-    Arc, Mutex,
-    mpsc::{Receiver, Sender},
+use std::{
+    sync::{
+        Arc, Mutex,
+        mpsc::{Receiver, Sender},
+    },
+    time::Instant,
 };
 
 use anyhow::{Context, Result};
@@ -33,12 +36,13 @@ use winit::{
     application::ApplicationHandler,
     dpi::{LogicalSize, PhysicalPosition, PhysicalSize},
     event::{ElementState, Ime, MouseButton, MouseScrollDelta, WindowEvent},
-    event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy},
+    event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy},
     keyboard::ModifiersState,
     window::{Window, WindowId},
 };
 
 use crate::{
+    blink::Blink,
     font::Fonts,
     grid::{Cells, Measured, Page, Spelling, Update},
     keys,
@@ -106,6 +110,19 @@ struct Showing {
     /// committed would be putting somebody's half-typed pinyin into a
     /// buffer with an undo history.
     spelling: Option<Spelling>,
+    /// How the caret blinks here, or `None` where the system says it
+    /// should not.
+    blink: Option<Blink>,
+    /// Whether the caret is being drawn at this moment.
+    lit: bool,
+    /// When it next goes the other way.
+    flip: Instant,
+    /// When the reader last did something.
+    ///
+    /// What blinking is measured from: a caret is solid while somebody is
+    /// typing, and a desktop that says when to stop says it in seconds
+    /// since the last key.
+    stirred: Instant,
     /// How big the text is, in points, as the settings last said.
     ///
     /// Kept because the two things it is measured against move on their
@@ -143,6 +160,12 @@ impl Showing {
             rolled: 0.0,
             composing: false,
             spelling: None,
+            // Asked once, on the way up: it is a question about the system
+            // rather than about this window.
+            blink: Blink::asked(),
+            lit: true,
+            flip: Instant::now(),
+            stirred: Instant::now(),
             points,
         }
     }
@@ -181,6 +204,24 @@ impl Showing {
             .ok()
             .and_then(|mut outcome| outcome.take())
             .unwrap_or(Ok(()))
+    }
+
+    /// The reader did something, so the caret is solid again and the
+    /// blinking starts over.
+    ///
+    /// Which is what every caret does: one that went on blinking through a
+    /// paragraph being typed would flicker under the reader's hands, and
+    /// one that stayed dark for the half cycle it was in the middle of
+    /// would be a keypress with no caret after it.
+    fn stir(&mut self) {
+        self.stirred = Instant::now();
+        if let Some(blink) = self.blink {
+            self.flip = self.stirred + blink.every;
+        }
+        if !self.lit {
+            self.lit = true;
+            self.redraw();
+        }
     }
 
     /// Draws again, for something the window knows and the application
@@ -411,6 +452,44 @@ impl ApplicationHandler<Waking> for Showing {
         }
     }
 
+    /// When to wake next, which is only ever for the caret.
+    ///
+    /// Obelus's own loop is a thread blocked on a channel and wakes this
+    /// one when it has drawn something; the one thing the window does on a
+    /// clock of its own is turn the caret on and off. So the deadline is
+    /// worked out from what is true -- there is a caret, it blinks, and the
+    /// reader has not stopped for long enough to settle it -- rather than
+    /// switched on and off from the places that change any of those. The
+    /// same rule the ticker follows, in the crate that has no ticker.
+    fn about_to_wait(&mut self, events: &ActiveEventLoop) {
+        let (Some(blink), true) = (self.blink, self.page.caret().is_some()) else {
+            // Nothing to animate: park until something arrives.
+            events.set_control_flow(ControlFlow::Wait);
+            return;
+        };
+        let now = Instant::now();
+        if blink
+            .settles
+            .is_some_and(|settles| now.duration_since(self.stirred) >= settles)
+        {
+            // Stopped blinking and left visible, which is what that
+            // setting is for: a caret blinking at an empty desk all
+            // afternoon is a process that never sleeps.
+            if !self.lit {
+                self.lit = true;
+                self.redraw();
+            }
+            events.set_control_flow(ControlFlow::Wait);
+            return;
+        }
+        if now >= self.flip {
+            self.lit = !self.lit;
+            self.flip = now + blink.every;
+            self.redraw();
+        }
+        events.set_control_flow(ControlFlow::WaitUntil(self.flip));
+    }
+
     fn window_event(&mut self, events: &ActiveEventLoop, _window: WindowId, event: WindowEvent) {
         match event {
             // The close button means what the key that leaves means, asking
@@ -423,7 +502,9 @@ impl ApplicationHandler<Waking> for Showing {
                 else {
                     return;
                 };
-                if let Err(error) = painter.paint(&self.page, fonts, self.spelling.as_ref()) {
+                if let Err(error) =
+                    painter.paint(&self.page, fonts, self.spelling.as_ref(), self.lit)
+                {
                     tracing::error!(?error, "the frame was not drawn");
                 }
             }
@@ -440,45 +521,49 @@ impl ApplicationHandler<Waking> for Showing {
             // scale on the way through.
             WindowEvent::ScaleFactorChanged { .. } => self.redraw_at(self.points),
             WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers.state(),
-            WindowEvent::Ime(ime) => match ime {
-                // The spelling so far, drawn in the file at the place the
-                // word will go. An input method draws a window of its own
-                // for the candidates and Obelus leaves that alone; what it
-                // will not leave alone is *where the word is being typed*,
-                // which belongs on the page with the code it is going into.
-                Ime::Preedit(spelling, caret) => {
-                    self.composing = !spelling.is_empty();
-                    self.spelling = (!spelling.is_empty()).then(|| Spelling {
-                        // Where the input method's own caret is, in
-                        // characters rather than in bytes: the window
-                        // counts cells, and a byte offset into pinyin is
-                        // not one.
-                        caret: caret.map_or_else(
-                            || spelling.chars().count(),
-                            |(start, _)| spelling[..start].chars().count(),
-                        ),
-                        text: spelling,
-                    });
-                    self.redraw();
+            WindowEvent::Ime(ime) => {
+                self.stir();
+                match ime {
+                    // The spelling so far, drawn in the file at the place the
+                    // word will go. An input method draws a window of its own
+                    // for the candidates and Obelus leaves that alone; what it
+                    // will not leave alone is *where the word is being typed*,
+                    // which belongs on the page with the code it is going into.
+                    Ime::Preedit(spelling, caret) => {
+                        self.composing = !spelling.is_empty();
+                        self.spelling = (!spelling.is_empty()).then(|| Spelling {
+                            // Where the input method's own caret is, in
+                            // characters rather than in bytes: the window
+                            // counts cells, and a byte offset into pinyin is
+                            // not one.
+                            caret: caret.map_or_else(
+                                || spelling.chars().count(),
+                                |(start, _)| spelling[..start].chars().count(),
+                            ),
+                            text: spelling,
+                        });
+                        self.redraw();
+                    }
+                    // The word. It goes in the way pasted text goes in --
+                    // wherever the reader is writing, as one change -- because
+                    // that is the same question and it is already answered.
+                    Ime::Commit(word) => {
+                        self.composing = false;
+                        self.spelling = None;
+                        self.tell(Event::Paste(word));
+                    }
+                    Ime::Enabled | Ime::Disabled => {
+                        self.composing = false;
+                        self.spelling = None;
+                        self.redraw();
+                    }
                 }
-                // The word. It goes in the way pasted text goes in --
-                // wherever the reader is writing, as one change -- because
-                // that is the same question and it is already answered.
-                Ime::Commit(word) => {
-                    self.composing = false;
-                    self.spelling = None;
-                    self.tell(Event::Paste(word));
-                }
-                Ime::Enabled | Ime::Disabled => {
-                    self.composing = false;
-                    self.spelling = None;
-                    self.redraw();
-                }
-            },
+            }
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state != ElementState::Pressed {
                     return;
                 }
+                self.stir();
                 let Some(key) = keys::pressed(
                     &event.logical_key,
                     event.physical_key,
@@ -522,6 +607,7 @@ impl ApplicationHandler<Waking> for Showing {
                 if button != MouseButton::Left {
                     return;
                 }
+                self.stir();
                 self.held = state == ElementState::Pressed;
                 let Some((x, y)) = self.pointer else {
                     return;

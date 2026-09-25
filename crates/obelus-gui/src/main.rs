@@ -15,6 +15,7 @@
 //! switch that is a guess about somebody else's machine. Here the presses
 //! arrive as themselves and the marks are compiled into the binary.
 
+mod blink;
 mod font;
 mod grid;
 mod keys;
