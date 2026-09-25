@@ -1803,6 +1803,16 @@ impl App {
         if let (Some(rows), Some(picker)) = (rows, self.picker.as_mut()) {
             picker.refresh_indices(rows);
         }
+        // The same question for the list a setting's names are built in,
+        // and the same reason: its window moves when the rows about to be
+        // drawn say where it goes.
+        let building = self
+            .names
+            .as_ref()
+            .map(|(_, names)| obelus_ui::names::rows_drawn(names, self.picker_area()));
+        if let (Some(rows), Some((_, names))) = (building, self.names.as_mut()) {
+            names.settle_window(rows);
+        }
         // Unconditionally, because with no list open the geometry is `None`
         // and the trees parsed for the last one are what has to be let go.
         self.colour_visible_rows(rows.unwrap_or(0));

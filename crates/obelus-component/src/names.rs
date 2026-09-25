@@ -269,6 +269,16 @@ impl Names {
         offers
     }
 
+    /// Moves the window to where the rows about to be drawn put it.
+    ///
+    /// Once a frame, with the height the list will have: where the window
+    /// belongs depends on the geometry, and the geometry is only settled at
+    /// that point. Without it the focus walks off the bottom and the rows
+    /// stay where they were, which is a list that cannot be scrolled.
+    pub fn settle_window(&mut self, height: u16) {
+        self.window.settle(height);
+    }
+
     /// Walks the selection by this many rows, for a wheel.
     ///
     /// A notch steps the selection rather than the view, because a list's

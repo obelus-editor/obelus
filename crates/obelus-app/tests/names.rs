@@ -43,3 +43,31 @@ fn what_is_typed_narrows_it_and_is_itself_an_answer() {
     }
     support::check("names_typed_60x20", &support::render(&mut app, 60, 20));
 }
+
+/// A list longer than the band scrolls, so the reader can reach the end of
+/// it.
+///
+/// Where the window sits depends on how many rows are about to be drawn,
+/// which only the frame knows -- so it is settled once a frame, like every
+/// other list here.
+///
+/// Deliberate break: taking that out of `App::prepare` leaves the focus
+/// walking off the bottom while the rows stay where they were, and the
+/// name this asks for is never drawn.
+#[test]
+fn a_list_longer_than_the_band_scrolls() {
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 60, 20);
+    let many: Vec<String> = (0..30).map(|at| format!("Face {at:02}")).collect();
+    app.handle(obelus_app::event::Event::Fonts(many));
+    app.open_names("fonts");
+
+    for _ in 0..20 {
+        support::press(&mut app, KeyCode::Down);
+    }
+    let screen = support::render(&mut app, 60, 20);
+    assert!(
+        screen.contains("Face 20"),
+        "the list did not follow the focus:\n{screen}"
+    );
+}
