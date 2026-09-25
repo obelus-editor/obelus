@@ -340,7 +340,19 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_System_IO",
     "Win32_System_Threading",
     "Win32_UI_WindowsAndMessaging",
+    # And the clipboard, which on Windows is a system service rather than a
+    # program to run: see `obelus-clipboard`'s `native.rs`.
+    "Win32_System_DataExchange",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_UI_Shell",
 ] }
+
+# macOS's pasteboard, for the same reason. Only the clipboard names these,
+# and only on that platform.
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSPasteboard"] }
+objc2-foundation = { version = "0.3", features = ["NSArray", "NSString", "NSURL"] }
 
 # Nothing but cargo's own defaults.
 #

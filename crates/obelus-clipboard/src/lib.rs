@@ -29,6 +29,7 @@
 //! clipboard manager's job, not an editor's.
 
 pub mod links;
+mod native;
 
 use std::{
     io,
@@ -120,6 +121,51 @@ impl Provider {
             Self::Osc52 | Self::Kept => None,
         }
     }
+
+    /// The command that says what the clipboard is offering, where there
+    /// is one.
+    ///
+    /// Only the two that can be asked. A clipboard holds one thing in
+    /// several shapes at once -- a file manager's copy is a path, a name
+    /// and a picture -- and which shapes are there is a question
+    /// `pbpaste`, `xsel` and a terminal cannot answer at all: they hand
+    /// over text and that is the whole of their vocabulary. The two
+    /// platforms whose clipboard is a system service are not asked this
+    /// way at all; see [`native`].
+    const fn listing(self) -> Option<(&'static str, &'static [&'static str])> {
+        match self {
+            Self::Wayland => Some(("wl-paste", &["--list-types"])),
+            // `TARGETS` is X11's own name for the list, and it comes back
+            // as one name per line like every other selection.
+            Self::XClip => Some(("xclip", &["-selection", "clipboard", "-t", "TARGETS", "-o"])),
+            _ => None,
+        }
+    }
+
+    /// And the one that reads a particular shape.
+    fn reading(self, mime: &str) -> Option<(&'static str, Vec<String>)> {
+        match self {
+            Self::Wayland => Some((
+                "wl-paste",
+                vec![
+                    "--no-newline".to_string(),
+                    "--type".to_string(),
+                    mime.to_string(),
+                ],
+            )),
+            Self::XClip => Some((
+                "xclip",
+                vec![
+                    "-selection".to_string(),
+                    "clipboard".to_string(),
+                    "-t".to_string(),
+                    mime.to_string(),
+                    "-o".to_string(),
+                ],
+            )),
+            _ => None,
+        }
+    }
 }
 
 /// What this machine has, asked once and remembered.
@@ -163,6 +209,148 @@ pub fn provider() -> Provider {
         tracing::info!(?found, "the clipboard");
         found
     })
+}
+
+/// What the clipboard is offering, by name.
+///
+/// The names are mime types, on all three platforms: the two whose
+/// clipboard is a system service have vocabularies of their own -- a UTI on
+/// macOS, a numbered format on Windows -- and each says its answer in these
+/// words rather than making every caller learn three.
+///
+/// Empty where nothing is on it, and empty where the machine cannot be
+/// asked: `pbpaste`, `xsel` and a terminal have no way to say. A caller
+/// reads that as "text, or nothing", which is what those clipboards are.
+#[must_use]
+pub fn types() -> Vec<String> {
+    if let Some(names) = native::types() {
+        return names;
+    }
+    let Some((program, arguments)) = provider().listing() else {
+        return Vec::new();
+    };
+    let outcome = Command::new(program)
+        .args(arguments)
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output();
+    match outcome {
+        Ok(ran) if ran.status.success() => offered(&String::from_utf8_lossy(&ran.stdout)),
+        Ok(ran) => {
+            // An empty clipboard is a failure for both of them, and is not
+            // worth a word: it is the ordinary state of a machine that has
+            // just started.
+            tracing::debug!(program, status = ?ran.status, "nothing to list");
+            Vec::new()
+        }
+        Err(error) => {
+            tracing::warn!(program, %error, "asking what is on the clipboard");
+            Vec::new()
+        }
+    }
+}
+
+/// One of those shapes, as the bytes it is.
+///
+/// Bytes rather than text: what this is for is the shapes that are not
+/// text -- a list of files, a picture -- and a caller that wants a string
+/// has [`paste`].
+#[must_use]
+pub fn paste_as(mime: &str) -> Option<Vec<u8>> {
+    if let Some(bytes) = native::paste_as(mime) {
+        return Some(bytes);
+    }
+    let (program, arguments) = provider().reading(mime)?;
+    let outcome = Command::new(program)
+        .args(&arguments)
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    if !outcome.status.success() {
+        tracing::debug!(program, mime, status = ?outcome.status, "nothing of that shape");
+        return None;
+    }
+    Some(outcome.stdout)
+}
+
+/// The name a list of files goes by.
+///
+/// The one shape Obelus asks for besides text, and the reason any of this
+/// exists: a reader copies a file in their file manager and pastes it where
+/// Obelus is asking for one. It is what X11 and Wayland call it, and what
+/// the other two platforms' answers are translated into.
+pub const FILES: &str = "text/uri-list";
+
+/// The names in a listing, one per line.
+fn offered(said: &str) -> Vec<String> {
+    let mut names: Vec<String> = said
+        .lines()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        // X11 answers with its own questions among the shapes -- `TARGETS`,
+        // `TIMESTAMP`, `MULTIPLE` -- which are about the selection rather
+        // than about what is on it.
+        .filter(|name| !matches!(*name, "TARGETS" | "TIMESTAMP" | "MULTIPLE" | "SAVE_TARGETS"))
+        .map(str::to_string)
+        .collect();
+    names.dedup();
+    names
+}
+
+/// What a `text/uri-list` names, as paths on this machine.
+///
+/// Only `file:` URIs, because only those are paths. A list that names
+/// something on a web server names nothing this machine can open, and a
+/// path that is not one is worse than none: it is a path a reader watches
+/// Obelus fail to open.
+#[must_use]
+pub fn files(list: &[u8]) -> Vec<std::path::PathBuf> {
+    String::from_utf8_lossy(list)
+        .lines()
+        .map(str::trim)
+        // The format's own comments, which is how it carries anything that
+        // is not a URI.
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .filter_map(|line| {
+            let rest = line.strip_prefix("file://")?;
+            // `file://host/path`, and the host is empty for this machine --
+            // which is the only one whose files are here.
+            if !rest.starts_with('/') {
+                return None;
+            }
+            Some(std::path::PathBuf::from(decoded(rest)))
+        })
+        .collect()
+}
+
+/// A URI's percent escapes, put back.
+///
+/// By hand rather than with a crate: what arrives here is a path somebody
+/// else wrote, the rule is three characters long, and the alternative is a
+/// dependency for one function.
+fn decoded(said: &str) -> String {
+    let mut out = Vec::with_capacity(said.len());
+    let mut bytes = said.bytes();
+    while let Some(byte) = bytes.next() {
+        if byte != b'%' {
+            out.push(byte);
+            continue;
+        }
+        let digits: Vec<u8> = bytes.clone().take(2).collect();
+        let digits = String::from_utf8_lossy(&digits).to_string();
+        match u8::from_str_radix(&digits, 16) {
+            Ok(decoded) => {
+                out.push(decoded);
+                bytes.next();
+                bytes.next();
+            }
+            // Not an escape after all, and a percent sign is a character a
+            // file may be named with.
+            Err(_) => out.push(byte),
+        }
+    }
+    String::from_utf8_lossy(&out).to_string()
 }
 
 /// Puts text back, from wherever it can be got.
@@ -297,5 +485,67 @@ mod tests {
         // encoded at all: the sequence is terminated by a control character,
         // so the text inside it cannot contain arbitrary bytes.
         assert_eq!(STANDARD.encode("你好"), "5L2g5aW9");
+    }
+
+    /// A listing is one name per line, and X11's questions about the
+    /// selection are not shapes of what is on it.
+    ///
+    /// Deliberate break: keeping `TARGETS` makes a caller asking "are
+    /// there files here" read a list whose first entry is the word for
+    /// "what is here", which is not a shape anything can be read as.
+    #[test]
+    fn a_listing_is_the_shapes_and_nothing_else() {
+        let said = "TARGETS\nTIMESTAMP\ntext/uri-list\nUTF8_STRING\n\n  text/plain  \n";
+        assert_eq!(
+            offered(said),
+            ["text/uri-list", "UTF8_STRING", "text/plain"]
+        );
+        assert!(offered("").is_empty());
+    }
+
+    /// A `text/uri-list` is paths, and only the ones that are paths here.
+    ///
+    /// Deliberate break: taking every line makes a copy from a browser --
+    /// which puts `https://` on the clipboard in this shape -- into a path
+    /// Obelus opens and fails to find.
+    #[test]
+    fn a_uri_list_is_the_files_it_names() {
+        // The third line is a path and not a URI, which this format does
+        // not carry: taking it would mean taking the path out of every
+        // `https://` line as well, since by then the two look alike.
+        let list = b"# a comment the format allows\r\nfile:///home/sunli/note.md\r\nhttps://example.com/x\r\n/home/sunli/bare.txt\r\nfile:///tmp/two.rs\r\n";
+        let files = files(list);
+        assert_eq!(
+            files,
+            [
+                std::path::PathBuf::from("/home/sunli/note.md"),
+                std::path::PathBuf::from("/tmp/two.rs")
+            ]
+        );
+    }
+
+    /// And the escapes in one are put back, because a file may be named
+    /// with a space.
+    ///
+    /// Deliberate break: handing the line over as it stands gives a path
+    /// with `%20` in it, which is a file nobody has.
+    #[test]
+    fn a_path_with_a_space_in_it_survives_the_uri() {
+        assert_eq!(
+            files(b"file:///home/sunli/two%20words.txt"),
+            [std::path::PathBuf::from("/home/sunli/two words.txt")]
+        );
+        // A percent that is not an escape is a character a file may be
+        // named with, and stays one.
+        assert_eq!(
+            files(b"file:///tmp/100%.txt"),
+            [std::path::PathBuf::from("/tmp/100%.txt")]
+        );
+        // Every byte of a name that is not ASCII arrives escaped, one
+        // escape per byte.
+        assert_eq!(
+            files(b"file:///tmp/%E4%B8%AD%E6%96%87.rs"),
+            [std::path::PathBuf::from("/tmp/\u{4e2d}\u{6587}.rs")]
+        );
     }
 }
