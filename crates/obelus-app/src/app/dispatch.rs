@@ -66,6 +66,7 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::GoBack => app.go_back(),
         Command::GoForward => app.go_forward(),
         Command::AgentOpen => app.open_agent(),
+        Command::ConversationSelect => app.open_conversation_picker(),
         Command::CountLines => app.open_counts(),
         Command::TodoOpen => app.open_todo(),
         Command::TodoAdd => app.add_todo(),

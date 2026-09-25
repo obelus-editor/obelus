@@ -183,6 +183,67 @@ as its region, and that is why `App::chat_key` takes its room from the same
 functions the view lays itself out with rather than from anything of its
 own.
 
+And a file read is the same mistake in a costume, because it does not look
+like work. Three of them were behind questions a view asks: whether this
+project has any conversation to take up, drawn on the conversation's status
+row; which of the notes has one, drawn on the notes page; and what each
+agent's install record says, drawn on the settings. Parsing that table is
+37us for one conversation and 351us for twenty, and the notes turn a mark
+while any agent is at work -- twelve times a second, for a page nobody is
+typing on.
+
+**Nothing is polled.** What to do about one of these is either to ask a
+cheaper question or to be told, and there is no third answer. **Ask a
+cheaper question**: whether there is *anything* to take up is the size of a
+file (285ns) rather than what is in it, because Obelus writes that file
+whole and writes it empty when it has nothing to say -- which leaves the
+gate a shade generous, so the list it opens says what it actually found.
+**Or keep it and hear the change**: which note has a conversation is a
+table somebody *writes*, and a write is something a watcher hears, so it is
+read when the page opens, when the watcher says so, and when Obelus writes
+it -- and `sessions::change` hands back what it wrote, so that last one
+re-reads nothing.
+
+The one that looked like a third answer was the claims. A claim is a lock:
+taking one writes nothing, and an Obelus that is killed gives its lock up
+with nothing on disk to say so -- which reads as "nothing can tell you, so
+keep asking", and was a walk of the claims directory on every frame the
+notes were showing. Something does tell you. The kernel closes a dying
+process's files, and a watcher reports a file closed by a process that had
+it open for *writing*. So a claim is **held** by a writer, on purpose, and
+**looked at** through a read, on purpose -- because a look that announced
+itself would be Obelus waking itself to look again, for ever. `obelus_watch`
+lets that one Access event through and refuses the rest; `chats` opens for
+reading everywhere but `claim`; `flock` allows it, where `fcntl` locks would
+not. Being refused a claim counts as being told, too, and is the freshest
+news there is: the row the reader pressed goes dim under them.
+
+That leaves three moments a thing is read: when the view that shows it
+opens (a watch says what happens next, not what was already there), when
+the watcher says so, and when Obelus is the one who changed it.
+
+Which is not the same as the three moments a *watch* is taken.
+`App::settle_the_watches` holds all of them and is asked from what is open,
+once a frame; the reading is the view's own, done as it opens. They were
+one thing briefly and it was wrong twice over: an Obelus whose watcher
+would not start read nothing at all for the rest of the session, and a view
+whose keys act before the next frame -- the notes are opened by one key and
+talked about with the next -- got its answer a keystroke late. So `Watched`
+keeps two fields, what is *wanted* and what is *held*, and only the first
+decides when to read.
+
+The test for which shape a thing wants is not how dear it is. It is whether
+there is anything that could tell you it moved -- and the answer was yes
+in the one place it looked like no, so the question is worth asking twice
+before settling for a poll.
+
+One was left alone, which is the other half of the rule. The agents page
+reads an install record per agent, three times a frame between the page,
+its window of cards and its pictures: forty misses measured at 51us, on one
+page, that nothing animates -- so it is 150us on a keystroke nobody is
+waiting on. A number is a reason to look; it is not on its own a reason to
+add machinery.
+
 **A call's title is the command, so a few rows of it are shown shut.** An
 agent titles a call with its own text and for a command that is the command
 line, which is the thing a reader of a transcript of commands is reading:
@@ -207,6 +268,74 @@ src/app.rs` followed by `src/app.rs` is the rule a setting's description
 already follows when it is the setting's name again -- what the title has
 *not* said is what is left to say, so `line 20  +2` where it named the file
 and the whole of `src/app.rs:20  +2` where it did not.
+
+**Opening a conversation starts nothing; saying something does.** A view is
+somewhere to look, and looking is not talking. `f4` and the notes' `Talk`
+used to run the agent's process and mint a conversation on it before the
+reader had typed a character -- so a key pressed to see what was said
+yesterday started a node, and left behind an empty conversation the agent
+does not keep and Obelus could still write down against the note in place
+of the one the reader had been talking in. There are two moments a session
+is asked for now: the reader's first message, where `App::say_in` starts
+the process and the handle holds the words until there is somewhere to send
+them, and their choosing one from the list to take up again. The claim is
+still taken when the view opens, because the claim is not about the agent
+-- it is this window saying the note's conversation is its own, and that
+has to be said before another window says it.
+
+Which makes `Talking::Idle` a state a reader sits in rather than a blink,
+so it needed words of its own: `starting...` under a still mark, about a
+conversation nothing is starting, is the one thing that row must not say.
+And "starting" has to be told from "nothing has been asked for", which used
+to be the same thing -- `Conversation::opening` is the half of that
+`asked_for` cannot carry, because a fresh conversation has no name until
+the answer brings one.
+
+**What a reader said about a project outlives the window they said it in.**
+The agent keeps every word and Obelus keeps the one thing it cannot --
+which conversation is which -- so `f4` inside a conversation is a list of
+them, newest first, over the one they are in. Ordered by when something was
+last said in it, which is a field (`Kept::last`) because it cannot be
+worked out from anything else, and written in the same words a commit's row
+uses (`how_long_ago`).
+
+**A row of a list says what is true now, and says it in one answer.** The
+rows of a list are a snapshot -- building them reads files and walks git,
+which is not work a frame can do -- so what changes under the reader while
+the list is up is asked again instead of rebuilt: `Picker::remark`, which
+the list of open documents already used for the mark that turns while an
+agent works. What it carried was the mark alone, and the list of
+conversations needs two things -- the lock, and whether the key works on
+that row -- which are one fact wearing two faces. So a remark carries
+`Said`, both together: a list that could refresh one without the other is a
+list that draws a lock on a row and lets the reader into it anyway, which
+is the same shape as the card whose `submit` row stopped saying the keys
+were on it.
+
+And the waking is the other half. A claim is a lock, and a lock is
+invisible to a watcher -- nothing is written when one is taken, which is
+the whole reason the claim has a file -- so the directory of them is what
+one Obelus wakes another on, and without a watch on it the rows would be
+asked again only when the reader happened to press something. The watch is
+counted, so the notes page and this list can hold it at once; which of them
+holds it is decided every frame from what is showing, rather than switched
+on where a list opens and off in each of the ways it closes. A watch
+switched on in one place and off in three outlives its reason the first
+time somebody adds a fourth way out -- the ticker's rule, one level along.
+
+**A conversation belongs to the agent that had it.** A session id is a name
+one agent minted and means nothing to another, so only the agent in use can
+be asked to take one up. The others are shown all the same -- a tab each,
+their rows dim, the reason above them -- because the alternative is a
+reader who changed agents finding their conversations gone and nothing
+saying where. A tab exists only where that agent has something in it, so
+the ordinary case of one agent has no tab row at all; the tabs are scopes
+and not groups, because a picker's group tabs come with an `All` in front
+of them and `All` is the one tab this list must not have -- it would mix
+the rows that can be taken up with the rows that cannot. Nothing here
+switches the agent: that is a setting, and doing it from a row would drop
+the session of every conversation open, including the one the reader is
+standing in.
 
 **A conversation takes one prompt turn at a time, so what the reader says
 into a running one waits.** The protocol puts no turn on either end of the
@@ -591,6 +720,18 @@ choosing, and a function key is not a way out of it. The card of every key
 was `f1` until this, and moved to `ctrl+k` (`keymap::keys_card`) because `f1`
 names the files.
 
+And a view that has bound the key itself beats the swap. `App::handle_key`
+asked the swap first, so a key the showing view had taken was answered one
+level out and its own binding was dead: `f4` in a conversation swapped the
+conversation for itself. `Keymap::bound_here` is that question -- what this
+context binds, with no falling back -- and it is the same precedence
+`Keymap::lookup` already uses. Which is what `f4` inside a conversation is
+for: it opens the conversation from anywhere else and means *which one*
+inside the one it named, the same move `f3` makes in `f1`'s list. So
+`talk-to-agent` is bound in `Context::Normal` rather than everywhere: the
+only two contexts with global keys are Normal and Chat, and Chat has its own
+answer now.
+
 **One mark for "the keys are here", and it says nothing else.** Every list,
 page and card in Obelus puts `selected_row_background` behind the row the
 reader is on -- a picker's rows, the settings', an agent's question, the
@@ -777,7 +918,7 @@ gitignore.
 takes one prompt turn at a time and the queue that keeps Obelus to one lives
 in a process, so a second process prompting the same conversation walks
 straight past it -- no `2 waiting` anywhere, because neither Obelus can see
-the other's queue. So a note's conversation is claimed, and the claim is a
+the other's queue. So a conversation is claimed, and the claim is a
 lock the system holds rather than anything Obelus writes down: an Obelus that
 is killed, crashes or loses power gives it up without being asked, which a
 process number in a file cannot do -- it has to be believed, checked against
@@ -791,7 +932,20 @@ nobody holds -- and asking for the lock is what says which it is.
 Nothing is said on the status row when the key is refused. The lock beside
 the note says it, and the foot says it again by not offering `Talk` there:
 the reader is told before they press, which is the rule the palette follows
-for a command it will not run.
+for a command it will not run. The list of conversations says the same
+thing the same way -- the lock in the marker column, the row dim -- and
+asks for the claim *again* when the row is chosen, because the list was
+built a moment ago and another Obelus may have walked in since. Where it
+has, the list stays open and the row goes dim under the reader, which is
+the answer; nothing happening at all is a key that looks broken.
+
+*And what is claimed is the conversation, not the note.* `ChatId` is which
+one: a note where there is one, and the agent's own name for it where there
+is not. It has to be the note for a note's conversation -- the notes page
+reaches one before a session exists, which is why the claim is taken before
+the conversation is opened -- and it has to be the session for the other
+kind, because nothing else names one. Two keys for one conversation would be
+two doors with an Obelus behind each.
 
 Two smaller ones, in the same spirit. An install claims the agent's directory
 with a file created exclusively, so two windows asked for the same agent do
@@ -819,7 +973,8 @@ src/
                     (preferences); what Obelus says before the reader's
                     first words is one piece that is always said and one
                     the topic adds, and the reader's own words go into a
-                    template last (opening)
+                    template last (opening); a conversation belongs to the
+                    agent that had it (conversations)
   text.rs         the Rope wrapper: the only place coordinates convert
   buffer/         one open file: text, syntax, cursor, viewport
                   · an edit knows where it happened; do not read over an
@@ -863,7 +1018,8 @@ src/
                     what the remote has not seen is marked (history)
   agent/          the ACP registry, installing an agent, its marks
                   · an agent is installed when the install says so, in
-                    writing (install)
+                    writing (install); a conversation is claimed by what
+                    names it, and one Obelus at a time has it (chats)
   acp/            the protocol, through its own crate, and the thread that
                   joins it to the loop
                   · why the runtime is current-thread, why the two

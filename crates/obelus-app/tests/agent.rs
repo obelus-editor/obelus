@@ -83,7 +83,103 @@ fn playing(how: &[&str]) -> (App, Receiver<Event>) {
     arguments.extend(how.iter().map(|word| (*word).to_string()));
     app.talk_to("fake", Path::new("sh"), &arguments);
     app.open_agent();
+    // Opening the view starts nothing -- see `App::open_agent` -- and what
+    // these tests are about is what happens in a conversation that is
+    // running. The reader's own way to one is saying something, which would
+    // put a row on every one of these pages.
+    app.open_a_session_for_test();
     (app, events)
+}
+
+/// Goes from the notes to the conversation about the note under the reader,
+/// and starts it.
+///
+/// The key opens the view and starts nothing -- see `App::open_agent` --
+/// which is what a reader's first message is for. These tests are about
+/// what happens in a conversation that is running, so they take the short
+/// way in, the same one `playing` takes for the loose conversation.
+fn talk_about_the_note(app: &mut App) {
+    support::press_alt(app, 'a');
+    // Only where the key was honoured: a note another Obelus has open opens
+    // nothing, and asking for a session there would ask for one in whatever
+    // conversation the reader was in before.
+    if app.chat().is_some() {
+        app.open_a_session_for_test();
+    }
+}
+
+/// Whether the transcript has these words in it anywhere.
+fn said_in_transcript(app: &App, words: &str) -> bool {
+    app.chat().is_some_and(|chat| {
+        chat.rows(WIDTH)
+            .iter()
+            .any(|row| row.text().contains(words))
+    })
+}
+
+/// Writes a conversation into the project's table, as one that was had and
+/// left.
+///
+/// A conversation about nothing in particular, which is what the key opens
+/// and what the list is mostly of. `last` is when something was last said
+/// in it, which is what the list is ordered by.
+fn remember_a_conversation(
+    scratch: &support::Scratch,
+    agent: &str,
+    session: &str,
+    title: &str,
+    last: Option<i64>,
+) {
+    obelus_agent::acp::sessions::change(scratch.path(), None, |remembered| {
+        remembered.put(
+            &obelus_agent::chats::ChatId::Loose(session.to_string()),
+            agent,
+            obelus_agent::acp::sessions::Kept {
+                session: session.to_string(),
+                title: Some(title.to_string()),
+                told: None,
+                introduced: false,
+                last,
+            },
+        );
+    });
+}
+
+/// Says what a watcher says when a claim appears, goes, or is closed by the
+/// process that was holding it.
+///
+/// A real one hears all three: a file created, a file removed, and -- the
+/// one that matters -- a file closed by a writer, which is what the kernel
+/// does to the files of an Obelus it is killing. These tests take and drop
+/// claims by hand, so they say it by hand; without it they would be asking
+/// whether Obelus goes and looks of its own accord, which is the thing it
+/// stopped doing.
+fn the_claims_changed(app: &mut App, root: &Path, which: &obelus_agent::chats::ChatId) {
+    let path = obelus_agent::chats::directory(root)
+        .expect("somewhere to keep claims")
+        .join(which.file_name());
+    app.handle(obelus_app::event::Event::Watched(obelus_watch::Changed {
+        path,
+    }));
+}
+
+/// Writes down a conversation about one of the project's notes.
+fn remember_a_note_conversation(scratch: &support::Scratch, note: &str, session: &str) {
+    obelus_agent::acp::sessions::change(scratch.path(), None, |remembered| {
+        remembered.put(
+            &obelus_agent::chats::ChatId::Note(
+                obelus_git::todo::NoteId::read(note).expect("a name"),
+            ),
+            "fake",
+            obelus_agent::acp::sessions::Kept {
+                session: session.to_string(),
+                title: None,
+                told: None,
+                introduced: false,
+                last: Some(1_700_000_000),
+            },
+        );
+    });
 }
 
 /// Handles events until the application satisfies `until`, or gives up.
@@ -2378,6 +2474,7 @@ fn talking_to_an_agent_that_stopped_starts_it_again() {
     std::fs::write(&file, "agent = \"fake\"\n").expect("a settings file");
     app.config_file_for_test(file);
     app.open_agent();
+    app.open_a_session_for_test();
     pump(&mut app, &events, "the session", |app| {
         app.talking() == obelus_agent::Talking::Ready
     });
@@ -2681,6 +2778,7 @@ fn a_row_naming_a_file_that_is_gone_changes_nothing() {
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     app.open_agent();
+    app.open_a_session_for_test();
     pump(&mut app, &events, "the session", |app| {
         app.talking() == obelus_agent::Talking::Ready
     });
@@ -3048,7 +3146,7 @@ fn a_conversation_about_a_note_says_so_in_its_first_message() {
     );
     // Into the notes and on to the one note's conversation.
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
-    support::press_alt(&mut app, 'a');
+    talk_about_the_note(&mut app);
     assert!(app.chat().is_some(), "no conversation about the note");
     pump(&mut app, &events, "the session", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -3124,7 +3222,7 @@ fn a_question_that_arrives_while_the_reader_is_away_waits_in_its_own_conversatio
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
-    support::press_alt(&mut app, 'a');
+    talk_about_the_note(&mut app);
     pump(&mut app, &events, "the session", |app| {
         app.talking() == obelus_agent::Talking::Ready
     });
@@ -3206,7 +3304,7 @@ fn an_agent_that_stops_takes_the_questions_in_every_conversation_with_it() {
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
-    support::press_alt(&mut app, 'a');
+    talk_about_the_note(&mut app);
     pump(&mut app, &events, "the session", |app| {
         app.talking() == obelus_agent::Talking::Ready
     });
@@ -3511,7 +3609,7 @@ fn a_question_about_a_notes_conversation_is_asked_in_it() {
     );
     // Into the notes and on to the one note's conversation.
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
-    support::press_alt(&mut app, 'a');
+    talk_about_the_note(&mut app);
     pump(&mut app, &events, "the session", |app| {
         app.talking() == obelus_agent::Talking::Ready
     });
@@ -3654,7 +3752,7 @@ fn notes_that_will_not_read_do_not_forget_the_conversations() {
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
-    support::press_alt(&mut app, 'a');
+    talk_about_the_note(&mut app);
     pump(&mut app, &events, "a session", |app| {
         app.talking() == obelus_agent::Talking::Ready
     });
@@ -3672,7 +3770,7 @@ fn notes_that_will_not_read_do_not_forget_the_conversations() {
         obelus_agent::acp::sessions::read(scratch.path())
             .remembered()
             .expect("the table")
-            .get(&id, "fake")
+            .get(&obelus_agent::chats::ChatId::Note(id.clone()), "fake")
             .is_some(),
         "the conversation was never written down, so this proves nothing"
     );
@@ -3692,7 +3790,7 @@ fn notes_that_will_not_read_do_not_forget_the_conversations() {
         obelus_agent::acp::sessions::read(scratch.path())
             .remembered()
             .expect("the table")
-            .get(&id, "fake")
+            .get(&obelus_agent::chats::ChatId::Note(id.clone()), "fake")
             .is_some(),
         "the conversation was forgotten because the notes would not read"
     );
@@ -3733,13 +3831,14 @@ fn a_conversation_the_agent_has_forgotten_is_started_again() {
         Some(std::slice::from_ref(&id)),
         |remembered| {
             remembered.put(
-                &id,
+                &obelus_agent::chats::ChatId::Note(id.clone()),
                 "fake",
                 obelus_agent::acp::sessions::Kept {
                     session: "s-gone".to_string(),
                     title: None,
                     told: Some("a note".to_string()),
                     introduced: true,
+                    last: None,
                 },
             );
         },
@@ -3753,7 +3852,7 @@ fn a_conversation_the_agent_has_forgotten_is_started_again() {
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
-    support::press_alt(&mut app, 'a');
+    talk_about_the_note(&mut app);
     pump(&mut app, &events, "a session of some kind", |app| {
         app.talking() == obelus_agent::Talking::Ready
     });
@@ -4552,13 +4651,14 @@ fn remembering_how(
         Some(std::slice::from_ref(&id)),
         |remembered| {
             remembered.put(
-                &id,
+                &obelus_agent::chats::ChatId::Note(id.clone()),
                 "fake",
                 obelus_agent::acp::sessions::Kept {
                     session: session.to_string(),
                     title: None,
                     told: Some("a note".to_string()),
                     introduced: true,
+                    last: None,
                 },
             );
         },
@@ -4573,7 +4673,7 @@ fn remembering_how(
     arguments.extend(how.iter().map(|word| (*word).to_string()));
     app.talk_to("fake", Path::new("sh"), &arguments);
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
-    support::press_alt(&mut app, 'a');
+    talk_about_the_note(&mut app);
     (scratch, app, events)
 }
 
@@ -4622,13 +4722,14 @@ fn a_note_says_whether_anybody_has_talked_about_it() {
         Some(std::slice::from_ref(&id)),
         |remembered| {
             remembered.put(
-                &id,
+                &obelus_agent::chats::ChatId::Note(id.clone()),
                 "fake",
                 obelus_agent::acp::sessions::Kept {
                     session: "s-old".to_string(),
                     title: None,
                     told: None,
                     introduced: false,
+                    last: None,
                 },
             );
         },
@@ -4673,7 +4774,7 @@ fn a_note_says_whether_anybody_has_talked_about_it() {
     // And once that conversation is waiting on an answer, the mark says
     // so -- in the colour the list of open documents uses for the same
     // thing, which is what the whole frame is checked for.
-    support::press_alt(&mut app, 'a');
+    talk_about_the_note(&mut app);
     pump(&mut app, &events, "the session", |app| {
         app.talking() == obelus_agent::Talking::Ready
     });
@@ -5033,13 +5134,14 @@ fn the_first_conversation_opened_after_a_restart_is_taken_up() {
         Some(std::slice::from_ref(&id)),
         |remembered| {
             remembered.put(
-                &id,
+                &obelus_agent::chats::ChatId::Note(id.clone()),
                 "fake",
                 obelus_agent::acp::sessions::Kept {
                     session: "s-old".to_string(),
                     title: None,
                     told: None,
                     introduced: false,
+                    last: None,
                 },
             );
         },
@@ -5064,7 +5166,7 @@ fn the_first_conversation_opened_after_a_restart_is_taken_up() {
     app.config_file_for_test(file);
 
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
-    support::press_alt(&mut app, 'a');
+    talk_about_the_note(&mut app);
     // What the agent replays, which is what says it was asked for the
     // conversation written down rather than handed a new one. A load that
     // worked writes no note -- there is nothing to explain, the words are
@@ -5141,7 +5243,8 @@ fn a_conversation_the_agent_has_not_got_is_forgotten_rather_than_replaced() {
         .remembered()
         .expect("the table");
     assert_eq!(
-        kept.get(&id, "fake").map(|kept| kept.session.clone()),
+        kept.get(&obelus_agent::chats::ChatId::Note(id.clone()), "fake")
+            .map(|kept| kept.session.clone()),
         None,
         "the note still points at a conversation nobody can reach"
     );
@@ -5161,7 +5264,8 @@ fn a_conversation_the_agent_has_not_got_is_forgotten_rather_than_replaced() {
         .remembered()
         .expect("the table");
     assert!(
-        kept.get(&id, "fake").is_some(),
+        kept.get(&obelus_agent::chats::ChatId::Note(id.clone()), "fake")
+            .is_some(),
         "a conversation with something in it was not written down"
     );
 }
@@ -6269,6 +6373,7 @@ fn a_conversation_opens_on_what_the_reader_chose() {
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     app.open_agent();
+    app.open_a_session_for_test();
 
     pump(&mut app, &events, "the model to be the chosen one", |app| {
         app.agent_settings()
@@ -6321,6 +6426,7 @@ fn a_value_the_agent_no_longer_offers_is_not_sent() {
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     app.open_agent();
+    app.open_a_session_for_test();
 
     pump(&mut app, &events, "the switch to be on", |app| {
         app.agent_settings()
@@ -6540,7 +6646,11 @@ fn a_conversation_another_obelus_has_open_is_not_opened_again() {
     let id = obelus_git::todo::NoteId::read("0123456T").expect("a name");
 
     // The other Obelus, holding it for as long as this is held.
-    let theirs = obelus_agent::chats::claim(scratch.path(), &id).expect("their claim");
+    let theirs = obelus_agent::chats::claim(
+        scratch.path(),
+        &obelus_agent::chats::ChatId::Note(id.clone()),
+    )
+    .expect("their claim");
 
     let (mut app, _events) = wired();
     app.working_directory_for_test(scratch.path().to_path_buf());
@@ -6574,8 +6684,14 @@ fn a_conversation_another_obelus_has_open_is_not_opened_again() {
     );
 
     // Given up, it is the reader's again: they closed it in the other
-    // window and this one does not have to be restarted.
+    // window and this one does not have to be restarted. Heard rather than
+    // noticed -- the file going is what a watcher reports.
     drop(theirs);
+    the_claims_changed(
+        &mut app,
+        scratch.path(),
+        &obelus_agent::chats::ChatId::Note(id.clone()),
+    );
     assert_eq!(
         app.talked_about().first(),
         Some(&obelus_component::todo::Talked::Not),
@@ -6591,4 +6707,935 @@ fn a_conversation_another_obelus_has_open_is_not_opened_again() {
         app.chat().is_some(),
         "the conversation could not be opened after it was given up"
     );
+}
+
+/// Opening a conversation starts nothing, and the first message starts it
+/// all.
+///
+/// A view is somewhere to look, and looking is not talking. The key used to
+/// run the agent's process and mint a conversation on it before the reader
+/// had typed a character -- so pressing it to see what was said yesterday
+/// started a node and left an empty conversation behind on the agent, which
+/// the agent does not keep and Obelus could still write down in place of a
+/// real one.
+///
+/// Both halves, because each passes with the other broken: a key that
+/// starts nothing and never starts is a conversation nobody can talk in,
+/// and a key that starts everything is what this is about.
+///
+/// Broken deliberately by putting `start_agent` and `ask_for_a_session`
+/// back at the end of `App::open_agent`: the first two assertions go red.
+/// Broken the other way by taking the `ask_for_a_session` out of
+/// `App::say_in`: the message is held for a session nobody asked for and
+/// the last one goes red.
+#[test]
+fn opening_a_conversation_starts_nothing_and_the_first_word_starts_it() {
+    let (mut app, events) = wired();
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.open_agent();
+    assert!(app.chat().is_some(), "the view did not open");
+    // Nothing is on its way, which is a different state from starting: a
+    // transcript saying `starting...` under a still mark says something is
+    // happening where nothing is.
+    assert_eq!(
+        app.talking(),
+        obelus_agent::Talking::Idle,
+        "opening the view asked the agent for something"
+    );
+    // And it stays that way. A moment of the loop rather than an assertion
+    // taken the same instant, because what is being tested is that nothing
+    // arrives.
+    settle(&mut app, &events, Duration::from_millis(300));
+    assert_eq!(
+        app.talking(),
+        obelus_agent::Talking::Idle,
+        "something started behind the reader's back"
+    );
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Ask it something"),
+        "the page says something is starting when nothing is:\n{text}"
+    );
+
+    // The reader says something, and that is what starts the process, opens
+    // the conversation and sends the message once there is somewhere to
+    // send it.
+    support::type_text(&mut app, "/echo");
+    support::press(&mut app, KeyCode::Enter);
+    // The agent's own words, not the reader's: what they typed is on the
+    // page the moment they press enter, so a transcript holding it says
+    // only that they pressed enter.
+    pump(&mut app, &events, "the answer", |app| {
+        said_in_transcript(app, "heard you")
+    });
+}
+
+/// The list offers what this project has had, newest first, and taking one
+/// up goes to it.
+///
+/// What a reader said to an agent outlives the window they said it in: the
+/// agent keeps every word and Obelus keeps which conversation is which.
+/// Without a way back to one, the only conversations a reader has are the
+/// ones this Obelus happens to be holding.
+///
+/// Broken deliberately by sorting the rows the other way round in
+/// `App::conversation_rows` -- `Reverse` off the key -- which puts last
+/// week's conversation above this minute's.
+#[test]
+fn the_list_offers_the_conversations_this_project_has_had() {
+    let scratch = support::Scratch::new("agent-conversation-list");
+    let (mut app, _events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    // The setting is what says which agent's conversations these are, and
+    // the process is what will be asked for one: the list is built from the
+    // first and has to reach the second.
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    remember_a_conversation(&scratch, "fake", "s-old", "count the lines", Some(1_000));
+    remember_a_conversation(&scratch, "fake", "s-new", "the margin lies", Some(2_000));
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
+    // The key rather than the command, because the key is half of it: `f4`
+    // opens the conversation from anywhere and means "which one" inside the
+    // conversation it named, the same way `f3` walks to a tab of `f1`'s
+    // list rather than opening that list again.
+    support::press(&mut app, KeyCode::F(4));
+    let picker = app.picker().expect("the list of conversations");
+    let rows: Vec<(String, bool)> = picker
+        .matches()
+        .map(|item| (item.label.clone(), item.enabled))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("the margin lies".to_string(), true),
+            ("count the lines".to_string(), true),
+        ],
+        "the conversations are not there, or not newest first"
+    );
+    // No tab row: one agent has talked here, and a row of tabs over the
+    // only agent a reader has used says nothing and costs two rows.
+    assert!(
+        app.picker().expect("the list").tabs().is_empty(),
+        "a list of one agent's conversations has a row of tabs"
+    );
+
+    // Taking one up opens it and asks the agent for that one by name.
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_none(), "the list stayed open");
+    assert_eq!(
+        app.chat_session_for_test().as_deref(),
+        Some("s-new"),
+        "it did not ask for the conversation the row named"
+    );
+}
+
+/// A conversation another Obelus has open is in the list and cannot be
+/// taken up.
+///
+/// The same promise the notes page makes, arriving by the other door: a
+/// conversation is not a thing two Obelus may have open at once, and the
+/// list is now a second way to reach one. Said in the ink and the lock
+/// rather than on the status row -- the reader is told before they press,
+/// which is the rule the palette follows for a command it will not run.
+///
+/// Two halves, because each passes with the other broken. Giving every row
+/// `enabled: true` in `App::conversation_rows` stops the row saying so
+/// before the reader presses. And taking the claim out of
+/// `App::take_up_conversation` -- opening it whether or not `chats::claim`
+/// answered -- lets the second window in when the other Obelus arrived
+/// after the list was built, which is the moment the row cannot have
+/// covered.
+#[test]
+fn a_conversation_another_obelus_has_open_cannot_be_taken_up_from_the_list() {
+    let scratch = support::Scratch::new("agent-conversation-held");
+    let (mut app, _events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    remember_a_conversation(&scratch, "fake", "s-held", "somebody has this", Some(2_000));
+    remember_a_conversation(&scratch, "fake", "s-free", "nobody has this", Some(1_000));
+
+    // The other Obelus, holding it for as long as this is held. A lock
+    // belongs to the open file rather than to the process, so one taken
+    // here is as much somebody else's as one taken in another window.
+    let theirs = obelus_agent::chats::claim(
+        scratch.path(),
+        &obelus_agent::chats::ChatId::Loose("s-held".to_string()),
+    )
+    .expect("their claim");
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
+    let rows: Vec<(String, bool, bool)> = app
+        .picker()
+        .expect("the list")
+        .matches()
+        .map(|item| (item.label.clone(), item.enabled, item.marker.is_some()))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("somebody has this".to_string(), false, true),
+            ("nobody has this".to_string(), true, false),
+        ],
+        "the row does not say the conversation is somebody else's"
+    );
+
+    // And the other half: a conversation that was free when the list was
+    // built and is not free by the time the reader presses enter on it. The
+    // claim is asked for at the press and not read off the row, so the
+    // answer is the row saying so -- the list stays open and the lock
+    // arrives on it.
+    let also_theirs = obelus_agent::chats::claim(
+        scratch.path(),
+        &obelus_agent::chats::ChatId::Loose("s-free".to_string()),
+    )
+    .expect("their second claim");
+    // Not heard yet, which is the point of this half: the row still says
+    // the conversation is free, and what refuses the reader is the claim
+    // being asked for again at the press.
+    support::press(&mut app, KeyCode::Enter);
+    assert!(
+        app.picker().is_some(),
+        "the list went, so a second window was let into the conversation"
+    );
+    assert!(
+        app.chat_session_for_test().is_none(),
+        "a second window was let into the conversation"
+    );
+    assert!(
+        app.picker()
+            .expect("the list")
+            .matches()
+            .all(|item| !item.enabled),
+        "the row the reader pressed still says it can be taken up"
+    );
+
+    // Given up, they are the reader's again.
+    drop(theirs);
+    drop(also_theirs);
+    the_claims_changed(
+        &mut app,
+        scratch.path(),
+        &obelus_agent::chats::ChatId::Loose("s-held".to_string()),
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
+    assert!(
+        app.picker()
+            .expect("the list")
+            .matches()
+            .all(|item| item.enabled),
+        "the conversations are still somebody else's after they were let go"
+    );
+}
+
+/// A conversation had with another agent gets a tab of its own, and its
+/// rows cannot be taken up.
+///
+/// A session id is a name one agent minted and means nothing to another, so
+/// only the agent in use can be asked to take one up. Shown all the same,
+/// with the reason above them: the alternative is a reader who changed
+/// agents finding their conversations gone and nothing saying where.
+///
+/// Broken deliberately by taking the `mine &&` off `enabled` in
+/// `App::conversation_rows`: the rows offer to take up a conversation the
+/// agent in use never had, and the agent answers by opening a new one.
+#[test]
+fn another_agents_conversations_get_a_tab_and_cannot_be_taken_up() {
+    let scratch = support::Scratch::new("agent-conversation-tabs");
+    let (mut app, _events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    remember_a_conversation(&scratch, "fake", "s-mine", "mine", Some(2_000));
+    remember_a_conversation(&scratch, "other", "s-theirs", "theirs", Some(1_000));
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
+    let picker = app.picker().expect("the list");
+    assert_eq!(
+        picker.tabs(),
+        ["fake", "other"],
+        "the agents that have talked here are not the tabs, or not in use first"
+    );
+    assert!(
+        picker.what_about().is_none(),
+        "the tab whose rows all work is explaining a rule nothing has broken"
+    );
+    assert!(
+        picker.matches().all(|item| item.enabled),
+        "the agent in use cannot take up its own conversations"
+    );
+
+    // One tab to the right: the other agent's, said and not offered.
+    support::press(&mut app, KeyCode::Tab);
+    let picker = app.picker().expect("the list");
+    let rows: Vec<(String, bool)> = picker
+        .matches()
+        .map(|item| (item.label.clone(), item.enabled))
+        .collect();
+    assert_eq!(
+        rows,
+        [("theirs".to_string(), false)],
+        "the other agent's conversations are missing, or offered"
+    );
+    assert!(
+        picker
+            .what_about()
+            .is_some_and(|said| said.contains("only be taken up by the agent that had it")),
+        "a tab of rows that cannot be chosen says nothing about why"
+    );
+}
+
+/// A conversation this Obelus already has open is gone to, not opened
+/// twice.
+///
+/// The list answers "which conversation", not "where it is kept": a reader
+/// choosing a row means to be reading it, and whether Obelus has to ask the
+/// agent for it is Obelus's business.
+///
+/// Broken deliberately by dropping the `listed.open` arm from
+/// `App::take_up_conversation`: a second document appears for one
+/// conversation, and the claim it asks for is one this Obelus already
+/// holds, so nothing opens at all.
+#[test]
+fn a_conversation_already_open_here_is_gone_to() {
+    // A project of its own, because the list is of everything said about
+    // one: a test sharing the checkout with every other test in this binary
+    // would find their conversations in its list, and one of them held.
+    let scratch = support::Scratch::new("agent-conversation-open-here");
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    // Which agent's conversations the list is of is the setting, not
+    // whichever process happens to be running: the list has to answer
+    // before anything is started.
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.open_agent();
+    app.open_a_session_for_test();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/echo");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer", |app| {
+        said_in_transcript(app, "heard you")
+    });
+    let open = app.chat_session_for_test().expect("a session");
+    let documents = app.document_count_for_test();
+
+    // Away to a file, and back through the list.
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::FileOpen);
+    support::press(&mut app, KeyCode::Esc);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
+    // It is in the list at all, which is a conversation about nothing in
+    // particular being written down: those were left out while the only
+    // thing that asked was the notes page, which has no row for one.
+    assert_eq!(
+        app.picker().expect("the list").match_count(),
+        1,
+        "a conversation about nothing in particular was not written down"
+    );
+    support::press(&mut app, KeyCode::Enter);
+    // The list went, which is what says the row was taken. It would not
+    // have: the claim on a conversation this Obelus is already holding is
+    // one it cannot take twice, so a row that asked for it again would
+    // refuse the reader their own conversation.
+    assert!(
+        app.picker().is_none(),
+        "the row would not take the reader to a conversation they already have open"
+    );
+    assert_eq!(
+        app.chat_session_for_test().as_deref(),
+        Some(open.as_str()),
+        "the row did not take the reader to the conversation it named"
+    );
+    assert_eq!(
+        app.document_count_for_test(),
+        documents,
+        "a second document was opened for one conversation"
+    );
+}
+
+/// A conversation taken up in another window says so under the reader,
+/// without them pressing anything.
+///
+/// The one thing on these rows that changes while the list is up and is
+/// nobody's keystroke. A claim is a lock and a lock is invisible to a
+/// watcher -- nothing is written when one is taken -- which is why the
+/// claim has a file: the directory is what wakes this Obelus, and the
+/// frame that wakes asks the rows again.
+///
+/// The notice is said by hand here, which is what this test is *not*
+/// about: whether anything would ever say it is
+/// `the_notes_hear_a_claim_through_a_watch_they_took_themselves`, which
+/// takes a real watcher and delivers nothing itself.
+///
+/// Two deliberate breaks. Taking `freshen_the_conversation_rows` out of
+/// `App::prepare` leaves the row saying it is free for as long as the
+/// reader looks at it. Answering `Said { enabled: true, .. }` there lets
+/// them into a conversation the row has just drawn a lock on -- the half
+/// that would have drifted if a remark carried only the mark.
+#[test]
+fn a_conversation_taken_up_elsewhere_says_so_while_the_reader_looks_at_it() {
+    let scratch = support::Scratch::new("agent-conversation-live");
+    let (mut app, _events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    remember_a_conversation(&scratch, "fake", "s-one", "the first", Some(2_000));
+    remember_a_conversation(&scratch, "fake", "s-two", "the second", Some(1_000));
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
+    support::press(&mut app, KeyCode::F(4));
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert!(
+        app.picker()
+            .expect("the list")
+            .matches()
+            .all(|item| item.enabled && item.marker.is_none()),
+        "a conversation nobody has open is drawn as somebody's"
+    );
+    // The other Obelus arrives, and the reader presses nothing: the frame
+    // its watch wakes is what asks the rows again.
+    let theirs = obelus_agent::chats::claim(
+        scratch.path(),
+        &obelus_agent::chats::ChatId::Loose("s-one".to_string()),
+    )
+    .expect("their claim");
+    the_claims_changed(
+        &mut app,
+        scratch.path(),
+        &obelus_agent::chats::ChatId::Loose("s-one".to_string()),
+    );
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    let rows: Vec<(String, bool, bool)> = app
+        .picker()
+        .expect("the list")
+        .matches()
+        .map(|item| (item.label.clone(), item.enabled, item.marker.is_some()))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("the first".to_string(), false, true),
+            ("the second".to_string(), true, false),
+        ],
+        "the row went on saying the conversation was free to take up"
+    );
+
+    // And back again when they let it go, because what a row says is
+    // worked out from what Obelus was last told rather than written down
+    // once.
+    drop(theirs);
+    the_claims_changed(
+        &mut app,
+        scratch.path(),
+        &obelus_agent::chats::ChatId::Loose("s-one".to_string()),
+    );
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert!(
+        app.picker()
+            .expect("the list")
+            .matches()
+            .all(|item| item.enabled && item.marker.is_none()),
+        "the row is still somebody else's after they let it go"
+    );
+}
+
+/// The key that opens the list is offered from what a stat says, so the
+/// list has to say what it actually found.
+///
+/// Whether this project has anything to take up is asked on every frame of
+/// every conversation -- the status row draws that key only where it would
+/// do something -- so it is answered by the size of one file rather than by
+/// parsing it: 285ns against 351us with twenty conversations written down.
+/// Which leaves the gate a shade generous, because a size cannot say
+/// whether the bytes still parse. The list is where that is made good.
+///
+/// Broken deliberately two ways. Having `open_conversation_picker` return
+/// early on a table it cannot read puts the reader back where `f3` on a
+/// clean project used to leave them: a key the page offered and nothing
+/// happening. And saying "Nothing has been said about this project yet"
+/// for a table that would not read reports Obelus's own trouble as the
+/// reader's history -- which is the answer the notes and the settings both
+/// had to learn to tell apart.
+#[test]
+fn a_table_obelus_cannot_read_is_not_a_project_nobody_has_talked_about() {
+    let scratch = support::Scratch::new("agent-conversation-unreadable");
+    let (mut app, _events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    // Half a table, as another program's crash leaves one.
+    let table = obelus_agent::acp::sessions::path(scratch.path()).expect("somewhere to keep it");
+    std::fs::create_dir_all(table.parent().expect("a directory")).expect("the directory");
+    std::fs::write(&table, "[[talked]]\nagent = \"half a na").expect("the half-written table");
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
+    assert!(
+        app.offers(obelus_command::Command::ConversationSelect),
+        "the key is not offered for a project that has a table at all"
+    );
+    support::press(&mut app, KeyCode::F(4));
+    let picker = app.picker().expect("the list");
+    assert_eq!(picker.match_count(), 0);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        dump.contains("cannot read what it wrote down"),
+        "the list blamed the reader for Obelus's own unreadable file:\n{dump}"
+    );
+}
+
+/// The notes stay level with another window writing down a conversation.
+///
+/// Which of them has one is a table Obelus keeps rather than parses on
+/// every frame the page draws -- 37us for one conversation and 351us for
+/// twenty, twelve times a second while any agent is at work. What makes
+/// keeping it honest is that a write to a file is something a watcher
+/// hears, which is the whole difference between this and the claim beside
+/// it: a claim is given up by a lock going, with nothing written.
+///
+/// Broken deliberately two ways. Dropping the `is_the_sessions_file` arm
+/// from the watcher leaves the page saying nobody has talked about the
+/// note for the rest of the session. And having `App::sessions` read the
+/// file itself again puts the parse back on every frame -- which this
+/// cannot see, so the measurement above is what stands for it, and the
+/// second half of this test is about the other direction: that the kept
+/// copy is there at all before anybody writes anything.
+#[test]
+fn the_notes_hear_a_conversation_written_down_by_another_window() {
+    let scratch = support::Scratch::new("agent-notes-hear-the-table");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()),
+        "[[todo]]\nid = \"0123456V\"\nsaid = \"somebody else will talk about this\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+    let (mut app, _events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        app.talked_about().first(),
+        Some(&obelus_component::todo::Talked::Not),
+        "the note claims a conversation nobody has had"
+    );
+    // The page cannot hear the file until there is a directory to watch,
+    // and on a project nobody has ever had a conversation in there is
+    // none. This is the precondition rather than the hearing -- the
+    // assertion below drives the event by hand, so it passes either way,
+    // and this is the half that would not.
+    let table = obelus_agent::acp::sessions::path(scratch.path()).expect("a path");
+    assert!(
+        table.parent().is_some_and(std::path::Path::is_dir),
+        "there is no directory to watch, so the first write elsewhere goes unheard"
+    );
+
+    // The other Obelus writes one down, and this one hears the file.
+    obelus_agent::acp::sessions::change(scratch.path(), None, |kept| {
+        kept.put(
+            &obelus_agent::chats::ChatId::Note(
+                obelus_git::todo::NoteId::read("0123456V").expect("a name"),
+            ),
+            "fake",
+            obelus_agent::acp::sessions::Kept {
+                session: "s-theirs".to_string(),
+                title: None,
+                told: None,
+                introduced: false,
+                last: Some(1_700_000_000),
+            },
+        );
+    });
+    app.handle(obelus_app::event::Event::Watched(obelus_watch::Changed {
+        path: obelus_agent::acp::sessions::path(scratch.path()).expect("a path"),
+    }));
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        app.talked_about().first(),
+        Some(&obelus_component::todo::Talked::Yes),
+        "the page never heard that the conversation was written down"
+    );
+}
+
+/// The conversation's header follows the note being rewritten in another
+/// window.
+///
+/// What a conversation is about is the note's own words, and a header is
+/// drawn on every frame -- twice, for the editor and for the status row.
+/// Reading the notes file there is 29us for one note and 225us for twenty,
+/// so the words are kept; and a kept copy with nothing to refresh it is a
+/// header saying what the note used to say, which is the reason the read
+/// was there in the first place. What makes keeping it honest is that
+/// every way a note changes -- this page, the reader's own editor, a
+/// second Obelus -- writes the file, and a write is something a watcher
+/// hears.
+///
+/// Broken deliberately two ways. Taking the `reread_the_notes_kept` out of
+/// the watcher's arm leaves the header on the old words for the rest of
+/// the session. Taking the one in `settle_the_watches` out leaves it with
+/// no words at all until somebody writes the file, because a watch says
+/// what happens next and not what was already there.
+#[test]
+fn the_header_follows_the_note_being_rewritten_elsewhere() {
+    let scratch = support::Scratch::new("agent-note-header-follows");
+    support::make_room_for_notes(scratch.path());
+    let notes = obelus_git::todo::path(scratch.path());
+    std::fs::write(
+        &notes,
+        "[[todo]]\nid = \"0123456W\"\nsaid = \"what it said on Monday\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+
+    let (mut app, _events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    support::press_alt(&mut app, 'a');
+    assert!(app.chat().is_some(), "no conversation about the note");
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        dump.contains("what it said on Monday"),
+        "the header does not say what the conversation is about:\n{dump}"
+    );
+
+    // The other window rewrites it, and this one hears the file.
+    std::fs::write(
+        &notes,
+        "[[todo]]\nid = \"0123456W\"\nsaid = \"what it says on Tuesday\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes again");
+    app.handle(obelus_app::event::Event::Watched(obelus_watch::Changed {
+        path: notes,
+    }));
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        dump.contains("what it says on Tuesday"),
+        "the header went on saying what the note used to say:\n{dump}"
+    );
+}
+
+/// The notes page hears a conversation being taken up elsewhere, through a
+/// watch it took itself.
+///
+/// Every other test of this says the notice by hand, which asks only what
+/// Obelus does once it has been told. This one asks the question those
+/// cannot: whether anything would ever tell it. A real watcher, a real
+/// claim taken in the claims directory, and no event delivered by the test
+/// at all.
+///
+/// Broken deliberately by taking the `watch_directory` out of the notes'
+/// opening, or the `create_dir_all` in front of it -- a watch on a
+/// directory that is not there is a watch on nothing. Either way nothing
+/// arrives and this waits out its deadline.
+#[test]
+fn the_notes_hear_a_claim_through_a_watch_they_took_themselves() {
+    let scratch = support::Scratch::new("agent-notes-real-watch");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()),
+        "[[todo]]\nid = \"0123456X\"\nsaid = \"somebody will take this up\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+
+    let (sender, events) = std::sync::mpsc::channel();
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.agents_root_for_test(agents_root());
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    // The whole of what starting means, which is the only way to an
+    // application with a watcher in it.
+    app.start(sender);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        app.talked_about().first(),
+        Some(&obelus_component::todo::Talked::Not),
+        "the note claims a conversation nobody has had"
+    );
+
+    // Another Obelus takes it up. Nothing is delivered by hand: what has to
+    // happen is that the claim's file appearing reaches this application.
+    let theirs = obelus_agent::chats::claim(
+        scratch.path(),
+        &obelus_agent::chats::ChatId::Note(
+            obelus_git::todo::NoteId::read("0123456X").expect("a name"),
+        ),
+    )
+    .expect("their claim");
+    pump(&mut app, &events, "the claim to be heard", |app| {
+        app.talked_about().first() == Some(&obelus_component::todo::Talked::Elsewhere)
+    });
+
+    // And letting go is heard the same way.
+    drop(theirs);
+    pump(&mut app, &events, "the claim being let go", |app| {
+        app.talked_about().first() == Some(&obelus_component::todo::Talked::Not)
+    });
+}
+
+/// And the table beside the claims, through a watch the notes took
+/// themselves.
+///
+/// Which note has a conversation is kept rather than parsed on every frame
+/// the page draws. A kept answer is only as honest as what refreshes it,
+/// and what refreshes this one is hearing the file -- so the watch existing
+/// is the whole of the promise, and every other test of it says the notice
+/// by hand.
+///
+/// Broken deliberately by taking the `watch` off the table in the notes'
+/// opening, or the `create_dir_all` in front of it: on a project where no
+/// conversation has ever been written down there is no directory to watch,
+/// which is exactly the project this test builds.
+#[test]
+fn the_notes_hear_the_table_through_a_watch_they_took_themselves() {
+    let scratch = support::Scratch::new("agent-notes-real-table-watch");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()),
+        "[[todo]]\nid = \"0123456Y\"\nsaid = \"somebody will talk about this\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+
+    let (sender, events) = std::sync::mpsc::channel();
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.agents_root_for_test(agents_root());
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    app.start(sender);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        app.talked_about().first(),
+        Some(&obelus_component::todo::Talked::Not),
+        "the note claims a conversation nobody has had"
+    );
+
+    obelus_agent::acp::sessions::change(scratch.path(), None, |kept| {
+        kept.put(
+            &obelus_agent::chats::ChatId::Note(
+                obelus_git::todo::NoteId::read("0123456Y").expect("a name"),
+            ),
+            "fake",
+            obelus_agent::acp::sessions::Kept {
+                session: "s-theirs".to_string(),
+                title: None,
+                told: None,
+                introduced: false,
+                last: Some(1_700_000_000),
+            },
+        );
+    });
+    pump(&mut app, &events, "the table to be heard", |app| {
+        app.talked_about().first() == Some(&obelus_component::todo::Talked::Yes)
+    });
+}
+
+/// A conversation about a note takes its own watch on the notes, because
+/// the page that usually holds one may never have been opened.
+///
+/// Reached from the list of conversations rather than from the notes, which
+/// is the way in that leaves that page shut: the header is drawn from a
+/// kept copy of the notes, and without a watch of its own that copy would
+/// be whatever the file said when the conversation opened, for ever.
+///
+/// Broken deliberately by taking the notes out of `settle_the_watches` --
+/// the header stops following -- or by leaving the `reread_the_notes_kept`
+/// out of it, which leaves the header with no words at all.
+#[test]
+fn a_conversation_about_a_note_watches_the_notes_without_the_page() {
+    let scratch = support::Scratch::new("agent-header-real-watch");
+    support::make_room_for_notes(scratch.path());
+    let notes = obelus_git::todo::path(scratch.path());
+    std::fs::write(
+        &notes,
+        "[[todo]]\nid = \"0123456Z\"\nsaid = \"what it said on Monday\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+    remember_a_note_conversation(&scratch, "0123456Z", "s-kept");
+
+    let (sender, events) = std::sync::mpsc::channel();
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.agents_root_for_test(agents_root());
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    app.start(sender);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+
+    // In through the list, so the notes page is never opened and never
+    // takes the watch this is about.
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
+    support::press(&mut app, KeyCode::F(4));
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.notes().is_none(), "the notes page is open after all");
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        dump.contains("what it said on Monday"),
+        "the header does not say what the conversation is about:\n{dump}"
+    );
+
+    std::fs::write(
+        &notes,
+        "[[todo]]\nid = \"0123456Z\"\nsaid = \"what it says on Tuesday\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes again");
+    pump(&mut app, &events, "the note being rewritten", |app| {
+        app.what_this_conversation_is_about()
+            .is_some_and(|said| said.contains("Tuesday"))
+    });
+}
+
+/// An Obelus that is killed gives its conversations up, and the window
+/// beside it says so without being touched.
+///
+/// The whole of the promise, end to end: a real lock on a real claim, heard
+/// through a watch this application took itself, let go the way a killed
+/// process lets go -- the descriptor closed by the kernel, the file left
+/// exactly where it was -- and the note goes back to being the reader's,
+/// with nothing pressed and no event delivered by the test.
+///
+/// It is the case the claim was written for: "an Obelus that is killed,
+/// crashes or loses power gives it up without being asked", and the one
+/// that read as having no notice at all. The notice is the kernel closing
+/// the dead process's files, which a watcher reports as a close by a
+/// writer.
+///
+/// The pieces have tests of their own -- `obelus_watch` for the event,
+/// `chats` for a lock seen through a descriptor that cannot write, and the
+/// two beside this for the watch being taken -- and this is the one that
+/// puts them together.
+#[test]
+fn an_obelus_that_is_killed_gives_its_conversation_back() {
+    let scratch = support::Scratch::new("agent-killed-gives-back");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()),
+        "[[todo]]\nid = \"01234560\"\nsaid = \"they will die holding this\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+    let which = obelus_agent::chats::ChatId::Note(
+        obelus_git::todo::NoteId::read("01234560").expect("a name"),
+    );
+    let claims = obelus_agent::chats::directory(scratch.path()).expect("somewhere");
+    std::fs::create_dir_all(&claims).expect("the claims directory");
+    let claim = claims.join(which.file_name());
+
+    let (sender, events) = std::sync::mpsc::channel();
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.agents_root_for_test(agents_root());
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    app.start(sender);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+
+    // The other Obelus, holding a real exclusive lock on the claim. A lock
+    // belongs to the open file and not to the process, so one taken here is
+    // as much somebody else's as one taken in another window -- which is
+    // what lets this test be both windows.
+    let mut theirs = obelus_agent::chats::claim(scratch.path(), &which).expect("their claim");
+    pump(&mut app, &events, "their claim to be heard", |app| {
+        app.talked_about().first() == Some(&obelus_component::todo::Talked::Elsewhere)
+    });
+
+    // And it dies, without tidying anything up: the lock goes because the
+    // kernel closes the descriptor, and the file stays exactly where it
+    // was. That is what makes this the hard case -- nothing was written and
+    // nothing was removed.
+    theirs.as_if_this_obelus_died_for_test();
+    drop(theirs);
+    assert!(
+        claim.exists(),
+        "the file went with the claim, so this is the easy case after all"
+    );
+    pump(&mut app, &events, "the claim to be given up", |app| {
+        app.talked_about().first() == Some(&obelus_component::todo::Talked::Not)
+    });
 }

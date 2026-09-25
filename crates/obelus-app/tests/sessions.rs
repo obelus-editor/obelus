@@ -300,7 +300,7 @@ fn interrupting_one_conversation_does_not_swallow_the_others_answer() {
 /// of open documents calls it and a replay is not obliged to send it again.
 #[test]
 fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
-    use obelus_agent::acp::sessions;
+    use obelus_agent::{acp::sessions, chats::ChatId};
     use obelus_git::todo::NoteId;
 
     // The table lives in Obelus's state directory, and a test that wrote to
@@ -314,19 +314,22 @@ fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
 
     sessions::change(root, Some(std::slice::from_ref(&note)), |kept| {
         kept.put(
-            &note,
+            &ChatId::Note(note.clone()),
             "fake",
             sessions::Kept {
                 session: "s-1".to_string(),
                 title: Some("why refilter drops rows".to_string()),
                 told: None,
                 introduced: false,
+                last: None,
             },
         );
     });
 
     let back = sessions::read(root).remembered().expect("the table");
-    let kept = back.get(&note, "fake").expect("the conversation");
+    let kept = back
+        .get(&ChatId::Note(note.clone()), "fake")
+        .expect("the conversation");
     assert_eq!(kept.session, "s-1");
     assert_eq!(kept.title.as_deref(), Some("why refilter drops rows"));
 
@@ -336,22 +339,23 @@ fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
     let other = NoteId::read("JKMNPQRS").expect("a name");
     sessions::change(root, Some(&[note.clone(), other.clone()]), |kept| {
         kept.put(
-            &other,
+            &ChatId::Note(other.clone()),
             "fake",
             sessions::Kept {
                 session: "s-2".to_string(),
                 title: None,
                 told: None,
                 introduced: false,
+                last: None,
             },
         );
     });
     let back = sessions::read(root).remembered().expect("the table");
     assert!(
-        back.get(&note, "fake").is_some(),
+        back.get(&ChatId::Note(note.clone()), "fake").is_some(),
         "the second write put back what the first wrote"
     );
-    assert!(back.get(&other, "fake").is_some());
+    assert!(back.get(&ChatId::Note(other.clone()), "fake").is_some());
 
     // A note that has gone takes its conversation with it, collected on the
     // way past rather than when the note was deleted -- because a note can
@@ -359,7 +363,7 @@ fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
     sessions::change(root, Some(std::slice::from_ref(&other)), |_| {});
     let back = sessions::read(root).remembered().expect("the table");
     assert!(
-        back.get(&note, "fake").is_none(),
+        back.get(&ChatId::Note(note.clone()), "fake").is_none(),
         "a conversation outlived the note it was about"
     );
 }

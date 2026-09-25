@@ -24,6 +24,8 @@ use std::{
 
 use obelus_git::todo::NoteId;
 
+use crate::chats::ChatId;
+
 /// What Obelus remembers about one conversation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Kept {
@@ -66,33 +68,55 @@ pub struct Kept {
     /// -- one repeated telling on the way past, which is what the field
     /// above settles for in the same case.
     pub introduced: bool,
+    /// When something was last said in it, as seconds since the epoch.
+    ///
+    /// What the list of conversations is ordered by and what each row says
+    /// about itself, through the same `how_long_ago` a commit's row is
+    /// written with.
+    ///
+    /// `None` for a conversation from before this was written down, which
+    /// sorts last and says nothing -- a made-up time would put a
+    /// conversation somewhere in the order on no evidence at all.
+    pub last: Option<i64>,
 }
 
-/// Which conversation is about which note, for one project.
+/// Which conversation is which, for one project.
 ///
-/// Keyed by the note *and* the agent: the same note talked over with two
-/// agents is two conversations, and an agent cannot be handed a session id
-/// that another agent minted.
+/// Keyed by the conversation *and* the agent: the same note talked over
+/// with two agents is two conversations, and an agent cannot be handed a
+/// session id that another agent minted -- which is why the list Obelus
+/// offers is one agent's, and why the others are shown and not offered.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Remembered {
-    kept: BTreeMap<(NoteId, String), Kept>,
+    kept: BTreeMap<(ChatId, String), Kept>,
 }
 
 impl Remembered {
-    /// What is remembered about one note, for one agent.
+    /// What is remembered about one conversation, for one agent.
     #[must_use]
-    pub fn get(&self, note: &NoteId, agent: &str) -> Option<&Kept> {
-        self.kept.get(&(note.clone(), agent.to_string()))
+    pub fn get(&self, which: &ChatId, agent: &str) -> Option<&Kept> {
+        self.kept.get(&(which.clone(), agent.to_string()))
     }
 
     /// Remembers one, replacing whatever was there.
-    pub fn put(&mut self, note: &NoteId, agent: &str, kept: Kept) {
-        self.kept.insert((note.clone(), agent.to_string()), kept);
+    pub fn put(&mut self, which: &ChatId, agent: &str, kept: Kept) {
+        self.kept.insert((which.clone(), agent.to_string()), kept);
     }
 
     /// Forgets one.
-    pub fn forget(&mut self, note: &NoteId, agent: &str) {
-        self.kept.remove(&(note.clone(), agent.to_string()));
+    pub fn forget(&mut self, which: &ChatId, agent: &str) {
+        self.kept.remove(&(which.clone(), agent.to_string()));
+    }
+
+    /// Every conversation it holds, with which one it is and whose agent.
+    ///
+    /// In no particular order: what orders the list is when each was last
+    /// talked in, which is the caller's to sort by because it is the
+    /// caller that draws it.
+    pub fn all(&self) -> impl Iterator<Item = (&ChatId, &str, &Kept)> {
+        self.kept
+            .iter()
+            .map(|((which, agent), kept)| (which, agent.as_str(), kept))
     }
 
     /// Forgets every conversation whose note has gone.
@@ -112,7 +136,12 @@ impl Remembered {
         let Some(notes) = notes else {
             return;
         };
-        self.kept.retain(|(note, _), _| notes.contains(note));
+        // Only the ones a note could have taken away with it. A
+        // conversation about nothing in particular is not named by
+        // anything in that file, so sweeping it against that file would
+        // forget every one of them on the first pass.
+        self.kept
+            .retain(|(which, _), _| which.note().is_none_or(|note| notes.contains(note)));
     }
 
     /// Every session it holds, for asking an agent which it still knows.
@@ -190,6 +219,25 @@ impl Reading {
     }
 }
 
+/// Whether this project has any conversation written down, without
+/// reading them.
+///
+/// A stat, because that is all the question needs and the question is
+/// asked from a view: [`read`] parses the whole table, which is 37us for
+/// one conversation and 351us for twenty, and a view that asked it drew
+/// every frame of a conversation at that price. What a view asks has to be
+/// already answered or cheap enough to be; this is the second.
+///
+/// What makes the length enough is the writer, just below: [`change`] puts
+/// [`to_toml`] in the file whole, and an empty table writes an empty file.
+/// So bytes in it means rows in it -- the one thing a size cannot tell is
+/// whether they still *parse*, which is why this is a gate and not an
+/// answer. The list it gates says what it found.
+#[must_use]
+pub fn any(root: &Path) -> bool {
+    path(root).is_some_and(|path| std::fs::metadata(path).is_ok_and(|file| file.len() > 0))
+}
+
 /// What the file says.
 #[must_use]
 pub fn read(root: &Path) -> Reading {
@@ -230,16 +278,22 @@ fn read_from(text: &str) -> Reading {
             continue;
         };
         let text = |key: &str| row.get(key).and_then(toml::Value::as_str);
-        let (Some(note), Some(agent), Some(session)) =
-            (text("note"), text("agent"), text("session"))
-        else {
+        let (Some(agent), Some(session)) = (text("agent"), text("session")) else {
             continue;
         };
-        let Some(note) = NoteId::read(note) else {
-            continue;
+        // A row with no note is one about nothing in particular, which is
+        // named by its session and by nothing else. Every row written
+        // before those were remembered has one, so an old file reads as it
+        // always did.
+        let which = match text("note") {
+            Some(note) => match NoteId::read(note) {
+                Some(note) => ChatId::Note(note),
+                None => continue,
+            },
+            None => ChatId::Loose(session.to_string()),
         };
         kept.insert(
-            (note, agent.to_string()),
+            (which, agent.to_string()),
             Kept {
                 session: session.to_string(),
                 title: text("title").map(str::to_string),
@@ -248,6 +302,7 @@ fn read_from(text: &str) -> Reading {
                     .get("introduced")
                     .and_then(toml::Value::as_bool)
                     .unwrap_or(false),
+                last: row.get("last").and_then(toml::Value::as_integer),
             },
         );
     }
@@ -260,8 +315,17 @@ fn read_from(text: &str) -> Reading {
 /// the same project is an ordinary thing to have running and the last one to
 /// write would otherwise put back the other's conversations as they were
 /// before it opened them.
-pub fn change(root: &Path, notes: Option<&[NoteId]>, what: impl FnOnce(&mut Remembered)) {
-    let Some(path) = path(root) else { return };
+/// Hands back what it wrote, or nothing where it wrote nothing.
+///
+/// So that a caller keeping a copy is given the one this just made rather
+/// than reading the file again for it: the read is the dear half -- 37us
+/// for one conversation, 351us for twenty -- and this has done it already.
+pub fn change(
+    root: &Path,
+    notes: Option<&[NoteId]>,
+    what: impl FnOnce(&mut Remembered),
+) -> Option<Remembered> {
+    let path = path(root)?;
     // Nothing at all where the file will not read. Every other way of
     // declining here leaves it alone; going on would write what Obelus can
     // make of a file it cannot read over the file itself, which is every
@@ -273,7 +337,7 @@ pub fn change(root: &Path, notes: Option<&[NoteId]>, what: impl FnOnce(&mut Reme
     // has to be started again.
     let Some(mut remembered) = read(root).remembered() else {
         tracing::warn!(path = %path.display(), "will not read, so nothing is remembered over it");
-        return;
+        return None;
     };
     what(&mut remembered);
     remembered.forget_notes_that_are_gone(notes);
@@ -281,7 +345,7 @@ pub fn change(root: &Path, notes: Option<&[NoteId]>, what: impl FnOnce(&mut Reme
         && let Err(error) = std::fs::create_dir_all(directory)
     {
         tracing::warn!(%error, path = %path.display(), "no directory to remember conversations in");
-        return;
+        return None;
     }
     // Through a name beside it and a rename, the way the notes and the
     // settings are written: a crash halfway leaves the old file rather than
@@ -291,16 +355,20 @@ pub fn change(root: &Path, notes: Option<&[NoteId]>, what: impl FnOnce(&mut Reme
         std::fs::write(&beside, to_toml(&remembered)).and_then(|()| std::fs::rename(&beside, &path))
     {
         tracing::warn!(%error, path = %path.display(), "the conversations were not remembered");
+        return None;
     }
+    Some(remembered)
 }
 
 /// What the file holds, as text.
 #[must_use]
 fn to_toml(remembered: &Remembered) -> String {
     let mut out = String::new();
-    for ((note, agent), kept) in &remembered.kept {
+    for ((which, agent), kept) in &remembered.kept {
         out.push_str("[[talked]]\n");
-        out.push_str(&format!("note = \"{note}\"\n"));
+        if let Some(note) = which.note() {
+            out.push_str(&format!("note = \"{note}\"\n"));
+        }
         out.push_str(&format!("agent = {}\n", quoted(agent)));
         out.push_str(&format!("session = {}\n", quoted(&kept.session)));
         if let Some(title) = &kept.title {
@@ -314,6 +382,9 @@ fn to_toml(remembered: &Remembered) -> String {
         // cannot read their own decisions out of.
         if kept.introduced {
             out.push_str("introduced = true\n");
+        }
+        if let Some(last) = kept.last {
+            out.push_str(&format!("last = {last}\n"));
         }
         out.push('\n');
     }
@@ -340,8 +411,8 @@ fn quoted(text: &str) -> String {
 mod tests {
     use super::*;
 
-    fn note(said: &str) -> NoteId {
-        NoteId::read(said).expect("a name")
+    fn note(said: &str) -> ChatId {
+        ChatId::Note(NoteId::read(said).expect("a name"))
     }
 
     /// What goes out comes back, including the parts TOML has opinions
@@ -359,6 +430,7 @@ mod tests {
                 // field that routinely has newlines in it.
                 told: Some("what it said\n\nand the rest of it".to_string()),
                 introduced: true,
+                last: Some(1_700_000_000),
             },
         );
         // The same note with a second agent, which is a second conversation:
@@ -371,6 +443,7 @@ mod tests {
                 title: None,
                 told: None,
                 introduced: false,
+                last: None,
             },
         );
 
@@ -439,10 +512,11 @@ mod tests {
                     title: None,
                     told: None,
                     introduced: false,
+                    last: None,
                 },
             );
         }
-        remembered.forget_notes_that_are_gone(Some(&[note("ABCDEFGH")]));
+        remembered.forget_notes_that_are_gone(Some(&[NoteId::read("ABCDEFGH").expect("a name")]));
         assert!(remembered.get(&note("ABCDEFGH"), "claude-acp").is_some());
         assert!(
             remembered.get(&note("JKMNPQRS"), "claude-acp").is_none(),
@@ -494,6 +568,7 @@ mod tests {
                     title: None,
                     told: None,
                     introduced: false,
+                    last: None,
                 },
             );
         });
@@ -527,6 +602,7 @@ mod tests {
                     title: None,
                     told: None,
                     introduced: false,
+                    last: None,
                 },
             );
         }
@@ -554,6 +630,7 @@ mod tests {
                 title: None,
                 told: None,
                 introduced: false,
+                last: None,
             },
         );
         remembered.put(
@@ -564,6 +641,7 @@ mod tests {
                 title: None,
                 told: None,
                 introduced: false,
+                last: None,
             },
         );
         // A second agent's, which this one's answer says nothing about.
@@ -575,6 +653,7 @@ mod tests {
                 title: None,
                 told: None,
                 introduced: false,
+                last: None,
             },
         );
 

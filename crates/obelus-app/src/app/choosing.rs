@@ -287,6 +287,15 @@ impl App {
                 .current_buffer()
                 .and_then(Buffer::language)
                 .is_some_and(|language| language.line_comment().is_some()),
+            // A stat of one file in Obelus's own state directory, and
+            // deliberately not a read of it. This is asked from a view --
+            // the conversation's status row draws the key that opens the
+            // list only where it would do something -- so it is asked on
+            // every frame of every conversation, and parsing the table
+            // there cost 351us a frame with twenty conversations in it
+            // against 285ns for this. What a view asks has to be already
+            // answered or cheap enough to be.
+            Requires::AConversation => obelus_agent::acp::sessions::any(&self.working_directory),
             Requires::AServerLog => obelus_logging::current_file(obelus_logging::SERVERS).is_some(),
         }
     }
@@ -309,6 +318,7 @@ impl App {
         // Which is why `open_troubles` declares its radii after this call
         // and not before.
         self.troubling.clear();
+        self.conversing = crate::app::conversations::Conversing::default();
         // Where the reader is looking, before the list takes any of it.
         // Taken here rather than when the list first shows them somewhere,
         // because a list that sits on the status bar shortens the editor
@@ -359,6 +369,9 @@ impl App {
         // answers, not two views of one.
         let historic = !self.history.radii.is_empty();
         let troubling = !self.troubling.is_empty();
+        // And a list of conversations is one answer per agent: the rows of
+        // a tab are that agent's, fetched when the reader walks onto it.
+        let conversing = !self.conversing.agents.is_empty();
         let before = (picker.tab(), picker.query().to_string());
         // Where the tree is standing, read before the key can move it: a
         // typed letter filters the rows the list already has, so by the
@@ -404,6 +417,9 @@ impl App {
                 if calling && after.0 != before.0 {
                     self.turn_calls_round();
                 }
+                if conversing && after.0 != before.0 {
+                    self.refresh_conversations();
+                }
                 true
             }
             // What is behind a row is the application's: the list reports
@@ -437,6 +453,29 @@ impl App {
         // is torn down, because the list is what it happens to.
         if let PickerValue::Directory(path) = &value {
             self.open_directory(&path.clone());
+            return;
+        }
+        // A conversation is taken up before the list is torn down, because
+        // the claim can fail: the list was built a moment ago and another
+        // Obelus may have walked into that conversation since. Where it
+        // has, the list stays open and the row is drawn with the lock on
+        // it, which is the answer -- nothing happening at all is a key that
+        // looks broken.
+        if let PickerValue::Conversation(at) = &value {
+            let at = *at;
+            if !self.take_up_conversation(at) {
+                self.refresh_conversations();
+                return;
+            }
+            // Out through the door every list leaves by, so that what
+            // the list declared -- which agents its tabs were, what each
+            // row stood for, the watch on which conversations are open
+            // elsewhere -- goes however it is left. Forgotten first
+            // rather than gone back to, which is what makes `leave` put
+            // nothing back: a row was chosen, so where they were looking
+            // from is not somewhere to return to.
+            self.looked_from = None;
+            self.leave(Layer::Picker);
             return;
         }
         if let PickerValue::Commit(id) = value {
@@ -550,6 +589,9 @@ impl App {
             // is opened as that commit had it.
             PickerValue::Commit(_) => {}
             PickerValue::CommitFile { id, path } => self.open_at_commit(id, &path, None),
+            // Dealt with before the list is closed, for the reason a
+            // directory is: choosing one may leave the list where it was.
+            PickerValue::Conversation(_) => {}
             PickerValue::Nothing => {}
         }
     }

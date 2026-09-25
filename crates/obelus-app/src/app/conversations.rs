@@ -1,0 +1,668 @@
+//! The list of conversations, and what taking one up costs.
+//!
+//! What a reader has said to an agent about this project outlives the
+//! window they said it in: the agent keeps every word, and Obelus keeps the
+//! one thing it cannot -- which conversation is which. This is the way back
+//! to one.
+//!
+//! The ordinary compact list, over the conversation the reader is in. Not a
+//! view of its own: the rows are that conversation's neighbours and the
+//! reader is choosing between them, which is what a list over something
+//! rather than instead of it is for.
+//!
+//! **A conversation belongs to the agent that had it.** A session id is a
+//! name one agent minted and means nothing to another, so only the agent in
+//! use can be asked to take one up. The others are still shown -- a tab
+//! each, greyed, with the reason above them -- because the alternative is a
+//! reader who changed agents finding their conversations gone and nowhere
+//! saying where. A tab exists only where that agent has something in it, so
+//! the ordinary case of one agent has no tab row at all.
+//!
+//! **Which conversations there are is a snapshot; which of them can be
+//! taken up is not.** The rows are made once, as the list opens, because
+//! making them reads the table and the notes and walks the claims -- and
+//! because rows arriving under a reader's selection move them somewhere
+//! they did not choose. What each row says *about itself* is asked again
+//! whenever a claim moves, which is the half that has to be right before
+//! they press: a conversation another window took a moment ago goes dim
+//! under them. So one started elsewhere while this list is up shows the
+//! next time it is opened, and one taken up elsewhere shows at once.
+
+use obelus_component::picker::{Marking, Remark, Said};
+
+use super::{talking::Whose, *};
+use crate::conversation::Topic;
+
+/// Which conversations somebody has open, by its place in `App::watching`.
+pub(super) const CLAIMS: usize = 0;
+/// Which of the notes has a conversation at all.
+pub(super) const TABLE: usize = 1;
+/// What the notes say.
+pub(super) const NOTES: usize = 2;
+/// How many of them there are.
+pub(super) const WATCHED: usize = 3;
+
+/// One of the things Obelus watches, and whether it managed to.
+///
+/// Two fields and not one, because they answer two different questions and
+/// the difference is not cosmetic. What the views *want* heard about is
+/// what says when to read the thing -- once, as it becomes wanted -- and a
+/// machine whose watcher would not start still has to read it, or its notes
+/// page would show nothing at all rather than something a little behind.
+/// What is actually *watched* is what there is to give up again. Folding
+/// the two into one field tied the reading to the watching, and an Obelus
+/// with no watcher read nothing for the rest of the session.
+#[derive(Debug, Default)]
+pub(super) struct Watched {
+    /// Whether anything showing is drawn from it.
+    ///
+    /// A yes or no rather than the path, so that the question a frame asks
+    /// is a comparison and not a path built and thrown away: where the
+    /// state directory is takes an environment variable and two
+    /// allocations, and three of those on every frame of the notes is work
+    /// a view has caused. The path is worked out on the edge, where it is
+    /// needed.
+    wanted: bool,
+    /// And what the watcher took, which is nothing when it would not.
+    held: Option<PathBuf>,
+}
+
+impl Watched {
+    /// Nothing wanted and nothing held, for the array on `App`.
+    #[must_use]
+    pub(super) const fn new() -> Self {
+        Self {
+            wanted: false,
+            held: None,
+        }
+    }
+}
+
+/// How one of them is watched, and whether its directory is Obelus's to
+/// make when it is not there yet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum How {
+    /// The directory itself, for whatever turns up in it.
+    Directory,
+    /// One file, through the directory holding it.
+    File,
+    /// The same, where that directory may not exist yet.
+    FileMakingRoom,
+}
+
+/// The mark a conversation another Obelus has open wears.
+///
+/// The lock the notes page uses for the same fact, in the column that page
+/// puts it in -- one writer, because the list builds it once and asks for
+/// it again on every frame it is up, and two spellings of one mark is one
+/// chance for those to disagree.
+fn locked() -> (Marking, String) {
+    (
+        Marking::Aside,
+        match obelus_icons::enabled() {
+            true => obelus_icons::ui::ELSEWHERE.to_string(),
+            false => "-".to_string(),
+        },
+    )
+}
+
+/// The list of conversations, while it is the list showing.
+///
+/// Two halves of one thing: which agent each tab names, and what each row
+/// of the tab showing stands for. Both are refilled together when the
+/// reader walks onto a tab, because a row is chosen by its position and a
+/// list of rows that outlived the tab it was fetched for would be rows
+/// pointing at somebody else's conversations.
+#[derive(Debug, Default)]
+pub(super) struct Conversing {
+    /// The agents the tabs name, in tab order. Empty when the list showing
+    /// is not this one.
+    pub agents: Vec<String>,
+    /// What each row stands for, in the order they were given to the list.
+    rows: Vec<Listed>,
+}
+
+/// What one row of the list stands for.
+///
+/// Worked out when the list is built rather than read off the file twice:
+/// the row draws one of these and choosing it acts on the same one.
+#[derive(Clone, Debug)]
+struct Listed {
+    /// Which conversation, which is what a claim is taken on.
+    which: obelus_agent::chats::ChatId,
+    /// The agent's own name for it, which is what reopens it.
+    session: String,
+    /// Whether this Obelus already has it open, and where.
+    open: Option<DocumentId>,
+}
+
+impl App {
+    /// Offers every conversation this project has had, by agent.
+    pub(super) fn open_conversation_picker(&mut self) {
+        // Whatever the table holds, including nothing. The gate that
+        // offered this key answered from the file's *size*, which is
+        // cheap enough for a view to ask and a shade generous: a file
+        // with bytes in it that will not parse reads there as "there is
+        // something here". So the list opens either way and says what it
+        // found, rather than the key doing nothing at all.
+        // Looked at once as the list is built, because a watch says what
+        // happens next and not what was already there -- and the rows are
+        // made here, before the frame that takes the watch.
+        self.reread_who_holds_what();
+        let reading = obelus_agent::acp::sessions::read(&self.working_directory);
+        // Three answers and not two, which is what that read gives and what
+        // this has to pass on: a table Obelus cannot read is not a project
+        // nobody has said anything about, and telling the reader it is
+        // would be Obelus reporting its own trouble as their history.
+        let unreadable = matches!(reading, obelus_agent::acp::sessions::Reading::Unreadable(_));
+        let remembered = reading.remembered().unwrap_or_default();
+        // A fourth reason the kept copy is read, and the one that costs
+        // nothing: this has the table in its hands. Without it a
+        // conversation taken up from here would be told about its note
+        // again, because what the agent was already told is looked up in
+        // that copy.
+        self.sessions_kept = Some(remembered.clone());
+        // Which agents have said anything here, most recently talked to
+        // first -- and the one in use ahead of all of them, because that is
+        // the tab the reader lands on and the only one whose rows they can
+        // take up.
+        let mut agents: Vec<String> = Vec::new();
+        let mut when: HashMap<String, i64> = HashMap::new();
+        for (_, agent, kept) in remembered.all() {
+            let last = kept.last.unwrap_or(i64::MIN);
+            let seen = when.entry(agent.to_string()).or_insert(i64::MIN);
+            *seen = (*seen).max(last);
+            if !agents.iter().any(|known| known == agent) {
+                agents.push(agent.to_string());
+            }
+        }
+        let in_use = self.settled.config.agent.clone().unwrap_or_default();
+        agents.sort_by_key(|agent| {
+            (
+                *agent != in_use,
+                std::cmp::Reverse(when.get(agent).copied().unwrap_or(i64::MIN)),
+            )
+        });
+        let names: Vec<String> = agents
+            .iter()
+            .map(|agent| self.agent_called(agent))
+            .collect();
+        // Declared before the rows are built and before the list is shown:
+        // the rows are fetched per tab and the tabs are these agents, so
+        // nothing about this list can be worked out without them.
+        //
+        // `show_list` clears whatever the last list declared, which is why
+        // they are put back after it -- the same order `open_troubles`
+        // takes with its radii, and for the same reason.
+        self.conversing.agents = agents;
+        let rows = self.conversation_rows(0);
+        let mut picker = Picker::new(rows, PickerLayout::Compact { rows: COMPACT_ROWS });
+        picker.when_empty(match unreadable {
+            true => "Obelus cannot read what it wrote down about this project",
+            false => "Nothing has been said about this project yet",
+        });
+        // Scopes rather than groups: the rows of a tab are fetched when the
+        // reader walks onto it, the way a search's are. A row of tabs the
+        // picker filters would need an "All" in front of them, which is the
+        // one tab this list must not have -- it would mix the rows that can
+        // be taken up with the rows that cannot.
+        //
+        // And only where there is more than one: a tab row over the only
+        // agent a reader has talked to says nothing and costs two rows.
+        if names.len() > 1 {
+            let names: Vec<&str> = names.iter().map(String::as_str).collect();
+            picker.with_scopes(&names);
+        }
+        self.say_whose_conversations(&mut picker, 0);
+        let conversing = std::mem::take(&mut self.conversing);
+        self.show_list(picker);
+        self.conversing = conversing;
+    }
+
+    /// Fills the list again for the tab the reader has walked onto.
+    pub(super) fn refresh_conversations(&mut self) {
+        let Some(tab) = self.picker.as_ref().map(Picker::tab) else {
+            return;
+        };
+        let rows = self.conversation_rows(tab);
+        let Some(mut picker) = self.picker.take() else {
+            return;
+        };
+        picker.replace(rows);
+        self.say_whose_conversations(&mut picker, tab);
+        self.picker = Some(picker);
+    }
+
+    /// What the list says about itself on this tab, which is why the rows
+    /// of every tab but one cannot be chosen.
+    ///
+    /// Only where it is not the reader's own agent: a list that explained
+    /// itself on the tab where everything works would be explaining a rule
+    /// nothing on screen has broken.
+    fn say_whose_conversations(&self, picker: &mut Picker, tab: usize) {
+        let in_use = self.settled.config.agent.clone().unwrap_or_default();
+        let whose = self.conversing.agents.get(tab).cloned().unwrap_or_default();
+        let said = match whose == in_use {
+            true => String::new(),
+            false => format!(
+                "{} is the agent in use, and a conversation can only be taken up by the agent that had it.",
+                self.agent_called(&in_use)
+            ),
+        };
+        picker.about(&said);
+    }
+
+    /// The rows of one tab, newest first.
+    fn conversation_rows(&mut self, tab: usize) -> Vec<PickerItem> {
+        self.conversing.rows.clear();
+        let Some(whose) = self.conversing.agents.get(tab).cloned() else {
+            return Vec::new();
+        };
+        let mine = self.settled.config.agent.as_deref() == Some(whose.as_str());
+        let Some(remembered) =
+            obelus_agent::acp::sessions::read(&self.working_directory).remembered()
+        else {
+            return Vec::new();
+        };
+        // Every conversation somebody has open, as Obelus last looked --
+        // which is when something told it to look. See
+        // `App::reread_who_holds_what`.
+        let held = self.held_kept.clone();
+        let notes = obelus_git::todo::read(&self.working_directory)
+            .notes()
+            .unwrap_or_default()
+            .notes;
+        let now = std::time::SystemTime::now();
+        let mut rows: Vec<(Option<i64>, Listed, PickerItem)> = remembered
+            .all()
+            .filter(|(_, agent, _)| *agent == whose)
+            .map(|(which, _, kept)| {
+                let open = self.conversation_open(which);
+                let elsewhere = open.is_none() && held.contains(which);
+                // What the agent called it, then what the note says, then
+                // nothing anybody wrote: a conversation an agent never
+                // titled and no note names has only the fact that it
+                // happened.
+                let about = which.note().and_then(|id| {
+                    notes
+                        .iter()
+                        .find(|note| note.id == *id)
+                        .map(|note| note.title().to_string())
+                });
+                let label = kept
+                    .title
+                    .clone()
+                    .or_else(|| about.clone())
+                    .unwrap_or_else(|| "Untitled".to_string());
+                // Not said twice: a title the agent never gave is the
+                // note's own words, and the same words after them is the
+                // rule a setting's description already follows.
+                let detail = match about {
+                    Some(about) if about != label => Some(about),
+                    Some(_) => None,
+                    None => Some("nothing in particular".to_string()),
+                };
+                let item = PickerItem {
+                    prose: false,
+                    marker: elsewhere.then(locked),
+                    icon: None,
+                    label,
+                    detail,
+                    trailing: kept.last.map(|last| obelus_git::how_long_ago(last, now)),
+                    changed: None,
+                    // Both halves say the same thing in the ink: a row that
+                    // belongs to another agent cannot be taken up, and one
+                    // another Obelus is in is not this window's to enter.
+                    enabled: mine && !elsewhere,
+                    colours: None,
+                    status: None,
+                    depth: 0,
+                    opens: None,
+                    kind: None,
+                    tab: None,
+                    // Stands for its place in the list rather than for
+                    // the conversation, the way a server's offered actions
+                    // do: what a row stands for is Obelus's own
+                    // bookkeeping -- a note or a session id, a claim,
+                    // where it is already open -- and a list of rows is
+                    // not where that belongs. Which place it is is not
+                    // known until they are sorted, just below.
+                    value: PickerValue::Conversation(0),
+                };
+                (
+                    kept.last,
+                    Listed {
+                        which: which.clone(),
+                        session: kept.session.clone(),
+                        open,
+                    },
+                    item,
+                )
+            })
+            .collect();
+        // Newest first, and the ones from before Obelus wrote down when
+        // last. A made-up time would have put those somewhere in the order
+        // on no evidence at all.
+        rows.sort_by_key(|(last, _, _)| std::cmp::Reverse(*last));
+        let mut stands_for: Vec<Listed> = Vec::with_capacity(rows.len());
+        let mut items = Vec::with_capacity(rows.len());
+        for (at, (_, listed, mut item)) in rows.into_iter().enumerate() {
+            item.value = PickerValue::Conversation(at);
+            stands_for.push(listed);
+            items.push(item);
+        }
+        self.conversing.rows = stands_for;
+        items
+    }
+
+    /// Asks again which conversations somebody else has open, while the
+    /// list is up.
+    ///
+    /// The one thing on these rows that changes under the reader and is
+    /// nobody's keystroke: another Obelus opens or closes a conversation
+    /// and the row that was theirs to take stops being it, or the other way
+    /// about. The rows themselves stay -- they are a snapshot, and a list
+    /// that rebuilt itself every frame would slide new rows in under the
+    /// reader's selection -- so only what a row says about itself is asked
+    /// again.
+    ///
+    /// Both halves of that together, which is why [`Said`] carries both:
+    /// the lock and whether the key works are one fact, and a list that
+    /// could refresh one without the other is a list that says a row is
+    /// somebody else's and lets the reader in anyway.
+    ///
+    /// One walk of the claims, which is what the notes page pays every
+    /// frame it is showing, for the same answer. Measured: 8us for a
+    /// project nobody has a conversation open in, 17us with five and 41us
+    /// with twenty -- and Obelus has no frame rate, so the bill is one of
+    /// those per keystroke plus, while something is animating behind the
+    /// list, one per tick.
+    ///
+    /// Not kept between frames, and not asked only when the watcher says
+    /// the directory moved, which is the cache that suggests itself now
+    /// that there is a watch. A claim is given up by the *lock* going, and
+    /// an Obelus that crashed gives up its lock with nothing written and no
+    /// event at all: the file it left behind is still there. So an answer
+    /// kept until the directory next changes is an answer that can go on
+    /// saying a conversation is somebody else's for the rest of the
+    /// session. The notes page settled this first, for the same reason.
+    pub(super) fn freshen_the_conversation_rows(&mut self) {
+        if self.conversing.agents.is_empty() || self.picker.is_none() {
+            return;
+        }
+        // Worked out before the list is borrowed to change, because both
+        // halves are this application's.
+        let held = self.held_now();
+        let in_use = self.settled.config.agent.clone().unwrap_or_default();
+        let mine = self.conversing.agents.get(self.tab_showing()) == Some(&in_use);
+        let said: Vec<Said> = self
+            .conversing
+            .rows
+            .iter()
+            .map(|listed| {
+                let open = self.conversation_open(&listed.which);
+                let elsewhere = open.is_none() && held.contains(&listed.which);
+                Said {
+                    marker: elsewhere.then(locked),
+                    enabled: mine && !elsewhere,
+                }
+            })
+            .collect();
+        // And where a conversation was taken up in another window while the
+        // reader was looking at the row, the row they are standing on is
+        // one of these: it says so before they press, which is the whole
+        // of what this is for.
+        let Some(picker) = self.picker.as_mut() else {
+            return;
+        };
+        picker.remark(|value| match value {
+            PickerValue::Conversation(at) => said
+                .get(*at)
+                .map_or(Remark::Keep, |now| Remark::Now(now.clone())),
+            _ => Remark::Keep,
+        });
+    }
+
+    /// Which tab the list is showing, or the first where there is no list.
+    fn tab_showing(&self) -> usize {
+        self.picker.as_ref().map_or(0, Picker::tab)
+    }
+
+    /// Watches what the views showing are drawn from, and stops watching
+    /// what nothing is drawn from.
+    ///
+    /// Three things, and every one of them a file somebody else writes:
+    /// which conversations are open elsewhere, which of the notes has a
+    /// conversation at all, and what the notes say. Each is kept in memory
+    /// and each is only as honest as what refreshes it, so the watch is the
+    /// whole of the promise.
+    ///
+    /// Asked from what is open, every frame, rather than taken at each door
+    /// a view can be opened by and given up at each door it can be closed
+    /// by. Two of these had been done the second way and the third had
+    /// both, which is how one file came to be watched twice by two owners:
+    /// the counting inside the watcher made that work and made it invisible.
+    /// A watch switched on in one place and off in three outlives its reason
+    /// the first time somebody adds a fourth way out -- the ticker's rule,
+    /// one level along.
+    ///
+    /// Only the watches. *Reading* the three is the view's own, done as it
+    /// opens: a watch says what happens next and not what was already
+    /// there, and a frame is too late anyway -- the notes page is opened by
+    /// one key and talked about with the next, and two keys can be drained
+    /// before a frame is drawn between them.
+    pub(super) fn settle_the_watches(&mut self) {
+        let notes = self.notes_document().is_some();
+        let listing = !self.conversing.agents.is_empty() && self.picker.is_some();
+        let about_a_note = self
+            .conversation()
+            .is_some_and(|talk| matches!(&talk.topic, Topic::Note(_)));
+
+        // A directory rather than a file: a claim is a file appearing and
+        // going again, so there is nothing here to watch by name. Wanted by
+        // the notes, which mark the ones somebody else has, and by the list
+        // of conversations, which greys them.
+        self.settle_a_watch(
+            CLAIMS,
+            notes || listing,
+            How::Directory,
+            obelus_agent::chats::directory,
+        );
+        // The table saying which note has a conversation, which only the
+        // notes page draws.
+        self.settle_a_watch(
+            TABLE,
+            notes,
+            How::FileMakingRoom,
+            obelus_agent::acp::sessions::path,
+        );
+        // And the notes themselves: the page reads them, and so does the
+        // header of a conversation about one -- which is usually open with
+        // that page shut.
+        self.settle_a_watch(NOTES, notes || about_a_note, How::File, |root| {
+            Some(obelus_git::todo::path(root))
+        });
+    }
+
+    /// Takes or gives up one of them, so that what is watched matches what
+    /// is wanted.
+    ///
+    /// Only the watch. Reading the thing is the view's own, done as it
+    /// opens -- see the note on `settle_the_watches` -- because a view's
+    /// keys can act before the frame after it opens, and a value read on
+    /// that frame would be a keystroke too late.
+    fn settle_a_watch(
+        &mut self,
+        which: usize,
+        wanted: bool,
+        how: How,
+        where_it_is: impl FnOnce(&std::path::Path) -> Option<PathBuf>,
+    ) {
+        if wanted == self.watching[which].wanted {
+            return;
+        }
+        // Whatever was actually taken, which is not always what was wanted.
+        if let Some(had) = self.watching[which].held.take()
+            && let Some(watcher) = self.watcher.as_mut()
+        {
+            match how {
+                How::Directory => watcher.unwatch_directory(&had),
+                How::File | How::FileMakingRoom => watcher.unwatch(&had),
+            }
+        }
+        self.watching[which].wanted = wanted;
+        if !wanted {
+            return;
+        }
+        // Worked out here rather than by the caller, so that a frame on
+        // which nothing has opened or closed does not build three paths to
+        // throw away.
+        let Some(path) = where_it_is(&self.working_directory) else {
+            return;
+        };
+        // A watch on a directory that is not there is a watch on nothing.
+        // Only where the directory is Obelus's own to make and may not
+        // exist yet: the claims' one on a project nobody has talked about,
+        // and the table's on an Obelus that has never written one down.
+        // The notes' is not among them -- to be reading a conversation
+        // about a note there has to be a note, which means a file, which
+        // means the directory holding it, and making one here would be
+        // Obelus putting a notes directory on a project with no notes.
+        match how {
+            How::Directory => {
+                let _ = std::fs::create_dir_all(&path);
+            }
+            How::FileMakingRoom => {
+                if let Some(directory) = path.parent() {
+                    let _ = std::fs::create_dir_all(directory);
+                }
+            }
+            How::File => {}
+        }
+        if let Some(watcher) = self.watcher.as_mut() {
+            let taken = match how {
+                How::Directory => watcher.watch_directory(&path),
+                How::File | How::FileMakingRoom => watcher.watch(&path),
+            };
+            match taken {
+                Ok(()) => self.watching[which].held = Some(path),
+                Err(error) => {
+                    tracing::debug!(%error, path = %path.display(), "not watching it");
+                }
+            }
+        }
+    }
+
+    /// Looks again at which conversations somebody has open.
+    ///
+    /// The one walk of the claims, done when something says to rather than
+    /// on every frame: a claim taken or let go is a file appearing or
+    /// going, and one let go by an Obelus dying is that file closed by a
+    /// writer -- all three are things a watcher reports.
+    ///
+    /// Obelus's own claims are in here too. A lock belongs to the open file
+    /// and not to the process, so a second look finds this window's own in
+    /// the way; which of them are its own it knows from the conversations
+    /// it is holding.
+    pub(super) fn reread_who_holds_what(&mut self) {
+        self.held_kept = obelus_agent::chats::held(&self.working_directory);
+    }
+
+    /// Whether a path that changed is one of this project's claims.
+    #[must_use]
+    pub(super) fn is_a_claim(&self, path: &std::path::Path) -> bool {
+        obelus_agent::chats::directory(&self.working_directory)
+            .is_some_and(|directory| path.parent() == Some(directory.as_path()))
+    }
+
+    /// Which conversations somebody has open, as Obelus last looked.
+    #[must_use]
+    pub fn held_now(&self) -> &std::collections::BTreeSet<obelus_agent::chats::ChatId> {
+        &self.held_kept
+    }
+
+    /// Where this conversation is open in this Obelus, if it is.
+    fn conversation_open(&self, which: &obelus_agent::chats::ChatId) -> Option<DocumentId> {
+        self.documents
+            .iter()
+            .enumerate()
+            .find(|(_, document)| {
+                document
+                    .as_ref()
+                    .and_then(Document::chat)
+                    .is_some_and(|talk| match which {
+                        obelus_agent::chats::ChatId::Note(note) => {
+                            matches!(&talk.topic, Topic::Note(id) if id == note)
+                        }
+                        obelus_agent::chats::ChatId::Loose(session) => {
+                            talk.topic == Topic::Loose
+                                && talk
+                                    .session
+                                    .as_ref()
+                                    .is_some_and(|open| &*open.0 == session.as_str())
+                        }
+                    })
+            })
+            .map(|(at, _)| DocumentId::new(at))
+    }
+
+    /// Goes to the conversation a row names, taking it up where it is not
+    /// already open.
+    ///
+    /// The claim is asked for here and not read off the row: the list was
+    /// built a moment ago and another Obelus may have walked into the
+    /// conversation since. Where it has, the row says so -- the list stays
+    /// open and redraws with the lock on it -- because a key that answers
+    /// nothing is a key that looks broken.
+    pub(super) fn take_up_conversation(&mut self, at: usize) -> bool {
+        let Some(listed) = self.conversing.rows.get(at).cloned() else {
+            return false;
+        };
+        if let Some(id) = listed.open {
+            self.go_to_document(id);
+            return true;
+        }
+        let Some(claim) = obelus_agent::chats::claim(&self.working_directory, &listed.which) else {
+            // Being refused is itself news, and the freshest there is: it
+            // says somebody holds this one at this instant, which is more
+            // than the watcher has got round to saying. So Obelus looks
+            // again here rather than waiting to be told what it has just
+            // found out -- and the row the reader pressed goes dim under
+            // them, which is the answer.
+            self.reread_who_holds_what();
+            return false;
+        };
+        self.make_room(Room::Region);
+        // The same as the notes' own door: what the header is drawn from is
+        // read as the conversation opens, and kept level by a watch settled
+        // on the next frame.
+        self.reread_the_notes_kept();
+        let (told, introduced) = match listed.which.note() {
+            Some(note) => self.remembered_telling(note),
+            None => (None, false),
+        };
+        let topic = match listed.which.note() {
+            Some(note) => Topic::Note(note.clone()),
+            None => Topic::Loose,
+        };
+        let talk = crate::conversation::Conversation {
+            told,
+            introduced,
+            topic,
+            claim: Some(claim),
+            ..crate::conversation::Conversation::default()
+        };
+        self.documents.push(Some(talk.into()));
+        let at = DocumentId::new(self.documents.len() - 1);
+        self.go_to_document(at);
+        // Taking one up is the reader asking for it by name, so this is
+        // one of the two moments a session is asked for -- the other is
+        // their first message. The agent is started for it, because there
+        // is nothing to ask until there is one.
+        if self.talker.is_none() {
+            self.start_agent();
+        }
+        self.ask_for_a_session(Whose::One(at), Some(listed.session.clone()));
+        true
+    }
+}

@@ -31,7 +31,93 @@ use std::{
 
 use obelus_git::todo::NoteId;
 
-/// Where a project's claims are kept, one file per note.
+/// Which conversation, for the two things Obelus keeps beside one: the
+/// claim here and the name written down in [`crate::acp::sessions`].
+///
+/// A note where there is one, and the agent's own name for the conversation
+/// where there is not. It has to be the note for a note's conversation and
+/// not the session: the notes page reaches one before a session exists --
+/// that is the whole reason the claim is taken before the conversation is
+/// opened -- and a key that was the session there would be a second door
+/// into one conversation, with an Obelus behind each.
+///
+/// The other kind has no such door. Nothing but the agent's name reaches it,
+/// so that name is what says which.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ChatId {
+    /// One of the project's notes.
+    Note(NoteId),
+    /// One about nothing in particular, by the session the agent minted.
+    Loose(String),
+}
+
+/// What tells a loose conversation's file from a note's.
+///
+/// A note's name is eight characters of Crockford's alphabet, so no note
+/// can be spelled with this in front of it.
+const LOOSE: &str = "loose-";
+
+impl ChatId {
+    /// The file this claim lives in, under [`directory`].
+    ///
+    /// A note is its own name, which every claim written before this was a
+    /// pair was -- so a conversation somebody has open right now stays open
+    /// across the change rather than coming back as a second claim on the
+    /// same note.
+    ///
+    /// A session id is the agent's, which is to say it is any string at
+    /// all: Copilot's are uuids and nothing promises the next agent's will
+    /// be. So everything but the characters a filename may certainly hold
+    /// is written as its bytes, which is also what makes [`Self::read`] the
+    /// exact other direction.
+    #[must_use]
+    pub fn file_name(&self) -> String {
+        let session = match self {
+            Self::Note(note) => return note.as_str().to_string(),
+            Self::Loose(session) => session,
+        };
+        let mut name = LOOSE.to_string();
+        for byte in session.bytes() {
+            match byte {
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'.' | b'_' => name.push(byte as char),
+                _ => name.push_str(&format!("-{byte:02x}")),
+            }
+        }
+        name
+    }
+
+    /// The one that file name names, or nothing where it names neither.
+    #[must_use]
+    pub fn read(name: &str) -> Option<Self> {
+        let Some(rest) = name.strip_prefix(LOOSE) else {
+            return NoteId::read(name).map(Self::Note);
+        };
+        let mut bytes = Vec::new();
+        let mut left = rest.as_bytes();
+        while let Some((first, after)) = left.split_first() {
+            if *first != b'-' {
+                bytes.push(*first);
+                left = after;
+                continue;
+            }
+            let (pair, after) = after.split_at_checked(2)?;
+            bytes.push(u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok()?);
+            left = after;
+        }
+        Some(Self::Loose(String::from_utf8(bytes).ok()?))
+    }
+
+    /// The note it is about, where it is about one.
+    #[must_use]
+    pub const fn note(&self) -> Option<&NoteId> {
+        match self {
+            Self::Note(note) => Some(note),
+            Self::Loose(_) => None,
+        }
+    }
+}
+
+/// Where a project's claims are kept, one file per conversation.
 #[must_use]
 pub fn directory(root: &Path) -> Option<PathBuf> {
     Some(
@@ -41,7 +127,7 @@ pub fn directory(root: &Path) -> Option<PathBuf> {
     )
 }
 
-/// Says this Obelus has the conversation about `note`, unless another has.
+/// Says this Obelus has the conversation `which` names, unless another has.
 ///
 /// `None` is another Obelus holding it. Also a system with nowhere to keep
 /// the claim, and that is deliberately the same answer: a reader whose
@@ -49,12 +135,18 @@ pub fn directory(root: &Path) -> Option<PathBuf> {
 /// this promise, and the honest thing is to decline rather than to let two
 /// windows into one conversation while saying nothing.
 #[must_use]
-pub fn claim(root: &Path, note: &NoteId) -> Option<Claim> {
-    let path = directory(root)?.join(note.as_str());
+pub fn claim(root: &Path, which: &ChatId) -> Option<Claim> {
+    let path = directory(root)?.join(which.file_name());
     std::fs::create_dir_all(path.parent()?).ok()?;
     // Opened rather than created exclusively: the file left behind by a
     // process that died is not a claim, and refusing on finding one would
     // hand the reader a conversation they can never open again.
+    // For writing, and that is not only because it may have to be created:
+    // what says a claim ended with the Obelus that held it is a watcher
+    // reporting the file closed *by a writer*, which the kernel does on the
+    // way out of a process it is killing. Opened for reading, a claim would
+    // end in silence and the next window would go on drawing a lock nobody
+    // holds until it looked again for some other reason.
     let file = File::options()
         .create(true)
         .write(true)
@@ -64,17 +156,21 @@ pub fn claim(root: &Path, note: &NoteId) -> Option<Claim> {
     if held_by_somebody_else(&file) {
         return None;
     }
-    Some(Claim { path, file })
+    Some(Claim {
+        path,
+        leave_the_file: false,
+        file,
+    })
 }
 
-/// Every note in this project whose conversation somebody has open.
+/// Every conversation in this project somebody has open.
 ///
 /// Including this Obelus's own: a lock is about the open file and not about
 /// the process, so a second look from the same process finds its own claim
 /// in the way. Which of them are this one's is a question this cannot answer
 /// and the caller already knows -- it is holding them.
 #[must_use]
-pub fn held(root: &Path) -> BTreeSet<NoteId> {
+pub fn held(root: &Path) -> BTreeSet<ChatId> {
     let Some(directory) = directory(root) else {
         return BTreeSet::new();
     };
@@ -86,28 +182,11 @@ pub fn held(root: &Path) -> BTreeSet<NoteId> {
     entries
         .flatten()
         .filter_map(|entry| {
-            let note = NoteId::read(entry.file_name().to_str()?)?;
-            let file = File::options().write(true).open(entry.path()).ok()?;
-            held_by_somebody_else(&file).then_some(note)
+            let which = ChatId::read(entry.file_name().to_str()?)?;
+            let file = File::options().read(true).open(entry.path()).ok()?;
+            held_by_somebody_else(&file).then_some(which)
         })
         .collect()
-}
-
-/// Whether somebody has this one note's conversation open.
-///
-/// The same question [`held`] answers for all of them, asked of one: what
-/// wants it is the foot of the notes, which says what the key under the
-/// reader will do and is drawn every frame. One file opened rather than a
-/// directory walked.
-#[must_use]
-pub fn held_by_anybody(root: &Path, note: &NoteId) -> bool {
-    let Some(path) = directory(root).map(|directory| directory.join(note.as_str())) else {
-        return false;
-    };
-    File::options()
-        .write(true)
-        .open(&path)
-        .is_ok_and(|file| held_by_somebody_else(&file))
 }
 
 /// A conversation this Obelus has open, which it gives up by being dropped.
@@ -119,6 +198,15 @@ pub fn held_by_anybody(root: &Path, note: &NoteId) -> bool {
 #[derive(Debug)]
 pub struct Claim {
     path: PathBuf,
+    /// Whether the file goes when the lock does.
+    ///
+    /// It does, every way out but one: a process that is killed or loses
+    /// power drops its lock without running a line of anybody's code, and
+    /// the file it left is still there. That is the case the whole of this
+    /// is built around -- see [`Claim::as_if_this_obelus_died_for_test`],
+    /// which is the only thing that sets this and is only there so that a
+    /// test can be that process.
+    leave_the_file: bool,
     /// Held open for as long as the claim is: the lock belongs to the open
     /// file and goes when it closes, which is also what makes a killed
     /// Obelus give it up.
@@ -129,8 +217,29 @@ pub struct Claim {
     file: File,
 }
 
+impl Claim {
+    /// Lets the lock go the way an Obelus that was killed does: the file
+    /// stays exactly where it was.
+    ///
+    /// The one way a claim can end that writes nothing, removes nothing and
+    /// runs none of Obelus's code -- so the only notice of it is the kernel
+    /// closing the descriptor, which a watcher reports as a close by a
+    /// writer. Nothing in Obelus calls this; a test that wants to be the
+    /// process that died does, because it cannot be killed and go on
+    /// asserting.
+    pub const fn as_if_this_obelus_died_for_test(&mut self) {
+        self.leave_the_file = true;
+    }
+}
+
 impl Drop for Claim {
     fn drop(&mut self) {
+        if self.leave_the_file {
+            // The lock goes with the file this holds, a moment from now,
+            // and nothing else happens -- which is the whole of what dying
+            // looks like from outside.
+            return;
+        }
         // The name goes here and the lock goes a moment later, when the
         // file this holds is closed on the way out of this. That order is
         // the useful one: another Obelus wakes on the file going, and by
@@ -149,6 +258,15 @@ impl Drop for Claim {
 /// descriptor on the file -- which this opens twice, once to hold a claim
 /// and once to look at one, so Obelus would let go of its own claim by
 /// glancing at it.
+///
+/// The descriptor this is handed must be opened for *reading*, which is
+/// what every caller below does and what [`claim`] deliberately does not.
+/// A watcher reports a file being closed by a process that had it open for
+/// writing, and that report is the only notice there is that a claim ended
+/// because its Obelus died -- see `obelus_watch`. So a claim is held by a
+/// writer, on purpose; and Obelus's own looking is reading, on purpose,
+/// because a look that announced itself would be Obelus waking itself up to
+/// look again.
 ///
 /// A lock taken here is given up again when the file closes, at the end of
 /// the caller's expression. The cost is that a claim asked for in exactly
@@ -225,7 +343,7 @@ mod tests {
     #[test]
     fn one_note_has_one_conversation_open() {
         let root = scratch("one-at-a-time");
-        let note = NoteId::read("0123456A").expect("a name");
+        let note = ChatId::Note(NoteId::read("0123456A").expect("a name"));
 
         let first = claim(&root, &note).expect("nobody had it");
         assert!(
@@ -244,6 +362,81 @@ mod tests {
         assert!(claim(&root, &note).is_some(), "nobody can have it now");
     }
 
+    /// A conversation about nothing in particular is claimed too.
+    ///
+    /// It has to be: the list of conversations offers one to be taken up
+    /// again, and two Obelus taking up the same one is the thing every
+    /// claim here exists to stop -- the notes were only the first way to
+    /// reach one.
+    ///
+    /// And the name it is claimed under survives being written to a
+    /// filesystem and read back: a session id is the agent's own string,
+    /// and the one Copilot mints has characters in it no directory would
+    /// take. What Obelus writes, Obelus has to be able to read.
+    ///
+    /// Broken deliberately by having `ChatId::read` answer `None` for
+    /// anything it does not recognise as a note: `held` stops seeing the
+    /// claim, and the second Obelus walks in.
+    #[test]
+    fn a_conversation_about_nothing_is_claimed_by_its_session() {
+        let root = scratch("loose");
+        let loose = ChatId::Loose("sess/01 \u{4f60}?*".to_string());
+
+        let first = claim(&root, &loose).expect("nobody had it");
+        assert!(
+            claim(&root, &loose).is_none(),
+            "a second Obelus was let into the conversation"
+        );
+        assert_eq!(
+            ChatId::read(&loose.file_name()),
+            Some(loose.clone()),
+            "the name does not survive the filesystem"
+        );
+        assert!(held(&root).contains(&loose), "the claim does not show");
+        drop(first);
+        assert!(held(&root).is_empty(), "the claim outlived it");
+    }
+
+    /// Looking at a claim does not announce itself, and still sees it.
+    ///
+    /// Two halves of one arrangement. A claim is *held* by a writer, so that
+    /// the kernel closing a dying process's files reports it -- which is the
+    /// only notice there is that a lock ended without anybody writing
+    /// anything. And a claim is *looked at* through a read, so that Obelus
+    /// going round the directory whenever it is told one moved does not
+    /// itself count as a move and send Obelus round again.
+    ///
+    /// What makes the second possible is `flock`: it belongs to the open
+    /// file description rather than to the access mode, so a descriptor with
+    /// no write access can still ask for an exclusive lock and be refused.
+    /// `fcntl` locks cannot do this, which is the other reason they were not
+    /// used.
+    ///
+    /// Broken deliberately by opening with `.write(true)` in `held`: the
+    /// lock is still seen, so nothing here goes red -- and that is the point
+    /// of the pair in `tests/watch.rs`, which is where the silence is
+    /// asserted. Broken the other way, by taking the read off, `held` opens
+    /// nothing and the claim disappears.
+    #[test]
+    fn a_claim_is_seen_through_a_descriptor_that_cannot_write() {
+        let root = scratch("looking");
+        let which = ChatId::Loose("s-looked-at".to_string());
+        let held_by_them = claim(&root, &which).expect("their claim");
+
+        let path = directory(&root).expect("somewhere").join(which.file_name());
+        let looking = File::options()
+            .read(true)
+            .open(&path)
+            .expect("looking at it");
+        assert!(
+            held_by_somebody_else(&looking),
+            "a claim cannot be seen without write access, so looking would announce itself"
+        );
+        assert!(held(&root).contains(&which), "the walk does not see it");
+        drop(held_by_them);
+        assert!(held(&root).is_empty(), "the claim outlived its holder");
+    }
+
     /// A claim left behind by an Obelus that died is not a claim.
     ///
     /// Which is the whole reason for a lock rather than a process number
@@ -256,8 +449,8 @@ mod tests {
     #[test]
     fn a_file_nobody_holds_is_not_a_claim() {
         let root = scratch("left-behind");
-        let note = NoteId::read("0123456B").expect("a name");
-        let path = directory(&root).expect("somewhere").join(note.as_str());
+        let note = ChatId::Note(NoteId::read("0123456B").expect("a name"));
+        let path = directory(&root).expect("somewhere").join(note.file_name());
         std::fs::create_dir_all(path.parent().expect("a directory")).expect("the directory");
         std::fs::write(&path, "").expect("what the dead Obelus left");
 

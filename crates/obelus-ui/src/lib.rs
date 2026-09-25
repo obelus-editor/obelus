@@ -168,6 +168,10 @@ pub trait Screen {
     fn images(&self) -> &Images;
     /// The bindings currently in force.
     fn keymap(&self) -> &Keymap;
+    /// Whether a command can do its job right now, which is the one
+    /// judgement of it: a view that says a key is there says it only where
+    /// pressing it would do something.
+    fn offers(&self, command: obelus_command::Command) -> bool;
     /// What is on screen over the file, worked out from what is open.
     fn layers(&self) -> layers::Layers;
     /// The agents page's rows.

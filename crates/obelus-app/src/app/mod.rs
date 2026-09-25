@@ -18,6 +18,7 @@ mod asking;
 mod changing;
 mod choosing;
 mod completing;
+mod conversations;
 mod counting;
 pub mod dispatch;
 pub mod document;
@@ -534,6 +535,48 @@ pub struct App {
     /// it has something to answer with, so its position is not fixed.
     /// Empty when the list showing is not that one.
     troubling: Vec<semantics::Wrong>,
+    /// Which agents the open list of conversations is showing, and what
+    /// each of its rows stands for.
+    ///
+    /// The same remembering as the two above, for the same reason: a tab is
+    /// only there when that agent has said something here, so which tab is
+    /// which agent is not a fixed mapping. Empty when the list showing is
+    /// not that one.
+    conversing: conversations::Conversing,
+    /// What Obelus is watching for the views drawn from it, by the places
+    /// in `conversations`: the claims, the table of conversations, and the
+    /// notes.
+    ///
+    /// Which of them are wanted is worked out from what is open, every
+    /// frame, by `App::settle_the_watches` -- rather than taken at each
+    /// door a view opens by and given up at each door it closes by, which
+    /// is how one of these came to be watched twice.
+    watching: [conversations::Watched; conversations::WATCHED],
+    /// The project's table of conversations, as Obelus last read it.
+    ///
+    /// `None` until there has been a reason to read it. What the reasons
+    /// are is `App::sessions`; what they are *for* is that the notes page
+    /// asks which of them has a conversation on every frame it draws, and
+    /// parsing that table there cost more than everything else the page
+    /// does put together.
+    sessions_kept: Option<obelus_agent::acp::sessions::Remembered>,
+    /// The project's notes, as Obelus last read them.
+    ///
+    /// Not the page's copy, which is the reader's and is ahead of the file
+    /// while they are typing in it. This one is the file, for the one
+    /// thing outside that page which has to know what a note says: the
+    /// header of the conversation about it.
+    notes_kept: Option<obelus_git::todo::Todo>,
+    /// Which conversations somebody has open, as Obelus last looked.
+    ///
+    /// Asked when there is a reason and kept until there is another, like
+    /// everything else here. What makes that honest for a *lock* -- which
+    /// nothing writes and nothing removes when the process holding it dies
+    /// -- is that the kernel closes a dead process's files and a watcher
+    /// reports that close. See `obelus_watch` for the one Access event it
+    /// lets through, and `obelus_agent::chats` for why Obelus's own looking
+    /// is a read.
+    held_kept: std::collections::BTreeSet<obelus_agent::chats::ChatId>,
     /// Who last changed each line, per file that has been asked about.
     ///
     /// Kept rather than replaced, because a reader goes back and forth
@@ -724,6 +767,11 @@ impl App {
             calls: None,
             searching: Vec::new(),
             troubling: Vec::new(),
+            conversing: conversations::Conversing::default(),
+            watching: [const { conversations::Watched::new() }; conversations::WATCHED],
+            sessions_kept: None,
+            notes_kept: None,
+            held_kept: std::collections::BTreeSet::new(),
             blames: std::collections::HashMap::new(),
             committed: None,
             asking_blame: std::collections::HashSet::new(),
@@ -1465,6 +1513,7 @@ impl App {
                 self.look_back();
                 self.history = history_view::Showing::default();
                 self.troubling.clear();
+                self.conversing = conversations::Conversing::default();
                 self.close_calls();
                 // What a server offered to do here, which the rows were
                 // indexes into. A row is chosen by its position, so offers
@@ -1620,6 +1669,12 @@ impl App {
         // redraw put it right, so what a reader saw was their words go and
         // come back.
         self.editor_area = editor_area;
+        // What the views showing are drawn from, and what Obelus has to be
+        // told about it. First, because everything below this reads one of
+        // those kept answers -- the notes' marks are worked out a dozen
+        // lines down -- and a watch taken at the end of the frame is a view
+        // that draws its first frame from whatever was there last time.
+        self.settle_the_watches();
         // The notes are laid out against the room they have: a terminal is
         // resized and a setting is changed while they are open, and the rows
         // they are made of depend on both.
@@ -1655,6 +1710,11 @@ impl App {
         // rows are a snapshot and this is the part of them that is about
         // now.
         self.freshen_the_document_marks();
+        // And what a row of the list of conversations says about itself,
+        // which is the same rule one level along: another Obelus opening
+        // or closing one is not this reader's keystroke, and the row has
+        // to say so before they press.
+        self.freshen_the_conversation_rows();
         // What the conversation says is happening, read off the state
         // rather than remembered: a row that is worked out every frame
         // cannot be left saying something that stopped being true.
@@ -1861,6 +1921,18 @@ impl App {
                     // the name in the settings has not moved, and what it
                     // stands for has.
                     self.reread_theme();
+                } else if self.is_a_claim(&path) {
+                    // A conversation taken up or let go in another window
+                    // -- including one let go by that window dying, which
+                    // is a file closed by a writer and nothing else.
+                    self.reread_who_holds_what();
+                } else if self.is_the_sessions_file(&path) {
+                    // Which of the project's notes has a conversation,
+                    // written by another Obelus -- or by this one, which
+                    // hears its own writes like anybody else's and has
+                    // already kept what it wrote. Reading it again costs
+                    // one parse and keeps the two windows in step.
+                    self.reread_the_sessions();
                 } else if self.is_the_notes_file(&path) {
                     // What the project means to come back to, written by
                     // another Obelus, the reader's own editor -- or by this
@@ -1871,6 +1943,11 @@ impl App {
                     // back what Obelus itself just wrote changes nothing on
                     // the page.
                     self.reread_notes();
+                    // And the copy the conversation's header is drawn
+                    // from, which is wanted whether or not that page is
+                    // open: a reader talking about a note has usually
+                    // walked away from the list of them.
+                    self.reread_the_notes_kept();
                 } else if obelus_git::state_moved(&path) {
                     self.forget_what_git_said();
                 } else {
@@ -2191,7 +2268,17 @@ impl App {
         // a file is what it means here -- the table is asked as though the
         // file were what is showing -- and only the keys that open a view
         // are let through, so nothing opens over anything.
+        //
+        // Unless the view showing has bound that key itself, which is a
+        // view saying what the key means *here* -- and that beats what it
+        // means one level out, the same way `Keymap::lookup` asks a
+        // context's own table before the file's and the file's before
+        // everywhere. `f4` in a conversation is the case: it opens the
+        // conversation from anywhere else and means "which one" inside the
+        // one it named, and without this it swapped the conversation for
+        // itself and the binding was dead.
         if self.in_a_whole_view()
+            && self.keymap.bound_here(&key, self.context()).is_none()
             && let Some(command) = self.keymap.lookup(&key, Context::Normal)
             && command.opens_a_view()
         {
@@ -3342,6 +3429,9 @@ impl Screen for App {
     }
     fn keymap(&self) -> &Keymap {
         App::keymap(self)
+    }
+    fn offers(&self, command: Command) -> bool {
+        App::offers(self, command)
     }
     fn layers(&self) -> layers::Layers {
         App::layers(self)

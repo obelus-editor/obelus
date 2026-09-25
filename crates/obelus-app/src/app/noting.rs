@@ -99,33 +99,19 @@ impl App {
             .push(Some(crate::app::document::Document::from(view)));
         let id = DocumentId::new(self.documents.len() - 1);
         self.go_to_document(id);
-        // Heard about for as long as it is open, which as a document is
-        // until it is closed. What it buys is freshness and not safety: a
-        // change of the other window's is in the file whether this one hears
-        // about it or not, and what keeps it there is that every write goes
-        // back through the file -- see [`App::do_to_the_notes`]. This is so
-        // that the reader sees it before they next press anything.
-        if let Some(watcher) = self.watcher.as_mut()
-            && let Err(error) = watcher.watch(&obelus_git::todo::path(&self.working_directory))
-        {
-            tracing::debug!(%error, "not watching what the project means to come back to");
-        }
-        // And which of them somebody else has a conversation open about,
-        // which is a directory rather than a file: a claim is a file
-        // appearing and going again, so there is nothing here to watch by
-        // name. A lock is invisible to a watcher -- taking one writes
-        // nothing -- which is why the claim has a file at all.
-        if let Some(directory) = obelus_agent::chats::directory(&self.working_directory) {
-            // Made here, because a watch on a directory that is not there
-            // yet is a watch on nothing: the first conversation in a
-            // project would open in the other window unseen.
-            let _ = std::fs::create_dir_all(&directory);
-            if let Some(watcher) = self.watcher.as_mut()
-                && let Err(error) = watcher.watch_directory(&directory)
-            {
-                tracing::debug!(%error, "not watching which conversations are open elsewhere");
-            }
-        }
+        // What this page is drawn from, read as it opens. The watches on
+        // the three of them are settled from what is open rather than taken
+        // here -- see `App::settle_the_watches` -- but a watch says what
+        // happens next and not what was already there, and the first frame
+        // is too late for either: the key after this one talks about a
+        // note, and looks up the conversation written down against it.
+        //
+        // What the watches buy is freshness and not safety: a change of the
+        // other window's is in the file whether this one hears about it or
+        // not, and what keeps it there is that every write goes back
+        // through the file -- see `App::do_to_the_notes`.
+        self.reread_the_sessions();
+        self.reread_who_holds_what();
     }
 
     /// Says the notes have just been typed into, so they are written down

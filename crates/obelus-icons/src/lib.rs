@@ -358,6 +358,11 @@ pub fn for_command(command: obelus_command::Command) -> char {
         Command::GoBack => '\u{f17b3}',
         Command::GoForward => '\u{f17b7}',
         Command::AgentOpen => ui::AGENT,
+        // `md-forum_outline`: several of them, which is what this is a
+        // list of. Not the one [`ui::AGENT`] wears -- two rows with one
+        // picture say less than one, and the difference between these two
+        // rows is exactly one conversation against all of them.
+        Command::ConversationSelect => '\u{f0286}',
         // A bar chart, which is what the view itself draws: a column per
         // language against the biggest one.
         Command::CountLines => '\u{f0128}',

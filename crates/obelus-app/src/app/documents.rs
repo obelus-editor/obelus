@@ -130,7 +130,14 @@ impl App {
             PickerValue::Document(id) => marks
                 .iter()
                 .find(|(whose, _)| whose == id)
-                .map_or(Remark::Keep, |(_, mark)| Remark::Now(mark.clone())),
+                // Always choosable: every row of this list is something
+                // open, and going to it is what the list is for.
+                .map_or(Remark::Keep, |(_, mark)| {
+                    Remark::Now(obelus_component::picker::Said {
+                        marker: mark.clone(),
+                        enabled: true,
+                    })
+                }),
             _ => Remark::Keep,
         });
     }
@@ -869,27 +876,19 @@ impl App {
         // reader to stop before it is written, and closing a second after
         // typing is the one moment that pause has not come -- so it is
         // taken here. A note lives nowhere but the file.
-        if self
-            .document(id)
-            .is_some_and(|document| document.notes().is_some())
+        //
+        // Nothing is unwatched here, though this is where the notes' three
+        // watches used to be given up: what a view is drawn from is settled
+        // from what is open, on the next frame, by
+        // `App::settle_the_watches`.
+        if let Some(changes) = self
+            .documents
+            .get_mut(id.get())
+            .and_then(Option::as_mut)
+            .and_then(Document::notes_mut)
+            .map(obelus_component::todo::TodoView::take_changes)
         {
-            if let Some(changes) = self
-                .documents
-                .get_mut(id.get())
-                .and_then(Option::as_mut)
-                .and_then(Document::notes_mut)
-                .map(obelus_component::todo::TodoView::take_changes)
-            {
-                self.do_to_the_notes(changes);
-            }
-            if let Some(watcher) = self.watcher.as_mut() {
-                watcher.unwatch(&obelus_git::todo::path(&self.working_directory));
-            }
-            if let Some(directory) = obelus_agent::chats::directory(&self.working_directory)
-                && let Some(watcher) = self.watcher.as_mut()
-            {
-                watcher.unwatch_directory(&directory);
-            }
+            self.do_to_the_notes(changes);
         }
         let Some(document) = self.documents.get_mut(id.get()).and_then(Option::take) else {
             return;

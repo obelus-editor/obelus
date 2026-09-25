@@ -159,6 +159,14 @@ pub enum PickerValue {
         /// Which of the files it changed, relative to the repository.
         path: PathBuf,
     },
+    /// Take up one of the conversations the project has had.
+    ///
+    /// By its place in the list rather than by the conversation, the way
+    /// [`PickerValue::Action`] names a server's offer: which conversation a
+    /// row stands for is Obelus's own bookkeeping -- a note or a session
+    /// id, a claim, where it is already open -- and a list of rows is not
+    /// where that belongs.
+    Conversation(usize),
     /// One of the ways out of a question Obelus stopped to ask.
     Answer(obelus_buffer::question::Answer),
     /// Nothing. A row that is there to say why the list is short.
@@ -237,11 +245,27 @@ pub enum Marking {
 /// wearing the same word.
 #[derive(Clone, Debug)]
 pub enum Remark {
-    /// Not a row the caller knows anything about: leave its mark as it is.
-    /// Every list but one is made of these.
+    /// Not a row the caller knows anything about: leave it as it is. Every
+    /// list but two is made of these.
     Keep,
-    /// The mark this row should wear now, or none at all.
-    Now(Option<(Marking, String)>),
+    /// What the row says about itself now.
+    Now(Said),
+}
+
+/// What a row says about itself, asked again while the list is up.
+///
+/// The mark and whether the row can be chosen, together and never apart.
+/// They are two halves of one fact -- a conversation another Obelus has
+/// open wears a lock *and* refuses the key -- and a list where one could be
+/// refreshed without the other is a list that can say a row is somebody
+/// else's while still letting the reader into it. Whoever answers answers
+/// both.
+#[derive(Clone, Debug)]
+pub struct Said {
+    /// The mark, or none at all.
+    pub marker: Option<(Marking, String)>,
+    /// Whether the key works on it here.
+    pub enabled: bool,
 }
 
 /// One row.
@@ -996,14 +1020,16 @@ impl Picker {
     /// the turning mark comes from the ticker, which is what made the
     /// second so convincing.
     ///
-    /// Only the mark. A row's label is what the query matched, and the
+    /// Never the words. A row's label is what the query matched, and the
     /// matched characters are offsets into it: changing the words here
     /// would leave a list highlighting cells that are no longer the ones
-    /// that matched.
+    /// that matched. What a row *says about itself* is another matter, and
+    /// [`Said`] is the whole of it.
     pub fn remark(&mut self, mut mark: impl FnMut(&PickerValue) -> Remark) {
         for item in &mut self.items {
             if let Remark::Now(now) = mark(&item.value) {
-                item.marker = now;
+                item.marker = now.marker;
+                item.enabled = now.enabled;
             }
         }
         // The column is kept for whichever rows have one, and whether any

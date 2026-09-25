@@ -57,6 +57,20 @@ pub struct Conversation {
     /// from "no session yet" because two conversations opening at once would
     /// otherwise be told apart by nothing, and could take each other's.
     pub asked_for: Option<acp::SessionId>,
+    /// Whether it has asked for a fresh one and not been answered.
+    ///
+    /// The other half of [`Self::asked_for`], which says the same thing
+    /// about a conversation being taken up by name. Two fields rather than
+    /// one, because that one carries the name and a fresh conversation has
+    /// no name until the answer brings it.
+    ///
+    /// What it is for is telling "starting" from "nothing has been asked
+    /// for yet", which used to be the same state because opening the view
+    /// asked. It does not: a conversation with no session and nothing on
+    /// the way is a conversation the reader has not said anything in, and a
+    /// transcript reading `starting...` under a still mark says the
+    /// opposite.
+    pub opening: bool,
     /// What the note said when Obelus last told the agent about it.
     ///
     /// What the agent has been *told*, rather than what Obelus has to say:

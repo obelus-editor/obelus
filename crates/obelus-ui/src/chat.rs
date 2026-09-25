@@ -414,6 +414,15 @@ pub struct ChatView<'a> {
     /// How full the agent's memory of this conversation is, once it has
     /// said.
     usage: Option<&'a acp::Usage>,
+    /// The key that opens the list of conversations, where there is one to
+    /// take up and a key bound to it.
+    ///
+    /// Read off the key table rather than written down here, because a
+    /// rebind has to change every place a key is displayed -- and asked of
+    /// the application whether the command can run at all, which is the one
+    /// judgement of that: a row saying `f4` over a project nobody has
+    /// talked about is a key that answers nothing.
+    conversations: Option<String>,
 }
 
 impl<'a> ChatView<'a> {
@@ -434,6 +443,14 @@ impl<'a> ChatView<'a> {
             about: app.what_this_conversation_is_about(),
             note: app.note(),
             usage: app.agent_usage(),
+            conversations: app
+                .offers(obelus_command::Command::ConversationSelect)
+                .then(|| {
+                    app.keymap()
+                        .chord_for(obelus_command::Command::ConversationSelect)
+                })
+                .flatten()
+                .map(|chord| chord.label()),
         })
     }
 
@@ -1085,7 +1102,7 @@ impl ChatView<'_> {
         //
         // Measured first, because the room the settings have is what is left
         // of the row.
-        let hint = self.status_hint();
+        let hint = self.status_hint(area);
         if let Some(hint) = &hint
             && let Ok(offset) =
                 u16::try_from(usize::from(area.width).saturating_sub(text_width(hint) + 1))
@@ -1290,23 +1307,33 @@ impl ChatView<'_> {
 
     /// What a key does on the status row, on the right.
     ///
-    /// Two of them at most, and the way back comes first: a conversation
-    /// about a note is reached from the notes page, and a way out that
-    /// nothing says exists is the same gap one level up -- which is why the
-    /// key was added at all.
+    /// The way back comes first: a conversation about a note is reached
+    /// from the notes page, and a way out that nothing says exists is the
+    /// same gap one level up -- which is why the key was added at all.
+    /// Then the way to the conversation's neighbours, and the mode last,
+    /// which is the rightmost thing on this row and always has been: a key
+    /// that moved when a conversation gained a setting would be a key the
+    /// reader has to look for.
+    ///
+    /// Three is more than a narrow row can hold, so one of them goes --
+    /// the one about the *other* conversations, because the other two are
+    /// about the one in front of the reader and that is what a row with no
+    /// room keeps. The same judgement the number beside them is held to,
+    /// and it has to be made here rather than by the drawing: what is left
+    /// of the row for the settings is what is left once this has taken its
+    /// share.
     ///
     /// Asked before the settings are drawn, because the room they have is
     /// what is left of the row once this is on it.
-    fn status_hint(&self) -> Option<String> {
-        let mut hints = Vec::new();
-        if self.about.is_some() {
-            hints.push(match obelus_icons::enabled() {
-                true => format!("{}t  the note", obelus_icons::key::ALT),
-                false => "alt+t  the note".to_string(),
-            });
-        }
-        if self.mode().is_some_and(|mode| mode.values.len() > 1) {
-            hints.push(match obelus_icons::enabled() {
+    fn status_hint(&self, area: Rect) -> Option<String> {
+        let back = self.about.is_some().then(|| match obelus_icons::enabled() {
+            true => format!("{}t  the note", obelus_icons::key::ALT),
+            false => "alt+t  the note".to_string(),
+        });
+        let mode = self
+            .mode()
+            .is_some_and(|mode| mode.values.len() > 1)
+            .then(|| match obelus_icons::enabled() {
                 true => format!(
                     "{}{}  mode",
                     obelus_icons::key::SHIFT,
@@ -1314,8 +1341,34 @@ impl ChatView<'_> {
                 ),
                 false => "shift+tab  mode".to_string(),
             });
+        let others = self
+            .conversations
+            .as_ref()
+            .map(|chord| format!("{chord}  Conversations"));
+        let joined = |hints: &[&String]| match hints.is_empty() {
+            true => None,
+            false => Some(
+                hints
+                    .iter()
+                    .map(|said| said.as_str())
+                    .collect::<Vec<_>>()
+                    .join("   "),
+            ),
+        };
+        let all: Vec<&String> = [back.as_ref(), others.as_ref(), mode.as_ref()]
+            .into_iter()
+            .flatten()
+            .collect();
+        if let Some(said) = joined(&all)
+            && text_width(&said) + 2 + LEAST_SETTINGS <= usize::from(area.width)
+        {
+            return Some(said);
         }
-        (!hints.is_empty()).then(|| hints.join("   "))
+        let fewer: Vec<&String> = [back.as_ref(), mode.as_ref()]
+            .into_iter()
+            .flatten()
+            .collect();
+        joined(&fewer)
     }
 
     /// How much of the status row the settings have.
@@ -1324,7 +1377,7 @@ impl ChatView<'_> {
     /// other, both of which stay put. Asked by the drawing and by a press,
     /// because a press has to be measured against the row that is there.
     fn status_room(&self, area: Rect) -> usize {
-        let hint = self.status_hint();
+        let hint = self.status_hint(area);
         let taken = hint.as_deref().map_or(0, |hint| text_width(hint) + 2);
         let over = usize::from(area.width).saturating_sub(taken + 2);
         let used = self
@@ -1575,8 +1628,13 @@ impl ChatView<'_> {
         match self.state {
             Talking::Nobody => "no agent is active \u{2014} open the settings and choose one",
             Talking::Gone => "It stopped. Ask something to start it again",
-            Talking::Starting | Talking::Idle => "starting\u{2026}",
-            Talking::Ready | Talking::Thinking => "Ask it something",
+            Talking::Starting => "starting\u{2026}",
+            // Idle belongs here rather than with starting. Opening a
+            // conversation starts nothing -- no process, no session -- so
+            // idle is what every conversation is until the reader says
+            // something, and "starting..." under a still mark would say
+            // something is on its way to a page nothing is coming to.
+            Talking::Idle | Talking::Ready | Talking::Thinking => "Ask it something",
         }
     }
 }
@@ -1770,6 +1828,7 @@ mod caret {
                         phase: 0,
                         about: None,
                         note: None,
+                        conversations: None,
                         usage: None,
                     };
                     let mut cells = ratatui::buffer::Buffer::empty(area);

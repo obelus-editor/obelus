@@ -252,3 +252,79 @@ fn a_file_written_continuously_is_still_reported() {
         "nothing was reported in four hundred milliseconds of continuous writing"
     );
 }
+
+/// An Obelus that is killed reports that it let go of what it was holding.
+///
+/// The one thing on disk that nothing writes: a claim on a conversation is
+/// a lock, taking one writes nothing, and a process that crashes or loses
+/// power gives its lock up without a byte changing. That read as "nothing
+/// can tell you", and the answer was to go and look on every frame for as
+/// long as the page was showing.
+///
+/// Something does tell you. The kernel closes a dying process's files, and
+/// a watcher reports a file closed by a process that had it open for
+/// *writing* -- which is how `obelus_agent::chats` opens a claim, on
+/// purpose.
+///
+/// Broken deliberately by putting `EventKind::Access(_)` back as a blanket
+/// refusal in `obelus_watch`: nothing arrives and this waits out its
+/// deadline.
+#[test]
+fn a_process_that_is_killed_reports_letting_go_of_what_it_held() {
+    let scratch = Scratch::new("killed");
+    let path = scratch.write("claim", "");
+
+    let (sender, events) = obelus_app::event::channel();
+    let mut watcher = Watcher::new(sender).expect("starting the watcher");
+    watcher.watch(&path).expect("watching");
+
+    // The other Obelus: it holds the claim open for writing and is then
+    // killed, which is the way out that writes nothing.
+    let mut theirs = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(format!("exec 9>{} ; sleep 30", path.display()))
+        .spawn()
+        .expect("the other Obelus");
+    // What opening it said, which is not what this is about.
+    let _ = collect(&events, Duration::from_millis(400));
+    theirs.kill().expect("killing it");
+    let _ = theirs.wait();
+
+    assert!(
+        wait_for(&events, &path),
+        "an Obelus died holding a claim and nothing said so"
+    );
+}
+
+/// Reading a file does not wake the loop.
+///
+/// The other half of the one above, and the reason it is safe: Obelus looks
+/// at every claim in the project whenever it is told one moved, and a look
+/// that announced itself would be Obelus waking itself up to look again,
+/// for ever. So the look is a read -- `chats::held` opens without write
+/// access -- and a read is the Access event this still refuses.
+///
+/// Broken deliberately by letting `EventKind::Access(_)` through whole in
+/// `obelus_watch`: the read arrives and this goes red.
+#[test]
+fn reading_a_file_says_nothing() {
+    let scratch = Scratch::new("reading");
+    let path = scratch.write("claim", "");
+
+    let (sender, events) = obelus_app::event::channel();
+    let mut watcher = Watcher::new(sender).expect("starting the watcher");
+    watcher.watch(&path).expect("watching");
+
+    // Opened for reading and closed, which is what looking at a claim is.
+    {
+        let _look = fs::File::options()
+            .read(true)
+            .open(&path)
+            .expect("looking at it");
+    }
+
+    assert!(
+        collect(&events, Duration::from_millis(400)).is_empty(),
+        "looking at a file woke the loop, which would wake it again"
+    );
+}

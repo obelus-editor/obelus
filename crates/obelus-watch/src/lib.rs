@@ -90,7 +90,29 @@ impl Watcher {
                 Ok(event) => {
                     // Access events say nothing changed, and they arrive
                     // whenever anything reads the file — including Obelus.
-                    if matches!(event.kind, EventKind::Access(_)) {
+                    //
+                    // All but one. A file closed by a process that had it
+                    // open for *writing* is how the one thing no write
+                    // reports gets reported: a claim is a lock, taking one
+                    // writes nothing, and a process that is killed or loses
+                    // power gives its lock up with nothing on disk to say
+                    // so. The kernel closes its descriptors on the way out,
+                    // and that close is this event. It is the only notice
+                    // there is that a conversation another Obelus was
+                    // holding is free again, and without it the answer
+                    // would have to be asked for over and over.
+                    //
+                    // Which is why the look that asks *is* a read: see
+                    // `obelus_agent::chats`, where checking a claim opens
+                    // the file without write access on purpose, so that
+                    // Obelus's own looking cannot wake Obelus.
+                    let closed_by_a_writer = matches!(
+                        event.kind,
+                        EventKind::Access(notify::event::AccessKind::Close(
+                            notify::event::AccessMode::Write
+                        ))
+                    );
+                    if matches!(event.kind, EventKind::Access(_)) && !closed_by_a_writer {
                         return;
                     }
                     let spellings = spelled.lock().unwrap_or_else(|poison| poison.into_inner());

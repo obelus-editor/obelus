@@ -131,6 +131,8 @@ pub enum Command {
     GoForward,
     /// Talk to the active agent.
     AgentOpen,
+    /// Take up a conversation with the agent that was had before.
+    ConversationSelect,
     /// Count the lines of the project, by language and by file.
     CountLines,
     /// Show what this project means to come back to.
@@ -336,6 +338,25 @@ pub enum Requires {
     AChangedFile,
     /// A language server has to have written to its log.
     AServerLog,
+    /// The project has to have a conversation written down, with any agent.
+    ///
+    /// Any agent and not the one in use, because the list shows the others
+    /// too -- greyed, with a line saying why, which is the answer to "where
+    /// did the ones I had with the last agent go". Gated on the one in use,
+    /// a reader who changed agents would find the key dead and nowhere to
+    /// be told.
+    ///
+    /// Answered by a stat rather than by reading the table: this one is
+    /// asked from a view -- the key that opens the list is drawn on the
+    /// conversation's status row -- so it is asked on every frame of every
+    /// conversation, which is not where a TOML parse belongs. What makes a
+    /// size enough is that Obelus writes that file whole and writes it
+    /// empty when it has nothing to say.
+    ///
+    /// Which leaves the gate a shade generous -- a file with bytes in it
+    /// that no longer parse reads as "there is something here" -- so the
+    /// list it opens says what it actually found.
+    AConversation,
     /// The language has to have something to start a line comment with.
     ALineComment,
 }
@@ -644,6 +665,11 @@ pub const ALL: &[CommandSpec] = &[
         title: "Talk to the active agent",
     },
     CommandSpec {
+        command: Command::ConversationSelect,
+        name: "choose-conversation",
+        title: "Take up a conversation with the agent",
+    },
+    CommandSpec {
         command: Command::CountLines,
         name: "count-lines",
         title: "How much code is here, by language and by file",
@@ -740,6 +766,10 @@ impl Command {
             | Self::FileRename
             | Self::PreviewToggle
             | Self::ThemeSelect
+            // A list over the conversation rather than instead of it: the
+            // rows are that conversation's neighbours, and the reader is
+            // choosing between them with the one they are in behind.
+            | Self::ConversationSelect
             | Self::CommandPalette
             | Self::SymbolMenu
             | Self::SymbolComplete
@@ -857,6 +887,7 @@ impl Command {
             Self::LspRestart
             | Self::LspStop
             | Self::AgentOpen
+            | Self::ConversationSelect
             | Self::ConfigOpen
             | Self::ConfigProject
             | Self::ConfigFile
@@ -1028,6 +1059,7 @@ impl Command {
             // command saying so is the only way a reader learns that
             // logging failed.
             Self::LogServers => Requires::AServerLog,
+            Self::ConversationSelect => Requires::AConversation,
         }
     }
 
