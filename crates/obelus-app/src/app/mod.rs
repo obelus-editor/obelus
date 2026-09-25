@@ -441,6 +441,13 @@ pub struct App {
     )>,
     /// What Obelus knows about the agents it could run.
     agents: agents::Agents,
+    /// Where the agents page's marks were on the frame just drawn.
+    ///
+    /// Kept so that the next frame can be asked whether they have moved,
+    /// which is the whole of whether it has to be written with the caret
+    /// put out. `None` when the page is not showing: what comes back to it
+    /// is a page that has to be written whatever it holds.
+    picture_layout: Option<agents::PictureLayout>,
     /// The settings as they stand, and where each part came from.
     settled: preferences::Settled,
     /// The settings view, while it is open.
@@ -695,6 +702,7 @@ impl App {
             waiting_on: Vec::new(),
             settled: preferences::Settled::default(),
             agents: agents::Agents::default(),
+            picture_layout: None,
             settings: None,
             counts: None,
             screen_area: Rect::ZERO,
@@ -1226,8 +1234,10 @@ impl App {
     /// from the half-dozen places that change any of it, which is how a
     /// ticker outlives its reason.
     fn wants_animating(&self, working: bool) -> bool {
-        // Nothing open at all: the welcome screen's sheen.
-        self.current.is_none()
+        // Nothing open and no page taking its place: the welcome screen's
+        // sheen. A settings page over the welcome is not a welcome screen,
+        // so keeping its clock running would redraw a motionless page.
+        (self.current.is_none() && !self.layers().filling())
             // An agent at work in the conversation being read.
             || working
             // Or in one that is not, while the list that says so is open.
@@ -3062,9 +3072,16 @@ where
     // Putting the caret out on *every* frame fixed that and cost more than
     // it was worth: a hide and a show per frame is a caret that visibly
     // blinks, and frames arrive as fast as a language server reports
-    // progress. So the careful order is used where it is needed, which is
-    // the one page that draws pictures.
-    let pictures = app.shows_pictures();
+    // progress. So the careful order is used on the frames that need it,
+    // which are the ones that actually hand the terminal a picture -- see
+    // `App::writes_a_picture`.
+    //
+    // Measured from the terminal rather than from the last frame's area,
+    // because the first frame has no last one and a resize is exactly when
+    // the marks move.
+    let size = terminal.size()?;
+    let screen = Rect::new(0, 0, size.width, size.height);
+    let pictures = app.writes_a_picture(obelus_ui::editor_room(screen, &*app));
     if pictures {
         terminal.hide_cursor()?;
     }

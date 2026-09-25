@@ -1101,6 +1101,25 @@ fn a_tick_changes_nothing_once_a_file_is_open() {
     assert_eq!(support::render(&mut app, 40, 8), before);
 }
 
+/// A full-screen page replaces the welcome screen rather than sitting over
+/// it, so its own stillness must stop the welcome screen's clock.
+#[test]
+fn settings_stop_the_welcome_animation() {
+    let mut app = App::new(Vec::new());
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert!(
+        app.is_waking(),
+        "the welcome screen did not start its clock"
+    );
+
+    app.open_settings();
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert!(
+        !app.is_waking(),
+        "the welcome animation is still waking the settings page"
+    );
+}
+
 /// Paging takes the cursor along, keeping its place *on the screen*: the row
 /// of the window it was on is the row it is on after the page. A cursor left
 /// behind means the next arrow key throws the page away; a cursor dropped at

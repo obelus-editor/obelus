@@ -402,10 +402,28 @@ pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
         Some(Layer::Picker) => return on_the_status_row(status::prompt_caret(app.picker()?)),
         Some(Layer::Settings) => {
             let settings = app.settings()?;
-            return on_the_status_row(status::filter_caret(
-                &settings.query(),
-                settings.query_caret(),
-            ));
+            let said = settings.query();
+            // A filter nobody has typed into has no caret, the same answer
+            // the counts give and for the same reason: what says where the
+            // keys are going is the row the reader is on, and a caret sat
+            // in an empty box is a second mark for one fact. The row keeps
+            // its prompt either way, so there is still somewhere visibly
+            // waiting to be typed into.
+            //
+            // Not the rule a picker follows, because a picker is opened in
+            // order to type -- this page is opened in order to walk it,
+            // and the filter is the thing a reader reaches for second.
+            //
+            // It is also what keeps the agents page still. A terminal is
+            // handed a picture by writing it at the caret, so a frame that
+            // moves the marks has to put the caret out and bring it back
+            // -- around a write the terminal takes milliseconds to chew
+            // through, which is a caret blinking once per scrolled row.
+            // No caret, nothing to put out.
+            if said.is_empty() {
+                return None;
+            }
+            return on_the_status_row(status::filter_caret(&said, settings.query_caret()));
         }
         // A note being written has one in the row it is being written in,
         // which is the row it will be read in. The same answer the

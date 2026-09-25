@@ -11,6 +11,40 @@ use obelus_ui::image::{Images, Palette};
 
 use super::*;
 
+/// Where the agents page's marks will be drawn, as much of it as two
+/// frames have to be compared on.
+///
+/// A mark sits in two cells, and a terminal is handed a picture only when
+/// one of those cells changed. Which cells they are is a function of
+/// exactly these: the room the page has, which card the window starts at,
+/// how tall each card above is, and the colours the marks were encoded
+/// for. Equal here means the same cells, which means nothing is written.
+#[derive(Debug, Default, PartialEq)]
+pub(super) struct PictureLayout {
+    /// How much room the page had.
+    room: (u16, u16),
+    /// Which card the window starts at.
+    first: usize,
+    /// Which card has the focus.
+    ///
+    /// A mark is drawn onto the background it will sit on, because a
+    /// terminal is handed pixels rather than a colour scheme -- so the
+    /// focused card's mark is a different picture from the same mark on
+    /// any other card, and moving the focus rewrites two of them.
+    focus: usize,
+    /// Every listed agent: its id, how many rows its card takes, and
+    /// whether a mark of its own has arrived.
+    ///
+    /// The last because the marks arrive one at a time, each its own
+    /// event -- and the frame a mark arrives on writes a picture into
+    /// cells that had a glyph in them, with nothing else on the page
+    /// having moved.
+    cards: Vec<(String, u16, bool)>,
+    /// What the marks were encoded for. `None` before there are settings
+    /// to ask, which is not a page anything was drawn on.
+    palette: Option<Palette>,
+}
+
 /// What Obelus knows about the agents it could run.
 ///
 /// One field on `App` rather than nine. They are one subject -- the list,
@@ -364,6 +398,102 @@ impl App {
             && self.settings.as_ref().is_some_and(Settings::on_agents)
     }
 
+    /// Whether this frame has to be written with the caret put out.
+    ///
+    /// Only a frame that writes a picture does, and a picture is written
+    /// only where a cell changed -- so the question is whether the marks
+    /// will land anywhere other than where they last landed, and
+    /// [`Self::picture_moved`] answers it by comparing.
+    ///
+    /// Asked from what is true rather than from the event that woke the
+    /// frame. Deciding it by event went wrong the obvious way: walking the
+    /// cards scrolls the window, so the arrows move every mark on the page,
+    /// and an arrow key left off the list of events that matter wrote its
+    /// sixels under a caret the reader could see. The other direction cost
+    /// as much -- a frame that hides and shows the caret is a frame the
+    /// caret blinks in, and install progress arrives several times a
+    /// second without moving a mark at all.
+    pub(super) fn writes_a_picture(&mut self, editor: Rect) -> bool {
+        if !self.shows_pictures() || !self.agents.images.requires_hidden_cursor() {
+            // Nothing of this page is on screen to compare against, so
+            // whatever comes back to it is a page that has to be written.
+            self.picture_layout = None;
+            return false;
+        }
+        self.picture_moved(editor)
+    }
+
+    /// Whether the marks would land anywhere other than where they did.
+    ///
+    /// The window is settled first, because which card is at the top is
+    /// exactly what the arrows move: read before the page has been
+    /// settled, this compares the frame's own focus against the previous
+    /// frame's window and answers about a page that never existed.
+    fn picture_moved(&mut self, editor: Rect) -> bool {
+        self.settle_agents(editor);
+        let now = self.picture_layout(editor);
+        let moved = self.picture_layout.as_ref() != Some(&now);
+        self.picture_layout = Some(now);
+        moved
+    }
+
+    /// The same question, for a test.
+    ///
+    /// Without the two conditions in front of it, which are about the
+    /// terminal: whether one can draw a picture at all is found by writing
+    /// an escape sequence and reading the answer, and a test has nobody to
+    /// ask. What a test is about here is the other half -- what counts as
+    /// the marks having moved.
+    #[must_use]
+    pub fn picture_moved_for_test(&mut self, editor: Rect) -> bool {
+        self.picture_moved(editor)
+    }
+
+    /// Where every mark on the agents page will be drawn, near enough to
+    /// compare two frames of it.
+    ///
+    /// Not the coordinates themselves: a mark's position is a function of
+    /// these, and every one of them is a value the page already keeps.
+    /// The heights are in it because a card is as tall as its description
+    /// needs and an install that failed adds a row -- so a card above the
+    /// window's first can change height and push every mark below it down
+    /// without anything else here moving.
+    fn picture_layout(&self, editor: Rect) -> PictureLayout {
+        let listed = self.listed_agents();
+        let Some(settings) = self.settings.as_ref() else {
+            return PictureLayout::default();
+        };
+        let rows = settings.agents(&listed);
+        let width = obelus_component::settings::Settings::card_width(editor.width);
+        let focus = settings.focus().min(rows.len().saturating_sub(1));
+        PictureLayout {
+            room: (editor.width, editor.height),
+            first: settings.top().min(focus),
+            focus,
+            cards: rows
+                .iter()
+                .map(|agent| {
+                    let id = agent.agent.id.clone();
+                    let marked = self.agents.icons.contains_key(&id);
+                    (id, settings.card_rows(agent, width), marked)
+                })
+                .collect(),
+            palette: Some(self.icon_palette()),
+        }
+    }
+
+    /// The colours the marks are inked and backed in.
+    ///
+    /// One answer, because a mark encoded for one palette and compared
+    /// against another is a picture that never looks like it moved.
+    fn icon_palette(&self) -> Palette {
+        Palette {
+            ink: self.theme().gutter_current,
+            paper: self.theme().background,
+            selected: self.theme().selected_row_background,
+        }
+    }
+
     /// Encodes the marks the agents page is about to draw.
     ///
     /// Per frame, and free after the first: encoding is cached, and what
@@ -374,11 +504,7 @@ impl App {
         if !self.shows_pictures() {
             return;
         }
-        let palette = Palette {
-            ink: self.theme().gutter_current,
-            paper: self.theme().background,
-            selected: self.theme().selected_row_background,
-        };
+        let palette = self.icon_palette();
         let listed = self.listed_agents();
         let wanted: Vec<(String, bool)> = {
             let Some(settings) = self.settings.as_ref() else {

@@ -690,6 +690,20 @@ impl Settings {
             .collect()
     }
 
+    /// How wide a card's own words are, in the room the page has.
+    ///
+    /// One answer, because three asked it: the page that lays the cards
+    /// out, the window that decides which of them are on screen, and the
+    /// frame that works out where a mark will land. Three copies of a
+    /// margin is three chances for a card to be measured at one width and
+    /// drawn at another.
+    #[must_use]
+    pub const fn card_width(room: u16) -> u16 {
+        // The indent either side, and the room the state in the corner
+        // keeps for itself.
+        room.saturating_sub(7)
+    }
+
     /// How many rows a card takes.
     ///
     /// Its name, its description wrapped to the room there is, who wrote
@@ -725,7 +739,7 @@ impl Settings {
     /// is no number to divide by.
     #[must_use]
     pub fn cards_that_fit(&self, agents: &[Agent], room: (u16, u16)) -> usize {
-        let width = room.0.saturating_sub(7);
+        let width = Self::card_width(room.0);
         let height = room.1.saturating_sub(2);
         let listed = self.agents(agents);
         let mut taken = 0;
@@ -1081,7 +1095,7 @@ impl Settings {
     /// screen.
     pub fn settle_cards(&mut self, agents: &[Agent], room: (u16, u16)) {
         let listed = self.agents(agents);
-        let width = room.0.saturating_sub(7);
+        let width = Self::card_width(room.0);
         let heights: Vec<u16> = listed
             .iter()
             .map(|agent| self.card_rows(agent, width) + 1)

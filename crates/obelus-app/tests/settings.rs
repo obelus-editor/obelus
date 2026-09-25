@@ -2541,3 +2541,271 @@ fn the_projects_page_has_one_tab() {
         "the project's page changed which agent Obelus talks to"
     );
 }
+
+/// Walking the cards rewrites marks, and a frame that changed nothing
+/// does not.
+///
+/// Two different reasons for the first, and both count: a scroll puts
+/// every mark on a new row, and a step that scrolls nothing still rewrites
+/// two of them, because a mark is drawn onto the background it will sit on
+/// and the focused card's background is not the others'.
+///
+/// This is what decides whether the frame is written with the caret put
+/// out. Getting it wrong is visible either way: a frame that hides and
+/// shows the caret without needing to is a caret that blinks, and a frame
+/// that writes a sixel without hiding it draws the picture under a caret
+/// the reader can see.
+#[test]
+fn walking_the_cards_rewrites_marks_and_a_still_frame_does_not() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("marks-move");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+    support::press(&mut app, KeyCode::BackTab);
+    assert!(app.settings().expect("the settings").on_agents());
+
+    let agents: Vec<obelus_agent::Agent> = (0..12)
+        .map(|index| obelus_agent::Agent {
+            id: format!("agent-{index}"),
+            name: format!("Agent {index}"),
+            version: "1.0.0".to_string(),
+            description: "One of several".to_string(),
+            authors: vec!["Somebody".to_string()],
+            license: "MIT".to_string(),
+            website: None,
+            icon: None,
+            distribution: obelus_agent::Distribution::Node {
+                package: format!("agent-{index}@1.0.0"),
+                arguments: Vec::new(),
+            },
+        })
+        .collect();
+    app.handle(Event::Agent(obelus_agent::Event::Registry {
+        agents,
+        failure: None,
+    }));
+
+    let screen = ratatui::layout::Rect::new(0, 0, 76, 16);
+    support::render(&mut app, screen.width, screen.height);
+    let editor = obelus_ui::editor_room(screen, &app);
+
+    // The page arriving is a page to write, whatever it holds.
+    assert!(
+        app.picture_moved_for_test(editor),
+        "the first page of cards was not a page to write"
+    );
+    // And asked again with nothing touched, it says so -- which is the
+    // half that keeps the caret from blinking on every frame that is not
+    // about the cards.
+    assert!(
+        !app.picture_moved_for_test(editor),
+        "a frame that changed nothing still wanted the caret put out"
+    );
+
+    // A step inside the window. Nothing scrolls, and two marks are still
+    // rewritten: the card the focus left and the card it reached, each on
+    // the background it now sits on.
+    support::press(&mut app, KeyCode::Down);
+    let before = app.settings().expect("the settings").top();
+    assert!(
+        app.picture_moved_for_test(editor),
+        "the focus stepped onto a card without that card's mark being redrawn"
+    );
+    assert_eq!(
+        app.settings().expect("the settings").top(),
+        before,
+        "this step was meant to be one the window does not follow"
+    );
+    // And asked again with the focus where it was left, it is still.
+    assert!(
+        !app.picture_moved_for_test(editor),
+        "a frame after the step still wanted the caret put out"
+    );
+
+    // And the end of the list, which the window has to follow: every mark
+    // on the page lands on a new row.
+    support::press(&mut app, KeyCode::End);
+    assert!(
+        app.picture_moved_for_test(editor),
+        "the window scrolled to the last card without moving a mark"
+    );
+    assert_ne!(
+        app.settings().expect("the settings").top(),
+        before,
+        "End was meant to scroll the window"
+    );
+}
+
+/// An install reports progress several times a second and moves no mark,
+/// so none of those frames is written with the caret put out.
+#[test]
+fn install_progress_moves_no_mark() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("marks-installing");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+    support::press(&mut app, KeyCode::BackTab);
+
+    app.handle(Event::Agent(obelus_agent::Event::Registry {
+        agents: vec![obelus_agent::Agent {
+            id: "agent-0".to_string(),
+            name: "Agent 0".to_string(),
+            version: "1.0.0".to_string(),
+            description: "The only one".to_string(),
+            authors: vec!["Somebody".to_string()],
+            license: "MIT".to_string(),
+            website: None,
+            icon: None,
+            distribution: obelus_agent::Distribution::Node {
+                package: "agent-0@1.0.0".to_string(),
+                arguments: Vec::new(),
+            },
+        }],
+        failure: None,
+    }));
+
+    let screen = ratatui::layout::Rect::new(0, 0, 76, 16);
+    support::render(&mut app, screen.width, screen.height);
+    let editor = obelus_ui::editor_room(screen, &app);
+    assert!(app.picture_moved_for_test(editor), "no first page");
+
+    for done in 1..4 {
+        app.handle(Event::Agent(obelus_agent::Event::Installing {
+            id: "agent-0".to_string(),
+            progress: obelus_agent::install::Progress {
+                done,
+                total: Some(4),
+                elapsed: std::time::Duration::from_secs(done),
+            },
+        }));
+        assert!(
+            !app.picture_moved_for_test(editor),
+            "install progress asked for the caret to be put out"
+        );
+    }
+}
+
+/// The marks arrive one at a time, an event each, and the frame one lands
+/// on writes a picture into cells that had a glyph in them.
+///
+/// Nothing else about the page has moved on that frame -- same cards, same
+/// window, same room -- so a layout that watched only where the cards were
+/// would let that picture be written under a visible caret.
+#[test]
+fn a_mark_arriving_is_a_picture_to_write() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("marks-arriving");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+    support::press(&mut app, KeyCode::BackTab);
+
+    let agents: Vec<obelus_agent::Agent> = (0..3)
+        .map(|index| obelus_agent::Agent {
+            id: format!("agent-{index}"),
+            name: format!("Agent {index}"),
+            version: "1.0.0".to_string(),
+            description: "One of several".to_string(),
+            authors: vec!["Somebody".to_string()],
+            license: "MIT".to_string(),
+            website: None,
+            icon: None,
+            distribution: obelus_agent::Distribution::Node {
+                package: format!("agent-{index}@1.0.0"),
+                arguments: Vec::new(),
+            },
+        })
+        .collect();
+    app.handle(Event::Agent(obelus_agent::Event::Registry {
+        agents,
+        failure: None,
+    }));
+
+    let screen = ratatui::layout::Rect::new(0, 0, 76, 16);
+    support::render(&mut app, screen.width, screen.height);
+    let editor = obelus_ui::editor_room(screen, &app);
+    assert!(app.picture_moved_for_test(editor), "no first page");
+    assert!(
+        !app.picture_moved_for_test(editor),
+        "a page that changed nothing still wanted the caret put out"
+    );
+
+    // Each mark in turn, and every one of them is a frame to write --
+    // including the second and the third, which is where a page that
+    // watched only its cards stopped noticing.
+    for index in 0..3 {
+        app.handle(Event::Agent(obelus_agent::Event::Icon {
+            id: format!("agent-{index}"),
+            svg: "<svg viewBox=\"0 0 16 16\"><rect width=\"16\" height=\"16\"/></svg>".to_string(),
+        }));
+        assert!(
+            app.picture_moved_for_test(editor),
+            "the mark for agent-{index} arrived without a picture to write"
+        );
+    }
+}
+
+/// A filter nobody has typed into has no caret, and one that has been
+/// typed into does.
+///
+/// Two marks for one fact is the reason -- the row the reader is on says
+/// where the keys are going -- and the agents page is what makes it matter
+/// beyond the look of it: a terminal is handed a picture by writing it at
+/// the caret, so a caret sat in an empty box has to be put out and brought
+/// back every time a scrolled row moves the marks.
+#[test]
+fn an_empty_filter_has_no_caret() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("empty-filter");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+
+    let screen = ratatui::layout::Rect::new(0, 0, 76, 16);
+    support::render(&mut app, screen.width, screen.height);
+    assert!(
+        obelus_ui::cursor_position(screen, &app).is_none(),
+        "the settings opened with a caret in a filter nobody had typed into"
+    );
+
+    // And the agents tab, which is the one that draws pictures.
+    support::press(&mut app, KeyCode::BackTab);
+    support::render(&mut app, screen.width, screen.height);
+    assert!(
+        app.settings().expect("the settings").on_agents(),
+        "not on the agents tab"
+    );
+    assert!(
+        obelus_ui::cursor_position(screen, &app).is_none(),
+        "the agents page put a caret in an empty filter"
+    );
+
+    // Typing is what asks for one, and it lands after what was typed.
+    support::type_text(&mut app, "ag");
+    support::render(&mut app, screen.width, screen.height);
+    let caret = obelus_ui::cursor_position(screen, &app).expect("no caret to type at");
+    assert_eq!(
+        caret.y,
+        screen.height - 1,
+        "the filter's caret left the status row"
+    );
+
+    // And taking it back out takes the caret with it.
+    support::press(&mut app, KeyCode::Backspace);
+    support::press(&mut app, KeyCode::Backspace);
+    assert!(
+        app.settings().expect("the settings").query().is_empty(),
+        "the filter still has something in it"
+    );
+    support::render(&mut app, screen.width, screen.height);
+    assert!(
+        obelus_ui::cursor_position(screen, &app).is_none(),
+        "the caret stayed behind in an emptied filter"
+    );
+}

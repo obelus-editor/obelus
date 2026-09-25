@@ -147,6 +147,23 @@ impl Images {
         self.picker.is_some()
     }
 
+    /// Whether a frame writing these has to put the caret out first.
+    ///
+    /// Sixel and iTerm2 draw at the cursor as their escape sequence
+    /// arrives, so a caret the reader can see is a caret they watch jump
+    /// into the picture and back. Kitty's virtual placements save and
+    /// restore the cursor themselves and carry the pixels once, so hiding
+    /// it around them buys nothing and costs a blink.
+    #[must_use]
+    pub fn requires_hidden_cursor(&self) -> bool {
+        self.picker.as_ref().is_some_and(|picker| {
+            matches!(
+                picker.protocol_type(),
+                ProtocolType::Sixel | ProtocolType::Iterm2
+            )
+        })
+    }
+
     /// Encodes one mark, unless it already has been.
     ///
     /// The palette is the view's, and a palette Obelus has not drawn with
@@ -275,7 +292,7 @@ fn rgb(colour: Color) -> (u8, u8, u8) {
 
 #[cfg(test)]
 mod tests {
-    use ratatui::style::Color;
+    use ratatui::style::{Color, Style};
     use ratatui_image::picker::{Picker, ProtocolType};
 
     use super::{Images, Palette, SLOT, raster};
@@ -333,6 +350,20 @@ mod tests {
         assert!(raster(MARK, (0, 16), Color::White, Color::Black).is_none());
     }
 
+    #[test]
+    fn kitty_does_not_need_the_cursor_hidden() {
+        assert!(
+            !terminal(ProtocolType::Kitty).requires_hidden_cursor(),
+            "kitty restores the cursor around virtual image placement"
+        );
+        for protocol in [ProtocolType::Sixel, ProtocolType::Iterm2] {
+            assert!(
+                terminal(protocol).requires_hidden_cursor(),
+                "{protocol:?} draws at the cursor"
+            );
+        }
+    }
+
     /// The whole path, per protocol: an SVG becomes pixels, the pixels
     /// become that terminal's escape sequence, and the sequence reaches the
     /// cell the card put it in.
@@ -378,14 +409,52 @@ mod tests {
     /// card's and an ordinary card's are two different pictures.
     #[test]
     fn the_focused_card_gets_its_own_pixels() {
-        let mut images = terminal(ProtocolType::Kitty);
+        // Sixel, because its pixels are the cell's own symbol: two
+        // drawings that differ are two symbols that differ, and counting
+        // the cache's keys would say two whatever was encoded into them.
+        let mut images = terminal(ProtocolType::Sixel);
         images.prepare("claude-acp", MARK, false, PALETTE);
         images.prepare("claude-acp", MARK, true, PALETTE);
         assert_eq!(images.encoded.len(), 2);
         let plain = images.encoded[&("claude-acp".to_string(), false)].size();
         assert_eq!(plain, SLOT);
-        let mut cells = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, 8, 2));
+
+        let area = ratatui::layout::Rect::new(0, 0, 8, 2);
+        let mut ordinary = ratatui::buffer::Buffer::empty(area);
+        assert!(images.draw(&mut ordinary, 0, 0, "claude-acp", false));
+        let mut focused = ratatui::buffer::Buffer::empty(area);
+        assert!(images.draw(&mut focused, 0, 0, "claude-acp", true));
+        assert_ne!(
+            ordinary[(0, 0)].symbol(),
+            focused[(0, 0)].symbol(),
+            "the focused card was handed an ordinary card's pixels"
+        );
+    }
+
+    /// A mark leaves the background of the cells it lands in alone.
+    ///
+    /// The card has already filled its rows with its own colour, and the
+    /// mark was drawn onto that same colour -- so writing a background
+    /// here would put two cells of the page's colour inside the focused
+    /// card's band, a hole in the one mark that says where the reader is.
+    #[test]
+    fn a_mark_leaves_its_cells_background_alone() {
+        let mut images = terminal(ProtocolType::Kitty);
+        images.prepare("claude-acp", MARK, true, PALETTE);
+        let area = ratatui::layout::Rect::new(0, 0, 8, 2);
+        let mut cells = ratatui::buffer::Buffer::empty(area);
+        // What the card fills its row with before the mark goes in.
+        for column in 0..2 {
+            cells[(column, 0)].set_style(Style::new().bg(PALETTE.selected));
+        }
         assert!(images.draw(&mut cells, 0, 0, "claude-acp", true));
+        for column in 0..2 {
+            assert_eq!(
+                cells[(column, 0)].style().bg,
+                Some(PALETTE.selected),
+                "the mark repainted column {column} of the focused card"
+            );
+        }
     }
 
     /// Pixels cannot be recoloured after the fact, so a theme change is a

@@ -1012,7 +1012,7 @@ impl SettingsView<'_> {
         // focus leaves the window -- so a step that is not at an edge
         // scrolls nothing. Heights here are for laying the cards out, not
         // for deciding where the window is.
-        let width = area.width.saturating_sub(7);
+        let width = Settings::card_width(area.width);
         let heights: Vec<u16> = listed
             .iter()
             .map(|agent| self.settings.card_rows(agent, width) + 1)
