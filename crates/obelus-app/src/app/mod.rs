@@ -410,6 +410,13 @@ pub struct App {
     /// binary's own, and everything under it takes it as a string like any
     /// other fact about how Obelus was started.
     built: &'static str,
+    /// Whether what is typed goes over what is under the cursor.
+    ///
+    /// Not a setting and not a preference: it is a mode, which is to say
+    /// something the reader turns on for the next minute and off again, and
+    /// what says they are in it is the shape of the caret and a word on the
+    /// status row.
+    replacing: bool,
     /// What is drawing Obelus, where it has anything to be told.
     ///
     /// `None` in a terminal, which is told nothing: see [`App::drawn_by`].
@@ -738,6 +745,7 @@ impl App {
             waking: false,
             dragging: None,
             built: "",
+            replacing: false,
             drawing: None,
             prompt: None,
             changes: None,
@@ -831,6 +839,33 @@ impl App {
             return;
         }
         self.should_quit = true;
+    }
+
+    /// Whether what is typed goes over what is under the cursor.
+    #[must_use]
+    pub const fn replacing(&self) -> bool {
+        self.replacing
+    }
+
+    /// Turns typing over on, or off again.
+    pub fn toggle_replacing(&mut self) {
+        self.replacing = !self.replacing;
+    }
+
+    /// What shape the caret is, which is what it says about the next thing
+    /// typed.
+    ///
+    /// A bar sits between two characters and says the next one goes there;
+    /// a block sits on one and says the next one takes its place. So the
+    /// shape follows the mode -- and only in a document, because a box the
+    /// reader is typing into does not have the mode: a query or a message
+    /// is one short line, and typing over it means nothing.
+    #[must_use]
+    pub fn caret(&self) -> Caret {
+        match self.replacing && self.layers().nearest().is_none() {
+            true => Caret::Block,
+            false => Caret::Bar,
+        }
     }
 
     /// The bindings currently in force.
@@ -1882,6 +1917,12 @@ impl App {
         self.screen_area = area;
         self.prepare(obelus_ui::editor_room(area, self));
         obelus_ui::draw(cells, area, self);
+        // With the frame rather than with the key that changed it: what
+        // the caret is doing depends on where it ended up, which is not
+        // known until the frame has been laid out.
+        if let Some(drawing) = self.drawing.as_ref() {
+            drawing.caret_is(self.caret());
+        }
         obelus_ui::cursor_position(area, self)
     }
 
@@ -3140,6 +3181,20 @@ pub(crate) fn relative(path: &Path, root: &Path) -> String {
         .to_string()
 }
 
+/// What shape the caret is drawn in.
+///
+/// Two, because there are two things the next character can do: go between
+/// what is there, or go over it. A terminal has four of these and the
+/// reader has chosen one of them for their terminal; a window draws its own
+/// and so has to be told which.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Caret {
+    /// Between two characters: what is typed goes in.
+    Bar,
+    /// On one: what is typed takes its place.
+    Block,
+}
+
 /// What the thing drawing Obelus can be told.
 ///
 /// One method, and the shape is deliberate: this is not a way for the
@@ -3159,6 +3214,14 @@ pub trait Drawing: std::fmt::Debug + Send + Sync {
     /// so what it must not do is wait: putting it down a channel is what
     /// the window does.
     fn text_size(&self, points: usize);
+
+    /// The caret is this shape.
+    ///
+    /// Said on every frame rather than when it changes, because what it
+    /// depends on -- the mode, and whether the caret is in a box -- is
+    /// worked out while the frame is laid out and not kept anywhere else.
+    /// The front end compares it with what it is already drawing.
+    fn caret_is(&self, caret: Caret);
 }
 
 /// Lays out, scrolls and draws one frame.
@@ -3390,6 +3453,9 @@ impl Screen for App {
     }
     fn blame(&self) -> Option<&[Option<obelus_git::Blamed>]> {
         App::blame(self)
+    }
+    fn replacing(&self) -> bool {
+        App::replacing(self)
     }
     fn built(&self) -> &str {
         self.built

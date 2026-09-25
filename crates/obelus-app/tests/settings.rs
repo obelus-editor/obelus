@@ -2832,6 +2832,11 @@ impl obelus_app::app::Drawing for Told {
     fn text_size(&self, points: usize) {
         self.0.lock().expect("what was said").push(points);
     }
+
+    /// Nothing: what this is a test of is the size, and the shape of the
+    /// caret is said on every frame -- which is a test of its own, in the
+    /// crate that draws one.
+    fn caret_is(&self, _: obelus_app::app::Caret) {}
 }
 
 impl Told {

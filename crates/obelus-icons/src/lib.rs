@@ -345,6 +345,9 @@ pub fn for_command(command: obelus_command::Command) -> char {
         // Two slashes, which is what a comment starts with in most of the
         // languages this table knows.
         Command::CommentToggle => '\u{f0182}',
+        // A caret on a line, which is what the mode is about: where the
+        // next character goes.
+        Command::ReplaceToggle => '\u{f0379}',
         Command::Undo => '\u{f054c}',
         Command::Redo => '\u{f044e}',
         Command::SelectionCopy => '\u{f018f}',

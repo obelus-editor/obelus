@@ -137,6 +137,8 @@ pub trait Screen {
     /// Who last changed each line of the file being read, if the answer has
     /// arrived and the reader wants to see it.
     fn blame(&self) -> Option<&[Option<obelus_git::Blamed>]>;
+    /// Whether what is typed goes over what is under the cursor.
+    fn replacing(&self) -> bool;
     /// Which build this is, where whatever started Obelus has said.
     ///
     /// Empty where nothing has, which is every test: the welcome screen

@@ -15,13 +15,23 @@ use std::{collections::HashMap, sync::Arc};
 use anyhow::{Context, Result};
 use bytemuck::{Pod, Zeroable};
 use cosmic_text::{CacheKey, SwashContent};
+use obelus_app::app::Caret;
 use ratatui::style::{Color, Modifier};
 use winit::window::Window;
 
 use crate::{
     font::Fonts,
-    grid::{Look, Page},
+    grid::{Look, Page, Spelling},
 };
+
+/// How wide the bar caret is, as a part of a cell.
+///
+/// Thin enough to stand between two characters rather than on one, which is
+/// the whole of what it says.
+const BAR: f32 = 0.15;
+
+/// And how thick the line under what is being spelled is.
+const UNDERLINE: f32 = 0.06;
 
 /// How big the glyph texture starts, in pixels each way.
 ///
@@ -333,6 +343,18 @@ impl Painter {
         // validation error, which is to say a panic while the reader drags
         // a corner.
         let most = self.device.limits().max_texture_dimension_2d;
+        if width > most || height > most {
+            // Said, because what it does instead of failing is draw a
+            // surface smaller than the window and let the compositor
+            // stretch it: the picture goes soft, and a reader who cannot
+            // see why would have nothing to go on.
+            tracing::warn!(
+                width,
+                height,
+                most,
+                "the window is larger than this device can draw in one texture"
+            );
+        }
         self.configured.width = width.clamp(1, most);
         self.configured.height = height.clamp(1, most);
         self.surface.configure(&self.device, &self.configured);
@@ -344,13 +366,22 @@ impl Painter {
         self.atlas.empty();
     }
 
-    /// Draws a page.
-    pub(crate) fn paint(&mut self, page: &Page, fonts: &mut Fonts) -> Result<()> {
+    /// Draws a page, and whatever is being spelled over it.
+    pub(crate) fn paint(
+        &mut self,
+        page: &Page,
+        fonts: &mut Fonts,
+        spelling: Option<&Spelling>,
+    ) -> Result<()> {
         let cell = fonts.cell();
         self.quads.clear();
         self.backgrounds(page, cell.width, cell.height);
         self.letters(page, fonts);
-        self.caret(page, fonts);
+        // Over the cells and under the caret: the word being spelled is
+        // going in at the caret, so the caret belongs at the place in it
+        // the input method says.
+        self.spelling(page, fonts, spelling);
+        self.caret(page, fonts, spelling);
 
         #[expect(
             clippy::cast_precision_loss,
@@ -542,29 +573,111 @@ impl Painter {
         }
     }
 
-    /// The caret, which is the cell it is in with its colours the other way
-    /// round.
+    /// The caret, in the shape that says what the next character will do.
     ///
-    /// The same thing a terminal does with it, and for the same reason: a
-    /// block that hid the character under it would be a caret a reader
-    /// cannot read past.
-    fn caret(&mut self, page: &Page, fonts: &mut Fonts) {
+    /// A bar stands between two characters and says the next one goes
+    /// there; a block stands on one and says the next one takes its place.
+    /// Which is the mode, and the application is what knows it.
+    ///
+    /// The block is the cell with its colours the other way round, which is
+    /// what a terminal does and for the same reason: a block that hid the
+    /// character under it would be a caret a reader cannot read past.
+    fn caret(&mut self, page: &Page, fonts: &mut Fonts, spelling: Option<&Spelling>) {
         let Some(caret) = page.caret() else {
+            return;
+        };
+        let cell = fonts.cell();
+        // Inside the word being spelled, where the input method says it is:
+        // a caret left at the start of it would be a caret in the wrong
+        // half of what the reader is typing.
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a caret is a few columns into what is being spelled"
+        )]
+        let along = spelling.map_or(0, |spelling| spelling.columns() as u16);
+        let x = caret.x.saturating_add(along);
+        let look = page.look(caret.x, caret.y);
+        let ink = rgba(look.foreground, Ink::Foreground);
+        let left = f32::from(x) * cell.width;
+        let top = f32::from(caret.y) * cell.height;
+        // Inside a word being spelled the caret is always a bar: what is
+        // under it there is the spelling itself, which is being written
+        // rather than typed over, and a block would hide the character the
+        // reader is in the middle of choosing.
+        let shape = match spelling.is_some() {
+            true => Caret::Bar,
+            false => page.shape(),
+        };
+        match shape {
+            // Narrow, and never thinner than a pixel: a caret that rounds
+            // to nothing is a caret nobody can find.
+            Caret::Bar => self.block(
+                left,
+                top,
+                (cell.width * BAR).round().max(1.0),
+                cell.height,
+                ink,
+            ),
+            Caret::Block => {
+                self.block(left, top, cell.width, cell.height, ink);
+                let behind = rgba(look.background, Ink::Background);
+                // What is under the caret, drawn again in the colour behind
+                // it, so that a block does not hide the character it is on.
+                if !look.text.trim().is_empty() {
+                    self.glyphs(caret.x, caret.y, look, behind, fonts);
+                }
+            }
+        }
+    }
+
+    /// What an input method is spelling, drawn where the word will go.
+    ///
+    /// Over the cells to the right of the caret rather than pushing them
+    /// along: the file has not changed, and a window that reflowed the line
+    /// for a word that may never be committed would be showing the reader a
+    /// file that does not exist. Underlined, which is what says these
+    /// characters are not in the file yet.
+    ///
+    /// In the colours of the place it is being typed into, because that is
+    /// the only theme the window has: the cells say what the page's ink and
+    /// paper are here.
+    fn spelling(&mut self, page: &Page, fonts: &mut Fonts, spelling: Option<&Spelling>) {
+        let (Some(spelling), Some(caret)) = (spelling, page.caret()) else {
             return;
         };
         let cell = fonts.cell();
         let look = page.look(caret.x, caret.y);
         let ink = rgba(look.foreground, Ink::Foreground);
-        self.block(
-            f32::from(caret.x) * cell.width,
-            f32::from(caret.y) * cell.height,
-            cell.width,
-            cell.height,
-            ink,
-        );
-        let behind = rgba(look.background, Ink::Background);
-        if !look.text.trim().is_empty() {
-            self.glyphs(caret.x, caret.y, look, behind, fonts);
+        let paper = rgba(look.background, Ink::Background);
+        let mut column = caret.x;
+        for character in spelling.text.chars() {
+            if column >= page.columns() {
+                // Off the edge. Clipped rather than wrapped: the row below
+                // belongs to the next line of the file.
+                break;
+            }
+            let written = character.to_string();
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "the width of one character, which is one or two"
+            )]
+            let wide = obelus_text::text_width(&written).max(1) as u16;
+            let left = f32::from(column) * cell.width;
+            let top = f32::from(caret.y) * cell.height;
+            let width = f32::from(wide) * cell.width;
+            self.block(left, top, width, cell.height, paper);
+            let over = Look {
+                text: &written,
+                foreground: look.foreground,
+                background: look.background,
+                modifier: look.modifier,
+            };
+            self.glyphs(column, caret.y, over, ink, fonts);
+            // The line under it, which is what every input method's inline
+            // spelling wears and what tells it apart from the file.
+            let thick = (cell.height * UNDERLINE).round().max(1.0);
+            self.block(left, top + cell.height - thick, width, thick, ink);
+            column = column.saturating_add(wide);
         }
     }
 }

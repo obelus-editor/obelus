@@ -235,11 +235,27 @@ impl App {
                 )
             }
             Typing::Character(_) | Typing::Newline | Typing::Tab => {
+                // Typing over what is there rather than before it, which is
+                // the whole of the replace mode: the span is the character
+                // under the cursor instead of nothing at all.
+                //
+                // At the end of a line there is no character under the
+                // cursor, and `clamp_column` says so by handing back the
+                // column it was given -- which makes the span empty, which
+                // is an insertion. Every editor does that, and the reason
+                // is that the alternative is typing over the newline and
+                // joining the line below.
+                let end_column = match typing {
+                    Typing::Character(_) if self.replacing => {
+                        text.clamp_column(cursor.line, cursor.column.saturating_add(1))
+                    }
+                    _ => cursor.column,
+                };
                 let at = obelus_text::coordinates::Span {
                     line: cursor.line,
                     column: cursor.column,
                     end_line: cursor.line,
-                    end_column: cursor.column,
+                    end_column,
                 };
                 let doing = match typing {
                     Typing::Character(_) => obelus_buffer::undo::Doing::Typing,

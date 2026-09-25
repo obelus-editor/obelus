@@ -113,6 +113,9 @@ pub enum Command {
     /// Comment the line, or the selected lines, out -- or take the comment
     /// off where they all have one.
     CommentToggle,
+    /// Type over what is under the cursor from now on, or go back to
+    /// typing before it.
+    ReplaceToggle,
     /// Put back what was last copied or cut.
     Paste,
     /// Put back what the last change took away.
@@ -630,6 +633,11 @@ pub const ALL: &[CommandSpec] = &[
         title: "Comment this line, or the selected ones, out",
     },
     CommandSpec {
+        command: Command::ReplaceToggle,
+        name: "toggle-replace",
+        title: "Type over what is under the cursor, instead of before it",
+    },
+    CommandSpec {
         command: Command::Paste,
         name: "paste",
         title: "Put back what was last copied or cut",
@@ -799,6 +807,7 @@ impl Command {
             | Self::LineUp
             | Self::LineDown
             | Self::CommentToggle
+            | Self::ReplaceToggle
             | Self::Undo
             | Self::Redo
             | Self::SelectionClear
@@ -875,6 +884,7 @@ impl Command {
             | Self::LineUp
             | Self::LineDown
             | Self::CommentToggle
+            | Self::ReplaceToggle
             | Self::Paste
             | Self::Undo
             | Self::Redo => Group::Edit,
@@ -1014,6 +1024,12 @@ impl Command {
             // front of a line, and saying so is better than a key that does
             // nothing on CSS and works on Rust.
             Self::CommentToggle => Requires::ALineComment,
+            // A document to type into. Not `ACaret`, which a box the reader
+            // is typing in answers as well: a query or a message is one
+            // short line, typing over it means nothing, and a mode offered
+            // where it does nothing is a mode that does not do what the
+            // reader was told.
+            Self::ReplaceToggle => Requires::AFileOpen,
             // Not a selection: with nothing selected these are about the
             // line the cursor is on -- or the whole of the box -- which is
             // what a reader means by them far more often than they mean

@@ -40,7 +40,7 @@ use winit::{
 
 use crate::{
     font::Fonts,
-    grid::{Cells, Measured, Page, Update},
+    grid::{Cells, Measured, Page, Spelling, Update},
     keys,
 };
 
@@ -99,6 +99,13 @@ struct Showing {
     /// `o` is spelling one character, and passing those presses on as well
     /// would put the spelling in the file and the word after it.
     composing: bool,
+    /// What an input method is spelling, and where its own caret is in it.
+    ///
+    /// The window's, not the application's: the word is not in the file
+    /// yet, and telling the application about a word that may never be
+    /// committed would be putting somebody's half-typed pinyin into a
+    /// buffer with an undo history.
+    spelling: Option<Spelling>,
     /// How big the text is, in points, as the settings last said.
     ///
     /// Kept because the two things it is measured against move on their
@@ -135,6 +142,7 @@ impl Showing {
             held: false,
             rolled: 0.0,
             composing: false,
+            spelling: None,
             points,
         }
     }
@@ -173,6 +181,17 @@ impl Showing {
             .ok()
             .and_then(|mut outcome| outcome.take())
             .unwrap_or(Ok(()))
+    }
+
+    /// Draws again, for something the window knows and the application
+    /// does not.
+    ///
+    /// What is being spelled is the only such thing: every other change on
+    /// screen comes from a frame, and a frame asks for its own redraw.
+    fn redraw(&self) {
+        if let Some(window) = self.window.as_ref() {
+            window.request_redraw();
+        }
     }
 
     /// Tells Obelus what the reader did.
@@ -226,9 +245,12 @@ impl Showing {
             return;
         };
         let cell = fonts.cell();
+        // Past what is being spelled, so the candidates sit under the end
+        // of the word rather than under the character it started at.
+        let along = self.spelling.as_ref().map_or(0, Spelling::columns);
         window.set_ime_cursor_area(
             PhysicalPosition::new(
-                f32::from(caret.x) * cell.width,
+                (f32::from(caret.x) + along as f32) * cell.width,
                 f32::from(caret.y) * cell.height,
             ),
             PhysicalSize::new(cell.width, cell.height),
@@ -316,7 +338,7 @@ impl ApplicationHandler<Waking> for Showing {
         // And the other direction: what the settings say about the window,
         // which the application sends when they change and nobody else can
         // answer.
-        app.drawn_by(Arc::new(crate::grid::Sizing::new(frames, wake)));
+        app.drawn_by(Arc::new(crate::grid::Telling::new(frames, wake)));
         // The one place Obelus is told where its events go, which is what
         // starts the watcher, the servers and the walk of the project.
         app.start(doing);
@@ -401,7 +423,7 @@ impl ApplicationHandler<Waking> for Showing {
                 else {
                     return;
                 };
-                if let Err(error) = painter.paint(&self.page, fonts) {
+                if let Err(error) = painter.paint(&self.page, fonts, self.spelling.as_ref()) {
                     tracing::error!(?error, "the frame was not drawn");
                 }
             }
@@ -419,18 +441,39 @@ impl ApplicationHandler<Waking> for Showing {
             WindowEvent::ScaleFactorChanged { .. } => self.redraw_at(self.points),
             WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers.state(),
             WindowEvent::Ime(ime) => match ime {
-                // The spelling so far, which the input method draws itself
-                // in a window of its own beside the caret. What Obelus does
-                // with it is know that the keys are spoken for.
-                Ime::Preedit(spelling, _) => self.composing = !spelling.is_empty(),
+                // The spelling so far, drawn in the file at the place the
+                // word will go. An input method draws a window of its own
+                // for the candidates and Obelus leaves that alone; what it
+                // will not leave alone is *where the word is being typed*,
+                // which belongs on the page with the code it is going into.
+                Ime::Preedit(spelling, caret) => {
+                    self.composing = !spelling.is_empty();
+                    self.spelling = (!spelling.is_empty()).then(|| Spelling {
+                        // Where the input method's own caret is, in
+                        // characters rather than in bytes: the window
+                        // counts cells, and a byte offset into pinyin is
+                        // not one.
+                        caret: caret.map_or_else(
+                            || spelling.chars().count(),
+                            |(start, _)| spelling[..start].chars().count(),
+                        ),
+                        text: spelling,
+                    });
+                    self.redraw();
+                }
                 // The word. It goes in the way pasted text goes in --
                 // wherever the reader is writing, as one change -- because
                 // that is the same question and it is already answered.
                 Ime::Commit(word) => {
                     self.composing = false;
+                    self.spelling = None;
                     self.tell(Event::Paste(word));
                 }
-                Ime::Enabled | Ime::Disabled => self.composing = false,
+                Ime::Enabled | Ime::Disabled => {
+                    self.composing = false;
+                    self.spelling = None;
+                    self.redraw();
+                }
             },
             WindowEvent::KeyboardInput { event, .. } => {
                 if event.state != ElementState::Pressed {

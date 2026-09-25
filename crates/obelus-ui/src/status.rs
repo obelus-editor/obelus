@@ -61,6 +61,14 @@ pub struct StatusView<'a> {
     /// on the status row opens *over* a list rather than closing it, so
     /// the list is not always the nearest thing any more.
     nearest: Option<Layer>,
+    /// Whether what is typed goes over what is under the cursor.
+    ///
+    /// A mode, so it is said where the mode goes: a reader who cannot see
+    /// which one they are in finds out by typing, and by then a character
+    /// is gone. The caret says it too where Obelus draws its own -- a
+    /// block rather than a bar -- and a terminal's caret is the terminal's,
+    /// which is why the word is the half that works in both.
+    replacing: bool,
     theme: &'a Theme,
     troubles: &'a [obelus_lsp::trouble::Trouble],
     working_directory: &'a Path,
@@ -83,6 +91,7 @@ impl<'a> StatusView<'a> {
             prompt: app.prompt(),
             notes: app.notes(),
             nearest: app.layers().nearest(),
+            replacing: app.replacing(),
             theme: app.theme(),
             working_directory: app.working_directory(),
         }
@@ -336,6 +345,9 @@ impl StatusView<'_> {
         }
         if let Some(mode) = buffer.mode().name() {
             marker.push_str(&format!("  {mode}"));
+        }
+        if self.replacing {
+            marker.push_str("  Replacing");
         }
         // Unsaved work, and the file having moved under it. Both are the
         // same kind of fact as the three above -- what is on screen is not

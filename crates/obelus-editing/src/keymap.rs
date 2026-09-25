@@ -819,6 +819,16 @@ impl Keymap {
                     context: Context::Normal,
                     chord: KeyChord::new(KeyCode::Char('/'), KeyModifiers::CONTROL),
                 },
+                // The one key that names itself, and the one binding
+                // outside the three families. `Insert` is what this does on
+                // every keyboard that has the key, it is bare because it is
+                // not a letter and cannot be typing, and a chord for it
+                // would be a chord nobody would look for.
+                Binding {
+                    command: Command::ReplaceToggle,
+                    context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Insert, KeyModifiers::NONE),
+                },
                 // The browser's keys, for the browser's idea: a history of
                 // places, walked in both directions. vim's `ctrl+o` and
                 // `ctrl+i` cannot both be used -- `ctrl+i` *is* tab.
@@ -1089,6 +1099,11 @@ pub fn why_not(chord: KeyChord) -> Option<&'static str> {
             Some("The terminal sends another key for this")
         }
         KeyCode::Char(_) => None,
+        // The one key with a name and no family. Every terminal reports it
+        // as itself and no other key folds onto it, it cannot be typing,
+        // and the mode it turns on is the one it is named after -- so a
+        // reader may bind it, and Obelus binds it by default.
+        KeyCode::Insert if alone => None,
         _ => Some("Not a key Obelus can be given"),
     }
 }

@@ -55,6 +55,7 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::SelectionCopy => app.copy_selection(),
         Command::SelectionCut => app.cut_selection(),
         Command::Paste => app.paste(),
+        Command::ReplaceToggle => app.toggle_replacing(),
         Command::LineUp => app.move_lines(true),
         Command::LineDown => app.move_lines(false),
         Command::CommentToggle => app.toggle_comment(),

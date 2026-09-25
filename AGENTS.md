@@ -860,6 +860,40 @@ in its two cells, scaled down only where it does not fit: cosmic-text's
 fifth until its advance is a whole number of cells, and that is a line of
 Chinese visibly larger than the Latin above it.
 
+**The caret's shape says what the next character will do.** A bar stands
+between two characters and says the next one goes in there; a block stands
+on one and says the next one takes its place. So there are two shapes and
+they follow the mode: `Insert` toggles typing over, which is the one
+binding outside the three key families and is there because that is what
+the key is called. The shape is asked of the application on every frame --
+it depends on where the caret ended up, which is not known until the frame
+is laid out -- and only a window can draw it, because a terminal's caret is
+the terminal's and Obelus does not own its shape. Which is why the status
+row says `Replacing` in a word as well: that half works in both, and a mode
+with no sign is a mode the reader is in without knowing.
+
+Only in a document. A box the reader is typing into is one short line --
+a query, a message, a note -- where typing over means nothing, so the
+caret there stays a bar whatever the mode says. A caret that claimed
+otherwise would be the one thing a caret must not be, which is wrong about
+what the next key does.
+
+**What an input method is spelling is on the page, and is not in the
+file.** Typing Chinese is spelling a word before it exists: several
+keypresses that are not characters, and then one character that is. The
+window draws that spelling itself, over the cells to the right of the
+caret, underlined, in the colours of the place it is going into -- and the
+application is never told about it. Not because it could not be: because
+what would arrive is half-typed pinyin in a buffer with an undo history and
+a file that has changed. What arrives instead, when the input method
+commits, is a paste -- which is the same question Obelus already answered
+about where typed text goes when several things are on screen.
+
+The keys during that spelling belong to the input method, so a plain
+character is swallowed while one is being composed: it is arriving twice,
+once as the spelling and once as the word. A chord is not -- `ctrl+s` means
+save whatever is being typed.
+
 **Obelus does not split its window, so several Obelus processes is the
 normal case.** A terminal already splits, tiles and tabs better than an
 editor can from the inside, so Obelus has one region and no panes. What that

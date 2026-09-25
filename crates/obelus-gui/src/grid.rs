@@ -19,6 +19,7 @@ use std::sync::{
     mpsc::Sender,
 };
 
+use obelus_app::app::Caret;
 use ratatui::{
     backend::{Backend, ClearType, WindowSize},
     buffer::Cell,
@@ -52,39 +53,54 @@ pub(crate) enum Update {
     /// the screen arrives: down this channel, in order, from the thread
     /// that knows what the settings say.
     TextSize(usize),
+    /// What shape the caret is.
+    ///
+    /// Which is a fact about the frame it arrives with -- it depends on
+    /// where the caret ended up -- so it travels with the frame rather
+    /// than beside it.
+    CaretShape(Caret),
 }
 
-/// How the window is told what the settings say about it.
+/// How the window is told the things only the application knows.
 ///
-/// The other direction on the same wire. What crosses is not a frame, so
-/// the window takes it out of the queue before the page sees it -- a page
-/// knows about cells and a text size is not one.
+/// The other direction on the same wire: how big the text should be, and
+/// what shape the caret is. Neither is a cell, so the window takes them out
+/// of the queue before the page sees them -- but they go down the same
+/// channel as the cells, because they are about the same frame and
+/// anything else could arrive in the wrong order.
 #[derive(Clone)]
-pub(crate) struct Sizing {
+pub(crate) struct Telling {
     updates: Sender<Update>,
     wake: Arc<dyn Fn() + Send + Sync>,
 }
 
-impl std::fmt::Debug for Sizing {
+impl std::fmt::Debug for Telling {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str("Sizing")
+        formatter.write_str("Telling")
     }
 }
 
-impl Sizing {
+impl Telling {
     /// Says where to send what the application works out about the window.
     pub(crate) fn new(updates: Sender<Update>, wake: Arc<dyn Fn() + Send + Sync>) -> Self {
         Self { updates, wake }
     }
 }
 
-impl obelus_app::app::Drawing for Sizing {
+impl obelus_app::app::Drawing for Telling {
     fn text_size(&self, points: usize) {
         // A window that has gone is a send that fails, and the application
         // is about to find that out for itself on its next frame.
         if self.updates.send(Update::TextSize(points)).is_ok() {
             (self.wake)();
         }
+    }
+
+    fn caret_is(&self, caret: Caret) {
+        // No wake: this arrives while a frame is being laid out, and the
+        // frame's own end wakes the window a moment later. Waking here as
+        // well would be a second wake for one screen.
+        let _ = self.updates.send(Update::CaretShape(caret));
     }
 }
 
@@ -276,12 +292,49 @@ impl Backend for Cells {
 /// arrives as the handful of cells that changed, and a redraw with nothing
 /// changed at all -- a window uncovered, a monitor waking -- has to be able
 /// to draw the same screen again without asking Obelus for it.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(crate) struct Page {
     columns: u16,
     rows: u16,
     cells: Vec<Cell>,
     caret: Option<Position>,
+    shape: Caret,
+}
+
+impl Default for Page {
+    fn default() -> Self {
+        Self {
+            columns: 0,
+            rows: 0,
+            cells: Vec::new(),
+            caret: None,
+            // Until the application says otherwise, which it does with the
+            // first frame: a bar is what it is anywhere a reader types.
+            shape: Caret::Bar,
+        }
+    }
+}
+
+/// What an input method is spelling, before it becomes a word.
+///
+/// Drawn by the window over the cells to the right of the caret, which is
+/// where the word will go. It is not in the file and not in any cell: an
+/// application that was told about it would be an application with
+/// half-typed pinyin in a buffer's undo history.
+#[derive(Clone, Debug)]
+pub(crate) struct Spelling {
+    /// What has been typed so far.
+    pub(crate) text: String,
+    /// How many characters into it the input method's own caret is.
+    pub(crate) caret: usize,
+}
+
+impl Spelling {
+    /// How many columns of the grid it takes up to its caret, which is
+    /// where the caret is drawn and where the candidates are pointed.
+    pub(crate) fn columns(&self) -> usize {
+        obelus_text::text_width(&self.text.chars().take(self.caret).collect::<String>())
+    }
 }
 
 /// One cell, as the painter reads it.
@@ -332,6 +385,11 @@ impl Page {
         self.caret
     }
 
+    /// And what shape it is drawn in.
+    pub(crate) const fn shape(&self) -> Caret {
+        self.shape
+    }
+
     /// Makes room for a screen this size, and empties it.
     ///
     /// Emptied rather than kept: the cells that were here were at other
@@ -363,6 +421,10 @@ impl Page {
             }
             Update::Caret(caret) => {
                 self.caret = caret;
+                false
+            }
+            Update::CaretShape(shape) => {
+                self.shape = shape;
                 false
             }
             Update::Frame => true,
@@ -403,5 +465,31 @@ impl Page {
     fn at(&self, x: u16, y: u16) -> Option<usize> {
         (x < self.columns && y < self.rows)
             .then(|| usize::from(y) * usize::from(self.columns) + usize::from(x))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Where the caret goes inside a word being spelled is counted in
+    /// cells, not in characters.
+    ///
+    /// Deliberate break: counting the characters before it -- which is
+    /// what the input method's own offset is -- puts the caret one column
+    /// short for every full-width character typed so far, so the caret
+    /// walks backwards through the word as it is spelled.
+    #[test]
+    fn a_spelling_is_measured_in_cells() {
+        let spelling = Spelling {
+            text: "\u{4e2d}a".to_string(),
+            caret: 2,
+        };
+        assert_eq!(spelling.columns(), 3);
+        let start = Spelling {
+            text: "\u{4e2d}a".to_string(),
+            caret: 0,
+        };
+        assert_eq!(start.columns(), 0);
     }
 }
