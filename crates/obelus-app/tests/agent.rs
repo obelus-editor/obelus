@@ -7802,3 +7802,77 @@ fn the_row_is_there_on_a_later_sitting_because_the_first_conversation_taught_it(
         "the row says nothing about what this conversation will run on:\n{row}"
     );
 }
+
+/// A file an older Obelus wrote is brought up to date by the next
+/// conversation.
+///
+/// What it was missing is the two things that make the row: which value the
+/// agent itself opens on, and which of the settings is the *mode*. A reader
+/// who has been talking to an agent for weeks has one of those files and no
+/// reason to choose their agent again, so it has to be a conversation that
+/// puts them there -- the first one minted after the change, which is
+/// paying for nothing extra.
+///
+/// Broken deliberately by writing the offers whole when they differ instead
+/// of carrying nothing over: the old file's rows compare equal on the parts
+/// it has and the write is skipped, so it stays as it was for ever.
+#[test]
+fn a_file_an_older_obelus_wrote_is_brought_up_to_date() {
+    let scratch = support::Scratch::new("agent-old-options-file");
+    // A directory of this test's own: the shared one is written by every
+    // other test's agent, and what is being asserted here is what happened
+    // to one particular file.
+    let root = agents_root_for("old-options-file");
+    let home = root.join("fake");
+    std::fs::create_dir_all(&home).expect("the agent's directory");
+    // Exactly the shape the file had before: no `current`, no `category`.
+    std::fs::write(
+        home.join("options.json"),
+        r#"{"options":[{"id":"mode","name":"Mode","about":null,
+           "values":[{"id":"ask","name":"ask first","about":null},
+                     {"id":"code","name":"write code","about":null}],
+           "kind":"select"}]}"#,
+    )
+    .expect("the old file");
+
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.agents_root_for_test(root.clone());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
+    support::type_text(&mut app, "/echo");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer", |app| {
+        said_in_transcript(app, "heard you")
+    });
+
+    let obelus_agent::options::Reading::Offers(offers) = obelus_agent::options::read("fake", &root)
+    else {
+        panic!("the file did not read back");
+    };
+    let mode = offers
+        .iter()
+        .find(|offer| offer.id == "mode")
+        .expect("the setting is still there");
+    assert_eq!(
+        mode.current.as_deref(),
+        Some("ask"),
+        "the file still does not say what the agent opens on"
+    );
+    assert_eq!(
+        mode.category,
+        obelus_agent::acp::Category::Mode,
+        "the file still does not say which of them is the mode"
+    );
+}
