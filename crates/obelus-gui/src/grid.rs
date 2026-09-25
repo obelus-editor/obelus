@@ -20,6 +20,7 @@ use std::sync::{
 };
 
 use obelus_app::app::Caret;
+use obelus_ui::image::Palette;
 use ratatui::{
     backend::{Backend, ClearType, WindowSize},
     buffer::Cell,
@@ -59,6 +60,92 @@ pub(crate) enum Update {
     /// where the caret ended up -- so it travels with the frame rather
     /// than beside it.
     CaretShape(Caret),
+    /// A mark the window may be asked to draw, and what it is drawn from.
+    ///
+    /// Once per mark and palette: the drawing is a few kilobytes of text,
+    /// and what it becomes -- pixels at the size a cell is now -- is the
+    /// window's business.
+    Mark {
+        /// Which agent's mark it is.
+        id: String,
+        /// Whether this is the one the reader is on, which is drawn on
+        /// another colour.
+        focused: bool,
+        /// The drawing itself.
+        svg: String,
+        /// The colours to ink it in.
+        palette: Palette,
+    },
+    /// And that mark goes here, in the frame being laid out.
+    Marked {
+        /// Which mark.
+        id: String,
+        /// In which of its two colourings.
+        focused: bool,
+        /// The column its left edge sits at.
+        x: u16,
+        /// And the row.
+        y: u16,
+    },
+}
+
+/// Where a mark is, in the frame being drawn.
+#[derive(Clone, Debug)]
+pub(crate) struct Marked {
+    /// Which mark.
+    pub(crate) id: String,
+    /// In which colouring.
+    pub(crate) focused: bool,
+    /// The column.
+    pub(crate) x: u16,
+    /// And the row.
+    pub(crate) y: u16,
+}
+
+/// The window's end of what a view says about marks.
+///
+/// Down the same channel as the cells, because a mark is part of the frame
+/// being laid out: one that arrived after the frame it belongs to would be
+/// a picture drawn over the screen that replaced it.
+#[derive(Clone)]
+pub(crate) struct Marking {
+    updates: Sender<Update>,
+}
+
+impl std::fmt::Debug for Marking {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("Marking")
+    }
+}
+
+impl Marking {
+    /// Says where a view's marks go.
+    pub(crate) const fn new(updates: Sender<Update>) -> Self {
+        Self { updates }
+    }
+}
+
+impl obelus_ui::image::Marks for Marking {
+    fn carries(&self, id: &str, svg: &str, focused: bool, palette: Palette) {
+        let _ = self.updates.send(Update::Mark {
+            id: id.to_string(),
+            focused,
+            svg: svg.to_string(),
+            palette,
+        });
+    }
+
+    fn draws(&self, id: &str, focused: bool, x: u16, y: u16) {
+        // No wake, the same as the caret's shape: this is said while a
+        // frame is being laid out, and the frame's own end wakes the
+        // window a moment later.
+        let _ = self.updates.send(Update::Marked {
+            id: id.to_string(),
+            focused,
+            x,
+            y,
+        });
+    }
 }
 
 /// How the window is told the things only the application knows.
@@ -425,6 +512,12 @@ impl Page {
             }
             Update::CaretShape(shape) => {
                 self.shape = shape;
+                false
+            }
+            // Neither is a cell: the window takes both out of the queue
+            // before the page is handed anything.
+            Update::Mark { id, .. } | Update::Marked { id, .. } => {
+                tracing::warn!(id, "a mark reached the page");
                 false
             }
             Update::Frame => true,

@@ -69,11 +69,35 @@ pub struct Palette {
     pub selected: Color,
 }
 
+/// Where a window's marks go, for the front end that draws its own pixels.
+///
+/// A terminal is handed a picture as bytes in the middle of a frame, which
+/// is why everything above works the way it does. A window has a texture
+/// and a place to put quads, and none of that belongs in a view: so the
+/// view says the same two things it says to a terminal -- here is a mark,
+/// draw it there -- and what is on the other end turns them into pixels.
+///
+/// The `svg` crosses once per mark and palette, and the placement once per
+/// frame it is on screen.
+pub trait Marks: Send + Sync {
+    /// This mark exists, and is drawn from this text in these colours.
+    fn carries(&self, id: &str, svg: &str, focused: bool, palette: Palette);
+    /// And it goes here, in the frame being laid out.
+    fn draws(&self, id: &str, focused: bool, x: u16, y: u16);
+}
+
 /// The marks, encoded for whatever the terminal turned out to be.
 pub struct Images {
     /// How to encode, and how big a cell is. `None` when the terminal
     /// cannot show a picture, which is most of the time.
     picker: Option<Picker>,
+    /// Where a window's marks go instead, when a window is what is
+    /// drawing. Exclusive with `picker`: the three terminal protocols and
+    /// a texture are two answers to one question.
+    marks: Option<std::sync::Arc<dyn Marks>>,
+    /// Which marks the window has already been handed, so that a screenful
+    /// of cards does not send the same drawing every frame.
+    told: std::collections::HashSet<Key>,
     /// What has already been encoded. Cheap to keep -- a sixteen-pixel
     /// square is a kilobyte of pixels -- and encoding is the only part of
     /// this that is not free.
@@ -91,6 +115,7 @@ impl std::fmt::Debug for Images {
         formatter
             .debug_struct("Images")
             .field("protocol", &self.picker.as_ref().map(Picker::protocol_type))
+            .field("a window's", &self.marks.is_some())
             .field("encoded", &self.encoded.len())
             .finish()
     }
@@ -109,6 +134,25 @@ impl Images {
     pub fn none() -> Self {
         Self {
             picker: None,
+            marks: None,
+            told: std::collections::HashSet::new(),
+            encoded: HashMap::new(),
+            palette: None,
+        }
+    }
+
+    /// The marks, drawn by a window rather than by a terminal.
+    ///
+    /// Which a window can always do: the three protocols above are ways of
+    /// asking a terminal to draw pixels it owns, and a window owns its
+    /// own. So there is no detection here and no fallback to a glyph --
+    /// the picture is simply drawn.
+    #[must_use]
+    pub fn drawn_by(marks: std::sync::Arc<dyn Marks>) -> Self {
+        Self {
+            picker: None,
+            marks: Some(marks),
+            told: std::collections::HashSet::new(),
             encoded: HashMap::new(),
             palette: None,
         }
@@ -129,6 +173,8 @@ impl Images {
                 tracing::info!(protocol = ?picker.protocol_type(), "the terminal can show pictures");
                 Self {
                     picker: Some(picker),
+                    marks: None,
+                    told: std::collections::HashSet::new(),
                     encoded: HashMap::new(),
                     palette: None,
                 }
@@ -142,9 +188,16 @@ impl Images {
     }
 
     /// Whether there is any point preparing a picture.
+    ///
+    /// Either end counts. It used to be the terminal's protocol alone,
+    /// which is what a window answering `false` here cost: this is also
+    /// the gate on *fetching* the drawings, so the marks were never
+    /// downloaded, never prepared, and the cards in a window wore the
+    /// glyph a terminal without a protocol gets -- while the window was
+    /// sitting there able to draw any of them.
     #[must_use]
     pub fn available(&self) -> bool {
-        self.picker.is_some()
+        self.picker.is_some() || self.marks.is_some()
     }
 
     /// Whether a frame writing these has to put the caret out first.
@@ -169,11 +222,22 @@ impl Images {
     /// The palette is the view's, and a palette Obelus has not drawn with
     /// before empties the cache: pixels cannot be recoloured after the fact.
     pub fn prepare(&mut self, id: &str, svg: &str, focused: bool, palette: Palette) {
-        let Some(picker) = &self.picker else { return };
         if self.palette != Some(palette) {
             self.encoded.clear();
+            self.told.clear();
             self.palette = Some(palette);
         }
+        if let Some(marks) = self.marks.clone() {
+            // Once per mark and palette. The drawing itself is a few
+            // kilobytes of text, and what is on screen is a dozen cards
+            // redrawn on every keystroke.
+            let key = (id.to_string(), focused);
+            if self.told.insert(key) {
+                marks.carries(id, svg, focused, palette);
+            }
+            return;
+        }
+        let Some(picker) = &self.picker else { return };
         let key = (id.to_string(), focused);
         if self.encoded.contains_key(&key) {
             return;
@@ -204,14 +268,27 @@ impl Images {
     /// `false` means the caller should draw its glyph: either the terminal
     /// cannot show pictures, or this agent's drawing has not arrived yet.
     pub fn draw(&self, cells: &mut CellBuffer, x: u16, y: u16, id: &str, focused: bool) -> bool {
-        let Some(protocol) = self.encoded.get(&(id.to_string(), focused)) else {
-            return false;
-        };
         let area = Rect {
             x,
             y,
             width: SLOT.width,
             height: SLOT.height,
+        };
+        if let Some(marks) = &self.marks {
+            // The same rule as below, for the same reason: a picture is
+            // drawn at a place rather than into cells, so one hanging off
+            // the edge is a mark over whatever is out there. The glyph the
+            // caller draws instead is the one that clips.
+            if !self.told.contains(&(id.to_string(), focused))
+                || cells.area().intersection(area) != area
+            {
+                return false;
+            }
+            marks.draws(id, focused, x, y);
+            return true;
+        }
+        let Some(protocol) = self.encoded.get(&(id.to_string(), focused)) else {
+            return false;
         };
         // Refused rather than clipped when what is on screen is narrower
         // than the mark. A picture is handed to the terminal as pixels at a
@@ -314,6 +391,8 @@ mod tests {
         picker.set_protocol_type(protocol);
         Images {
             picker: Some(picker),
+            marks: None,
+            told: std::collections::HashSet::new(),
             encoded: std::collections::HashMap::new(),
             palette: None,
         }
@@ -511,5 +590,117 @@ mod tests {
         );
         let mut cells = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, 8, 2));
         assert!(!images.draw(&mut cells, 0, 0, "claude-acp", false));
+    }
+
+    /// What a window's end of this records, for a test to look at.
+    #[derive(Debug, Default)]
+    struct Window {
+        carried: std::sync::Mutex<Vec<(String, bool)>>,
+        drawn: std::sync::Mutex<Vec<(String, u16, u16)>>,
+    }
+
+    impl super::Marks for Window {
+        fn carries(&self, id: &str, _svg: &str, focused: bool, _palette: Palette) {
+            self.carried
+                .lock()
+                .expect("what was carried")
+                .push((id.to_string(), focused));
+        }
+
+        fn draws(&self, id: &str, _focused: bool, x: u16, y: u16) {
+            self.drawn
+                .lock()
+                .expect("what was drawn")
+                .push((id.to_string(), x, y));
+        }
+    }
+
+    /// A window can show a picture, which is what decides whether the
+    /// drawings are fetched at all.
+    ///
+    /// Deliberate break: answering from the terminal's protocol alone --
+    /// which is what this said before there was a window -- stops the
+    /// marks being downloaded, and every card wears its glyph.
+    #[test]
+    fn a_window_can_show_a_picture() {
+        let images = Images::drawn_by(std::sync::Arc::new(Window::default()));
+        assert!(images.available());
+        assert!(!Images::none().available());
+    }
+
+    /// A window is handed a drawing once, and told where to put it on every
+    /// frame.
+    ///
+    /// The two halves are different questions and the same call answers
+    /// them: what a mark is made of crosses once, because it is kilobytes
+    /// of text and a screenful of cards is redrawn on every keystroke;
+    /// where it goes crosses every frame, because that is what a frame is.
+    ///
+    /// Deliberate break: taking the `told` check out of `prepare` carries
+    /// the drawing on every frame, which this counts.
+    #[test]
+    fn a_window_is_told_what_a_mark_is_once_and_where_it_goes_always() {
+        let window = std::sync::Arc::new(Window::default());
+        let mut images = Images::drawn_by(window.clone());
+        let palette = Palette {
+            ink: Color::Rgb(1, 2, 3),
+            paper: Color::Rgb(4, 5, 6),
+            selected: Color::Rgb(7, 8, 9),
+        };
+        let mut cells = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, 20, 4));
+        for _ in 0..3 {
+            images.prepare("claude", MARK, false, palette);
+            assert!(images.draw(&mut cells, 2, 1, "claude", false));
+        }
+        assert_eq!(
+            *window.carried.lock().expect("what was carried"),
+            vec![("claude".to_string(), false)]
+        );
+        assert_eq!(window.drawn.lock().expect("what was drawn").len(), 3);
+    }
+
+    /// A theme change is every mark drawn again, because pixels cannot be
+    /// recoloured after the fact.
+    ///
+    /// Deliberate break: leaving `told` alone when the palette changes
+    /// leaves the window drawing the old theme's marks for the rest of the
+    /// session.
+    #[test]
+    fn a_new_palette_carries_the_marks_again() {
+        let window = std::sync::Arc::new(Window::default());
+        let mut images = Images::drawn_by(window.clone());
+        let mut palette = Palette {
+            ink: Color::Rgb(1, 2, 3),
+            paper: Color::Rgb(4, 5, 6),
+            selected: Color::Rgb(7, 8, 9),
+        };
+        images.prepare("claude", MARK, false, palette);
+        palette.ink = Color::Rgb(9, 9, 9);
+        images.prepare("claude", MARK, false, palette);
+        assert_eq!(window.carried.lock().expect("what was carried").len(), 2);
+    }
+
+    /// A mark that does not fit is not drawn at all, and says so.
+    ///
+    /// A picture goes at a place rather than into cells, so half of one
+    /// hanging off the edge is a mark over whatever is out there. Saying
+    /// `false` is what makes the caller draw its glyph, which clips.
+    ///
+    /// Deliberate break: telling the window to draw it anyway returns
+    /// `true` here, and the caller stops drawing the glyph that fits.
+    #[test]
+    fn a_mark_that_does_not_fit_is_left_to_the_glyph() {
+        let window = std::sync::Arc::new(Window::default());
+        let mut images = Images::drawn_by(window.clone());
+        let palette = Palette {
+            ink: Color::Rgb(1, 2, 3),
+            paper: Color::Rgb(4, 5, 6),
+            selected: Color::Rgb(7, 8, 9),
+        };
+        images.prepare("claude", MARK, false, palette);
+        let mut cells = ratatui::buffer::Buffer::empty(ratatui::layout::Rect::new(0, 0, 3, 1));
+        // Two cells wide, starting one from the right edge.
+        assert!(!images.draw(&mut cells, 2, 0, "claude", false));
+        assert!(window.drawn.lock().expect("what was drawn").is_empty());
     }
 }

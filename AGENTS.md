@@ -894,6 +894,26 @@ character is swallowed while one is being composed: it is arriving twice,
 once as the spelling and once as the word. A chord is not -- `ctrl+s` means
 save whatever is being typed.
 
+**A window draws the marks itself, and the view does not know the
+difference.** An agent's mark on the agents page is an SVG from the
+registry. A terminal is handed it as encoded pixels in the middle of a
+frame, in one of three protocols, if it has one at all -- which is what
+`ui::image` is. A window has a texture and somewhere to put a quad, and
+none of that belongs in a view: so the view goes on saying the same two
+things it says to a terminal -- here is a mark, draw it there -- and
+`image::Marks` is the other end. The drawing crosses once per mark and
+palette, because it is kilobytes of text and the page is redrawn on every
+keystroke; the placement crosses every frame, because that is what a frame
+is. The pixels are made in the window, at the moment of drawing, because
+how many pixels a mark is depends on how big a cell is -- which the reader
+changes.
+
+`Images::available` is the same question for both, and it is also the gate
+on *fetching* the drawings at all. A window that answered it from the
+terminal's protocol alone downloaded nothing, prepared nothing, and drew
+the glyph a terminal without a protocol gets -- while sitting there able to
+draw any of them.
+
 **Obelus does not split its window, so several Obelus processes is the
 normal case.** A terminal already splits, tiles and tabs better than an
 editor can from the inside, so Obelus has one region and no panes. What that

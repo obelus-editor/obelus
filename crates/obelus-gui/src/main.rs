@@ -61,7 +61,7 @@ fn main() -> Result<()> {
     // the console the reader started Obelus from rather than flashing past
     // inside a window that is about to close. The order inside is argued
     // where it lives.
-    let mut app = startup::start(&arguments.paths, env!("OBELUS_BUILD"))?;
+    let app = startup::start(&arguments.paths, env!("OBELUS_BUILD"))?;
     // The window's half of the line `startup::start` just wrote, which is
     // the first thing to suspect when a key or a colour did not do what it
     // should.
@@ -70,13 +70,6 @@ fn main() -> Result<()> {
         "drawn in a window"
     );
 
-    // Said rather than left to a default: a picture on the agents page is
-    // drawn by handing a terminal pixels in one of three protocols, and a
-    // window speaks none of them. The glyph is what is drawn instead, which
-    // is the same fallback a terminal that cannot answer gets -- and the
-    // marks are carried in the binary, so it is not the compromise it is
-    // there.
-    app.use_images(obelus_ui::image::Images::none());
     window::show(app)
 }
 

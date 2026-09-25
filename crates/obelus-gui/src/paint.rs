@@ -16,12 +16,13 @@ use anyhow::{Context, Result};
 use bytemuck::{Pod, Zeroable};
 use cosmic_text::{CacheKey, SwashContent};
 use obelus_app::app::Caret;
+use obelus_ui::image::{Palette, SLOT};
 use ratatui::style::{Color, Modifier};
 use winit::window::Window;
 
 use crate::{
     font::Fonts,
-    grid::{Look, Page, Spelling},
+    grid::{Look, Marked, Page, Spelling},
 };
 
 /// How wide the bar caret is, as a part of a cell.
@@ -57,6 +58,14 @@ pub(crate) struct Painter {
     uniforms: wgpu::Buffer,
     bindings: wgpu::BindGroup,
     atlas: Atlas,
+    /// What each mark is drawn from, until it has been drawn.
+    ///
+    /// The text rather than the pixels: how many pixels a mark is depends
+    /// on how big a cell is, which the reader changes.
+    drawings: HashMap<(String, bool), String>,
+    /// The colours those drawings are inked in. A theme change is a new
+    /// palette, and every mark already drawn is the old theme's.
+    palette: Option<Palette>,
     /// The instances of the frame being built, kept so that a screenful of
     /// rectangles is allocated once rather than once a frame.
     quads: Vec<Quad>,
@@ -99,6 +108,13 @@ struct Atlas {
     /// which is worth remembering too, or a missing glyph is rasterised
     /// again on every frame that asks for it.
     spots: HashMap<CacheKey, Option<Spot>>,
+    /// And where each agent's mark landed, by the same rule.
+    ///
+    /// A second map rather than a second texture: a mark is a picture of
+    /// about sixteen pixels square, which is a large glyph and nothing
+    /// more. What makes it a map of its own is that it is thrown away for
+    /// a different reason -- a theme, rather than a size.
+    marks: HashMap<(String, bool), Option<Spot>>,
     /// One opaque pixel, so that a rectangle with no picture can go through
     /// the same pipeline as one with.
     white: [f32; 4],
@@ -331,6 +347,8 @@ impl Painter {
             uniforms,
             bindings,
             atlas,
+            drawings: HashMap::new(),
+            palette: None,
             quads: Vec::new(),
             instances,
         })
@@ -361,23 +379,47 @@ impl Painter {
     }
 
     /// The text is a different size now, so nothing kept about its glyphs
-    /// is about this size.
+    /// -- or about the marks, which are drawn to fit a cell -- is about
+    /// this size.
     pub(crate) fn forget_the_glyphs(&mut self) {
         self.atlas.empty();
     }
 
-    /// Draws a page, and whatever is being spelled over it.
+    /// A mark the window may be asked to draw, and what it is drawn from.
+    ///
+    /// Kept as the drawing rather than turned into pixels here: what size
+    /// to draw it at is known at the moment it is drawn, and a reader who
+    /// changes the text's size changes it.
+    pub(crate) fn carries(&mut self, id: String, focused: bool, svg: String, palette: Palette) {
+        if self.palette != Some(palette) {
+            // Pixels cannot be recoloured after the fact, so a new theme
+            // is every mark drawn again. The same rule the terminal's side
+            // of this follows.
+            self.drawings.clear();
+            self.atlas.forget_the_marks();
+            self.palette = Some(palette);
+        }
+        tracing::debug!(id, focused, "the window carries a mark");
+        self.drawings.insert((id, focused), svg);
+    }
+
+    /// Draws a page, the marks on it, and whatever is being spelled over
+    /// it.
     pub(crate) fn paint(
         &mut self,
         page: &Page,
         fonts: &mut Fonts,
         spelling: Option<&Spelling>,
         caret: bool,
+        marked: &[Marked],
     ) -> Result<()> {
         let cell = fonts.cell();
         self.quads.clear();
         self.backgrounds(page, cell.width, cell.height);
         self.letters(page, fonts);
+        // After the text, over cells the view left empty: a view draws its
+        // glyph only where a picture could not be drawn.
+        self.marks(marked, cell);
         // Over the cells and under the caret: the word being spelled is
         // going in at the caret, so the caret belongs at the place in it
         // the input method says.
@@ -552,7 +594,7 @@ impl Painter {
         let italic = look.modifier.contains(Modifier::ITALIC);
         let placed = fonts.glyphs(look.text, bold, italic).to_vec();
         for glyph in placed {
-            let Some(spot) = self.atlas.spot(&self.device, &self.queue, fonts, glyph.key) else {
+            let Some(spot) = self.atlas.spot(&self.queue, fonts, glyph.key) else {
                 continue;
             };
             #[expect(
@@ -573,6 +615,74 @@ impl Painter {
                     true => COLOURFUL,
                     false => 0,
                 },
+                padding: [0; 3],
+            });
+        }
+    }
+
+    /// The marks on this frame, each drawn into the two cells it was given.
+    ///
+    /// Rasterised the first time it is asked for at this size and kept in
+    /// the same texture the glyphs are in: a mark is a picture of about
+    /// sixteen pixels square, which is a large glyph and nothing more.
+    fn marks(&mut self, marked: &[Marked], cell: crate::font::CellSize) {
+        for mark in marked {
+            let key = (mark.id.clone(), mark.focused);
+            let spot = match self.atlas.mark(&key) {
+                Some(spot) => spot,
+                None => {
+                    let (Some(svg), Some(palette)) = (self.drawings.get(&key), self.palette) else {
+                        // Asked for before it was carried, which the view
+                        // does not do -- but a frame is not the place to
+                        // find out.
+                        continue;
+                    };
+                    #[expect(
+                        clippy::cast_possible_truncation,
+                        clippy::cast_sign_loss,
+                        reason = "a mark is a few dozen pixels each way"
+                    )]
+                    let pixels = (
+                        (cell.width * f32::from(SLOT.width)).round() as u32,
+                        (cell.height * f32::from(SLOT.height)).round() as u32,
+                    );
+                    let paper = match mark.focused {
+                        true => palette.selected,
+                        false => palette.paper,
+                    };
+                    let Some(drawn) = obelus_ui::image::raster(svg, pixels, palette.ink, paper)
+                    else {
+                        // A drawing this machine's renderer would not read.
+                        // Remembered as nothing, so it is not tried again
+                        // on every frame -- and said, because a card
+                        // wearing a glyph where the others wear pictures
+                        // has no other explanation.
+                        tracing::warn!(id = key.0, "a mark that would not draw");
+                        self.atlas.no_mark(key);
+                        continue;
+                    };
+                    let rgba = drawn.to_rgba8();
+                    let (width, height) = (rgba.width(), rgba.height());
+                    let spot = self.atlas.place(&self.queue, width, height, &rgba, true);
+                    self.atlas.marked(key, spot);
+                    match spot {
+                        Some(spot) => spot,
+                        None => continue,
+                    }
+                }
+            };
+            self.quads.push(Quad {
+                rect: [
+                    f32::from(mark.x) * cell.width,
+                    f32::from(mark.y) * cell.height,
+                    cell.width * f32::from(SLOT.width),
+                    cell.height * f32::from(SLOT.height),
+                ],
+                uv: spot.uv,
+                // The picture carries its own colours, and the instance's
+                // alpha is the whole of what it adds.
+                colour: [1.0, 1.0, 1.0, 1.0],
+                flags: COLOURFUL,
                 padding: [0; 3],
             });
         }
@@ -760,6 +870,7 @@ impl Atlas {
             view,
             allocator,
             spots: HashMap::new(),
+            marks: HashMap::new(),
             white: [middle[0], middle[1], middle[0], middle[1]],
         }
     }
@@ -767,43 +878,128 @@ impl Atlas {
     /// Everything in it is the wrong size now.
     fn empty(&mut self) {
         self.spots.clear();
+        self.marks.clear();
         // The white pixel keeps its place: the allocator is not cleared,
         // because the one thing in it that is not a glyph is still right.
     }
 
+    /// The marks are the wrong colour now, which a theme change makes them.
+    fn forget_the_marks(&mut self) {
+        self.marks.clear();
+    }
+
+    /// Where a mark is, if it has been drawn at this size and in these
+    /// colours.
+    fn mark(&self, key: &(String, bool)) -> Option<Spot> {
+        self.marks.get(key).copied().flatten()
+    }
+
+    /// Remembers where one landed.
+    fn marked(&mut self, key: (String, bool), spot: Option<Spot>) {
+        self.marks.insert(key, spot);
+    }
+
+    /// And remembers that one cannot be drawn at all.
+    fn no_mark(&mut self, key: (String, bool)) {
+        self.marks.insert(key, None);
+    }
+
+    /// Puts pixels in, and says where they went.
+    ///
+    /// The one piece of code that writes to the texture: a glyph and a
+    /// mark differ in where their pixels come from and in nothing else.
+    fn place(
+        &mut self,
+        queue: &wgpu::Queue,
+        width: u32,
+        height: u32,
+        pixels: &[u8],
+        colourful: bool,
+    ) -> Option<Spot> {
+        if width == 0 || height == 0 {
+            return None;
+        }
+        #[expect(
+            clippy::cast_possible_wrap,
+            reason = "what is put in is smaller than the atlas, which is a thousand pixels"
+        )]
+        let wanted = etagere::size2(width as i32, height as i32);
+        let allocation = match self.allocator.allocate(wanted) {
+            Some(allocation) => allocation,
+            None => {
+                // Full. Everything in it is thrown away and whatever is
+                // still wanted is drawn again as it is asked for, which
+                // costs one frame and cannot fail twice: a session that
+                // filled it did so over thousands of frames.
+                tracing::debug!("the glyph atlas is full, and is being started again");
+                self.allocator.clear();
+                self.spots.clear();
+                self.marks.clear();
+                self.allocator.allocate(wanted)?
+            }
+        };
+        let corner = allocation.rectangle.min;
+        #[expect(clippy::cast_sign_loss, reason = "an allocation is never negative")]
+        let (x, y) = (corner.x as u32, corner.y as u32);
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &self.texture,
+                mip_level: 0,
+                origin: wgpu::Origin3d { x, y, z: 0 },
+                aspect: wgpu::TextureAspect::All,
+            },
+            pixels,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(width * 4),
+                rows_per_image: Some(height),
+            },
+            wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+        );
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "the atlas is a thousand pixels across"
+        )]
+        let uv = [
+            x as f32 / ATLAS as f32,
+            y as f32 / ATLAS as f32,
+            (x + width) as f32 / ATLAS as f32,
+            (y + height) as f32 / ATLAS as f32,
+        ];
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "what is put in is a few dozen pixels each way"
+        )]
+        Some(Spot {
+            uv,
+            width: width as f32,
+            height: height as f32,
+            left: 0.0,
+            top: 0.0,
+            colourful,
+        })
+    }
+
     /// Where a glyph is, putting it in if this is the first time it has
     /// been asked for.
-    fn spot(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        fonts: &mut Fonts,
-        key: CacheKey,
-    ) -> Option<Spot> {
+    fn spot(&mut self, queue: &wgpu::Queue, fonts: &mut Fonts, key: CacheKey) -> Option<Spot> {
         if let Some(known) = self.spots.get(&key) {
             return *known;
         }
-        let spot = self.rasterise(device, queue, fonts, key);
+        let spot = self.rasterise(queue, fonts, key);
         self.spots.insert(key, spot);
         spot
     }
 
     /// Draws one glyph and finds it a place.
-    fn rasterise(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        fonts: &mut Fonts,
-        key: CacheKey,
-    ) -> Option<Spot> {
+    fn rasterise(&mut self, queue: &wgpu::Queue, fonts: &mut Fonts, key: CacheKey) -> Option<Spot> {
         let picture = fonts.picture(key)?;
         let width = picture.placement.width;
         let height = picture.placement.height;
-        if width == 0 || height == 0 {
-            // A space, or a character the face draws as nothing. Worth
-            // remembering as "nothing" so that it is not asked again.
-            return None;
-        }
         let colourful = matches!(picture.content, SwashContent::Color);
         let pixels = match picture.content {
             // Coverage: the alpha is the whole of it, and the colour comes
@@ -826,73 +1022,15 @@ impl Atlas {
                 .flat_map(|texel| [0xff, 0xff, 0xff, texel[1]])
                 .collect::<Vec<u8>>(),
         };
-        let left = picture.placement.left;
-        let top = picture.placement.top;
-
-        #[expect(
-            clippy::cast_possible_wrap,
-            reason = "a glyph is smaller than the atlas, which is a thousand pixels"
-        )]
-        let wanted = etagere::size2(width as i32, height as i32);
-        let allocation = match self.allocator.allocate(wanted) {
-            Some(allocation) => allocation,
-            None => {
-                // Full. Everything in it is thrown away and the glyphs that
-                // are still wanted are drawn again as they are asked for,
-                // which costs one frame and cannot fail twice: a session
-                // that filled it did so over thousands of frames.
-                tracing::debug!("the glyph atlas is full, and is being started again");
-                self.allocator.clear();
-                self.spots.clear();
-                self.allocator.allocate(wanted)?
-            }
-        };
-        let corner = allocation.rectangle.min;
-        #[expect(clippy::cast_sign_loss, reason = "an allocation is never negative")]
-        let (x, y) = (corner.x as u32, corner.y as u32);
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &self.texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d { x, y, z: 0 },
-                aspect: wgpu::TextureAspect::All,
-            },
-            &pixels,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(width * 4),
-                rows_per_image: Some(height),
-            },
-            wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-        );
-        let _ = device;
-
+        // Where the glyph sits against the pen, which is the one thing a
+        // mark has no use for: a mark is put where it was told.
         #[expect(
             clippy::cast_precision_loss,
-            reason = "the atlas is a thousand pixels across"
+            reason = "a glyph is offset by a few dozen pixels"
         )]
-        let uv = [
-            x as f32 / ATLAS as f32,
-            y as f32 / ATLAS as f32,
-            (x + width) as f32 / ATLAS as f32,
-            (y + height) as f32 / ATLAS as f32,
-        ];
-        #[expect(
-            clippy::cast_precision_loss,
-            reason = "a glyph is a few dozen pixels each way"
-        )]
-        Some(Spot {
-            uv,
-            width: width as f32,
-            height: height as f32,
-            left: left as f32,
-            top: top as f32,
-            colourful,
-        })
+        let (left, top) = (picture.placement.left as f32, picture.placement.top as f32);
+        let spot = self.place(queue, width, height, &pixels, colourful)?;
+        Some(Spot { left, top, ..spot })
     }
 }
 

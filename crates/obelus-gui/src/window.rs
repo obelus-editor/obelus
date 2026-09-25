@@ -44,7 +44,7 @@ use winit::{
 use crate::{
     blink::Blink,
     font::Fonts,
-    grid::{Cells, Measured, Page, Spelling, Update},
+    grid::{Cells, Marked, Marking, Measured, Page, Spelling, Update},
     keys,
 };
 
@@ -110,6 +110,14 @@ struct Showing {
     /// committed would be putting somebody's half-typed pinyin into a
     /// buffer with an undo history.
     spelling: Option<Spelling>,
+    /// Where the marks go on the frame being shown.
+    marked: Vec<Marked>,
+    /// And the ones the frame being laid out has asked for so far.
+    ///
+    /// Two lists because a frame is drawn from what it said, not from what
+    /// the next one is saying: a screen part way through being described
+    /// would be marks from two screens at once.
+    marking: Vec<Marked>,
     /// How the caret blinks here, or `None` where the system says it
     /// should not.
     blink: Option<Blink>,
@@ -160,6 +168,8 @@ impl Showing {
             rolled: 0.0,
             composing: false,
             spelling: None,
+            marked: Vec::new(),
+            marking: Vec::new(),
             // Asked once, on the way up: it is a question about the system
             // rather than about this window.
             blink: Blink::asked(),
@@ -379,7 +389,16 @@ impl ApplicationHandler<Waking> for Showing {
         // And the other direction: what the settings say about the window,
         // which the application sends when they change and nobody else can
         // answer.
-        app.drawn_by(Arc::new(crate::grid::Telling::new(frames, wake)));
+        app.drawn_by(Arc::new(crate::grid::Telling::new(
+            frames.clone(),
+            Arc::clone(&wake),
+        )));
+        // And the marks, which a window draws itself. A terminal is asked
+        // what it can show and mostly cannot; there is nothing to ask
+        // here, because the pixels are the window's own.
+        app.use_images(obelus_ui::image::Images::drawn_by(Arc::new(Marking::new(
+            frames,
+        ))));
         // The one place Obelus is told where its events go, which is what
         // starts the watcher, the servers and the walk of the project.
         app.start(doing);
@@ -424,8 +443,28 @@ impl ApplicationHandler<Waking> for Showing {
                 let mut sized = None;
                 while let Ok(update) = frames.try_recv() {
                     match update {
-                        // Not a cell, so the page never sees it.
+                        // Not cells, so the page never sees them.
                         Update::TextSize(points) => sized = Some(points),
+                        Update::Mark {
+                            id,
+                            focused,
+                            svg,
+                            palette,
+                        } => {
+                            if let Some(painter) = self.painter.as_mut() {
+                                painter.carries(id, focused, svg, palette);
+                            }
+                        }
+                        Update::Marked { id, focused, x, y } => {
+                            self.marking.push(Marked { id, focused, x, y })
+                        }
+                        Update::Frame => {
+                            // The frame is over: what it asked for is what
+                            // is on screen until the next one says
+                            // otherwise.
+                            self.marked = std::mem::take(&mut self.marking);
+                            drew = true;
+                        }
                         cells => drew |= self.page.apply(cells),
                     }
                 }
@@ -502,9 +541,13 @@ impl ApplicationHandler<Waking> for Showing {
                 else {
                     return;
                 };
-                if let Err(error) =
-                    painter.paint(&self.page, fonts, self.spelling.as_ref(), self.lit)
-                {
+                if let Err(error) = painter.paint(
+                    &self.page,
+                    fonts,
+                    self.spelling.as_ref(),
+                    self.lit,
+                    &self.marked,
+                ) {
                     tracing::error!(?error, "the frame was not drawn");
                 }
             }
