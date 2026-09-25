@@ -17,7 +17,8 @@ cargo build
 cargo test
 cargo +nightly fmt              # NOT `cargo fmt`
 cargo clippy --all-features --all-targets
-cargo run -- src/app.rs
+cargo run -- src/app.rs               # ob, in this terminal
+cargo run -p obelus-gui -- src/app.rs # obg, in a window
 UPDATE_FIXTURES=1 cargo test    # regenerate golden cell grids
 cargo test -- --ignored         # the slow real-server tests, and the diff sweep
 OBELUS_REQUIRE_LSP=1 cargo test # a missing rust-analyzer fails rather than skips
@@ -651,6 +652,49 @@ arriving and the screen it produced.
 Writing to a server's stdin needs its own thread, because a busy server stops
 draining the pipe. An answer that arrives after the world has moved on is the
 normal case, which is why requests record the version they asked against.
+
+**Obelus is drawn on two things, and the loop knows neither.** `ob` is the
+terminal and `obg` is a window -- gvim's relation to vim, not a second
+program: the same grid, the same `component/` and `ui/`, the same `App`.
+What the window is for is the two things a terminal cannot give. It cannot
+tell `ctrl+i` from `Tab`, `ctrl+m` from `Enter` or `ctrl+[` from `Escape`
+-- one byte each -- and most terminals send nothing at all for
+`ctrl+shift+X`, so the key table is written around what will get through.
+And it draws with the font the reader installed, which is what
+`icons::NERD_FONT` is: Obelus guessing about somebody else's machine. In
+the window the presses arrive as themselves and the marks are compiled into
+the binary.
+
+The seam is one trait and one channel. `ratatui::backend::Backend` is where
+a screenful of cells becomes escape sequences or becomes quads on a texture,
+and `app::run` is handed the *receiving* end of the loop's channel because
+the other end belongs to whichever front end is running: the terminal reads
+keys on a thread of its own, and a window gets them from the event loop a
+platform obliges it to run on the process's first thread. Which is why
+`App` crosses a thread in `obg` and stays there -- one owner of `&mut App`,
+as before, just not on `main`'s thread. What a send needs there and did not
+need in a terminal is a wake: a thread parked in `recv` wakes because
+something was sent, and a thread parked in the platform's own wait does
+not, so the backend holds the window's proxy and pokes it when a frame is
+done.
+
+A key is still a `crossterm::event::KeyEvent` everywhere inside Obelus,
+including inside `obg`, which has no terminal in it at all. The window
+translates its own presses into that type in one file (`keys.rs`), and the
+twenty-odd files that read a key never hear that there are two front ends.
+The same trick is not available for what a *window* can say and a terminal
+cannot: closing one is the reader asking to leave, so it is an event
+(`Event::Closed`) that goes the same way the key that leaves goes, question
+about unwritten files included -- and the window stays open until the
+application says it is done.
+
+What is not shared is the drawing. `obg` has no images (the three terminal
+picture protocols are a terminal's, and the glyph is what a window draws),
+and its cells are painted by one pipeline: a quad per run of background, a
+quad per glyph, a quad for the caret, all from one texture. The colours go
+through untouched, which is why the surface is viewed without its sRGB
+conversion -- a theme's `#1e1e2e` is the colour the reader picked, and a
+pipeline that corrects it draws a different one.
 
 **Obelus does not split its window, so several Obelus processes is the
 normal case.** A terminal already splits, tiles and tabs better than an

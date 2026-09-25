@@ -1,0 +1,341 @@
+//! The cells, on their way from Obelus's loop to the window.
+//!
+//! Obelus draws into a grid of cells and always has. What a terminal does
+//! with that grid is write escape sequences down a pipe; what the window
+//! does is put it on a texture. Neither is the application's business, which
+//! is why the whole of the difference is a `ratatui::backend::Backend` --
+//! this one -- and why nothing above it had to change.
+//!
+//! The grid itself lives in the window, not here. `ratatui`'s `Terminal`
+//! hands a backend only the cells that *differ* from the last frame, so what
+//! crosses the channel is a keystroke's worth of change rather than a
+//! screenful: the window keeps the cells and applies what arrives. A frame
+//! that really did change everything -- a resize, a new theme -- crosses as
+//! everything, which is the cost being paid where it is incurred.
+
+use std::sync::{
+    Arc,
+    atomic::{AtomicU16, AtomicU32, Ordering},
+    mpsc::Sender,
+};
+
+use ratatui::{
+    backend::{Backend, ClearType, WindowSize},
+    buffer::Cell,
+    layout::{Position, Size},
+};
+
+/// One change to what is on the screen.
+///
+/// Ordered, and applied in the order it was sent: a cell written and then
+/// written again is two updates, and the second one is the one that counts.
+#[derive(Debug)]
+pub(crate) enum Update {
+    /// A cell, at a place.
+    Cell {
+        /// The column.
+        x: u16,
+        /// The row.
+        y: u16,
+        /// What is in it.
+        cell: Box<Cell>,
+    },
+    /// Everything, gone.
+    Cleared,
+    /// Where the caret is, or that it has been put away.
+    Caret(Option<Position>),
+    /// The end of a frame: what came before it is what to draw.
+    Frame,
+}
+
+/// The window is gone, so there is nowhere for a frame to go.
+///
+/// Which ends Obelus's loop, by the same route a terminal whose input thread
+/// died ends it: the error travels up out of `app::run` and the thread
+/// finishes.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Closed;
+
+impl std::fmt::Display for Closed {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("the window is gone")
+    }
+}
+
+impl std::error::Error for Closed {}
+
+/// How big the screen is, as both sides measure it.
+///
+/// Written by the window when it is resized and read by Obelus's loop on
+/// the next frame, which is a frame away rather than a lock away: a resize
+/// arrives as an event too, so the loop reads this immediately afterwards
+/// and never at a moment when nothing told it to look.
+#[derive(Debug, Default)]
+pub(crate) struct Measured {
+    columns: AtomicU16,
+    rows: AtomicU16,
+    /// The window, in pixels, packed as width in the high half and height
+    /// in the low one so that the two are read as one fact.
+    pixels: AtomicU32,
+}
+
+impl Measured {
+    /// Says how big the screen has become.
+    pub(crate) fn resized(&self, columns: u16, rows: u16, width: u32, height: u32) {
+        self.columns.store(columns, Ordering::Relaxed);
+        self.rows.store(rows, Ordering::Relaxed);
+        // Clamped rather than wrapped: a window wider than 65535 pixels is
+        // not a thing to be wrong about quietly.
+        let packed = (width.min(u32::from(u16::MAX)) << 16) | height.min(u32::from(u16::MAX));
+        self.pixels.store(packed, Ordering::Relaxed);
+    }
+
+    /// How many columns and rows there are room for.
+    fn size(&self) -> Size {
+        Size::new(
+            self.columns.load(Ordering::Relaxed),
+            self.rows.load(Ordering::Relaxed),
+        )
+    }
+
+    /// And how many pixels that is.
+    fn pixels(&self) -> Size {
+        let packed = self.pixels.load(Ordering::Relaxed);
+        // Both halves were clamped to a `u16` on the way in.
+        Size::new((packed >> 16) as u16, (packed & 0xffff) as u16)
+    }
+}
+
+/// Where Obelus's frames go.
+pub(crate) struct Cells {
+    updates: Sender<Update>,
+    /// What makes the window look. Sending alone does not: its loop is
+    /// asleep in the platform's own wait, and the one way to reach a thread
+    /// parked there is to post an event to it.
+    wake: Arc<dyn Fn() + Send + Sync>,
+    measured: Arc<Measured>,
+    caret: Position,
+    /// Whether the caret is being shown, so that moving it while it is put
+    /// away does not put it back.
+    shown: bool,
+}
+
+impl std::fmt::Debug for Cells {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Cells")
+            .field("caret", &self.caret)
+            .field("shown", &self.shown)
+            .finish_non_exhaustive()
+    }
+}
+
+impl Cells {
+    /// The backend Obelus's loop draws into.
+    pub(crate) fn new(
+        updates: Sender<Update>,
+        wake: Arc<dyn Fn() + Send + Sync>,
+        measured: Arc<Measured>,
+    ) -> Self {
+        Self {
+            updates,
+            wake,
+            measured,
+            caret: Position::ORIGIN,
+            shown: false,
+        }
+    }
+
+    /// Puts one update on its way, or says the window has gone.
+    fn send(&self, update: Update) -> Result<(), Closed> {
+        self.updates.send(update).map_err(|_| Closed)
+    }
+}
+
+impl Backend for Cells {
+    type Error = Closed;
+
+    fn draw<'a, I>(&mut self, content: I) -> Result<(), Closed>
+    where
+        I: Iterator<Item = (u16, u16, &'a Cell)>,
+    {
+        for (x, y, cell) in content {
+            self.send(Update::Cell {
+                x,
+                y,
+                cell: Box::new(cell.clone()),
+            })?;
+        }
+        Ok(())
+    }
+
+    fn hide_cursor(&mut self) -> Result<(), Closed> {
+        self.shown = false;
+        self.send(Update::Caret(None))
+    }
+
+    fn show_cursor(&mut self) -> Result<(), Closed> {
+        self.shown = true;
+        self.send(Update::Caret(Some(self.caret)))
+    }
+
+    fn get_cursor_position(&mut self) -> Result<Position, Closed> {
+        Ok(self.caret)
+    }
+
+    fn set_cursor_position<P: Into<Position>>(&mut self, position: P) -> Result<(), Closed> {
+        self.caret = position.into();
+        match self.shown {
+            true => self.send(Update::Caret(Some(self.caret))),
+            // Where it will be when it comes back, which is what the
+            // terminal does with the same call: a caret that is put away is
+            // still somewhere.
+            false => Ok(()),
+        }
+    }
+
+    fn clear(&mut self) -> Result<(), Closed> {
+        self.send(Update::Cleared)
+    }
+
+    fn clear_region(&mut self, clear_type: ClearType) -> Result<(), Closed> {
+        match clear_type {
+            ClearType::All => self.clear(),
+            // The rest are a terminal's: they clear from the caret to
+            // somewhere, which only means anything where the caret is a
+            // place a stream of bytes has reached. Obelus draws a whole
+            // screen every frame and asks for none of them.
+            other => {
+                tracing::warn!(?other, "a window clears the whole screen or nothing");
+                Ok(())
+            }
+        }
+    }
+
+    fn size(&self) -> Result<Size, Closed> {
+        Ok(self.measured.size())
+    }
+
+    fn window_size(&mut self) -> Result<WindowSize, Closed> {
+        Ok(WindowSize {
+            columns_rows: self.measured.size(),
+            pixels: self.measured.pixels(),
+        })
+    }
+
+    fn flush(&mut self) -> Result<(), Closed> {
+        self.send(Update::Frame)?;
+        (self.wake)();
+        Ok(())
+    }
+}
+
+/// The cells, as the window has them.
+///
+/// The window keeps the grid because it is the one that redraws: a frame
+/// arrives as the handful of cells that changed, and a redraw with nothing
+/// changed at all -- a window uncovered, a monitor waking -- has to be able
+/// to draw the same screen again without asking Obelus for it.
+#[derive(Debug, Default)]
+pub(crate) struct Page {
+    columns: u16,
+    rows: u16,
+    cells: Vec<Cell>,
+    caret: Option<Position>,
+}
+
+/// One cell, as the painter reads it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Look<'a> {
+    /// What is in it, which may be several characters making one mark.
+    pub(crate) text: &'a str,
+    /// The ink.
+    pub(crate) foreground: ratatui::style::Color,
+    /// And what is behind it.
+    pub(crate) background: ratatui::style::Color,
+    /// Bold, italic, and the rest of what a style can say.
+    pub(crate) modifier: ratatui::style::Modifier,
+}
+
+impl Page {
+    /// How many columns there are.
+    pub(crate) const fn columns(&self) -> u16 {
+        self.columns
+    }
+
+    /// And how many rows.
+    pub(crate) const fn rows(&self) -> u16 {
+        self.rows
+    }
+
+    /// Where the caret is, when it is being shown.
+    pub(crate) const fn caret(&self) -> Option<Position> {
+        self.caret
+    }
+
+    /// Makes room for a screen this size, and empties it.
+    ///
+    /// Emptied rather than kept: the cells that were here were at other
+    /// places, and a grid reshaped around them would draw the old screen
+    /// slewed. Obelus redraws the whole of it on the frame after a resize,
+    /// which is the frame this is making room for.
+    pub(crate) fn resized(&mut self, columns: u16, rows: u16) {
+        self.columns = columns;
+        self.rows = rows;
+        self.cells.clear();
+        self.cells
+            .resize_with(usize::from(columns) * usize::from(rows), Cell::default);
+    }
+
+    /// Takes one update, and says whether it ended a frame.
+    pub(crate) fn apply(&mut self, update: Update) -> bool {
+        match update {
+            Update::Cell { x, y, cell } => {
+                if let Some(at) = self.at(x, y) {
+                    self.cells[at] = *cell;
+                }
+                false
+            }
+            Update::Cleared => {
+                for cell in &mut self.cells {
+                    *cell = Cell::default();
+                }
+                false
+            }
+            Update::Caret(caret) => {
+                self.caret = caret;
+                false
+            }
+            Update::Frame => true,
+        }
+    }
+
+    /// What is in one cell.
+    ///
+    /// Outside the grid is empty rather than a panic: a frame drawn against
+    /// the size the window had a moment ago is the ordinary case during a
+    /// resize, and the frame after it is the right one.
+    pub(crate) fn look(&self, x: u16, y: u16) -> Look<'_> {
+        let Some(at) = self.at(x, y) else {
+            return Look {
+                text: " ",
+                foreground: ratatui::style::Color::Reset,
+                background: ratatui::style::Color::Reset,
+                modifier: ratatui::style::Modifier::empty(),
+            };
+        };
+        let cell = &self.cells[at];
+        Look {
+            text: cell.symbol(),
+            foreground: cell.fg,
+            background: cell.bg,
+            modifier: cell.modifier,
+        }
+    }
+
+    /// Where a cell is in the list, or nothing when it is off the grid.
+    fn at(&self, x: u16, y: u16) -> Option<usize> {
+        (x < self.columns && y < self.rows)
+            .then(|| usize::from(y) * usize::from(self.columns) + usize::from(x))
+    }
+}

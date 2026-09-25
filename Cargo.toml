@@ -284,6 +284,41 @@ schemars = "1"
 # normaliser -- a dozen crates to open a link.
 open = "5"
 
+# The window, for the binary that draws Obelus in one rather than in a
+# terminal. winit is the only crate here that owns a thread it is not given:
+# a platform's event loop has to be the process's first thread on macOS and
+# Windows, which is why `obg` runs the loop there and Obelus's own loop on a
+# thread of its own.
+#
+# 0.30 rather than 0.31, which is still a beta.
+winit = "0.30"
+
+# What the window is painted with. Metal on macOS, D3D12 on Windows, Vulkan
+# on Linux -- which is the whole reason for it: one pipeline written once
+# against three drivers nobody has to think about again.
+wgpu = "30"
+
+# Fonts: finding what this machine has, falling back for a character the
+# chosen face does not cover, shaping, and turning a glyph into pixels.
+#
+# Its own layout is *not* used. The layout is Obelus's grid -- every cell at
+# a place worked out from a column, the way a terminal does it -- and asking
+# a text engine to lay out a screenful of cells would be asking it to answer
+# a question that is already answered.
+cosmic-text = "0.19"
+
+# Where each glyph sits in the one texture they are all kept in.
+etagere = "0.3"
+
+# Structs into GPU buffers, which is the one thing every wgpu program needs
+# and nothing in std does.
+bytemuck = { version = "1", features = ["derive"] }
+
+# Waiting for wgpu's setup, which is the only `async` in the window's
+# binary: asking for an adapter and a device is two awaits on the way up and
+# nothing afterwards, so a runtime for it would be a runtime for two calls.
+pollster = "1"
+
 # What the tests use and the program does not.
 # A blocking HTTP client, for the tests that talk to the server Obelus runs
 # for an agent. Obelus itself fetches with `reqwest` on its own runtime;

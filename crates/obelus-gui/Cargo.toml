@@ -1,0 +1,37 @@
+[package]
+name = "obelus-gui"
+# Its own, not the workspace's: that one says "terminal", and this is the
+# binary for readers who are not in one.
+description = "A code reader in a window. It doesn't want you to type."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "obg"
+path = "src/main.rs"
+
+# Cargo inherits nothing here on its own; every member says it.
+[lints]
+workspace = true
+
+[dependencies]
+obelus-app.workspace = true
+obelus-icons.workspace = true
+obelus-logging.workspace = true
+obelus-ui.workspace = true
+anyhow.workspace = true
+bytemuck.workspace = true
+clap.workspace = true
+cosmic-text.workspace = true
+# The type a key arrives as everywhere inside Obelus. Nothing here talks to
+# a terminal; what the window produces is translated into this so that the
+# twenty-odd files that read a key do not have to know there are two front
+# ends.
+crossterm.workspace = true
+etagere.workspace = true
+pollster.workspace = true
+ratatui.workspace = true
+tracing.workspace = true
+wgpu.workspace = true
+winit.workspace = true
