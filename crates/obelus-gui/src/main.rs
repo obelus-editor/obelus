@@ -19,6 +19,7 @@ mod blink;
 mod font;
 mod grid;
 mod keys;
+mod monospace;
 mod paint;
 mod window;
 

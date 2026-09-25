@@ -987,6 +987,15 @@ than of the font database, because cosmic-text substitutes a face of its
 own without being asked and a chain that did not notice would stop at the
 first name every time.
 
+Under all of them is what *this machine* calls monospaced, which is asked
+of the platform rather than taken from the text engine: cosmic-text
+resolves `Family::Monospace` from a name written into itself (`Noto Sans
+Mono`, under a `TODO`), and on a desktop where `fc-match monospace` says
+something else -- `JetBrainsMono Nerd Font` on the machine this was written
+on -- a reader who has chosen nothing got a window in a face nothing else
+on their screen was using. A setting nobody set means what the machine
+already does.
+
 **Obelus does not split its window, so several Obelus processes is the
 normal case.** A terminal already splits, tiles and tabs better than an
 editor can from the inside, so Obelus has one region and no panes. What that

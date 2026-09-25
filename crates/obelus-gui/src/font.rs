@@ -76,11 +76,16 @@ pub(crate) struct Fonts {
     /// hundred cell contents over and over: without it every frame reshapes
     /// every cell, and shaping is the expensive half of drawing text.
     shaped: HashMap<(String, Weight, Style), Vec<Placed>>,
-    /// The faces the reader asked for, in the order they are tried.
+    /// The faces to try, in order: the reader's, and then whatever this
+    /// machine calls its monospaced one.
     ///
-    /// Empty is this machine's own monospaced face, which is what a
-    /// reader who has said nothing gets.
+    /// The last of them is why a reader who has chosen nothing gets the
+    /// face their terminal already draws code in rather than a name
+    /// cosmic-text has written into itself -- see [`crate::monospace`].
     families: Vec<String>,
+    /// That last one, kept so that changing the reader's list does not
+    /// mean asking the platform again.
+    otherwise: Option<String>,
 }
 
 impl std::fmt::Debug for Fonts {
@@ -118,7 +123,9 @@ impl Fonts {
             },
             shaped: HashMap::new(),
             families: Vec::new(),
+            otherwise: crate::monospace::here(),
         };
+        fonts.families = chain(&[], fonts.otherwise.as_deref());
         fonts.measure();
         fonts
     }
@@ -129,10 +136,11 @@ impl Fonts {
     /// over when it comes to be drawn with, because one settings file is
     /// read on every machine the reader uses.
     pub(crate) fn use_families(&mut self, names: &[String]) {
-        if self.families == names {
+        let wanted = chain(names, self.otherwise.as_deref());
+        if self.families == wanted {
             return;
         }
-        self.families = names.to_vec();
+        self.families = wanted;
         self.shaped.clear();
         self.measure();
     }
@@ -324,6 +332,22 @@ fn shape(
     placed
 }
 
+/// The faces to try, in order.
+///
+/// What the reader asked for, and then what this machine calls its
+/// monospaced face -- which is the answer when they asked for nothing, and
+/// the one under them when a character is in none of theirs. Not added
+/// twice where they have named it themselves.
+fn chain(names: &[String], otherwise: Option<&str>) -> Vec<String> {
+    let mut chain: Vec<String> = names.to_vec();
+    if let Some(last) = otherwise
+        && !chain.iter().any(|name| name.eq_ignore_ascii_case(last))
+    {
+        chain.push(last.to_string());
+    }
+    chain
+}
+
 /// Lays the text out in the first of the reader's faces that draws it.
 ///
 /// "Draws it" is asked of the answer rather than of the font database: a
@@ -442,5 +466,58 @@ mod tests {
         // Letters, digits and CJK are the machine's.
         assert!(!is_a_mark('a'));
         assert!(!is_a_mark('读'));
+    }
+}
+
+#[cfg(test)]
+mod chains {
+    use super::*;
+
+    /// What this machine calls monospaced is the last thing tried, and a
+    /// reader who chose nothing gets it first.
+    ///
+    /// Which is the whole of the fix: `Family::Monospace` resolves to a
+    /// name cosmic-text wrote into itself, and on a machine where that is
+    /// not what `fc-match monospace` says, a window with no setting drew
+    /// in a face nothing else on the screen was using.
+    ///
+    /// Deliberate break: leaving the platform's face out makes the first
+    /// of these empty, and an empty chain is `Family::Monospace` again.
+    #[test]
+    fn the_machines_own_face_is_under_the_readers() {
+        assert_eq!(chain(&[], Some("JetBrains Mono")), ["JetBrains Mono"]);
+        assert_eq!(
+            chain(&["Iosevka".to_string()], Some("JetBrains Mono")),
+            ["Iosevka", "JetBrains Mono"]
+        );
+    }
+
+    /// And it is not added twice where the reader named it themselves.
+    ///
+    /// Deliberate break: pushing it unconditionally puts the same face in
+    /// the chain twice, which is a second shaping of every character it
+    /// fails to draw.
+    #[test]
+    fn a_face_the_reader_named_is_not_added_again() {
+        assert_eq!(
+            chain(&["JetBrains Mono".to_string()], Some("JetBrains Mono")),
+            ["JetBrains Mono"]
+        );
+        // However it is spelled: a family name is a name, and fontconfig
+        // and a reader do not have to agree about its case.
+        assert_eq!(
+            chain(&["jetbrains mono".to_string()], Some("JetBrains Mono")),
+            ["jetbrains mono"]
+        );
+    }
+
+    /// A machine that says nothing leaves the chain to the reader alone.
+    ///
+    /// Deliberate break: putting an empty name in the chain asks for a
+    /// family called nothing, once per character.
+    #[test]
+    fn a_machine_with_no_answer_adds_nothing() {
+        assert!(chain(&[], None).is_empty());
+        assert_eq!(chain(&["Iosevka".to_string()], None), ["Iosevka"]);
     }
 }
