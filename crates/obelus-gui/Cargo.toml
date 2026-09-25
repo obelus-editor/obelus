@@ -19,6 +19,10 @@ workspace = true
 obelus-app.workspace = true
 obelus-icons.workspace = true
 obelus-logging.workspace = true
+# How many cells a cell's text takes, which is the application's own answer
+# and has to be: the window draws the character where the application put
+# the one after it.
+obelus-text.workspace = true
 obelus-ui.workspace = true
 anyhow.workspace = true
 bytemuck.workspace = true

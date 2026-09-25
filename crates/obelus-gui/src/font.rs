@@ -163,7 +163,7 @@ impl Fonts {
         };
     }
 
-    /// What one cell's text is drawn as.
+    /// What one cell's text is drawn as, placed in the cells it occupies.
     ///
     /// Shaped once per distinct string and kept: a screenful is a few
     /// hundred different cells however many rows it has.
@@ -194,7 +194,27 @@ impl Fonts {
     }
 }
 
-/// Lays out one cell's worth of text.
+/// Lays out one cell's worth of text, in the cells that cell occupies.
+///
+/// How many that is comes from [`obelus_text::text_width`], which is the
+/// same question the application asked when it decided which column the
+/// next character goes in. Asking it any other way here would be a second
+/// answer, and the two would disagree about exactly the characters that are
+/// hard: a full-width one, an emoji, a mark that combines.
+///
+/// Within that room the glyph is left the size the face drew it and put in
+/// the middle. A Latin face's advance is about three fifths of its size and
+/// a CJK face's is the whole of it, so two cells of Latin is wider than one
+/// full-width character: the difference is a little air either side, which
+/// is what every terminal shows. It used to be handed to cosmic-text's
+/// `monospace_width`, which closes that gap by *scaling the glyph up* until
+/// its advance is a whole number of cells -- a fifth bigger, drawn edge to
+/// edge with its neighbours, so a line of Chinese was visibly a different
+/// size from the Latin above it.
+///
+/// Scaled down only where it does not fit, which is the other direction and
+/// not a matter of taste: a glyph wider than the cells it was given is a
+/// glyph drawn over the text beside it.
 fn shape(
     system: &mut FontSystem,
     metrics: Metrics,
@@ -203,6 +223,14 @@ fn shape(
     weight: Weight,
     style: Style,
 ) -> Vec<Placed> {
+    // At least one: a cell that measures zero -- a combining mark on its
+    // own, a zero-width space -- still has the cell it was written into.
+    let columns = obelus_text::text_width(text).max(1);
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "a cell is one or two columns, never billions"
+    )]
+    let room = columns as f32 * width;
     let family = match text.chars().next().is_some_and(is_a_mark) {
         // Asked for by name rather than left to the fallback chain. What
         // Obelus's marks are is a private use area code point, and a
@@ -214,21 +242,47 @@ fn shape(
         true => Family::Name(SYMBOLS_FAMILY),
         false => Family::Monospace,
     };
+    let attrs = Attrs::new().family(family).weight(weight).style(style);
+    let (placed, drawn) = lay(system, metrics, text, &attrs);
+    // Too wide for its cells, which happens where a fallback face is not a
+    // monospaced one at all. Drawn again at the size that fits rather than
+    // squeezed afterwards: a bitmap stretched sideways is a blurred letter,
+    // and the glyph has not been rasterised yet.
+    let (mut placed, drawn) = match drawn > room + 0.5 {
+        true => lay(
+            system,
+            Metrics::new(metrics.font_size * room / drawn, metrics.line_height),
+            text,
+            &attrs,
+        ),
+        false => (placed, drawn),
+    };
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "half the difference between two widths of a cell or two"
+    )]
+    let middle = ((room - drawn) / 2.0).round() as i32;
+    for glyph in &mut placed {
+        glyph.x += middle;
+    }
+    placed
+}
+
+/// One laying out, and how wide it came out.
+fn lay(
+    system: &mut FontSystem,
+    metrics: Metrics,
+    text: &str,
+    attrs: &Attrs<'_>,
+) -> (Vec<Placed>, f32) {
     let mut buffer = Buffer::new(system, metrics);
     let mut shaping = buffer.borrow_with(system);
     shaping.set_size(None, None);
-    // A cell is one column wide whatever the face thinks, so a glyph that
-    // disagrees is put at the column's own place rather than at the one its
-    // advance would have reached.
-    shaping.set_monospace_width(Some(width));
-    shaping.set_text(
-        text,
-        &Attrs::new().family(family).weight(weight).style(style),
-        Shaping::Advanced,
-        None,
-    );
+    shaping.set_text(text, attrs, Shaping::Advanced, None);
     let mut placed = Vec::new();
+    let mut drawn: f32 = 0.0;
     for run in shaping.layout_runs() {
+        drawn = drawn.max(run.line_w);
         for glyph in run.glyphs {
             let physical = glyph.physical((0.0, 0.0), 1.0);
             placed.push(Placed {
@@ -238,7 +292,7 @@ fn shape(
             });
         }
     }
-    placed
+    (placed, drawn)
 }
 
 /// Whether this is one of the marks Obelus carries its own face for.

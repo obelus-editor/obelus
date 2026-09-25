@@ -257,6 +257,25 @@ pub(crate) struct Look<'a> {
     pub(crate) modifier: ratatui::style::Modifier,
 }
 
+impl Look<'_> {
+    /// How many columns this cell takes up.
+    ///
+    /// Two for a full-width character, and the cell after it is one
+    /// `ratatui` has reset -- no text and no colours. In a terminal that
+    /// cell is never drawn at all, because the terminal itself advances two
+    /// columns for a wide glyph; a window draws every cell, so without
+    /// asking this it painted the default background behind the second half
+    /// of every Chinese character and a line of them came out striped.
+    pub(crate) fn columns(&self) -> u16 {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "the width of one cell's text, which is one or two"
+        )]
+        let columns = obelus_text::text_width(self.text) as u16;
+        columns.max(1)
+    }
+}
+
 impl Page {
     /// How many columns there are.
     pub(crate) const fn columns(&self) -> u16 {

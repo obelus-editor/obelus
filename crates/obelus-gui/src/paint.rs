@@ -139,15 +139,25 @@ impl Painter {
             // The floor every desktop adapter clears, so that what is asked
             // for is what a window needs rather than what this machine
             // happens to have.
-            required_limits: wgpu::Limits::downlevel_defaults(),
+            // What this machine offers, not a floor. The floor allows a
+            // texture of 2048 pixels, and a window is a texture: a
+            // maximised Obelus on a tall screen asked for 1882 by 2052 and
+            // the surface refused it -- which is a panic on a resize, not
+            // a degraded picture.
+            required_limits: adapter.limits(),
             experimental_features: wgpu::ExperimentalFeatures::disabled(),
             memory_hints: wgpu::MemoryHints::default(),
             trace: wgpu::Trace::Off,
         }))
         .context("the graphics adapter would not open a device")?;
 
+        let most = device.limits().max_texture_dimension_2d;
         let mut configured = surface
-            .get_default_config(&adapter, size.width.max(1), size.height.max(1))
+            .get_default_config(
+                &adapter,
+                size.width.clamp(1, most),
+                size.height.clamp(1, most),
+            )
             .context("the surface offers no way to be drawn on")?;
         let view = configured.format.remove_srgb_suffix();
         // The surface is drawn through a view that does not convert, and
@@ -318,8 +328,13 @@ impl Painter {
 
     /// The window changed size, so the surface has to.
     pub(crate) fn resized(&mut self, width: u32, height: u32) {
-        self.configured.width = width.max(1);
-        self.configured.height = height.max(1);
+        // Clamped, because a surface bigger than the largest texture this
+        // device can make is not a picture that comes out wrong -- it is a
+        // validation error, which is to say a panic while the reader drags
+        // a corner.
+        let most = self.device.limits().max_texture_dimension_2d;
+        self.configured.width = width.clamp(1, most);
+        self.configured.height = height.clamp(1, most);
         self.surface.configure(&self.device, &self.configured);
     }
 
@@ -443,36 +458,18 @@ impl Painter {
                 true => (bottom - f32::from(row) * height).max(height),
                 false => height,
             };
-            let mut run: Option<(u16, u16, [f32; 4])> = None;
-            let draw = |painter: &mut Self, start: u16, end: u16, colour: [f32; 4]| {
+            for (start, end, colour) in runs(page, row) {
                 let wide = match end == page.columns() {
                     true => (right - f32::from(start) * width).max(width),
                     false => f32::from(end - start) * width,
                 };
-                painter.block(
+                self.block(
                     f32::from(start) * width,
                     f32::from(row) * height,
                     wide,
                     tall,
-                    colour,
+                    rgba(colour, Ink::Background),
                 );
-            };
-            for column in 0..page.columns() {
-                let look = page.look(column, row);
-                let colour = rgba(look.background, Ink::Background);
-                match run {
-                    Some((start, end, running)) if running == colour && end == column => {
-                        run = Some((start, column + 1, running));
-                    }
-                    Some((start, end, running)) => {
-                        draw(self, start, end, running);
-                        run = Some((column, column + 1, colour));
-                    }
-                    None => run = Some((column, column + 1, colour)),
-                }
-            }
-            if let Some((start, end, running)) = run {
-                draw(self, start, end, running);
             }
         }
     }
@@ -781,6 +778,42 @@ impl Atlas {
     }
 }
 
+/// The runs of one colour along a row, as few as they can be said in.
+///
+/// Two things are settled here. A screen is mostly the page's own colour,
+/// so a rectangle per cell would be ten thousand of them to say one thing.
+/// And a full-width character owns both of its columns: the second one is a
+/// cell `ratatui` has reset, with no text and no colours, which a terminal
+/// never draws because it advanced two columns itself. A window draws every
+/// cell, so reading that cell's own background painted the default colour
+/// behind the right half of every Chinese character -- a line of them came
+/// out striped.
+fn runs(page: &Page, row: u16) -> Vec<(u16, u16, Color)> {
+    let mut runs: Vec<(u16, u16, Color)> = Vec::new();
+    // How many columns of the character just seen are still to come.
+    let mut rest = 0;
+    for column in 0..page.columns() {
+        let colour = match rest {
+            0 => {
+                let look = page.look(column, row);
+                rest = look.columns() - 1;
+                look.background
+            }
+            // The rest of a character that was seen already, so there is
+            // always a run to take the colour from.
+            _ => {
+                rest -= 1;
+                runs.last().map_or(Color::Reset, |&(_, _, running)| running)
+            }
+        };
+        match runs.last_mut() {
+            Some((_, end, running)) if *running == colour && *end == column => *end = column + 1,
+            _ => runs.push((column, column + 1, colour)),
+        }
+    }
+    runs
+}
+
 /// Which half of a cell a colour is for, which is the whole of what `Reset`
 /// means.
 #[derive(Clone, Copy, Debug)]
@@ -876,7 +909,65 @@ fn indexed(index: u8) -> (u8, u8, u8) {
 
 #[cfg(test)]
 mod tests {
+    use ratatui::buffer::Cell;
+
     use super::*;
+    use crate::grid::Update;
+
+    /// A page with one row of text on it, for asking what would be drawn.
+    fn page(text: &str) -> Page {
+        let mut page = Page::default();
+        page.resized(12, 1);
+        let mut column = 0;
+        for character in text.chars() {
+            let written = character.to_string();
+            let mut cell = Cell::default();
+            cell.set_symbol(&written);
+            cell.bg = Color::Rgb(1, 2, 3);
+            let wide = obelus_text::text_width(&written).max(1);
+            page.apply(Update::Cell {
+                x: column,
+                y: 0,
+                cell: Box::new(cell),
+            });
+            // What `ratatui` leaves behind the right half of a wide
+            // character: a cell with nothing in it and no colours.
+            for rest in 1..wide {
+                page.apply(Update::Cell {
+                    x: column + rest as u16,
+                    y: 0,
+                    cell: Box::new(Cell::default()),
+                });
+            }
+            column += wide as u16;
+        }
+        page
+    }
+
+    /// A full-width character's colour covers both of its columns.
+    ///
+    /// Deliberate break: reading each cell's own background -- which is
+    /// what a terminal's front end can do, because a terminal draws the
+    /// second half itself -- puts a run of the default colour between every
+    /// pair of Chinese characters, and this counts them.
+    #[test]
+    fn a_wide_character_owns_the_colour_of_both_its_cells() {
+        let page = page("\u{4e2d}\u{6587}");
+        let coloured: Vec<_> = runs(&page, 0)
+            .into_iter()
+            .filter(|&(_, _, colour)| colour == Color::Rgb(1, 2, 3))
+            .collect();
+        assert_eq!(coloured, vec![(0, 4, Color::Rgb(1, 2, 3))]);
+    }
+
+    /// And the rest of the row is still said in as few runs as it can be.
+    ///
+    /// Deliberate break: a rectangle per cell -- the obvious way to write
+    /// this -- makes it twelve.
+    #[test]
+    fn a_row_is_as_few_runs_as_it_can_be() {
+        assert_eq!(runs(&page("ab"), 0).len(), 2);
+    }
 
     /// The colours a theme names are the colours that are drawn.
     ///
