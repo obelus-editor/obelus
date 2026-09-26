@@ -749,12 +749,23 @@ command is gone and `App::blame` reads the setting.
   works. What takes them is a desktop *configuring* the terminal to, so
   that its own chord lands somewhere in a shell: omarchy adds them to
   foot's bindings for exactly that. There the key never reaches Obelus at
-  all, and since `ob` has the mouse (so the terminal has no selection to
-  copy) what it does is nothing. Which is the shape of the whole problem:
-  a desktop can tell a terminal from a window, and nothing can tell a
-  shell from a program that has taken the terminal over. Not something
-  Obelus can answer from the inside -- the terminal decides before Obelus
-  is asked, and decides unconditionally.
+  all -- measured, by pressing it at `ob` in such a terminal and at `ob` in
+  the same terminal with that one binding turned off: the first copies
+  nothing, the second copies the selection.
+
+  And the two halves come apart, which is the part worth keeping. With the
+  terminal holding both keys, paste still works and copy cannot, because
+  **pasting is something a terminal can do on behalf of the program inside
+  it and copying is not**: it puts the words down the pty, where they
+  arrive as an ordinary bracketed paste. Copy it cannot do, because what is
+  selected is the program's and the terminal does not know -- and `ob` has
+  taken the mouse, so the selection the terminal *would* copy is empty. The
+  key does nothing at all.
+
+  Which is the shape of the whole problem: a desktop can tell a terminal
+  from a window, and nothing can tell a shell from a program that has taken
+  the terminal over. Not something Obelus can answer from the inside -- the
+  terminal decides before Obelus is asked, and decides unconditionally.
   **Escape always gives up on the nearest thing**, and everything else is
   reached from the palette: a chord for every command is how a key table
   stops being memorable.
