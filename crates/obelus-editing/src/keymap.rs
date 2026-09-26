@@ -1006,12 +1006,24 @@ impl Keymap {
     /// been renamed, a chord it cannot read -- is skipped with a word in the
     /// log. A config file with a typo in it should leave a reader with
     /// Obelus, not with a table full of holes.
+    ///
+    /// What it skipped comes back with it, because a line that bound
+    /// nothing looks from the outside exactly like one that bound
+    /// something -- and the file it is in is a file the reader can be
+    /// shown.
     #[must_use]
-    pub fn with(bindings: &std::collections::BTreeMap<String, String>) -> Self {
+    pub fn with(bindings: &std::collections::BTreeMap<String, String>) -> (Self, Vec<Unbound>) {
         let mut keymap = Self::new();
+        let mut unbound = Vec::new();
+        let skipped = |name: &String, text: &String, why: Unbindable| Unbound {
+            name: name.clone(),
+            text: text.clone(),
+            why,
+        };
         for (name, text) in bindings {
             let Some(command) = obelus_command::by_name(name) else {
                 tracing::warn!(name, "no command by that name to bind");
+                unbound.push(skipped(name, text, Unbindable::NoSuchCommand));
                 continue;
             };
             // An empty chord is the reader having taken the key away, which
@@ -1022,6 +1034,7 @@ impl Keymap {
             }
             let Some(chord) = KeyChord::parse(text) else {
                 tracing::warn!(name, text, "not a key Obelus can read");
+                unbound.push(skipped(name, text, Unbindable::Unreadable));
                 continue;
             };
             // The same judgement the page that binds keys makes. A chord
@@ -1029,11 +1042,12 @@ impl Keymap {
             // nothing on screen to say why the key does nothing.
             if let Some(why) = why_not(chord) {
                 tracing::warn!(name, text, why, "not a key Obelus can be given");
+                unbound.push(skipped(name, text, Unbindable::NotAllowed(why)));
                 continue;
             }
             keymap.rebind(command, Some(chord));
         }
-        keymap
+        (keymap, unbound)
     }
 
     /// The key bound to a command, if one is.
@@ -1060,6 +1074,34 @@ impl Default for Keymap {
 
 /// Why a chord cannot be bound to a command, or `None` if it can.
 ///
+/// A line of a `[keys]` table that bound nothing, and why.
+///
+/// Facts, not words: what to say about one is copy, and copy is written
+/// where the rest of what Obelus says to the reader is written.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Unbound {
+    /// The command, spelled the way the file spells it.
+    pub name: String,
+    /// And the chord it was to go on.
+    pub text: String,
+    /// Why nothing happened.
+    pub why: Unbindable,
+}
+
+/// What was wrong with a line that bound nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Unbindable {
+    /// Obelus has no command by that name: one renamed since, or a word
+    /// spelled wrong.
+    NoSuchCommand,
+    /// What was written is not a chord Obelus can read at all.
+    Unreadable,
+    /// It is a chord, and not one a reader may be given -- with the reason
+    /// [`why_not`] gives, which is the reason the page that binds keys
+    /// shows.
+    NotAllowed(&'static str),
+}
+
 /// One judgement, used by the page that binds keys, by the table read out of
 /// the config file, and by the test that holds the shipped table to the same
 /// rule. The three families are the whole of what is allowed:

@@ -2062,23 +2062,30 @@ impl App {
         let Some(span) = at else {
             return;
         };
-        self.troubles
-            .entry(path.to_path_buf())
-            .or_default()
-            .push(obelus_lsp::trouble::Trouble {
-                span,
-                severity,
-                message: said.to_string(),
-                // Obelus is the tool that said it, which is what a row of
-                // a list of problems reads out -- and what tells this one
-                // from a server's when the file is taken away again. Its
-                // own name, spelled the way the name is spelled.
-                source: Some(OBELUS.to_string()),
-                // A code action is asked for *about* a diagnostic, and the
-                // server matches it by every field it sent. There is no
-                // server behind this one and nothing to ask.
-                item: serde_json::Value::Null,
-            });
+        let said = obelus_lsp::trouble::Trouble {
+            span,
+            severity,
+            message: said.to_string(),
+            // Obelus is the tool that said it, which is what a row of a
+            // list of problems reads out -- and what tells this one from a
+            // server's when the file is taken away again. Its own name,
+            // spelled the way the name is spelled.
+            source: Some(OBELUS.to_string()),
+            // A code action is asked for *about* a diagnostic, and the
+            // server matches it by every field it sent. There is no server
+            // behind this one and nothing to ask.
+            item: serde_json::Value::Null,
+        };
+        // In the order they are in the file, which is what a server's
+        // arrive sorted into and what the keys that walk them and the list
+        // they are in both read. Obelus finds its own in whatever order it
+        // happens to ask -- the key table is alphabetical, because that is
+        // what a table of it is.
+        let troubles = self.troubles.entry(path.to_path_buf()).or_default();
+        let at = troubles.partition_point(|other| {
+            (other.span.line, other.span.column) <= (span.line, span.column)
+        });
+        troubles.insert(at, said);
     }
 
     /// Forgets what Obelus said about a file, leaving what a server said.

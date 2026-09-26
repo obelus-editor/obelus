@@ -285,7 +285,7 @@ fn the_readers_own_bindings_go_over_the_defaults() {
     ]
     .into_iter()
     .collect();
-    let keymap = Keymap::with(&moved);
+    let (keymap, _unbound) = Keymap::with(&moved);
 
     // Both of `close-document`'s bindings moved: it is one command with one
     // key, bound in two contexts so that it reaches the list of open files.

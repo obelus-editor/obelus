@@ -714,7 +714,15 @@ pub fn placed(ignored: Vec<Ignored>, text: &str) -> Vec<Ignored> {
     if ignored.is_empty() {
         return ignored;
     }
-    let spans = spans_in(text);
+    settled(ignored, &spans_in(text))
+}
+
+/// The same, where the caller has already asked where the keys are.
+#[must_use]
+pub fn settled(
+    ignored: Vec<Ignored>,
+    spans: &std::collections::BTreeMap<String, Span>,
+) -> Vec<Ignored> {
     ignored
         .into_iter()
         .map(|one| Ignored {
@@ -884,7 +892,13 @@ pub fn reading_of(text: &str) -> Reading {
     match text.parse::<toml::Table>() {
         Ok(table) => {
             let (config, applied) = from_table(&table);
-            Reading::Settings(config, applied.set, placed(applied.ignored, text))
+            let spans = spans_in(text);
+            Reading::Settings {
+                config,
+                named: applied.set,
+                ignored: settled(applied.ignored, &spans),
+                spans,
+            }
         }
         // The parser says which bytes it gave up on, which is the whole
         // reason a reader can be shown the line rather than told a number
@@ -910,9 +924,24 @@ pub enum Reading {
     Nowhere,
     /// There is none yet, which is where everybody starts.
     Nothing,
-    /// There is one; this is what it says, the settings it named, and the
-    /// lines in it that did nothing.
-    Settings(Config, Vec<&'static str>, Vec<Ignored>),
+    /// There is one, and this is what came of it.
+    ///
+    /// A struct rather than a tuple because it carries four things, and
+    /// the fourth is one nothing here uses: where each key is written is
+    /// for whatever has to say "this line" about that file *later* -- a
+    /// key binding that will not bind is decided by the keymap, long after
+    /// the text has been let go of.
+    Settings {
+        /// What the file says.
+        config: Config,
+        /// The settings it named. One it named is the reader's whether or
+        /// not what they wrote differs from what Obelus would have done.
+        named: Vec<&'static str>,
+        /// The lines in it that did nothing.
+        ignored: Vec<Ignored>,
+        /// And where every key in it is written.
+        spans: std::collections::BTreeMap<String, Span>,
+    },
     /// There is one and it could not be read, with what went wrong and
     /// where.
     ///
@@ -1982,7 +2011,7 @@ mod where_it_went_wrong {
     fn a_file_that_parses_is_not_unreadable() {
         assert!(matches!(
             reading_of("theme = \"dark\"\n"),
-            Reading::Settings(..)
+            Reading::Settings { .. }
         ));
     }
 

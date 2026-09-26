@@ -3040,3 +3040,59 @@ fn what_a_project_may_not_set_is_marked_on_the_projects_file() {
     // The second line of the project's file, where `agent` is written.
     assert_eq!(problems[0].span.line.get(), 1);
 }
+
+/// A line of the key table that bound nothing is a warning on that line.
+///
+/// The three ways it can happen, each with a different thing left to say:
+/// a command that has been renamed, a chord Obelus cannot read at all, and
+/// a chord it can read and may not be given. A key that silently never
+/// fires is the thing the whole `why_not` judgement exists to prevent, and
+/// until now the file was the one place it could still happen.
+///
+/// Deliberate break: `Keymap::with` skipping quietly, which is what it did
+/// -- the count drops to zero. And `keys_that_bound_nothing` looking the
+/// span up under the bare name rather than under `keys.`, which leaves
+/// three problems with nowhere to be.
+#[test]
+fn a_key_that_bound_nothing_is_a_warning_on_that_line() {
+    let _taken = SETTINGS.lock().expect("the lock");
+    let scratch = temporary("unbound");
+    let file = settings_file(&scratch);
+    std::fs::write(
+        &file,
+        "theme = \"dark\"\n\n[keys]\nopen-file = \"f1\"\nopen-fiel = \"f2\"\n\
+         save-file = \"ctrl+shiftier+s\"\nclose-document = \"ctrl+shift+w\"\n",
+    )
+    .expect("writing a settings file");
+
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&file).expect("opening the settings file"),
+    ]);
+    app.config_file_for_test(file.clone());
+    support::lay_out(&mut app, 72, 24);
+
+    let said: Vec<(usize, String)> = app
+        .problems()
+        .map(|problem| (problem.span.line.get(), problem.message.clone()))
+        .collect();
+    assert_eq!(said.len(), 3, "{said:?}");
+    // The line that binds is not one of them.
+    assert!(!said.iter().any(|(line, _)| *line == 3), "{said:?}");
+    assert_eq!(said[0], (4, "No command is called open-fiel".to_string()));
+    assert_eq!(
+        said[1],
+        (
+            5,
+            "Nothing is bound to save-file: ctrl+shiftier+s is not a key".to_string()
+        )
+    );
+    // The reason the page that binds keys gives, in its own words, because
+    // it is the same judgement.
+    assert!(
+        said[2]
+            .1
+            .starts_with("Nothing is bound to close-document: "),
+        "{said:?}"
+    );
+    assert_eq!(said[2].0, 6);
+}

@@ -483,7 +483,12 @@ so there is nothing to put off and no second shape to keep.
 
 Which is also what a *line* of a settings file gets: one Obelus has never
 heard of, one a project is not allowed to set, one that is not the shape it
-has to be. From the outside a line like that looks exactly like a line that
+has to be, and one of the `[keys]` table that bound nothing. That last is
+where `why_not` was always headed -- it exists so that a key which cannot
+fire is refused where the reader can see it, and the config file was the
+one place a refusal still happened in silence. The reason it gives is the
+reason the page that binds keys shows, in its own words, because it is one
+judgement. From the outside a line like that looks exactly like a line that
 was obeyed, which is what made it worth a word in the first place -- and a
 warning rather than an error, because the file read and everything else in
 it took.
@@ -495,6 +500,17 @@ despans it, on the grounds that an edited document's spans are about text
 that is no longer there. Two parses of a file this size is not a cost
 worth a word; what would be worth one is reading the file twice to ask the
 two questions, because two readings can disagree.
+
+Said where the file is read and not where the keymap is built, which is
+the ticker's rule again: the keymap is built after every change, and a
+reader flipping a switch has not touched their key table. So what would
+not bind is written down where it is worked out and said where the file
+is, once.
+
+And Obelus's own go into the list *in file order*, which a server's arrive
+in and Obelus's do not: a key table is alphabetical, because that is what
+a table of it is. The keys that walk problems and the list they are in
+both read that one list top to bottom.
 
 And the words are Obelus's while the facts are the file's, which is the
 split that decides where each half lives: `obelus_config` says a key did

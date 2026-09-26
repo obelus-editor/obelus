@@ -101,6 +101,12 @@ pub(super) struct Settled {
     /// Kept so the project's page can say whose value a row is showing. Worked
     /// out from the merged config it cannot be -- by then the two are one.
     pub readers: obelus_config::Config,
+    /// The lines of the reader's `[keys]` table that bound nothing.
+    ///
+    /// Written down where the keymap is built and said where the file is
+    /// read: the keymap is built again after every change, and saying it
+    /// there would be saying it once per change to a file nobody touched.
+    pub unbound: Vec<obelus_editing::keymap::Unbound>,
     /// Which settings the reader's file named.
     ///
     /// Which, not what they came to: a reader who writes a setting down has
@@ -127,6 +133,7 @@ impl Default for Settled {
             readable: true,
             readers: obelus_config::Config::default(),
             named: Vec::new(),
+            unbound: Vec::new(),
             project: None,
             pinned: Vec::new(),
         }
@@ -778,7 +785,9 @@ impl App {
         // defaults, and applying them to a table that has already had them
         // applied would leave a rebind that was undone in the file still in
         // force.
-        self.keymap = obelus_editing::keymap::Keymap::with(&self.settled.config.keys);
+        let (keymap, unbound) = obelus_editing::keymap::Keymap::with(&self.settled.config.keys);
+        self.keymap = keymap;
+        self.settled.unbound = unbound;
         // What a server works out is drawn or it is not, and the switch has
         // to reach the screen either way: turned off it takes what is
         // already drawn away, and turned on it asks for what was never
@@ -814,11 +823,19 @@ impl App {
         // answered by the path Obelus actually read, and a reader with two
         // machines or an `XDG_CONFIG_HOME` has more than one candidate.
         match obelus_config::read_from(&path) {
-            obelus_config::Reading::Settings(config, named, ignored) => {
+            obelus_config::Reading::Settings {
+                config,
+                named,
+                ignored,
+                spans,
+            } => {
                 tracing::info!(path = %path.display(), settings = ?named, "read the settings");
                 self.nothing_wrong_with(&path);
                 self.lines_that_did_nothing(&path, &ignored);
+                // After, because what the keymap would not take is worked
+                // out while the config is being applied.
                 self.configure(config, named);
+                self.keys_that_bound_nothing(&path, &spans);
             }
             obelus_config::Reading::Nothing | obelus_config::Reading::Nowhere => {
                 tracing::info!(path = %path.display(), "no settings file yet, so the defaults");
@@ -924,7 +941,12 @@ impl App {
     pub(super) fn reread_config(&mut self) {
         if let Some(path) = self.settled.path.clone() {
             match obelus_config::read_from(&path) {
-                obelus_config::Reading::Settings(config, named, ignored) => {
+                obelus_config::Reading::Settings {
+                    config,
+                    named,
+                    ignored,
+                    spans,
+                } => {
                     tracing::info!(path = %path.display(), "the settings changed under us");
                     self.nothing_wrong_with(&path);
                     self.lines_that_did_nothing(&path, &ignored);
@@ -932,6 +954,7 @@ impl App {
                     self.settled.named = named;
                     self.settled.config = config;
                     self.apply_config();
+                    self.keys_that_bound_nothing(&path, &spans);
                     self.settled.readable = true;
                 }
                 // Gone, which is somebody deleting it or an editor writing
@@ -975,6 +998,45 @@ impl App {
                 }
             };
             self.obelus_says(path, one.at, obelus_lsp::trouble::Severity::Warning, &said);
+        }
+    }
+
+    /// Marks the lines of the `[keys]` table that bound nothing.
+    ///
+    /// Said where the file is read rather than where the keymap is built,
+    /// because the keymap is built again after every change and a reader
+    /// flipping a switch has not touched their key table.
+    ///
+    /// Under the table they are in (`keys.open-file`), which is how the
+    /// file names them and the only way to say which of several lines is
+    /// the one that is wrong.
+    fn keys_that_bound_nothing(
+        &mut self,
+        path: &Path,
+        spans: &std::collections::BTreeMap<String, obelus_text::coordinates::Span>,
+    ) {
+        for one in std::mem::take(&mut self.settled.unbound) {
+            let said = match one.why {
+                // Never starting with the name, and saying what Obelus did
+                // rather than what the reader wrote: what is left to say is
+                // the thing they cannot see.
+                obelus_editing::keymap::Unbindable::NoSuchCommand => {
+                    format!("No command is called {}", one.name)
+                }
+                obelus_editing::keymap::Unbindable::Unreadable => {
+                    format!(
+                        "Nothing is bound to {}: {} is not a key",
+                        one.name, one.text
+                    )
+                }
+                // The reason the page that binds keys gives, in its own
+                // words, because it is the same judgement.
+                obelus_editing::keymap::Unbindable::NotAllowed(why) => {
+                    format!("Nothing is bound to {}: {why}", one.name)
+                }
+            };
+            let at = spans.get(&format!("keys.{}", one.name)).copied();
+            self.obelus_says(path, at, obelus_lsp::trouble::Severity::Warning, &said);
         }
     }
 
