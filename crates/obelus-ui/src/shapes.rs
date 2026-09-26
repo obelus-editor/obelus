@@ -126,6 +126,21 @@ pub trait Shapes: Send + Sync {
     /// which; a front end counting colours would be guessing.
     fn behind(&self, area: Rect, joined: Joined, ground: Color, cells: &[Cell]);
 
+    /// This cell is a switch, and it is set or it is not.
+    ///
+    /// One cell, which is the one the glyph is in: the blank after it
+    /// belongs to the glyph and not to the box.
+    ///
+    /// No colours, unlike a cap's: what the switch is drawn in and what
+    /// is behind it are the ink and the ground of that very cell, which
+    /// the view has already written there. Said again here they would be
+    /// the same two colours from two places, and two places is somewhere
+    /// for them to differ.
+    ///
+    /// A terminal says all of this in a glyph, and says it whether or not
+    /// anybody is listening here.
+    fn ticked(&self, area: Rect, on: bool);
+
     /// This band shows a list of things starting at `top`.
     ///
     /// A number to be *compared*, not read: what a front end does with it
@@ -175,6 +190,13 @@ pub(crate) fn behind(area: Rect, joined: Joined, ground: Color, cells: &CellBuff
         }
     }
     shapes.behind(room, joined, ground, &under);
+}
+
+/// Tells whoever is drawing that a switch is here.
+pub(crate) fn ticked(area: Rect, on: bool) {
+    if let Some(shapes) = DRAWING.get() {
+        shapes.ticked(area, on);
+    }
 }
 
 /// Tells whoever is drawing where a band of rows has got to.

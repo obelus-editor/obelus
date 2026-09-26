@@ -1621,6 +1621,19 @@ pub fn tick(on: bool) -> char {
 /// Draws one, and says where whatever follows it goes.
 pub fn ticked(cells: &mut CellBuffer, x: u16, y: u16, on: bool, style: Style) -> u16 {
     put(cells, x, y, tick(on), style);
+    // And what that cell *is*, for a front end that can draw the shape
+    // rather than the glyph standing in for it. The cell above is the
+    // whole of the switch in a terminal and nothing depends on this being
+    // heard -- see `shapes`.
+    shapes::ticked(
+        Rect {
+            x,
+            y,
+            width: 1,
+            height: 1,
+        },
+        on,
+    );
     x + TICK_WIDTH
 }
 

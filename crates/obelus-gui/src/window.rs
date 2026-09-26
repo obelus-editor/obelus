@@ -46,7 +46,9 @@ use winit::{
 use crate::{
     blink::Blink,
     font::Fonts,
-    grid::{Behind, Capped, Cells, Marked, Marking, Measured, Page, Said, Spelling, Update},
+    grid::{
+        Behind, Capped, Cells, Marked, Marking, Measured, Page, Said, Spelling, Ticked, Update,
+    },
     keys,
     motion::{Motion, Wake},
 };
@@ -120,6 +122,10 @@ struct Showing {
     capped: Vec<Capped>,
     /// The ones the frame being laid out has asked for so far.
     capping: Vec<Capped>,
+    /// Which cells are switches on the frame being shown.
+    ticked: Vec<Ticked>,
+    /// And on the one being laid out.
+    ticking: Vec<Ticked>,
     /// Which band of rows is a list, how far down it the band has got and
     /// what bar says so, on the frame being shown.
     scrolled: Option<(Rect, i64)>,
@@ -201,6 +207,8 @@ impl Showing {
             marking: Vec::new(),
             capped: Vec::new(),
             capping: Vec::new(),
+            ticked: Vec::new(),
+            ticking: Vec::new(),
             scrolled: None,
             scrolling: None,
             bar: None,
@@ -539,6 +547,9 @@ impl ApplicationHandler<Waking> for Showing {
                             self.scrolling = Some((area, top));
                             self.barring = bar;
                         }
+                        Update::Ticked { area, on } => {
+                            self.ticking.push(Ticked { area, on });
+                        }
                         Update::Capped {
                             keys,
                             area,
@@ -558,6 +569,7 @@ impl ApplicationHandler<Waking> for Showing {
                             // otherwise.
                             self.marked = std::mem::take(&mut self.marking);
                             self.capped = std::mem::take(&mut self.capping);
+                            self.ticked = std::mem::take(&mut self.ticking);
                             self.behind = self.behinding.take();
                             self.scrolled = self.scrolling.take();
                             self.bar = self.barring.take();
@@ -720,6 +732,7 @@ impl ApplicationHandler<Waking> for Showing {
                     Said {
                         marked: &self.marked,
                         capped: &self.capped,
+                        ticked: &self.ticked,
                         behind: self.behind.as_ref(),
                         band: self
                             .scrolled

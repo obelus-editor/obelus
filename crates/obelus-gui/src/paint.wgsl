@@ -31,7 +31,8 @@ struct Quad {
     // 16 and 128: square along the top or along the bottom, which is the
     // edge a pane is joined to and no edge at all.
     // 32 and 64: the frame that has just been drawn, put back on the
-    // screen in two pieces while a pane slides into it.
+    // screen in two pieces while a pane slides into it. 256: the mark in
+    // a switch that is set.
     @location(3) flags: u32,
     // How far those corners are taken off, in pixels.
     @location(4) radius: f32,
@@ -151,8 +152,35 @@ const TAPS: i32 = 12;
 // direction every raised thing in every interface is lit from.
 const LIGHT: vec2<f32> = vec2<f32>(-0.42, -1.0);
 
+// How far a point is from the line between two others.
+fn to_line(point: vec2<f32>, one_end: vec2<f32>, other: vec2<f32>) -> f32 {
+    let along = point - one_end;
+    let line = other - one_end;
+    let how_far = clamp(dot(along, line) / dot(line, line), 0.0, 1.0);
+    return length(along - line * how_far);
+}
+
+// The mark in a switch, as two strokes of a pen: down to the turn, and up
+// again further. In the quad's own units from nought to one, so a reader
+// who makes the text bigger gets a bigger one drawn the same.
+const TURN: vec2<f32> = vec2<f32>(0.43, 0.70);
+const STARTS: vec2<f32> = vec2<f32>(0.25, 0.50);
+const ENDS: vec2<f32> = vec2<f32>(0.76, 0.31);
+// Half the pen's width, and the ends are round because a distance to a
+// line is: a mark with cut ends reads as two strokes rather than one.
+const NIB: f32 = 0.085;
+
 @fragment
 fn fragment(in: Fragment) -> @location(0) vec4<f32> {
+    // The mark in a switch that is set.
+    if ((in.flags & 256u) != 0u) {
+        let at = in.middle / (in.half_size * 2.0) + vec2<f32>(0.5);
+        let stroke = min(to_line(at, STARTS, TURN), to_line(at, TURN, ENDS));
+        // Back into pixels for the softening, so the edge is a pixel wide
+        // whatever size the box is.
+        let covered = clamp((NIB - stroke) * in.half_size.x * 2.0, 0.0, 1.0);
+        return vec4<f32>(in.colour.rgb, in.colour.a * covered);
+    }
     // A pane on its way in.
     //
     // The frame was drawn once into a texture of its own, and it is put

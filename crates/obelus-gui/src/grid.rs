@@ -124,6 +124,13 @@ pub(crate) enum Update {
         /// What draws its outline.
         edge: Color,
     },
+    /// A cell that is a switch, and which way it is set.
+    Ticked {
+        /// Which cell it is.
+        area: Rect,
+        /// Whether it is set.
+        on: bool,
+    },
     /// A band of rows, and which row of its list it starts at.
     Scrolled {
         /// Which cells it is.
@@ -163,6 +170,8 @@ pub(crate) struct Said<'a> {
     pub(crate) marked: &'a [Marked],
     /// Which runs of cells are keys in caps.
     pub(crate) capped: &'a [Capped],
+    /// And which cells are switches.
+    pub(crate) ticked: &'a [Ticked],
     /// And what is under the pane, where there is one.
     pub(crate) behind: Option<&'a Behind>,
     /// The band of rows that is catching up, and the page as it was
@@ -211,6 +220,15 @@ impl Behind {
         self.cells
             .get(usize::from(down) * usize::from(self.area.width) + usize::from(along))
     }
+}
+
+/// Where a switch is in the frame being drawn, and how it stands.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Ticked {
+    /// Which cell it is.
+    pub(crate) area: Rect,
+    /// Whether it is set.
+    pub(crate) on: bool,
 }
 
 /// Where a cap is in the frame being drawn, and what it is drawn in.
@@ -286,6 +304,10 @@ impl Capped {
 }
 
 impl obelus_ui::shapes::Shapes for Marking {
+    fn ticked(&self, area: Rect, on: bool) {
+        let _ = self.updates.send(Update::Ticked { area, on });
+    }
+
     fn scrolled(&self, area: Rect, top: i64, bar: Option<Bar>) {
         let _ = self.updates.send(Update::Scrolled { area, top, bar });
     }
@@ -754,6 +776,7 @@ impl Page {
             // was under one, and the window takes both out of the queue
             // with the marks.
             Update::Capped { area, .. }
+            | Update::Ticked { area, .. }
             | Update::Behind { area, .. }
             | Update::Scrolled { area, .. } => {
                 tracing::warn!(?area, "a cap reached the page");

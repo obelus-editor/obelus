@@ -25,7 +25,7 @@ use winit::window::Window;
 
 use crate::{
     font::{CellSize, Fonts},
-    grid::{Behind, Capped, Look, Marked, Page, Said, Spelling},
+    grid::{Behind, Capped, Look, Marked, Page, Said, Spelling, Ticked},
     motion::Moving,
 };
 
@@ -165,6 +165,21 @@ const GLASS: u32 = 8;
 const HANGING: u32 = 16;
 /// Or to the row below it, so there is none along the bottom.
 const STANDING: u32 = 128;
+/// The mark in a switch that is set.
+const CHECKED: u32 = 256;
+
+/// How much of a cell a switch's box takes, across.
+///
+/// Nearly all of it: what it stands in for is a glyph, and a glyph fills
+/// its cell. The little left over is what keeps it off whatever is beside
+/// it.
+const BOX: f32 = 0.95;
+/// How round its corners are, as a part of its side.
+const BOX_CORNER: f32 = 0.30;
+/// And how thick its outline is, by the same measure.
+const BOX_EDGE: f32 = 0.11;
+/// How far above the cell's middle it sits, as a part of the cell.
+const ABOVE: f32 = 0.05;
 /// The frame that has just been drawn, put back everywhere but the pane.
 const FRAME: u32 = 32;
 /// And the pane out of it, higher up than it will end.
@@ -569,6 +584,9 @@ impl Painter {
         // behind a key are, and the key is written on it.
         self.caps(page, said.capped, cell);
         self.letters(page, fonts);
+        // Over the letters: a switch replaces the glyph standing in for
+        // it, rather than sitting beside one.
+        self.ticks(page, said.ticked, cell);
         // After the text, over cells the view left empty: a view draws its
         // glyph only where a picture could not be drawn.
         self.marks(said.marked, cell);
@@ -986,6 +1004,73 @@ impl Painter {
             radius: radius.max(0.0).min(width.min(height) / 2.0),
             padding: [0; 2],
         });
+    }
+
+    /// The switches, drawn as the box a glyph was standing in for.
+    ///
+    /// After the letters, because what it goes over is that glyph: a
+    /// terminal has one cell and one character to say this in, and what
+    /// it says there is the whole of the answer -- this is the same
+    /// answer drawn rather than spelled.
+    ///
+    /// Set is a filled box with the mark cut out of it; not is the same
+    /// box with its middle taken back out, which leaves an outline. One
+    /// shape either way, because a pair that changed shape would put a
+    /// jog in a column read straight down -- which is what `tick` says
+    /// about the two glyphs, for the same reason.
+    fn ticks(&mut self, page: &Page, ticked: &[Ticked], cell: CellSize) {
+        for tick in ticked {
+            let left = f32::from(tick.area.x) * cell.width;
+            let top = f32::from(tick.area.y) * cell.height;
+            // The cell's own ink and ground, which the view wrote there:
+            // what a terminal draws the glyph in is what a window draws
+            // the box in.
+            let look = page.look(tick.area.x, tick.area.y);
+            let ground = rgba(look.background, Ink::Background);
+            // The glyph the view wrote, covered: it is what a terminal
+            // draws, and here it is what is being replaced.
+            self.block(left, top, cell.width, cell.height, ground);
+
+            let side = (cell.width * BOX).round().max(3.0);
+            // A shade above the middle of the cell, which is where the
+            // middle of the writing is: letters sit on a baseline with
+            // their descenders below it, so a box centred on the cell
+            // sits low against the words beside it.
+            let (at, over) = (
+                left + (cell.width - side) / 2.0,
+                (top + (cell.height - side) / 2.0 - cell.height * ABOVE).round(),
+            );
+            let radius = side * BOX_CORNER;
+            self.rounded(
+                at,
+                over,
+                side,
+                side,
+                radius,
+                rgba(look.foreground, Ink::Foreground),
+            );
+            match tick.on {
+                true => self.quads.push(Quad {
+                    rect: [at, over, side, side],
+                    uv: self.atlas.white,
+                    colour: ground,
+                    flags: CHECKED,
+                    radius: 0.0,
+                    padding: [0; 2],
+                }),
+                false => {
+                    let edge = (side * BOX_EDGE).round().max(1.0);
+                    self.rounded(
+                        at + edge,
+                        over + edge,
+                        side - edge * 2.0,
+                        side - edge * 2.0,
+                        (radius - edge).max(0.0),
+                        ground,
+                    );
+                }
+            }
+        }
     }
 
     /// The caps the keys at the foot of a view are drawn in.

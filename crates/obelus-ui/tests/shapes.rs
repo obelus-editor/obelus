@@ -30,7 +30,10 @@ struct Said {
 
 /// A front end that writes down what it is told.
 #[derive(Default)]
-struct Heard(Mutex<Vec<Said>>);
+struct Heard {
+    caps: Mutex<Vec<Said>>,
+    switches: Mutex<Vec<(Rect, bool)>>,
+}
 
 impl obelus_ui::shapes::Shapes for Heard {
     fn behind(
@@ -44,8 +47,14 @@ impl obelus_ui::shapes::Shapes for Heard {
 
     fn scrolled(&self, _area: Rect, _top: i64, _bar: Option<obelus_ui::shapes::Bar>) {}
 
+    fn ticked(&self, area: Rect, on: bool) {
+        if let Ok(mut switches) = self.switches.lock() {
+            switches.push((area, on));
+        }
+    }
+
     fn capped(&self, keys: &str, area: Rect, cap: Color, page: Color, edge: Color) {
-        if let Ok(mut said) = self.0.lock() {
+        if let Ok(mut said) = self.caps.lock() {
             said.push(Said {
                 keys: keys.to_string(),
                 area,
@@ -65,6 +74,45 @@ fn heard() -> &'static Arc<Heard> {
         obelus_ui::shapes::drawn_by(heard.clone());
         heard
     })
+}
+
+/// Break: drop the `shapes::ticked` beside the glyph in `ticked`, and a
+/// window has a switch with nothing saying it is one -- so it draws the
+/// character standing in for the box instead of the box.
+#[test]
+fn a_switch_says_which_cell_it_is_in_and_which_way_it_is_set() {
+    let heard = heard();
+    let mut hint =
+        obelus_ui::Hint::common(KeyChord::parse("alt+i").expect("alt+i is a key"), "Ignored");
+    hint.switched = Some(true);
+    // Its own row again, so that another test's foot is not taken for
+    // this one: the recorder is shared by everything in this binary.
+    let rows = 13;
+    let area = Rect {
+        x: 0,
+        y: 0,
+        width: 60,
+        height: rows,
+    };
+    let mut cells = CellBuffer::empty(area);
+    obelus_ui::foot_without_a_card(&mut cells, area, &[hint], &DARK);
+
+    let said = heard.switches.lock().expect("nothing poisoned it").clone();
+    let mine: Vec<(Rect, bool)> = said
+        .into_iter()
+        .filter(|(area, _)| area.y == rows - 1)
+        .collect();
+    assert_eq!(mine.len(), 1, "one switch: {mine:?}");
+    let (where_it_is, on) = mine[0];
+    assert!(on, "the one it was given");
+    // One cell, which is the one the glyph is in: the blank after it
+    // belongs to the glyph.
+    assert_eq!((where_it_is.width, where_it_is.height), (1, 1));
+    assert_eq!(
+        cells[(where_it_is.x, where_it_is.y)].symbol(),
+        obelus_ui::tick(true).to_string(),
+        "and the cell still says it, which is all a terminal has"
+    );
 }
 
 /// A foot with one key on it, drawn into a grid this test owns.
@@ -96,7 +144,7 @@ fn a_foot_says_where_its_caps_are() {
     // cannot be mistaken for it.
     let rows = 9;
     let _cells = a_foot(rows);
-    let said = heard.0.lock().expect("nothing poisoned it").clone();
+    let said = heard.caps.lock().expect("nothing poisoned it").clone();
     let mine: Vec<Said> = said
         .into_iter()
         .filter(|said| said.area.y == rows - 1)
@@ -156,7 +204,7 @@ fn the_card_of_every_key_says_a_cap_round_each() {
     let mut cells = CellBuffer::empty(area);
     obelus_ui::keys_card(&mut cells, area, &hints, &DARK);
 
-    let said = heard.0.lock().expect("nothing poisoned it").clone();
+    let said = heard.caps.lock().expect("nothing poisoned it").clone();
     let mine: Vec<Said> = said.into_iter().filter(|said| said.area.y == 10).collect();
     assert_eq!(mine.len(), 1, "one key, one cap: {mine:?}");
     // `alt+m` with the blank either side that the card leaves it, which is
