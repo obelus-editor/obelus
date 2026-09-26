@@ -522,6 +522,13 @@ impl WelcomeView<'_> {
     /// is a glyph in its own column. A foot answers the other way, and for
     /// the opposite reason -- see `obelus_theme::Theme::raised_background`.
     ///
+    /// Which is still the whole of the answer for a terminal, and nothing
+    /// below writes a cell it did not write before. A window is told those
+    /// cells are a key's cap all the same, and what it draws is the
+    /// *shape* -- an outline and the lip under it, which puts no colour on
+    /// the screen at all. The two are not the same decision, and only one
+    /// of them was ever about panels.
+    ///
     /// The picture belongs to the words, not to the key -- it is a picture
     /// of the *thing* -- so it sits against them, and the key column is left
     /// to the keys.
@@ -541,6 +548,18 @@ impl WelcomeView<'_> {
             y,
             &hint.key,
             Style::new().fg(self.theme.foreground),
+        );
+        // Measured with `drawn` rather than by the cells, because this
+        // screen counts a glyph as the two columns a font draws it in and
+        // a cap that used the other count would stop short of its key.
+        crate::cap_around(
+            left + inset,
+            y,
+            &hint.key,
+            drawn(&hint.key),
+            self.theme.background,
+            self.theme.background,
+            self.theme.gutter,
         );
 
         let mut x = left.saturating_add(width).saturating_add(BESIDE);

@@ -21,10 +21,31 @@ use ratatui::style::{Color, Modifier};
 use winit::window::Window;
 
 use crate::{
-    font::Fonts,
-    grid::{Look, Marked, Page, Spelling},
+    font::{CellSize, Fonts},
+    grid::{Capped, Look, Marked, Page, Spelling},
     motion::Moving,
 };
+
+/// How far a cap is held off the rows either side of it, as a part of a
+/// cell's height.
+const INSET: f32 = 0.08;
+/// And off the cells either side, as a part of a cell's width.
+///
+/// The same idea and the same reason: a cap that reached the edge of the
+/// blank it was given would touch whatever is in the next cell, and one
+/// place -- the welcome screen, where a picture sits against the key --
+/// has only that one blank to share. A fraction of a cell rather than a
+/// whole one, because the blank *is* the cap's; what this holds off is
+/// what is on the other side of it.
+const SIDE: f32 = 0.15;
+/// How thick the lip under it is, by the same measure.
+///
+/// What says the key is raised. Thicker than the outline on the other
+/// three sides, because a key is lit from above and a real one's bottom
+/// edge is the part of it you can see.
+const LIP: f32 = 0.12;
+/// How round its corners are, as a part of its height.
+const ROUNDING: f32 = 0.22;
 
 /// How wide the bar caret is, as a part of a cell.
 ///
@@ -83,14 +104,19 @@ struct Quad {
     uv: [f32; 4],
     colour: [f32; 4],
     flags: u32,
+    /// How far its corners are rounded, in pixels. Read only where
+    /// `ROUNDED` is set.
+    radius: f32,
     /// The hardware wants the whole thing aligned; nothing reads these.
-    padding: [u32; 3],
+    padding: [u32; 2],
 }
 
 /// A rectangle with no picture: its colour is the whole of it.
 const SOLID: u32 = 1;
 /// A picture with colours of its own, which is an emoji.
 const COLOURFUL: u32 = 2;
+/// A solid whose corners are taken off, which is a key's cap.
+const ROUNDED: u32 = 4;
 
 /// What the shader needs to know about the window.
 #[repr(C)]
@@ -308,6 +334,7 @@ impl Painter {
                         1 => Float32x4,
                         2 => Float32x4,
                         3 => Uint32,
+                        4 => Float32,
                     ],
                 })],
             },
@@ -413,10 +440,14 @@ impl Painter {
         spelling: Option<&Spelling>,
         moving: Moving,
         marked: &[Marked],
+        capped: &[Capped],
     ) -> Result<()> {
         let cell = fonts.cell();
         self.quads.clear();
         self.backgrounds(page, cell.width, cell.height);
+        // Over the ground and under the text: a cap is the shape the cells
+        // behind a key are, and the key is written on it.
+        self.caps(page, capped, cell);
         self.letters(page, fonts);
         // After the text, over cells the view left empty: a view draws its
         // glyph only where a picture could not be drawn.
@@ -560,8 +591,96 @@ impl Painter {
             uv: self.atlas.white,
             colour,
             flags: SOLID,
-            padding: [0; 3],
+            radius: 0.0,
+            padding: [0; 2],
         });
+    }
+
+    /// One block of colour with its corners taken off.
+    fn rounded(
+        &mut self,
+        left: f32,
+        top: f32,
+        width: f32,
+        height: f32,
+        radius: f32,
+        colour: [f32; 4],
+    ) {
+        self.quads.push(Quad {
+            rect: [left, top, width, height],
+            uv: self.atlas.white,
+            colour,
+            flags: SOLID | ROUNDED,
+            radius: radius.max(0.0).min(width.min(height) / 2.0),
+            padding: [0; 2],
+        });
+    }
+
+    /// The caps the keys at the foot of a view are drawn in.
+    ///
+    /// A terminal's cap is the run of cells behind the key, a shade off
+    /// the page, and that is what has already been painted here by
+    /// `backgrounds`. What a window can say that a terminal cannot is the
+    /// *shape*: so the ground is put back over those cells and the cap is
+    /// drawn on it, which is why this runs after the backgrounds and
+    /// before the letters that sit on it.
+    ///
+    /// Three rectangles, and the third is what makes it a key rather than
+    /// a rounded box: the face is drawn a pixel inside the outline on
+    /// three sides and further in at the bottom, so what is left showing
+    /// under it is a lip. Which is the whole of the trick a keyboard's own
+    /// keys use.
+    fn caps(&mut self, page: &Page, capped: &[Capped], cell: CellSize) {
+        for cap in capped {
+            // A cap whose cells no longer hold its key belongs to a view
+            // that was drawn over inside the frame that said it -- see
+            // `Capped::still_said`.
+            if !cap.still_said(page) {
+                continue;
+            }
+            let left = f32::from(cap.area.x) * cell.width;
+            let top = f32::from(cap.area.y) * cell.height;
+            let width = f32::from(cap.area.width) * cell.width;
+            let side = (cell.width * SIDE).round();
+            // Never thinner than a pixel: a lip that rounds away is a cap
+            // that lies flat, and the inset is what keeps a cap off the
+            // rows either side of it.
+            let inset = (cell.height * INSET).round().max(1.0);
+            let lip = (cell.height * LIP).round().max(1.0);
+            let height = (cell.height - inset * 2.0).max(1.0);
+            let radius = (height * ROUNDING).min(cell.width);
+            // What the cells said, put back: the corners this is about to
+            // round away are painted in the cap's own ground, and a cap
+            // drawn over them would have square shoulders.
+            self.block(
+                left,
+                top,
+                width,
+                cell.height,
+                rgba(cap.page, Ink::Background),
+            );
+            // Held off the cells either side, which the ground above is
+            // not: what was put back is every cell the cap was said
+            // about, and what is drawn on it stops short of them.
+            let drawn = (width - side * 2.0).max(1.0);
+            self.rounded(
+                left + side,
+                top + inset,
+                drawn,
+                height,
+                radius,
+                rgba(cap.edge, Ink::Foreground),
+            );
+            let face = (height - 1.0 - lip).max(1.0);
+            self.rounded(
+                left + side + 1.0,
+                top + inset + 1.0,
+                (drawn - 2.0).max(1.0),
+                face,
+                (radius - 1.0).max(0.0),
+                rgba(cap.cap, Ink::Background),
+            );
+        }
     }
 
     /// The text.
@@ -640,7 +759,8 @@ impl Painter {
                     true => COLOURFUL,
                     false => 0,
                 },
-                padding: [0; 3],
+                radius: 0.0,
+                padding: [0; 2],
             });
         }
     }
@@ -708,7 +828,8 @@ impl Painter {
                 // alpha is the whole of what it adds.
                 colour: [1.0, 1.0, 1.0, 1.0],
                 flags: COLOURFUL,
-                padding: [0; 3],
+                radius: 0.0,
+                padding: [0; 2],
             });
         }
     }

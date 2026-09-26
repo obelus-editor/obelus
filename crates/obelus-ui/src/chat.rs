@@ -240,6 +240,50 @@ pub fn regions(area: Rect, needed: usize) -> Regions {
     regions_capped(area, needed, MOST_WRITING)
 }
 
+/// The blanks between a key and the word for what it does.
+const GAP_IN_A_HINT: usize = 2;
+/// And between one of those and the next.
+///
+/// Wider than the gap inside one, for the reason the foot's `BETWEEN` is:
+/// the gap between items has to beat the gaps inside one, or the row is a
+/// line of tokens with nothing saying which belongs to which.
+const GAP_BETWEEN_HINTS: usize = 3;
+
+/// Where each of those keys starts in that run, in cells from its
+/// beginning.
+///
+/// A function of its own rather than a sum kept while drawing, because it
+/// is the one place the two shapes of this row have to agree: the run is
+/// what a terminal writes, and a cap is said about cells *of* it. A walk
+/// that counted the gaps differently from `joined` would draw a cap over
+/// the word beside the key.
+fn where_the_keys_are(hints: &[(String, &'static str)]) -> Vec<usize> {
+    let mut along = 0;
+    hints
+        .iter()
+        .map(|(keys, does)| {
+            let at = along;
+            along += text_width(keys) + GAP_IN_A_HINT + text_width(does) + GAP_BETWEEN_HINTS;
+            at
+        })
+        .collect()
+}
+
+/// A row of keys as one run of text, which is what is written and
+/// measured.
+fn joined(hints: &[(String, &'static str)]) -> Option<String> {
+    match hints.is_empty() {
+        true => None,
+        false => Some(
+            hints
+                .iter()
+                .map(|(keys, does)| format!("{keys}{}{does}", " ".repeat(GAP_IN_A_HINT)))
+                .collect::<Vec<_>>()
+                .join(&" ".repeat(GAP_BETWEEN_HINTS)),
+        ),
+    }
+}
+
 /// The same, for a foot of the region with a cap of its own.
 #[must_use]
 pub fn regions_capped(area: Rect, needed: usize, most: u16) -> Regions {
@@ -1102,18 +1146,30 @@ impl ChatView<'_> {
         //
         // Measured first, because the room the settings have is what is left
         // of the row.
-        let hint = self.status_hint(area);
+        let keys = self.status_keys(area);
+        let hint = joined(&keys);
         if let Some(hint) = &hint
             && let Ok(offset) =
                 u16::try_from(usize::from(area.width).saturating_sub(text_width(hint) + 1))
         {
-            write(
-                cells,
-                area.x + offset,
-                area.y,
-                hint,
-                plain.fg(self.theme.gutter),
-            );
+            let at = area.x + offset;
+            write(cells, at, area.y, hint, plain.fg(self.theme.gutter));
+            // And which cells of that run are the key. Nothing is written
+            // twice: the run above is the whole of what a terminal draws,
+            // and this says what shape a window may draw round part of it.
+            for (along, (keys, _)) in where_the_keys_are(&keys).into_iter().zip(&keys) {
+                if let Ok(x) = u16::try_from(usize::from(at) + along) {
+                    crate::cap_around(
+                        x,
+                        area.y,
+                        keys,
+                        text_width(keys),
+                        self.theme.background,
+                        self.theme.background,
+                        self.theme.gutter,
+                    );
+                }
+            }
         }
 
         // How full the agent's memory is, beside the hints rather than
@@ -1326,49 +1382,48 @@ impl ChatView<'_> {
     /// Asked before the settings are drawn, because the room they have is
     /// what is left of the row once this is on it.
     fn status_hint(&self, area: Rect) -> Option<String> {
-        let back = self.about.is_some().then(|| match obelus_icons::enabled() {
-            true => format!("{}t  the note", obelus_icons::key::ALT),
-            false => "alt+t  the note".to_string(),
+        joined(&self.status_keys(area))
+    }
+
+    /// The same row, kept as the key and what it does rather than as one
+    /// run of text.
+    ///
+    /// Two shapes of one thing, because the row is measured and written as
+    /// text and the cap round each key is about *where the key is*: a
+    /// front end that draws the shape has to be told which cells of that
+    /// run are the key, and a run that had already been joined cannot say.
+    fn status_keys(&self, area: Rect) -> Vec<(String, &'static str)> {
+        let back = self.about.is_some().then(|| {
+            let keys = match obelus_icons::enabled() {
+                true => format!("{}t", obelus_icons::key::ALT),
+                false => "alt+t".to_string(),
+            };
+            (keys, "the note")
         });
         let mode = self
             .mode()
             .is_some_and(|mode| mode.values.len() > 1)
-            .then(|| match obelus_icons::enabled() {
-                true => format!(
-                    "{}{}  mode",
-                    obelus_icons::key::SHIFT,
-                    obelus_icons::key::TAB
-                ),
-                false => "shift+tab  mode".to_string(),
+            .then(|| {
+                let keys = match obelus_icons::enabled() {
+                    true => format!("{}{}", obelus_icons::key::SHIFT, obelus_icons::key::TAB),
+                    false => "shift+tab".to_string(),
+                };
+                (keys, "mode")
             });
         let others = self
             .conversations
             .as_ref()
-            .map(|chord| format!("{chord}  Conversations"));
-        let joined = |hints: &[&String]| match hints.is_empty() {
-            true => None,
-            false => Some(
-                hints
-                    .iter()
-                    .map(|said| said.as_str())
-                    .collect::<Vec<_>>()
-                    .join("   "),
-            ),
-        };
-        let all: Vec<&String> = [back.as_ref(), others.as_ref(), mode.as_ref()]
+            .map(|chord| (chord.clone(), "Conversations"));
+        let all: Vec<(String, &'static str)> = [back.clone(), others, mode.clone()]
             .into_iter()
             .flatten()
             .collect();
         if let Some(said) = joined(&all)
             && text_width(&said) + 2 + LEAST_SETTINGS <= usize::from(area.width)
         {
-            return Some(said);
+            return all;
         }
-        let fewer: Vec<&String> = [back.as_ref(), mode.as_ref()]
-            .into_iter()
-            .flatten()
-            .collect();
-        joined(&fewer)
+        [back, mode].into_iter().flatten().collect()
     }
 
     /// How much of the status row the settings have.
@@ -1641,6 +1696,26 @@ impl ChatView<'_> {
 
 #[cfg(test)]
 mod tests {
+    /// Break: count the gap between two hints as the gap inside one, and
+    /// every cap after the first is drawn a cell or two to the left of the
+    /// key it is about.
+    #[test]
+    fn a_cap_on_the_status_row_is_over_the_key_it_is_about() {
+        let hints = [
+            ("alt+t".to_string(), "the note"),
+            ("ctrl+g".to_string(), "Conversations"),
+            ("shift+tab".to_string(), "mode"),
+        ];
+        let said = super::joined(&hints).expect("three hints say something");
+        for (along, (keys, _)) in super::where_the_keys_are(&hints).into_iter().zip(&hints) {
+            assert_eq!(
+                said.get(along..along + keys.len()),
+                Some(keys.as_str()),
+                "{keys} is not at {along} of {said:?}"
+            );
+        }
+    }
+
     use std::path::{Path, PathBuf};
 
     use super::{Speaker, mark, said_place};

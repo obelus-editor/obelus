@@ -809,12 +809,25 @@ impl SettingsView<'_> {
                     row.pinned.is_none() && row.scope != Some(Scope::Project),
                 ),
                 Aside::Words(words) => {
+                    let keys = truncate_from_right(words, usize::from(CONTROL_WIDTH));
                     write(
                         cells,
                         aside_at,
                         y,
-                        &truncate_from_right(words, usize::from(CONTROL_WIDTH)),
+                        &keys,
                         plain.fg(self.theme.foreground).bg(background),
+                    );
+                    // The row's own ground either side, whichever row it is:
+                    // a cap on the row the reader is on is drawn over the
+                    // colour that says so.
+                    crate::cap_around(
+                        aside_at,
+                        y,
+                        &keys,
+                        text_width(&keys),
+                        background,
+                        background,
+                        self.theme.gutter,
                     );
                 }
                 Aside::Chosen(word, said) => {

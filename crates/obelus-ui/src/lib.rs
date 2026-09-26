@@ -282,6 +282,7 @@ pub mod names;
 pub mod picker;
 pub mod reading;
 pub mod settings;
+pub mod shapes;
 pub mod signature;
 pub mod status;
 pub mod todo;
@@ -1553,8 +1554,71 @@ pub fn ticked(cells: &mut CellBuffer, x: u16, y: u16, on: bool, style: Style) ->
 /// in: the row used to separate a key from its word by one blank and one
 /// item from the next by three, which are near enough the same gap that the
 /// eye could not tell which side of it a word belonged to.
-fn capped(cells: &mut CellBuffer, x: u16, y: u16, keys: &str, style: Style) -> u16 {
-    write(cells, x, y, &format!(" {keys} "), style)
+fn capped(cells: &mut CellBuffer, x: u16, y: u16, keys: &str, theme: &Theme) -> u16 {
+    let after = write(
+        cells,
+        x,
+        y,
+        &format!(" {keys} "),
+        Style::new()
+            .fg(theme.gutter_current)
+            .bg(theme.raised_background),
+    );
+    // And what those cells *are*, for a front end that can draw the shape
+    // rather than only its ground -- see `shapes`. The cells above are the
+    // whole of the cap in a terminal and the ground of it in a window;
+    // neither depends on this being heard.
+    shapes::capped(
+        keys,
+        Rect {
+            x,
+            y,
+            width: after.saturating_sub(x),
+            height: 1,
+        },
+        theme.raised_background,
+        theme.background,
+        theme.gutter,
+    );
+    after
+}
+
+/// Says that a key already written here sits in a cap, without touching a
+/// cell of it.
+///
+/// The foot writes its own cap, because a run of cells a shade off the page
+/// is the only cap a terminal has and the foot is a row of keys among
+/// words. The other two places a key is shown have no ground to give it and
+/// need none: on the card and on the keys page the key is *a column*, and
+/// being in that column is what says it is a key. So the cells stay exactly
+/// as they are, and the shape is said around them -- over the blank either
+/// side, which is where a cap's own blanks would have been.
+///
+/// Which is the whole channel's rule in the one case it is easiest to get
+/// wrong: what is said here may not be the only thing saying it.
+/// `keys` is how many cells the key itself takes, which the caller
+/// measures: a screen that counts a Nerd Font glyph as two cells and one
+/// that counts it as one are both here, and a cap measured by the wrong
+/// one is a cap that does not fit the key it is round.
+fn cap_around(x: u16, y: u16, keys: &str, wide: usize, cap: Color, page: Color, edge: Color) {
+    let Ok(width) = u16::try_from(wide + 2) else {
+        return;
+    };
+    if wide == 0 {
+        return;
+    }
+    shapes::capped(
+        keys,
+        Rect {
+            x: x.saturating_sub(1),
+            y,
+            width,
+            height: 1,
+        },
+        cap,
+        page,
+        edge,
+    );
 }
 
 /// How far apart two items on that row sit.
@@ -1755,15 +1819,7 @@ fn row_of_keys(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme
     let width = u16::try_from(cap_width(&chord) + 1 + text_width("Keys")).unwrap_or(0);
     let edge = match area.width.checked_sub(width + 2).filter(|_| card) {
         Some(offset) => {
-            let after = capped(
-                cells,
-                area.x + offset,
-                y,
-                &chord,
-                Style::new()
-                    .fg(theme.gutter_current)
-                    .bg(theme.raised_background),
-            );
+            let after = capped(cells, area.x + offset, y, &chord, theme);
             write(
                 cells,
                 after + 1,
@@ -1795,15 +1851,7 @@ fn row_of_keys(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme
         // The key in a cap and the word out of it: what a reader is looking
         // for down here is which key, and the word is read once to find out
         // that it is the one.
-        x = capped(
-            cells,
-            x,
-            y,
-            &keys,
-            Style::new()
-                .fg(theme.gutter_current)
-                .bg(theme.raised_background),
-        );
+        x = capped(cells, x, y, &keys, theme);
         if let Some(does) = hint.does {
             x = write(
                 cells,
@@ -1910,7 +1958,20 @@ pub fn keys_card(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &The
             true => ground,
             false => off,
         };
-        write(cells, room.x, y, &hint.keys(), style);
+        let keys = hint.keys();
+        write(cells, room.x, y, &keys, style);
+        // The panel's own ground on both counts: what draws the cap here is
+        // its outline and the lip under it, the same as a key on a page
+        // that is already the colour the key is.
+        cap_around(
+            room.x,
+            y,
+            &keys,
+            text_width(&keys),
+            theme.raised_background,
+            theme.raised_background,
+            theme.gutter,
+        );
         let mut x = room.x + column;
         if let Some(does) = hint.said.or(hint.does) {
             x = write(cells, x, y, does, style);

@@ -1360,12 +1360,16 @@ src/
                     something may ask for (link); an agent that stopped is
                     started again by talking to it (mod)
   ui/             editor, status bar, picker, settings, chat, welcome,
-                  images, shared cell writers
+                  images, shapes, shared cell writers
                   · what the bar measures is what is shown, the caret can be
                     in the block, a bar is a block, a column a file might
                     need is reserved for the whole file (editor); everything
                     that scrolls says so (mod); a header says what a thing
-                    is, the foot says what is happening (chat)
+                    is, the foot says what is happening (chat); a view says
+                    what a region *is* and the front end says what that
+                    looks like, nothing may be said there that the cells do
+                    not already say in their own way, and what is said
+                    carries enough to be checked against them (shapes)
 tests/            integration tests plus tests/fixtures/*.txt golden grids
                   · why the fake agent is `sh`, and what it checks back
                     (agent)

@@ -44,7 +44,7 @@ use winit::{
 use crate::{
     blink::Blink,
     font::Fonts,
-    grid::{Cells, Marked, Marking, Measured, Page, Spelling, Update},
+    grid::{Capped, Cells, Marked, Marking, Measured, Page, Spelling, Update},
     keys,
     motion::{Motion, Wake},
 };
@@ -113,6 +113,11 @@ struct Showing {
     spelling: Option<Spelling>,
     /// Where the marks go on the frame being shown.
     marked: Vec<Marked>,
+    /// And where its key caps are, kept the same way and for the same
+    /// reason.
+    capped: Vec<Capped>,
+    /// The ones the frame being laid out has asked for so far.
+    capping: Vec<Capped>,
     /// And the ones the frame being laid out has asked for so far.
     ///
     /// Two lists because a frame is drawn from what it said, not from what
@@ -163,6 +168,8 @@ impl Showing {
             spelling: None,
             marked: Vec::new(),
             marking: Vec::new(),
+            capped: Vec::new(),
+            capping: Vec::new(),
             // The blink is asked once, on the way up: it is a question
             // about the system rather than about this window.
             motion: Motion::new(Blink::asked()),
@@ -396,9 +403,12 @@ impl ApplicationHandler<Waking> for Showing {
         // And the marks, which a window draws itself. A terminal is asked
         // what it can show and mostly cannot; there is nothing to ask
         // here, because the pixels are the window's own.
-        app.use_images(obelus_ui::image::Images::drawn_by(Arc::new(Marking::new(
-            frames,
-        ))));
+        let marking = Marking::new(frames);
+        // And what a run of cells *is*, which a window can draw the shape
+        // of: said once, because who is drawing is a fact about the
+        // process rather than about a frame.
+        obelus_ui::shapes::drawn_by(Arc::new(marking.clone()));
+        app.use_images(obelus_ui::image::Images::drawn_by(Arc::new(marking)));
         // The one place Obelus is told where its events go, which is what
         // starts the watcher, the servers and the walk of the project.
         app.start(doing);
@@ -461,11 +471,25 @@ impl ApplicationHandler<Waking> for Showing {
                         Update::Marked { id, focused, x, y } => {
                             self.marking.push(Marked { id, focused, x, y })
                         }
+                        Update::Capped {
+                            keys,
+                            area,
+                            cap,
+                            page,
+                            edge,
+                        } => self.capping.push(Capped {
+                            keys,
+                            area,
+                            cap,
+                            page,
+                            edge,
+                        }),
                         Update::Frame => {
                             // The frame is over: what it asked for is what
                             // is on screen until the next one says
                             // otherwise.
                             self.marked = std::mem::take(&mut self.marking);
+                            self.capped = std::mem::take(&mut self.capping);
                             drew = true;
                         }
                         cells => drew |= self.page.apply(cells),
@@ -570,6 +594,7 @@ impl ApplicationHandler<Waking> for Showing {
                     self.spelling.as_ref(),
                     self.motion.moving(Instant::now()),
                     &self.marked,
+                    &self.capped,
                 ) {
                     tracing::error!(?error, "the frame was not drawn");
                 }

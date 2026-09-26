@@ -24,7 +24,8 @@ use obelus_ui::image::Palette;
 use ratatui::{
     backend::{Backend, ClearType, WindowSize},
     buffer::Cell,
-    layout::{Position, Size},
+    layout::{Position, Rect, Size},
+    style::Color,
 };
 
 /// One change to what is on the screen.
@@ -91,6 +92,39 @@ pub(crate) enum Update {
         /// And the row.
         y: u16,
     },
+    /// These cells are a key in a cap of its own.
+    ///
+    /// What a terminal draws as a run of cells a shade off the page, and
+    /// a window draws as the shape it is. The colours travel with it
+    /// because the window has no theme -- see `obelus_ui::shapes`.
+    Capped {
+        /// The key in it, which is what says the cap is still about these
+        /// cells.
+        keys: String,
+        /// Which cells it is.
+        area: Rect,
+        /// The ground the key sits on.
+        cap: Color,
+        /// What is behind the cap, which shows through its corners.
+        page: Color,
+        /// What draws its outline.
+        edge: Color,
+    },
+}
+
+/// Where a cap is in the frame being drawn, and what it is drawn in.
+#[derive(Clone, Debug)]
+pub(crate) struct Capped {
+    /// The key in it.
+    pub(crate) keys: String,
+    /// Which cells it is.
+    pub(crate) area: Rect,
+    /// The ground the key sits on.
+    pub(crate) cap: Color,
+    /// What is behind it.
+    pub(crate) page: Color,
+    /// What draws its outline.
+    pub(crate) edge: Color,
 }
 
 /// Where a mark is, in the frame being drawn.
@@ -126,6 +160,42 @@ impl Marking {
     /// Says where a view's marks go.
     pub(crate) const fn new(updates: Sender<Update>) -> Self {
         Self { updates }
+    }
+}
+
+impl Capped {
+    /// Whether the page still says what this cap was said about.
+    ///
+    /// A view that draws and is then drawn over inside the same frame has
+    /// already said its caps, and the cells they were about belong to
+    /// whatever covered them -- the welcome screen under a list is drawn
+    /// and replaced every frame, and its six keys left six empty caps on
+    /// the list. The cells are the truth: a cap that disagrees with them
+    /// is about a screen that is not the screen.
+    ///
+    /// The key sits one cell in from the cap's own left edge, which is
+    /// where the blank inside a cap is, wherever the cap came from.
+    pub(crate) fn still_said(&self, page: &Page) -> bool {
+        let mut said = String::new();
+        for at in 1..self.area.width.saturating_sub(1) {
+            said.push_str(page.look(self.area.x.saturating_add(at), self.area.y).text);
+        }
+        said.trim_end() == self.keys
+    }
+}
+
+impl obelus_ui::shapes::Shapes for Marking {
+    fn capped(&self, keys: &str, area: Rect, cap: Color, page: Color, edge: Color) {
+        // No wake, the same as a mark's placement: this is said while a
+        // frame is being laid out, and the frame's own end wakes the
+        // window a moment later.
+        let _ = self.updates.send(Update::Capped {
+            keys: keys.to_string(),
+            area,
+            cap,
+            page,
+            edge,
+        });
     }
 }
 
@@ -541,6 +611,12 @@ impl Page {
                 tracing::warn!(id, "a mark reached the page");
                 false
             }
+            // Nor is this: it is what a run of cells *is*, and the window
+            // takes it out of the queue with the marks.
+            Update::Capped { area, .. } => {
+                tracing::warn!(?area, "a cap reached the page");
+                false
+            }
             Update::Frame => true,
             // Taken out of the queue before the page is handed anything,
             // because it is not about a cell. A page that reached this
@@ -609,5 +685,46 @@ mod tests {
             caret: 0,
         };
         assert_eq!(start.columns(), 0);
+    }
+
+    /// A cap is about cells, and the cells are the truth.
+    ///
+    /// Deliberate break: answer `true` from `Capped::still_said` whatever
+    /// the page holds, and the welcome screen -- drawn every frame under
+    /// the list that covers it, and saying its caps before it is covered
+    /// -- leaves six empty caps sitting on the list.
+    #[test]
+    fn a_cap_whose_cells_were_drawn_over_is_not_drawn() {
+        let mut page = Page::default();
+        page.resized(10, 1);
+        fn write(page: &mut Page, said: &str) {
+            for (at, character) in said.chars().enumerate() {
+                let x = u16::try_from(at).expect("a short run");
+                let mut cell = Cell::default();
+                cell.set_symbol(&character.to_string());
+                page.apply(Update::Cell {
+                    x,
+                    y: 0,
+                    cell: Box::new(cell),
+                });
+            }
+        }
+        write(&mut page, " f1 ");
+        let cap = Capped {
+            keys: "f1".to_string(),
+            area: Rect {
+                x: 0,
+                y: 0,
+                width: 4,
+                height: 1,
+            },
+            cap: Color::Reset,
+            page: Color::Reset,
+            edge: Color::Reset,
+        };
+        assert!(cap.still_said(&page));
+        // What a view drawn over inside the same frame leaves behind.
+        write(&mut page, "    ");
+        assert!(!cap.still_said(&page));
     }
 }
