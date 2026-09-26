@@ -16,6 +16,25 @@
 //! the grid says, because the grid is the layout -- asking a text engine to
 //! lay out a screenful of cells would be asking it a question that is
 //! already answered, and answering it differently.
+//!
+//! **A key's cap is the one place the grid is not what a cell is measured
+//! in.** Everything on the screen is a row of the grid at the grid's size,
+//! except the legend in a keycap: a letter the full height of the row
+//! reaches both edges of the cap and hangs its descender out of the
+//! bottom, which is a cap the key is too big for. So `Size` says which,
+//! and it says it three times over -- the font's size, the line's height,
+//! and the room a glyph is middled in -- because the legend is smaller,
+//! sits in the middle of a line of its own rather than on the row's
+//! baseline, and is laid out at a pitch of its own so the letters close
+//! up. Each of the three is drawn by a different piece of the frame, so
+//! each has a test and a break of its own.
+//!
+//! And a cell is still shaped a cell at a time in a cap, which is what
+//! decides the *shape* of the cache: a map per way of drawing, each
+//! holding the strings drawn that way. One map keyed by the way and the
+//! text together would have to own the string to ask the question, which
+//! is an allocation per cell per frame for a screenful that was already
+//! in it.
 
 use std::collections::HashMap;
 
@@ -98,7 +117,11 @@ pub(crate) struct Fonts {
     /// What a cell's text shapes to, kept because a screen is the same few
     /// hundred cell contents over and over: without it every frame reshapes
     /// every cell, and shaping is the expensive half of drawing text.
-    shaped: HashMap<(String, Weight, Style), Vec<Placed>>,
+    ///
+    /// A map per way of drawing, rather than one keyed by the way *and* the
+    /// text: there are eight of the first and thousands of the second, and
+    /// only this shape can be asked with the text borrowed.
+    shaped: HashMap<Face, HashMap<String, Vec<Placed>>>,
     /// The faces to try, in order: the reader's, and then whatever this
     /// machine calls its monospaced one.
     ///
@@ -247,32 +270,81 @@ impl Fonts {
     ///
     /// Shaped once per distinct string and kept: a screenful is a few
     /// hundred different cells however many rows it has.
-    pub(crate) fn glyphs(&mut self, text: &str, bold: bool, italic: bool) -> &[Placed] {
-        let weight = match bold {
-            true => Weight::BOLD,
-            false => Weight::NORMAL,
+    pub(crate) fn glyphs(&mut self, text: &str, bold: bool, italic: bool, size: Size) -> &[Placed] {
+        let face = Face {
+            weight: match bold {
+                true => Weight::BOLD,
+                false => Weight::NORMAL,
+            },
+            style: match italic {
+                true => Style::Italic,
+                false => Style::Normal,
+            },
+            size,
         };
-        let style = match italic {
-            true => Style::Italic,
-            false => Style::Normal,
+        // Smaller in a cap, and on its own line so that it sits in the
+        // middle of one rather than on the writing's baseline: what a cap
+        // holds is a key, not a word in a sentence.
+        let metrics = match size {
+            Size::Cell => self.metrics,
+            Size::Capped => Metrics::new(
+                self.metrics.font_size * SMALLER,
+                self.metrics.line_height * SMALLER,
+            ),
         };
-        let key = (text.to_string(), weight, style);
         // Two disjoint fields, which is why the shaping is a free function:
         // the cache is borrowed for the entry and the font system for the
         // work inside it.
         let system = &mut self.system;
-        let metrics = self.metrics;
-        let width = self.cell.width;
+        // A cell of a cap is that much narrower too, because the legend is
+        // laid out at its own pitch -- and this is what the glyph is
+        // centred in and measured against.
+        let width = match size {
+            Size::Cell => self.cell.width,
+            Size::Capped => self.cell.width * SMALLER,
+        };
         let families = &self.families;
-        self.shaped
-            .entry(key)
-            .or_insert_with(|| shape(system, metrics, width, families, text, weight, style))
+        let shaped = self.shaped.entry(face).or_default();
+        // Asked with the text borrowed and copied only on a miss. One flat
+        // map keyed by the whole lot would have to own the string to ask
+        // the question, which is an allocation per cell per frame -- and a
+        // screenful is a few thousand cells that were all in the cache.
+        if !shaped.contains_key(text) {
+            let placed = shape(system, metrics, width, families, text, face);
+            shaped.insert(text.to_string(), placed);
+        }
+        &shaped[text]
     }
 
     /// The pixels of one glyph, or nothing where the face has none.
     pub(crate) fn picture(&mut self, key: CacheKey) -> Option<&SwashImage> {
         self.pictures.get_image(&mut self.system, key).as_ref()
     }
+}
+
+/// One way of drawing a cell's text: which face, at which of the two sizes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct Face {
+    weight: Weight,
+    style: Style,
+    size: Size,
+}
+
+/// How big the text in a key's cap is, against the writing beside it.
+///
+/// A keycap's legend is smaller than the prose around it on every keyboard
+/// there is, and for the same reason here: a letter drawn the full height
+/// of the row fills the cap to its edges and its descender hangs out of the
+/// bottom, which is a cap the key is too big for.
+pub(crate) const SMALLER: f32 = 0.74;
+
+/// How big a cell's text is drawn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum Size {
+    /// The size the row is written in.
+    Cell,
+    /// Smaller, on a line of its own: what goes in a key's cap.
+    Capped,
 }
 
 /// Lays out one cell's worth of text, in the cells that cell occupies.
@@ -302,8 +374,7 @@ fn shape(
     width: f32,
     families: &[String],
     text: &str,
-    weight: Weight,
-    style: Style,
+    face: Face,
 ) -> Vec<Placed> {
     // At least one: a cell that measures zero -- a combining mark on its
     // own, a zero-width space -- still has the cell it was written into.
@@ -325,7 +396,10 @@ fn shape(
         true => Family::Name(SYMBOLS_FAMILY),
         false => Family::Monospace,
     };
-    let attrs = Attrs::new().family(family).weight(weight).style(style);
+    let attrs = Attrs::new()
+        .family(family)
+        .weight(face.weight)
+        .style(face.style);
     // The reader's list, in their order, and then whatever the machine
     // would have chosen. A name that is not here, or is here and does not
     // cover this character, is stepped over: what says so is which face
@@ -358,8 +432,11 @@ fn shape(
         glyph.x += middle;
         // Writing goes on the baseline the grid is counted in, whichever
         // face it came from: that is what keeps a line a line. A mark goes
-        // on the one its own face asked for -- see `Placed::baseline`.
-        if !mark {
+        // on the one its own face asked for -- see `Placed::baseline` --
+        // and so does a cap's legend, which is on a line of its own and
+        // would otherwise sit on the writing's baseline with its head in
+        // the middle of the cap.
+        if !mark && face.size == Size::Cell {
             glyph.baseline = None;
         }
     }
@@ -507,6 +584,85 @@ mod tests {
         assert!(!is_a_mark('读'));
     }
 
+    /// A key in a cap is smaller than the row it sits in, is on a line of
+    /// its own, and is told from the row by the cache.
+    ///
+    /// Three things, because `Size::Capped` is three lines in three
+    /// places and each of them passes with the other two broken. The
+    /// numbers are the machine's; what is asserted is the relationships.
+    ///
+    /// Deliberate breaks, one per assertion:
+    ///
+    /// * The cache, keyed with `Size::Cell` whatever was asked for: the second
+    ///   ask hands back the run the first was given, so a cap is drawn at the
+    ///   row's size -- and, worse, a row after a cap at the cap's.
+    /// * The metrics, left at `self.metrics`: the legend goes on the row's
+    ///   baseline with its head in the middle of the cap. It is still *small*,
+    ///   because the room below shrinks it to fit -- which is exactly why this
+    ///   needs an assertion of its own.
+    /// * The room, left at `self.cell.width`: the glyph is middled in the cell
+    ///   the grid gave it rather than in the pitch the legend is laid out at,
+    ///   so a key of two characters is drawn a quarter of a cell right of where
+    ///   `legend` put it.
+    #[test]
+    fn a_key_in_a_cap_is_smaller_than_the_row_it_is_in_and_on_its_own_line() {
+        fn asked(fonts: &mut Fonts, size: Size) -> Vec<Placed> {
+            fonts.glyphs("F1", false, false, size).to_vec()
+        }
+        fn sizes(placed: &[Placed]) -> Vec<f32> {
+            placed
+                .iter()
+                .map(|glyph| f32::from_bits(glyph.key.font_size_bits))
+                .collect()
+        }
+        let mut fonts = Fonts::new(16.0);
+        let grid = fonts.cell().baseline;
+        let row = asked(&mut fonts, Size::Cell);
+        let cap = asked(&mut fonts, Size::Capped);
+        assert!(!row.is_empty(), "nothing was laid out");
+        assert_eq!(row.len(), cap.len(), "the same text laid out differently");
+
+        // Asked for again, after the cap has been: a cache that had lost
+        // the size would answer this one with the cap's run.
+        assert_eq!(
+            sizes(&row),
+            sizes(&asked(&mut fonts, Size::Cell)),
+            "a key drawn in a cap changed how the same word is drawn in a row"
+        );
+        for (row, cap) in sizes(&row).iter().zip(sizes(&cap)) {
+            assert!(
+                cap < *row,
+                "a key was asked for at {cap}, the row it is in at {row}"
+            );
+        }
+
+        // A line of its own, which is what `legend` middles in the cap:
+        // writing has none and goes on the grid's -- see
+        // `Placed::baseline`. Being merely *above* the grid's proves
+        // nothing, because a run laid out in any face is: what says the
+        // line shrank with the letters is that it shrank by the same
+        // fraction. Loosely, since where in a line a face puts its
+        // baseline is the face's own business.
+        for glyph in &cap {
+            let baseline = glyph.baseline.expect("a key is on a line of its own");
+            let wanted = grid * SMALLER;
+            assert!(
+                (baseline - wanted).abs() < grid * 0.1,
+                "a key's line sits at {baseline}, a line {SMALLER} of the grid's at {wanted}"
+            );
+        }
+
+        // Middled in the pitch the legend is laid out at. Both runs are
+        // monospaced text in the room it was measured for, so both start
+        // hard against the left of it; a legend middled in the grid's
+        // cells instead would be pushed right by what it did not fill.
+        let (row, cap) = (row[0].x, cap[0].x);
+        assert!(
+            cap <= row,
+            "a key starts {cap} into its room, the row it is in {row}"
+        );
+    }
+
     /// A mark is drawn on the baseline its own face asked for; writing is
     /// drawn on the one the grid is counted in.
     ///
@@ -531,8 +687,8 @@ mod tests {
         let mut fonts = Fonts::new(16.0);
         let cell = fonts.cell();
         // `md-apple_keyboard_control`, which is what `ctrl` is drawn as.
-        let mark: Vec<Placed> = fonts.glyphs("\u{f0634}", false, false).to_vec();
-        let letter: Vec<Placed> = fonts.glyphs("k", false, false).to_vec();
+        let mark: Vec<Placed> = fonts.glyphs("\u{f0634}", false, false, Size::Cell).to_vec();
+        let letter: Vec<Placed> = fonts.glyphs("k", false, false, Size::Cell).to_vec();
         assert!(
             !mark.is_empty() && !letter.is_empty(),
             "nothing was laid out"

@@ -24,7 +24,7 @@ use ratatui::style::{Color, Modifier};
 use winit::window::Window;
 
 use crate::{
-    font::{CellSize, Fonts},
+    font::{self, CellSize, Fonts, Size},
     grid::{Behind, Capped, Look, Marked, Page, Said, Spelling, Ticked},
     motion::Moving,
 };
@@ -580,10 +580,11 @@ impl Painter {
         // pass draws and it draws the front of the buffer.
         let pane = said.behind.map(|behind| self.glass(page, behind, fonts));
         self.backgrounds(page, cell.width, cell.height, said.behind);
-        // Over the ground and under the text: a cap is the shape the cells
-        // behind a key are, and the key is written on it.
-        self.caps(page, said.capped, cell);
         self.letters(page, fonts);
+        // Over the text, which it covers: a cap is the shape the cells
+        // behind a key are, and it writes the key on itself, smaller than
+        // the words beside it.
+        self.caps(page, said.capped, fonts);
         // Over the letters: a switch replaces the glyph standing in for
         // it, rather than sitting beside one.
         self.ticks(page, said.ticked, cell);
@@ -900,7 +901,7 @@ impl Painter {
                 );
                 if !look.text.trim().is_empty() {
                     let ink = rgba(look.foreground, Ink::Foreground);
-                    self.glyphs_at(left, top, look, ink, fonts);
+                    self.glyphs_at(left, top, look, ink, fonts, Size::Cell);
                 }
             }
         }
@@ -1079,15 +1080,21 @@ impl Painter {
     /// the page, and that is what has already been painted here by
     /// `backgrounds`. What a window can say that a terminal cannot is the
     /// *shape*: so the ground is put back over those cells and the cap is
-    /// drawn on it, which is why this runs after the backgrounds and
-    /// before the letters that sit on it.
+    /// drawn on it -- which is why this runs after the letters rather
+    /// than before them. The key is the one thing on the screen not
+    /// written at the size the grid is counted in (see `font::Size`), so
+    /// the cells' own glyphs are covered by the cap's ground and the key
+    /// is written again on the face, centred in it. Drawn from `keys`
+    /// rather than cell by cell, because a word tracked out to the cell
+    /// pitch at three quarters the size reads as spaced-out capitals.
     ///
     /// Three rectangles, and the third is what makes it a key rather than
     /// a rounded box: the face is drawn a pixel inside the outline on
     /// three sides and further in at the bottom, so what is left showing
     /// under it is a lip. Which is the whole of the trick a keyboard's own
     /// keys use.
-    fn caps(&mut self, page: &Page, capped: &[Capped], cell: CellSize) {
+    fn caps(&mut self, page: &Page, capped: &[Capped], fonts: &mut Fonts) {
+        let cell = fonts.cell();
         for cap in capped {
             // A cap whose cells no longer hold its key belongs to a view
             // that was drawn over inside the frame that said it -- see
@@ -1137,6 +1144,64 @@ impl Painter {
                 (radius - 1.0).max(0.0),
                 rgba(cap.cap, Ink::Background),
             );
+            self.legend(
+                cap,
+                page,
+                left + width / 2.0,
+                top + inset + 1.0 + face / 2.0,
+                fonts,
+            );
+        }
+    }
+
+    /// The key itself, written on the face of its cap.
+    ///
+    /// Middled on the face rather than on the cells: the face is held off
+    /// the bottom of the cap by the lip, so a key centred in the row
+    /// would sit low in the thing it is in by exactly that much.
+    ///
+    /// Cell by cell, as everything else that draws text here is, and at a
+    /// pitch of its own so that the letters close up rather than keeping
+    /// the room the grid gave them. Shaping the key in one run instead
+    /// would track it properly and get the *face* wrong: what decides
+    /// which family is asked for is whether the text is one of Obelus's
+    /// marks, and `Ctrl` is drawn as a mark with a letter after it -- so
+    /// one run would send the letter to the symbols font as well.
+    ///
+    /// The ink comes from the cells, which is where the theme said it --
+    /// the cap knows the three colours it is drawn in and not the one the
+    /// key is written in.
+    fn legend(&mut self, cap: &Capped, page: &Page, middle: f32, height: f32, fonts: &mut Fonts) {
+        let cell = fonts.cell();
+        let pitch = cell.width * font::SMALLER;
+        let columns = obelus_text::text_width(&cap.keys).max(1);
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "a key is a few columns wide, never billions"
+        )]
+        let left = middle - columns as f32 * pitch / 2.0;
+        let top = height - cell.height * font::SMALLER / 2.0;
+        let mut column = 0;
+        for at in 1..cap.area.width.saturating_sub(1) {
+            if column >= columns {
+                break;
+            }
+            let look = page.look(cap.area.x.saturating_add(at), cap.area.y);
+            // The right half of a wide character, which its neighbour
+            // blanked -- see `Page::covered`.
+            if look.text.is_empty() {
+                continue;
+            }
+            if !look.text.trim().is_empty() {
+                let ink = rgba(look.foreground, Ink::Foreground);
+                #[expect(
+                    clippy::cast_precision_loss,
+                    reason = "a key is a few columns wide, never billions"
+                )]
+                let along = left + column as f32 * pitch;
+                self.glyphs_at(along, top, look, ink, fonts, Size::Capped);
+            }
+            column += obelus_text::text_width(look.text).max(1);
         }
     }
 
@@ -1192,7 +1257,7 @@ impl Painter {
                 );
                 if !under.text.trim().is_empty() {
                     let ink = rgba(under.foreground, Ink::Foreground);
-                    self.glyphs_at(left, top, under, ink, fonts);
+                    self.glyphs_at(left, top, under, ink, fonts, Size::Cell);
                 }
             }
         }
@@ -1261,6 +1326,7 @@ impl Painter {
             look,
             colour,
             fonts,
+            Size::Cell,
         );
     }
 
@@ -1276,11 +1342,12 @@ impl Painter {
         look: Look<'_>,
         colour: [f32; 4],
         fonts: &mut Fonts,
+        size: Size,
     ) {
         let cell = fonts.cell();
         let bold = look.modifier.contains(Modifier::BOLD);
         let italic = look.modifier.contains(Modifier::ITALIC);
-        let placed = fonts.glyphs(look.text, bold, italic).to_vec();
+        let placed = fonts.glyphs(look.text, bold, italic, size).to_vec();
         for glyph in placed {
             let Some(spot) = self.atlas.spot(&self.queue, fonts, glyph.key) else {
                 continue;
@@ -1443,7 +1510,7 @@ impl Painter {
                 // What is under the caret, drawn again in the colour behind
                 // it, so that a block does not hide the character it is on.
                 if !look.text.trim().is_empty() {
-                    self.glyphs_at(left, top, look, behind, fonts);
+                    self.glyphs_at(left, top, look, behind, fonts, Size::Cell);
                 }
             }
         }

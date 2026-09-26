@@ -1400,7 +1400,8 @@ src/
                     pane has one edge and so no corners, glass is a bend
                     and a light before it is a blur, and a region of the
                     frame is put back somewhere else rather than drawn
-                    again (paint)
+                    again (paint); a key's cap is the one place the grid is
+                    not what a cell is measured in (font)
 tests/            integration tests plus tests/fixtures/*.txt golden grids
                   · why the fake agent is `sh`, and what it checks back
                     (agent)
