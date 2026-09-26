@@ -58,6 +58,21 @@ const GUTTER: u16 = 4;
 /// makes a block of six read as six things rather than as a paragraph.
 const ROW_HEIGHT: u16 = 2;
 
+/// How wide the block of what went wrong is allowed to be.
+///
+/// Wider than the plate, which the keys are centred on: those are two
+/// short words under a cap, and these are a sentence with a file and a
+/// line after it. Capped, because a line of prose run across a wide
+/// terminal is a line the eye loses its place in.
+const AMISS_WIDTH: u16 = 64;
+
+/// And how many of them are shown at once.
+///
+/// Six, which is as many as the keys above take. More than that and the
+/// block is the screen rather than a note under the way in -- and the list
+/// is a list, reachable by name, where there is room for all of them.
+const AMISS_ROWS: usize = 6;
+
 /// The gap between a key and what it opens.
 ///
 /// One, against the four between the columns: the key and the words after
@@ -154,6 +169,9 @@ fn foot(built: &str) -> String {
 /// The centred block.
 pub struct WelcomeView<'a> {
     keymap: &'a Keymap,
+    /// What went wrong on the way up. Empty on almost every start, and
+    /// then the block is not there at all.
+    went_wrong: Vec<crate::WentWrong>,
     theme: &'a Theme,
     /// Which build this is, for the plate's edge.
     built: &'a str,
@@ -171,6 +189,7 @@ impl<'a> WelcomeView<'a> {
     pub fn new(app: &'a impl Screen) -> Self {
         Self {
             keymap: app.keymap(),
+            went_wrong: app.went_wrong(),
             theme: app.theme(),
             built: app.built(),
             phase: app.phase(),
@@ -197,12 +216,19 @@ impl Widget for WelcomeView<'_> {
         // between the lines -- and none after the last of them.
         let lines = u16::try_from(hints.len().div_ceil(COLUMNS)).unwrap_or(1);
         let keys = (lines * ROW_HEIGHT).saturating_sub(1);
-        let tall = u16::try_from(WORDMARK.len()).unwrap_or(u16::MAX) + 1 + keys;
+        let amiss = self.amiss_height();
+        let tall = u16::try_from(WORDMARK.len()).unwrap_or(u16::MAX) + 1 + keys + amiss;
         let wordmark = width_of(WORDMARK[0]);
         let short = u16::try_from(hints.len() + 2).unwrap_or(u16::MAX);
 
         if wordmark <= area.width && tall <= area.height {
             self.lavish(area, cells, &hints, wordmark, tall);
+        } else if wordmark <= area.width && tall.saturating_sub(amiss) <= area.height {
+            // The plate and the keys, and what went wrong left out. Which
+            // is the wrong way round if it were a matter of what is worth
+            // the room -- but the block is reachable by name and the way
+            // in is the only thing this screen is for.
+            self.lavish(area, cells, &hints, wordmark, tall - amiss);
         } else if let Some(narrow) = hint_block_width(&hints)
             && narrow <= area.width
             && short <= area.height
@@ -248,6 +274,95 @@ impl WelcomeView<'_> {
 
         y += 1;
         self.grid(cells, left, y, width, hints);
+
+        // Under the keys, and only where the height asked for it: the
+        // caller works out whether there is room before deciding which
+        // layout this is.
+        let amiss = self.amiss_height();
+        if amiss > 0 && height >= WORDMARK.len() as u16 + 1 + amiss {
+            let keys = (u16::try_from(hints.len().div_ceil(COLUMNS)).unwrap_or(1) * ROW_HEIGHT)
+                .saturating_sub(1);
+            self.amiss(cells, area, y + keys + 1);
+        }
+    }
+
+    /// How many rows the block of what went wrong takes, with its heading
+    /// and the blank above it.
+    fn amiss_height(&self) -> u16 {
+        let rows = self.went_wrong.len().min(AMISS_ROWS);
+        match rows {
+            0 => 0,
+            rows => u16::try_from(rows).unwrap_or(0) + 2,
+        }
+    }
+
+    /// What went wrong on the way up, under a heading of its own.
+    ///
+    /// The heading is in the theme's warning colour and the rows are not:
+    /// a block of coloured prose is a block a reader cannot read, and what
+    /// the colour is for is saying which block this is. Where each row is
+    /// about a line of a file, that file and line are the row's tail --
+    /// worked out first, so a long sentence cannot push it off the screen.
+    fn amiss(&self, cells: &mut CellBuffer, area: Rect, top: u16) {
+        let width = AMISS_WIDTH.min(area.width);
+        let left = area.x + (area.width.saturating_sub(width)) / 2;
+        write(
+            cells,
+            left + 1,
+            top,
+            "What went wrong starting up",
+            Style::new().fg(self.theme.syntax.warning),
+        );
+        for (at, row) in self.went_wrong.iter().take(AMISS_ROWS).enumerate() {
+            let Ok(offset) = u16::try_from(at) else {
+                continue;
+            };
+            self.amiss_row(cells, left, top + 2 + offset, width, row);
+        }
+    }
+
+    /// One of them: what Obelus says, and where to go.
+    fn amiss_row(
+        &self,
+        cells: &mut CellBuffer,
+        left: u16,
+        y: u16,
+        width: u16,
+        row: &crate::WentWrong,
+    ) {
+        let tail = row.at.as_ref().map(|(path, line)| {
+            let name = path.file_name().map_or_else(
+                || path.display().to_string(),
+                |name| name.to_string_lossy().to_string(),
+            );
+            format!("{name}:{}", line.get() + 1)
+        });
+        // The tail first, so the sentence takes what is left: somebody
+        // else's words may be as long as they like and may not push what
+        // the row says about itself off the screen.
+        let tail_width = tail.as_deref().map_or(0, str::width);
+        let room = usize::from(width)
+            .saturating_sub(2)
+            .saturating_sub(if tail_width > 0 { tail_width + 2 } else { 0 });
+        let said = crate::truncate_from_right(&row.said, room);
+        write(
+            cells,
+            left + 1,
+            y,
+            &said,
+            Style::new().fg(self.theme.foreground),
+        );
+        if let Some(tail) = tail
+            && let Ok(offset) = u16::try_from(usize::from(width).saturating_sub(tail_width + 1))
+        {
+            write(
+                cells,
+                left + offset,
+                y,
+                &tail,
+                Style::new().fg(self.theme.gutter),
+            );
+        }
     }
 
     /// The keys in columns under the plate, centred on it.

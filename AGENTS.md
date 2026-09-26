@@ -519,10 +519,33 @@ sentence a reader sees is written where the rest of what Obelus says is
 written. There is no reader down in the config crate, only a file and what
 could not be made of it.
 
+**And what went wrong on the way up is said on the screen that shows when
+nothing is open.** A mark on a line of a settings file is a mark nobody
+sees until they open that file, and the reader who has just started Obelus
+has opened nothing -- so the welcome screen carries the same sentences
+again, under the keys and never in front of them, because what that screen
+is for is the way in. It is absent on almost every start, which is the
+point: a heading over an empty list is a row of screen spent saying nothing
+happened.
+
+The rows are Obelus's own only. What a server says about the code is the
+code's business and is not something that went wrong starting up. Each row
+is what Obelus said and where to go, and the tail -- the file and the line
+-- is worked out first so a long sentence cannot push it off the screen,
+which is the tool call's rule at another scale. Six of them at most: more
+than that and the block is the screen rather than a note under the way in,
+and the list is reachable by name where there is room for all of them.
+
 Nothing without a place, though. A mark is a mark *on* something: a file
-whose permissions forbid it, a watcher that would not start, a server that
-never answered -- none of those has a line to draw under, and saying them
-here would be saying them nowhere a reader will look. And a span of nothing
+whose permissions forbid it, a watcher that would not start, a terminal
+that would not report the wheel -- none of those has a line to draw under.
+They go on that screen and nowhere else, which is why they are kept apart
+from the marks rather than faked onto line one of something.
+
+Not every failure on the way up belongs even there. Watching a file that
+is not there yet fails, and a project with no settings of its own is the
+ordinary case -- a list that said so would say something on every start,
+which is how a list stops being read. And a span of nothing
 is no mark either, which is not hypothetical: a parser that stops *between*
 two characters (`key with no value`) names an empty range, so an empty one
 is widened to the rest of its line.

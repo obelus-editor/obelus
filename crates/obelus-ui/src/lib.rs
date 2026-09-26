@@ -71,6 +71,20 @@ use obelus_text::coordinates::{LineNumber, Span};
 
 use crate::image::Images;
 
+/// One thing that went wrong on the way up.
+///
+/// The words are written by the time they get here -- what Obelus says
+/// about a file it could not read is the same sentence whether it is drawn
+/// under a line or on a list -- so this carries them and where to go, and
+/// nothing else.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WentWrong {
+    /// What Obelus says about it.
+    pub said: String,
+    /// The file it is about and the line in it, where there is one.
+    pub at: Option<(std::path::PathBuf, LineNumber)>,
+}
+
 /// What a preview is, for the view that draws it.
 ///
 /// A borrow of the whole of it rather than a tuple: it is the same list of
@@ -194,6 +208,13 @@ pub trait Screen {
     fn opened_hunks(&self) -> Vec<LineNumber>;
     /// How far along the welcome screen's colours have travelled, in ticks.
     fn phase(&self) -> u32;
+    /// What went wrong on the way up, for the screen that is showing when
+    /// nothing is open.
+    ///
+    /// Empty on almost every start, and the block it fills is absent then:
+    /// what this screen is for is the way in, and what went wrong goes
+    /// under it rather than in front of it.
+    fn went_wrong(&self) -> Vec<WentWrong>;
     /// The open picker, for the renderer.
     fn picker(&self) -> Option<&Picker>;
     /// The settings the project has set, which are the ones the reader cannot

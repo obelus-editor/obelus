@@ -73,8 +73,14 @@ fn main() -> Result<()> {
     // everywhere). That is a real loss for a reader, and it buys the one
     // thing a reader does with a mouse far more often.
     let mouse = enable_mouse();
+    if !mouse {
+        // The one thing that goes wrong here and stays wrong: the wheel
+        // keeps sending arrow keys, and nothing on screen would otherwise
+        // say why.
+        app.amiss("The wheel will not be reported, so it moves the cursor");
+    }
     // And what the terminal pastes, wrapped so it can be told from typing.
-    enable_paste();
+    enable_paste(&mut app);
     // And the keyboard, for the one key Obelus needs that a terminal
     // cannot otherwise report.
     let keyboard = enable_keyboard();
@@ -161,11 +167,12 @@ fn enable_keyboard() -> bool {
 ///
 /// Best effort, like the mouse: a terminal that does not know the mode says
 /// nothing and pastes the old way.
-fn enable_paste() {
+fn enable_paste(app: &mut obelus_app::app::App) {
     if let Err(error) =
         crossterm::execute!(std::io::stdout(), crossterm::event::EnableBracketedPaste)
     {
         tracing::warn!(%error, "no bracketed paste");
+        app.amiss("Pasting will arrive a character at a time, not in one go");
     }
 }
 

@@ -2343,3 +2343,65 @@ fn the_end_of_a_reading_is_its_last_screenful() {
 
     let _ = std::fs::remove_file(&path);
 }
+
+/// The welcome screen says what went wrong on the way up.
+///
+/// Which is the one place it can be said: a mark on a line of a settings
+/// file is a mark nobody sees until they open it, and the screen that shows
+/// when nothing is open is where a reader is standing when it matters.
+///
+/// Under the keys and never in front of them: what this screen is for is
+/// the way in.
+///
+/// Deliberate break: `WelcomeView` drawing the block above the keys instead
+/// (the last assertion), and `amiss_height` answering zero (the rest).
+#[test]
+fn the_welcome_screen_says_what_went_wrong_starting_up() {
+    let scratch = support::Scratch::new("welcome-amiss");
+    let file = scratch.join("config.toml");
+    std::fs::write(&file, "theme = \"dark\"\nshrift = 15\n").expect("writing a settings file");
+
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.config_file_for_test(file);
+    let dump = support::render(&mut app, 76, 26);
+    let text = support::text_block(&dump);
+
+    assert!(text.contains("What went wrong starting up"), "{dump}");
+    assert!(text.contains("No setting is called shrift"), "{dump}");
+    // The file and the line it is on, counted the way a reader counts.
+    assert!(text.contains("config.toml:2"), "{dump}");
+
+    let keys = text
+        .find(&obelus_editing::keymap::function(1).label())
+        .expect("the key that opens a file");
+    let wrong = text
+        .find("What went wrong starting up")
+        .expect("the heading");
+    assert!(
+        keys < wrong,
+        "what went wrong was put in front of the way in"
+    );
+}
+
+/// And a screen with nothing wrong has no block at all.
+///
+/// Almost every start is this one. A heading over an empty list would be a
+/// row of screen spent saying nothing happened.
+///
+/// Deliberate break: `amiss` drawing its heading whatever the list holds.
+#[test]
+fn a_welcome_screen_with_nothing_wrong_says_nothing() {
+    let scratch = support::Scratch::new("welcome-well");
+    let file = scratch.join("config.toml");
+    std::fs::write(&file, "theme = \"dark\"\n").expect("writing a settings file");
+
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.config_file_for_test(file);
+    let dump = support::render(&mut app, 76, 26);
+    assert!(
+        !support::text_block(&dump).contains("What went wrong"),
+        "{dump}"
+    );
+}

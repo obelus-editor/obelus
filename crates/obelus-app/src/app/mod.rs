@@ -665,6 +665,18 @@ pub struct App {
     /// nothing is invisible: without somewhere to say "no definition found" or
     /// "still indexing", pressing the key looks like the key not working.
     note: Option<String>,
+    /// What went wrong on the way up that no file can be marked with.
+    ///
+    /// A watcher that would not start, an agent offered no tools. Most of
+    /// what Obelus finds on the way up is a mark on a line of a file the
+    /// reader wrote; these are what is left over, and they have nowhere to
+    /// go but the screen that is showing when nothing is open.
+    ///
+    /// Not every failure on the way up belongs here. Watching a file that
+    /// is not there yet fails, and that is the ordinary state of a project
+    /// with no settings of its own -- a list that said so would be a list
+    /// that says something on every start.
+    amiss: Vec<String>,
     /// The file watcher, once started.
     ///
     /// Held because dropping it stops the watch. `None` means auto-reload is
@@ -814,6 +826,7 @@ impl App {
             note: None,
             walk_generation: obelus_runtime::cancel::Latest::default(),
             events: None,
+            amiss: Vec::new(),
             watcher: None,
             theme_watched: Vec::new(),
             highlights: Highlights::default(),
@@ -1067,6 +1080,8 @@ impl App {
                 // Obelus an agent cannot ask anything of, which is what it
                 // was until now.
                 tracing::warn!(%error, "Obelus is offering an agent nothing");
+                self.amiss
+                    .push("An agent asking Obelus for its tools reaches nothing".to_string());
             }
         }
         self.start_watching(sender);
@@ -1174,6 +1189,14 @@ impl App {
             Ok(watcher) => watcher,
             Err(error) => {
                 tracing::warn!(%error, "auto-reload is off");
+                // The one watcher failure worth saying: without it nothing
+                // Obelus reads is read again for the rest of the session,
+                // so a file changed in another window, a commit, and the
+                // settings all go unheard.
+                self.amiss.push(
+                    "Nothing is being watched, so changes made elsewhere will not arrive"
+                        .to_string(),
+                );
                 return;
             }
         };
@@ -1234,6 +1257,62 @@ impl App {
     #[must_use]
     pub const fn picker(&self) -> Option<&Picker> {
         self.picker.as_ref()
+    }
+
+    /// What went wrong on the way up, in one list.
+    ///
+    /// Both halves: what Obelus could not make of a file it reads for its
+    /// own sake, and what has no file to be about. The first is already a
+    /// mark on that file -- but a mark on a file nobody has opened is a
+    /// mark nobody sees, and the screen that shows when nothing is open is
+    /// the one place a reader will be standing when it matters.
+    ///
+    /// Obelus's own only. What a server says about the code is the code's
+    /// business and is not something that went wrong starting up.
+    #[must_use]
+    pub fn what_went_wrong(&self) -> Vec<obelus_ui::WentWrong> {
+        let mut rows: Vec<obelus_ui::WentWrong> = Vec::new();
+        let mut paths: Vec<&PathBuf> = self.troubles.keys().collect();
+        paths.sort();
+        for path in paths {
+            for trouble in self.troubles.get(path).into_iter().flatten() {
+                if trouble.source.as_deref() != Some(semantics::OBELUS) {
+                    continue;
+                }
+                rows.push(obelus_ui::WentWrong {
+                    // The first line: what Obelus says about a file that
+                    // will not read carries the parser's own words under
+                    // its sentence, and a row is one line.
+                    said: trouble
+                        .message
+                        .lines()
+                        .next()
+                        .unwrap_or_default()
+                        .to_string(),
+                    at: Some((path.clone(), trouble.span.line)),
+                });
+            }
+        }
+        rows.extend(self.amiss.iter().map(|said| obelus_ui::WentWrong {
+            said: said.clone(),
+            at: None,
+        }));
+        rows
+    }
+
+    /// What went wrong on the way up with no file to mark.
+    ///
+    /// The front end's own belong here too: a terminal that would not turn
+    /// on bracketed paste is a terminal Obelus cannot be pasted into, and
+    /// `ob` is the only thing that knows.
+    pub fn amiss(&mut self, said: &str) {
+        self.amiss.push(said.to_string());
+    }
+
+    /// And everything that has gone in it.
+    #[must_use]
+    pub fn went_wrong(&self) -> &[String] {
+        &self.amiss
     }
 
     /// What the server says is wrong with the file being read.
@@ -3593,6 +3672,10 @@ impl Screen for App {
     fn opened_hunks(&self) -> Vec<LineNumber> {
         App::opened_hunks(self)
     }
+    fn went_wrong(&self) -> Vec<obelus_ui::WentWrong> {
+        self.what_went_wrong()
+    }
+
     fn phase(&self) -> u32 {
         App::phase(self)
     }

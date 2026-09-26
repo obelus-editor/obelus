@@ -12,7 +12,7 @@ use super::*;
 /// Its own name, spelled the way the name is spelled everywhere -- and it
 /// is what tells Obelus's own from a server's when one of them is taken
 /// away again.
-const OBELUS: &str = "Obelus";
+pub(super) const OBELUS: &str = "Obelus";
 
 impl App {
     /// What a language server is busy with, if one is.
