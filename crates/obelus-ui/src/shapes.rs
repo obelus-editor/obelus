@@ -33,7 +33,11 @@
 
 use std::sync::{Arc, OnceLock};
 
-use ratatui::{layout::Rect, style::Color};
+use ratatui::{
+    buffer::{Buffer as CellBuffer, Cell},
+    layout::Rect,
+    style::Color,
+};
 
 /// What a front end that draws its own pixels can be told about a frame.
 ///
@@ -60,6 +64,29 @@ pub trait Shapes: Send + Sync {
     /// colour `panel` rounds its frame in, so the two round things Obelus
     /// draws are drawn in one ink.
     fn capped(&self, keys: &str, area: Rect, cap: Color, page: Color, edge: Color);
+
+    /// What is behind a pane: the cells that were there in the moment
+    /// before it was drawn over them.
+    ///
+    /// Said *then* rather than kept from the last frame, because the thing
+    /// behind a dialog is one of the few things in Obelus that changes
+    /// while nobody is touching it. The file under a list is redrawn every
+    /// frame from the buffer it is in, so a reload the watcher noticed, a
+    /// commit in another window, an agent's write -- all of them are
+    /// already in these cells when the pane goes over them. A backdrop
+    /// kept would be the screen as it was, going staler the longer the
+    /// dialog stays up, and the one place a reader would notice is the
+    /// one this is for.
+    ///
+    /// Row-major, `area.width` to a row. Nothing has to be done with it:
+    /// a front end that draws a pane opaque, the way a terminal does, can
+    /// ignore every one of these and be right.
+    /// `ground` is the pane's own colour, which is where the glass is:
+    /// a cell of the pane wearing it is one that says nothing of its own,
+    /// and a cell wearing anything else -- a selected row, a tab, a rule
+    /// -- is the pane saying something and stays opaque. The view knows
+    /// which; a front end counting colours would be guessing.
+    fn behind(&self, area: Rect, ground: Color, cells: &[Cell]);
 }
 
 /// Who is drawing, where it is somebody who wants to be told.
@@ -73,6 +100,28 @@ static DRAWING: OnceLock<Arc<dyn Shapes>> = OnceLock::new();
 /// said nothing new.
 pub fn drawn_by(shapes: Arc<dyn Shapes>) {
     let _ = DRAWING.set(shapes);
+}
+
+/// Tells whoever is drawing what is under a pane, out of the frame being
+/// laid out.
+///
+/// Costs a terminal nothing: `DRAWING` is never set there, so the cells
+/// are not even walked.
+pub(crate) fn behind(area: Rect, ground: Color, cells: &CellBuffer) {
+    let Some(shapes) = DRAWING.get() else {
+        return;
+    };
+    let room = area.intersection(cells.area);
+    if room.is_empty() {
+        return;
+    }
+    let mut under = Vec::with_capacity(usize::from(room.width) * usize::from(room.height));
+    for y in room.top()..room.bottom() {
+        for x in room.left()..room.right() {
+            under.push(cells[(x, y)].clone());
+        }
+    }
+    shapes.behind(room, ground, &under);
 }
 
 /// Tells whoever is drawing that a cap is here.

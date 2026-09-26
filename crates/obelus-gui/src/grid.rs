@@ -110,6 +110,71 @@ pub(crate) enum Update {
         /// What draws its outline.
         edge: Color,
     },
+    /// What is behind a pane, in the frame being laid out.
+    ///
+    /// The whole region, not a diff: it is said in the moment between the
+    /// page being drawn and the pane going over it, and what was there a
+    /// frame ago is exactly what it must not be -- see
+    /// `obelus_ui::shapes::Shapes::behind`.
+    Behind {
+        /// Which cells it is.
+        area: Rect,
+        /// The pane's own colour, which is where the glass is.
+        ground: Color,
+        /// Row-major, `area.width` to a row.
+        cells: Vec<Cell>,
+    },
+}
+
+/// What a view said about the frame beyond the cells in it.
+///
+/// One thing rather than three parameters: they arrive together, they are
+/// swapped together when the frame ends, and the painter reads them in one
+/// pass -- see `obelus_ui::shapes`.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Said<'a> {
+    /// Where the marks go.
+    pub(crate) marked: &'a [Marked],
+    /// Which runs of cells are keys in caps.
+    pub(crate) capped: &'a [Capped],
+    /// And what is under the pane, where there is one.
+    pub(crate) behind: Option<&'a Behind>,
+}
+
+/// What is behind the pane on the frame being drawn.
+#[derive(Clone, Debug)]
+pub(crate) struct Behind {
+    /// Which cells it is.
+    pub(crate) area: Rect,
+    /// The pane's own colour.
+    pub(crate) ground: Color,
+    /// Row-major.
+    pub(crate) cells: Vec<Cell>,
+}
+
+impl Behind {
+    /// What was at this place, as the painter reads a cell.
+    pub(crate) fn look(&self, x: u16, y: u16) -> Option<Look<'_>> {
+        self.at(x, y).map(|cell| Look {
+            text: cell.symbol(),
+            foreground: cell.fg,
+            background: cell.bg,
+            modifier: cell.modifier,
+        })
+    }
+
+    /// What was at this place, or nothing where it is outside the region.
+    fn at(&self, x: u16, y: u16) -> Option<&Cell> {
+        if x < self.area.x || y < self.area.y {
+            return None;
+        }
+        let (along, down) = (x - self.area.x, y - self.area.y);
+        if along >= self.area.width || down >= self.area.height {
+            return None;
+        }
+        self.cells
+            .get(usize::from(down) * usize::from(self.area.width) + usize::from(along))
+    }
 }
 
 /// Where a cap is in the frame being drawn, and what it is drawn in.
@@ -185,6 +250,14 @@ impl Capped {
 }
 
 impl obelus_ui::shapes::Shapes for Marking {
+    fn behind(&self, area: Rect, ground: Color, cells: &[Cell]) {
+        let _ = self.updates.send(Update::Behind {
+            area,
+            ground,
+            cells: cells.to_vec(),
+        });
+    }
+
     fn capped(&self, keys: &str, area: Rect, cap: Color, page: Color, edge: Color) {
         // No wake, the same as a mark's placement: this is said while a
         // frame is being laid out, and the frame's own end wakes the
@@ -611,9 +684,10 @@ impl Page {
                 tracing::warn!(id, "a mark reached the page");
                 false
             }
-            // Nor is this: it is what a run of cells *is*, and the window
-            // takes it out of the queue with the marks.
-            Update::Capped { area, .. } => {
+            // Nor are these: they are what a run of cells *is* and what
+            // was under one, and the window takes both out of the queue
+            // with the marks.
+            Update::Capped { area, .. } | Update::Behind { area, .. } => {
                 tracing::warn!(?area, "a cap reached the page");
                 false
             }
@@ -726,5 +800,45 @@ mod tests {
         // What a view drawn over inside the same frame leaves behind.
         write(&mut page, "    ");
         assert!(!cap.still_said(&page));
+    }
+
+    /// What is under the pane is read at the place it was taken from.
+    ///
+    /// Deliberate break: count the rows by the region's *left edge* rather
+    /// than by its width -- which is the same number whenever a pane
+    /// starts at column zero, and every pane in Obelus does but one. The
+    /// glass would show the page shifted sideways by however far in the
+    /// pane begins, and only on the one pane that is not full width.
+    #[test]
+    fn what_is_under_a_pane_is_read_where_it_was_taken_from() {
+        let area = Rect {
+            x: 3,
+            y: 1,
+            width: 2,
+            height: 2,
+        };
+        let cells: Vec<Cell> = ["a", "b", "c", "d"]
+            .into_iter()
+            .map(|symbol| {
+                let mut cell = Cell::default();
+                cell.set_symbol(symbol);
+                cell
+            })
+            .collect();
+        let behind = Behind {
+            area,
+            ground: Color::Reset,
+            cells,
+        };
+        assert_eq!(behind.look(3, 1).map(|look| look.text), Some("a"));
+        assert_eq!(behind.look(4, 1).map(|look| look.text), Some("b"));
+        assert_eq!(behind.look(3, 2).map(|look| look.text), Some("c"));
+        assert_eq!(behind.look(4, 2).map(|look| look.text), Some("d"));
+        // Outside it in every direction, because a pane's region is not
+        // the screen and the painter walks what it is given.
+        assert!(behind.look(2, 1).is_none());
+        assert!(behind.look(5, 1).is_none());
+        assert!(behind.look(3, 0).is_none());
+        assert!(behind.look(3, 3).is_none());
     }
 }

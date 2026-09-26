@@ -14,6 +14,10 @@ struct Screen {
 @group(0) @binding(0) var<uniform> screen: Screen;
 @group(0) @binding(1) var atlas: texture_2d<f32>;
 @group(0) @binding(2) var atlas_sampler: sampler;
+// What is behind a pane, drawn into a texture of its own a pass earlier.
+// Sampled only by a glass quad; every other quad ignores it.
+@group(0) @binding(3) var behind: texture_2d<f32>;
+@group(0) @binding(4) var behind_sampler: sampler;
 
 // What the instance buffer holds.
 struct Quad {
@@ -23,7 +27,7 @@ struct Quad {
     @location(1) uv: vec4<f32>,
     @location(2) colour: vec4<f32>,
     // 1: a solid colour. 2: a picture with colours of its own.
-    // 4: a solid with its corners taken off.
+    // 4: a solid with its corners taken off. 8: glass over what is behind.
     @location(3) flags: u32,
     // How far those corners are taken off, in pixels.
     @location(4) radius: f32,
@@ -73,8 +77,111 @@ fn outside(point: vec2<f32>, half_size: vec2<f32>, radius: f32) -> f32 {
     return length(max(corner, vec2<f32>(0.0))) + min(max(corner.x, corner.y), 0.0) - radius;
 }
 
+// Which way the nearest edge of a rounded box faces, from a point inside
+// it. The gradient of the distance above, worked out rather than sampled:
+// a derivative would be the difference between two pixels, and what this
+// is for is the direction light bends at an edge.
+fn facing(point: vec2<f32>, half_size: vec2<f32>, radius: f32) -> vec2<f32> {
+    let corner = abs(point) - half_size + vec2<f32>(radius);
+    if (max(corner.x, corner.y) > 0.0) {
+        return normalize(max(corner, vec2<f32>(0.0))) * sign(point);
+    }
+    // Deep inside, where the nearest edge is one of the four sides.
+    if (corner.x > corner.y) {
+        return vec2<f32>(sign(point.x), 0.0);
+    }
+    return vec2<f32>(0.0, sign(point.y));
+}
+
+// How thick the bevel is, as a part of the corner's radius. What decides
+// how wide the band is that bends what is behind: a slab of glass with a
+// rounded edge shows the world undisturbed through its middle and pulled
+// about only where it curves away.
+const BEVEL: f32 = 1.7;
+// How far that band moves what it is bending, in pixels at the very edge.
+//
+// Small, and the reason is what is behind it. A bevel gathers what is
+// under it into a narrower band, and gathering a photograph reads as
+// glass while gathering a page of monospaced text reads as a comb: the
+// rows come out as teeth. So the bend is enough to see and not enough to
+// count.
+const DEPTH: f32 = 13.0;
+// How wide the softening is, in pixels.
+//
+// Wide enough that what is written behind the glass stops being letters
+// and becomes the texture of a page with writing on it. A frost that left
+// the words legible would be two things to read in one place, which is
+// worse than either of them alone -- and it is the one thing a reader
+// would rather the glass did not do.
+const FROST: f32 = 11.0;
+// How many places it is sampled from, on two rings and the middle.
+const TAPS: i32 = 12;
+// Where the light is, which is above and a little to the left -- the one
+// direction every raised thing in every interface is lit from.
+const LIGHT: vec2<f32> = vec2<f32>(-0.42, -1.0);
+
 @fragment
 fn fragment(in: Fragment) -> @location(0) vec4<f32> {
+    // Glass: what is behind, bent at the edges, tinted, and lit.
+    //
+    // Not a blur. The blur is the smallest part of it -- three taps, and
+    // only so that what is behind stops competing with what is written on
+    // top. What says glass is the other two: content pulled sideways in a
+    // band along the rim, which is what a bevel does to what is behind it,
+    // and a bright line along that rim where the light catches it.
+    if ((in.flags & 8u) != 0u) {
+        let distance = outside(in.middle, in.half_size, in.radius);
+        // Outside the rounded corners the pane is not there at all, and
+        // what shows is what was drawn under it.
+        if (distance > 0.0) {
+            discard;
+        }
+        let edge = normalize(LIGHT);
+        let bevel = min(in.radius * BEVEL, min(in.half_size.x, in.half_size.y));
+        // One at the very rim and nothing at all through the middle.
+        let rim = clamp(1.0 + distance / max(bevel, 1.0), 0.0, 1.0);
+        let facing = facing(in.middle, in.half_size, in.radius);
+        let lens = pow(rim, 2.5);
+
+        let uv = in.position.xy / screen.size;
+        // Pulled *inward*: at the edge of a slab you see what is further
+        // under it, which is what makes a straight line behind the pane
+        // bend as it passes the rim.
+        let shift = -facing * lens * DEPTH / screen.size;
+        // Two rings and the middle, which at this width is enough that a
+        // row of text behind comes out as a band rather than as a comb.
+        var frosted = textureSample(behind, behind_sampler, uv + shift).rgb * 2.0;
+
+        var weight = 2.0;
+        for (var tap = 0; tap < TAPS; tap = tap + 1) {
+            let angle = f32(tap) * 0.5236;
+            let ring = select(1.0, 0.55, (tap & 1) == 0);
+            // Least at the rim and most through the middle. Which is the
+            // whole of why the bending above can be seen at all: a frost
+            // laid on evenly would smear away the one band where the
+            // glass has any thickness to show.
+            let width = FROST * (0.42 + 0.58 * (1.0 - lens));
+            let step = vec2<f32>(cos(angle), sin(angle)) * width * ring / screen.size;
+            frosted += textureSample(behind, behind_sampler, uv + shift + step).rgb;
+            weight += 1.0;
+        }
+        frosted = frosted / weight;
+
+        // More of the pane's own colour where what is behind is close to
+        // it in brightness, because that is where what is written on the
+        // glass would otherwise have the least to stand out against.
+        let grey = vec3<f32>(0.2126, 0.7152, 0.0722);
+        let near = 1.0 - clamp(abs(dot(frosted, grey) - dot(in.colour.rgb, grey)) * 3.0, 0.0, 1.0);
+        let tint = clamp(in.colour.a + (1.0 - in.colour.a) * near * 0.4, 0.0, 1.0);
+        var glass = mix(frosted, in.colour.rgb, tint);
+
+        // The rim, lit from one side and faintly returned on the other,
+        // which is a thing with a thickness rather than a painted line.
+        let lit = pow(rim, 10.0) * max(dot(facing, edge), 0.0);
+        let far = pow(rim, 22.0) * max(dot(facing, -edge), 0.0);
+        glass += vec3<f32>(lit * 0.5 + far * 0.22);
+        return vec4<f32>(glass, 1.0);
+    }
     // Before the plain solid, because a rounded one is a solid as well.
     if ((in.flags & 4u) != 0u) {
         let distance = outside(in.middle, in.half_size, in.radius);

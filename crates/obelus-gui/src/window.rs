@@ -44,7 +44,7 @@ use winit::{
 use crate::{
     blink::Blink,
     font::Fonts,
-    grid::{Capped, Cells, Marked, Marking, Measured, Page, Spelling, Update},
+    grid::{Behind, Capped, Cells, Marked, Marking, Measured, Page, Said, Spelling, Update},
     keys,
     motion::{Motion, Wake},
 };
@@ -118,6 +118,11 @@ struct Showing {
     capped: Vec<Capped>,
     /// The ones the frame being laid out has asked for so far.
     capping: Vec<Capped>,
+    /// What is under the pane on the frame being shown, where there is
+    /// one.
+    behind: Option<Behind>,
+    /// And on the frame being laid out.
+    behinding: Option<Behind>,
     /// And the ones the frame being laid out has asked for so far.
     ///
     /// Two lists because a frame is drawn from what it said, not from what
@@ -170,6 +175,8 @@ impl Showing {
             marking: Vec::new(),
             capped: Vec::new(),
             capping: Vec::new(),
+            behind: None,
+            behinding: None,
             // The blink is asked once, on the way up: it is a question
             // about the system rather than about this window.
             motion: Motion::new(Blink::asked()),
@@ -471,6 +478,21 @@ impl ApplicationHandler<Waking> for Showing {
                         Update::Marked { id, focused, x, y } => {
                             self.marking.push(Marked { id, focused, x, y })
                         }
+                        // The last one said wins, which is the pane
+                        // nearest the reader: a setting's choices open
+                        // over the settings, and what the reader sees
+                        // through is the one on top.
+                        Update::Behind {
+                            area,
+                            ground,
+                            cells,
+                        } => {
+                            self.behinding = Some(Behind {
+                                area,
+                                ground,
+                                cells,
+                            });
+                        }
                         Update::Capped {
                             keys,
                             area,
@@ -490,6 +512,7 @@ impl ApplicationHandler<Waking> for Showing {
                             // otherwise.
                             self.marked = std::mem::take(&mut self.marking);
                             self.capped = std::mem::take(&mut self.capping);
+                            self.behind = self.behinding.take();
                             drew = true;
                         }
                         cells => drew |= self.page.apply(cells),
@@ -593,8 +616,11 @@ impl ApplicationHandler<Waking> for Showing {
                     fonts,
                     self.spelling.as_ref(),
                     self.motion.moving(Instant::now()),
-                    &self.marked,
-                    &self.capped,
+                    Said {
+                        marked: &self.marked,
+                        capped: &self.capped,
+                        behind: self.behind.as_ref(),
+                    },
                 ) {
                     tracing::error!(?error, "the frame was not drawn");
                 }

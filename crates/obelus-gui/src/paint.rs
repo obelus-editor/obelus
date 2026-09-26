@@ -22,9 +22,23 @@ use winit::window::Window;
 
 use crate::{
     font::{CellSize, Fonts},
-    grid::{Capped, Look, Marked, Page, Spelling},
+    grid::{Behind, Capped, Look, Marked, Page, Said, Spelling},
     motion::Moving,
 };
+
+/// How much of the glass is the pane's own colour, before the shader
+/// adds to it where what is behind would leave the text nothing to stand
+/// against.
+///
+/// Thin enough that what is under it reads as shapes, thick enough that
+/// what is written on it is what is being read.
+const TINT: f32 = 0.74;
+
+/// How round a pane's corners are, in cells of its own height.
+///
+/// A pane is a slab laid over the page, and a slab has corners. What
+/// shows in them is what is behind, undisturbed: the glass is not there.
+const CORNER: f32 = 0.9;
 
 /// How far a cap is held off the rows either side of it, as a part of a
 /// cell's height.
@@ -91,7 +105,23 @@ pub(crate) struct Painter {
     /// The instances of the frame being built, kept so that a screenful of
     /// rectangles is allocated once rather than once a frame.
     quads: Vec<Quad>,
+    /// How many of them are the backdrop, which is drawn twice: once into
+    /// the texture the glass reads, and again on the screen, where it is
+    /// what shows through the pane's rounded corners.
+    behind_quads: usize,
     instances: wgpu::Buffer,
+    layout: wgpu::BindGroupLayout,
+    sampler: wgpu::Sampler,
+    smooth: wgpu::Sampler,
+    /// What is behind the pane, as a picture of the window.
+    backdrop: wgpu::TextureView,
+    /// The same bindings with something else in the backdrop's place, for
+    /// the pass that *draws* it: a texture cannot be read and written in
+    /// one pass, and what goes in the slot is never sampled there.
+    plain_bindings: wgpu::BindGroup,
+    /// Whether that picture was made again and the bindings still point at
+    /// the old one.
+    bindings_are_stale: bool,
 }
 
 /// One rectangle, as the shader reads it.
@@ -117,6 +147,8 @@ const SOLID: u32 = 1;
 const COLOURFUL: u32 = 2;
 /// A solid whose corners are taken off, which is a key's cap.
 const ROUNDED: u32 = 4;
+/// What is behind a pane, seen through it.
+const GLASS: u32 = 8;
 
 /// What the shader needs to know about the window.
 #[repr(C)]
@@ -265,7 +297,10 @@ impl Painter {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
+                    // The fragment stage reads it too, since the glass:
+                    // what it samples is the window, so it has to know how
+                    // big the window is.
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -289,26 +324,53 @@ impl Painter {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
-            ],
-        });
-        let bindings = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("obelus"),
-            layout: &layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: uniforms.as_entire_binding(),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
                 },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&atlas.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
                 },
             ],
         });
+        // Smooth, unlike the glyphs': what this samples is a picture being
+        // bent, and bending it a pixel at a time is what a staircase is.
+        let smooth = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("obelus behind"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            ..Default::default()
+        });
+        let backdrop = made_to_draw_into(&device, view, configured.width, configured.height);
+        let bindings = bound(
+            &device,
+            &layout,
+            &uniforms,
+            &atlas.view,
+            &sampler,
+            &backdrop,
+            &smooth,
+        );
+        let plain_bindings = bound(
+            &device,
+            &layout,
+            &uniforms,
+            &atlas.view,
+            &sampler,
+            &atlas.view,
+            &smooth,
+        );
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("obelus"),
@@ -378,7 +440,14 @@ impl Painter {
             drawings: HashMap::new(),
             palette: None,
             quads: Vec::new(),
+            behind_quads: 0,
             instances,
+            layout,
+            sampler,
+            smooth,
+            backdrop,
+            plain_bindings,
+            bindings_are_stale: false,
         })
     }
 
@@ -404,6 +473,16 @@ impl Painter {
         self.configured.width = width.clamp(1, most);
         self.configured.height = height.clamp(1, most);
         self.surface.configure(&self.device, &self.configured);
+        // The pane's backdrop is a picture of the window, so it is the
+        // size of the window: one that stayed the old size would be
+        // sampled at the wrong place for every pixel of the glass.
+        self.backdrop = made_to_draw_into(
+            &self.device,
+            self.view,
+            self.configured.width,
+            self.configured.height,
+        );
+        self.bindings_are_stale = true;
     }
 
     /// The text is a different size now, so nothing kept about its glyphs
@@ -439,19 +518,24 @@ impl Painter {
         fonts: &mut Fonts,
         spelling: Option<&Spelling>,
         moving: Moving,
-        marked: &[Marked],
-        capped: &[Capped],
+        said: Said<'_>,
     ) -> Result<()> {
         let cell = fonts.cell();
         self.quads.clear();
-        self.backgrounds(page, cell.width, cell.height);
+        self.behind_quads = 0;
+        // First of everything, because these are the quads the backdrop
+        // pass draws and it draws the front of the buffer.
+        if let Some(behind) = said.behind {
+            self.glass(behind, fonts);
+        }
+        self.backgrounds(page, cell.width, cell.height, said.behind);
         // Over the ground and under the text: a cap is the shape the cells
         // behind a key are, and the key is written on it.
-        self.caps(page, capped, cell);
+        self.caps(page, said.capped, cell);
         self.letters(page, fonts);
         // After the text, over cells the view left empty: a view draws its
         // glyph only where a picture could not be drawn.
-        self.marks(marked, cell);
+        self.marks(said.marked, cell);
         // Over the cells and under the caret: the word being spelled is
         // going in at the caret, so the caret belongs at the place in it
         // the input method says.
@@ -487,6 +571,19 @@ impl Painter {
         self.queue
             .write_buffer(&self.instances, 0, bytemuck::cast_slice(&self.quads));
 
+        if self.bindings_are_stale {
+            self.bindings = bound(
+                &self.device,
+                &self.layout,
+                &self.uniforms,
+                &self.atlas.view,
+                &self.sampler,
+                &self.backdrop,
+                &self.smooth,
+            );
+            self.bindings_are_stale = false;
+        }
+
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame)
             | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
@@ -517,6 +614,35 @@ impl Painter {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("obelus"),
             });
+        // What is behind the pane, into a picture of its own. Only the
+        // front of the buffer, which is exactly those cells -- and only
+        // where there is a pane at all, so a window with nothing over the
+        // page does none of this.
+        if self.behind_quads > 0 {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("obelus behind"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &self.backdrop,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.pipeline);
+            // Not `self.bindings`: those have the texture this pass is
+            // drawing into bound for reading, which is the one thing a
+            // pass may not have.
+            pass.set_bind_group(0, &self.plain_bindings, &[]);
+            pass.set_vertex_buffer(0, self.instances.slice(..));
+            pass.draw(0..4, 0..self.behind_quads as u32);
+        }
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("obelus"),
@@ -552,7 +678,7 @@ impl Painter {
     /// A run of cells with the same background is one rectangle: a screen
     /// is mostly the page's own colour, and a quad per cell would be ten
     /// thousand of them to say so.
-    fn backgrounds(&mut self, page: &Page, width: f32, height: f32) {
+    fn backgrounds(&mut self, page: &Page, width: f32, height: f32, behind: Option<&Behind>) {
         // A window is not a whole number of cells across, so there is a
         // strip down the right and along the bottom that no cell reaches.
         // The last run of each row is stretched into it, and the last row
@@ -569,17 +695,34 @@ impl Painter {
                 false => height,
             };
             for (start, end, colour) in runs(page, row) {
-                let wide = match end == page.columns() {
-                    true => (right - f32::from(start) * width).max(width),
-                    false => f32::from(end - start) * width,
+                // The pane's own colour inside the pane is where the glass
+                // is: it is the pane saying nothing there, and drawing it
+                // would be painting over what the reader is meant to see
+                // through. Anything else it wears -- a selected row, a
+                // tab, a rule -- is the pane speaking, and stays.
+                let glass = behind.filter(|behind| {
+                    colour == behind.ground && row >= behind.area.y && row < behind.area.bottom()
+                });
+                let pieces: [Option<(u16, u16)>; 2] = match glass {
+                    None => [Some((start, end)), None],
+                    Some(behind) => [
+                        (start < behind.area.x).then(|| (start, end.min(behind.area.x))),
+                        (end > behind.area.right()).then(|| (start.max(behind.area.right()), end)),
+                    ],
                 };
-                self.block(
-                    f32::from(start) * width,
-                    f32::from(row) * height,
-                    wide,
-                    tall,
-                    rgba(colour, Ink::Background),
-                );
+                for (start, end) in pieces.into_iter().flatten() {
+                    let wide = match end == page.columns() {
+                        true => (right - f32::from(start) * width).max(width),
+                        false => f32::from(end - start) * width,
+                    };
+                    self.block(
+                        f32::from(start) * width,
+                        f32::from(row) * height,
+                        wide,
+                        tall,
+                        rgba(colour, Ink::Background),
+                    );
+                }
             }
         }
     }
@@ -681,6 +824,60 @@ impl Painter {
                 rgba(cap.cap, Ink::Background),
             );
         }
+    }
+
+    /// What is under a pane, and the glass over it.
+    ///
+    /// The cells first, all of them, drawn exactly as the page would draw
+    /// them. They go in front of everything else in the buffer because
+    /// they are drawn twice: once into a texture of their own, which is
+    /// what the glass reads, and once here on the screen, where they are
+    /// what shows through the pane's rounded corners -- the one place the
+    /// pane is not.
+    ///
+    /// Then one quad over the lot of it, which is the glass. What it does
+    /// with what is behind is in `paint.wgsl`: the shape is the same
+    /// rounded box a key's cap is, and it is the same function that says
+    /// where its edge is.
+    fn glass(&mut self, behind: &Behind, fonts: &mut Fonts) {
+        let cell = fonts.cell();
+        for y in behind.area.top()..behind.area.bottom() {
+            for x in behind.area.left()..behind.area.right() {
+                let Some(under) = behind.look(x, y) else {
+                    continue;
+                };
+                let left = f32::from(x) * cell.width;
+                let top = f32::from(y) * cell.height;
+                self.block(
+                    left,
+                    top,
+                    cell.width,
+                    cell.height,
+                    rgba(under.background, Ink::Background),
+                );
+                if !under.text.trim().is_empty() {
+                    let ink = rgba(under.foreground, Ink::Foreground);
+                    self.glyphs_at(left, top, under, ink, fonts);
+                }
+            }
+        }
+        self.behind_quads = self.quads.len();
+
+        let mut tint = rgba(behind.ground, Ink::Background);
+        tint[3] = TINT;
+        self.quads.push(Quad {
+            rect: [
+                f32::from(behind.area.x) * cell.width,
+                f32::from(behind.area.y) * cell.height,
+                f32::from(behind.area.width) * cell.width,
+                f32::from(behind.area.height) * cell.height,
+            ],
+            uv: self.atlas.white,
+            colour: tint,
+            flags: SOLID | ROUNDED | GLASS,
+            radius: cell.height * CORNER,
+            padding: [0; 2],
+        });
     }
 
     /// The text.
@@ -1241,6 +1438,70 @@ enum Ink {
 /// sRGB conversion for exactly this reason. A theme's `#1e1e2e` is the
 /// colour the reader picked, and a pipeline that corrects it draws a
 /// different one.
+/// A texture the size of the window, to draw a frame into and read back.
+fn made_to_draw_into(
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+    width: u32,
+    height: u32,
+) -> wgpu::TextureView {
+    device
+        .create_texture(&wgpu::TextureDescriptor {
+            label: Some("obelus behind"),
+            size: wgpu::Extent3d {
+                width: width.max(1),
+                height: height.max(1),
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        })
+        .create_view(&wgpu::TextureViewDescriptor::default())
+}
+
+/// Everything the shader is handed, in one place because the backdrop is
+/// made again whenever the window changes size and the rest goes with it.
+fn bound(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    uniforms: &wgpu::Buffer,
+    atlas: &wgpu::TextureView,
+    sampler: &wgpu::Sampler,
+    backdrop: &wgpu::TextureView,
+    smooth: &wgpu::Sampler,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("obelus"),
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniforms.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(atlas),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: wgpu::BindingResource::TextureView(backdrop),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: wgpu::BindingResource::Sampler(smooth),
+            },
+        ],
+    })
+}
+
 fn rgba(colour: Color, ink: Ink) -> [f32; 4] {
     let (r, g, b) = match colour {
         Color::Rgb(r, g, b) => (r, g, b),

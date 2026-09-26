@@ -583,6 +583,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
         match layer {
             Layer::Settings => {
                 if let Some(view) = settings::SettingsView::new(app) {
+                    shapes::behind(regions.editor, app.theme().background, cells);
                     view.render(regions.editor, cells);
                 }
             }
@@ -591,18 +592,26 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
             // `Room::Screen` says about them.
             Layer::Counts => {
                 if let Some(view) = counts::CountsView::new(app) {
+                    shapes::behind(area, app.theme().background, cells);
                     view.render(area, cells);
                 }
             }
             Layer::Picker => {
                 if let Some(list) = app.picker() {
-                    list_over(cells, app, list, room_for_a_picker(app, regions.editor));
+                    let room = room_for_a_picker(app, regions.editor);
+                    // Said with the room the view is about to be handed,
+                    // rather than worked out again here: two answers to
+                    // where a pane is would be a backdrop that does not
+                    // line up with what is over it.
+                    shapes::behind(room, app.theme().background, cells);
+                    list_over(cells, app, list, room);
                 }
             }
             Layer::Names => {
                 if let Some(names) = app.names() {
                     let room = room_for_a_picker(app, regions.editor);
                     let region = names::region(names, room);
+                    shapes::behind(region, app.theme().background, cells);
                     names::NamesView::new(names, app.theme()).render(region, cells);
                     // The edge every band gets, for the same reason a
                     // compact list gets one: two different things sharing
