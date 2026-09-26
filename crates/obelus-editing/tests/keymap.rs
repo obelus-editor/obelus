@@ -334,3 +334,108 @@ fn the_readers_own_bindings_go_over_the_defaults() {
         "a key that could never fire was taken out of the file and bound"
     );
 }
+
+/// Copy and paste answer to the names a desktop knows them by, in both the
+/// file and a dialog.
+///
+/// A desktop's own one chord for copy is turned into a key and sent to
+/// whatever has the focus, and which key depends on what it takes that
+/// thing for: omarchy's `super+c` is `ctrl+c` for a window and
+/// `ctrl+Insert` for something it reads as a terminal. Obelus is both, and
+/// is read as either, so it answers both -- and the same table is what `ob`
+/// and `obg` are looking things up in, so binding it once is binding it for
+/// both.
+///
+/// Deliberate break: either pair of bindings removed, which leaves its own
+/// assertion looking up `None`.
+#[test]
+fn copy_and_paste_answer_to_the_chords_a_desktop_sends() {
+    let keymap = Keymap::new();
+    let copy = press(KeyCode::Insert, KeyModifiers::CONTROL);
+    let paste = press(KeyCode::Insert, KeyModifiers::SHIFT);
+
+    for context in [Context::Normal, Context::Dialog] {
+        assert_eq!(
+            keymap.lookup(&copy, context),
+            Some(Command::SelectionCopy),
+            "ctrl+insert in {context:?}"
+        );
+        assert_eq!(
+            keymap.lookup(&paste, context),
+            Some(Command::Paste),
+            "shift+insert in {context:?}"
+        );
+    }
+
+    // And the key it is a modified form of still means what it is named
+    // after, which is the one thing these must not have taken.
+    assert_eq!(
+        keymap.lookup(&press(KeyCode::Insert, KeyModifiers::NONE), Context::Normal),
+        Some(Command::ReplaceToggle)
+    );
+}
+
+/// And those two are the only modified `Insert` a reader may bind.
+///
+/// `why_not` is asked by the keys page and by the config file as well as by
+/// the shipped table, so letting one chord through is letting it through
+/// everywhere. Two is what the desktop sends; a third would be Obelus
+/// inventing one after all.
+///
+/// Deliberate break: `why_not` letting any modified `Insert` through, which
+/// is the obvious way to write the exception and is what the last two
+/// assertions are for.
+#[test]
+fn only_the_two_chords_a_desktop_sends_are_a_modified_insert() {
+    let may = |modifiers| {
+        obelus_editing::keymap::why_not(KeyChord::new(KeyCode::Insert, modifiers)).is_none()
+    };
+
+    assert!(may(KeyModifiers::CONTROL));
+    assert!(may(KeyModifiers::SHIFT));
+    assert!(may(KeyModifiers::NONE));
+    // Alt asks about the cursor, and there is nothing it would ask here.
+    assert!(!may(KeyModifiers::ALT));
+    // And two modifiers is the desktop's own, wherever it lands.
+    assert!(!may(KeyModifiers::CONTROL | KeyModifiers::SHIFT));
+}
+
+/// Rebinding a command with two chords leaves it with one, once per
+/// context.
+///
+/// Copy answers to `ctrl+c` and to `ctrl+Insert`, in the file and in a
+/// dialog, so it is in each of those contexts twice. A rebind that made one
+/// binding per *appearance* would put the reader's key in twice -- two
+/// bindings on one chord in one context, which is the thing
+/// `no_chord_is_bound_twice_in_one_context` holds the shipped table to and
+/// nothing was holding a rebuilt one to.
+///
+/// Deliberate break: `rebind` collecting the contexts without asking
+/// whether it already has one, which is how it was written when every
+/// command had one chord.
+#[test]
+fn rebinding_a_command_with_two_chords_leaves_it_one_key_per_context() {
+    let mut keymap = Keymap::new();
+    keymap.rebind(Command::SelectionCopy, Some(control('y')));
+
+    let copies: Vec<_> = keymap
+        .bindings()
+        .iter()
+        .filter(|binding| binding.command == Command::SelectionCopy)
+        .collect();
+    assert_eq!(copies.len(), 2, "{copies:?}");
+    assert!(copies.iter().all(|binding| binding.chord == control('y')));
+    // The two it was in, each once.
+    let mut contexts: Vec<_> = copies.iter().map(|binding| binding.context).collect();
+    contexts.dedup();
+    assert_eq!(contexts.len(), 2);
+
+    // And the chord it had is nobody's now, rather than still copying.
+    assert_eq!(
+        keymap.lookup(
+            &press(KeyCode::Insert, KeyModifiers::CONTROL),
+            Context::Normal
+        ),
+        None
+    );
+}

@@ -633,6 +633,31 @@ impl Keymap {
                     context: Context::Dialog,
                     chord: control('v'),
                 },
+                // And the same two under the names a desktop uses for
+                // them. Argued in `why_not`, which has to let them
+                // through: they are the chords omarchy's `super+c` and
+                // `super+v` turn into where the thing they are sent to
+                // looks like a terminal.
+                Binding {
+                    command: Command::SelectionCopy,
+                    context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Insert, KeyModifiers::CONTROL),
+                },
+                Binding {
+                    command: Command::Paste,
+                    context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Insert, KeyModifiers::SHIFT),
+                },
+                Binding {
+                    command: Command::SelectionCopy,
+                    context: Context::Dialog,
+                    chord: KeyChord::new(KeyCode::Insert, KeyModifiers::CONTROL),
+                },
+                Binding {
+                    command: Command::Paste,
+                    context: Context::Dialog,
+                    chord: KeyChord::new(KeyCode::Insert, KeyModifiers::SHIFT),
+                },
                 Binding {
                     command: Command::Undo,
                     context: Context::Normal,
@@ -939,13 +964,21 @@ impl Keymap {
     /// the file on the row of a list, and a reader who rebinds it means
     /// both. A command that had no key gets one where the reader is
     /// reading, which is where a key they press belongs.
+    ///
+    /// Which includes the chords a command has that the reader did not
+    /// choose -- copy answers to `ctrl+Insert` as well as `ctrl+c` -- so
+    /// the reader gets the one key the page shows them and no second one
+    /// firing behind it.
     pub fn rebind(&mut self, command: Command, chord: Option<KeyChord>) {
-        let contexts: Vec<Context> = self
-            .bindings
-            .iter()
-            .filter(|binding| binding.command == command)
-            .map(|binding| binding.context)
-            .collect();
+        // Each context once, not once per binding: a command with two
+        // chords in one context appears in that context twice, and one
+        // binding per appearance is two bindings on the same key.
+        let mut contexts: Vec<Context> = Vec::new();
+        for binding in &self.bindings {
+            if binding.command == command && !contexts.contains(&binding.context) {
+                contexts.push(binding.context);
+            }
+        }
         self.bindings.retain(|binding| binding.command != command);
         let Some(chord) = chord else {
             return;
@@ -1045,6 +1078,24 @@ pub fn why_not(chord: KeyChord) -> Option<&'static str> {
     let alone = chord.modifiers.is_empty();
     let control = chord.modifiers == KeyModifiers::CONTROL;
     let alt = chord.modifiers == KeyModifiers::ALT;
+
+    // Copy and paste, under the names the desktop knows them by. Not
+    // Obelus naming a command with shift -- these two are the chords a
+    // terminal has meant by copy and paste since long before any of this,
+    // and they are what a desktop sends a *terminal* when the reader
+    // presses its own one chord for copy: omarchy's `super+c` is
+    // `ctrl+Insert` where it thinks it is talking to a terminal and
+    // `ctrl+c` where it does not. Obelus answers both, so which of the two
+    // it is taken for stops mattering. The same shape as `shift+enter` and
+    // `alt+enter` being taken together: one act, two chords, because what
+    // arrives is not Obelus's to decide.
+    //
+    // Every terminal reports these the same way, unlike a modified
+    // function key -- though a terminal that binds them for itself (foot
+    // does, by default) keeps them and Obelus never sees them.
+    if chord.code == KeyCode::Insert && (control || chord.modifiers == KeyModifiers::SHIFT) {
+        return None;
+    }
 
     // Two of them, or shift with another: shift extends and reverses and
     // names nothing, and a second modifier is either the desktop's

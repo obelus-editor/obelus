@@ -728,8 +728,28 @@ command is gone and `App::blame` reads the setting.
   run of lines it is inside, `alt+m` its matching bracket, and the arrows --
   up and down between changes, left and right through the places the reader
   has been.
-* **Shift never names a command.** It only extends (`shift` plus an arrow)
-  or reverses (`shift+tab`), which leaves it meaning one thing everywhere.
+* **Shift names no command of Obelus's own.** It only extends (`shift` plus
+  an arrow) or reverses (`shift+tab`), which leaves it meaning one thing
+  everywhere. `shift+Insert` is the exception that says what the rule is
+  about: it is not a name Obelus chose, it is a name the desktop already
+  uses. A desktop's own one chord for copy is turned into a *key* and sent
+  to whatever has the focus, and which key depends on what it takes that
+  thing for -- omarchy's `super+c` arrives as `ctrl+c` at a window and as
+  `ctrl+Insert` at something it reads as a terminal, `super+v` as `ctrl+v`
+  or `shift+Insert`. Obelus is both and is read as either, so it answers
+  all four and stops caring which it is taken for. One table, so binding it
+  once binds it for `ob` and `obg` together. The same shape as `shift+enter`
+  and `alt+enter` being taken as a pair: one act, two chords, because what
+  arrives is not Obelus's to decide.
+
+  Which is the whole of the exception, and `why_not` is where that is
+  enforced -- `alt+Insert` is still refused, because nothing sends it. A
+  terminal that binds these for itself keeps them and Obelus never sees
+  them: foot does by default, which is why `super+c` in `ob` copies the
+  terminal's selection rather than the reader's until that line is taken
+  out of the terminal's own config. That is not something Obelus can answer
+  from the inside, and pretending otherwise would be a key that looks bound
+  and does nothing.
   **Escape always gives up on the nearest thing**, and everything else is
   reached from the palette: a chord for every command is how a key table
   stops being memorable.
