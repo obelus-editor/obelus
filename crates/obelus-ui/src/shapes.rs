@@ -119,6 +119,16 @@ pub trait Shapes: Send + Sync {
     /// Row-major, `area.width` to a row. Nothing has to be done with it:
     /// a front end that draws a pane opaque, the way a terminal does, can
     /// ignore every one of these and be right.
+    ///
+    /// A screenful of cells, copied, on every frame a pane is up. Which
+    /// is worth knowing rather than worth avoiding: measured at 66us for
+    /// two hundred columns by fifty, against a frame a reader is waiting
+    /// sixteen thousand of those for, and twelve frames a second is all
+    /// the ticker ever asks for. The obvious saving -- keep the last one
+    /// and send nothing where it has not changed -- was measured too, and
+    /// comparing the two came to 62us: the same work to find out whether
+    /// to do the work. A terminal pays none of it either way, because it
+    /// never says who is drawing.
     /// `ground` is the pane's own colour, which is where the glass is:
     /// a cell of the pane wearing it is one that says nothing of its own,
     /// and a cell wearing anything else -- a selected row, a tab, a rule

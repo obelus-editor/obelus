@@ -594,11 +594,21 @@ impl WelcomeView<'_> {
 /// allocates one, which is why everything here leaves a blank column after a
 /// glyph. Two columns of keys line up only if the measuring agrees with the
 /// drawing, and the width tables cannot -- they know nothing about the font.
+///
+/// Except in a window, where the face is not the reader's guess but the
+/// `Mono` one carried in the binary, and a mark in it is fitted to the one
+/// cell it was given. Asking for two there is a column a cell too wide,
+/// which puts the key a cell left of where the column says and leaves the
+/// gap on the other side -- where a cap drawn round it shows it.
 fn drawn(contents: &str) -> usize {
+    let glyph = match obelus_config::in_a_window() {
+        true => 1,
+        false => 2,
+    };
     contents
         .chars()
         .map(|character| match character {
-            '\u{e000}'..='\u{f8ff}' | '\u{f0000}'..='\u{ffffd}' => 2,
+            '\u{e000}'..='\u{f8ff}' | '\u{f0000}'..='\u{ffffd}' => glyph,
             _ => character.width().unwrap_or(0),
         })
         .sum()

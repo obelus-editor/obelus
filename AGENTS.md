@@ -1093,6 +1093,25 @@ in its two cells, scaled down only where it does not fit: cosmic-text's
 fifth until its advance is a whole number of cells, and that is a line of
 Chinese visibly larger than the Latin above it.
 
+And it has to be told twice, because the *letters* are the other half of
+that and were missed. A terminal advanced those two columns itself, so
+`ratatui` has nothing to say about the second one and its diff leaves it
+out -- and what a window still has in it is whatever was there before. A
+page of Chinese over a page of code showed one Latin letter sitting on the
+right half of every other character, in the colours it had had. Which is
+what said where it came from: a glyph carrying a *style* is not a font
+going wrong, it is a cell nobody repainted. So a cell written over its
+neighbours blanks them, with its own style, which is what `ratatui`'s own
+buffer holds there -- the page saying to itself what the diff did not.
+
+Nor is a glyph the same width in both. A terminal draws with the font the
+reader installed, whose non-`Mono` variants take two columns; a window
+draws with the `Mono` one carried in the binary, fitted to the one cell it
+was given. So a measurement in columns has to ask which front end it is
+for, and the welcome screen's `drawn` does -- a column a cell too wide put
+its keys a cell left of where the column said, which is a gap nobody could
+see until a cap was drawn round them.
+
 **The caret's shape says what the next character will do.** A bar stands
 between two characters and says the next one goes in there; a block stands
 on one and says the next one takes its place. So there are two shapes and
@@ -1370,6 +1389,18 @@ src/
                     looks like, nothing may be said there that the cells do
                     not already say in their own way, and what is said
                     carries enough to be checked against them (shapes)
+  gui/            the window: what a screenful of cells becomes when it is
+                  not a terminal -- the grid on its way over, the glyphs,
+                  the quads, and the one clock the window keeps
+                  · the page is what Obelus said and motion is only how the
+                    window is showing it, a moment and a rate are two kinds
+                    of waiting, and none of it crosses to the application
+                    (motion); a full-width character takes the cells it
+                    covers with it, because the diff will not (grid); a
+                    pane has one edge and so no corners, glass is a bend
+                    and a light before it is a blur, and a region of the
+                    frame is put back somewhere else rather than drawn
+                    again (paint)
 tests/            integration tests plus tests/fixtures/*.txt golden grids
                   · why the fake agent is `sh`, and what it checks back
                     (agent)
