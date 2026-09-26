@@ -127,6 +127,13 @@ struct Showing {
     scrolling: Option<(Rect, i64)>,
     /// The bar beside the band being shown.
     bar: Option<Bar>,
+    /// Which row its mark was on when the slide under way began.
+    ///
+    /// The slide's other end, and the reason it is kept rather than
+    /// worked out: both ends have to be rows the bar was *drawn* at, or
+    /// the mark sets out from somewhere it was never drawn and steps
+    /// back to catch up.
+    bar_origin: Option<u16>,
     /// And the one being laid out.
     barring: Option<Bar>,
     /// The page as it was before the frame being shown.
@@ -198,6 +205,7 @@ impl Showing {
             scrolling: None,
             bar: None,
             barring: None,
+            bar_origin: None,
             before: None,
             behind: None,
             behinding: None,
@@ -486,6 +494,7 @@ impl ApplicationHandler<Waking> for Showing {
                 // Kept only where a band could move, because that is the
                 // only thing it is for.
                 let before = was_at.map(|_| self.page.clone());
+                let bar_was = self.bar.map(|bar| bar.mark);
                 let mut drew = false;
                 let mut sized = None;
                 let mut faces = None;
@@ -605,6 +614,7 @@ impl ApplicationHandler<Waking> for Showing {
                         .band_moved(rows, f32::from(room.height), Instant::now())
                     {
                         self.before = before;
+                        self.bar_origin = bar_was;
                     }
                 }
                 if let Some(names) = faces {
@@ -703,7 +713,10 @@ impl ApplicationHandler<Waking> for Showing {
                             .scrolled
                             .zip(self.before.as_ref())
                             .map(|((room, _), before)| (room, before)),
-                        bar: self.bar,
+                        bar: self.bar.map(|bar| {
+                            let origin = self.bar_origin.unwrap_or(bar.mark);
+                            (bar.area, f32::from(origin) - f32::from(bar.mark))
+                        }),
                     },
                 ) {
                     tracing::error!(?error, "the frame was not drawn");

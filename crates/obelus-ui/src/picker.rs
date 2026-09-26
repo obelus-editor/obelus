@@ -514,7 +514,7 @@ impl Widget for PickerView<'_> {
                     width: SCROLLBAR_WIDTH,
                     ..list
                 },
-                per_row: crate::bar_per_row(list.height, matched),
+                mark: crate::bar_mark(list.height, first, matched),
             });
             crate::shapes::scrolled(rows, top, bar);
         }

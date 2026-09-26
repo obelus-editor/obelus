@@ -903,15 +903,11 @@ pub(crate) fn scrollbar(
     let total = total.max(1);
     let x = area.right().saturating_sub(1);
 
-    let (thumb, travel, furthest) = bar_reach(height, total);
-    let start = if total <= height {
-        0
-    } else {
-        (top * travel).div_ceil(furthest).min(travel)
-    };
+    let (thumb, _, _) = bar_reach(height, total);
+    let start = bar_mark(area.height, top, total);
 
     for row in 0..area.height {
-        let inside = usize::from(row) >= start && usize::from(row) < start + thumb;
+        let inside = row >= start && usize::from(row) < usize::from(start) + thumb;
         let colour = if inside {
             theme.gutter_current
         } else {
@@ -949,25 +945,25 @@ fn bar_reach(height: usize, total: usize) -> (usize, usize, usize) {
     (thumb, travel, furthest)
 }
 
-/// How far a bar's mark moves for each row the thing it is about moves.
+/// Which row of the track a bar's mark starts on.
 ///
-/// A fraction, and usually a small one: a file of two thousand lines on a
-/// fifty-row screen moves its mark a fiftieth of a row per line. Which is
-/// the whole point of having it -- a mark drawn at whole rows only moves
-/// once every fifty lines, and a mark slid by this moves every line.
+/// The one place it is worked out, because two now want it: the bar that
+/// draws the mark, and the front end that slides it. And the front end
+/// needs *this* number rather than a rate, which is what it had first and
+/// what made the mark step backwards. A rate is continuous and this is
+/// not -- the mark is drawn on a row -- so sliding at the rate reached a
+/// place a row's rounding away from where the mark was last drawn, in
+/// whichever direction the rounding fell. Between two of these there is
+/// nothing to disagree about: it sets out from where the mark was and
+/// arrives where the mark is.
 #[must_use]
-pub fn bar_per_row(height: u16, total: usize) -> f32 {
-    let height = usize::from(height);
-    if total <= height {
-        return 0.0;
+pub fn bar_mark(height: u16, top: usize, total: usize) -> u16 {
+    let rows = usize::from(height);
+    if total <= rows {
+        return 0;
     }
-    let (_, travel, furthest) = bar_reach(height, total);
-    #[expect(
-        clippy::cast_precision_loss,
-        reason = "rows of a screen against lines of a file"
-    )]
-    let (travel, furthest) = (travel as f32, furthest as f32);
-    travel / furthest
+    let (_, travel, furthest) = bar_reach(rows, total);
+    u16::try_from((top * travel).div_ceil(furthest).min(travel)).unwrap_or(0)
 }
 
 /// Which row of a bar `area.height` rows tall a line of `total` falls on.
@@ -2222,42 +2218,35 @@ pub(crate) fn glyphs_held() -> std::sync::MutexGuard<'static, ()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        bar_per_row, drop_from_left, drop_from_right, scrollbar, tick, truncate_from_left,
-        truncate_from_right,
+        bar_mark, drop_from_left, drop_from_right, tick, truncate_from_left, truncate_from_right,
     };
 
-    /// A bar's mark is slid at the rate the bar itself draws it moving.
+    /// A bar's mark reaches the end of its track exactly when the last
+    /// row does, and never steps back on the way there.
     ///
-    /// Deliberate break: work the rate out as the screen's share of the
-    /// whole (`height / total`) rather than as the mark's travel over the
-    /// distance the top can go. It is the same number whenever the thumb
-    /// happens to be half the track and wrong everywhere else -- so a
-    /// mark slid at it would arrive short of where the bar then draws it,
-    /// and step the rest of the way, which is the jump this is for.
+    /// Deliberate break: scale by the whole list rather than by how far
+    /// its top can go -- `total` in place of `furthest` in `bar_reach`.
+    /// The mark then stops short of the bottom on the one screenful
+    /// anybody checks it against.
+    ///
+    /// Not checked against what `scrollbar` draws, because `scrollbar`
+    /// works it out with this: one function, so there is nothing for the
+    /// two of them to disagree about, and a test that compared them
+    /// would be asking the rule what it expects.
     #[test]
-    fn a_bar_is_slid_at_the_rate_it_is_drawn_moving() {
-        // Ten rows of a forty-row list: a two-row thumb with eight rows to
-        // travel, over a top that can go thirty.
-        let theme = &obelus_theme::builtin::DARK;
-        let area = ratatui::layout::Rect {
-            x: 0,
-            y: 0,
-            width: 1,
-            height: 10,
-        };
-        let mut cells = ratatui::buffer::Buffer::empty(area);
-        scrollbar(&mut cells, area, 30, 40, theme);
-        let start = (0..area.height)
-            .find(|row| cells[(0, *row)].fg == theme.gutter_current)
-            .expect("a thumb somewhere on the track");
-
-        let slid = bar_per_row(area.height, 40) * 30.0;
-        assert!(
-            (slid - f32::from(start)).abs() < 0.001,
-            "slid to {slid}, drawn at {start}"
-        );
-        // A list that fits has nowhere for its mark to go.
-        assert!((bar_per_row(10, 10) - 0.0).abs() < f32::EPSILON);
+    fn a_bar_reaches_the_end_of_its_track_when_the_last_row_does() {
+        // Ten rows of a forty-row list: a two-row thumb with eight rows
+        // of track to travel, over a top that can go thirty.
+        assert_eq!(bar_mark(10, 0, 40), 0);
+        assert_eq!(bar_mark(10, 30, 40), 8, "the last screenful is the end");
+        // And never back, which is the one thing a mark must not do.
+        let mut last = 0;
+        for top in 0..=30 {
+            let mark = bar_mark(10, top, 40);
+            assert!(mark >= last, "the mark stepped back at {top}");
+            last = mark;
+        }
+        assert_eq!(bar_mark(10, 0, 10), 0, "a list that fits");
     }
 
     /// A control character in what is drawn does not take Obelus down.

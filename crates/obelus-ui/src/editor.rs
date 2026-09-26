@@ -622,17 +622,25 @@ impl Widget for EditorView<'_> {
         // text, the bar's mark would travel the distance the text did
         // rather than its own share of it, which is the whole length of
         // the file too far.
+        // Counted in the lines that are *shown*, which is what the bar
+        // counts: with a run closed the document is shorter and the
+        // reader is further into it than the file's own numbers say.
+        // Once, because the bar is drawn from these and the front end
+        // slides it to what they say -- two workings-out would be a mark
+        // slid to one row and drawn on another.
+        let shown = text.line_count() - buffer.folds().hidden_total();
+        let above = {
+            let top = buffer.viewport().top;
+            top.get() - buffer.folds().hidden_before(top)
+        };
         if let Some(travelled) = self.travelled {
-            // Counted in the lines that are *shown*, which is what the bar
-            // itself counts: with a run closed the document is shorter.
-            let shown = text.line_count() - buffer.folds().hidden_total();
             let bar = (shown > usize::from(area.height)).then(|| crate::shapes::Bar {
                 area: Rect {
                     x: area.right().saturating_sub(SCROLLBAR_WIDTH),
                     width: SCROLLBAR_WIDTH,
                     ..area
                 },
-                per_row: crate::bar_per_row(area.height, shown),
+                mark: crate::bar_mark(area.height, above, shown),
             });
             crate::shapes::scrolled(
                 Rect {
@@ -1147,18 +1155,7 @@ impl Widget for EditorView<'_> {
             // The whole region, so the bar is in the last column of it --
             // which is where every list in Obelus puts its own, and what
             // keeps them in one line when a list opens over a file.
-            // Counted in the lines that are *shown*: the bar answers how
-            // much of this there is and which part of it is in front of
-            // you, and with a run closed the document is shorter and the
-            // reader is further into it than the file's own numbers say.
-            let folds = buffer.folds();
-            crate::scrollbar(
-                cells,
-                area,
-                viewport.top.get() - folds.hidden_before(viewport.top),
-                text.line_count() - folds.hidden_total(),
-                self.theme,
-            );
+            crate::scrollbar(cells, area, above, shown, self.theme);
         }
     }
 }

@@ -602,8 +602,8 @@ impl Painter {
                 _ => -1.0,
             };
             self.composing(pane, along, away * (1.0 - along) * height * TRAVEL);
-        } else if let (Some(_), Some((behind, moved))) = (said.band, moving.scroll) {
-            self.catching_up(page, said, behind, moved, fonts);
+        } else if let (Some(_), Some((behind, since))) = (said.band, moving.scroll) {
+            self.catching_up(page, said, behind, since, fonts);
         }
 
         #[expect(
@@ -872,7 +872,7 @@ impl Painter {
         page: &Page,
         said: Said<'_>,
         behind: f32,
-        moved: f32,
+        since: f32,
         fonts: &mut Fonts,
     ) {
         let Some((room, before)) = said.band else {
@@ -881,7 +881,7 @@ impl Painter {
         let cell = fonts.cell();
         // Where the page it scrolled off has got to, which is further back
         // than the band by however much of the move is already done.
-        let offset = (behind - moved) * cell.height;
+        let offset = (behind - since) * cell.height;
         for y in room.top()..room.bottom() {
             for x in room.left()..room.right() {
                 let look = before.look(x, y);
@@ -918,13 +918,8 @@ impl Painter {
         // of cells is a handful of quads and the sliver it leaves at one
         // end is the bar drawn where it belongs -- a track, and the same
         // colour all the way down.
-        if let Some(bar) = said.bar {
-            // The other way from the band, and not a slip: scrolling down
-            // moves the text up and the mark down, so a band that has not
-            // caught up is *lower* than it will end and its mark is
-            // *higher*. One distance, two directions, because they are
-            // two ends of the same movement.
-            let shift = -behind * bar.per_row * cell.height;
+        if let Some((room, to_come)) = said.bar {
+            let shift = mark_behind(to_come, behind, since) * cell.height;
             // Kept inside the bar's own rows. The mark moves a share of
             // the band's distance, and over a page that share is rows
             // rather than a fraction of one -- unclipped, the far end of
@@ -936,15 +931,15 @@ impl Painter {
             // where the frame drew it, which is track: the mark has moved
             // away from that end, because that is the end it came from.
             let (first, last) = (
-                f32::from(bar.area.top()) * cell.height,
-                f32::from(bar.area.bottom()) * cell.height,
+                f32::from(room.top()) * cell.height,
+                f32::from(room.bottom()) * cell.height,
             );
-            for y in bar.area.top()..bar.area.bottom() {
+            for y in room.top()..room.bottom() {
                 let top = f32::from(y).mul_add(cell.height, shift);
                 if top + cell.height <= first || top >= last {
                     continue;
                 }
-                for x in bar.area.left()..bar.area.right() {
+                for x in room.left()..room.right() {
                     let look = page.look(x, y);
                     let left = f32::from(x) * cell.width;
                     self.block(
@@ -1796,6 +1791,22 @@ fn bound(
     })
 }
 
+/// How far a bar's mark is drawn from where the frame put it, while the
+/// band beside it catches up, in rows.
+///
+/// The same fraction of the way along as the band, so the two arrive
+/// together. `to_come` is measured between two rows the bar was *drawn*
+/// at, so the mark neither sets out from nor lands on a row it was never
+/// on -- and it is held between them, because a mark that left the row it
+/// was on before it set off, or went past the row it is going to, is a
+/// mark that steps backwards. Which is the one thing a mark must not do.
+fn mark_behind(to_come: f32, behind: f32, since: f32) -> f32 {
+    if since.abs() <= f32::EPSILON {
+        return 0.0;
+    }
+    to_come * (behind / since).clamp(0.0, 1.0)
+}
+
 fn rgba(colour: Color, ink: Ink) -> [f32; 4] {
     let (r, g, b) = match colour {
         Color::Rgb(r, g, b) => (r, g, b),
@@ -1877,6 +1888,34 @@ fn indexed(index: u8) -> (u8, u8, u8) {
 
 #[cfg(test)]
 mod tests {
+    use super::mark_behind;
+
+    /// A bar's mark stays between the two rows it was drawn on.
+    ///
+    /// Deliberate break: drop the clamp. A band that is somehow further
+    /// behind than it set out -- which a second press during a slide can
+    /// arrange -- then sends the mark past the row it started from, and a
+    /// mark that goes the wrong way before it goes the right way is the
+    /// one thing anybody notices about a bar.
+    #[test]
+    fn a_mark_stays_between_the_two_rows_it_was_drawn_on() {
+        // Three rows to come.
+        assert!((mark_behind(3.0, 3.0, 3.0) - 3.0).abs() < 0.001, "sets out");
+        assert!(mark_behind(3.0, 0.0, 3.0).abs() < 0.001, "and lands");
+        let part = mark_behind(3.0, 1.0, 3.0);
+        assert!(part > 0.0 && part < 3.0, "{part}");
+        assert!(
+            (mark_behind(3.0, 9.0, 3.0) - 3.0).abs() < 0.001,
+            "no further"
+        );
+        assert!(
+            mark_behind(3.0, -1.0, 3.0).abs() < 0.001,
+            "nor the other way"
+        );
+        // Nothing has moved, so the mark has nowhere to be but where it is.
+        assert!(mark_behind(3.0, 1.0, 0.0).abs() < f32::EPSILON);
+    }
+
     use ratatui::buffer::Cell;
 
     use super::*;

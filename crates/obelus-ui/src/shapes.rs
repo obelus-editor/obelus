@@ -62,14 +62,19 @@ pub enum Joined {
 /// A bar is not part of the band -- it says where the band *is*, and slid
 /// with it, it would travel the band's distance instead of its own share
 /// of it. But it is not still either: its mark belongs where the band is
-/// being drawn rather than where the band is going, and `per_row` is what
-/// turns the one into the other.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// being drawn rather than where the band is going.
+///
+/// What says where that is, is the row the mark is *drawn* on, and not a
+/// rate. A rate is continuous and the mark is not, so a mark slid at one
+/// sets out from a place a row's rounding away from where it was last
+/// drawn -- which on screen is a mark that steps back before it goes on.
+/// Between two rows it was drawn on there is nothing to disagree about.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Bar {
     /// The column or columns it takes.
     pub area: Rect,
-    /// How far its mark moves for each row the band moves.
-    pub per_row: f32,
+    /// Which row of them its mark starts on.
+    pub mark: u16,
 }
 
 /// What a front end that draws its own pixels can be told about a frame.

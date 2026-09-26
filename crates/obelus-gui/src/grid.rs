@@ -158,8 +158,10 @@ pub(crate) struct Said<'a> {
     /// before it moved -- which is the only place the rows that have
     /// scrolled off still exist.
     pub(crate) band: Option<(Rect, &'a Page)>,
-    /// And the bar beside it, which moves its own share of the distance.
-    pub(crate) bar: Option<Bar>,
+    /// And the bar beside it: where it is, and how many rows its mark
+    /// still has to come. Rows the bar itself was drawn at, both ends, so
+    /// there is nothing between them to round differently.
+    pub(crate) bar: Option<(Rect, f32)>,
 }
 
 /// What is behind the pane on the frame being drawn.
