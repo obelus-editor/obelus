@@ -293,6 +293,7 @@ open = "5"
 # 0.30 rather than 0.31, which is still a beta.
 wayland-client = "0.31"
 winit = "0.30"
+x11rb = "0.13"
 
 # What the window is painted with. Metal on macOS, D3D12 on Windows, Vulkan
 # on Linux -- which is the whole reason for it: one pipeline written once

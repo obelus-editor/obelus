@@ -904,14 +904,19 @@ paste is the most ordinary thing a reader does with a copy. So the last
 thing the window does is hand the *words* to a program that will keep them
 (`hand_over`) -- the words only, because a private shape given to a program
 that knows nothing about Obelus is bytes nobody can read. And the serial is
-the other half of the same bargain: taking the selection has to be asked
-with a number the compositor gave the seat when the reader last touched
-something, which is a connection's and not a machine's -- so the clipboard
-runs on a second queue of *winit's own* connection rather than one of its
-own, where every `set_selection` would be ignored in silence. Only writing
-is Obelus's: reading somebody else's clipboard is what the programs are
-already good at, in every shape, and a second answer to that question is
-the thing this file is mostly about not having.
+the other half of the same bargain: taking the Wayland selection has to be
+asked with a number the compositor gave the seat when the reader last
+touched something, which is a connection's and not a machine's -- so that
+half runs on a second queue of *winit's own* connection rather than one of
+its own, where every `set_selection` would be ignored in silence. X11 asks
+with a timestamp and an ordinary window, so that half opens a connection of
+its own and makes an unmapped one-pixel window to be the owner -- not a
+preference: a shared connection would mean the selection requests arrive in
+winit's queue, and one the window loop dropped is a paste that never
+answers. Only writing is Obelus's either way: reading somebody else's
+clipboard is what the programs are already good at, in every shape, and a
+second answer to that question is the thing this file is mostly about not
+having.
 
 A full-width character is two columns of the grid and one glyph, and the
 second column is a cell `ratatui` has *reset*: no text, no colours. A

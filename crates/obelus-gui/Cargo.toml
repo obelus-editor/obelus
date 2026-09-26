@@ -49,6 +49,7 @@ winit.workspace = true
 # clipboard has to be on the window's own.
 [target.'cfg(target_os = "linux")'.dependencies]
 wayland-client.workspace = true
+x11rb.workspace = true
 
 # Only there, and only for `GetCaretBlinkTime`: how fast a caret blinks is
 # the one thing of the three platforms that has an API rather than a

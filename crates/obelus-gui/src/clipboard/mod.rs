@@ -18,6 +18,8 @@
 
 #[cfg(target_os = "linux")]
 mod wayland;
+#[cfg(target_os = "linux")]
+mod x11;
 
 /// Takes the clipboard, if this machine is one Obelus can take it on.
 ///
@@ -41,7 +43,16 @@ pub(crate) fn take(events: &winit::event_loop::ActiveEventLoop) {
         RawDisplayHandle::Wayland(wayland) => {
             if let Some(clipboard) = unsafe { wayland::Clipboard::take(wayland.display) } {
                 obelus_clipboard::owned_by(Box::new(clipboard));
-                tracing::info!("the clipboard is Obelus's own");
+                tracing::info!(on = "wayland", "the clipboard is Obelus's own");
+            }
+        }
+        // A connection of its own, unlike the Wayland half: X11 asks for
+        // the selection with a timestamp rather than with a serial, so
+        // there is nothing about winit's connection that this needs.
+        RawDisplayHandle::Xlib(_) | RawDisplayHandle::Xcb(_) => {
+            if let Some(clipboard) = x11::Clipboard::take() {
+                obelus_clipboard::owned_by(Box::new(clipboard));
+                tracing::info!(on = "x11", "the clipboard is Obelus's own");
             }
         }
         other => tracing::info!(?other, "the clipboard is left to the programs"),
