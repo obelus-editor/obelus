@@ -63,6 +63,11 @@ pub(crate) enum Update {
     ///
     /// The same journey as the size, for the same reason.
     Fonts(Vec<String>),
+    /// Whether things arrive where they are going, or are simply there.
+    ///
+    /// The same journey again: a setting the application cannot act on
+    /// because there is nothing in a terminal for it to mean.
+    Animates(bool),
     /// What shape the caret is, and whose it is.
     ///
     /// Which is a fact about the frame it arrives with -- both depend on
@@ -370,6 +375,11 @@ impl obelus_app::app::Drawing for Telling {
         if self.updates.send(Update::Fonts(names.to_vec())).is_ok() {
             (self.wake)();
         }
+    }
+
+    fn animates(&self, on: bool) {
+        let _ = self.updates.send(Update::Animates(on));
+        (self.wake)();
     }
 
     fn caret_is(&self, caret: Caret, whose: Option<Layer>) {
@@ -732,6 +742,12 @@ impl Page {
             // before the page is handed anything.
             Update::Mark { id, .. } | Update::Marked { id, .. } => {
                 tracing::warn!(id, "a mark reached the page");
+                false
+            }
+            // Nor is this: it is a setting, and the window takes it out
+            // of the queue with the size and the faces.
+            Update::Animates(on) => {
+                tracing::warn!(on, "a setting reached the page");
                 false
             }
             // Nor are these: they are what a run of cells *is* and what

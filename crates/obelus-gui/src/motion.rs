@@ -376,6 +376,17 @@ impl Blinking {
 /// it.
 #[derive(Debug)]
 pub(crate) struct Motion {
+    /// Whether anything here moves at all.
+    ///
+    /// The reader's, and it is asked at the three doors rather than at
+    /// the drawing: what it turns off is things *starting*, so nothing
+    /// is kept about a slide that is not happening -- including the page
+    /// the window would otherwise copy to draw a band's gap out of.
+    ///
+    /// The blink is not one of these. A caret blinks because every caret
+    /// does, at the rate the system was asked for, and a reader who wants
+    /// none says so to their desktop.
+    animates: bool,
     blink: Blinking,
     caret: Glide,
     pane: Sliding,
@@ -387,6 +398,7 @@ impl Motion {
     pub(crate) fn new(blink: Option<Blink>) -> Self {
         let now = Instant::now();
         Self {
+            animates: true,
             blink: Blinking {
                 how: blink,
                 lit: true,
@@ -400,6 +412,21 @@ impl Motion {
                 since: 0.0,
                 started: now,
             },
+        }
+    }
+
+    /// The reader has said whether things arrive or are simply there.
+    ///
+    /// What is under way when they turn it off is dropped: a slide that
+    /// finished itself after the switch would be the setting taking a
+    /// moment to mean anything.
+    pub(crate) fn animates(&mut self, on: bool) {
+        self.animates = on;
+        if !on {
+            self.caret.from = None;
+            self.pane.opened = None;
+            self.band.from = None;
+            self.band.since = 0.0;
         }
     }
 
@@ -426,7 +453,7 @@ impl Motion {
             self.caret.from = None;
             return;
         };
-        if was != is {
+        if self.animates && was != is {
             self.caret.moved(was, is, now);
         }
     }
@@ -437,7 +464,7 @@ impl Motion {
     /// which is the band's content going up. Says whether the window has
     /// to keep the page it scrolled off -- see `Scrolling::moved`.
     pub(crate) fn band_moved(&mut self, rows: f32, most: f32, now: Instant) -> bool {
-        self.band.moved(rows, most, now)
+        self.animates && self.band.moved(rows, most, now)
     }
 
     /// A pane opened over the page.
@@ -446,7 +473,9 @@ impl Motion {
     /// one that is still there while another opens over it is a pane that
     /// has not moved.
     pub(crate) fn pane_opened(&mut self, now: Instant) {
-        self.pane.opened = Some(now);
+        if self.animates {
+            self.pane.opened = Some(now);
+        }
     }
 
     /// And the page is bare again.
@@ -768,6 +797,37 @@ mod tests {
         motion.band_moved(2.0, 20.0, base);
         assert_eq!(motion.wake(base, true), Some(Wake::EveryFrame));
         assert_eq!(motion.wake(base + CATCH_UP, true), None);
+    }
+
+    /// Break: leave the check out of any one of the three doors, and a
+    /// reader who turned animation off still gets that one -- which is a
+    /// switch they watched do nothing to the thing they turned it off
+    /// for.
+    #[test]
+    fn a_reader_who_turned_animation_off_gets_none_of_it() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        motion.animates(false);
+
+        motion.caret_moved(Some(at(0, 10)), Some(at(0, 0)), base);
+        assert_eq!(motion.moving(base).drift, (0.0, 0.0), "the caret");
+        motion.pane_opened(base);
+        assert_eq!(motion.moving(base).pane, None, "a pane");
+        assert!(!motion.band_moved(3.0, 20.0, base), "a band");
+        assert_eq!(motion.moving(base).scroll, None);
+        assert_eq!(motion.wake(base, true), None, "and nothing to wake for");
+
+        // And what was under way when they turned it off is dropped: one
+        // that finished itself afterwards would be the switch taking a
+        // moment to mean anything.
+        let mut motion = Motion::new(None);
+        motion.caret_moved(Some(at(0, 10)), Some(at(0, 0)), base);
+        motion.band_moved(3.0, 20.0, base);
+        motion.pane_opened(base);
+        motion.animates(false);
+        assert_eq!(motion.moving(base).drift, (0.0, 0.0));
+        assert_eq!(motion.moving(base).scroll, None);
+        assert_eq!(motion.moving(base).pane, None);
     }
 
     /// Break: give a caret the system says should not blink one anyway,

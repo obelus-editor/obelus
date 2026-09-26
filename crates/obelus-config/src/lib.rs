@@ -59,6 +59,15 @@ pub struct Config {
     pub blame_margin: bool,
     /// Whether a line too long for the screen continues on the next row.
     pub wrap: bool,
+    /// Whether things arrive where they are going instead of being there.
+    ///
+    /// A window's setting and nothing to a terminal, whose unit is a
+    /// whole cell: what this is about is the caret walking to the cell it
+    /// was sent to, a pane sliding in from the edge it hangs off, and a
+    /// list catching up with where it has scrolled to -- none of which a
+    /// terminal can draw a step of. On by default, because what it is for
+    /// is following something with the eye rather than finding it again.
+    pub animation: bool,
     /// How wide a tab is drawn, and how many spaces the tab key puts in.
     pub tab_width: usize,
     /// The faces text is drawn in, tried in the order they are written.
@@ -166,6 +175,9 @@ impl Default for Config {
             // who wants it can say so, and then it is a line's own choice
             // no longer.
             wrap: false,
+            // On, because what it is for is following something
+            // with the eye rather than finding it again.
+            animation: true,
             // What the code Obelus is written in uses, which is also what
             // the rest of the program laid a tab out at before a reader
             // could say otherwise.
@@ -493,6 +505,15 @@ pub const ALL: &[Setting] = &[
         drawn: Drawn::InAWindow,
     },
     Setting {
+        key: "animation",
+        name: "Animation",
+        about: "Let the caret, a list and a pane arrive where they are going instead of being there",
+        group: Group::Appearance,
+        reach: Reach::Anywhere,
+        kind: Kind::Switch,
+        drawn: Drawn::InAWindow,
+    },
+    Setting {
         key: "font_size",
         name: "Text size",
         about: "How big the text is in a window, in points",
@@ -573,6 +594,7 @@ impl Config {
             "font_size" => Some(Value::Count(self.font_size)),
             "fonts" => Some(Value::Names(self.fonts.clone())),
             "hover_delay" => Some(Value::Count(self.hover_delay)),
+            "animation" => Some(Value::Switch(self.animation)),
             "format_on_save" => Some(Value::Switch(self.format_on_save)),
             "code_actions_on_save" => Some(Value::Switch(self.code_actions_on_save)),
             "inlay_hints" => Some(Value::Switch(self.inlay_hints)),
@@ -596,6 +618,7 @@ impl Config {
             ("hover_delay", Value::Count(delay)) => self.hover_delay = *delay,
             ("font_size", Value::Count(points)) => self.font_size = *points,
             ("fonts", Value::Names(names)) => self.fonts = names.clone(),
+            ("animation", Value::Switch(on)) => self.animation = *on,
             ("format_on_save", Value::Switch(on)) => self.format_on_save = *on,
             ("code_actions_on_save", Value::Switch(on)) => self.code_actions_on_save = *on,
             ("inlay_hints", Value::Switch(on)) => self.inlay_hints = *on,
@@ -1026,6 +1049,11 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
             .filter(|name| !name.trim().is_empty())
             .collect();
     }
+    if let Some(on) = table.get("animation").and_then(toml::Value::as_bool)
+        && allowed("animation")
+    {
+        config.animation = on;
+    }
     if let Some(on) = table.get("format_on_save").and_then(toml::Value::as_bool)
         && allowed("format_on_save")
     {
@@ -1238,6 +1266,11 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
         "hover_delay",
         config.hover_delay != default.hover_delay,
         toml_edit::value(i64::try_from(config.hover_delay).unwrap_or(400)),
+    );
+    put(
+        "animation",
+        config.animation != default.animation,
+        toml_edit::value(config.animation),
     );
     put(
         "format_on_save",
@@ -1593,6 +1626,7 @@ mod tests {
             icons: false,
             blame_margin: false,
             wrap: true,
+            animation: false,
             tab_width: 8,
             fonts: vec!["JetBrains Mono".to_string(), "Noto Sans CJK SC".to_string()],
             font_size: 18,
@@ -1867,6 +1901,7 @@ mod tests {
         let existing = "theme = \"dark\"\nicons = true\nwrap = false\n# mine\nfuture_setting = 3\n";
         let config = Config {
             wrap: true,
+            animation: false,
             ..Config::default()
         };
         let written = over(existing, &config);

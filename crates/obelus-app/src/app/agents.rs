@@ -340,6 +340,7 @@ impl App {
     pub fn drawn_by(&mut self, drawing: std::sync::Arc<dyn crate::app::Drawing>) {
         drawing.text_size(self.settled.config.font_size);
         drawing.use_fonts(&self.settled.config.fonts);
+        drawing.animates(self.settled.config.animation);
         self.drawing = Some(drawing);
     }
 

@@ -3524,6 +3524,14 @@ pub trait Drawing: std::fmt::Debug + Send + Sync {
     /// document's own.
     fn caret_is(&self, caret: Caret, whose: Option<Layer>);
 
+    /// Things arrive where they are going, or are simply there.
+    ///
+    /// A setting, said the same way and at the same moments as the size:
+    /// it means nothing to a terminal, whose unit is a whole cell and
+    /// which cannot draw a step of anything, so it is the front end's to
+    /// act on and the application does not read it back.
+    fn animates(&self, on: bool);
+
     /// The text is drawn in these faces, tried in this order.
     ///
     /// A setting, like the size, and said the same way and at the same

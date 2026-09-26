@@ -503,6 +503,7 @@ impl ApplicationHandler<Waking> for Showing {
                     match update {
                         // Not cells, so the page never sees them.
                         Update::TextSize(points) => sized = Some(points),
+                        Update::Animates(on) => self.motion.animates(on),
                         Update::Fonts(names) => faces = Some(names),
                         Update::Mark {
                             id,
