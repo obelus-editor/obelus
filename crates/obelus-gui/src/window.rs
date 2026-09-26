@@ -457,6 +457,7 @@ impl ApplicationHandler<Waking> for Showing {
                 // provoked -- and drawing the older ones would be drawing
                 // screens the reader is never meant to see.
                 let was = self.page.caret();
+                let had_a_pane = self.behind.is_some();
                 let mut drew = false;
                 let mut sized = None;
                 let mut faces = None;
@@ -528,6 +529,16 @@ impl ApplicationHandler<Waking> for Showing {
                 // saw.
                 self.motion
                     .caret_moved(was, self.page.caret(), Instant::now());
+                // A pane opening is the one thing on the screen that
+                // arrives rather than changes, and it is worked out from
+                // what is there rather than announced: a frame with a pane
+                // on it that the one before it had none is a pane opening,
+                // and there is nowhere else that can be true.
+                match (had_a_pane, self.behind.is_some()) {
+                    (false, true) => self.motion.pane_opened(Instant::now()),
+                    (true, false) => self.motion.pane_shut(),
+                    _ => {}
+                }
                 if let Some(names) = faces {
                     // Which faces text is drawn in decides how wide a cell
                     // is, so this is the same work a new size is: measure

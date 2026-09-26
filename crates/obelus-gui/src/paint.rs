@@ -34,10 +34,20 @@ use crate::{
 /// what is written on it is what is being read.
 const TINT: f32 = 0.74;
 
-/// How round a pane's corners are, in cells of its own height.
+/// How far a pane travels on its way in, as a part of its own height.
 ///
-/// A pane is a slab laid over the page, and a slab has corners. What
-/// shows in them is what is behind, undisturbed: the glass is not there.
+/// A fraction rather than the whole of it. A slab sliding the length of
+/// itself is every row of a list arriving from somewhere else, which for
+/// the fifth of a second it takes reads as the list scrolling rather than
+/// as the pane opening -- and a reader who was about to press a key has to
+/// wait to see what they are pressing it on.
+const TRAVEL: f32 = 0.18;
+
+/// How round a pane's bottom corners are, in cells of its own height.
+///
+/// The bottom only: a pane hangs from the row above it rather than
+/// floating over the page, and what shows in the corners it does have is
+/// what is behind, undisturbed, because the glass is not there.
 const CORNER: f32 = 0.9;
 
 /// How far a cap is held off the rows either side of it, as a part of a
@@ -115,6 +125,12 @@ pub(crate) struct Painter {
     smooth: wgpu::Sampler,
     /// What is behind the pane, as a picture of the window.
     backdrop: wgpu::TextureView,
+    /// And the whole frame as one, which is drawn only while a pane is on
+    /// its way in.
+    picture: wgpu::TextureView,
+    /// The bindings that read that one, for the two quads that put it back
+    /// on the screen.
+    showing_bindings: wgpu::BindGroup,
     /// The same bindings with something else in the backdrop's place, for
     /// the pass that *draws* it: a texture cannot be read and written in
     /// one pass, and what goes in the slot is never sampled there.
@@ -149,6 +165,12 @@ const COLOURFUL: u32 = 2;
 const ROUNDED: u32 = 4;
 /// What is behind a pane, seen through it.
 const GLASS: u32 = 8;
+/// And rounded along the bottom only, which is what a pane is.
+const HANGING: u32 = 16;
+/// The frame that has just been drawn, put back everywhere but the pane.
+const FRAME: u32 = 32;
+/// And the pane out of it, higher up than it will end.
+const SLID: u32 = 64;
 
 /// What the shader needs to know about the window.
 #[repr(C)]
@@ -371,6 +393,16 @@ impl Painter {
             &atlas.view,
             &smooth,
         );
+        let picture = made_to_draw_into(&device, view, configured.width, configured.height);
+        let showing_bindings = bound(
+            &device,
+            &layout,
+            &uniforms,
+            &atlas.view,
+            &sampler,
+            &picture,
+            &smooth,
+        );
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("obelus"),
@@ -446,7 +478,9 @@ impl Painter {
             sampler,
             smooth,
             backdrop,
+            picture,
             plain_bindings,
+            showing_bindings,
             bindings_are_stale: false,
         })
     }
@@ -477,6 +511,12 @@ impl Painter {
         // size of the window: one that stayed the old size would be
         // sampled at the wrong place for every pixel of the glass.
         self.backdrop = made_to_draw_into(
+            &self.device,
+            self.view,
+            self.configured.width,
+            self.configured.height,
+        );
+        self.picture = made_to_draw_into(
             &self.device,
             self.view,
             self.configured.width,
@@ -525,9 +565,7 @@ impl Painter {
         self.behind_quads = 0;
         // First of everything, because these are the quads the backdrop
         // pass draws and it draws the front of the buffer.
-        if let Some(behind) = said.behind {
-            self.glass(behind, fonts);
-        }
+        let pane = said.behind.map(|behind| self.glass(page, behind, fonts));
         self.backgrounds(page, cell.width, cell.height, said.behind);
         // Over the ground and under the text: a cap is the shape the cells
         // behind a key are, and the key is written on it.
@@ -544,6 +582,14 @@ impl Painter {
         // is drawn either way, by the pass above.
         if moving.caret {
             self.caret(page, fonts, spelling, moving.drift);
+        }
+
+        // Everything the frame says has been said. What is left is
+        // putting it back on the screen in two pieces, where a pane is on
+        // its way in -- see `paint.wgsl`.
+        let drawn = self.quads.len();
+        if let (Some(pane), Some(along)) = (pane, moving.pane) {
+            self.composing(pane, along);
         }
 
         #[expect(
@@ -579,6 +625,15 @@ impl Painter {
                 &self.atlas.view,
                 &self.sampler,
                 &self.backdrop,
+                &self.smooth,
+            );
+            self.showing_bindings = bound(
+                &self.device,
+                &self.layout,
+                &self.uniforms,
+                &self.atlas.view,
+                &self.sampler,
+                &self.picture,
                 &self.smooth,
             );
             self.bindings_are_stale = false;
@@ -643,6 +698,35 @@ impl Painter {
             pass.set_vertex_buffer(0, self.instances.slice(..));
             pass.draw(0..4, 0..self.behind_quads as u32);
         }
+        // A pane on its way in: the frame goes into a picture of its own
+        // first, and the screen is put together out of it below. Only
+        // while one is moving -- an arrived pane is drawn straight to the
+        // screen like everything else.
+        let composing = self.quads.len() > drawn;
+        if composing {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("obelus frame"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &self.picture,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                        store: wgpu::StoreOp::Store,
+                    },
+                    depth_slice: None,
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&self.pipeline);
+            // The glass is drawn in here, and what it reads is the
+            // backdrop -- which this pass is not writing to.
+            pass.set_bind_group(0, &self.bindings, &[]);
+            pass.set_vertex_buffer(0, self.instances.slice(..));
+            pass.draw(0..4, 0..drawn as u32);
+        }
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("obelus"),
@@ -664,9 +748,29 @@ impl Painter {
                 multiview_mask: None,
             });
             pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &self.bindings, &[]);
             pass.set_vertex_buffer(0, self.instances.slice(..));
-            pass.draw(0..4, 0..self.quads.len() as u32);
+            match composing {
+                // The page first, and the glass over it -- which is the
+                // quad straight after the page's own, because `glass`
+                // pushes the one and then the other.
+                //
+                // The glass and not only the page, because what slides in
+                // over it is a pane that is *itself* glass: laid over the
+                // page as it is, the arriving text would be read through
+                // one frosting and the text under it through none, which
+                // is the same words twice in two states. Over glass that
+                // is already there, only the pane's own content arrives.
+                true => {
+                    pass.set_bind_group(0, &self.bindings, &[]);
+                    pass.draw(0..4, 0..self.behind_quads as u32 + 1);
+                    pass.set_bind_group(0, &self.showing_bindings, &[]);
+                    pass.draw(0..4, drawn as u32..self.quads.len() as u32);
+                }
+                false => {
+                    pass.set_bind_group(0, &self.bindings, &[]);
+                    pass.draw(0..4, 0..drawn as u32);
+                }
+            }
         }
         self.queue.submit([encoder.finish()]);
         self.queue.present(frame);
@@ -735,6 +839,41 @@ impl Painter {
             colour,
             flags: SOLID,
             radius: 0.0,
+            padding: [0; 2],
+        });
+    }
+
+    /// The two quads that put a frame back on the screen with the pane in
+    /// it moved.
+    ///
+    /// The frame has been drawn into a picture of its own by then. One
+    /// quad is everywhere the pane is not, taken from that picture where
+    /// it stands; the other is the pane, taken from higher up in it. What
+    /// shows where the pane has not reached is the page, which was drawn
+    /// on the screen before either of them.
+    fn composing(&mut self, pane: [f32; 4], along: f32) {
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "a window is thousands of pixels, not millions"
+        )]
+        let (right, bottom) = (self.configured.width as f32, self.configured.height as f32);
+        let [left, top, far, low] = pane;
+        let room = [left, top, far, low];
+        self.quads.push(Quad {
+            rect: [0.0, 0.0, right, bottom],
+            uv: room,
+            colour: [0.0, 0.0, 0.0, 1.0],
+            flags: FRAME,
+            radius: 0.0,
+            padding: [0; 2],
+        });
+        self.quads.push(Quad {
+            rect: [left, top, (far - left).max(1.0), (low - top).max(1.0)],
+            uv: room,
+            // Above where it will end, by less the further along it is.
+            colour: [0.0, 0.0, 0.0, along],
+            flags: SLID,
+            radius: -(1.0 - along) * (low - top) * TRAVEL,
             padding: [0; 2],
         });
     }
@@ -839,20 +978,41 @@ impl Painter {
     /// with what is behind is in `paint.wgsl`: the shape is the same
     /// rounded box a key's cap is, and it is the same function that says
     /// where its edge is.
-    fn glass(&mut self, behind: &Behind, fonts: &mut Fonts) {
+    fn glass(&mut self, page: &Page, behind: &Behind, fonts: &mut Fonts) -> [f32; 4] {
         let cell = fonts.cell();
+        // A window is not a whole number of cells across, and a pane that
+        // reaches the edge of one has to reach the edge of the window:
+        // the strip past the last whole cell is stretched into here for
+        // the same reason `backgrounds` stretches it, and it was left
+        // black the first time because the run that used to cover it is
+        // the very run this leaves out.
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "a window is thousands of pixels, not millions"
+        )]
+        let (right, bottom) = (self.configured.width as f32, self.configured.height as f32);
+        let to_the_edge = behind.area.right() == page.columns();
+        let to_the_foot = behind.area.bottom() == page.rows();
         for y in behind.area.top()..behind.area.bottom() {
+            let tall = match to_the_foot && y + 1 == behind.area.bottom() {
+                true => (bottom - f32::from(y) * cell.height).max(cell.height),
+                false => cell.height,
+            };
             for x in behind.area.left()..behind.area.right() {
                 let Some(under) = behind.look(x, y) else {
                     continue;
+                };
+                let wide = match to_the_edge && x + 1 == behind.area.right() {
+                    true => (right - f32::from(x) * cell.width).max(cell.width),
+                    false => cell.width,
                 };
                 let left = f32::from(x) * cell.width;
                 let top = f32::from(y) * cell.height;
                 self.block(
                     left,
                     top,
-                    cell.width,
-                    cell.height,
+                    wide,
+                    tall,
                     rgba(under.background, Ink::Background),
                 );
                 if !under.text.trim().is_empty() {
@@ -865,19 +1025,27 @@ impl Painter {
 
         let mut tint = rgba(behind.ground, Ink::Background);
         tint[3] = TINT;
+        let (left, top) = (
+            f32::from(behind.area.x) * cell.width,
+            f32::from(behind.area.y) * cell.height,
+        );
+        let far = match to_the_edge {
+            true => right,
+            false => f32::from(behind.area.right()) * cell.width,
+        };
+        let low = match to_the_foot {
+            true => bottom,
+            false => f32::from(behind.area.bottom()) * cell.height,
+        };
         self.quads.push(Quad {
-            rect: [
-                f32::from(behind.area.x) * cell.width,
-                f32::from(behind.area.y) * cell.height,
-                f32::from(behind.area.width) * cell.width,
-                f32::from(behind.area.height) * cell.height,
-            ],
+            rect: [left, top, (far - left).max(1.0), (low - top).max(1.0)],
             uv: self.atlas.white,
             colour: tint,
-            flags: SOLID | ROUNDED | GLASS,
+            flags: SOLID | ROUNDED | GLASS | HANGING,
             radius: cell.height * CORNER,
             padding: [0; 2],
         });
+        [left, top, far, low]
     }
 
     /// The text.

@@ -41,6 +41,15 @@ use crate::blink::Blink;
 /// one line to the next, and no longer.
 const GLIDE: Duration = Duration::from_millis(70);
 
+/// How long a pane takes to arrive.
+///
+/// Longer than the caret's flight, because what is moving is the whole of
+/// the screen rather than one cell of it, and shorter than the pause
+/// before a reader would wonder whether the key had worked. A pane that
+/// took its time would be a key that feels slow, which is the one thing
+/// an animation must not make a key feel.
+const SLIDE: Duration = Duration::from_millis(190);
+
 /// When the window wants the loop back.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Wake {
@@ -56,6 +65,15 @@ pub(crate) enum Wake {
 pub(crate) struct Moving {
     /// Whether the caret is drawn at this moment.
     pub(crate) caret: bool,
+    /// How far along a pane is on its way in, from nothing at all to
+    /// arrived, or `None` for a pane that is simply there.
+    ///
+    /// `None` rather than `Some(1.0)` for a pane at rest, because the two
+    /// are not the same thing to draw: one is a frame with a pane on it,
+    /// and the other is a frame being composed out of two pictures. A
+    /// window that took the second path every frame would pay for an
+    /// animation nobody is watching.
+    pub(crate) pane: Option<f32>,
     /// How far from where the page says it is the caret is drawn, in
     /// cells.
     ///
@@ -143,6 +161,45 @@ impl Glide {
     }
 }
 
+/// A pane on its way in from above.
+#[derive(Debug)]
+struct Sliding {
+    /// When it opened, or `None` where there is no pane or it has
+    /// arrived.
+    opened: Option<Instant>,
+}
+
+impl Sliding {
+    /// Whether it is still on its way.
+    fn moving(&self, now: Instant) -> bool {
+        self.opened
+            .is_some_and(|opened| now.duration_since(opened) < SLIDE)
+    }
+
+    /// How far along it is, or `None` for a pane that is simply there.
+    fn along(&self, now: Instant) -> Option<f32> {
+        let opened = self.opened?;
+        let gone = now.duration_since(opened).as_secs_f32() / SLIDE.as_secs_f32();
+        if gone >= 1.0 {
+            return None;
+        }
+        // Slowest into its place, fastest leaving the top: a thing that
+        // arrives somewhere settles into it.
+        Some(1.0 - (1.0 - gone).powi(3))
+    }
+
+    /// Moves it on, and says whether what is drawn changed.
+    fn settle(&mut self, now: Instant) -> bool {
+        if self.opened.is_none() {
+            return false;
+        }
+        if !self.moving(now) {
+            self.opened = None;
+        }
+        true
+    }
+}
+
 /// The caret going on and off.
 #[derive(Debug)]
 struct Blinking {
@@ -221,6 +278,7 @@ impl Blinking {
 pub(crate) struct Motion {
     blink: Blinking,
     caret: Glide,
+    pane: Sliding,
 }
 
 impl Motion {
@@ -235,6 +293,7 @@ impl Motion {
                 stirred: now,
             },
             caret: Glide::resting(),
+            pane: Sliding { opened: None },
         }
     }
 
@@ -264,6 +323,20 @@ impl Motion {
         }
     }
 
+    /// A pane opened over the page.
+    ///
+    /// Only the opening: a pane that is closed leaves nothing to draw, and
+    /// one that is still there while another opens over it is a pane that
+    /// has not moved.
+    pub(crate) fn pane_opened(&mut self, now: Instant) {
+        self.pane.opened = Some(now);
+    }
+
+    /// And the page is bare again.
+    pub(crate) fn pane_shut(&mut self) {
+        self.pane.opened = None;
+    }
+
     /// Moves everything on to this moment, and says whether the screen has
     /// to be drawn again for it.
     ///
@@ -272,8 +345,9 @@ impl Motion {
     /// them would stop asking at the first that said yes.
     pub(crate) fn advance(&mut self, now: Instant, caret: bool) -> bool {
         let flew = self.caret.settle(now);
+        let slid = self.pane.settle(now);
         let blinked = self.blink.advance(now, caret);
-        flew || blinked
+        flew || slid || blinked
     }
 
     /// When the window wants the loop back, or `None` for nothing moving.
@@ -281,7 +355,7 @@ impl Motion {
     /// A rate beats a moment: something in flight wants every frame, and a
     /// blink that is also due will be seen on one of them.
     pub(crate) fn wake(&self, now: Instant, caret: bool) -> Option<Wake> {
-        match self.caret.moving(now) {
+        match self.caret.moving(now) || self.pane.moving(now) {
             true => Some(Wake::EveryFrame),
             false => self.blink.wake(now, caret),
         }
@@ -295,6 +369,7 @@ impl Motion {
             // the middle of following it.
             caret: self.blink.lit || self.caret.moving(now),
             drift: self.caret.drift(now),
+            pane: self.pane.along(now),
         }
     }
 }
@@ -431,6 +506,48 @@ mod tests {
         let flip = base + blinking().every;
         assert_eq!(motion.wake(flip, false), None);
         assert!(!motion.advance(flip, false));
+    }
+
+    /// Break: answer `Some(1.0)` from `Sliding::along` once the time is
+    /// up rather than `None`, and every frame for the rest of the session
+    /// is drawn twice -- once into a picture and once out of it -- for a
+    /// pane that arrived a minute ago.
+    #[test]
+    fn a_pane_arrives_and_then_is_simply_there() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        assert_eq!(motion.moving(base).pane, None, "nothing has opened");
+        motion.pane_opened(base);
+        assert_eq!(motion.moving(base).pane, Some(0.0));
+        let half = motion.moving(base + SLIDE / 2).pane.expect("on its way");
+        assert!(half > 0.0 && half < 1.0, "{half}");
+        assert_eq!(motion.moving(base + SLIDE).pane, None);
+    }
+
+    /// Break: leave the pane out of `Motion::wake` and a pane slides in at
+    /// whatever rate the blink happens to want, which is twice a second.
+    #[test]
+    fn a_pane_on_its_way_in_asks_for_every_frame() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        assert_eq!(motion.wake(base, true), None);
+        motion.pane_opened(base);
+        assert_eq!(motion.wake(base, true), Some(Wake::EveryFrame));
+        assert_eq!(motion.wake(base + SLIDE, true), None);
+    }
+
+    /// Break: have `pane_shut` leave the moment it opened behind, and a
+    /// pane closed while it was still arriving leaves the window composing
+    /// a frame out of a pane that is not on it.
+    #[test]
+    fn a_pane_that_went_away_is_not_still_arriving() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        motion.pane_opened(base);
+        assert!(motion.moving(base).pane.is_some());
+        motion.pane_shut();
+        assert_eq!(motion.moving(base).pane, None);
+        assert_eq!(motion.wake(base, true), None);
     }
 
     /// Break: give a caret the system says should not blink one anyway,

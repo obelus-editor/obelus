@@ -28,6 +28,9 @@ struct Quad {
     @location(2) colour: vec4<f32>,
     // 1: a solid colour. 2: a picture with colours of its own.
     // 4: a solid with its corners taken off. 8: glass over what is behind.
+    // 16: and square along the top, for a pane that hangs from a row.
+    // 32 and 64: the frame that has just been drawn, put back on the
+    // screen in two pieces while a pane slides into it.
     @location(3) flags: u32,
     // How far those corners are taken off, in pixels.
     @location(4) radius: f32,
@@ -44,6 +47,10 @@ struct Fragment {
     @location(3) middle: vec2<f32>,
     @location(4) @interpolate(flat) half_size: vec2<f32>,
     @location(5) @interpolate(flat) radius: f32,
+    // A rectangle in pixels, for the two quads that put a sliding pane
+    // back together. Flat, because what it is is a region rather than
+    // something measured across the quad.
+    @location(6) @interpolate(flat) box: vec4<f32>,
 };
 
 @vertex
@@ -66,14 +73,27 @@ fn vertex(@builtin(vertex_index) corner: u32, quad: Quad) -> Fragment {
     out.half_size = quad.rect.zw * 0.5;
     out.middle = (along - vec2<f32>(0.5)) * quad.rect.zw;
     out.radius = quad.radius;
+    out.box = quad.uv;
     return out;
 }
 
 // How far outside a rounded box a point is, in pixels: negative inside it,
 // zero on the edge. The standard signed distance to one, which is the only
 // way to draw a curve on a quad without an outline to sample.
-fn outside(point: vec2<f32>, half_size: vec2<f32>, radius: f32) -> f32 {
-    let corner = abs(point) - half_size + vec2<f32>(radius);
+// `hanging` says the box has no top edge at all.
+//
+// A pane is not a card floating over the page; it is the page's own region
+// taken over, joined to the row above it. A join is not an edge: nothing
+// there is rounded, nothing there bends what is behind, and nothing there
+// catches the light. All three fall out of the one line that leaves the
+// top off the box -- and what clips the pane up there is the quad's own
+// bounds, which is where the join is.
+fn outside(point: vec2<f32>, half_size: vec2<f32>, radius: f32, hanging: bool) -> f32 {
+    var side = abs(point) - half_size;
+    if (hanging) {
+        side.y = point.y - half_size.y;
+    }
+    let corner = side + vec2<f32>(radius);
     return length(max(corner, vec2<f32>(0.0))) + min(max(corner.x, corner.y), 0.0) - radius;
 }
 
@@ -81,16 +101,22 @@ fn outside(point: vec2<f32>, half_size: vec2<f32>, radius: f32) -> f32 {
 // it. The gradient of the distance above, worked out rather than sampled:
 // a derivative would be the difference between two pixels, and what this
 // is for is the direction light bends at an edge.
-fn facing(point: vec2<f32>, half_size: vec2<f32>, radius: f32) -> vec2<f32> {
-    let corner = abs(point) - half_size + vec2<f32>(radius);
+fn facing(point: vec2<f32>, half_size: vec2<f32>, radius: f32, hanging: bool) -> vec2<f32> {
+    var side = abs(point) - half_size;
+    var way = sign(point);
+    if (hanging) {
+        side.y = point.y - half_size.y;
+        way.y = 1.0;
+    }
+    let corner = side + vec2<f32>(radius);
     if (max(corner.x, corner.y) > 0.0) {
-        return normalize(max(corner, vec2<f32>(0.0))) * sign(point);
+        return normalize(max(corner, vec2<f32>(0.0))) * way;
     }
-    // Deep inside, where the nearest edge is one of the four sides.
+    // Deep inside, where the nearest edge is one of the sides.
     if (corner.x > corner.y) {
-        return vec2<f32>(sign(point.x), 0.0);
+        return vec2<f32>(way.x, 0.0);
     }
-    return vec2<f32>(0.0, sign(point.y));
+    return vec2<f32>(0.0, way.y);
 }
 
 // How thick the bevel is, as a part of the corner's radius. What decides
@@ -122,6 +148,35 @@ const LIGHT: vec2<f32> = vec2<f32>(-0.42, -1.0);
 
 @fragment
 fn fragment(in: Fragment) -> @location(0) vec4<f32> {
+    // A pane on its way in.
+    //
+    // The frame was drawn once into a texture of its own, and it is put
+    // back on the screen in two pieces: everything that is not the pane,
+    // where it belongs, and the pane, higher up than it will end. What is
+    // under the second piece is the page, drawn before both, which is what
+    // shows in the band the pane has not reached yet.
+    //
+    // Nothing about this reaches the drawing above. A pane that has
+    // arrived is not composed at all, and neither is a window with no pane
+    // on it: what it costs is one pass, for a fifth of a second.
+    if ((in.flags & 32u) != 0u) {
+        let at = in.position.xy;
+        // The pane's own room is the other piece's.
+        if (at.x >= in.box.x && at.x < in.box.z && at.y >= in.box.y && at.y < in.box.w) {
+            discard;
+        }
+        return textureSample(behind, behind_sampler, at / screen.size);
+    }
+    if ((in.flags & 64u) != 0u) {
+        let at = in.position.xy;
+        let taken_at = vec2<f32>(at.x, at.y - in.radius);
+        // Off the end of the pane is the pane not being there yet.
+        if (taken_at.y < in.box.y || taken_at.y >= in.box.w) {
+            discard;
+        }
+        let taken = textureSample(behind, behind_sampler, taken_at / screen.size);
+        return vec4<f32>(taken.rgb, in.colour.a);
+    }
     // Glass: what is behind, bent at the edges, tinted, and lit.
     //
     // Not a blur. The blur is the smallest part of it -- three taps, and
@@ -130,7 +185,8 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
     // band along the rim, which is what a bevel does to what is behind it,
     // and a bright line along that rim where the light catches it.
     if ((in.flags & 8u) != 0u) {
-        let distance = outside(in.middle, in.half_size, in.radius);
+        let hanging = (in.flags & 16u) != 0u;
+        let distance = outside(in.middle, in.half_size, in.radius, hanging);
         // Outside the rounded corners the pane is not there at all, and
         // what shows is what was drawn under it.
         if (distance > 0.0) {
@@ -140,7 +196,7 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
         let bevel = min(in.radius * BEVEL, min(in.half_size.x, in.half_size.y));
         // One at the very rim and nothing at all through the middle.
         let rim = clamp(1.0 + distance / max(bevel, 1.0), 0.0, 1.0);
-        let facing = facing(in.middle, in.half_size, in.radius);
+        let facing = facing(in.middle, in.half_size, in.radius, hanging);
         let lens = pow(rim, 2.5);
 
         let uv = in.position.xy / screen.size;
@@ -184,7 +240,7 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
     }
     // Before the plain solid, because a rounded one is a solid as well.
     if ((in.flags & 4u) != 0u) {
-        let distance = outside(in.middle, in.half_size, in.radius);
+        let distance = outside(in.middle, in.half_size, in.radius, false);
         // Softened over the one pixel either side of the edge. Without
         // it a corner is a staircase, which at the size a key's cap is
         // drawn is the whole of what the eye sees.
