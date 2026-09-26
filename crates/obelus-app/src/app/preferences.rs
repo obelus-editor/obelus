@@ -792,8 +792,22 @@ impl App {
     /// than whatever the machine it runs on has in `~/.config`.
     pub fn load_config(&mut self) {
         self.settled.path = obelus_config::path();
-        let Some(path) = self.settled.path.clone() else {
+        if self.settled.path.is_none() {
             tracing::info!("nowhere to keep settings, so the defaults");
+            return;
+        }
+        self.read_the_settings();
+    }
+
+    /// Reads whatever [`Settled::path`] names, and applies it.
+    ///
+    /// The whole of what reading the reader's settings does, so that a
+    /// test pointing Obelus at a file of its own goes down the same road
+    /// as a reader -- including the road a file that will not read takes,
+    /// which is the one worth testing and was the one a test could not
+    /// reach.
+    fn read_the_settings(&mut self) {
+        let Some(path) = self.settled.path.clone() else {
             return;
         };
         // Which file, and what was in it: "my setting did nothing" is
@@ -802,12 +816,15 @@ impl App {
         match obelus_config::read_from(&path) {
             obelus_config::Reading::Settings(config, named) => {
                 tracing::info!(path = %path.display(), settings = ?named, "read the settings");
+                self.nothing_wrong_with(&path);
                 self.configure(config, named);
             }
             obelus_config::Reading::Nothing | obelus_config::Reading::Nowhere => {
                 tracing::info!(path = %path.display(), "no settings file yet, so the defaults");
             }
-            obelus_config::Reading::Unreadable(why) => self.settings_unreadable(&path, &why),
+            obelus_config::Reading::Unreadable(why, at) => {
+                self.settings_unreadable(&path, &why, at);
+            }
         }
         self.apply_project();
     }
@@ -910,12 +927,17 @@ impl App {
                     self.settled.config = config;
                     self.apply_config();
                     self.settled.readable = true;
+                    // Whatever Obelus said about this file last time is
+                    // about a version of it that no longer exists.
+                    self.nothing_wrong_with(&path);
                 }
                 // Gone, which is somebody deleting it or an editor writing
                 // it in a way Obelus caught mid-flight. Neither is a reason
                 // to throw away what this session is set to.
                 obelus_config::Reading::Nothing | obelus_config::Reading::Nowhere => {}
-                obelus_config::Reading::Unreadable(why) => self.settings_unreadable(&path, &why),
+                obelus_config::Reading::Unreadable(why, at) => {
+                    self.settings_unreadable(&path, &why, at);
+                }
             }
         }
         // And the project's over the top, from the reader's file up: a layer
@@ -932,8 +954,26 @@ impl App {
     /// session happens to be set to. So nothing is saved until it reads
     /// -- which it will, the moment somebody fixes the file, because the
     /// watcher is on it.
-    fn settings_unreadable(&mut self, path: &Path, why: &str) {
+    fn settings_unreadable(
+        &mut self,
+        path: &Path,
+        why: &str,
+        at: Option<obelus_text::coordinates::Span>,
+    ) {
         tracing::warn!(path = %path.display(), why, "the settings file will not read");
+        // And on the file itself, where a reader who opens it sees the
+        // line rather than a number they have to go and count to. The
+        // whole of the parser's words go in the message, under Obelus's
+        // own sentence: the first line is what a list of problems shows,
+        // and `TOML parse error at line 14` is not a sentence about what
+        // Obelus did.
+        self.nothing_wrong_with(path);
+        self.obelus_says(
+            path,
+            at,
+            obelus_lsp::trouble::Severity::Error,
+            &format!("The settings will not read, so none are saved\n{why}"),
+        );
         self.settled.readable = false;
         // Short, because the status row is one row and shares it with the
         // file and the position: which file and what went wrong are in the
@@ -965,11 +1005,6 @@ impl App {
     /// For a test: the reader's own file is not something a test may write
     /// to, and a test of "does changing this save it" has to have a file.
     pub fn config_file_for_test(&mut self, path: PathBuf) {
-        let text = std::fs::read_to_string(&path).unwrap_or_default();
-        let named = match obelus_config::read_from(&path) {
-            obelus_config::Reading::Settings(_, named) => named,
-            _ => Vec::new(),
-        };
         // Where the file is, before what is in it: applying a setting can
         // send Obelus looking beside that file for something -- a theme is
         // in the directory next to it -- and a path set afterwards is a
@@ -977,6 +1012,6 @@ impl App {
         // it first for the same reason.
         self.settled.path = Some(path);
         self.settled.readable = true;
-        self.configure(obelus_config::from_toml(&text), named);
+        self.read_the_settings();
     }
 }

@@ -2885,3 +2885,75 @@ fn the_size_of_the_text_reaches_whatever_is_drawing() {
     app.config_file_for_test(file);
     assert_eq!(told.last(), Some(24), "the size it was changed to");
 }
+
+/// A settings file that will not read is a problem marked on that file.
+///
+/// Which is the point of marking it there rather than only saying so: the
+/// reader who opens the file to fix it is shown the line, and the count on
+/// the status row, the keys that walk problems and the list they are in are
+/// the ones they already have -- nothing here is a second kind of mark.
+///
+/// Deliberate break: `settings_unreadable` saying its piece and stopping,
+/// which is what it did before Obelus said anything about its own files.
+#[test]
+fn a_settings_file_that_will_not_read_is_marked_on_that_file() {
+    let _taken = SETTINGS.lock().expect("the lock");
+    let scratch = temporary("unreadable");
+    let file = settings_file(&scratch);
+    std::fs::write(&file, "theme = \"dark\"\nfont_size 15\n").expect("writing a settings file");
+
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&file).expect("opening the settings file"),
+    ]);
+    app.config_file_for_test(file.clone());
+    support::lay_out(&mut app, 72, 24);
+
+    let problems: Vec<_> = app.problems().collect();
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    let problem = problems[0];
+    assert_eq!(
+        problem.severity,
+        obelus_lsp::trouble::Severity::Error,
+        "a file none of whose settings took is not a remark"
+    );
+    // Obelus's own name, which is what says who noticed -- and what tells
+    // this one from a server's when one of them is taken away.
+    assert_eq!(problem.source.as_deref(), Some("Obelus"));
+    // The second line, counted from zero, and over characters rather than
+    // over nothing: the parser stops between two of them.
+    assert_eq!(problem.span.line.get(), 1, "{:?}", problem.span);
+    assert!(
+        problem.span.end_column.get() > problem.span.column.get(),
+        "{:?}",
+        problem.span
+    );
+}
+
+/// And fixing the file takes the mark away.
+///
+/// A mark that outlived what it was about would be the one thing a mark
+/// must not be, which is wrong -- and the settings file is watched, so the
+/// moment somebody fixes it Obelus reads it again.
+///
+/// Deliberate break: `nothing_wrong_with` never called where the file
+/// reads, which leaves the old mark beside the new reading.
+#[test]
+fn fixing_the_settings_file_takes_the_mark_away() {
+    let _taken = SETTINGS.lock().expect("the lock");
+    let scratch = temporary("fixed");
+    let file = settings_file(&scratch);
+    std::fs::write(&file, "theme = \"dark\"\nfont_size 15\n").expect("writing a settings file");
+
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&file).expect("opening the settings file"),
+    ]);
+    app.config_file_for_test(file.clone());
+    support::lay_out(&mut app, 72, 24);
+    assert_eq!(app.problems().count(), 1, "the broken file was not marked");
+
+    std::fs::write(&file, "theme = \"dark\"\nfont_size = 15\n").expect("fixing the file");
+    // The same road the watcher sends Obelus down when somebody else
+    // writes that file.
+    app.config_file_for_test(file.clone());
+    assert_eq!(app.problems().count(), 0, "the mark outlived the mistake");
+}

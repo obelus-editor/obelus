@@ -35,6 +35,8 @@
 
 use std::path::{Path, PathBuf};
 
+use obelus_text::coordinates::Span;
+
 /// The theme a reader who has not chosen one gets.
 ///
 /// Here rather than beside the themes themselves because it is a written
@@ -707,6 +709,57 @@ pub fn load() -> Reading {
     read_from(&path)
 }
 
+/// Where a range of `text`'s bytes is, in the document's own counts.
+///
+/// Through [`obelus_text::Text`], which is where every conversion between
+/// one count and another lives. A settings file is small enough that
+/// building one to ask about a single span costs nothing worth measuring,
+/// and the alternative is this arithmetic written again somewhere it does
+/// not belong.
+///
+/// The document's counts rather than the protocol's, unlike a diagnostic
+/// that arrives from a server: a server names a place in a file it may be
+/// the only one holding, so what it sends has to be converted against the
+/// text later. Obelus has the text in its hand at the moment it finds the
+/// fault, so there is nothing to put off.
+#[must_use]
+pub fn span_of(text: &str, bytes: &std::ops::Range<usize>) -> Span {
+    use obelus_text::coordinates::{ByteOffset, CharColumn};
+
+    let rope = obelus_text::Text::from_string(text);
+    let place = |byte: usize| {
+        let byte = ByteOffset::new(byte.min(text.len()));
+        let line = rope.line_of_byte(byte);
+        let start = rope.line_start_byte(line);
+        let column = CharColumn::new(
+            text.get(start.get()..byte.get())
+                .map_or(0, |before| before.chars().count()),
+        );
+        (line, column)
+    };
+    let (line, column) = place(bytes.start);
+    let (end_line, end_column) = place(bytes.end);
+    // A parser that stopped *between* two characters names no characters
+    // at all -- `key with no value` points at where the value would have
+    // been -- and a mark drawn over nothing is no mark. So a span of
+    // nothing is the rest of the line it is on, which is the part of the
+    // file the reader has to look at anyway.
+    if bytes.start == bytes.end {
+        return Span {
+            line,
+            column,
+            end_line: line,
+            end_column: rope.line_length(line),
+        };
+    }
+    Span {
+        line,
+        column,
+        end_line,
+        end_column,
+    }
+}
+
 /// The same, from a path the caller names.
 #[must_use]
 pub fn read_from(path: &Path) -> Reading {
@@ -717,14 +770,30 @@ pub fn read_from(path: &Path) -> Reading {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return Reading::Nothing;
         }
-        Err(error) => return Reading::Unreadable(error.to_string()),
+        Err(error) => return Reading::Unreadable(error.to_string(), None),
     };
+    reading_of(&text)
+}
+
+/// What a settings file's contents come to.
+///
+/// Split from the file so that what the parser makes of some text can be
+/// asked without one: a file is an io error and a path, and neither is
+/// what is being decided here.
+#[must_use]
+pub fn reading_of(text: &str) -> Reading {
     match text.parse::<toml::Table>() {
         Ok(table) => {
             let (config, named) = from_table(&table);
             Reading::Settings(config, named)
         }
-        Err(error) => Reading::Unreadable(error.to_string()),
+        // The parser says which bytes it gave up on, which is the whole
+        // reason a reader can be shown the line rather than told a number
+        // they have to go and count to.
+        Err(error) => {
+            let at = error.span().map(|bytes| span_of(text, &bytes));
+            Reading::Unreadable(error.to_string(), at)
+        }
     }
 }
 
@@ -746,8 +815,12 @@ pub enum Reading {
     /// named. A setting it named is the reader's whether or not what they
     /// wrote differs from what Obelus would have done.
     Settings(Config, Vec<&'static str>),
-    /// There is one and it could not be read, with what went wrong.
-    Unreadable(String),
+    /// There is one and it could not be read, with what went wrong and
+    /// where.
+    ///
+    /// Nowhere for the failures that are not about the text -- a file
+    /// whose permissions forbid it has no line that is wrong with it.
+    Unreadable(String, Option<Span>),
 }
 
 /// The config a file's contents describe, taking the default for anything
@@ -1749,5 +1822,83 @@ mod tests {
             "a file the reader emptied was filled in again"
         );
         let _ = std::fs::remove_dir_all(&directory);
+    }
+}
+
+#[cfg(test)]
+mod where_it_went_wrong {
+    use super::*;
+
+    /// A settings file that will not parse says which line would not.
+    ///
+    /// The line is the whole point: a reader told only that the file is
+    /// broken has to find it themselves, and what Obelus can do instead is
+    /// put a mark on it.
+    ///
+    /// Deliberate break: `reading_of` answering `Unreadable(_, None)`,
+    /// which is what it did before the parser was asked where it stopped.
+    #[test]
+    fn a_file_that_will_not_parse_says_where() {
+        let Reading::Unreadable(why, at) =
+            reading_of("theme = \"dark\"\nicons = true\n\nfont_size 15\nwrap = true\n")
+        else {
+            panic!("a file that will not parse");
+        };
+        assert!(why.contains("expected `=`"), "{why}");
+        // Counted from zero, which is what a diagnostic counts in: the
+        // fourth line.
+        let at = at.expect("where the parser gave up");
+        assert_eq!(at.line.get(), 3, "{at:?}");
+        // And at the column the parser stopped at rather than at the start
+        // of the line -- a mark over the whole line says less.
+        assert!(at.column.get() > 0, "{at:?}");
+    }
+
+    /// And one that parses is not unreadable.
+    ///
+    /// Deliberate break: `reading_of` always answering `Unreadable`.
+    #[test]
+    fn a_file_that_parses_is_not_unreadable() {
+        assert!(matches!(
+            reading_of("theme = \"dark\"\n"),
+            Reading::Settings(..)
+        ));
+    }
+
+    /// A parser that names no characters gets the rest of its line.
+    ///
+    /// `key with no value` points at the gap where the value would have
+    /// gone, so the span it gives is empty -- and a mark over no
+    /// characters is one a reader cannot see, which is the one thing a
+    /// mark must not be.
+    ///
+    /// Deliberate break: `span_of` returning the empty range as it
+    /// arrived, which leaves the end where the start is.
+    #[test]
+    fn a_span_of_nothing_is_the_rest_of_its_line() {
+        let Reading::Unreadable(_, at) = reading_of("theme = \"dark\"\nfont_size 15\n") else {
+            panic!("a file that will not parse");
+        };
+        let at = at.expect("where the parser gave up");
+        assert_eq!(at.line, at.end_line);
+        assert!(at.end_column.get() > at.column.get(), "{at:?}");
+        // To the end of the line and no further: the lines under it are
+        // not what is wrong.
+        assert_eq!(at.end_column.get(), "font_size 15".len());
+    }
+
+    /// A place is counted in lines and characters, from zero.
+    ///
+    /// The document's own counts, not bytes: a settings file may name a
+    /// font or a theme in any language, and a column counted in bytes
+    /// would put the mark in the middle of a character.
+    ///
+    /// Deliberate break: `span_of` handing back the byte offset in place of
+    /// the character count, which the Chinese line catches.
+    #[test]
+    fn a_place_is_counted_in_lines_and_characters() {
+        let text = "one\n\u{4f60}\u{597d} = 1\n";
+        let at = span_of(text, &(text.find("= 1").expect("the equals")..text.len()));
+        assert_eq!((at.line.get(), at.column.get()), (1, 3));
     }
 }

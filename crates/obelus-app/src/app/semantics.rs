@@ -7,6 +7,13 @@
 
 use super::*;
 
+/// What Obelus calls itself where a diagnostic says which tool said it.
+///
+/// Its own name, spelled the way the name is spelled everywhere -- and it
+/// is what tells Obelus's own from a server's when one of them is taken
+/// away again.
+const OBELUS: &str = "Obelus";
+
 impl App {
     /// What a language server is busy with, if one is.
     ///
@@ -2024,6 +2031,70 @@ impl App {
             .into_iter()
             .flatten()
             .filter(|trouble| trouble.severity != obelus_lsp::trouble::Severity::Hint)
+    }
+
+    /// Writes down something Obelus itself has to say about one of the
+    /// files it reads for its own sake.
+    ///
+    /// Into the same list a server's go in, because from here down they
+    /// are the same thing: a mark against a piece of a file, with a word
+    /// about it and the name of whatever noticed. The underline, the count
+    /// on the status row, the keys that walk them and the list they are
+    /// in all read that one list and none of them has to be told which
+    /// kind it is holding.
+    ///
+    /// Placed already, unlike a server's. A server names a place in a file
+    /// it may be the only one holding, so what it sends is converted
+    /// against the text later; Obelus has the text in hand at the moment
+    /// it finds the fault.
+    ///
+    /// Nothing without a place. A diagnostic is a mark against a line, and
+    /// a failure with no line -- a file whose permissions forbid it, a
+    /// watcher that would not start -- has nothing to mark. Those are said
+    /// where what went wrong on the way up is said, which is not here.
+    pub(super) fn obelus_says(
+        &mut self,
+        path: &Path,
+        at: Option<obelus_text::coordinates::Span>,
+        severity: obelus_lsp::trouble::Severity,
+        said: &str,
+    ) {
+        let Some(span) = at else {
+            return;
+        };
+        self.troubles
+            .entry(path.to_path_buf())
+            .or_default()
+            .push(obelus_lsp::trouble::Trouble {
+                span,
+                severity,
+                message: said.to_string(),
+                // Obelus is the tool that said it, which is what a row of
+                // a list of problems reads out -- and what tells this one
+                // from a server's when the file is taken away again. Its
+                // own name, spelled the way the name is spelled.
+                source: Some(OBELUS.to_string()),
+                // A code action is asked for *about* a diagnostic, and the
+                // server matches it by every field it sent. There is no
+                // server behind this one and nothing to ask.
+                item: serde_json::Value::Null,
+            });
+    }
+
+    /// Forgets what Obelus said about a file, leaving what a server said.
+    ///
+    /// Called where the file is read again, because what was said is about
+    /// a version of it that no longer exists. Only Obelus's own: a server
+    /// keeps its own set until it publishes another, which is the
+    /// protocol's rule and not Obelus's to apply on its behalf.
+    pub(super) fn nothing_wrong_with(&mut self, path: &Path) {
+        let Some(troubles) = self.troubles.get_mut(path) else {
+            return;
+        };
+        troubles.retain(|trouble| trouble.source.as_deref() != Some(OBELUS));
+        if troubles.is_empty() {
+            self.troubles.remove(path);
+        }
     }
 
     /// Every file something is wrong with, in the order a project is read

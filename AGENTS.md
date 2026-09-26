@@ -459,6 +459,36 @@ the wrong place: a workspace it could not discover is why every question for
 the rest of the session comes back empty. The other three are a diary, and
 the log is what a diary is for.
 
+**A diagnostic is a mark against a piece of a file, and a server is not the
+only thing that can make one.** Obelus reads files for its own sake -- the
+settings, a project's settings -- and what it cannot make of one used to
+reach the reader as a line in the log and a sentence on the status row.
+Neither says *where*, which is the one thing the reader needs: a file that
+will not parse has a line that will not parse, and Obelus is holding it.
+
+So Obelus says so on the file, into the same list a server's go in. From
+there down they are the same thing, and nothing that draws one has to be
+told which kind it is holding: the underline, the count on the status row,
+the keys that walk problems and the list they are in all read that one
+list. `Reported::source` is what says who noticed, and Obelus fills in its
+own name -- which is also what tells its own from a server's when one of
+them is taken away again, because they keep different rules. A server's set
+for a path is replaced whole when it publishes another; that is the
+protocol's, not Obelus's to apply on a server's behalf.
+
+Placed already, unlike a server's. A server names a place in a file it may
+be the only one holding, so what it sends is converted against the text
+later -- Obelus has the text in its hand at the moment it finds the fault,
+so there is nothing to put off and no second shape to keep.
+
+Nothing without a place, though. A mark is a mark *on* something: a file
+whose permissions forbid it, a watcher that would not start, a server that
+never answered -- none of those has a line to draw under, and saying them
+here would be saying them nowhere a reader will look. And a span of nothing
+is no mark either, which is not hypothetical: a parser that stops *between*
+two characters (`key with no value`) names an empty range, so an empty one
+is widened to the rest of its line.
+
 **Folding is one act, and the notes are the fourth place it happens.** A run
 of lines in a file, a run of tool calls in a transcript, a commit's files in
 a list, and now what hangs under a note: one row standing in for several,
@@ -1519,8 +1549,9 @@ existing code is the style guide; match its density.
 
 ## Not now
 
-Workspace symbols and hover (the file outline is done), M1c (diagnostics, a
-gutter that holds more than line numbers), searching a file (`ctrl+f` is left
+Workspace symbols and hover (the file outline is done; M1c's diagnostics are
+done too -- the underline, the margin, the count on the status row, the keys
+that walk them and the list they are in), searching a file (`ctrl+f` is left
 unbound for it), the rest of M2's git (history, blame, tree diffs, staging --
 the working tree's own diff is done: `src/git/`, the margin, the map beside
 the scrollbar, `show-change` and the steps between hunks), the diff/semantic
