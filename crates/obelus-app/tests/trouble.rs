@@ -1581,3 +1581,81 @@ fn only_a_list_of_problems_opens_the_words_in_its_preview() {
         "another list's preview kept the box:\n{dump}"
     );
 }
+
+/// A server publishing about a file keeps what Obelus said about it.
+///
+/// The two are in one list and keep different rules. A server's set for a
+/// path is replaced whole when it publishes another -- that is the
+/// protocol's rule about a *server's* own, and it says nothing about
+/// anybody else's. A TOML server having an opinion about the settings must
+/// not take Obelus's marks off them, and it would: they live at the same
+/// path.
+///
+/// Deliberate break: `publish` inserting only what arrived, which is what
+/// it did.
+#[test]
+fn a_server_publishing_keeps_what_obelus_said() {
+    let scratch = support::Scratch::new("trouble-both");
+    let path = scratch.path().join("sample.rs");
+    std::fs::write(&path, "fn main() {\n    let x = nmae;\n}\n").expect("writing the file");
+    let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    support::lay_out(&mut app, 60, 16);
+
+    app.obelus_says_for_test(
+        &path,
+        obelus_text::coordinates::Span {
+            line: obelus_text::coordinates::LineNumber::new(0),
+            column: obelus_text::coordinates::CharColumn::new(0),
+            end_line: obelus_text::coordinates::LineNumber::new(0),
+            end_column: obelus_text::coordinates::CharColumn::new(2),
+        },
+        obelus_lsp::trouble::Severity::Warning,
+        "Obelus has an opinion",
+    );
+    assert_eq!(app.problems().count(), 1);
+
+    app.publish_for_test(published(&path, 1, 12, 16, 1));
+
+    let said: Vec<Option<&str>> = app
+        .problems()
+        .map(|problem| problem.source.as_deref())
+        .collect();
+    assert_eq!(said, [Some("Obelus"), Some("rustc")], "{said:?}");
+}
+
+/// And a server with nothing left to say takes only its own away.
+///
+/// Deliberate break: the empty case going back to `remove`, which takes
+/// the whole entry and Obelus's marks with it.
+#[test]
+fn a_server_with_nothing_to_say_leaves_what_obelus_said() {
+    let scratch = support::Scratch::new("trouble-emptied");
+    let path = scratch.path().join("sample.rs");
+    std::fs::write(&path, "fn main() {}\n").expect("writing the file");
+    let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    support::lay_out(&mut app, 60, 16);
+
+    app.obelus_says_for_test(
+        &path,
+        obelus_text::coordinates::Span {
+            line: obelus_text::coordinates::LineNumber::new(0),
+            column: obelus_text::coordinates::CharColumn::new(0),
+            end_line: obelus_text::coordinates::LineNumber::new(0),
+            end_column: obelus_text::coordinates::CharColumn::new(2),
+        },
+        obelus_lsp::trouble::Severity::Warning,
+        "Obelus has an opinion",
+    );
+    app.publish_for_test(json!({
+        "uri": support::uri_for(&path),
+        "diagnostics": []
+    }));
+
+    assert_eq!(
+        app.problems().count(),
+        1,
+        "Obelus's mark went with the server's"
+    );
+}

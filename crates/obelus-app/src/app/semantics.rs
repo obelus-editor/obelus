@@ -1746,11 +1746,41 @@ impl App {
                 client.encoding().clone()
             });
         let mut troubles = obelus_lsp::trouble::published(params, buffer.text(), &encoding);
+        // What Obelus said about this file survives. A server's set is
+        // replaced whole when it publishes another -- that is the
+        // protocol's rule about a server's own -- and it says nothing
+        // about anybody else's, so a server that happens to know about
+        // TOML would otherwise take Obelus's marks off the settings by
+        // having an opinion about the same file. `nothing_wrong_with`
+        // keeps a server's for the same reason, the other way round.
+        troubles.extend(
+            self.troubles
+                .get(&path)
+                .into_iter()
+                .flatten()
+                .filter(|trouble| trouble.source.as_deref() == Some(OBELUS))
+                .cloned(),
+        );
         troubles.sort_by_key(|trouble| (trouble.span.line, trouble.span.column));
         match troubles.is_empty() {
             true => self.troubles.remove(&path),
             false => self.troubles.insert(path, troubles),
         };
+    }
+
+    /// Says something of Obelus's own about a file, for a test.
+    ///
+    /// The real ones are made where a file Obelus reads for its own sake
+    /// will not read, which is not something a test of what happens to
+    /// them afterwards should have to arrange.
+    pub fn obelus_says_for_test(
+        &mut self,
+        path: &Path,
+        span: obelus_text::coordinates::Span,
+        severity: obelus_lsp::trouble::Severity,
+        said: &str,
+    ) {
+        self.obelus_says(path, Some(span), severity, said);
     }
 
     /// Hands the application what a server would have published.

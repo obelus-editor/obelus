@@ -13,7 +13,6 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
 use ratatui::style::Color;
 
 use crate::{SyntaxTheme, Theme, builtin};
@@ -50,12 +49,8 @@ pub fn found_in(directory: &Path) -> Vec<(String, PathBuf)> {
     found
 }
 
-/// Reads one, over whichever built-in theme it says to build on.
-pub fn read(path: &Path) -> Result<Theme> {
-    read_where(path).map_err(|wrong| anyhow::anyhow!(wrong.why))
-}
-
-/// The same, saying where in the file the trouble is.
+/// Reads one, over whichever built-in theme it says to build on, saying
+/// where in the file the trouble is.
 ///
 /// Where, because a theme file is a file the reader wrote and can be shown
 /// the line of -- which is worth more than a sentence naming the file they

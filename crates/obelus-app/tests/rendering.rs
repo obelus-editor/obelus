@@ -2469,3 +2469,39 @@ fn nothing_walks_a_welcome_screen_with_nothing_wrong() {
     assert_eq!(app.went_wrong_at(), 0);
     assert!(app.reading_nothing(), "something was opened");
 }
+
+/// A screen with room for the keys but not for what went wrong gets the
+/// keys.
+///
+/// The way in is the only thing this screen is for, so the block is what
+/// gives way -- and giving way has to mean not drawing it, which is not
+/// the same as deciding not to. The height is worked out once and the
+/// drawing obeys it; worked out twice, the second answer said there was
+/// room and drew the block into a screen measured as too short for it.
+///
+/// Deliberate break: `lavish` deciding for itself whether the block fits,
+/// which is what it did -- `height >= plate + 1 + block` is true whenever
+/// the keys happen to take as many rows as the block would.
+#[test]
+fn a_screen_too_short_for_what_went_wrong_still_gets_the_keys() {
+    let scratch = support::Scratch::new("welcome-tight");
+    let file = scratch.join("config.toml");
+    std::fs::write(&file, "theme = \"dark\"\nshrift = 15\n").expect("writing a settings file");
+
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.config_file_for_test(file);
+
+    // The plate, a blank and the keys are thirteen rows; the block wants
+    // five more. Fifteen has room for the first and not the second.
+    let dump = support::render(&mut app, 76, 16);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains(&obelus_editing::keymap::function(1).label()),
+        "the keys gave way instead:\n{dump}"
+    );
+    assert!(
+        !text.contains("What went wrong starting up"),
+        "the block was drawn into a screen with no room for it:\n{dump}"
+    );
+}

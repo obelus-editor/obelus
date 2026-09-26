@@ -161,20 +161,28 @@ impl Owner for Clipboard {
             return false;
         }
 
-        let Ok(mut held) = self.held.lock() else {
-            return false;
+        // The timestamp, and then the lock goes. What follows waits for
+        // the server, and the thread that answers for the selection wants
+        // this lock to do it -- a lock held across a wait that another
+        // thread may be the one to end is the shape of a deadlock, whether
+        // or not this particular pair can reach it.
+        let when = match self.held.lock() {
+            Ok(held) => held.when,
+            Err(_) => return false,
         };
         let taken = self
             .connection
-            .set_selection_owner(self.window, self.atoms.clipboard, held.when)
+            .set_selection_owner(self.window, self.atoms.clipboard, when)
             .map_err(ReplyError::from)
             .and_then(x11rb::cookie::VoidCookie::check);
         if taken.is_err() {
             tracing::warn!("the X server refused the clipboard");
             return false;
         }
-        held.mine = Some(offering);
-        drop(held);
+        match self.held.lock() {
+            Ok(mut held) => held.mine = Some(offering),
+            Err(_) => return false,
+        }
         // The server tells nobody who owns a selection; whoever wants to
         // know asks. So the only thing that can be checked is that it
         // agrees the window is the owner, which it will not if the

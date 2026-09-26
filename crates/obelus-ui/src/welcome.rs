@@ -72,10 +72,11 @@ const AMISS_WIDTH: u16 = 64;
 /// Six, which is as many as the keys above take. More than that and the
 /// block is the screen rather than a note under the way in -- and the list
 /// is a list, reachable by name, where there is room for all of them.
-const AMISS_ROWS: usize = 6;
-
-/// The same, for the window that decides which of them are on screen.
-const AMISS_ROWS_U16: u16 = 6;
+///
+/// Public because the application walks the list by it: what the keys move
+/// by has to be what is on screen, and two answers to how many rows there
+/// are is a page key that skips some.
+pub const AMISS_ROWS: u16 = 6;
 
 /// The gap between a key and what it opens.
 ///
@@ -170,6 +171,18 @@ fn foot(built: &str) -> String {
         .collect()
 }
 
+/// Whether the screen has room for what went wrong under the keys.
+///
+/// Answered where the height is worked out and carried down, rather than
+/// asked again lower: the second answer disagreed with the first.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Amiss {
+    /// There is room.
+    Shown,
+    /// There is not, so the way in gets the screen.
+    Left,
+}
+
 /// The centred block.
 pub struct WelcomeView<'a> {
     keymap: &'a Keymap,
@@ -198,7 +211,7 @@ impl<'a> WelcomeView<'a> {
             keymap: app.keymap(),
             went_wrong: app.went_wrong(),
             at: app.went_wrong_at(),
-            showing: app.went_wrong_showing(AMISS_ROWS_U16),
+            showing: app.went_wrong_showing(AMISS_ROWS),
             theme: app.theme(),
             built: app.built(),
             phase: app.phase(),
@@ -231,13 +244,19 @@ impl Widget for WelcomeView<'_> {
         let short = u16::try_from(hints.len() + 2).unwrap_or(u16::MAX);
 
         if wordmark <= area.width && tall <= area.height {
-            self.lavish(area, cells, &hints, wordmark, tall);
+            self.lavish(area, cells, &hints, wordmark, tall, Amiss::Shown);
         } else if wordmark <= area.width && tall.saturating_sub(amiss) <= area.height {
             // The plate and the keys, and what went wrong left out. Which
             // is the wrong way round if it were a matter of what is worth
             // the room -- but the block is reachable by name and the way
             // in is the only thing this screen is for.
-            self.lavish(area, cells, &hints, wordmark, tall - amiss);
+            //
+            // Said rather than worked out again: `lavish` deciding for
+            // itself whether the block fits is a second answer to a
+            // question already asked, and it got it wrong -- the keys and
+            // the block are the same height, so "there is room below the
+            // plate" was true in exactly the case this branch is for.
+            self.lavish(area, cells, &hints, wordmark, tall - amiss, Amiss::Left);
         } else if let Some(narrow) = hint_block_width(&hints)
             && narrow <= area.width
             && short <= area.height
@@ -249,7 +268,15 @@ impl Widget for WelcomeView<'_> {
 
 impl WelcomeView<'_> {
     /// The plate, and the keys under it.
-    fn lavish(&self, area: Rect, cells: &mut CellBuffer, hints: &[Hint], width: u16, height: u16) {
+    fn lavish(
+        &self,
+        area: Rect,
+        cells: &mut CellBuffer,
+        hints: &[Hint],
+        width: u16,
+        height: u16,
+        amiss: Amiss,
+    ) {
         let left = area.x + (area.width - width) / 2;
         let mut y = area.y + (area.height - height) / 2;
 
@@ -284,11 +311,8 @@ impl WelcomeView<'_> {
         y += 1;
         self.grid(cells, left, y, width, hints);
 
-        // Under the keys, and only where the height asked for it: the
-        // caller works out whether there is room before deciding which
-        // layout this is.
-        let amiss = self.amiss_height();
-        if amiss > 0 && height >= WORDMARK.len() as u16 + 1 + amiss {
+        // Under the keys, where the caller said there was room for it.
+        if amiss == Amiss::Shown && self.amiss_height() > 0 {
             let keys = (u16::try_from(hints.len().div_ceil(COLUMNS)).unwrap_or(1) * ROW_HEIGHT)
                 .saturating_sub(1);
             self.amiss(cells, area, y + keys + 1);
@@ -298,7 +322,7 @@ impl WelcomeView<'_> {
     /// How many rows the block of what went wrong takes, with its heading
     /// and the blank above it.
     fn amiss_height(&self) -> u16 {
-        let rows = self.went_wrong.len().min(AMISS_ROWS);
+        let rows = self.went_wrong.len().min(AMISS_ROWS as usize);
         match rows {
             0 => 0,
             // The heading and a blank above the rows, and a blank and the

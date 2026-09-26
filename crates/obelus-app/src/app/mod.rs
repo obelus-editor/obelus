@@ -740,13 +740,6 @@ pub(crate) fn file_in_mut(
     documents.get_mut(id.get())?.as_mut()?.file_mut()
 }
 
-/// How many of what went wrong the welcome screen shows at once.
-///
-/// The same number the view draws, because the keys that page through
-/// them have to move by what is on screen -- two answers to "how many
-/// rows" is a page key that skips some.
-const WENT_WRONG_ROWS: u16 = 6;
-
 impl App {
     /// Starts with the shipped key table and the given documents open.
     #[must_use]
@@ -1315,6 +1308,20 @@ impl App {
         rows
     }
 
+    /// How many things went wrong on the way up.
+    ///
+    /// Without building the list, which is what a frame wants: the number
+    /// is all a window needs, and the rows cost a sort and a clone apiece.
+    #[must_use]
+    pub fn how_much_went_wrong(&self) -> usize {
+        self.troubles
+            .values()
+            .flatten()
+            .filter(|trouble| trouble.source.as_deref() == Some(semantics::OBELUS))
+            .count()
+            + self.amiss.len()
+    }
+
     /// Which row of what went wrong the reader is on.
     #[must_use]
     pub fn went_wrong_at(&self) -> usize {
@@ -1333,8 +1340,13 @@ impl App {
     /// nowhere else, and a key that moved a selection nobody can see would
     /// be a key that does nothing the reader can tell.
     fn went_wrong_key(&mut self, key: &KeyEvent) -> bool {
+        // The cheap questions first: this is asked of every key, and the
+        // list is built by walking everything anything has been said about.
+        if !self.reading_nothing() || !key.modifiers.is_empty() {
+            return false;
+        }
         let rows = self.what_went_wrong();
-        if !self.reading_nothing() || rows.is_empty() || !key.modifiers.is_empty() {
+        if rows.is_empty() {
             return false;
         }
         if let Some(movement) = obelus_component::window::Move::of(key.code) {
@@ -1342,7 +1354,7 @@ impl App {
             // end is faster to reach than to walk back through.
             self.went_wrong_window.apply(
                 movement,
-                WENT_WRONG_ROWS,
+                obelus_ui::welcome::AMISS_ROWS,
                 obelus_component::window::Wrap::Yes,
             );
             return true;
@@ -1963,9 +1975,17 @@ impl App {
         // window's worth of. Asked from what is true once a frame, like
         // every other window: a count set only where a key is pressed is a
         // list whose rows are not on screen until somebody presses one.
-        let wrong = self.what_went_wrong().len();
-        self.went_wrong_window.set_count(wrong);
-        self.went_wrong_window.settle(WENT_WRONG_ROWS);
+        // Only where it is drawn, and counted rather than built: this runs
+        // on every frame, and building the list means sorting the paths
+        // anything has been said about and cloning a row for each -- all
+        // of it thrown away for a number that is zero on almost every
+        // start.
+        if self.reading_nothing() {
+            let wrong = self.how_much_went_wrong();
+            self.went_wrong_window.set_count(wrong);
+            self.went_wrong_window
+                .settle(obelus_ui::welcome::AMISS_ROWS);
+        }
 
         // Unconditionally, because with no list open the geometry is `None`
         // and the trees parsed for the last one are what has to be let go.
