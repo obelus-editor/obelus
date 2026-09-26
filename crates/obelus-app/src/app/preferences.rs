@@ -101,6 +101,11 @@ pub(super) struct Settled {
     /// Kept so the project's page can say whose value a row is showing. Worked
     /// out from the merged config it cannot be -- by then the two are one.
     pub readers: obelus_config::Config,
+    /// The theme the settings name, where nothing answers to that name.
+    ///
+    /// Held for the same reason as [`Settled::unbound`], and said in the
+    /// same place.
+    pub no_theme: Option<String>,
     /// The lines of the reader's `[keys]` table that bound nothing.
     ///
     /// Written down where the keymap is built and said where the file is
@@ -134,6 +139,7 @@ impl Default for Settled {
             readers: obelus_config::Config::default(),
             named: Vec::new(),
             unbound: Vec::new(),
+            no_theme: None,
             project: None,
             pinned: Vec::new(),
         }
@@ -541,11 +547,24 @@ impl App {
         let Some(path) = self.theme_file(name) else {
             return builtin::by_name(name).copied();
         };
-        match obelus_theme::written::read(&path) {
-            Ok(theme) => Some(theme),
-            Err(error) => {
-                tracing::warn!(%error, "a theme that would not read");
+        match obelus_theme::written::read_where(&path) {
+            Ok(theme) => {
+                self.nothing_wrong_with(&path);
+                Some(theme)
+            }
+            Err(wrong) => {
+                tracing::warn!(why = wrong.why, "a theme that would not read");
                 self.note = Some(format!("{name} will not read"));
+                // And on the theme's own file, where the line is. The
+                // colours on screen stay as they are: a reader who cannot
+                // read the screen cannot fix the file.
+                self.nothing_wrong_with(&path);
+                self.obelus_says(
+                    &path,
+                    wrong.at,
+                    obelus_lsp::trouble::Severity::Error,
+                    &format!("This theme will not read\n{}", wrong.why),
+                );
                 None
             }
         }
@@ -620,8 +639,13 @@ impl App {
     /// anybody having to tell it.
     pub(super) fn reread_theme(&mut self) {
         let called = self.settled.config.theme.clone();
-        if let Some(theme) = self.theme_called(&called) {
-            self.set_theme(&called, theme);
+        match self.theme_called(&called) {
+            Some(theme) => {
+                self.settled.no_theme = None;
+                self.set_theme(&called, theme);
+            }
+            // Said where the file is read, like the one above it.
+            None => self.settled.no_theme = Some(called),
         }
         // And wherever it lives now, which a swap of the whole directory has
         // just moved out from under the old watch.
@@ -761,8 +785,15 @@ impl App {
     /// cannot mean one thing on the way in and another when it is edited.
     fn apply_config(&mut self) {
         let called = self.settled.config.theme.clone();
-        if let Some(theme) = self.theme_called(&called) {
-            self.set_theme(&called, theme);
+        match self.theme_called(&called) {
+            Some(theme) => {
+                self.settled.no_theme = None;
+                self.set_theme(&called, theme);
+            }
+            // Written down rather than said, for the same reason a key
+            // that would not bind is: this runs after every change, and a
+            // reader flipping a switch has not renamed their theme.
+            None => self.settled.no_theme = Some(called),
         }
         // A theme chosen is a theme living somewhere else, so what is
         // watched for a change to it moves with it.
@@ -835,7 +866,7 @@ impl App {
                 // After, because what the keymap would not take is worked
                 // out while the config is being applied.
                 self.configure(config, named);
-                self.keys_that_bound_nothing(&path, &spans);
+                self.what_the_settings_could_not_use(&path, &spans);
             }
             obelus_config::Reading::Nothing | obelus_config::Reading::Nowhere => {
                 tracing::info!(path = %path.display(), "no settings file yet, so the defaults");
@@ -954,7 +985,7 @@ impl App {
                     self.settled.named = named;
                     self.settled.config = config;
                     self.apply_config();
-                    self.keys_that_bound_nothing(&path, &spans);
+                    self.what_the_settings_could_not_use(&path, &spans);
                     self.settled.readable = true;
                 }
                 // Gone, which is somebody deleting it or an editor writing
@@ -1001,7 +1032,9 @@ impl App {
         }
     }
 
-    /// Marks the lines of the `[keys]` table that bound nothing.
+    /// Marks the lines the settings named that Obelus could not use: a
+    /// theme nothing answers to, and a key table's lines that bound
+    /// nothing.
     ///
     /// Said where the file is read rather than where the keymap is built,
     /// because the keymap is built again after every change and a reader
@@ -1010,11 +1043,21 @@ impl App {
     /// Under the table they are in (`keys.open-file`), which is how the
     /// file names them and the only way to say which of several lines is
     /// the one that is wrong.
-    fn keys_that_bound_nothing(
+    fn what_the_settings_could_not_use(
         &mut self,
         path: &Path,
         spans: &std::collections::BTreeMap<String, obelus_text::coordinates::Span>,
     ) {
+        if let Some(called) = self.settled.no_theme.clone() {
+            // Never starting with the name: `dark` is a theme's own
+            // spelling and a sentence may not open on one.
+            self.obelus_says(
+                path,
+                spans.get("theme").copied(),
+                obelus_lsp::trouble::Severity::Warning,
+                &format!("No theme is called {called}"),
+            );
+        }
         for one in std::mem::take(&mut self.settled.unbound) {
             let said = match one.why {
                 // Never starting with the name, and saying what Obelus did

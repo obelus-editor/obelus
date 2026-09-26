@@ -481,6 +481,25 @@ be the only one holding, so what it sends is converted against the text
 later -- Obelus has the text in its hand at the moment it finds the fault,
 so there is nothing to put off and no second shape to keep.
 
+Which every file Obelus reads for its own sake gets, not the settings
+alone: a theme that will not parse is marked on the theme's file, and the
+notes on theirs. The notes because a reader opens that file -- they write
+into it from the page and edit it by hand -- and being told the whole list
+will not read without being told which line is a reader reading it all
+themselves.
+
+And a theme *name* nothing answers to is marked on the line that names it,
+in the other file: the name is a fact about the settings and the file it
+would name does not exist, so there is nothing else to put a mark on. The
+colours on screen stay as they are either way, which is the other half of
+one judgement -- a reader who cannot read the screen cannot fix the file --
+and that is exactly why the mark is the only way they find out.
+
+What is deliberately *not* marked is what Obelus writes for itself: which
+conversation belongs to which note, an install record, a claim. A reader
+does not write those and will not open them, so a mark on one is a mark
+nobody is standing where it can be seen. They stay a line in the log.
+
 Which is also what a *line* of a settings file gets: one Obelus has never
 heard of, one a project is not allowed to set, one that is not the shape it
 has to be, and one of the `[keys]` table that bound nothing. That last is

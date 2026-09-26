@@ -3096,3 +3096,112 @@ fn a_key_that_bound_nothing_is_a_warning_on_that_line() {
     );
     assert_eq!(said[2].0, 6);
 }
+
+/// A theme nothing answers to is a warning on the line that names it.
+///
+/// The colours on screen stay as they are, which is the other half of the
+/// same judgement: a reader who cannot read the screen cannot fix the file.
+/// So the only way they find out is the mark, and it goes on the line they
+/// wrote rather than on a file that does not exist.
+///
+/// Deliberate break: `apply_config` going back to `if let Some(theme)`,
+/// which leaves nothing written down.
+#[test]
+fn a_theme_nothing_answers_to_is_a_warning_on_its_line() {
+    let _taken = SETTINGS.lock().expect("the lock");
+    let scratch = temporary("no-theme");
+    let file = settings_file(&scratch);
+    std::fs::write(&file, "icons = true\ntheme = \"moonlight\"\n").expect("writing the settings");
+
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&file).expect("opening the settings file"),
+    ]);
+    app.config_file_for_test(file.clone());
+    support::lay_out(&mut app, 72, 24);
+
+    let problems: Vec<_> = app.problems().collect();
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert_eq!(problems[0].message, "No theme is called moonlight");
+    assert_eq!(
+        problems[0].severity,
+        obelus_lsp::trouble::Severity::Warning,
+        "a theme that is not there leaves the colours alone"
+    );
+    // The second line, where the name is written.
+    assert_eq!(problems[0].span.line.get(), 1);
+}
+
+/// And a theme file that will not parse is an error on that file.
+///
+/// On the theme's own file and not on the line that names it: the name is
+/// right, and the line that is wrong is in the other file.
+///
+/// Deliberate break: `read_where` handing back no span, which leaves the
+/// mark with nowhere to be and the count at zero.
+#[test]
+fn a_theme_file_that_will_not_read_is_an_error_on_that_file() {
+    let _taken = SETTINGS.lock().expect("the lock");
+    let scratch = temporary("bad-theme");
+    let themes = scratch.path().join("themes");
+    std::fs::create_dir_all(&themes).expect("a themes directory");
+    let theme = themes.join("moonlight.toml");
+    std::fs::write(&theme, "base = \"dark\"\n\n[syntax]\nkeyword \"#ff0000\"\n")
+        .expect("writing a theme");
+
+    let file = settings_file(&scratch);
+    std::fs::write(&file, "theme = \"moonlight\"\n").expect("writing the settings");
+
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&theme).expect("opening the theme"),
+    ]);
+    app.config_file_for_test(file);
+    support::lay_out(&mut app, 72, 24);
+
+    let problems: Vec<_> = app.problems().collect();
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(
+        problems[0].message.starts_with("This theme will not read"),
+        "{problems:?}"
+    );
+    assert_eq!(problems[0].severity, obelus_lsp::trouble::Severity::Error);
+    // The fourth line, where the equals is missing.
+    assert_eq!(problems[0].span.line.get(), 3);
+}
+
+/// And notes that will not read are an error on the notes' own file.
+///
+/// A file a reader opens: they write notes into it from the page and edit
+/// it by hand, so being told the whole list will not read without being
+/// told which line is a reader reading it all themselves. Nothing is shown
+/// and nothing is written while it is like that -- an empty page is not
+/// what the file says, it is what Obelus can make of it.
+///
+/// Deliberate break: `the_notes_now` saying its piece and stopping, which
+/// is what it did.
+#[test]
+fn notes_that_will_not_read_are_an_error_on_the_notes_file() {
+    let _taken = SETTINGS.lock().expect("the lock");
+    let scratch = support::Scratch::new("notes-unreadable");
+    support::make_room_for_notes(scratch.path());
+    let notes = obelus_git::todo::path(scratch.path());
+    std::fs::write(&notes, "[[todo]]\nid = \"ABCDEFGH\"\nsaid \"a note\"\n").expect("the notes");
+
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&notes).expect("opening the notes"),
+    ]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    let mine = temporary("notes-unreadable-settings");
+    app.config_file_for_test(settings_file(&mine));
+    support::lay_out(&mut app, 72, 24);
+    dispatch::dispatch(&mut app, Command::TodoOpen);
+
+    let problems: Vec<_> = app.problems().collect();
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(
+        problems[0].message.starts_with("The notes will not read"),
+        "{problems:?}"
+    );
+    assert_eq!(problems[0].severity, obelus_lsp::trouble::Severity::Error);
+    // The third line, where the equals is missing.
+    assert_eq!(problems[0].span.line.get(), 2);
+}

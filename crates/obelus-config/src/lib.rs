@@ -756,13 +756,16 @@ pub fn spans_in(text: &str) -> std::collections::BTreeMap<String, Span> {
         let Some(span) = document.as_table().key(key).and_then(toml_edit::Key::span) else {
             continue;
         };
-        found.insert(key.to_string(), span_of(text, &span));
+        found.insert(key.to_string(), obelus_text::span_of_bytes(text, &span));
         let Some(under) = item.as_table_like() else {
             continue;
         };
         for (inner, _) in under.iter() {
             if let Some(span) = under.key(inner).and_then(toml_edit::Key::span) {
-                found.insert(format!("{key}.{inner}"), span_of(text, &span));
+                found.insert(
+                    format!("{key}.{inner}"),
+                    obelus_text::span_of_bytes(text, &span),
+                );
             }
         }
     }
@@ -816,57 +819,6 @@ pub enum Why {
     NotATable,
 }
 
-/// Where a range of `text`'s bytes is, in the document's own counts.
-///
-/// Through [`obelus_text::Text`], which is where every conversion between
-/// one count and another lives. A settings file is small enough that
-/// building one to ask about a single span costs nothing worth measuring,
-/// and the alternative is this arithmetic written again somewhere it does
-/// not belong.
-///
-/// The document's counts rather than the protocol's, unlike a diagnostic
-/// that arrives from a server: a server names a place in a file it may be
-/// the only one holding, so what it sends has to be converted against the
-/// text later. Obelus has the text in its hand at the moment it finds the
-/// fault, so there is nothing to put off.
-#[must_use]
-pub fn span_of(text: &str, bytes: &std::ops::Range<usize>) -> Span {
-    use obelus_text::coordinates::{ByteOffset, CharColumn};
-
-    let rope = obelus_text::Text::from_string(text);
-    let place = |byte: usize| {
-        let byte = ByteOffset::new(byte.min(text.len()));
-        let line = rope.line_of_byte(byte);
-        let start = rope.line_start_byte(line);
-        let column = CharColumn::new(
-            text.get(start.get()..byte.get())
-                .map_or(0, |before| before.chars().count()),
-        );
-        (line, column)
-    };
-    let (line, column) = place(bytes.start);
-    let (end_line, end_column) = place(bytes.end);
-    // A parser that stopped *between* two characters names no characters
-    // at all -- `key with no value` points at where the value would have
-    // been -- and a mark drawn over nothing is no mark. So a span of
-    // nothing is the rest of the line it is on, which is the part of the
-    // file the reader has to look at anyway.
-    if bytes.start == bytes.end {
-        return Span {
-            line,
-            column,
-            end_line: line,
-            end_column: rope.line_length(line),
-        };
-    }
-    Span {
-        line,
-        column,
-        end_line,
-        end_column,
-    }
-}
-
 /// The same, from a path the caller names.
 #[must_use]
 pub fn read_from(path: &Path) -> Reading {
@@ -904,7 +856,9 @@ pub fn reading_of(text: &str) -> Reading {
         // reason a reader can be shown the line rather than told a number
         // they have to go and count to.
         Err(error) => {
-            let at = error.span().map(|bytes| span_of(text, &bytes));
+            let at = error
+                .span()
+                .map(|bytes| obelus_text::span_of_bytes(text, &bytes));
             Reading::Unreadable(error.to_string(), at)
         }
     }
@@ -2022,7 +1976,7 @@ mod where_it_went_wrong {
     /// characters is one a reader cannot see, which is the one thing a
     /// mark must not be.
     ///
-    /// Deliberate break: `span_of` returning the empty range as it
+    /// Deliberate break: `span_of_bytes` returning the empty range as it
     /// arrived, which leaves the end where the start is.
     #[test]
     fn a_span_of_nothing_is_the_rest_of_its_line() {
@@ -2061,12 +2015,13 @@ mod where_it_went_wrong {
     /// font or a theme in any language, and a column counted in bytes
     /// would put the mark in the middle of a character.
     ///
-    /// Deliberate break: `span_of` handing back the byte offset in place of
-    /// the character count, which the Chinese line catches.
+    /// Deliberate break: `span_of_bytes` handing back the byte offset in place
+    /// of the character count, which the Chinese line catches.
     #[test]
     fn a_place_is_counted_in_lines_and_characters() {
         let text = "one\n\u{4f60}\u{597d} = 1\n";
-        let at = span_of(text, &(text.find("= 1").expect("the equals")..text.len()));
+        let at =
+            obelus_text::span_of_bytes(text, &(text.find("= 1").expect("the equals")..text.len()));
         assert_eq!((at.line.get(), at.column.get()), (1, 3));
     }
 }

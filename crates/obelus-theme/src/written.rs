@@ -13,7 +13,7 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use ratatui::style::Color;
 
 use crate::{SyntaxTheme, Theme, builtin};
@@ -52,12 +52,40 @@ pub fn found_in(directory: &Path) -> Vec<(String, PathBuf)> {
 
 /// Reads one, over whichever built-in theme it says to build on.
 pub fn read(path: &Path) -> Result<Theme> {
-    let said =
-        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-    let table: toml::Table = said
-        .parse()
-        .with_context(|| format!("{} is not toml", path.display()))?;
+    read_where(path).map_err(|wrong| anyhow::anyhow!(wrong.why))
+}
+
+/// The same, saying where in the file the trouble is.
+///
+/// Where, because a theme file is a file the reader wrote and can be shown
+/// the line of -- which is worth more than a sentence naming the file they
+/// are already looking at.
+///
+/// # Errors
+///
+/// When the file cannot be read or is not TOML.
+pub fn read_where(path: &Path) -> std::result::Result<Theme, Wrong> {
+    let said = std::fs::read_to_string(path).map_err(|error| Wrong {
+        why: format!("reading {}: {error}", path.display()),
+        at: None,
+    })?;
+    let table: toml::Table = said.parse().map_err(|error: toml::de::Error| Wrong {
+        why: error.to_string(),
+        at: error
+            .span()
+            .map(|bytes| obelus_text::span_of_bytes(&said, &bytes)),
+    })?;
     Ok(over(&table))
+}
+
+/// Why a theme file would not read, and where.
+#[derive(Clone, Debug)]
+pub struct Wrong {
+    /// What went wrong, in the words it arrived in.
+    pub why: String,
+    /// Where in the file, where the file was the trouble at all -- a file
+    /// whose permissions forbid it has no line that is wrong with it.
+    pub at: Option<obelus_text::coordinates::Span>,
 }
 
 /// The theme a table describes, over the one it builds on.

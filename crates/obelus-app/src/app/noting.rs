@@ -281,14 +281,30 @@ impl App {
     fn the_notes_now(&mut self) -> Option<Todo> {
         let todo = match obelus_git::todo::read(&self.working_directory) {
             obelus_git::todo::Reading::Nothing => return Some(Todo::default()),
-            obelus_git::todo::Reading::Notes(todo) => todo,
+            obelus_git::todo::Reading::Notes(todo) => {
+                self.nothing_wrong_with(&obelus_git::todo::path(&self.working_directory));
+                todo
+            }
             // Nothing is shown and nothing is written. An empty page is not
             // what this file says -- it is what Obelus can make of a file it
             // cannot read -- and a reader who starts writing notes into it
             // has begun replacing their own list one note at a time.
-            obelus_git::todo::Reading::Unreadable(why) => {
+            obelus_git::todo::Reading::Unreadable(why, at) => {
                 tracing::warn!(why, "the notes will not read");
                 self.note = Some("The notes will not read".to_string());
+                // And on the file itself. It is a file a reader opens --
+                // they write notes into it from the page and edit it by
+                // hand -- so being told the whole list will not read
+                // without being told which line is a reader reading it
+                // all.
+                let path = obelus_git::todo::path(&self.working_directory);
+                self.nothing_wrong_with(&path);
+                self.obelus_says(
+                    &path,
+                    at,
+                    obelus_lsp::trouble::Severity::Error,
+                    &format!("The notes will not read\n{why}"),
+                );
                 return None;
             }
         };

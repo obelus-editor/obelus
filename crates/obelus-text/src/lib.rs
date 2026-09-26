@@ -956,3 +956,54 @@ pub fn wrapped_from(prose: &str, width: u16) -> Vec<(String, std::ops::Range<usi
     }
     rows
 }
+
+/// Where a range of `text`'s bytes is, in the document's own counts.
+///
+/// Through [`Text`], which is where every conversion between
+/// one count and another lives. A settings file is small enough that
+/// building one to ask about a single span costs nothing worth measuring,
+/// and the alternative is this arithmetic written again somewhere it does
+/// not belong.
+///
+/// The document's counts rather than the protocol's, unlike a diagnostic
+/// that arrives from a server: a server names a place in a file it may be
+/// the only one holding, so what it sends has to be converted against the
+/// text later. Obelus has the text in its hand at the moment it finds the
+/// fault, so there is nothing to put off.
+#[must_use]
+pub fn span_of_bytes(text: &str, bytes: &std::ops::Range<usize>) -> Span {
+    use coordinates::{ByteOffset, CharColumn};
+
+    let rope = Text::from_string(text);
+    let place = |byte: usize| {
+        let byte = ByteOffset::new(byte.min(text.len()));
+        let line = rope.line_of_byte(byte);
+        let start = rope.line_start_byte(line);
+        let column = CharColumn::new(
+            text.get(start.get()..byte.get())
+                .map_or(0, |before| before.chars().count()),
+        );
+        (line, column)
+    };
+    let (line, column) = place(bytes.start);
+    let (end_line, end_column) = place(bytes.end);
+    // A parser that stopped *between* two characters names no characters
+    // at all -- `key with no value` points at where the value would have
+    // been -- and a mark drawn over nothing is no mark. So a span of
+    // nothing is the rest of the line it is on, which is the part of the
+    // file the reader has to look at anyway.
+    if bytes.start == bytes.end {
+        return Span {
+            line,
+            column,
+            end_line: line,
+            end_column: rope.line_length(line),
+        };
+    }
+    Span {
+        line,
+        column,
+        end_line,
+        end_column,
+    }
+}

@@ -432,7 +432,7 @@ pub enum Reading {
     /// Here they are.
     Notes(Todo),
     /// There is one and it could not be read, with what went wrong.
-    Unreadable(String),
+    Unreadable(String, Option<obelus_text::coordinates::Span>),
 }
 
 impl Reading {
@@ -447,7 +447,7 @@ impl Reading {
         match self {
             Self::Nothing => Some(Todo::default()),
             Self::Notes(todo) => Some(todo),
-            Self::Unreadable(_) => None,
+            Self::Unreadable(..) => None,
         }
     }
 }
@@ -463,11 +463,20 @@ pub fn read(root: &Path) -> Reading {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             return Reading::Nothing;
         }
-        Err(error) => return Reading::Unreadable(error.to_string()),
+        Err(error) => return Reading::Unreadable(error.to_string(), None),
     };
     match text.parse::<toml::Table>() {
         Ok(table) => Reading::Notes(Todo::from_table(&table)),
-        Err(error) => Reading::Unreadable(error.to_string()),
+        // Where, because this is a file a reader can open: they write
+        // notes into it from the page and they edit it by hand, and being
+        // told the whole list will not read without being told which line
+        // is a reader reading it all.
+        Err(error) => {
+            let at = error
+                .span()
+                .map(|bytes| obelus_text::span_of_bytes(&text, &bytes));
+            Reading::Unreadable(error.to_string(), at)
+        }
     }
 }
 
@@ -916,7 +925,7 @@ pub fn change<T>(root: &Path, what: impl FnOnce(&mut Todo) -> T) -> Result<(Todo
     let mut todo = match read(root) {
         Reading::Nothing => Todo::default(),
         Reading::Notes(todo) => todo,
-        Reading::Unreadable(why) => return Err(NotChanged::Unreadable(why)),
+        Reading::Unreadable(why, _) => return Err(NotChanged::Unreadable(why)),
     };
     let was = todo.clone();
     let answer = what(&mut todo);
@@ -1298,7 +1307,7 @@ mod tests {
 
         std::fs::write(&path, "[[todo]]\nsaid = \"half a no").expect("the half-written notes");
         assert!(
-            matches!(read(&scratch), Reading::Unreadable(_)),
+            matches!(read(&scratch), Reading::Unreadable(..)),
             "a file that will not parse read as a file with nothing in it"
         );
 
