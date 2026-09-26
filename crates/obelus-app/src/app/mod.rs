@@ -709,6 +709,16 @@ pub struct App {
     /// frame there is nothing to page through yet, and afterwards it is the
     /// geometry the user is looking at.
     editor_area: Rect,
+    /// Which document the view was on last frame, and where in it.
+    ///
+    /// Only for working out how far it has travelled since: nothing reads
+    /// it, and nothing else may.
+    viewport_was: Option<(obelus_buffer::DocumentId, (LineNumber, usize))>,
+    /// How many screen rows the file's view has travelled altogether.
+    ///
+    /// A number to be *compared* rather than read -- see
+    /// `note_where_the_view_has_got_to`.
+    travelled: i64,
     working_directory: PathBuf,
     /// Whether to open on the file list.
     ///
@@ -748,6 +758,8 @@ impl App {
         let documents: Vec<Option<Document>> =
             open.into_iter().map(Document::from).map(Some).collect();
         Self {
+            viewport_was: None,
+            travelled: 0,
             looked_from: None,
             keymap: Keymap::new(),
             documents,
@@ -1829,6 +1841,47 @@ impl App {
         running
     }
 
+    /// Adds up how far the file's view has travelled, in screen rows.
+    ///
+    /// Asked here because here is once a frame, which is what makes the
+    /// total honest: a frame drawn again without the view moving adds
+    /// nothing, so whoever is watching the number can take a change in it
+    /// for a scroll. Twelve places move the viewport and none of them has
+    /// to know about this.
+    ///
+    /// Screen rows and not lines, because a fold between two tops is no
+    /// rows at all and a wrapped line is several -- see
+    /// `Buffer::screen_rows_between`, which is also what bounds the walk.
+    fn note_where_the_view_has_got_to(&mut self) {
+        let area = self.text_area();
+        let Some(current) = self.current else {
+            self.viewport_was = None;
+            return;
+        };
+        let Some(buffer) = self.current_buffer() else {
+            self.viewport_was = None;
+            return;
+        };
+        let now = (buffer.viewport().top, buffer.viewport().top_row);
+        let moved = match self.viewport_was {
+            // Another document is not this one having scrolled.
+            Some((was, at)) if was == current && at != now => {
+                buffer.screen_rows_between(at, now, area, usize::from(area.height))
+            }
+            _ => None,
+        };
+        self.viewport_was = Some((current, now));
+        if let Some(rows) = moved {
+            self.travelled = self.travelled.saturating_add(rows as i64);
+        }
+    }
+
+    /// How far the file's view has travelled altogether, in screen rows.
+    #[must_use]
+    pub const fn travelled(&self) -> i64 {
+        self.travelled
+    }
+
     /// The room the text has, once the gutter has taken its columns.
     ///
     /// Public because a test of what the view does when the cursor reaches
@@ -1885,6 +1938,7 @@ impl App {
         // redraw put it right, so what a reader saw was their words go and
         // come back.
         self.editor_area = editor_area;
+        self.note_where_the_view_has_got_to();
         // What the views showing are drawn from, and what Obelus has to be
         // told about it. First, because everything below this reads one of
         // those kept answers -- the notes' marks are worked out a dozen
@@ -3833,6 +3887,10 @@ impl Screen for App {
     fn talking(&self) -> Talking {
         App::talking(self)
     }
+    fn travelled(&self) -> i64 {
+        App::travelled(self)
+    }
+
     fn text_area(&self) -> TextArea {
         App::text_area(self)
     }

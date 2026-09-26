@@ -74,12 +74,12 @@ pub(crate) struct Moving {
     /// Whether the caret is drawn at this moment.
     pub(crate) caret: bool,
     /// How many rows behind where it has got to a band is drawn, and how
-    /// far it has to come altogether -- or `None` for a band that is
-    /// where it belongs.
+    /// far the page it scrolled off is from there -- or `None` for a band
+    /// that is where it belongs.
     ///
     /// Both, because the rows it has not caught up to yet are on no page
-    /// but the one it scrolled off, and how far back in that page they
-    /// are is the difference between the two.
+    /// but the one it scrolled off, and where in that page they are is
+    /// the difference between the two.
     pub(crate) scroll: Option<(f32, f32)>,
     /// How far along a pane is on its way in, from nothing at all to
     /// arrived, or `None` for a pane that is simply there.
@@ -185,10 +185,19 @@ impl Glide {
 /// is up.
 #[derive(Debug)]
 struct Scrolling {
-    /// How many rows behind it was when this began, or `None` for a band
-    /// that has caught up.
+    /// How many rows behind it was when this leg began, or `None` for a
+    /// band that has caught up.
     from: Option<f32>,
-    /// When it began.
+    /// And how far it has come since the page the window is keeping.
+    ///
+    /// Not the same number, and the difference is what a second press
+    /// during a slide makes: `from` is measured from wherever the band
+    /// was being *drawn* at that moment, which is nowhere any page shows,
+    /// while this is measured from the one page that does. The rows the
+    /// list scrolled past are drawn out of that page, so it is this that
+    /// says where to put them.
+    since: f32,
+    /// When this leg began.
     started: Instant,
 }
 
@@ -209,12 +218,34 @@ impl Scrolling {
     }
 
     /// The list has got somewhere else.
-    fn moved(&mut self, rows: f32, now: Instant) {
+    ///
+    /// Says whether this began a fresh slide, which is when the window
+    /// has to keep the page it scrolled off: one already under way keeps
+    /// the page it started with, because that is the page `since` counts
+    /// from.
+    ///
+    /// `most` is how many rows the band is tall. Further than that from
+    /// the page being kept and there is nothing left to draw the gap out
+    /// of, so the band gives up and is simply where it has got to -- the
+    /// same answer, for the same reason, that a jump gets.
+    fn moved(&mut self, rows: f32, most: f32, now: Instant) -> bool {
         // From where it is being drawn, so that a held-down arrow key is
         // one slide and not a stutter -- the caret's rule, on a band.
         let behind = self.behind(now).unwrap_or(0.0);
+        // Over because the time is up, whether or not a frame has been
+        // along to notice: what decides is the clock, and a band nobody
+        // has drawn for a second is not in the middle of anything.
+        let fresh = !self.moving(now);
+        let since = if fresh { rows } else { self.since + rows };
+        if since.abs() > most {
+            self.from = None;
+            self.since = 0.0;
+            return false;
+        }
         self.from = Some(rows + behind);
+        self.since = since;
         self.started = now;
+        fresh
     }
 
     /// Moves it on, and says whether what is drawn changed.
@@ -224,6 +255,7 @@ impl Scrolling {
         }
         if !self.moving(now) {
             self.from = None;
+            self.since = 0.0;
         }
         true
     }
@@ -365,6 +397,7 @@ impl Motion {
             pane: Sliding { opened: None },
             band: Scrolling {
                 from: None,
+                since: 0.0,
                 started: now,
             },
         }
@@ -399,9 +432,10 @@ impl Motion {
     /// A band of rows is showing a different part of its list.
     ///
     /// `rows` is how far it moved: positive where the list went down,
-    /// which is the band's content going up.
-    pub(crate) fn band_moved(&mut self, rows: f32, now: Instant) {
-        self.band.moved(rows, now);
+    /// which is the band's content going up. Says whether the window has
+    /// to keep the page it scrolled off -- see `Scrolling::moved`.
+    pub(crate) fn band_moved(&mut self, rows: f32, most: f32, now: Instant) -> bool {
+        self.band.moved(rows, most, now)
     }
 
     /// A pane opened over the page.
@@ -452,7 +486,10 @@ impl Motion {
             caret: self.blink.lit || self.caret.moving(now),
             drift: self.caret.drift(now),
             pane: self.pane.along(now),
-            scroll: self.band.behind(now).zip(self.band.from),
+            scroll: self
+                .band
+                .behind(now)
+                .map(|behind| (behind, self.band.since)),
         }
     }
 }
@@ -641,13 +678,13 @@ mod tests {
         let base = Instant::now();
         let mut motion = Motion::new(None);
         assert_eq!(motion.moving(base).scroll, None, "nothing has moved");
-        motion.band_moved(3.0, base);
+        assert!(motion.band_moved(3.0, 20.0, base), "a fresh slide");
         assert_eq!(motion.moving(base).scroll, Some((3.0, 3.0)));
-        let (behind, moved) = motion
+        let (behind, since) = motion
             .moving(base + CATCH_UP / 2)
             .scroll
             .expect("still catching up");
-        assert_eq!(moved, 3.0, "how far it has to come does not change");
+        assert_eq!(since, 3.0, "how far the kept page is does not change");
         assert!(behind > 0.0 && behind < 3.0, "{behind}");
         assert_eq!(motion.moving(base + CATCH_UP).scroll, None);
     }
@@ -659,13 +696,48 @@ mod tests {
     fn a_band_that_moves_again_carries_on_from_where_it_is() {
         let base = Instant::now();
         let mut motion = Motion::new(None);
-        motion.band_moved(3.0, base);
+        motion.band_moved(3.0, 20.0, base);
         let midway = base + CATCH_UP / 2;
         let (behind, _) = motion.moving(midway).scroll.expect("on its way");
-        motion.band_moved(3.0, midway);
-        let (again, moved) = motion.moving(midway).scroll.expect("on its way again");
+        motion.band_moved(3.0, 20.0, midway);
+        let (again, _) = motion.moving(midway).scroll.expect("on its way again");
         assert!((again - (3.0 + behind)).abs() < 0.001, "{again} {behind}");
-        assert!((moved - again).abs() < 0.001, "it sets out from there");
+    }
+
+    /// Break: answer `true` from `Scrolling::moved` whatever was already
+    /// happening, and the window swaps the page it is drawing the gap out
+    /// of in the middle of a slide -- which draws a row twice, once from
+    /// each page, for as long as the slide lasts.
+    #[test]
+    fn a_band_already_sliding_keeps_the_page_it_started_from() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        assert!(motion.band_moved(2.0, 20.0, base), "nothing was happening");
+        let midway = base + CATCH_UP / 2;
+        assert!(
+            !motion.band_moved(2.0, 20.0, midway),
+            "one is already under way"
+        );
+        let (_, since) = motion.moving(midway).scroll.expect("on its way");
+        assert!(
+            (since - 4.0).abs() < 0.001,
+            "both moves, from one page: {since}"
+        );
+        // And once it has caught up, the next one starts again.
+        assert!(motion.band_moved(1.0, 20.0, midway + CATCH_UP), "caught up");
+    }
+
+    /// Break: drop the `since` bound and a slide that has wandered further
+    /// than the band is tall draws its gap out of a page that has none of
+    /// those rows on it.
+    #[test]
+    fn a_band_that_has_come_further_than_it_is_tall_is_simply_there() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        assert!(motion.band_moved(6.0, 10.0, base));
+        let midway = base + CATCH_UP / 2;
+        assert!(!motion.band_moved(6.0, 10.0, midway), "too far to draw");
+        assert_eq!(motion.moving(midway).scroll, None, "it is simply there");
     }
 
     /// Break: leave the band out of `Motion::wake` and a list slides at
@@ -675,7 +747,7 @@ mod tests {
         let base = Instant::now();
         let mut motion = Motion::new(None);
         assert_eq!(motion.wake(base, true), None);
-        motion.band_moved(2.0, base);
+        motion.band_moved(2.0, 20.0, base);
         assert_eq!(motion.wake(base, true), Some(Wake::EveryFrame));
         assert_eq!(motion.wake(base + CATCH_UP, true), None);
     }

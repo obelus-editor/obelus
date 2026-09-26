@@ -186,6 +186,11 @@ pub trait Screen {
     fn images(&self) -> &Images;
     /// The bindings currently in force.
     fn keymap(&self) -> &Keymap;
+    /// How many screen rows the file's view has travelled altogether.
+    ///
+    /// A number to be compared rather than read: what a change in it says
+    /// is that the view scrolled, and by how much.
+    fn travelled(&self) -> i64;
     /// Whether a command can do its job right now, which is the one
     /// judgement of it: a view that says a key is there says it only where
     /// pressing it would do something.

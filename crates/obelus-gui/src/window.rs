@@ -586,9 +586,17 @@ impl ApplicationHandler<Waking> for Showing {
                         clippy::cast_precision_loss,
                         reason = "a list is rows, and a scroll is a few of them"
                     )]
-                    self.motion
-                        .band_moved((top - before_top) as f32, Instant::now());
-                    self.before = before;
+                    let rows = (top - before_top) as f32;
+                    // Only where this begins a fresh slide: one already
+                    // under way keeps the page it started with, because
+                    // that is the page the rows it scrolled past are on
+                    // and the one the distance is counted from.
+                    if self
+                        .motion
+                        .band_moved(rows, f32::from(room.height), Instant::now())
+                    {
+                        self.before = before;
+                    }
                 }
                 if let Some(names) = faces {
                     // Which faces text is drawn in decides how wide a cell

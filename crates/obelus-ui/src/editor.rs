@@ -338,6 +338,11 @@ pub fn gutter_width(line_count: usize) -> u16 {
 /// The editor region.
 pub struct EditorView<'a> {
     buffer: Option<&'a Buffer>,
+    /// How far the view has travelled, for the file being read.
+    ///
+    /// `None` for a preview: a preview is somewhere else, and it does not
+    /// scroll -- it is opened at a place and stays there.
+    travelled: Option<i64>,
     highlights: &'a Highlights,
     theme: &'a Theme,
     /// The runs of characters to mark, for a preview of somewhere in
@@ -485,6 +490,7 @@ impl<'a> EditorView<'a> {
     pub fn new(app: &'a impl Screen) -> Self {
         Self {
             buffer: app.current_buffer(),
+            travelled: Some(app.travelled()),
             highlights: app.highlights(),
             theme: app.theme(),
             // What is being talked about: the uses of the name the pointer
@@ -536,6 +542,7 @@ impl<'a> EditorView<'a> {
         troubles: &'a [obelus_lsp::trouble::Trouble],
     ) -> Self {
         Self {
+            travelled: None,
             buffer: Some(buffer),
             highlights,
             theme,
@@ -606,6 +613,20 @@ impl Widget for EditorView<'_> {
             0
         };
         let map = map_width(self.changes).min(area.width - margin - gutter - folds);
+        // Where the file's view has got to, for a front end that can draw
+        // it arriving. Everything left of the map scrolls together -- the
+        // margin, the numbers, the fold column and the text are one band
+        // -- and the map does not: it is a picture of the whole file and
+        // stays where it is.
+        if let Some(travelled) = self.travelled {
+            crate::shapes::scrolled(
+                Rect {
+                    width: area.width.saturating_sub(map),
+                    ..area
+                },
+                travelled,
+            );
+        }
         // The same total the caret's position is worked out from, which is
         // what keeps the two agreeing -- checked only where the caret is
         // drawn at all. A screen too narrow for what goes before the text

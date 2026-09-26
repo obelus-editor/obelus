@@ -817,6 +817,53 @@ impl Buffer {
     }
 
     /// The row of the screen `rows` away, crossing line boundaries and
+    /// How many screen rows apart two viewport positions are, or nothing
+    /// where they are further apart than `most`.
+    ///
+    /// Signed: positive where `to` is below `from`. Walked rather than
+    /// subtracted, because a line is not a row -- a fold between them is
+    /// no rows at all and a wrapped line is several, and neither line
+    /// number says which.
+    ///
+    /// Bounded, because the walk is the whole of the cost and what asks
+    /// is an animation: a view that went further than a screenful did not
+    /// scroll, it went somewhere else, and there is nothing to draw
+    /// between here and there.
+    #[must_use]
+    pub fn screen_rows_between(
+        &self,
+        from: (LineNumber, usize),
+        to: (LineNumber, usize),
+        area: TextArea,
+        most: usize,
+    ) -> Option<isize> {
+        if from == to {
+            return Some(0);
+        }
+        // Both ways at once, one step at a time each: stepping `n` from
+        // the start for every `n` would walk the distance squared, and
+        // this is asked on every frame a file is on screen.
+        let (mut down, mut up) = (from, from);
+        for step in 1..=most {
+            let stepped = isize::try_from(step).ok()?;
+            let further = self.step_screen_rows(down, 1, area);
+            if further != down {
+                down = further;
+                if down == to {
+                    return Some(stepped);
+                }
+            }
+            let back = self.step_screen_rows(up, -1, area);
+            if back != up {
+                up = back;
+                if up == to {
+                    return Some(-stepped);
+                }
+            }
+        }
+        None
+    }
+
     /// stopping at either end of the document.
     ///
     /// A position here is a line and a row *within its screen rows*, so a
@@ -1185,5 +1232,49 @@ impl Buffer {
         let (top, top_row) = self.step_screen_rows(wanted, -back, area);
         self.viewport.top = top;
         self.viewport.top_row = top_row;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use obelus_text::coordinates::LineNumber;
+
+    use crate::{Buffer, TextArea};
+
+    /// How far apart two tops are is counted in screen rows, and a wrapped
+    /// line is more than one of them.
+    ///
+    /// Deliberate break: subtract the two line numbers instead. It is the
+    /// same answer for a file whose lines all fit, and short by the
+    /// wrapping for every other one -- and what asks is a band drawing the
+    /// rows it scrolled past, so they would be drawn that far out of
+    /// place.
+    #[test]
+    fn how_far_apart_two_tops_are_is_rows_and_not_lines() {
+        let long = "x".repeat(30);
+        let buffer = Buffer::from_text(
+            Path::new("wrapped.txt"),
+            &format!("{long}\n{long}\n{long}\nshort\n"),
+        );
+        // Ten wide, so each of those lines is three rows.
+        let area = TextArea {
+            width: 10,
+            height: 8,
+            wrap: true,
+        };
+        let from = (LineNumber::new(0), 0);
+        let to = (LineNumber::new(2), 0);
+        assert_eq!(
+            buffer.screen_rows_between(from, to, area, 20),
+            Some(6),
+            "two wrapped lines are six rows, not two"
+        );
+        // And the same distance the other way round.
+        assert_eq!(buffer.screen_rows_between(to, from, area, 20), Some(-6));
+        assert_eq!(buffer.screen_rows_between(from, from, area, 20), Some(0));
+        // Further than it was asked to walk is no answer at all.
+        assert_eq!(buffer.screen_rows_between(from, to, area, 4), None);
     }
 }
