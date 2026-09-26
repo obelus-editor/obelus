@@ -736,12 +736,47 @@ impl Page {
             .resize_with(usize::from(columns) * usize::from(rows), Cell::default);
     }
 
+    /// Blanks the cells a full-width character at this place covers.
+    ///
+    /// The one thing a frame does not arrive with. A terminal advanced
+    /// two columns itself when it drew such a character, so `ratatui` has
+    /// nothing to say about the second one and its diff leaves it out --
+    /// and a window draws *every* cell, so what was in it is still drawn:
+    /// a letter from some frame before, in the colours it had then,
+    /// sitting on top of the character that took its place. A page of
+    /// Chinese over a page of code showed a word of the code scattered
+    /// across it, syntax colouring and all.
+    ///
+    /// Blanked rather than left, and with the character's own style,
+    /// because that is what `ratatui`'s own buffer holds there: what the
+    /// diff failed to say, the page says to itself.
+    fn covered(&mut self, x: u16, y: u16) {
+        let Some(at) = self.at(x, y) else {
+            return;
+        };
+        let (wide, style) = (
+            obelus_text::text_width(self.cells[at].symbol()),
+            self.cells[at].style(),
+        );
+        for over in 1..wide {
+            let Ok(over) = u16::try_from(over) else {
+                return;
+            };
+            let Some(covered) = x.checked_add(over).and_then(|x| self.at(x, y)) else {
+                return;
+            };
+            self.cells[covered].reset();
+            self.cells[covered].set_style(style);
+        }
+    }
+
     /// Takes one update, and says whether it ended a frame.
     pub(crate) fn apply(&mut self, update: Update) -> bool {
         match update {
             Update::Cell { x, y, cell } => {
                 if let Some(at) = self.at(x, y) {
                     self.cells[at] = *cell;
+                    self.covered(x, y);
                 }
                 false
             }
@@ -891,6 +926,45 @@ mod tests {
         // What a view drawn over inside the same frame leaves behind.
         write(&mut page, "    ");
         assert!(!cap.still_said(&page));
+    }
+
+    /// A full-width character takes the cells it covers with it.
+    ///
+    /// Deliberate break: leave `covered` out of the cell arm. A letter
+    /// from some frame before then stays under the right half of every
+    /// full-width character -- in the colours it had then, which is how
+    /// this was found: a page of Chinese with a word of the code that had
+    /// been there scattered over it, syntax colouring and all.
+    #[test]
+    fn a_full_width_character_takes_the_cells_it_covers_with_it() {
+        let mut page = Page::default();
+        page.resized(6, 1);
+        fn put(page: &mut Page, x: u16, said: &str) {
+            let mut cell = Cell::default();
+            cell.set_symbol(said);
+            page.apply(Update::Cell {
+                x,
+                y: 0,
+                cell: Box::new(cell),
+            });
+        }
+        // A word of code, as an earlier frame left it.
+        for (at, letter) in "shell".chars().enumerate() {
+            let x = u16::try_from(at).expect("a short word");
+            put(&mut page, x, &letter.to_string());
+        }
+        // And a character twice as wide over its first cell, which is all
+        // the diff has to say about it.
+        put(&mut page, 0, "\u{4e2d}");
+
+        assert_eq!(page.look(0, 0).text, "\u{4e2d}");
+        assert!(
+            page.look(1, 0).text.trim().is_empty(),
+            "the h is still under it: {:?}",
+            page.look(1, 0).text
+        );
+        // And no further: what it does not cover is not its to take.
+        assert_eq!(page.look(2, 0).text, "e");
     }
 
     /// What is under the pane is read at the place it was taken from.
