@@ -20,6 +20,7 @@ use std::sync::{
 };
 
 use obelus_app::app::Caret;
+use obelus_component::layers::Layer;
 use obelus_ui::{
     image::Palette,
     shapes::{Bar, Joined},
@@ -62,12 +63,17 @@ pub(crate) enum Update {
     ///
     /// The same journey as the size, for the same reason.
     Fonts(Vec<String>),
-    /// What shape the caret is.
+    /// What shape the caret is, and whose it is.
     ///
-    /// Which is a fact about the frame it arrives with -- it depends on
+    /// Which is a fact about the frame it arrives with -- both depend on
     /// where the caret ended up -- so it travels with the frame rather
     /// than beside it.
-    CaretShape(Caret),
+    CaretIs {
+        /// A bar or a block.
+        shape: Caret,
+        /// What it belongs to, and `None` for the document's own.
+        whose: Option<Layer>,
+    },
     /// A mark the window may be asked to draw, and what it is drawn from.
     ///
     /// Once per mark and palette: the drawing is a few kilobytes of text,
@@ -366,11 +372,14 @@ impl obelus_app::app::Drawing for Telling {
         }
     }
 
-    fn caret_is(&self, caret: Caret) {
+    fn caret_is(&self, caret: Caret, whose: Option<Layer>) {
         // No wake: this arrives while a frame is being laid out, and the
         // frame's own end wakes the window a moment later. Waking here as
         // well would be a second wake for one screen.
-        let _ = self.updates.send(Update::CaretShape(caret));
+        let _ = self.updates.send(Update::CaretIs {
+            shape: caret,
+            whose,
+        });
     }
 }
 
@@ -569,6 +578,7 @@ pub(crate) struct Page {
     cells: Vec<Cell>,
     caret: Option<Position>,
     shape: Caret,
+    whose: Option<Layer>,
 }
 
 impl Default for Page {
@@ -581,6 +591,7 @@ impl Default for Page {
             // Until the application says otherwise, which it does with the
             // first frame: a bar is what it is anywhere a reader types.
             shape: Caret::Bar,
+            whose: None,
         }
     }
 }
@@ -651,6 +662,14 @@ impl Page {
     }
 
     /// Where the caret is, when it is being shown.
+    /// What the caret belongs to, and `None` for the document's own.
+    ///
+    /// Not a cell, and kept here for the reason its shape is: it is a
+    /// fact about the frame the cells arrived with.
+    pub(crate) const fn whose(&self) -> Option<Layer> {
+        self.whose
+    }
+
     pub(crate) const fn caret(&self) -> Option<Position> {
         self.caret
     }
@@ -704,8 +723,9 @@ impl Page {
                 self.caret = caret;
                 false
             }
-            Update::CaretShape(shape) => {
+            Update::CaretIs { shape, whose } => {
                 self.shape = shape;
+                self.whose = whose;
                 false
             }
             // Neither is a cell: the window takes both out of the queue

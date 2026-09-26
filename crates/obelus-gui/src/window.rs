@@ -489,6 +489,7 @@ impl ApplicationHandler<Waking> for Showing {
                 // provoked -- and drawing the older ones would be drawing
                 // screens the reader is never meant to see.
                 let was = self.page.caret();
+                let whose_was = self.page.whose();
                 let had_a_pane = self.behind.is_some();
                 let was_at = self.scrolled;
                 // Kept only where a band could move, because that is the
@@ -573,7 +574,17 @@ impl ApplicationHandler<Waking> for Showing {
                 // caret to where it is now, not one per frame they never
                 // saw.
                 self.motion
-                    .caret_moved(was, self.page.caret(), Instant::now());
+                    // Nothing where the caret changed hands: a list
+                    // opening over the page puts the caret in its own
+                    // box, which is a different caret at a different
+                    // place. Walked from one to the other, it goes down
+                    // the screen from where the reader was reading to
+                    // where the list came up.
+                    .caret_moved(
+                        was.filter(|_| whose_was == self.page.whose()),
+                        self.page.caret(),
+                        Instant::now(),
+                    );
                 // A pane opening is the one thing on the screen that
                 // arrives rather than changes, and it is worked out from
                 // what is there rather than announced: a frame with a pane

@@ -4178,6 +4178,7 @@ dependencies = [
  "etagere",
  "obelus-app",
  "obelus-clipboard",
+ "obelus-component",
  "obelus-config",
  "obelus-icons",
  "obelus-logging",

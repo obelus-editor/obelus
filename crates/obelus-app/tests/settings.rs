@@ -2836,7 +2836,7 @@ impl obelus_app::app::Drawing for Told {
     /// Nothing: what this is a test of is the size, and the shape of the
     /// caret is said on every frame -- which is a test of its own, in the
     /// crate that draws one.
-    fn caret_is(&self, _: obelus_app::app::Caret) {}
+    fn caret_is(&self, _: obelus_app::app::Caret, _: Option<obelus_component::layers::Layer>) {}
 
     /// Nor this: which faces a window draws with is its own business, and
     /// what is under test here is the size.

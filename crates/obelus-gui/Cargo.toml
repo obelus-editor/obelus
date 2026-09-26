@@ -17,6 +17,9 @@ workspace = true
 
 [dependencies]
 obelus-app.workspace = true
+# For `Layer` alone: the window is told which of them owns the caret, so
+# that a caret changing hands is not taken for one that moved.
+obelus-component.workspace = true
 # The window is the half of Obelus that can own a selection, which is what
 # offering several shapes of one copy takes; see `clipboard/`.
 obelus-clipboard.workspace = true

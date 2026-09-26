@@ -2185,7 +2185,7 @@ impl App {
         // the caret is doing depends on where it ended up, which is not
         // known until the frame has been laid out.
         if let Some(drawing) = self.drawing.as_ref() {
-            drawing.caret_is(self.caret());
+            drawing.caret_is(self.caret(), self.layers().nearest());
         }
         obelus_ui::cursor_position(area, self)
     }
@@ -3509,13 +3509,20 @@ pub trait Drawing: std::fmt::Debug + Send + Sync {
     /// the window does.
     fn text_size(&self, points: usize);
 
-    /// The caret is this shape.
+    /// The caret is this shape, and belongs to this.
     ///
     /// Said on every frame rather than when it changes, because what it
     /// depends on -- the mode, and whether the caret is in a box -- is
     /// worked out while the frame is laid out and not kept anywhere else.
     /// The front end compares it with what it is already drawing.
-    fn caret_is(&self, caret: Caret);
+    ///
+    /// Whose it is, because a caret that changes hands has not *moved*.
+    /// A list opening over the page puts the caret in its own box, which
+    /// is a different caret at a different place, and a front end that
+    /// took the two for one would walk it down the screen -- from where
+    /// the reader was reading to where the list came up. `None` is the
+    /// document's own.
+    fn caret_is(&self, caret: Caret, whose: Option<Layer>);
 
     /// The text is drawn in these faces, tried in this order.
     ///

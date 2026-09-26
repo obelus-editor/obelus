@@ -420,8 +420,10 @@ impl Motion {
         // appearing somewhere is not moving there, and a box opening would
         // have its caret fly in from wherever the last one happened to
         // stand. The same the other way: a caret that has gone has nothing
-        // to fly to.
+        // to fly to -- and either way a flight in the air is over, because
+        // what it was carrying is not what is on the page now.
         let (Some(was), Some(is)) = (was, is) else {
+            self.caret.from = None;
             return;
         };
         if was != is {
@@ -521,6 +523,22 @@ mod tests {
         motion.caret_moved(None, Some(at(4, 4)), base);
         assert_eq!(motion.moving(base).drift, (0.0, 0.0));
         assert_ne!(motion.wake(base, true), Some(Wake::EveryFrame));
+    }
+
+    /// Break: leave `from` alone where one of the two is `None`, and a
+    /// flight already in the air carries on after the caret it was about
+    /// has been handed to something else -- a list opening mid-flight
+    /// leaves a caret walking to a box that is no longer there.
+    #[test]
+    fn a_caret_that_changed_hands_is_not_still_on_its_way() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        motion.caret_moved(Some(at(0, 10)), Some(at(0, 0)), base);
+        let midway = base + GLIDE / 2;
+        assert_ne!(motion.moving(midway).drift, (0.0, 0.0), "on its way");
+        // Which is what the window says by leaving out where it was.
+        motion.caret_moved(None, Some(at(4, 20)), midway);
+        assert_eq!(motion.moving(midway).drift, (0.0, 0.0));
     }
 
     /// Break: return `(0.0, 0.0)` from `Glide::drift` and the caret is
