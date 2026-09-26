@@ -21,6 +21,7 @@ mod font;
 mod grid;
 mod keys;
 mod monospace;
+mod motion;
 mod paint;
 mod window;
 

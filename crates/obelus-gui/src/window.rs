@@ -46,6 +46,7 @@ use crate::{
     font::Fonts,
     grid::{Cells, Marked, Marking, Measured, Page, Spelling, Update},
     keys,
+    motion::{Motion, Wake},
 };
 
 /// How many rows a notch of the wheel moves, which is what every terminal
@@ -118,19 +119,11 @@ struct Showing {
     /// the next one is saying: a screen part way through being described
     /// would be marks from two screens at once.
     marking: Vec<Marked>,
-    /// How the caret blinks here, or `None` where the system says it
-    /// should not.
-    blink: Option<Blink>,
-    /// Whether the caret is being drawn at this moment.
-    lit: bool,
-    /// When it next goes the other way.
-    flip: Instant,
-    /// When the reader last did something.
+    /// What the window is animating, and when it wants waking for it.
     ///
-    /// What blinking is measured from: a caret is solid while somebody is
-    /// typing, and a desktop that says when to stop says it in seconds
-    /// since the last key.
-    stirred: Instant,
+    /// The window's own, and nothing the application is ever told about:
+    /// see [`crate::motion`].
+    motion: Motion,
     /// How big the text is, in points, as the settings last said.
     ///
     /// Kept because the two things it is measured against move on their
@@ -170,12 +163,9 @@ impl Showing {
             spelling: None,
             marked: Vec::new(),
             marking: Vec::new(),
-            // Asked once, on the way up: it is a question about the system
-            // rather than about this window.
-            blink: Blink::asked(),
-            lit: true,
-            flip: Instant::now(),
-            stirred: Instant::now(),
+            // The blink is asked once, on the way up: it is a question
+            // about the system rather than about this window.
+            motion: Motion::new(Blink::asked()),
             points,
         }
     }
@@ -224,12 +214,7 @@ impl Showing {
     /// one that stayed dark for the half cycle it was in the middle of
     /// would be a keypress with no caret after it.
     fn stir(&mut self) {
-        self.stirred = Instant::now();
-        if let Some(blink) = self.blink {
-            self.flip = self.stirred + blink.every;
-        }
-        if !self.lit {
-            self.lit = true;
+        if self.motion.stirred(Instant::now()) {
             self.redraw();
         }
     }
@@ -454,6 +439,7 @@ impl ApplicationHandler<Waking> for Showing {
                 // frames may be waiting -- a key and the answer it
                 // provoked -- and drawing the older ones would be drawing
                 // screens the reader is never meant to see.
+                let was = self.page.caret();
                 let mut drew = false;
                 let mut sized = None;
                 let mut faces = None;
@@ -485,6 +471,16 @@ impl ApplicationHandler<Waking> for Showing {
                         cells => drew |= self.page.apply(cells),
                     }
                 }
+                // Where the caret is is the page's; whether it walked
+                // there or simply appeared is the window's own question,
+                // and it is asked of the drain as a whole rather than of
+                // each update in it. Several frames may have been waiting
+                // -- a key and the answer it provoked -- and what the
+                // reader is owed is the walk from where they last saw the
+                // caret to where it is now, not one per frame they never
+                // saw.
+                self.motion
+                    .caret_moved(was, self.page.caret(), Instant::now());
                 if let Some(names) = faces {
                     // Which faces text is drawn in decides how wide a cell
                     // is, so this is the same work a new size is: measure
@@ -529,42 +525,31 @@ impl ApplicationHandler<Waking> for Showing {
         }
     }
 
-    /// When to wake next, which is only ever for the caret.
+    /// When to wake next, which is whatever the window is animating.
     ///
     /// Obelus's own loop is a thread blocked on a channel and wakes this
-    /// one when it has drawn something; the one thing the window does on a
-    /// clock of its own is turn the caret on and off. So the deadline is
-    /// worked out from what is true -- there is a caret, it blinks, and the
-    /// reader has not stopped for long enough to settle it -- rather than
-    /// switched on and off from the places that change any of those. The
-    /// same rule the ticker follows, in the crate that has no ticker.
+    /// one when it has drawn something; everything the window does on a
+    /// clock of its own is in [`crate::motion`]. So the deadline is worked
+    /// out from what is true -- what is moving, and whether there is a
+    /// caret for any of it to be about -- rather than switched on and off
+    /// from the places that change any of that. The same rule the ticker
+    /// follows, in the crate that has no ticker.
     fn about_to_wait(&mut self, events: &ActiveEventLoop) {
-        let (Some(blink), true) = (self.blink, self.page.caret().is_some()) else {
-            // Nothing to animate: park until something arrives.
-            events.set_control_flow(ControlFlow::Wait);
-            return;
-        };
         let now = Instant::now();
-        if blink
-            .settles
-            .is_some_and(|settles| now.duration_since(self.stirred) >= settles)
-        {
-            // Stopped blinking and left visible, which is what that
-            // setting is for: a caret blinking at an empty desk all
-            // afternoon is a process that never sleeps.
-            if !self.lit {
-                self.lit = true;
-                self.redraw();
-            }
-            events.set_control_flow(ControlFlow::Wait);
-            return;
-        }
-        if now >= self.flip {
-            self.lit = !self.lit;
-            self.flip = now + blink.every;
+        let caret = self.page.caret().is_some();
+        if self.motion.advance(now, caret) {
             self.redraw();
         }
-        events.set_control_flow(ControlFlow::WaitUntil(self.flip));
+        events.set_control_flow(match self.motion.wake(now, caret) {
+            Some(Wake::At(when)) => ControlFlow::WaitUntil(when),
+            // Something is in flight, so the next frame is wanted as soon
+            // as the screen will take one. What paces it is the surface
+            // itself, which is presented on the vertical blank: that is
+            // the rate an animation is meant to run at, and the one
+            // number nobody here has to pick.
+            Some(Wake::EveryFrame) => ControlFlow::Poll,
+            None => ControlFlow::Wait,
+        });
     }
 
     fn window_event(&mut self, events: &ActiveEventLoop, _window: WindowId, event: WindowEvent) {
@@ -583,7 +568,7 @@ impl ApplicationHandler<Waking> for Showing {
                     &self.page,
                     fonts,
                     self.spelling.as_ref(),
-                    self.lit,
+                    self.motion.moving(Instant::now()),
                     &self.marked,
                 ) {
                     tracing::error!(?error, "the frame was not drawn");

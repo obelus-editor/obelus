@@ -23,6 +23,7 @@ use winit::window::Window;
 use crate::{
     font::Fonts,
     grid::{Look, Marked, Page, Spelling},
+    motion::Moving,
 };
 
 /// How wide the bar caret is, as a part of a cell.
@@ -410,7 +411,7 @@ impl Painter {
         page: &Page,
         fonts: &mut Fonts,
         spelling: Option<&Spelling>,
-        caret: bool,
+        moving: Moving,
         marked: &[Marked],
     ) -> Result<()> {
         let cell = fonts.cell();
@@ -426,8 +427,8 @@ impl Painter {
         self.spelling(page, fonts, spelling);
         // Off for half of every cycle, which is the blink. What is under it
         // is drawn either way, by the pass above.
-        if caret {
-            self.caret(page, fonts, spelling);
+        if moving.caret {
+            self.caret(page, fonts, spelling, moving.drift);
         }
 
         #[expect(
@@ -588,8 +589,29 @@ impl Painter {
         fonts: &mut Fonts,
     ) {
         let cell = fonts.cell();
-        let left = f32::from(column) * cell.width;
-        let top = f32::from(row) * cell.height;
+        self.glyphs_at(
+            f32::from(column) * cell.width,
+            f32::from(row) * cell.height,
+            look,
+            colour,
+            fonts,
+        );
+    }
+
+    /// The same, at a place in pixels rather than at a cell.
+    ///
+    /// Which the caret needs because a caret on its way is not on a cell
+    /// boundary, and what a block carries has to be in the same place the
+    /// block is.
+    fn glyphs_at(
+        &mut self,
+        left: f32,
+        top: f32,
+        look: Look<'_>,
+        colour: [f32; 4],
+        fonts: &mut Fonts,
+    ) {
+        let cell = fonts.cell();
         let bold = look.modifier.contains(Modifier::BOLD);
         let italic = look.modifier.contains(Modifier::ITALIC);
         let placed = fonts.glyphs(look.text, bold, italic).to_vec();
@@ -700,7 +722,13 @@ impl Painter {
     /// The block is the cell with its colours the other way round, which is
     /// what a terminal does and for the same reason: a block that hid the
     /// character under it would be a caret a reader cannot read past.
-    fn caret(&mut self, page: &Page, fonts: &mut Fonts, spelling: Option<&Spelling>) {
+    fn caret(
+        &mut self,
+        page: &Page,
+        fonts: &mut Fonts,
+        spelling: Option<&Spelling>,
+        drift: (f32, f32),
+    ) {
         let Some(caret) = page.caret() else {
             return;
         };
@@ -716,8 +744,13 @@ impl Painter {
         let x = caret.x.saturating_add(along);
         let look = page.look(caret.x, caret.y);
         let ink = rgba(look.foreground, Ink::Foreground);
-        let left = f32::from(x) * cell.width;
-        let top = f32::from(caret.y) * cell.height;
+        // Where it is drawn, which is where the page put it only once it
+        // has got there -- see `motion::Moving::drift`. Everything the
+        // caret carries is drawn from these two, so a caret in flight
+        // takes the character it is going to cover along with it rather
+        // than leaving it behind on the cell.
+        let left = (f32::from(x) + drift.0) * cell.width;
+        let top = (f32::from(caret.y) + drift.1) * cell.height;
         // Inside a word being spelled the caret is always a bar: what is
         // under it there is the spelling itself, which is being written
         // rather than typed over, and a block would hide the character the
@@ -742,7 +775,7 @@ impl Painter {
                 // What is under the caret, drawn again in the colour behind
                 // it, so that a block does not hide the character it is on.
                 if !look.text.trim().is_empty() {
-                    self.glyphs(caret.x, caret.y, look, behind, fonts);
+                    self.glyphs_at(left, top, look, behind, fonts);
                 }
             }
         }
