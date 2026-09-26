@@ -81,23 +81,25 @@ fn vertex(@builtin(vertex_index) corner: u32, quad: Quad) -> Fragment {
 // How far outside a rounded box a point is, in pixels: negative inside it,
 // zero on the edge. The standard signed distance to one, which is the only
 // way to draw a curve on a quad without an outline to sample.
-// `hanging` says the box has no top edge at all.
+// `joined` says which way a pane's seam faces: 1 above, -1 below, and 0
+// for a shape with edges all round, which is what a key's cap is.
 //
-// A pane is not a card floating over the page; it is the page's own region
-// taken over, joined to the row above it. A join is not an edge: nothing
-// there is rounded, nothing there bends what is behind, and nothing there
-// catches the light. All three fall out of the one line that leaves the
-// top off the box -- and what clips the pane up there is the quad's own
-// bounds, which is where the join is.
+// A pane has one edge and no corners. It is not a card floating over the
+// page; it is the page's own region taken over, as wide as the window and
+// fastened to the row at one end -- so three of its four sides are seams:
+// the two the window's own edges run down, and the one it hangs from. A
+// seam is not a boundary, and a corner needs two boundaries meeting, so
+// there is nowhere on a pane for one. Rounded anyway, what the curve does
+// is bite a notch out of the window's edge.
+//
+// Which leaves the distance to the one edge it has, and `point.x` out of
+// it altogether. What clips the other three is the quad's own bounds,
+// which is where the seams are.
 fn outside(point: vec2<f32>, half_size: vec2<f32>, radius: f32, joined: f32) -> f32 {
-    var side = abs(point) - half_size;
-    // `joined` is which way the seam is: -1 above, 1 below, 0 for a shape
-    // with edges all round. Measuring against `joined * point.y` leaves
-    // that end open, which is the whole of the difference.
     if (joined != 0.0) {
-        side.y = joined * point.y - half_size.y;
+        return joined * point.y - half_size.y;
     }
-    let corner = side + vec2<f32>(radius);
+    let corner = abs(point) - half_size + vec2<f32>(radius);
     return length(max(corner, vec2<f32>(0.0))) + min(max(corner.x, corner.y), 0.0) - radius;
 }
 
@@ -106,13 +108,12 @@ fn outside(point: vec2<f32>, half_size: vec2<f32>, radius: f32, joined: f32) -> 
 // a derivative would be the difference between two pixels, and what this
 // is for is the direction light bends at an edge.
 fn facing(point: vec2<f32>, half_size: vec2<f32>, radius: f32, joined: f32) -> vec2<f32> {
-    var side = abs(point) - half_size;
-    var way = sign(point);
+    // One edge, so one way to face.
     if (joined != 0.0) {
-        side.y = joined * point.y - half_size.y;
-        way.y = joined;
+        return vec2<f32>(0.0, joined);
     }
-    let corner = side + vec2<f32>(radius);
+    let corner = abs(point) - half_size + vec2<f32>(radius);
+    let way = sign(point);
     if (max(corner.x, corner.y) > 0.0) {
         return normalize(max(corner, vec2<f32>(0.0))) * way;
     }

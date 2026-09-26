@@ -46,13 +46,6 @@ const TINT: f32 = 0.74;
 /// wait to see what they are pressing it on.
 const TRAVEL: f32 = 0.18;
 
-/// How round a pane's bottom corners are, in cells of its own height.
-///
-/// The bottom only: a pane hangs from the row above it rather than
-/// floating over the page, and what shows in the corners it does have is
-/// what is behind, undisturbed, because the glass is not there.
-const CORNER: f32 = 0.9;
-
 /// How far a cap is held off the rows either side of it, as a part of a
 /// cell's height.
 const INSET: f32 = 0.08;
@@ -1157,13 +1150,14 @@ impl Painter {
             uv: self.atlas.white,
             colour: tint,
             flags: SOLID
-                | ROUNDED
                 | GLASS
                 | match behind.joined {
                     Joined::Above => HANGING,
                     Joined::Below => STANDING,
                 },
-            radius: cell.height * CORNER,
+            // Unread: a pane has no corners to round -- see `outside` in
+            // `paint.wgsl`.
+            radius: 0.0,
             padding: [0; 2],
         });
         [left, top, far, low]
