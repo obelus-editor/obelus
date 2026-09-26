@@ -2,12 +2,12 @@ screen 34x10  editor 34x8  status 34x1
 -- text --
  0|       Obelus        v0.1.0       
  1|                                  
- 2|           f1 Open a file         
- 3|           f3 Changed files       
- 4|           f6 Search files        
- 5|           f4 Ask the agent       
- 6|       ctrl+p Run a command       
- 7|       ctrl+q Leave Obelus        
+ 2|           F1 Open a file         
+ 3|           F3 Changed files       
+ 4|           F6 Search files        
+ 5|           F4 Ask the agent       
+ 6|       Ctrl+p Run a command       
+ 7|       Ctrl+q Leave Obelus        
  8|──────────────────────────────────
  9|                                  
 -- style --

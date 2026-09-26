@@ -21,7 +21,7 @@ screen 76x24  editor 76x22  status 76x1
 18|                                                                            
 19|                                                                            
 20|────────────────────────────────────────────────────────────────────────────
-21|   enter  Another    alt+space  Done    alt+a  Talk   …                     
+21|   Enter  Another    Alt+Space  Done    Alt+a  Talk   …                     
 22|────────────────────────────────────────────────────────────────────────────
 23| Todo                                                     2 to come back to 
 -- style --

@@ -1648,7 +1648,10 @@ fn a_command_can_be_put_on_another_key() {
     // Written down, so it is still bound tomorrow.
     let written = std::fs::read_to_string(&file).expect("the file");
     assert!(
-        written.contains("choose-theme") && written.contains("alt+j"),
+        // In the spelling the screen shows, which is the only one there
+        // is: a file and a screen that wrote a name two ways would be two
+        // names.
+        written.contains("choose-theme") && written.contains("Alt+j"),
         "the binding is not in the file:\n{written}"
     );
     // And the row says so where it said "press a key".

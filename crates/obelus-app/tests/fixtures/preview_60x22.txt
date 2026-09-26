@@ -19,7 +19,7 @@ screen 60x22  editor 60x20  status 60x1
 16|                                                            
 17|                                                            
 18|────────────────────────────────────────────────────────────
-19|   alt+i  Ignored files □    …                ctrl+k  Keys  
+19|   Alt+i  Ignored files □    …                Ctrl+k  Keys  
 20|────────────────────────────────────────────────────────────
 21| > fixtures                                                 
 -- style --

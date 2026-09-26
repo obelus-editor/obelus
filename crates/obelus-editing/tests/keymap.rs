@@ -161,19 +161,29 @@ fn a_modifier_obelus_does_not_know_disqualifies_the_key() {
 
 /// Both ways of writing a chord. With glyphs the modifiers stop being
 /// prefixes and a key that is a word becomes one column, which is the point:
-/// `ctrl+pagedown` is thirteen columns of a right-aligned key column, and
+/// `Ctrl+PageDown` is thirteen columns of a right-aligned key column, and
 /// every one of them comes off the room the description has.
+///
+/// A key that is a word is written the way keys are written everywhere;
+/// a letter is left alone, because a shifted letter *is* the capital.
 #[test]
 fn a_chord_is_written_with_glyphs_or_spelled_out() {
     let control_f = control('f');
-    assert_eq!(control_f.label_in(false), "ctrl+f");
+    assert_eq!(control_f.label_in(false), "Ctrl+f");
+    // The letter is the reader's, not Obelus's to tidy: the capital is
+    // how a chord with shift on a letter is written, so `Ctrl+F` would be
+    // a different key on the screen and a different key in the file.
+    assert_eq!(
+        KeyChord::new(KeyCode::Char('F'), KeyModifiers::CONTROL).label_in(false),
+        "Ctrl+F"
+    );
     assert_eq!(
         control_f.label_in(true),
         format!("{} f", obelus_icons::key::CONTROL)
     );
 
     let page = KeyChord::new(KeyCode::PageDown, KeyModifiers::CONTROL);
-    assert_eq!(page.label_in(false), "ctrl+pagedown");
+    assert_eq!(page.label_in(false), "Ctrl+PageDown");
     assert_eq!(
         page.label_in(true),
         format!(
@@ -190,7 +200,7 @@ fn a_chord_is_written_with_glyphs_or_spelled_out() {
     // `f10` is three -- and the twelve of them are the first keys a reader
     // looks for.
     let function = obelus_editing::keymap::function(10);
-    assert_eq!(function.label_in(false), "f10");
+    assert_eq!(function.label_in(false), "F10");
     assert_eq!(
         function.label_in(true),
         obelus_icons::key::function(10)
@@ -202,13 +212,17 @@ fn a_chord_is_written_with_glyphs_or_spelled_out() {
         None,
         "a keycap was invented for a key most keyboards do not have"
     );
-    // Which still reads back as itself: the file is written in the spelled
-    // form, and it is the form a reader types by hand.
+    // Which still reads back as itself, and so does the way it used to be
+    // written: the file is written in the spelled form, a reader types it
+    // by hand, and a settings file from before this was capitalised is
+    // still a settings file.
+    assert_eq!(KeyChord::parse("F10"), Some(function));
     assert_eq!(KeyChord::parse("f10"), Some(function));
+    assert_eq!(KeyChord::parse("ctrl+pagedown"), Some(page));
 
     // An arrow is a symbol in any font, so it is an arrow either way.
     let jump = KeyChord::new(KeyCode::Left, KeyModifiers::ALT);
-    assert_eq!(jump.label_in(false), "alt+\u{2190}");
+    assert_eq!(jump.label_in(false), "Alt+\u{2190}");
     assert_eq!(
         jump.label_in(true),
         format!("{} \u{2190}", obelus_icons::key::ALT)

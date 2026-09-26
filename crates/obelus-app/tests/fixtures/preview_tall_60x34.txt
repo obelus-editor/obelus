@@ -31,7 +31,7 @@ screen 60x34  editor 60x32  status 60x1
 28|  18 pub const LINE_18: u32 = 18;                          █
 29|  19 pub const LINE_19: u32 = 19;                          █
 30|────────────────────────────────────────────────────────────
-31|   alt+i  Ignored files □    …                ctrl+k  Keys  
+31|   Alt+i  Ignored files □    …                Ctrl+k  Keys  
 32|────────────────────────────────────────────────────────────
 33| >                                                          
 -- style --

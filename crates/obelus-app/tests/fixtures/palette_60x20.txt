@@ -8,16 +8,16 @@ screen 60x20  editor 60x18  status 60x1
  5|────────────────────────────────────────────────────────────
  6|  All  Files  Search  Code  Edit  Git  Obelus           ⇤ ⇥ 
  7|────────────────────────────────────────────────────────────
- 8| open-file  Open a file                                 f1 █
- 9| open-changed-file  Open a file that has changed        f3 █
-10| save-file  Write this file back to disk            ctrl+s █
-11| reload-file  Re-read this file from disk           ctrl+r █
-12| switch-document  Switch to something already open      f2 █
-13| close-document  Close what is being read           ctrl+w █
+ 8| open-file  Open a file                                 F1 █
+ 9| open-changed-file  Open a file that has changed        F3 █
+10| save-file  Write this file back to disk            Ctrl+s █
+11| reload-file  Re-read this file from disk           Ctrl+r █
+12| switch-document  Switch to something already open      F2 █
+13| close-document  Close what is being read           Ctrl+w █
 14| rename-file  Call this file something else, or move it    █
-15| toggle-preview  Show this file rendered, or stop   ctrl+t █
+15| toggle-preview  Show this file rendered, or stop   Ctrl+t █
 16| choose-theme  Change the colours                          █
-17| run-command  Run a command by name                 ctrl+p █
+17| run-command  Run a command by name                 Ctrl+p █
 18|────────────────────────────────────────────────────────────
 19| >                                                          
 -- style --

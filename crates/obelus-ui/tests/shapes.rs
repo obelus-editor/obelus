@@ -153,7 +153,7 @@ fn a_foot_says_where_its_caps_are() {
     let cap = &mine[0];
     // `f1` with a blank either side of it, where the row starts.
     assert_eq!((cap.area.x, cap.area.width), (2, 4), "{cap:?}");
-    assert_eq!(cap.keys, "f1");
+    assert_eq!(cap.keys, "F1");
     assert_eq!(cap.cap, DARK.raised_background);
     assert_eq!(cap.page, DARK.background);
     assert_eq!(cap.edge, DARK.gutter);
@@ -175,7 +175,7 @@ fn the_cells_are_the_cap_a_terminal_draws() {
         );
     }
     let inside: String = (2..6).map(|x| cells[(x, y)].symbol()).collect();
-    assert_eq!(inside, " f1 ");
+    assert_eq!(inside, " F1 ");
 }
 
 /// Break: drop the `cap_around` beside the card's `write`, and the one
@@ -210,7 +210,7 @@ fn the_card_of_every_key_says_a_cap_round_each() {
     // `alt+m` with the blank either side that the card leaves it, which is
     // the page's rather than the cap's: the cells are untouched.
     assert_eq!(mine[0].area.width, 7, "{:?}", mine[0]);
-    assert_eq!(mine[0].keys, "alt+m");
+    assert_eq!(mine[0].keys, "Alt+m");
     assert_eq!(
         mine[0].cap, DARK.raised_background,
         "the panel's own ground"

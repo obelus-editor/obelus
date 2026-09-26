@@ -13,7 +13,7 @@ screen 76x14  editor 76x12  status 76x1
 10|   ├  file05.rs                                385     355      20      10 █
 11|   ├  file06.rs                                376     346      20      10 █
 12|────────────────────────────────────────────────────────────────────────────
-13|   enter  Close                                               ctrl+k  Keys  
+13|   Enter  Close                                               Ctrl+k  Keys  
 -- style --
  0|aaaaaaaaaaaabbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

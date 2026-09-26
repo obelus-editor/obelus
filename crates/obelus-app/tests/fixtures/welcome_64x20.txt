@@ -10,11 +10,11 @@ screen 64x20  editor 64x18  status 64x1
  7|      ║ ▀█████▀ ██████▀ ███████ ███████ ▀█████▀ ▀█████▀ ║       
  8|      ╚════════════════════ v0.1.0 ═════════════════════╝       
  9|                                                                
-10|             f1 Open a file          f3 Changed files           
+10|             F1 Open a file          F3 Changed files           
 11|                                                                
-12|             f6 Search files         f4 Ask the agent           
+12|             F6 Search files         F4 Ask the agent           
 13|                                                                
-14|         ctrl+p Run a command    ctrl+q Leave Obelus            
+14|         Ctrl+p Run a command    Ctrl+q Leave Obelus            
 15|                                                                
 16|                                                                
 17|                                                                

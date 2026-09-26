@@ -448,7 +448,7 @@ mod tests {
     /// rather than for the lock: the leftover reads as somebody's.
     #[test]
     fn a_file_nobody_holds_is_not_a_claim() {
-        let root = scratch("left-behind");
+        let root = scratch1("left-behind");
         let note = ChatId::Note(NoteId::read("0123456B").expect("a name"));
         let path = directory(&root).expect("somewhere").join(note.file_name());
         std::fs::create_dir_all(path.parent().expect("a directory")).expect("the directory");

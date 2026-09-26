@@ -109,18 +109,32 @@ impl KeyChord {
     /// The same, with the glyphs asked for or refused.
     ///
     /// Takes the switch rather than reading it, so both ways of writing a
-    /// chord can be tested. With glyphs, a key that is a *word* -- `pagedown`
+    /// chord can be tested. With glyphs, a key that is a *word* -- `PageDown`
     /// is eight columns -- becomes one column, and the modifiers stop being
     /// prefixes; the arrow keys stay arrows either way, being symbols
     /// already. Every glyph is followed by a blank column, because a Nerd
     /// Font's non-`Mono` variants draw them two cells wide.
+    ///
+    /// A key that is a word is written the way keys are written everywhere
+    /// -- `Ctrl`, `F1`, `PageDown` -- and this is the *only* spelling: it
+    /// is what the screen shows and what `[keys]` in the settings file is
+    /// written in, because two spellings of one name is somewhere for them
+    /// to differ. An older file in the other case still reads: `parse`
+    /// never minded, and that is what makes the change safe.
+    ///
+    /// A letter is left exactly as it is, and that is not tidiness. **A
+    /// shifted letter is the capital** -- it is how a chord with shift on a
+    /// letter is normalised -- so `Ctrl+A` is `ctrl+shift+a` and nothing
+    /// else. Capitalising one here would name a different key on the
+    /// screen, and name it again in the file when the reader copied what
+    /// they saw.
     #[must_use]
     pub fn label_in(self, glyphs: bool) -> String {
         let mut label = String::new();
         for (modifier, name, glyph) in [
-            (KeyModifiers::CONTROL, "ctrl", obelus_icons::key::CONTROL),
-            (KeyModifiers::ALT, "alt", obelus_icons::key::ALT),
-            (KeyModifiers::SHIFT, "shift", obelus_icons::key::SHIFT),
+            (KeyModifiers::CONTROL, "Ctrl", obelus_icons::key::CONTROL),
+            (KeyModifiers::ALT, "Alt", obelus_icons::key::ALT),
+            (KeyModifiers::SHIFT, "Shift", obelus_icons::key::SHIFT),
         ] {
             if self.modifiers.contains(modifier) {
                 if glyphs {
@@ -134,16 +148,16 @@ impl KeyChord {
         }
 
         let named: Option<(&str, char)> = match self.code {
-            KeyCode::Char(' ') => Some(("space", obelus_icons::key::SPACE)),
-            KeyCode::Enter => Some(("enter", obelus_icons::key::ENTER)),
-            KeyCode::Esc => Some(("esc", obelus_icons::key::ESCAPE)),
-            KeyCode::Home => Some(("home", obelus_icons::key::HOME)),
-            KeyCode::End => Some(("end", obelus_icons::key::END)),
-            KeyCode::PageUp => Some(("pageup", obelus_icons::key::PAGE_UP)),
-            KeyCode::PageDown => Some(("pagedown", obelus_icons::key::PAGE_DOWN)),
-            KeyCode::Backspace => Some(("backspace", obelus_icons::key::BACKSPACE)),
-            KeyCode::Delete => Some(("delete", obelus_icons::key::DELETE)),
-            KeyCode::Tab => Some(("tab", obelus_icons::key::TAB)),
+            KeyCode::Char(' ') => Some(("Space", obelus_icons::key::SPACE)),
+            KeyCode::Enter => Some(("Enter", obelus_icons::key::ENTER)),
+            KeyCode::Esc => Some(("Esc", obelus_icons::key::ESCAPE)),
+            KeyCode::Home => Some(("Home", obelus_icons::key::HOME)),
+            KeyCode::End => Some(("End", obelus_icons::key::END)),
+            KeyCode::PageUp => Some(("PageUp", obelus_icons::key::PAGE_UP)),
+            KeyCode::PageDown => Some(("PageDown", obelus_icons::key::PAGE_DOWN)),
+            KeyCode::Backspace => Some(("Backspace", obelus_icons::key::BACKSPACE)),
+            KeyCode::Delete => Some(("Delete", obelus_icons::key::DELETE)),
+            KeyCode::Tab => Some(("Tab", obelus_icons::key::TAB)),
             _ => None,
         };
         // A function key gets its own keycap, which a patched font has one
@@ -152,7 +166,7 @@ impl KeyChord {
         if let KeyCode::F(number) = self.code {
             match obelus_icons::key::function(number).filter(|_| glyphs) {
                 Some(keycap) => label.push(keycap),
-                None => label.push_str(&format!("f{number}")),
+                None => label.push_str(&format!("F{number}")),
             }
             return label;
         }
@@ -164,7 +178,9 @@ impl KeyChord {
             (None, KeyCode::Up) => label.push('\u{2191}'),
             (None, KeyCode::Right) => label.push('\u{2192}'),
             (None, KeyCode::Down) => label.push('\u{2193}'),
-            (None, other) => label.push_str(&format!("{other:?}").to_lowercase()),
+            // `BackTab` and the rest already come out of the debug
+            // spelling the way a key is written.
+            (None, other) => label.push_str(&format!("{other:?}")),
         }
         label
     }

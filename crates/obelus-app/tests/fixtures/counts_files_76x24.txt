@@ -23,7 +23,7 @@ screen 76x24  editor 76x22  status 76x1
 20|                                                                            
 21|                                                                            
 22|────────────────────────────────────────────────────────────────────────────
-23|   enter  Open                                                ctrl+k  Keys  
+23|   Enter  Open                                                Ctrl+k  Keys  
 -- style --
  0|aaaaaaaaaaaabbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
