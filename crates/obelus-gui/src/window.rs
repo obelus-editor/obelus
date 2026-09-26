@@ -364,6 +364,9 @@ impl ApplicationHandler<Waking> for Showing {
                 return;
             }
         };
+        // Once there is a window, which is the first moment there is a
+        // display connection to adopt.
+        crate::clipboard::take(events);
         // Without this a window gets keys and nothing else, and there is
         // no way to type any language that is spelled before it is written.
         window.set_ime_allowed(true);
@@ -516,7 +519,13 @@ impl ApplicationHandler<Waking> for Showing {
                     }
                 }
             }
-            Waking::Finished => events.exit(),
+            Waking::Finished => {
+                // Before the window goes, because what Obelus is offering
+                // is offered *by* this process: the selection belongs to a
+                // live client, and in a moment there will not be one.
+                obelus_clipboard::hand_over();
+                events.exit();
+            }
         }
     }
 

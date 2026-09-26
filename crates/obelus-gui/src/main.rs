@@ -16,6 +16,7 @@
 //! arrive as themselves and the marks are compiled into the binary.
 
 mod blink;
+mod clipboard;
 mod font;
 mod grid;
 mod keys;

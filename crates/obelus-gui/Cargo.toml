@@ -17,6 +17,9 @@ workspace = true
 
 [dependencies]
 obelus-app.workspace = true
+# The window is the half of Obelus that can own a selection, which is what
+# offering several shapes of one copy takes; see `clipboard/`.
+obelus-clipboard.workspace = true
 obelus-config.workspace = true
 obelus-icons.workspace = true
 obelus-logging.workspace = true
@@ -40,6 +43,12 @@ ratatui.workspace = true
 tracing.workspace = true
 wgpu.workspace = true
 winit.workspace = true
+
+# Taking the selection rather than handing it to `wl-copy`. The same crate
+# winit already has, on purpose: a serial belongs to a connection, so the
+# clipboard has to be on the window's own.
+[target.'cfg(target_os = "linux")'.dependencies]
+wayland-client.workspace = true
 
 # Only there, and only for `GetCaretBlinkTime`: how fast a caret blinks is
 # the one thing of the three platforms that has an API rather than a

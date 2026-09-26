@@ -887,6 +887,32 @@ method, called when it says who it is and again after every change, which
 in `obg` goes down the frames channel like everything else about what is on
 the screen.
 
+Nor is the clipboard. A copy is one thing in several shapes at once -- a
+file manager's is a path, a name and a picture -- and the programs Obelus
+reaches for offer one shape per invocation: `wl-copy -t` and `xclip -t` each
+name one, and the second call replaces the first. So a copy that is words
+for everybody *and* Obelus's own shape for another Obelus has to come from a
+client that owns the selection, and owning one needs a display connection.
+The window has one; a terminal does not, and over ssh there is nothing at
+this end to connect to. `obelus_clipboard::owned_by` is where the window
+says so, and everything falls back to the programs where nobody has -- a
+compositor without the globals, a window nobody has touched yet, and `ob`.
+
+What it costs is why the programs stay. The selection belongs to a live
+client, so what Obelus owns is gone the moment Obelus is, and copy, quit,
+paste is the most ordinary thing a reader does with a copy. So the last
+thing the window does is hand the *words* to a program that will keep them
+(`hand_over`) -- the words only, because a private shape given to a program
+that knows nothing about Obelus is bytes nobody can read. And the serial is
+the other half of the same bargain: taking the selection has to be asked
+with a number the compositor gave the seat when the reader last touched
+something, which is a connection's and not a machine's -- so the clipboard
+runs on a second queue of *winit's own* connection rather than one of its
+own, where every `set_selection` would be ignored in silence. Only writing
+is Obelus's: reading somebody else's clipboard is what the programs are
+already good at, in every shape, and a second answer to that question is
+the thing this file is mostly about not having.
+
 A full-width character is two columns of the grid and one glyph, and the
 second column is a cell `ratatui` has *reset*: no text, no colours. A
 terminal never draws it, because the terminal advanced two columns itself.

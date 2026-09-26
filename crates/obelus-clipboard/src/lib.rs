@@ -49,6 +49,13 @@ static KEPT: Mutex<Option<String>> = Mutex::new(None);
 /// Which way this machine talks to its clipboard, worked out once.
 static PROVIDER: OnceLock<Provider> = OnceLock::new();
 
+/// Obelus's own hold on the clipboard, where a front end can take one.
+///
+/// Installed once, by the front end, at startup. A `OnceLock` because there
+/// is one clipboard and one front end, and a second owner would be a second
+/// answer to every question below.
+static OWNER: OnceLock<Box<dyn Owner>> = OnceLock::new();
+
 /// A provider a test asked for, which stands in front of the detected one.
 ///
 /// Its own thing rather than seeding `PROVIDER`, because a `OnceLock` can be
@@ -168,6 +175,105 @@ impl Provider {
     }
 }
 
+/// Obelus holding the clipboard itself, rather than handing it to a program.
+///
+/// Every provider above gives the text to somebody else, and that somebody
+/// offers it in one shape. A clipboard holds one thing in several shapes at
+/// once -- a file manager's copy is a path, a name and a picture -- and
+/// offering several is not something the programs can be asked for:
+/// `wl-copy -t` and `xclip -t` each name one, per invocation, and the
+/// second call replaces the first. So a copy that is words for everybody
+/// *and* Obelus's own shape for another Obelus has to come from a client
+/// that owns the selection. Which needs a display connection, and that is
+/// the window: a terminal has none, and over ssh there is nothing at this
+/// end to connect to.
+///
+/// What it costs is why it is not simply better. The selection belongs to a
+/// live client, so what Obelus owns is gone the moment Obelus is -- and
+/// copy, quit, paste is the most ordinary thing a reader does with a copy.
+/// [`hand_over`] is the other half, and the reason the programs stay.
+///
+/// Only writing. Reading somebody else's clipboard is what the programs are
+/// already good at, in every shape, and an owner that read as well would be
+/// a second answer to a question that has one.
+pub trait Owner: Send + Sync {
+    /// Takes the selection, offering each shape by the name it goes by.
+    ///
+    /// `false` where it could not, which puts the copy back on the
+    /// provider -- a compositor with no manager to bind, a window that has
+    /// never been touched and so has no serial to ask with.
+    fn offer(&self, shapes: Vec<(String, Vec<u8>)>) -> bool;
+
+    /// One shape of what Obelus is offering, where Obelus is what owns the
+    /// selection.
+    ///
+    /// `None` where somebody else owns it, which is the ordinary case: then
+    /// the question is theirs to answer and a program asks it.
+    fn holding(&self, mime: &str) -> Option<Vec<u8>>;
+
+    /// And their names, for the same reason.
+    fn holds(&self) -> Vec<String>;
+}
+
+/// The three names plain text goes by on a selection.
+///
+/// `text/plain;charset=utf-8` is what everything modern asks for;
+/// `UTF8_STRING` is X11's own name for the same bytes, which Wayland
+/// clients inherited by being ports of X11 ones; `text/plain` is the one a
+/// program that has not thought about encodings asks for, and it gets the
+/// same bytes because there is nothing else to give it.
+const WORDS: [&str; 3] = ["text/plain;charset=utf-8", "UTF8_STRING", "text/plain"];
+
+/// Obelus is this front end's to hold, from now on.
+///
+/// Called by the window once it has a display connection. Nothing calls it
+/// in a terminal, where there is no such connection to have.
+pub fn owned_by(owner: Box<dyn Owner>) {
+    if OWNER.set(owner).is_err() {
+        tracing::warn!("the clipboard already has an owner");
+    }
+}
+
+/// Whoever that is, if anybody.
+fn owner() -> Option<&'static dyn Owner> {
+    OWNER.get().map(AsRef::as_ref)
+}
+
+/// Gives what Obelus is holding to a program that will keep it, on the way
+/// out.
+///
+/// The selection belongs to a live client, so a copy made in Obelus dies
+/// with Obelus. The last thing the window does with the clipboard is
+/// therefore hand the words to `wl-copy`, which forks and goes on serving
+/// them to whatever pastes next.
+///
+/// The words only. The shapes Obelus offers for its own sake mean nothing
+/// to the program taking over, and nothing that asks for them afterwards
+/// would know what to do with the answer.
+///
+/// Not waited for, unlike an ordinary copy: this is the last moment of the
+/// process, and one of the programs (`xsel`, with `--nodetach`) stays in
+/// the foreground for as long as it holds the selection. Waiting for that
+/// one is a window that will not close.
+pub fn hand_over() {
+    let Some(owner) = owner() else { return };
+    let Some(words) = owner.holding(WORDS[0]) else {
+        return;
+    };
+    let Ok(words) = String::from_utf8(words) else {
+        return;
+    };
+    // The escape sequence is not a hand-over: it is addressed to a
+    // terminal, and what owns a selection is a window.
+    if provider().commands().is_none() {
+        tracing::info!("nothing to leave the clipboard with");
+        return;
+    }
+    if let Err(error) = to_a_program(&words, Waiting::No) {
+        tracing::warn!(%error, "handing the clipboard over");
+    }
+}
+
 /// What this machine has, asked once and remembered.
 ///
 /// The order is helix's, which is nvim's: a multiplexer first, because it is
@@ -223,6 +329,12 @@ pub fn provider() -> Provider {
 /// reads that as "text, or nothing", which is what those clipboards are.
 #[must_use]
 pub fn types() -> Vec<String> {
+    if let Some(owner) = owner() {
+        let holds = owner.holds();
+        if !holds.is_empty() {
+            return holds;
+        }
+    }
     if let Some(names) = native::types() {
         return names;
     }
@@ -257,6 +369,9 @@ pub fn types() -> Vec<String> {
 /// has [`paste`].
 #[must_use]
 pub fn paste_as(mime: &str) -> Option<Vec<u8>> {
+    if let Some(bytes) = owner().and_then(|owner| owner.holding(mime)) {
+        return Some(bytes);
+    }
     if let Some(bytes) = native::paste_as(mime) {
         return Some(bytes);
     }
@@ -361,6 +476,11 @@ fn decoded(said: &str) -> String {
 #[must_use]
 pub fn paste() -> Option<String> {
     let kept = || KEPT.lock().ok().and_then(|kept| kept.clone());
+    if let Some(words) = owner().and_then(|owner| owner.holding(WORDS[0]))
+        && let Ok(words) = String::from_utf8(words)
+    {
+        return Some(words);
+    }
     let Some((_, _, program, arguments)) = provider().commands() else {
         return kept();
     };
@@ -415,6 +535,28 @@ pub fn copy(text: &str) -> io::Result<()> {
     // Kept first and whatever happens: the case this is for is the one where
     // the provider cannot be asked for it back.
     keep(text);
+    let shapes = WORDS
+        .iter()
+        .map(|name| ((*name).to_string(), text.as_bytes().to_vec()))
+        .collect();
+    if owner().is_some_and(|owner| owner.offer(shapes)) {
+        return Ok(());
+    }
+    to_a_program(text, Waiting::Yes)
+}
+
+/// Whether a copy waits for the program it handed the text to.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Waiting {
+    /// An ordinary copy: until it has taken the text it has not got it, and
+    /// a program left running is a program still holding a pipe.
+    Yes,
+    /// A hand-over on the way out; see [`hand_over`].
+    No,
+}
+
+/// The half of a copy that is somebody else's program, or the terminal.
+fn to_a_program(text: &str, waiting: Waiting) -> io::Result<()> {
     let Some((program, arguments, _, _)) = provider().commands() else {
         return write_to(&mut io::stdout().lock(), text);
     };
@@ -427,10 +569,10 @@ pub fn copy(text: &str) -> io::Result<()> {
     if let Some(stdin) = child.stdin.as_mut() {
         io::Write::write_all(stdin, text.as_bytes())?;
     }
-    // Waited for, because until it has taken the text it has not got it --
-    // and because a program left running is a program still holding a pipe.
     drop(child.stdin.take());
-    child.wait()?;
+    if waiting == Waiting::Yes {
+        child.wait()?;
+    }
     Ok(())
 }
 
