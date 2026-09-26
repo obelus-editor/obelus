@@ -73,21 +73,11 @@
         <a class="button" href="https://github.com/sunli829/obelus">GitHub</a>
       </div>
 
-      <div class="screen" aria-hidden="true">
-        <div class="screen-rows">
-          <div class="row"><span class="ln">12</span><span class="mk"></span><span class="src"><span class="c">// 每一次改动都从这一扇门走。</span></span></div>
-          <div class="row"><span class="ln">13</span><span class="mk"></span><span class="src"><span class="k">pub fn</span> <span class="fn">change</span>(root: <span class="k">&amp;</span><span class="ty">Path</span>) -&gt; <span class="ty">Result</span>&lt;<span class="ty">Todo</span>&gt; {</span></div>
-          <div class="row touched"><span class="ln">14</span><span class="mk"></span><span class="src">    <span class="k">let</span> <span class="ty">Some</span>(held) = claim(root) <span class="k">else</span> {</span></div>
-          <div class="row touched"><span class="ln">15</span><span class="mk"></span><span class="src">        <span class="k">return</span> read(root);</span></div>
-          <div class="row"><span class="ln">16</span><span class="mk"></span><span class="src">    };</span></div>
-          <div class="row fold"><span class="ln">⋯</span><span class="mk"></span><span class="src"><span class="c">折起了 12 行</span></span></div>
-          <div class="row"><span class="ln">29</span><span class="mk"></span><span class="src">}</span></div>
-          <div class="row note"><span class="ln"></span><span class="mk"></span><span class="src"><span class="ob">÷</span> <span class="c">另开一个窗口对一下这里</span></span></div>
-          <span class="sb"></span>
-        </div>
-        <div class="screen-bar"><span>todo.rs</span><span>3 处改动 &nbsp;·&nbsp; 14:9</span></div>
-      </div>
-      <p class="caption">一屏的示意，不是截图：真正的屏幕用的是你自己的主题，边栏上的标记来自 git。</p>
+      <figure class="shot">
+        <img class="dark" src="../screen-dark.png" width="1500" height="1084" alt="Obelus 正在读一个 Rust 源文件。第 59 行改过，它下面就地展开了这一处 hunk，显示上一次提交里这行是什么样子；文件里其余的改动标在滚动条旁边，状态行写着文件名、语言服务器和光标位置。">
+        <img class="light" src="../screen-light.png" width="1500" height="1084" alt="同一屏，Obelus 的浅色主题。">
+        <figcaption class="caption"><code>obg</code> 在读它自己的源码。第 59 行改过，<kbd>Alt+d</kbd> 把这一处 hunk 就地展开，把上一次提交里的那行放在替换它的那行上面；滚动条旁边的标记是这个文件其余的改动。用的是 Obelus 内置的 <code>dark</code> 和 <code>light</code>，跟着本页当前的主题。</figcaption>
+      </figure>
     </div>
 
     <section id="why">
@@ -95,7 +85,7 @@
 
       <p><strong>说实话：它首先是写给我自己用的。</strong>每一个取舍先回答的是「我用着顺不顺手」，而不是「会不会有人因为缺某个功能而不用」。</p>
 
-      <p>vim 那套用法我一直不习惯。模式、<code>hjkl</code>、冒号命令——它们对习惯的人来说是肌肉记忆，对我来说是每次进终端都要重新想一遍的东西。我想要的是：<em>打开就能读</em>，方向键就是方向键，<kbd>ctrl+c</kbd> 就是复制，不用先按 <kbd>esc</kbd> 想一想自己在哪个模式里。</p>
+      <p>vim 那套用法我一直不习惯。模式、<code>hjkl</code>、冒号命令——它们对习惯的人来说是肌肉记忆，对我来说是每次进终端都要重新想一遍的东西。我想要的是：<em>打开就能读</em>，方向键就是方向键，<kbd>Ctrl+c</kbd> 就是复制，不用先按 <kbd>Esc</kbd> 想一想自己在哪个模式里。</p>
 
       <p>另一半原因是这几年读代码的方式真的变了。AI 写走了很多行，我坐在终端前面做的事越来越偏向「读、确认、标出存疑的地方、问一下 agent」，而不是「敲」。终端里好用的编辑器不少，但它们都是<em>编辑器</em>：功能表按编辑器的清单展开——多光标、宏、补全、片段。我要的东西在另一条线上：语法树、git 的时间线、语言服务器，以及和 agent 的对话——全部围着「读」这一件事组织。</p>
 
@@ -114,6 +104,7 @@
         <li><span>一个仓库的几个 worktree 共用一份笔记，两个窗口同时记不会互相抹掉</span><a class="where" href="#many">多窗口 ›</a></li>
         <li><span>同一个文件不止一种读法，也不止一种语言</span><a class="where" href="#what">它能做什么 ›</a></li>
         <li><span>没有模式，键就是你在图形编辑器里已经会的那套</span><a class="where" href="#keys">按键 ›</a></li>
+        <li><span>同一个 reader，跑在终端里或跑在自己的窗口里，后者收得到终端发不出的键</span><a class="where" href="#what">它能做什么 ›</a></li>
       </ul>
     </section>
 
@@ -134,7 +125,7 @@
           <span class="no">02</span>
           <div>
             <p class="claim">不用先学一门方言。</p>
-            <p class="why">没有模式。方向键就是方向键，<kbd>ctrl+c</kbd> 就是复制，<kbd>ctrl+z</kbd> 就是撤销。你在图形编辑器里已经会的那套手感，在这里直接能用。</p>
+            <p class="why">没有模式。方向键就是方向键，<kbd>Ctrl+c</kbd> 就是复制，<kbd>Ctrl+z</kbd> 就是撤销。你在图形编辑器里已经会的那套手感，在这里直接能用。</p>
           </div>
         </li>
         <li>
@@ -169,9 +160,9 @@
           <h4>读一个文件</h4>
           <ul>
             <li>语法高亮，15 门语言</li>
-            <li>行号边栏、软换行、折叠（<kbd>alt+f</kbd>）</li>
+            <li>行号边栏、软换行、折叠（<kbd>Alt+f</kbd>）</li>
             <li>长行折行按 Unicode 的断行规则：中文按字断，英文单词不会被拦腰切开；续行保持缩进，只有第一行有行号</li>
-                        <li>同一个文件不止一种读法：markdown 排成文章（<kbd>ctrl+t</kbd>）、日志排成列——按内容判断，不是按文件名</li>
+                        <li>同一个文件不止一种读法：markdown 排成文章（<kbd>Ctrl+t</kbd>）、日志排成列——按内容判断，不是按文件名</li>
             <li>同一个文件也不止一种语言：markdown 里的代码块、HTML 里的脚本，各按各自的语言上色</li>
           </ul>
         </div>
@@ -181,7 +172,7 @@
           <ul>
             <li>边栏标出改了哪些行，和 <code>git diff</code> 说的是同一件事</li>
             <li>滚动条内侧是整份文件的改动地图</li>
-            <li><kbd>alt+d</kbd> 就地展开 / 收起一个 hunk，<kbd>alt+p</kbd> / <kbd>alt+n</kbd> 在改动之间走</li>
+            <li><kbd>Alt+d</kbd> 就地展开 / 收起一个 hunk，<kbd>Alt+p</kbd> / <kbd>Alt+n</kbd> 在改动之间走</li>
             <li>边栏显示这一行最后是谁改的（可关）</li>
             <li>文件的历史 <kbd>F9</kbd>、项目的历史 <kbd>F10</kbd>、这一行是哪个提交写的 <kbd>F11</kbd>；提交信息悬在文件上方，远端还没见过的提交有标记</li>
             <li>只读：Obelus 不碰你的仓库，也不替你跑 git</li>
@@ -192,11 +183,22 @@
           <h4>语言服务器</h4>
           <ul>
             <li>定义 <kbd>F12</kbd>、大纲 <kbd>F7</kbd>、符号搜索 <kbd>F8</kbd></li>
-            <li><kbd>alt+enter</kbd> 打开关于光标下这个名字的菜单：类型定义、实现、引用、调用关系</li>
-            <li><kbd>alt+h</kbd> 悬停说明；鼠标停一会儿也行（时长可调，0 为关）</li>
-            <li>诊断：全部 <kbd>alt+e</kbd>，上一个 / 下一个 <kbd>alt+[</kbd> <kbd>alt+]</kbd></li>
-            <li>重命名 <kbd>alt+r</kbd>，code action <kbd>alt+a</kbd>，inlay hints（可关：关掉之后屏幕上的列就和文件里一模一样）</li>
+            <li><kbd>Alt+Enter</kbd> 打开关于光标下这个名字的菜单：类型定义、实现、引用、调用关系</li>
+            <li><kbd>Alt+h</kbd> 悬停说明；鼠标停一会儿也行（时长可调，0 为关）</li>
+            <li>诊断：全部 <kbd>Alt+e</kbd>，上一个 / 下一个 <kbd>Alt+[</kbd> <kbd>Alt+]</kbd>——而且诊断不只来自服务器：Obelus 自己读不懂的文件，会标在它读不懂的那一行上</li>
+            <li>重命名 <kbd>Alt+r</kbd>，code action <kbd>Alt+a</kbd>，inlay hints（可关：关掉之后屏幕上的列就和文件里一模一样）</li>
             <li>Obelus 认得的服务器：rust-analyzer、gopls、clangd、pylsp、typescript-language-server、bash-language-server、CSS / HTML / YAML</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h4>在终端里，或者在窗口里</h4>
+          <ul>
+            <li><code>ob</code> 是终端，<code>obg</code> 是窗口——gvim 之于 vim 的那种关系，不是第二个程序：同一套网格、同一套视图、同一套键</li>
+            <li>窗口是为了终端给不了的两件事。终端分不出 <kbd>Ctrl+i</kbd> 和 <kbd>Tab</kbd>、<kbd>Ctrl+m</kbd> 和 <kbd>Enter</kbd>、<kbd>Ctrl+[</kbd> 和 <kbd>Esc</kbd>——各自都只有一个字节——而 <kbd>Ctrl+Shift+X</kbd> 大多数终端干脆什么都不发</li>
+            <li>而且它用自己带的字体画，不用赌你装了哪一套：字形编译在二进制里，所以没有方框，也没有开关要找</li>
+            <li>它自己画像素，所以光标的形状会说出下一个键要干什么，光标和列表是移过去而不是跳过去，输入法正在拼的字也会先画在页面上</li>
+            <li>设置项会声明自己在哪边有效：<code>fonts</code>、<code>font_size</code>、<code>animation</code> 在终端里没有意义，<code>icons</code> 在窗口里没有意义，所以设置页只列当下有效的那些——而<em>文件</em>把它们全部留着，因为它们是留给这台机器上另一个 Obelus 的</li>
           </ul>
         </div>
 
@@ -206,7 +208,7 @@
             <li>一个界面，三个半径：本文件 <kbd>F5</kbd>、整个项目 <kbd>F6</kbd>、符号 <kbd>F8</kbd></li>
             <li>文件、已打开的文档、主题、命令：四个列表，用法完全一样</li>
             <li>结果还在陆续出现的时候，列表不会自己跳动，并且会说自己「还在读」</li>
-            <li><kbd>alt+←</kbd> / <kbd>alt+→</kbd> 回到跳转之前的位置，以及再跳回来</li>
+            <li><kbd>Alt+←</kbd> / <kbd>Alt+→</kbd> 回到跳转之前的位置，以及再跳回来</li>
           </ul>
         </div>
 
@@ -226,12 +228,15 @@ cd obelus
 # 装到 ~/.cargo/bin，命令叫 ob
 cargo install --path crates/obelus-cli
 
-# 或者只构建，二进制在 target/release/ob
+# 装成 `obg`：同一个 reader，跑在自己的窗口里
+cargo install --path crates/obelus-gui
+
+# 或者只构建：target/release/ob 和 target/release/obg
 cargo build --release</code></pre>
 
       <p>可选，但装了更好用：</p>
       <ul>
-        <li>一套 <strong>Nerd Font</strong> 补丁字体——文件名旁边、状态栏上的字形要靠它。没有的话在设置里把 <code>icons</code> 关掉，屏幕上就不会出现方框。</li>
+        <li>一套 <strong>Nerd Font</strong> 补丁字体——文件名旁边、状态栏上的字形要靠它，这是终端里的事。默认就是关的，所以没装也不会出现方框。<code>obg</code> 不需要：这些字形编译在它的二进制里。</li>
         <li>你这门语言的 <strong>language server</strong>（Rust 就是 <code>rust-analyzer</code>）。没装也能读，只是没有定义跳转、诊断和大纲。</li>
         <li>一个说 <strong>ACP</strong> 的 agent。Obelus 自己能从注册表里装，见下面。</li>
       </ul>
@@ -239,17 +244,18 @@ cargo build --release</code></pre>
       <h3>跑起来</h3>
       <pre><code>ob                   # 什么都不给：在当前目录打开欢迎页
 ob src/main.rs       # 读一个文件——它所在的那个仓库就是项目
-ob ../another-repo   # 给一个目录：它就是项目</code></pre>
+ob ../another-repo   # 给一个目录：它就是项目
+obg src/main.rs      # 同一个文件，改在窗口里读</code></pre>
 
       <h3>头五分钟</h3>
       <ol>
-        <li><kbd>F1</kbd> 打开文件。输入就是筛选，<kbd>↑</kbd><kbd>↓</kbd> 选，<kbd>enter</kbd> 确认，<kbd>esc</kbd> 取消。</li>
-        <li>不知道某个视图有哪些键？按 <kbd>F1</kbd>。底下那行只列<em>当下能用的</em>，<kbd>F1</kbd> 弹出全部（用不了的会灰掉）。</li>
-        <li><kbd>ctrl+p</kbd> 是命令面板：记不住键的，都能按名字找到。</li>
-        <li>把光标放到一个改动上按 <kbd>alt+d</kbd>：这个 hunk 会<em>就地</em>展开，改之前是什么样就写在那儿。</li>
-        <li>看到一行可疑的，<kbd>alt+t</kbd>，写一句。它记在这个项目的笔记里，下次 <code>todo</code> 还能找回来。</li>
-        <li><kbd>ctrl+p</kbd> → <code>open-settings</code> 调颜色、换行、tab 宽度这些；<code>choose-theme</code> 换主题。</li>
-        <li><kbd>ctrl+q</kbd> 走人。</li>
+        <li><kbd>F1</kbd> 打开文件。输入就是筛选，<kbd>↑</kbd><kbd>↓</kbd> 选，<kbd>Enter</kbd> 确认，<kbd>Esc</kbd> 取消。</li>
+        <li>不知道某个视图有哪些键？按 <kbd>Ctrl+k</kbd>。底下那行只列<em>当下能用的</em>，<kbd>Ctrl+k</kbd> 弹出全部（用不了的会灰掉）。</li>
+        <li><kbd>Ctrl+p</kbd> 是命令面板：记不住键的，都能按名字找到。</li>
+        <li>把光标放到一个改动上按 <kbd>Alt+d</kbd>：这个 hunk 会<em>就地</em>展开，改之前是什么样就写在那儿。</li>
+        <li>看到一行可疑的，<kbd>Alt+t</kbd>，写一句。它记在这个项目的笔记里，下次 <code>todo</code> 还能找回来。</li>
+        <li><kbd>Ctrl+p</kbd> → <code>open-settings</code> 调颜色、换行、tab 宽度这些；<code>choose-theme</code> 换主题。</li>
+        <li><kbd>Ctrl+q</kbd> 走人。</li>
       </ol>
     </section>
 
@@ -272,7 +278,7 @@ ob ../another-repo   # 给一个目录：它就是项目</code></pre>
           <tr><td><kbd>F1</kbd></td><td><code>open-file</code></td><td>在这棵树里挑一个文件打开（在弹出的视图里，<kbd>F1</kbd> 是「列出所有键」）</td></tr>
           <tr><td><kbd>F2</kbd></td><td><code>switch-document</code></td><td>在已经打开的文档之间挑</td></tr>
           <tr><td><kbd>F3</kbd></td><td><code>open-changed-file</code></td><td>挑一个自上次提交以来改过的文件</td></tr>
-          <tr><td><kbd>F4</kbd></td><td><code>talk-to-agent</code></td><td>和 agent 说话</td></tr>
+          <tr><td><kbd>F4</kbd></td><td><code>talk-to-agent</code></td><td>和 agent 说话——在一个对话里按，则是 <code>choose-conversation</code>：挑一个以前的对话接着说</td></tr>
           <tr><td><kbd>F5</kbd></td><td><code>search-file</code></td><td>在正在读的这个文件里搜</td></tr>
           <tr><td><kbd>F6</kbd></td><td><code>search-project</code></td><td>在整个项目里搜</td></tr>
           <tr><td><kbd>F7</kbd></td><td><code>show-outline</code></td><td>这个文件定义的每个符号</td></tr>
@@ -285,7 +291,7 @@ ob ../another-repo   # 给一个目录：它就是项目</code></pre>
       </table>
       </div>
 
-      <h3><span class="mono">ctrl</span> ：对眼前这个文件做点什么</h3>
+      <h3><span class="mono">Ctrl</span> ：对眼前这个文件做点什么</h3>
       <div class="table-wrap">
       <table>
         <thead><tr>
@@ -294,22 +300,22 @@ ob ../another-repo   # 给一个目录：它就是项目</code></pre>
           <th><span>做什么</span></th>
         </tr></thead>
         <tbody>
-          <tr><td><kbd>ctrl+p</kbd></td><td><code>run-command</code></td><td>命令面板</td></tr>
-          <tr><td><kbd>ctrl+w</kbd></td><td><code>close-document</code></td><td>不再显示当前文档</td></tr>
-          <tr><td><kbd>ctrl+s</kbd></td><td><code>save-file</code></td><td>写回磁盘</td></tr>
-          <tr><td><kbd>ctrl+r</kbd></td><td><code>reload-file</code></td><td>从磁盘重读</td></tr>
-          <tr><td><kbd>ctrl+t</kbd></td><td><code>toggle-preview</code></td><td>把 markdown 渲染出来看，或者不看</td></tr>
-          <tr><td><kbd>ctrl+l</kbd></td><td><code>go-to-line</code></td><td>跳到某一行</td></tr>
-          <tr><td><kbd>ctrl+c</kbd> <kbd>ctrl+x</kbd> <kbd>ctrl+v</kbd></td><td><code>copy-selection</code> <code>cut-selection</code> <code>paste</code></td><td>复制、剪切、粘贴（走系统剪贴板）</td></tr>
-          <tr><td><kbd>ctrl+z</kbd> <kbd>ctrl+y</kbd></td><td><code>undo</code> <code>redo</code></td><td>撤销、重做</td></tr>
-          <tr><td><kbd>ctrl+a</kbd></td><td><code>select-all</code></td><td>全选</td></tr>
-          <tr><td><kbd>ctrl+/</kbd></td><td><code>toggle-comment</code></td><td>注释掉这一行 / 这几行，或者把注释去掉</td></tr>
-          <tr><td><kbd>ctrl+q</kbd></td><td><code>quit</code></td><td>离开</td></tr>
+          <tr><td><kbd>Ctrl+p</kbd></td><td><code>run-command</code></td><td>命令面板</td></tr>
+          <tr><td><kbd>Ctrl+w</kbd></td><td><code>close-document</code></td><td>不再显示当前文档</td></tr>
+          <tr><td><kbd>Ctrl+s</kbd></td><td><code>save-file</code></td><td>写回磁盘</td></tr>
+          <tr><td><kbd>Ctrl+r</kbd></td><td><code>reload-file</code></td><td>从磁盘重读</td></tr>
+          <tr><td><kbd>Ctrl+t</kbd></td><td><code>toggle-preview</code></td><td>把 markdown 渲染出来看，或者不看</td></tr>
+          <tr><td><kbd>Ctrl+l</kbd></td><td><code>go-to-line</code></td><td>跳到某一行</td></tr>
+          <tr><td><kbd>Ctrl+c</kbd> <kbd>Ctrl+x</kbd> <kbd>Ctrl+v</kbd></td><td><code>copy-selection</code> <code>cut-selection</code> <code>paste</code></td><td>复制、剪切、粘贴（走系统剪贴板）。<kbd>Ctrl+Insert</kbd> 也是复制、<kbd>Shift+Insert</kbd> 也是粘贴：桌面自己那套复制粘贴的键，送到窗口是一对、送到它认作终端的东西是另一对，而 Obelus 两边都会被当成</td></tr>
+          <tr><td><kbd>Ctrl+z</kbd> <kbd>Ctrl+y</kbd></td><td><code>undo</code> <code>redo</code></td><td>撤销、重做</td></tr>
+          <tr><td><kbd>Ctrl+a</kbd></td><td><code>select-all</code></td><td>全选</td></tr>
+          <tr><td><kbd>Ctrl+/</kbd></td><td><code>toggle-comment</code></td><td>注释掉这一行 / 这几行，或者把注释去掉</td></tr>
+          <tr><td><kbd>Ctrl+q</kbd></td><td><code>quit</code></td><td>离开</td></tr>
         </tbody>
       </table>
       </div>
 
-      <h3><span class="mono">alt</span> ：问光标底下是什么，或者在找到的东西之间走</h3>
+      <h3><span class="mono">Alt</span> ：问光标底下是什么，或者在找到的东西之间走</h3>
       <div class="table-wrap">
       <table>
         <thead><tr>
@@ -318,34 +324,37 @@ ob ../another-repo   # 给一个目录：它就是项目</code></pre>
           <th><span>做什么</span></th>
         </tr></thead>
         <tbody>
-          <tr><td><kbd>alt+enter</kbd></td><td><code>ask-about-symbol</code></td><td>关于这个符号，语言服务器都能说什么</td></tr>
-          <tr><td><kbd>alt+h</kbd></td><td><code>describe-symbol</code></td><td>光标处是什么</td></tr>
-          <tr><td><kbd>alt+a</kbd></td><td><code>do-something-here</code></td><td>服务器对这里提供的修改（code actions）</td></tr>
-          <tr><td><kbd>alt+r</kbd></td><td><code>rename-symbol</code></td><td>把这个符号到处改名</td></tr>
-          <tr><td><kbd>alt+e</kbd></td><td><code>show-problems</code></td><td>这个文件里所有服务器认为有问题的地方</td></tr>
-          <tr><td><kbd>alt+[</kbd> <kbd>alt+]</kbd></td><td><code>go-to-previous-problem</code> <code>go-to-next-problem</code></td><td>上一个 / 下一个问题</td></tr>
-          <tr><td><kbd>alt+d</kbd></td><td><code>show-change</code></td><td>就地展开 / 收起这里的改动</td></tr>
-          <tr><td><kbd>alt+p</kbd> <kbd>alt+n</kbd></td><td><code>go-to-previous-change</code> <code>go-to-next-change</code></td><td>上一个 / 下一个改动</td></tr>
-          <tr><td><kbd>alt+f</kbd></td><td><code>fold</code></td><td>折叠光标所在的这一段，或展开它</td></tr>
-          <tr><td><kbd>alt+m</kbd></td><td><code>go-to-bracket</code></td><td>跳到配对的括号</td></tr>
-          <tr><td><kbd>alt+w</kbd></td><td><code>widen-selection</code></td><td>把选区扩大：先是词，然后是包着它的那层</td></tr>
-          <tr><td><kbd>alt+c</kbd></td><td><code>toggle-comment</code></td><td>同 <kbd>ctrl+/</kbd></td></tr>
-          <tr><td><kbd>alt+↑</kbd> <kbd>alt+↓</kbd></td><td><code>move-line-up</code> <code>move-line-down</code></td><td>把这一行（或选中的几行）上移 / 下移</td></tr>
-          <tr><td><kbd>alt+←</kbd> <kbd>alt+→</kbd></td><td><code>go-back</code> <code>go-forward</code></td><td>回到跳转之前的位置；以及再跳回来</td></tr>
-          <tr><td><kbd>alt+t</kbd></td><td><code>todo-add</code></td><td>就着这一行写一条笔记（在对话里则是打开笔记）</td></tr>
+          <tr><td><kbd>Alt+Enter</kbd></td><td><code>ask-about-symbol</code></td><td>关于这个符号，语言服务器都能说什么</td></tr>
+          <tr><td><kbd>Alt+h</kbd></td><td><code>describe-symbol</code></td><td>光标处是什么</td></tr>
+          <tr><td><kbd>Alt+a</kbd></td><td><code>do-something-here</code></td><td>服务器对这里提供的修改（code actions）</td></tr>
+          <tr><td><kbd>Alt+r</kbd></td><td><code>rename-symbol</code></td><td>把这个符号到处改名</td></tr>
+          <tr><td><kbd>Alt+e</kbd></td><td><code>show-problems</code></td><td>这个文件里所有服务器认为有问题的地方</td></tr>
+          <tr><td><kbd>Alt+[</kbd> <kbd>Alt+]</kbd></td><td><code>go-to-previous-problem</code> <code>go-to-next-problem</code></td><td>上一个 / 下一个问题</td></tr>
+          <tr><td><kbd>Alt+d</kbd></td><td><code>show-change</code></td><td>就地展开 / 收起这里的改动</td></tr>
+          <tr><td><kbd>Alt+p</kbd> <kbd>Alt+n</kbd></td><td><code>go-to-previous-change</code> <code>go-to-next-change</code></td><td>上一个 / 下一个改动</td></tr>
+          <tr><td><kbd>Alt+f</kbd></td><td><code>fold</code></td><td>折叠光标所在的这一段，或展开它</td></tr>
+          <tr><td><kbd>Alt+m</kbd></td><td><code>go-to-bracket</code></td><td>跳到配对的括号</td></tr>
+          <tr><td><kbd>Alt+w</kbd></td><td><code>widen-selection</code></td><td>把选区扩大：先是词，然后是包着它的那层</td></tr>
+          <tr><td><kbd>Alt+c</kbd></td><td><code>toggle-comment</code></td><td>同 <kbd>Ctrl+/</kbd></td></tr>
+          <tr><td><kbd>Alt+↑</kbd> <kbd>Alt+↓</kbd></td><td><code>move-line-up</code> <code>move-line-down</code></td><td>把这一行（或选中的几行）上移 / 下移</td></tr>
+          <tr><td><kbd>Alt+←</kbd> <kbd>Alt+→</kbd></td><td><code>go-back</code> <code>go-forward</code></td><td>回到跳转之前的位置；以及再跳回来</td></tr>
+          <tr><td><kbd>Alt+t</kbd></td><td><code>todo-add</code></td><td>就着这一行写一条笔记（在对话里则是打开笔记）</td></tr>
         </tbody>
       </table>
       </div>
+
+      <h3>还有一个键，在三族之外</h3>
+      <p class="quiet small"><kbd>Insert</kbd> 是 <code>toggle-replace</code>：把光标底下那个字符顶掉，而不是插在它前面。不带修饰键，也不属于上面三族，因为凡是有这个键的键盘，它就叫这个名字。光标会换形状来说这件事——方块压在一个字符上，意思是下一个键会顶掉它——状态行同时还写出 <code>Replacing</code> 这个词，因为终端的光标是终端的，形状那一半只有窗口画得出来。</p>
 
       <h3>移动，和列表里</h3>
-      <p>移动不是命令，所以它不在上面那些表里：方向键、<kbd>PageUp</kbd>/<kbd>PageDown</kbd>、<kbd>Home</kbd>/<kbd>End</kbd>（行首行尾）、<kbd>ctrl+Home</kbd>/<kbd>ctrl+End</kbd>（文件两端）。上下是按<em>视觉行</em>走的，所以换行之后它仍然是你看到的那一行。<kbd>shift</kbd> 从不命名任何命令，它只做一件事：扩展选区。</p>
-      <p>列表里（任何一个 picker、设置页、统计页、笔记页）：打字就是筛选，<kbd>↑</kbd><kbd>↓</kbd> 选，<kbd>PageUp</kbd>/<kbd>PageDown</kbd> 快速翻，<kbd>Home</kbd>/<kbd>End</kbd> 到两端，<kbd>enter</kbd> 作用于光标所在那一行，<kbd>esc</kbd> 取消，<kbd>F1</kbd> 列出全部的键。</p>
+      <p>移动不是命令，所以它不在上面那些表里：方向键、<kbd>PageUp</kbd>/<kbd>PageDown</kbd>、<kbd>Home</kbd>/<kbd>End</kbd>（行首行尾）、<kbd>Ctrl+Home</kbd>/<kbd>Ctrl+End</kbd>（文件两端）。上下是按<em>视觉行</em>走的，所以换行之后它仍然是你看到的那一行。<kbd>Shift</kbd> 从不命名任何命令，它只做一件事：扩展选区。</p>
+      <p>列表里（任何一个 picker、设置页、统计页、笔记页）：打字就是筛选，<kbd>↑</kbd><kbd>↓</kbd> 选，<kbd>PageUp</kbd>/<kbd>PageDown</kbd> 快速翻，<kbd>Home</kbd>/<kbd>End</kbd> 到两端，<kbd>Enter</kbd> 作用于光标所在那一行，<kbd>Esc</kbd> 取消，<kbd>F1</kbd> 列出全部的键。</p>
     </section>
 
     <section id="commands">
       <h2><span class="num">07</span><span>命令</span></h2>
 
-      <p>按 <kbd>ctrl+p</kbd>，按名字找。名字都是动词开头，面板上分成六个标签页，大致是一个上午的顺序：打开点什么 → 在里面找路 → 问它是什么意思 → 改 → 看看自己改了什么 → 最后是 Obelus 自己的杂务。</p>
+      <p>按 <kbd>Ctrl+p</kbd>，按名字找。名字都是动词开头，面板上分成六个标签页，大致是一个上午的顺序：打开点什么 → 在里面找路 → 问它是什么意思 → 改 → 看看自己改了什么 → 最后是 Obelus 自己的杂务。</p>
 
       <div class="table-wrap">
       <table>
@@ -368,7 +377,7 @@ ob ../another-repo   # 给一个目录：它就是项目</code></pre>
           </tr>
           <tr>
             <td>Edit</td>
-            <td><code>copy-selection</code> <code>cut-selection</code> <code>paste</code> <code>undo</code> <code>redo</code> <code>select-all</code> <code>widen-selection</code> <code>clear-selection</code> <code>move-line-up</code> <code>move-line-down</code> <code>toggle-comment</code></td>
+            <td><code>copy-selection</code> <code>cut-selection</code> <code>paste</code> <code>undo</code> <code>redo</code> <code>select-all</code> <code>widen-selection</code> <code>clear-selection</code> <code>move-line-up</code> <code>move-line-down</code> <code>toggle-comment</code> <code>toggle-replace</code></td>
           </tr>
           <tr>
             <td>Git</td>
@@ -376,7 +385,7 @@ ob ../another-repo   # 给一个目录：它就是项目</code></pre>
           </tr>
           <tr>
             <td>Obelus</td>
-            <td><code>choose-theme</code> <code>talk-to-agent</code> <code>open-settings</code> <code>open-project-settings</code> <code>open-settings-file</code> <code>open-log</code> <code>open-server-log</code> <code>restart-server</code> <code>stop-server</code> <code>quit</code></td>
+            <td><code>choose-theme</code> <code>talk-to-agent</code> <code>choose-conversation</code> <code>open-settings</code> <code>open-project-settings</code> <code>open-settings-file</code> <code>open-log</code> <code>open-server-log</code> <code>restart-server</code> <code>stop-server</code> <code>quit</code></td>
           </tr>
         </tbody>
       </table>
@@ -392,18 +401,20 @@ ob ../another-repo   # 给一个目录：它就是项目</code></pre>
       <table>
         <thead><tr><th><span>文件</span></th><th><span>是谁的</span></th></tr></thead>
         <tbody>
-          <tr><td><code>~/.config/obelus/config.toml</code></td><td>你自己的。<code>ctrl+p</code> → <code>open-settings</code> 改任何一项都会立刻写回这里</td></tr>
+          <tr><td><code>~/.config/obelus/config.toml</code></td><td>你自己的。<code>Ctrl+p</code> → <code>open-settings</code> 改任何一项都会立刻写回这里</td></tr>
           <tr><td><code>&lt;项目&gt;/.obelus/config.toml</code></td><td>这个项目的，盖在你的上面——但只盖它有权盖的那些项</td></tr>
         </tbody>
       </table>
       </div>
-      <p class="quiet small">文件不在、读不了、或者里面写错了，三种情况是同一个意思：用默认值。配置里有个笔误，你该得到的是一个照常开起来的 Obelus，而不是在本该是阅读器的地方得到一条错误信息。</p>
+      <p class="quiet small">文件不在，就是用默认值；里面有一行 Obelus 不认识，也是用默认值——配置里有个笔误，你该得到的是一个照常开起来的 Obelus，而不是在本该是阅读器的地方得到一条错误信息。只有一种情况不一样：文件<em>读不出来</em>。那时 Obelus 不再往这个文件里写，而不是拿它没见过的设置去覆盖你写的东西；它会说出来，并且在文件能解析的那一刻自己恢复。</p>
+      <p class="quiet small">而且它会说清楚是<em>哪一行</em>。配置文件解析不了、某个键绑不上、某一项项目无权设、主题名字没有文件对应——每一条都标在它自己那一行上，进的是语言服务器的诊断同一个列表，所以 <kbd>Alt+e</kbd> 和 <kbd>Alt+[</kbd> <kbd>Alt+]</kbd> 照常能走它们。文件是 Obelus 写的，那它就得说得出自己哪一行读不懂。</p>
 
       <div class="aside">
         <p><strong>项目不能设的三项：</strong><code>agent</code>、<code>keys</code>、<code>agents</code>。一个下载来的项目不该决定你的机器上启动哪个程序；能改键的项目也就能把 <code>quit</code> 挪到你会误触的地方；而「agent 不用问就能做什么」正是一个陌生项目最想写的那一项。</p>
       </div>
 
       <h3>能设的项</h3>
+      <p class="quiet small">其中几项只属于某一边。设置页只列在你当下这一边有效的那些——一行你改得动、改完却什么都不发生，只会教给你一件不真的事——而<em>文件</em>把它们全部留着，因为它们是留给这台机器上另一个 Obelus 的。</p>
       <div class="table-wrap">
       <table>
         <thead><tr>
@@ -413,10 +424,13 @@ ob ../another-repo   # 给一个目录：它就是项目</code></pre>
         </tr></thead>
         <tbody>
           <tr><td><code>theme</code></td><td><code>"dark"</code></td><td>Obelus 用哪套颜色画</td></tr>
-          <tr><td><code>icons</code></td><td><code>true</code></td><td>画不画 Nerd Font 字形（没有补丁字体的终端会画成方框）</td></tr>
+          <tr><td><code>icons</code></td><td><code>false</code></td><td><em>只在终端。</em>画不画 Nerd Font 字形——没有补丁字体的终端会画成方框。<code>obg</code> 的字形编译在二进制里，所以它从不问这一项</td></tr>
           <tr><td><code>wrap</code></td><td><code>false</code></td><td>长行是否折到下一行。默认关，好让一行就是一行</td></tr>
           <tr><td><code>blame_margin</code></td><td><code>true</code></td><td>边栏说不说这一行最后是谁改的</td></tr>
-          <tr><td><code>tab_width</code></td><td><code>4</code></td><td>一个 tab 画多宽</td></tr>
+          <tr><td><code>tab_width</code></td><td><code>4</code></td><td>一个 tab 画多宽。<code>2</code>、<code>4</code> 或 <code>8</code></td></tr>
+          <tr><td><code>fonts</code></td><td><code>[]</code></td><td><em>只在窗口。</em>用哪几套字体画，按你写的顺序，前一套没有这个字符才轮到后一套。留空表示「这台机器认的等宽字体」——问的是系统，不是文字引擎</td></tr>
+          <tr><td><code>animation</code></td><td><code>true</code></td><td><em>只在窗口。</em>光标是飞到目的地、列表是滑过去，还是直接跳过去。关掉，一切一步到位</td></tr>
+          <tr><td><code>font_size</code></td><td><code>14</code></td><td><em>只在窗口。</em>字画多大，单位 point。终端用的是你给终端设的字体</td></tr>
           <tr><td><code>hover_delay</code></td><td><code>400</code></td><td>鼠标停多久才去问那个词是什么，毫秒；0 表示只有按键才问</td></tr>
           <tr><td><code>format_on_save</code></td><td><code>false</code></td><td>保存前让语言服务器排一遍版。默认关：没人要求就跑格式化，等于把一个只是打开来读的文件改了，而且第一次知道是在 diff 里</td></tr>
           <tr><td><code>code_actions_on_save</code></td><td><code>false</code></td><td>保存前做服务器提供的整文件修改（排 import 之类）。默认关，理由同上</td></tr>
@@ -428,14 +442,14 @@ ob ../another-repo   # 给一个目录：它就是项目</code></pre>
       </div>
 
       <h3>改键</h3>
-      <p>写的是<em>改动</em>，不是整张表：你动了一个键，其余没说的仍然拿默认——以后 Obelus 加了新键，你也照样拿得到。空字符串表示「把这个键拿掉」，这也是一种决定。命令的名字就是上面那些。</p>
+      <p>写的是<em>改动</em>，不是整张表：你动了一个键，其余没说的仍然拿默认——以后 Obelus 加了新键，你也照样拿得到。空字符串表示「把这个键拿掉」，这也是一种决定。命令的名字就是上面那些；键的写法和屏幕上看到的一致——读的时候不区分大小写，所以在它们改成大写之前写的配置照样能用。</p>
       <pre><code>theme = "light"
 wrap = true
 blame_margin = false
 
 [keys]
-open-file = "ctrl+o"
-show-change = "alt+g"
+open-file = "Ctrl+o"
+show-change = "Alt+g"
 quit = ""            # 把这个绑定拿掉</code></pre>
 
       <h3>主题</h3>
@@ -448,7 +462,7 @@ quit = ""            # 把这个绑定拿掉</code></pre>
 
       <blockquote><p><em>obelus</em> 是学者在手稿边上标「此处存疑」的那个记号。笔记就是把那个记号写下来。</p></blockquote>
 
-      <p>读到一半按 <kbd>alt+t</kbd>，笔记页打开，第一条就已经就着光标那一行起好了头；命令 <code>todo</code> 打开全部。这一页<em>一直在被写</em>：打开时光标就在里面，敲一个字母就是一个字母，<kbd>enter</kbd> 起下一条，<kbd>shift+enter</kbd> 在同一条里换行。把一条笔记<em>当笔记</em>来操作的键都在 <kbd>alt</kbd> 底下：打勾、跳到它说的那一行、挪位置、拿掉。底下那行列着当下能用的键，<kbd>F1</kbd> 给全部。</p>
+      <p>读到一半按 <kbd>Alt+t</kbd>，笔记页打开，第一条就已经就着光标那一行起好了头；命令 <code>todo</code> 打开全部。这一页<em>一直在被写</em>：打开时光标就在里面，敲一个字母就是一个字母，<kbd>Enter</kbd> 起下一条，<kbd>Shift+Enter</kbd> 在同一条里换行。把一条笔记<em>当笔记</em>来操作的键都在 <kbd>Alt</kbd> 底下：打勾、跳到它说的那一行、挪位置、拿掉。底下那行列着当下能用的键，<kbd>F1</kbd> 给全部。</p>
 
       <p>一条笔记可以是关于某一行的，也可以是关于整个项目的，两者都很正常：「这个缓存是错的」属于某一行，「把统计页接到搜索上」属于整个项目。它指着哪儿，写在它下面单独的一行；什么都没写的笔记不会被留下。笔记可以挂在另一条底下，缩进就是层级。</p>
 
@@ -465,10 +479,10 @@ quit = ""            # 把这个绑定拿掉</code></pre>
       <p>Obelus 不实现任何人的模型，它只和你已经有的那个说话——用 <strong>ACP</strong>（Agent Client Protocol），和语言服务器一样的形状：另一个程序，走它自己的标准输入输出。</p>
 
       <h4>装一个</h4>
-      <p>哪些 agent 存在不是 Obelus 说了算。协议的作者维护着一份注册表，Obelus 读它：四十来条，每条有名字、版本、说明和安装方式。<code>ctrl+p</code> → <code>talk-to-agent</code>（或 <kbd>F4</kbd>），在 agents 页里挑一个装。能画图的终端会直接显示每个 agent 自己的 logo，不能的显示一个字形。同一时刻只有一个 agent：两个就意味着每次提问都要先说「问哪个」，而你得记住这件事。</p>
+      <p>哪些 agent 存在不是 Obelus 说了算。协议的作者维护着一份注册表，Obelus 读它：四十来条，每条有名字、版本、说明和安装方式。<code>Ctrl+p</code> → <code>talk-to-agent</code>（或 <kbd>F4</kbd>），在 agents 页里挑一个装。能画图的终端会直接显示每个 agent 自己的 logo，不能的显示一个字形。同一时刻只有一个 agent：两个就意味着每次提问都要先说「问哪个」，而你得记住这件事。</p>
 
       <h4>对话是一份文档</h4>
-      <p>它就在 <kbd>F2</kbd> 的那份列表里。走开是「去了别处」，不是「关掉了」——回来的时候，说过的话都还在。<kbd>enter</kbd> 发送，<kbd>alt+enter</kbd>（终端支持的话 <kbd>shift+enter</kbd> 也行）换行。状态栏那一行是这个 agent 自己声明的会话选项——模式、模型、推理强度之类——就地走、就地改；<kbd>shift+tab</kbd> 一直是反着走的那一个。Obelus 一个字也不翻译：哪些选项存在是 agent 的事。</p>
+      <p>它就在 <kbd>F2</kbd> 的那份列表里。走开是「去了别处」，不是「关掉了」——回来的时候，说过的话都还在。<kbd>Enter</kbd> 发送，<kbd>Alt+Enter</kbd>（终端支持的话 <kbd>Shift+Enter</kbd> 也行）换行。状态栏那一行是这个 agent 自己声明的会话选项——模式、模型、推理强度之类——就地走、就地改；<kbd>Shift+Tab</kbd> 一直是反着走的那一个。Obelus 一个字也不翻译：哪些选项存在是 agent 的事。</p>
 
       <h4>一场对话属于一条笔记</h4>
       <p>用 <kbd>F4</kbd> 开的对话不关于任何特定的事；从一条笔记开的，就是关于那条笔记的——而且一直是：明天回来，对话还在你离开的地方，因为说过的话由 agent 自己重放，Obelus 只需要记住哪个对话是关于哪条笔记的。</p>
@@ -476,7 +490,7 @@ quit = ""            # 把这个绑定拿掉</code></pre>
       <p>在你说第一句话之前，Obelus 还会先说清楚它在跟谁说话：这个人正在终端里读代码，你说的话会落在他正读的文件旁边；凡是该由他决定的事，用提问的方式问，而不要在回复里写成 <code>1) … 2) …</code>——那样到他那里只是一段文字，屏幕上没有任何东西表示这是在等一个回答。</p>
 
       <h4>它问你的时候</h4>
-      <p>问题是一张卡片，不是一个选择列表。卡片上方是它<em>要做什么</em>——那个工具调用本身，就画在对话里它该在的位置——下面是答案。走过某一行不等于选中它：输入框在答案下面，任何走到输入框的路都会经过它们，如果焦点走到哪儿就答到哪儿，那你路过时就把问题答了。<kbd>enter</kbd> 作用于你所在的那一行，这就是全部的规则。</p>
+      <p>问题是一张卡片，不是一个选择列表。卡片上方是它<em>要做什么</em>——那个工具调用本身，就画在对话里它该在的位置——下面是答案。走过某一行不等于选中它：输入框在答案下面，任何走到输入框的路都会经过它们，如果焦点走到哪儿就答到哪儿，那你路过时就把问题答了。<kbd>Enter</kbd> 作用于你所在的那一行，这就是全部的规则。</p>
 
       <h4>它想改文件的时候</h4>
       <p>已经改完的：那就是工作区和上一次提交的差别，去文件里看——对话里只是一行 <code>+12 -4</code>。还没改、正在<em>请求</em>你同意的：那些行既不在文件里也不在上一次提交里，所以它们画在对话里，就画在那次调用底下，敞着；而且事后也留在那儿——这就是你以后翻回去确认「我当初同意了什么」的地方。画法和文件里展开的 hunk 一模一样，因为它们说的是同一件事。</p>
