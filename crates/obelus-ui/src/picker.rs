@@ -503,6 +503,12 @@ impl Widget for PickerView<'_> {
             crate::scrollbar(cells, list, first, matched, self.theme);
         }
 
+        // Where this list has got to, for a front end that can draw it
+        // arriving rather than simply being there.
+        if let Ok(top) = i64::try_from(first) {
+            crate::shapes::scrolled(rows, top);
+        }
+
         let selected = self.picker.selected();
         for (row, (index, item)) in self
             .picker

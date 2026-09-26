@@ -87,6 +87,21 @@ pub trait Shapes: Send + Sync {
     /// -- is the pane saying something and stays opaque. The view knows
     /// which; a front end counting colours would be guessing.
     fn behind(&self, area: Rect, ground: Color, cells: &[Cell]);
+
+    /// This band shows a list of things starting at `top`.
+    ///
+    /// A number to be *compared*, not read: what a front end does with it
+    /// is subtract the one it was given last time, and what that says is
+    /// how many rows the band moved. Which is the only way it can be
+    /// known -- a band that scrolled and a band whose every row changed
+    /// are the same handful of differing cells, and nothing in them says
+    /// which happened.
+    ///
+    /// Absolute rather than a difference, so that a frame drawn twice
+    /// says the same thing twice and means it: a difference would have to
+    /// be consumed, and a redraw nobody asked for would replay a scroll
+    /// that already happened.
+    fn scrolled(&self, area: Rect, top: i64);
 }
 
 /// Who is drawing, where it is somebody who wants to be told.
@@ -122,6 +137,13 @@ pub(crate) fn behind(area: Rect, ground: Color, cells: &CellBuffer) {
         }
     }
     shapes.behind(room, ground, &under);
+}
+
+/// Tells whoever is drawing where a band of rows has got to.
+pub(crate) fn scrolled(area: Rect, top: i64) {
+    if let Some(shapes) = DRAWING.get() {
+        shapes.scrolled(area, top);
+    }
 }
 
 /// Tells whoever is drawing that a cap is here.

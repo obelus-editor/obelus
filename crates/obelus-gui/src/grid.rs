@@ -110,6 +110,13 @@ pub(crate) enum Update {
         /// What draws its outline.
         edge: Color,
     },
+    /// A band of rows, and which row of its list it starts at.
+    Scrolled {
+        /// Which cells it is.
+        area: Rect,
+        /// The row of the list its first row holds.
+        top: i64,
+    },
     /// What is behind a pane, in the frame being laid out.
     ///
     /// The whole region, not a diff: it is said in the moment between the
@@ -139,6 +146,10 @@ pub(crate) struct Said<'a> {
     pub(crate) capped: &'a [Capped],
     /// And what is under the pane, where there is one.
     pub(crate) behind: Option<&'a Behind>,
+    /// The band of rows that is catching up, and the page as it was
+    /// before it moved -- which is the only place the rows that have
+    /// scrolled off still exist.
+    pub(crate) band: Option<(Rect, &'a Page)>,
 }
 
 /// What is behind the pane on the frame being drawn.
@@ -250,6 +261,10 @@ impl Capped {
 }
 
 impl obelus_ui::shapes::Shapes for Marking {
+    fn scrolled(&self, area: Rect, top: i64) {
+        let _ = self.updates.send(Update::Scrolled { area, top });
+    }
+
     fn behind(&self, area: Rect, ground: Color, cells: &[Cell]) {
         let _ = self.updates.send(Update::Behind {
             area,
@@ -532,7 +547,7 @@ impl Backend for Cells {
 /// arrives as the handful of cells that changed, and a redraw with nothing
 /// changed at all -- a window uncovered, a monitor waking -- has to be able
 /// to draw the same screen again without asking Obelus for it.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct Page {
     columns: u16,
     rows: u16,
@@ -687,7 +702,9 @@ impl Page {
             // Nor are these: they are what a run of cells *is* and what
             // was under one, and the window takes both out of the queue
             // with the marks.
-            Update::Capped { area, .. } | Update::Behind { area, .. } => {
+            Update::Capped { area, .. }
+            | Update::Behind { area, .. }
+            | Update::Scrolled { area, .. } => {
                 tracing::warn!(?area, "a cap reached the page");
                 false
             }

@@ -50,6 +50,14 @@ const GLIDE: Duration = Duration::from_millis(70);
 /// an animation must not make a key feel.
 const SLIDE: Duration = Duration::from_millis(190);
 
+/// How long a band takes to catch up with where it has got to.
+///
+/// Shorter than a pane arriving and longer than the caret's flight. What
+/// it is measured against is the next press: a reader holding an arrow key
+/// sends one every thirty milliseconds or so, and a catch-up that outlived
+/// two of them would be a list that never stops sliding.
+const CATCH_UP: Duration = Duration::from_millis(110);
+
 /// When the window wants the loop back.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Wake {
@@ -65,6 +73,14 @@ pub(crate) enum Wake {
 pub(crate) struct Moving {
     /// Whether the caret is drawn at this moment.
     pub(crate) caret: bool,
+    /// How many rows behind where it has got to a band is drawn, and how
+    /// far it has to come altogether -- or `None` for a band that is
+    /// where it belongs.
+    ///
+    /// Both, because the rows it has not caught up to yet are on no page
+    /// but the one it scrolled off, and how far back in that page they
+    /// are is the difference between the two.
+    pub(crate) scroll: Option<(f32, f32)>,
     /// How far along a pane is on its way in, from nothing at all to
     /// arrived, or `None` for a pane that is simply there.
     ///
@@ -155,6 +171,58 @@ impl Glide {
             return false;
         }
         if now.duration_since(self.started) >= GLIDE {
+            self.from = None;
+        }
+        true
+    }
+}
+
+/// A band of rows catching up with where its list has got to.
+///
+/// The same shape as the caret's flight and for the same reasons: it is
+/// measured from where it is going, it carries on from where it is being
+/// drawn rather than from where it set out, and it is over when the time
+/// is up.
+#[derive(Debug)]
+struct Scrolling {
+    /// How many rows behind it was when this began, or `None` for a band
+    /// that has caught up.
+    from: Option<f32>,
+    /// When it began.
+    started: Instant,
+}
+
+impl Scrolling {
+    /// Whether it is still catching up.
+    fn moving(&self, now: Instant) -> bool {
+        self.from.is_some() && now.duration_since(self.started) < CATCH_UP
+    }
+
+    /// How many rows behind it is drawn at this moment.
+    fn behind(&self, now: Instant) -> Option<f32> {
+        let from = self.from?;
+        let gone = now.duration_since(self.started).as_secs_f32() / CATCH_UP.as_secs_f32();
+        if gone >= 1.0 {
+            return None;
+        }
+        Some(from * (1.0 - gone).powi(3))
+    }
+
+    /// The list has got somewhere else.
+    fn moved(&mut self, rows: f32, now: Instant) {
+        // From where it is being drawn, so that a held-down arrow key is
+        // one slide and not a stutter -- the caret's rule, on a band.
+        let behind = self.behind(now).unwrap_or(0.0);
+        self.from = Some(rows + behind);
+        self.started = now;
+    }
+
+    /// Moves it on, and says whether what is drawn changed.
+    fn settle(&mut self, now: Instant) -> bool {
+        if self.from.is_none() {
+            return false;
+        }
+        if !self.moving(now) {
             self.from = None;
         }
         true
@@ -279,6 +347,7 @@ pub(crate) struct Motion {
     blink: Blinking,
     caret: Glide,
     pane: Sliding,
+    band: Scrolling,
 }
 
 impl Motion {
@@ -294,6 +363,10 @@ impl Motion {
             },
             caret: Glide::resting(),
             pane: Sliding { opened: None },
+            band: Scrolling {
+                from: None,
+                started: now,
+            },
         }
     }
 
@@ -323,6 +396,14 @@ impl Motion {
         }
     }
 
+    /// A band of rows is showing a different part of its list.
+    ///
+    /// `rows` is how far it moved: positive where the list went down,
+    /// which is the band's content going up.
+    pub(crate) fn band_moved(&mut self, rows: f32, now: Instant) {
+        self.band.moved(rows, now);
+    }
+
     /// A pane opened over the page.
     ///
     /// Only the opening: a pane that is closed leaves nothing to draw, and
@@ -345,9 +426,10 @@ impl Motion {
     /// them would stop asking at the first that said yes.
     pub(crate) fn advance(&mut self, now: Instant, caret: bool) -> bool {
         let flew = self.caret.settle(now);
+        let caught = self.band.settle(now);
         let slid = self.pane.settle(now);
         let blinked = self.blink.advance(now, caret);
-        flew || slid || blinked
+        flew || caught || slid || blinked
     }
 
     /// When the window wants the loop back, or `None` for nothing moving.
@@ -355,7 +437,7 @@ impl Motion {
     /// A rate beats a moment: something in flight wants every frame, and a
     /// blink that is also due will be seen on one of them.
     pub(crate) fn wake(&self, now: Instant, caret: bool) -> Option<Wake> {
-        match self.caret.moving(now) || self.pane.moving(now) {
+        match self.caret.moving(now) || self.pane.moving(now) || self.band.moving(now) {
             true => Some(Wake::EveryFrame),
             false => self.blink.wake(now, caret),
         }
@@ -370,6 +452,7 @@ impl Motion {
             caret: self.blink.lit || self.caret.moving(now),
             drift: self.caret.drift(now),
             pane: self.pane.along(now),
+            scroll: self.band.behind(now).zip(self.band.from),
         }
     }
 }
@@ -548,6 +631,53 @@ mod tests {
         motion.pane_shut();
         assert_eq!(motion.moving(base).pane, None);
         assert_eq!(motion.wake(base, true), None);
+    }
+
+    /// Break: answer the distance still to come from `Scrolling::behind`
+    /// without the easing, and a list crawls at one speed and stops dead
+    /// instead of settling.
+    #[test]
+    fn a_band_catches_up_with_where_its_list_has_got_to() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        assert_eq!(motion.moving(base).scroll, None, "nothing has moved");
+        motion.band_moved(3.0, base);
+        assert_eq!(motion.moving(base).scroll, Some((3.0, 3.0)));
+        let (behind, moved) = motion
+            .moving(base + CATCH_UP / 2)
+            .scroll
+            .expect("still catching up");
+        assert_eq!(moved, 3.0, "how far it has to come does not change");
+        assert!(behind > 0.0 && behind < 3.0, "{behind}");
+        assert_eq!(motion.moving(base + CATCH_UP).scroll, None);
+    }
+
+    /// Break: set `from` in `Scrolling::moved` to the rows alone, leaving
+    /// out how far behind it already is, and a held-down arrow key snaps
+    /// the list back to where it was on every repeat.
+    #[test]
+    fn a_band_that_moves_again_carries_on_from_where_it_is() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        motion.band_moved(3.0, base);
+        let midway = base + CATCH_UP / 2;
+        let (behind, _) = motion.moving(midway).scroll.expect("on its way");
+        motion.band_moved(3.0, midway);
+        let (again, moved) = motion.moving(midway).scroll.expect("on its way again");
+        assert!((again - (3.0 + behind)).abs() < 0.001, "{again} {behind}");
+        assert!((moved - again).abs() < 0.001, "it sets out from there");
+    }
+
+    /// Break: leave the band out of `Motion::wake` and a list slides at
+    /// whatever rate the blink happens to want.
+    #[test]
+    fn a_band_catching_up_asks_for_every_frame() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        assert_eq!(motion.wake(base, true), None);
+        motion.band_moved(2.0, base);
+        assert_eq!(motion.wake(base, true), Some(Wake::EveryFrame));
+        assert_eq!(motion.wake(base + CATCH_UP, true), None);
     }
 
     /// Break: give a caret the system says should not blink one anyway,

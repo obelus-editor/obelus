@@ -17,7 +17,10 @@ use bytemuck::{Pod, Zeroable};
 use cosmic_text::{CacheKey, SwashContent};
 use obelus_app::app::Caret;
 use obelus_ui::image::{Palette, SLOT};
-use ratatui::style::{Color, Modifier};
+use ratatui::{
+    layout::Rect,
+    style::{Color, Modifier},
+};
 use winit::window::Window;
 
 use crate::{
@@ -589,7 +592,10 @@ impl Painter {
         // its way in -- see `paint.wgsl`.
         let drawn = self.quads.len();
         if let (Some(pane), Some(along)) = (pane, moving.pane) {
-            self.composing(pane, along);
+            let height = pane[3] - pane[1];
+            self.composing(pane, along, -(1.0 - along) * height * TRAVEL);
+        } else if let (Some((room, before)), Some((behind, moved))) = (said.band, moving.scroll) {
+            self.catching_up(room, before, behind, moved, fonts);
         }
 
         #[expect(
@@ -843,6 +849,58 @@ impl Painter {
         });
     }
 
+    /// A band of rows drawn behind where its list has got to.
+    ///
+    /// The same two quads a pane arrives on, and one thing before them.
+    /// What the band shows while it catches up is partly on the frame that
+    /// has just been drawn -- taken from it lower down, which is the band
+    /// showing what it showed a moment ago -- and partly on no frame at
+    /// all: the rows the list scrolled *past* are not on the new page, and
+    /// the only place they exist is the page it scrolled off. So that page
+    /// is drawn first, where those rows have got to, and what covers it is
+    /// the band itself wherever the new frame has something to say.
+    fn catching_up(
+        &mut self,
+        room: Rect,
+        before: &Page,
+        behind: f32,
+        moved: f32,
+        fonts: &mut Fonts,
+    ) {
+        let cell = fonts.cell();
+        // Where the page it scrolled off has got to, which is further back
+        // than the band by however much of the move is already done.
+        let offset = (behind - moved) * cell.height;
+        for y in room.top()..room.bottom() {
+            for x in room.left()..room.right() {
+                let look = before.look(x, y);
+                let left = f32::from(x) * cell.width;
+                let top = f32::from(y).mul_add(cell.height, offset);
+                self.block(
+                    left,
+                    top,
+                    cell.width,
+                    cell.height,
+                    rgba(look.background, Ink::Background),
+                );
+                if !look.text.trim().is_empty() {
+                    let ink = rgba(look.foreground, Ink::Foreground);
+                    self.glyphs_at(left, top, look, ink, fonts);
+                }
+            }
+        }
+        self.composing(
+            [
+                f32::from(room.x) * cell.width,
+                f32::from(room.y) * cell.height,
+                f32::from(room.right()) * cell.width,
+                f32::from(room.bottom()) * cell.height,
+            ],
+            1.0,
+            behind * cell.height,
+        );
+    }
+
     /// The two quads that put a frame back on the screen with the pane in
     /// it moved.
     ///
@@ -851,7 +909,7 @@ impl Painter {
     /// it stands; the other is the pane, taken from higher up in it. What
     /// shows where the pane has not reached is the page, which was drawn
     /// on the screen before either of them.
-    fn composing(&mut self, pane: [f32; 4], along: f32) {
+    fn composing(&mut self, pane: [f32; 4], along: f32, shift: f32) {
         #[expect(
             clippy::cast_precision_loss,
             reason = "a window is thousands of pixels, not millions"
@@ -873,7 +931,7 @@ impl Painter {
             // Above where it will end, by less the further along it is.
             colour: [0.0, 0.0, 0.0, along],
             flags: SLID,
-            radius: -(1.0 - along) * (low - top) * TRAVEL,
+            radius: shift,
             padding: [0; 2],
         });
     }

@@ -35,6 +35,8 @@ struct Heard(Mutex<Vec<Said>>);
 impl obelus_ui::shapes::Shapes for Heard {
     fn behind(&self, _area: Rect, _ground: Color, _cells: &[ratatui::buffer::Cell]) {}
 
+    fn scrolled(&self, _area: Rect, _top: i64) {}
+
     fn capped(&self, keys: &str, area: Rect, cap: Color, page: Color, edge: Color) {
         if let Ok(mut said) = self.0.lock() {
             said.push(Said {

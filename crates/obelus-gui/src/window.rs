@@ -32,6 +32,7 @@ use obelus_app::{
     app::{self, App},
     event::{Event, Pointer},
 };
+use ratatui::layout::Rect;
 use winit::{
     application::ApplicationHandler,
     dpi::{LogicalSize, PhysicalPosition, PhysicalSize},
@@ -118,6 +119,19 @@ struct Showing {
     capped: Vec<Capped>,
     /// The ones the frame being laid out has asked for so far.
     capping: Vec<Capped>,
+    /// Which band of rows is a list, and how far down it the band has
+    /// got, on the frame being shown.
+    scrolled: Option<(Rect, i64)>,
+    /// And on the frame being laid out.
+    scrolling: Option<(Rect, i64)>,
+    /// The page as it was before the frame being shown.
+    ///
+    /// Kept only while there is a band that could move, and for one
+    /// reason: the rows a list has scrolled past are not on the new page
+    /// at all, and a band catching up has to draw them. History, which is
+    /// what it is for -- not a stand-in for anything that is still going
+    /// on.
+    before: Option<Page>,
     /// What is under the pane on the frame being shown, where there is
     /// one.
     behind: Option<Behind>,
@@ -175,6 +189,9 @@ impl Showing {
             marking: Vec::new(),
             capped: Vec::new(),
             capping: Vec::new(),
+            scrolled: None,
+            scrolling: None,
+            before: None,
             behind: None,
             behinding: None,
             // The blink is asked once, on the way up: it is a question
@@ -458,6 +475,10 @@ impl ApplicationHandler<Waking> for Showing {
                 // screens the reader is never meant to see.
                 let was = self.page.caret();
                 let had_a_pane = self.behind.is_some();
+                let was_at = self.scrolled;
+                // Kept only where a band could move, because that is the
+                // only thing it is for.
+                let before = was_at.map(|_| self.page.clone());
                 let mut drew = false;
                 let mut sized = None;
                 let mut faces = None;
@@ -494,6 +515,9 @@ impl ApplicationHandler<Waking> for Showing {
                                 cells,
                             });
                         }
+                        Update::Scrolled { area, top } => {
+                            self.scrolling = Some((area, top));
+                        }
                         Update::Capped {
                             keys,
                             area,
@@ -514,6 +538,7 @@ impl ApplicationHandler<Waking> for Showing {
                             self.marked = std::mem::take(&mut self.marking);
                             self.capped = std::mem::take(&mut self.capping);
                             self.behind = self.behinding.take();
+                            self.scrolled = self.scrolling.take();
                             drew = true;
                         }
                         cells => drew |= self.page.apply(cells),
@@ -538,6 +563,30 @@ impl ApplicationHandler<Waking> for Showing {
                     (false, true) => self.motion.pane_opened(Instant::now()),
                     (true, false) => self.motion.pane_shut(),
                     _ => {}
+                }
+                // A band that moved is the same band showing a different
+                // part of its list. The same band, because a list that was
+                // replaced by another one in the same place has not
+                // scrolled -- it has been swapped, and sliding between two
+                // unrelated lists would say they were one.
+                // And no further than the band is tall. A list that
+                // moved by more than a screenful did not scroll -- it went
+                // somewhere else, and sliding the distance would be a
+                // second of rows nobody is reading. It is also the one
+                // bound that makes the drawing possible: the rows it left
+                // behind exist on one page, and that page is a screenful.
+                if let (Some((room, before_top)), Some((now_room, top))) = (was_at, self.scrolled)
+                    && room == now_room
+                    && top != before_top
+                    && top.abs_diff(before_top) <= u64::from(room.height)
+                {
+                    #[expect(
+                        clippy::cast_precision_loss,
+                        reason = "a list is rows, and a scroll is a few of them"
+                    )]
+                    self.motion
+                        .band_moved((top - before_top) as f32, Instant::now());
+                    self.before = before;
                 }
                 if let Some(names) = faces {
                     // Which faces text is drawn in decides how wide a cell
@@ -631,6 +680,10 @@ impl ApplicationHandler<Waking> for Showing {
                         marked: &self.marked,
                         capped: &self.capped,
                         behind: self.behind.as_ref(),
+                        band: self
+                            .scrolled
+                            .zip(self.before.as_ref())
+                            .map(|((room, _), before)| (room, before)),
                     },
                 ) {
                     tracing::error!(?error, "the frame was not drawn");
