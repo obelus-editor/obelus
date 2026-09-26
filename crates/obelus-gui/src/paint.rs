@@ -596,7 +596,7 @@ impl Painter {
             };
             self.composing(pane, along, away * (1.0 - along) * height * TRAVEL);
         } else if let (Some(_), Some((behind, since))) = (said.band, moving.scroll) {
-            self.catching_up(page, said, behind, since, fonts);
+            self.catching_up(said, behind, since, fonts);
         }
 
         #[expect(
@@ -860,14 +860,7 @@ impl Painter {
     /// the only place they exist is the page it scrolled off. So that page
     /// is drawn first, where those rows have got to, and what covers it is
     /// the band itself wherever the new frame has something to say.
-    fn catching_up(
-        &mut self,
-        page: &Page,
-        said: Said<'_>,
-        behind: f32,
-        since: f32,
-        fonts: &mut Fonts,
-    ) {
+    fn catching_up(&mut self, said: Said<'_>, behind: f32, since: f32, fonts: &mut Fonts) {
         let Some((room, before)) = said.band else {
             return;
         };
@@ -906,48 +899,26 @@ impl Painter {
 
         // And the bar, which is not in the band and does not stand still
         // either: its mark belongs where the band is being *drawn*, which
-        // is its own share of the same distance behind. Drawn from the
-        // page as it is rather than out of the picture, because a column
-        // of cells is a handful of quads and the sliver it leaves at one
-        // end is the bar drawn where it belongs -- a track, and the same
-        // colour all the way down.
+        // is its own share of the same distance behind.
+        //
+        // Taken out of the same picture and not redrawn from the page,
+        // which is what this did first and what made the column flicker:
+        // a bar inside a pane sits on glass, and the cells it is made of
+        // carry the pane's own colour -- painted back as cells, that
+        // colour goes down opaque over what the reader was seeing
+        // through. Out of the picture it is whatever it was, glass
+        // included, moved.
         if let Some((room, to_come)) = said.bar {
-            let shift = mark_behind(to_come, behind, since) * cell.height;
-            // Kept inside the bar's own rows. The mark moves a share of
-            // the band's distance, and over a page that share is rows
-            // rather than a fraction of one -- unclipped, the far end of
-            // the column went over the row above the region and the foot
-            // below it, which is a bar drawn across somebody else's
-            // writing for as long as the slide lasted.
-            //
-            // What the sliver it leaves at the other end shows is the bar
-            // where the frame drew it, which is track: the mark has moved
-            // away from that end, because that is the end it came from.
-            let (first, last) = (
-                f32::from(room.top()) * cell.height,
-                f32::from(room.bottom()) * cell.height,
+            self.slid(
+                [
+                    f32::from(room.x) * cell.width,
+                    f32::from(room.y) * cell.height,
+                    f32::from(room.right()) * cell.width,
+                    f32::from(room.bottom()) * cell.height,
+                ],
+                mark_behind(to_come, behind, since) * cell.height,
+                1.0,
             );
-            for y in room.top()..room.bottom() {
-                let top = f32::from(y).mul_add(cell.height, shift);
-                if top + cell.height <= first || top >= last {
-                    continue;
-                }
-                for x in room.left()..room.right() {
-                    let look = page.look(x, y);
-                    let left = f32::from(x) * cell.width;
-                    self.block(
-                        left,
-                        top,
-                        cell.width,
-                        cell.height,
-                        rgba(look.background, Ink::Background),
-                    );
-                    if !look.text.trim().is_empty() {
-                        let ink = rgba(look.foreground, Ink::Foreground);
-                        self.glyphs_at(left, top, look, ink, fonts);
-                    }
-                }
-            }
         }
     }
 
@@ -975,11 +946,22 @@ impl Painter {
             radius: 0.0,
             padding: [0; 2],
         });
+        self.slid([left, top, far, low], shift, along);
+    }
+
+    /// One region of the frame that has just been drawn, put back
+    /// somewhere other than where it stands.
+    ///
+    /// `shift` is how far, in pixels, and what is under it where the
+    /// region runs out is whatever was drawn there before -- the page for
+    /// a pane that has not arrived, the frame's own copy for a bar whose
+    /// mark has moved on.
+    fn slid(&mut self, box_: [f32; 4], shift: f32, fade: f32) {
+        let [left, top, far, low] = box_;
         self.quads.push(Quad {
             rect: [left, top, (far - left).max(1.0), (low - top).max(1.0)],
-            uv: room,
-            // Above where it will end, by less the further along it is.
-            colour: [0.0, 0.0, 0.0, along],
+            uv: box_,
+            colour: [0.0, 0.0, 0.0, fade],
             flags: SLID,
             radius: shift,
             padding: [0; 2],
