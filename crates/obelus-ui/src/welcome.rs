@@ -10,8 +10,9 @@
 //! directory is on it because the file picker only ever searches that one
 //! project, which is worth knowing before pressing the key that opens it.
 
+use crossterm::event::{KeyCode, KeyModifiers};
 use obelus_command::Command;
-use obelus_editing::keymap::Keymap;
+use obelus_editing::keymap::{KeyChord, Keymap};
 use obelus_theme::Theme;
 use ratatui::{
     buffer::Buffer as CellBuffer,
@@ -72,6 +73,9 @@ const AMISS_WIDTH: u16 = 64;
 /// block is the screen rather than a note under the way in -- and the list
 /// is a list, reachable by name, where there is room for all of them.
 const AMISS_ROWS: usize = 6;
+
+/// The same, for the window that decides which of them are on screen.
+const AMISS_ROWS_U16: u16 = 6;
 
 /// The gap between a key and what it opens.
 ///
@@ -172,6 +176,9 @@ pub struct WelcomeView<'a> {
     /// What went wrong on the way up. Empty on almost every start, and
     /// then the block is not there at all.
     went_wrong: Vec<crate::WentWrong>,
+    /// Which of them the reader is on, and which are on screen.
+    at: usize,
+    showing: std::ops::Range<usize>,
     theme: &'a Theme,
     /// Which build this is, for the plate's edge.
     built: &'a str,
@@ -190,6 +197,8 @@ impl<'a> WelcomeView<'a> {
         Self {
             keymap: app.keymap(),
             went_wrong: app.went_wrong(),
+            at: app.went_wrong_at(),
+            showing: app.went_wrong_showing(AMISS_ROWS_U16),
             theme: app.theme(),
             built: app.built(),
             phase: app.phase(),
@@ -292,7 +301,11 @@ impl WelcomeView<'_> {
         let rows = self.went_wrong.len().min(AMISS_ROWS);
         match rows {
             0 => 0,
-            rows => u16::try_from(rows).unwrap_or(0) + 2,
+            // The heading and a blank above the rows, and a blank and the
+            // foot below them: a reader has to be told the key is there
+            // before they press it, which is the rule the palette follows
+            // for a command it will not run.
+            rows => u16::try_from(rows).unwrap_or(0) + 4,
         }
     }
 
@@ -313,11 +326,36 @@ impl WelcomeView<'_> {
             "What went wrong starting up",
             Style::new().fg(self.theme.syntax.warning),
         );
-        for (at, row) in self.went_wrong.iter().take(AMISS_ROWS).enumerate() {
-            let Ok(offset) = u16::try_from(at) else {
+        let showing = self.showing.start..self.showing.end.min(self.went_wrong.len());
+        for (offset, at) in showing.clone().enumerate() {
+            let Some(row) = self.went_wrong.get(at) else {
                 continue;
             };
-            self.amiss_row(cells, left, top + 2 + offset, width, row);
+            let Ok(offset) = u16::try_from(offset) else {
+                continue;
+            };
+            self.amiss_row(cells, left, top + 2 + offset, width, row, at == self.at);
+        }
+
+        // What the key on the row does, and only where it does anything:
+        // a row with nowhere to go is one the reader is told about by the
+        // foot going quiet rather than by pressing and getting nothing.
+        let goes = self
+            .went_wrong
+            .get(self.at)
+            .is_some_and(|row| row.at.is_some());
+        if goes {
+            let Ok(under) = u16::try_from(showing.len()) else {
+                return;
+            };
+            let enter = KeyChord::new(KeyCode::Enter, KeyModifiers::NONE).label();
+            write(
+                cells,
+                left + 1,
+                top + 3 + under,
+                &format!("{enter}  Go to it"),
+                Style::new().fg(self.theme.gutter),
+            );
         }
     }
 
@@ -329,7 +367,26 @@ impl WelcomeView<'_> {
         y: u16,
         width: u16,
         row: &crate::WentWrong,
+        here: bool,
     ) {
+        // The one mark for "the keys are here", the same one every list,
+        // page and card in Obelus puts behind the row the reader is on.
+        let ink = Style::new().fg(self.theme.foreground);
+        let ink = match here {
+            true => ink.bg(self.theme.selected_row_background),
+            false => ink,
+        };
+        if here {
+            for column in 0..width {
+                put(
+                    cells,
+                    left + column,
+                    y,
+                    ' ',
+                    Style::new().bg(self.theme.selected_row_background),
+                );
+            }
+        }
         let tail = row.at.as_ref().map(|(path, line)| {
             let name = path.file_name().map_or_else(
                 || path.display().to_string(),
@@ -345,23 +402,17 @@ impl WelcomeView<'_> {
             .saturating_sub(2)
             .saturating_sub(if tail_width > 0 { tail_width + 2 } else { 0 });
         let said = crate::truncate_from_right(&row.said, room);
-        write(
-            cells,
-            left + 1,
-            y,
-            &said,
-            Style::new().fg(self.theme.foreground),
-        );
+        write(cells, left + 1, y, &said, ink);
         if let Some(tail) = tail
             && let Ok(offset) = u16::try_from(usize::from(width).saturating_sub(tail_width + 1))
         {
-            write(
-                cells,
-                left + offset,
-                y,
-                &tail,
-                Style::new().fg(self.theme.gutter),
-            );
+            let tail_ink = match here {
+                true => Style::new()
+                    .fg(self.theme.gutter)
+                    .bg(self.theme.selected_row_background),
+                false => Style::new().fg(self.theme.gutter),
+            };
+            write(cells, left + offset, y, &tail, tail_ink);
         }
     }
 

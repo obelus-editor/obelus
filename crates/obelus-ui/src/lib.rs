@@ -215,6 +215,10 @@ pub trait Screen {
     /// what this screen is for is the way in, and what went wrong goes
     /// under it rather than in front of it.
     fn went_wrong(&self) -> Vec<WentWrong>;
+    /// Which of those rows the reader is on.
+    fn went_wrong_at(&self) -> usize;
+    /// And which of them are on screen, out of `rows` that fit.
+    fn went_wrong_showing(&self, rows: u16) -> std::ops::Range<usize>;
     /// The open picker, for the renderer.
     fn picker(&self) -> Option<&Picker>;
     /// The settings the project has set, which are the ones the reader cannot

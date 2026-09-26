@@ -677,6 +677,13 @@ pub struct App {
     /// with no settings of its own -- a list that said so would be a list
     /// that says something on every start.
     amiss: Vec<String>,
+    /// Which of [`App::what_went_wrong`]'s rows the reader is on, and
+    /// which of them are on screen.
+    ///
+    /// A window like every other list's, because that is the one thing
+    /// that answers which rows are showing -- this list is six rows deep
+    /// on the welcome screen and can be longer than that.
+    went_wrong_window: obelus_component::window::Window,
     /// The file watcher, once started.
     ///
     /// Held because dropping it stops the watch. `None` means auto-reload is
@@ -732,6 +739,13 @@ pub(crate) fn file_in_mut(
 ) -> Option<&mut Buffer> {
     documents.get_mut(id.get())?.as_mut()?.file_mut()
 }
+
+/// How many of what went wrong the welcome screen shows at once.
+///
+/// The same number the view draws, because the keys that page through
+/// them have to move by what is on screen -- two answers to "how many
+/// rows" is a page key that skips some.
+const WENT_WRONG_ROWS: u16 = 6;
 
 impl App {
     /// Starts with the shipped key table and the given documents open.
@@ -827,6 +841,7 @@ impl App {
             walk_generation: obelus_runtime::cancel::Latest::default(),
             events: None,
             amiss: Vec::new(),
+            went_wrong_window: obelus_component::window::Window::default(),
             watcher: None,
             theme_watched: Vec::new(),
             highlights: Highlights::default(),
@@ -1298,6 +1313,54 @@ impl App {
             at: None,
         }));
         rows
+    }
+
+    /// Which row of what went wrong the reader is on.
+    #[must_use]
+    pub fn went_wrong_at(&self) -> usize {
+        self.went_wrong_window.focus()
+    }
+
+    /// And which of them are on screen, out of `rows` that fit.
+    #[must_use]
+    pub fn went_wrong_showing(&self, rows: u16) -> std::ops::Range<usize> {
+        self.went_wrong_window.visible(rows)
+    }
+
+    /// The keys that walk what went wrong, while it is what is showing.
+    ///
+    /// Only where the welcome screen is: the block is drawn there and
+    /// nowhere else, and a key that moved a selection nobody can see would
+    /// be a key that does nothing the reader can tell.
+    fn went_wrong_key(&mut self, key: &KeyEvent) -> bool {
+        let rows = self.what_went_wrong();
+        if !self.reading_nothing() || rows.is_empty() || !key.modifiers.is_empty() {
+            return false;
+        }
+        if let Some(movement) = obelus_component::window::Move::of(key.code) {
+            // Wrapping, like every list a reader chooses from: the other
+            // end is faster to reach than to walk back through.
+            self.went_wrong_window.apply(
+                movement,
+                WENT_WRONG_ROWS,
+                obelus_component::window::Wrap::Yes,
+            );
+            return true;
+        }
+        if key.code != KeyCode::Enter {
+            return false;
+        }
+        // A row with nowhere to go swallows the key rather than letting it
+        // through: what is under this screen is nothing, and a key that
+        // fell past it would be a key doing something else entirely.
+        let Some((path, line)) = rows
+            .get(self.went_wrong_window.focus())
+            .and_then(|row| row.at.clone())
+        else {
+            return true;
+        };
+        self.go_to(&path, u32::try_from(line.get()).unwrap_or(0), 0);
+        true
     }
 
     /// What went wrong on the way up with no file to mark.
@@ -1896,6 +1959,14 @@ impl App {
         if let (Some(rows), Some((_, names))) = (building, self.names.as_mut()) {
             names.settle_window(rows);
         }
+        // What went wrong on the way up, which the welcome screen draws a
+        // window's worth of. Asked from what is true once a frame, like
+        // every other window: a count set only where a key is pressed is a
+        // list whose rows are not on screen until somebody presses one.
+        let wrong = self.what_went_wrong().len();
+        self.went_wrong_window.set_count(wrong);
+        self.went_wrong_window.settle(WENT_WRONG_ROWS);
+
         // Unconditionally, because with no list open the geometry is `None`
         // and the trees parsed for the last one are what has to be let go.
         self.colour_visible_rows(rows.unwrap_or(0));
@@ -2419,6 +2490,13 @@ impl App {
         // And the holes a snippet left, which take `tab` while there are
         // any left to fill in.
         if self.snippet_key(&key) {
+            return;
+        }
+
+        // What went wrong on the way up, while that is what is on screen.
+        // Before the file's own keys, which are about a file and there is
+        // not one: this is what has the arrows when nothing is open.
+        if self.went_wrong_key(&key) {
             return;
         }
 
@@ -3674,6 +3752,14 @@ impl Screen for App {
     }
     fn went_wrong(&self) -> Vec<obelus_ui::WentWrong> {
         self.what_went_wrong()
+    }
+
+    fn went_wrong_at(&self) -> usize {
+        App::went_wrong_at(self)
+    }
+
+    fn went_wrong_showing(&self, rows: u16) -> std::ops::Range<usize> {
+        App::went_wrong_showing(self, rows)
     }
 
     fn phase(&self) -> u32 {

@@ -2405,3 +2405,67 @@ fn a_welcome_screen_with_nothing_wrong_says_nothing() {
         "{dump}"
     );
 }
+
+/// The arrows walk what went wrong, and enter goes to the line.
+///
+/// Which is why it is a list and not a paragraph: most of what Obelus finds
+/// on the way up is about a line of a file the reader wrote, and being told
+/// about it without being taken there is half an answer.
+///
+/// Deliberate break: `went_wrong_key` answering `false`, which lets the
+/// arrows fall through to a file that is not open and leaves the focus
+/// where it was; and `Enter` handled before the movement, which never
+/// reaches the second row.
+#[test]
+fn the_arrows_walk_what_went_wrong_and_enter_goes_there() {
+    let scratch = support::Scratch::new("welcome-walk");
+    let file = scratch.join("config.toml");
+    std::fs::write(&file, "theme = \"dark\"\nshrift = 15\nwrapp = true\n")
+        .expect("writing a settings file");
+
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.config_file_for_test(file.clone());
+    support::lay_out(&mut app, 76, 26);
+    assert_eq!(app.what_went_wrong().len(), 2);
+    assert_eq!(app.went_wrong_at(), 0);
+
+    support::press(&mut app, KeyCode::Down);
+    assert_eq!(app.went_wrong_at(), 1, "the arrow did not walk the list");
+
+    support::press(&mut app, KeyCode::Enter);
+    let buffer = app.current_buffer().expect("the settings file was opened");
+    assert_eq!(buffer.path(), file);
+    // The third line, where `wrapp` is written -- counted from zero by the
+    // cursor and from one by the reader.
+    assert_eq!(buffer.cursor().line.get(), 2);
+}
+
+/// And nothing walks when there is nothing wrong.
+///
+/// Deliberate break: `went_wrong_key` walking a list it has not been given
+/// -- `set_count` left out of the frame, so the window keeps whatever
+/// count it had from a screen that did have something wrong.
+///
+/// What this does *not* check is the guard on the list being empty. It is
+/// there so the arrows are not claimed where no block is drawn, and with
+/// nothing open there is nothing under them to claim them instead -- so
+/// taking the guard out changes nothing a test can see. Kept because the
+/// moment something is under this screen it would be wrong, and noted here
+/// because a guard nothing holds to is a guard somebody deletes.
+#[test]
+fn nothing_walks_a_welcome_screen_with_nothing_wrong() {
+    let scratch = support::Scratch::new("welcome-nowalk");
+    let file = scratch.join("config.toml");
+    std::fs::write(&file, "theme = \"dark\"\n").expect("writing a settings file");
+
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.config_file_for_test(file);
+    support::lay_out(&mut app, 76, 26);
+
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.went_wrong_at(), 0);
+    assert!(app.reading_nothing(), "something was opened");
+}

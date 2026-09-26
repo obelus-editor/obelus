@@ -533,8 +533,18 @@ code's business and is not something that went wrong starting up. Each row
 is what Obelus said and where to go, and the tail -- the file and the line
 -- is worked out first so a long sentence cannot push it off the screen,
 which is the tool call's rule at another scale. Six of them at most: more
-than that and the block is the screen rather than a note under the way in,
-and the list is reachable by name where there is room for all of them.
+than that and the block is the screen rather than a note under the way in.
+
+And it takes the keys, because most of what is on it is about a line of a
+file the reader wrote and being told without being taken there is half an
+answer: the arrows walk it, enter goes to the line, and the row the reader
+is on carries `selected_row_background` like the row of every other list.
+The foot says what enter does and goes quiet on a row with nowhere to go
+-- the reader is told before they press, which is the rule the palette
+follows. A window decides which rows are on screen, like every list, and
+it is settled from what is true once a frame rather than where a key is
+pressed: a count set only by a keypress is a list whose rows are not
+drawn until somebody presses one.
 
 Nothing without a place, though. A mark is a mark *on* something: a file
 whose permissions forbid it, a watcher that would not start, a terminal
