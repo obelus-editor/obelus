@@ -1401,7 +1401,9 @@ src/
                     and a light before it is a blur, and a region of the
                     frame is put back somewhere else rather than drawn
                     again (paint); a key's cap is the one place the grid is
-                    not what a cell is measured in (font)
+                    not what a cell is measured in (font); a thread that
+                    borrows somebody else's connection stops before the
+                    owner takes it back (clipboard/wayland)
 tests/            integration tests plus tests/fixtures/*.txt golden grids
                   · why the fake agent is `sh`, and what it checks back
                     (agent)

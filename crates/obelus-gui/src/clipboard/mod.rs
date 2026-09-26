@@ -59,6 +59,22 @@ pub(crate) fn take(events: &winit::event_loop::ActiveEventLoop) {
     }
 }
 
+/// Gives back whatever `take` took that outlives a frame.
+///
+/// Called from winit's `exiting`, which is the one place every way out of
+/// the loop passes through -- a key, the window's own button, a failure on
+/// the way up. What it is for is argued in [`wayland`]: a thread of
+/// Obelus's own is blocked on winit's display, and winit is about to close
+/// it.
+#[cfg(target_os = "linux")]
+pub(crate) fn let_go() {
+    wayland::let_go();
+}
+
 /// And on the platforms where it is not taken at all.
 #[cfg(not(target_os = "linux"))]
 pub(crate) fn take(_events: &winit::event_loop::ActiveEventLoop) {}
+
+/// Nor given back.
+#[cfg(not(target_os = "linux"))]
+pub(crate) fn let_go() {}

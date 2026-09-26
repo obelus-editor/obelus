@@ -15,12 +15,34 @@
 //! of this module's own, since the compositor asks for the bytes long after
 //! the copy: a `send` arrives when somebody else pastes, which may be
 //! tomorrow.
+//!
+//! **A thread that borrows somebody else's connection stops before the
+//! owner takes it back.** The listening thread blocks on winit's display
+//! fd, and winit closes that fd when the event loop ends -- so a thread
+//! left to find out for itself reads a closed descriptor and is told
+//! `EBADF`. Which is not silent: `wayland-backend` prints what it could
+//! not read to stderr itself, before the error is ever returned, so the
+//! reader who quit Obelus got `Io error: Bad file descriptor (os error 9)`
+//! on the console they started it from -- a line no `tracing` filter could
+//! reach and the log never saw. [`let_go`] is the other end of
+//! [`Clipboard::take`], called from winit's `exiting`, which is the one
+//! place every way out passes through.
+//!
+//! What wakes the thread to be told is a `wl_display.sync`: its answer
+//! comes back on this queue and nothing else dispatches it, so the reply
+//! *is* the wake and the flag is what it wakes it for. The same request a
+//! roundtrip is made of -- and `take` already waits on one, so a
+//! compositor that would not answer it is one Obelus never starts on.
 
 use std::{
     io::Write,
     os::fd::OwnedFd,
     ptr::NonNull,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread::JoinHandle,
 };
 
 use obelus_clipboard::Owner;
@@ -29,6 +51,7 @@ use wayland_client::{
     backend::Backend,
     event_created_child,
     protocol::{
+        wl_callback::{self, WlCallback},
         wl_data_device::{self, WlDataDevice},
         wl_data_device_manager::WlDataDeviceManager,
         wl_data_offer::WlDataOffer,
@@ -67,6 +90,48 @@ struct Held {
 struct Watching {
     held: Arc<Mutex<Held>>,
     seat: Option<WlSeat>,
+}
+
+/// What it takes to stop the listening thread, kept where the way out can
+/// reach it.
+///
+/// Beside the [`Clipboard`] rather than on it: the clipboard is handed to
+/// `obelus_clipboard` as a `dyn Owner` and there is no way back through
+/// that to a thread to join.
+struct Stopper {
+    /// Set before the wake, read after it.
+    stopping: Arc<AtomicBool>,
+    /// What the wake is sent on, and the queue its answer comes back to.
+    connection: Connection,
+    queue: QueueHandle<Watching>,
+    listening: JoinHandle<()>,
+}
+
+/// The one there is, once the clipboard has been taken.
+static STOPPER: Mutex<Option<Stopper>> = Mutex::new(None);
+
+/// Stops listening, before whoever owns the display closes it.
+///
+/// Quiet where there is nothing to stop, which is every Obelus that is not
+/// this one: a terminal, a window on X11, a window whose compositor had no
+/// data device. And quiet the second time, because it takes what it stops.
+pub(crate) fn let_go() {
+    let Some(stopper) = STOPPER.lock().ok().and_then(|mut held| held.take()) else {
+        return;
+    };
+    // Before the wake: what the wake is for is this being read.
+    stopper.stopping.store(true, Ordering::Release);
+    stopper.connection.display().sync(&stopper.queue, ());
+    if let Err(error) = stopper.connection.flush() {
+        // Nothing was sent, so nothing will arrive to wake it. Waiting
+        // here would be waiting for ever, and the thread is about to be
+        // ended by the process anyway.
+        tracing::warn!(%error, "waking the clipboard to stop it");
+        return;
+    }
+    if stopper.listening.join().is_err() {
+        tracing::warn!("the clipboard's listening thread had already panicked");
+    }
 }
 
 /// Obelus's hold on the selection.
@@ -113,13 +178,32 @@ impl Clipboard {
         }
 
         let name = "obelus clipboard".to_string();
+        let stopping = Arc::new(AtomicBool::new(false));
+        let told = Arc::clone(&stopping);
         let started = std::thread::Builder::new().name(name).spawn(move || {
-            // Until the connection goes, which is the process ending.
-            while queue.blocking_dispatch(&mut watching).is_ok() {}
+            // Until it is told to stop -- and, failing that, until the
+            // connection goes. The second is the process ending under it,
+            // which `let_go` exists to get in front of.
+            while !told.load(Ordering::Acquire) {
+                if queue.blocking_dispatch(&mut watching).is_err() {
+                    break;
+                }
+            }
         });
-        if let Err(error) = started {
-            tracing::warn!(%error, "no thread to listen for pastes on");
-            return None;
+        let listening = match started {
+            Ok(listening) => listening,
+            Err(error) => {
+                tracing::warn!(%error, "no thread to listen for pastes on");
+                return None;
+            }
+        };
+        if let Ok(mut held) = STOPPER.lock() {
+            *held = Some(Stopper {
+                stopping,
+                connection: connection.clone(),
+                queue: handle.clone(),
+                listening,
+            });
         }
         Some(Self {
             held,
@@ -174,6 +258,19 @@ impl Owner for Clipboard {
             .iter()
             .flat_map(|mine| mine.iter().map(|(name, _)| name.clone()))
             .collect()
+    }
+}
+
+/// The wake, which carries nothing: that it arrived is the whole message.
+impl Dispatch<WlCallback, ()> for Watching {
+    fn event(
+        _state: &mut Self,
+        _callback: &WlCallback,
+        _event: wl_callback::Event,
+        (): &(),
+        _connection: &Connection,
+        _queue: &QueueHandle<Self>,
+    ) {
     }
 }
 
@@ -364,5 +461,35 @@ fn hand_the_bytes_over(fd: OwnedFd, bytes: Vec<u8>) {
         });
     if let Err(error) = started {
         tracing::warn!(%error, "no thread to hand over what was copied");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Letting go is quiet where nothing was taken.
+    ///
+    /// Which is every Obelus that is not this one -- a terminal, a window
+    /// on X11, a window whose compositor offered no data device -- because
+    /// `exiting` asks unconditionally, and the last thing Obelus does must
+    /// not be the thing that goes wrong. Twice, because `exiting` is a
+    /// callback and nothing promises it is reached once.
+    ///
+    /// What is *not* tested here is the stopping itself. That needs a
+    /// compositor and a `wl_display` belonging to a live winit -- the same
+    /// reason the X11 half beside this one asks for a real server -- so it
+    /// was checked by running it instead, and the control is the honest
+    /// half of that: with `let_go` taken out of `exiting`, three quits in
+    /// a row printed `Io error: Bad file descriptor (os error 9)`; with it
+    /// back in, six printed nothing, by the key and by the window's own
+    /// button.
+    ///
+    /// Deliberate break: having `let_go` reach for the stopper with
+    /// `expect` in place of the `let ... else`.
+    #[test]
+    fn letting_go_of_a_clipboard_nobody_took_is_quiet() {
+        let_go();
+        let_go();
     }
 }

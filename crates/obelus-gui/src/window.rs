@@ -685,6 +685,17 @@ impl ApplicationHandler<Waking> for Showing {
         }
     }
 
+    /// The loop is over, whichever way it got here.
+    ///
+    /// Every `exit()` above arrives here, which is why what has to happen
+    /// once goes here rather than beside each of them: a way out added
+    /// later is one nobody has to remember to tell. And it is the last
+    /// moment the display is open, which is what the clipboard needs --
+    /// see `clipboard::let_go`.
+    fn exiting(&mut self, _events: &ActiveEventLoop) {
+        crate::clipboard::let_go();
+    }
+
     /// When to wake next, which is whatever the window is animating.
     ///
     /// Obelus's own loop is a thread blocked on a channel and wakes this
