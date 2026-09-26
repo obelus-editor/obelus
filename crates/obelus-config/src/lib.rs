@@ -689,15 +689,76 @@ pub fn project_path(root: &Path) -> Option<PathBuf> {
 /// stop -- Obelus goes on with the reader's own settings and says so in the
 /// log -- which is why this hands back the reason rather than a config with
 /// the defaults in it.
-pub fn read_table(path: &Path) -> Result<Option<toml::Table>, String> {
+pub fn read_table(path: &Path) -> Result<Option<(toml::Table, String)>, String> {
     let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error.to_string()),
     };
     text.parse::<toml::Table>()
-        .map(Some)
+        // The text as well as the table: where a key is written is a
+        // question only the text can answer, and reading the file twice
+        // to ask it is two readings that can disagree.
+        .map(|table| Some((table, text)))
         .map_err(|error| error.to_string())
+}
+
+/// Says where each line that did nothing is written.
+///
+/// Apart from the reading of the values, because the two parsers answer
+/// different questions and only one of them is asked here: what a key
+/// *is* comes from the table, and where it is written comes from the
+/// text.
+#[must_use]
+pub fn placed(ignored: Vec<Ignored>, text: &str) -> Vec<Ignored> {
+    if ignored.is_empty() {
+        return ignored;
+    }
+    let spans = spans_in(text);
+    ignored
+        .into_iter()
+        .map(|one| Ignored {
+            at: spans.get(&one.key).copied(),
+            ..one
+        })
+        .collect()
+}
+
+/// Which line each key in a settings file is written on.
+///
+/// A second parse, by the crate that keeps the spans -- the one the values
+/// come from throws them away, and it is the one every reader of a setting
+/// already speaks. Two parses of a file this size is not a cost worth a
+/// word; what would be worth one is a settings file parsed by two crates
+/// that disagreed, and they do not: a file either is TOML or is
+/// [`Reading::Unreadable`] before this is asked.
+///
+/// Dotted for what is under a table, which is how the two that have one
+/// are named: `keys.open-file`, `agents.copilot`.
+#[must_use]
+pub fn spans_in(text: &str) -> std::collections::BTreeMap<String, Span> {
+    let mut found = std::collections::BTreeMap::new();
+    // The immutable form, which is the one that keeps the spans: making a
+    // document editable throws them away, because an edited document's
+    // spans would be about text that is no longer there.
+    let Ok(document) = toml_edit::ImDocument::parse(text) else {
+        return found;
+    };
+    for (key, item) in document.as_table() {
+        let Some(span) = document.as_table().key(key).and_then(toml_edit::Key::span) else {
+            continue;
+        };
+        found.insert(key.to_string(), span_of(text, &span));
+        let Some(under) = item.as_table_like() else {
+            continue;
+        };
+        for (inner, _) in under.iter() {
+            if let Some(span) = under.key(inner).and_then(toml_edit::Key::span) {
+                found.insert(format!("{key}.{inner}"), span_of(text, &span));
+            }
+        }
+    }
+    found
 }
 
 /// Reads the file, or the defaults for every way it can decline.
@@ -707,6 +768,44 @@ pub fn load() -> Reading {
         return Reading::Nowhere;
     };
     read_from(&path)
+}
+
+/// What laying a table of settings over a config came to.
+#[derive(Clone, Debug, Default)]
+pub struct Applied {
+    /// The keys the table set. A setting it named is the reader's whether
+    /// or not what they wrote differs from what Obelus would have done.
+    pub set: Vec<&'static str>,
+    /// And the ones it named that did nothing.
+    pub ignored: Vec<Ignored>,
+}
+
+/// A line of a settings file that did nothing, and why.
+///
+/// Facts, not words. What to *say* about one is copy, and copy belongs
+/// where the rest of what Obelus says to the reader is written -- here
+/// there is no reader, only a file and what could not be made of it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Ignored {
+    /// The key it is about, spelled the way the file spells it.
+    pub key: String,
+    /// Why nothing happened.
+    pub why: Why,
+    /// Where that key is written, when the file was there to be looked at.
+    pub at: Option<Span>,
+}
+
+/// What was wrong with a line that did nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Why {
+    /// Obelus has no setting by that name: one that has gone, a name that
+    /// has changed, a word spelled wrong.
+    NoSuchSetting,
+    /// There is one, and a project's file is not allowed to set it.
+    NotForAProject,
+    /// What an agent is set to has to be a table of that agent's own
+    /// settings, and this is not one.
+    NotATable,
 }
 
 /// Where a range of `text`'s bytes is, in the document's own counts.
@@ -784,8 +883,8 @@ pub fn read_from(path: &Path) -> Reading {
 pub fn reading_of(text: &str) -> Reading {
     match text.parse::<toml::Table>() {
         Ok(table) => {
-            let (config, named) = from_table(&table);
-            Reading::Settings(config, named)
+            let (config, applied) = from_table(&table);
+            Reading::Settings(config, applied.set, placed(applied.ignored, text))
         }
         // The parser says which bytes it gave up on, which is the whole
         // reason a reader can be shown the line rather than told a number
@@ -811,10 +910,9 @@ pub enum Reading {
     Nowhere,
     /// There is none yet, which is where everybody starts.
     Nothing,
-    /// There is one; this is what it says, and these are the settings it
-    /// named. A setting it named is the reader's whether or not what they
-    /// wrote differs from what Obelus would have done.
-    Settings(Config, Vec<&'static str>),
+    /// There is one; this is what it says, the settings it named, and the
+    /// lines in it that did nothing.
+    Settings(Config, Vec<&'static str>, Vec<Ignored>),
     /// There is one and it could not be read, with what went wrong and
     /// where.
     ///
@@ -841,10 +939,10 @@ pub fn from_toml(text: &str) -> Config {
 /// Obelus would have done anyway, and a page that worked that out by
 /// comparing with the default could not tell them from a reader who said
 /// nothing at all.
-fn from_table(table: &toml::Table) -> (Config, Vec<&'static str>) {
+fn from_table(table: &toml::Table) -> (Config, Applied) {
     let mut config = Config::default();
-    let named = apply(&mut config, table, Whose::Reader);
-    (config, named)
+    let applied = apply(&mut config, table, Whose::Reader);
+    (config, applied)
 }
 
 /// Which files may set the key `key`.
@@ -876,15 +974,23 @@ pub fn reach_of(key: &str) -> Reach {
 /// What the project may not set is left alone, with a word in the log for
 /// whoever wrote that file: from the outside it is a line that did nothing,
 /// which is worth being able to find out about.
-pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Vec<&'static str> {
-    let mut set = Vec::new();
+pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied {
+    let mut applied = Applied::default();
+    // Collected beside rather than into `applied`, because the closure
+    // below has it borrowed for as long as the settings are being read.
+    let mut not_a_table: Vec<String> = Vec::new();
     let mut allowed = |key: &'static str| {
         if reach_of(key) == Reach::Anywhere || whose == Whose::Reader {
-            set.push(key);
+            applied.set.push(key);
             return true;
         }
         if table.contains_key(key) {
             tracing::warn!(key, "a project may not set this, so it is left alone");
+            applied.ignored.push(Ignored {
+                key: key.to_string(),
+                why: Why::NotForAProject,
+                at: None,
+            });
         }
         false
     };
@@ -993,6 +1099,7 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Vec<&'st
         for (agent, chosen) in agents {
             let Some(chosen) = chosen.as_table() else {
                 tracing::warn!(agent, "what this agent is set to is not a table");
+                not_a_table.push(agent.clone());
                 continue;
             };
             for (setting, value) in chosen {
@@ -1012,9 +1119,23 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Vec<&'st
     for key in table.keys() {
         if !known(key) {
             tracing::warn!(key, "no setting by this name, so the line does nothing");
+            applied.ignored.push(Ignored {
+                key: key.clone(),
+                why: Why::NoSuchSetting,
+                at: None,
+            });
         }
     }
-    set
+    // Named under the table they are in, which is how [`spans_in`] names
+    // them and how a reader would say where to look.
+    for agent in not_a_table {
+        applied.ignored.push(Ignored {
+            key: format!("agents.{agent}"),
+            why: Why::NotATable,
+            at: None,
+        });
+    }
+    applied
 }
 
 /// Whether a key in a settings file names a setting Obelus has.
@@ -1885,6 +2006,24 @@ mod where_it_went_wrong {
         // To the end of the line and no further: the lines under it are
         // not what is wrong.
         assert_eq!(at.end_column.get(), "font_size 15".len());
+    }
+
+    /// Every key in a settings file says which line it is written on,
+    /// including the ones under a table.
+    ///
+    /// Dotted for those, because that is how a line that did nothing names
+    /// itself when what is wrong is one agent's entry rather than the
+    /// whole table.
+    ///
+    /// Deliberate break: `spans_in` walking only the top level, which is
+    /// what the last assertion is for.
+    #[test]
+    fn every_key_says_which_line_it_is_on() {
+        let spans = spans_in("theme = \"dark\"\nshrift = 15\n\n[agents]\ncopilot = \"gpt-5\"\n");
+        assert_eq!(spans.get("theme").map(|at| at.line.get()), Some(0));
+        assert_eq!(spans.get("shrift").map(|at| at.line.get()), Some(1));
+        assert_eq!(spans.get("agents").map(|at| at.line.get()), Some(3));
+        assert_eq!(spans.get("agents.copilot").map(|at| at.line.get()), Some(4));
     }
 
     /// A place is counted in lines and characters, from zero.

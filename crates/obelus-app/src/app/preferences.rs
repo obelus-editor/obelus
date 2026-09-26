@@ -814,9 +814,10 @@ impl App {
         // answered by the path Obelus actually read, and a reader with two
         // machines or an `XDG_CONFIG_HOME` has more than one candidate.
         match obelus_config::read_from(&path) {
-            obelus_config::Reading::Settings(config, named) => {
+            obelus_config::Reading::Settings(config, named, ignored) => {
                 tracing::info!(path = %path.display(), settings = ?named, "read the settings");
                 self.nothing_wrong_with(&path);
+                self.lines_that_did_nothing(&path, &ignored);
                 self.configure(config, named);
             }
             obelus_config::Reading::Nothing | obelus_config::Reading::Nowhere => {
@@ -853,12 +854,15 @@ impl App {
             return;
         };
         match obelus_config::read_table(&path) {
-            Ok(Some(table)) => {
-                self.settled.pinned = obelus_config::apply(
+            Ok(Some((table, text))) => {
+                let applied = obelus_config::apply(
                     &mut self.settled.config,
                     &table,
                     obelus_config::Whose::Project,
                 );
+                self.settled.pinned = applied.set;
+                self.nothing_wrong_with(&path);
+                self.lines_that_did_nothing(&path, &obelus_config::placed(applied.ignored, &text));
                 tracing::info!(
                     path = %path.display(),
                     settings = ?self.settled.pinned,
@@ -920,16 +924,15 @@ impl App {
     pub(super) fn reread_config(&mut self) {
         if let Some(path) = self.settled.path.clone() {
             match obelus_config::read_from(&path) {
-                obelus_config::Reading::Settings(config, named) => {
+                obelus_config::Reading::Settings(config, named, ignored) => {
                     tracing::info!(path = %path.display(), "the settings changed under us");
+                    self.nothing_wrong_with(&path);
+                    self.lines_that_did_nothing(&path, &ignored);
                     self.settled.readers = config.clone();
                     self.settled.named = named;
                     self.settled.config = config;
                     self.apply_config();
                     self.settled.readable = true;
-                    // Whatever Obelus said about this file last time is
-                    // about a version of it that no longer exists.
-                    self.nothing_wrong_with(&path);
                 }
                 // Gone, which is somebody deleting it or an editor writing
                 // it in a way Obelus caught mid-flight. Neither is a reason
@@ -945,6 +948,34 @@ impl App {
         // since stopped naming, because nothing would have put the reader's
         // own answer back underneath it.
         self.apply_project();
+    }
+
+    /// Marks the lines of a settings file that did nothing.
+    ///
+    /// The words are written here and the facts come from
+    /// [`obelus_config`], which is the split it keeps everywhere: what
+    /// could not be made of a file is a fact about the file, and what to
+    /// say about it to a reader is copy. A line that did nothing is a
+    /// warning and not an error -- the file read, and everything else in
+    /// it took.
+    fn lines_that_did_nothing(&mut self, path: &Path, ignored: &[obelus_config::Ignored]) {
+        for one in ignored {
+            let said = match one.why {
+                // Never starting with the name, which is the rule every
+                // sentence with one in it follows: `Nothing is bound to
+                // open-file`, not `open-file has no key`.
+                obelus_config::Why::NoSuchSetting => {
+                    format!("No setting is called {}", one.key)
+                }
+                obelus_config::Why::NotForAProject => {
+                    format!("A project may not set {}", one.key)
+                }
+                obelus_config::Why::NotATable => {
+                    format!("What {} is set to is not a table of its settings", one.key)
+                }
+            };
+            self.obelus_says(path, one.at, obelus_lsp::trouble::Severity::Warning, &said);
+        }
     }
 
     /// Says the settings file cannot be read, and stops writing to it.

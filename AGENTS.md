@@ -481,6 +481,28 @@ be the only one holding, so what it sends is converted against the text
 later -- Obelus has the text in its hand at the moment it finds the fault,
 so there is nothing to put off and no second shape to keep.
 
+Which is also what a *line* of a settings file gets: one Obelus has never
+heard of, one a project is not allowed to set, one that is not the shape it
+has to be. From the outside a line like that looks exactly like a line that
+was obeyed, which is what made it worth a word in the first place -- and a
+warning rather than an error, because the file read and everything else in
+it took.
+
+Where that line is is a question only the *text* can answer, and the
+parser the values come from throws its spans away. So they come from
+`toml_edit`, and from its *immutable* document: making one editable
+despans it, on the grounds that an edited document's spans are about text
+that is no longer there. Two parses of a file this size is not a cost
+worth a word; what would be worth one is reading the file twice to ask the
+two questions, because two readings can disagree.
+
+And the words are Obelus's while the facts are the file's, which is the
+split that decides where each half lives: `obelus_config` says a key did
+nothing and why, in a word of its own (`Why::NoSuchSetting`), and the
+sentence a reader sees is written where the rest of what Obelus says is
+written. There is no reader down in the config crate, only a file and what
+could not be made of it.
+
 Nothing without a place, though. A mark is a mark *on* something: a file
 whose permissions forbid it, a watcher that would not start, a server that
 never answered -- none of those has a line to draw under, and saying them

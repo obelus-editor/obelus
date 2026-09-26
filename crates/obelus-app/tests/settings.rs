@@ -2957,3 +2957,86 @@ fn fixing_the_settings_file_takes_the_mark_away() {
     app.config_file_for_test(file.clone());
     assert_eq!(app.problems().count(), 0, "the mark outlived the mistake");
 }
+
+/// A line of a settings file that did nothing is a warning on that line.
+///
+/// Which is the whole of what a reader gets told about it otherwise:
+/// nothing. The file read, so every other line took -- a warning and not an
+/// error -- and from the outside a setting Obelus has never heard of looks
+/// exactly like one that was obeyed.
+///
+/// Deliberate break: `apply` going on logging and reporting nothing, which
+/// leaves the count at zero.
+#[test]
+fn a_line_that_did_nothing_is_a_warning_on_that_line() {
+    let _taken = SETTINGS.lock().expect("the lock");
+    let scratch = temporary("ignored");
+    let file = settings_file(&scratch);
+    std::fs::write(
+        &file,
+        "theme = \"dark\"\nshrift = 15\n\n[agents]\ncopilot = \"gpt-5\"\n",
+    )
+    .expect("writing a settings file");
+
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&file).expect("opening the settings file"),
+    ]);
+    app.config_file_for_test(file.clone());
+    support::lay_out(&mut app, 72, 24);
+
+    let problems: Vec<_> = app.problems().collect();
+    assert_eq!(problems.len(), 2, "{problems:?}");
+    for problem in &problems {
+        assert_eq!(
+            problem.severity,
+            obelus_lsp::trouble::Severity::Warning,
+            "a line that did nothing in a file that read is not an error"
+        );
+        assert_eq!(problem.source.as_deref(), Some("Obelus"));
+    }
+    let said: Vec<(usize, &str)> = problems
+        .iter()
+        .map(|problem| (problem.span.line.get(), problem.message.as_str()))
+        .collect();
+    assert!(
+        said.contains(&(1, "No setting is called shrift")),
+        "{said:?}"
+    );
+    // Under the table it is in, which is the only way to say which of an
+    // agent's lines is the one that is wrong.
+    assert!(
+        said.contains(&(
+            4,
+            "What agents.copilot is set to is not a table of its settings"
+        )),
+        "{said:?}"
+    );
+}
+
+/// And what a project's file may not set is marked on the project's file.
+///
+/// On that one and not the reader's: two files can name the same setting,
+/// and a mark on the wrong one sends the reader to a line that is right.
+///
+/// Deliberate break: `apply_project` reporting against `settled.path`,
+/// which is the reader's own file.
+#[test]
+fn what_a_project_may_not_set_is_marked_on_the_projects_file() {
+    let _taken = SETTINGS.lock().expect("the lock");
+    let scratch = project("not-allowed", "theme = \"dark\"\nagent = \"copilot\"\n");
+    let theirs = scratch.path().join(".obelus").join("config.toml");
+
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&theirs).expect("opening the project's settings"),
+    ]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    let mine = temporary("not-allowed-mine");
+    app.config_file_for_test(settings_file(&mine));
+    support::lay_out(&mut app, 72, 24);
+
+    let problems: Vec<_> = app.problems().collect();
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert_eq!(problems[0].message, "A project may not set agent");
+    // The second line of the project's file, where `agent` is written.
+    assert_eq!(problems[0].span.line.get(), 1);
+}
