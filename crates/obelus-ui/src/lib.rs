@@ -903,13 +903,7 @@ pub(crate) fn scrollbar(
     let total = total.max(1);
     let x = area.right().saturating_sub(1);
 
-    // At least one row of thumb, or a long list has a bar with nothing on it.
-    let thumb = (height * height / total).clamp(1, height);
-    let travel = height.saturating_sub(thumb);
-    // Scaled by how far the *top* can travel, not by the total: dividing by
-    // the total leaves the thumb short of the bottom exactly when the last
-    // row is on screen, which is the one position anyone checks it against.
-    let furthest = total.saturating_sub(height).max(1);
+    let (thumb, travel, furthest) = bar_reach(height, total);
     let start = if total <= height {
         0
     } else {
@@ -925,6 +919,55 @@ pub(crate) fn scrollbar(
         };
         put(cells, x, area.y + row, BAR, Style::new().fg(colour));
     }
+}
+
+/// How big a bar's thumb is, how far it can travel, and how far the top it
+/// is about can.
+///
+/// One answer, because two places need it now: the bar that draws the
+/// thumb, and the front end that has to know how far the thumb moves for
+/// each row the thing it is about moves. Two workings-out of the same
+/// three numbers would be a mark that slides at one rate and lands at
+/// another.
+fn bar_reach(height: usize, total: usize) -> (usize, usize, usize) {
+    // A bar with no rows has no thumb and nowhere to put one. The drawing
+    // used to be the only caller and turned back at its own door; now that
+    // two ask, the answer belongs here -- and a view is handed a region of
+    // no height often enough that this is not a corner: a terminal one row
+    // tall, a list with a question over it, a frame drawn before anything
+    // has been laid out.
+    if height == 0 {
+        return (0, 0, 1);
+    }
+    // At least one row of thumb, or a long list has a bar with nothing on it.
+    let thumb = (height * height / total.max(1)).clamp(1, height);
+    let travel = height.saturating_sub(thumb);
+    // Scaled by how far the *top* can travel, not by the total: dividing by
+    // the total leaves the thumb short of the bottom exactly when the last
+    // row is on screen, which is the one position anyone checks it against.
+    let furthest = total.saturating_sub(height).max(1);
+    (thumb, travel, furthest)
+}
+
+/// How far a bar's mark moves for each row the thing it is about moves.
+///
+/// A fraction, and usually a small one: a file of two thousand lines on a
+/// fifty-row screen moves its mark a fiftieth of a row per line. Which is
+/// the whole point of having it -- a mark drawn at whole rows only moves
+/// once every fifty lines, and a mark slid by this moves every line.
+#[must_use]
+pub fn bar_per_row(height: u16, total: usize) -> f32 {
+    let height = usize::from(height);
+    if total <= height {
+        return 0.0;
+    }
+    let (_, travel, furthest) = bar_reach(height, total);
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "rows of a screen against lines of a file"
+    )]
+    let (travel, furthest) = (travel as f32, furthest as f32);
+    travel / furthest
 }
 
 /// Which row of a bar `area.height` rows tall a line of `total` falls on.
@@ -2178,7 +2221,44 @@ pub(crate) fn glyphs_held() -> std::sync::MutexGuard<'static, ()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{drop_from_left, drop_from_right, tick, truncate_from_left, truncate_from_right};
+    use super::{
+        bar_per_row, drop_from_left, drop_from_right, scrollbar, tick, truncate_from_left,
+        truncate_from_right,
+    };
+
+    /// A bar's mark is slid at the rate the bar itself draws it moving.
+    ///
+    /// Deliberate break: work the rate out as the screen's share of the
+    /// whole (`height / total`) rather than as the mark's travel over the
+    /// distance the top can go. It is the same number whenever the thumb
+    /// happens to be half the track and wrong everywhere else -- so a
+    /// mark slid at it would arrive short of where the bar then draws it,
+    /// and step the rest of the way, which is the jump this is for.
+    #[test]
+    fn a_bar_is_slid_at_the_rate_it_is_drawn_moving() {
+        // Ten rows of a forty-row list: a two-row thumb with eight rows to
+        // travel, over a top that can go thirty.
+        let theme = &obelus_theme::builtin::DARK;
+        let area = ratatui::layout::Rect {
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 10,
+        };
+        let mut cells = ratatui::buffer::Buffer::empty(area);
+        scrollbar(&mut cells, area, 30, 40, theme);
+        let start = (0..area.height)
+            .find(|row| cells[(0, *row)].fg == theme.gutter_current)
+            .expect("a thumb somewhere on the track");
+
+        let slid = bar_per_row(area.height, 40) * 30.0;
+        assert!(
+            (slid - f32::from(start)).abs() < 0.001,
+            "slid to {slid}, drawn at {start}"
+        );
+        // A list that fits has nowhere for its mark to go.
+        assert!((bar_per_row(10, 10) - 0.0).abs() < f32::EPSILON);
+    }
 
     /// A control character in what is drawn does not take Obelus down.
     ///

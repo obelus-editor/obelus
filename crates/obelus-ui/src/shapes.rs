@@ -57,6 +57,21 @@ pub enum Joined {
     Below,
 }
 
+/// The bar beside a band, for a front end that can slide it.
+///
+/// A bar is not part of the band -- it says where the band *is*, and slid
+/// with it, it would travel the band's distance instead of its own share
+/// of it. But it is not still either: its mark belongs where the band is
+/// being drawn rather than where the band is going, and `per_row` is what
+/// turns the one into the other.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Bar {
+    /// The column or columns it takes.
+    pub area: Rect,
+    /// How far its mark moves for each row the band moves.
+    pub per_row: f32,
+}
+
 /// What a front end that draws its own pixels can be told about a frame.
 ///
 /// `&self` throughout, the same as `image::Marks` and for the same reason:
@@ -119,7 +134,7 @@ pub trait Shapes: Send + Sync {
     /// says the same thing twice and means it: a difference would have to
     /// be consumed, and a redraw nobody asked for would replay a scroll
     /// that already happened.
-    fn scrolled(&self, area: Rect, top: i64);
+    fn scrolled(&self, area: Rect, top: i64, bar: Option<Bar>);
 }
 
 /// Who is drawing, where it is somebody who wants to be told.
@@ -158,9 +173,9 @@ pub(crate) fn behind(area: Rect, joined: Joined, ground: Color, cells: &CellBuff
 }
 
 /// Tells whoever is drawing where a band of rows has got to.
-pub(crate) fn scrolled(area: Rect, top: i64) {
+pub(crate) fn scrolled(area: Rect, top: i64, bar: Option<Bar>) {
     if let Some(shapes) = DRAWING.get() {
-        shapes.scrolled(area, top);
+        shapes.scrolled(area, top, bar);
     }
 }
 

@@ -32,6 +32,7 @@ use obelus_app::{
     app::{self, App},
     event::{Event, Pointer},
 };
+use obelus_ui::shapes::Bar;
 use ratatui::layout::Rect;
 use winit::{
     application::ApplicationHandler,
@@ -119,11 +120,15 @@ struct Showing {
     capped: Vec<Capped>,
     /// The ones the frame being laid out has asked for so far.
     capping: Vec<Capped>,
-    /// Which band of rows is a list, and how far down it the band has
-    /// got, on the frame being shown.
+    /// Which band of rows is a list, how far down it the band has got and
+    /// what bar says so, on the frame being shown.
     scrolled: Option<(Rect, i64)>,
     /// And on the frame being laid out.
     scrolling: Option<(Rect, i64)>,
+    /// The bar beside the band being shown.
+    bar: Option<Bar>,
+    /// And the one being laid out.
+    barring: Option<Bar>,
     /// The page as it was before the frame being shown.
     ///
     /// Kept only while there is a band that could move, and for one
@@ -191,6 +196,8 @@ impl Showing {
             capping: Vec::new(),
             scrolled: None,
             scrolling: None,
+            bar: None,
+            barring: None,
             before: None,
             behind: None,
             behinding: None,
@@ -517,8 +524,9 @@ impl ApplicationHandler<Waking> for Showing {
                                 cells,
                             });
                         }
-                        Update::Scrolled { area, top } => {
+                        Update::Scrolled { area, top, bar } => {
                             self.scrolling = Some((area, top));
+                            self.barring = bar;
                         }
                         Update::Capped {
                             keys,
@@ -541,6 +549,7 @@ impl ApplicationHandler<Waking> for Showing {
                             self.capped = std::mem::take(&mut self.capping);
                             self.behind = self.behinding.take();
                             self.scrolled = self.scrolling.take();
+                            self.bar = self.barring.take();
                             drew = true;
                         }
                         cells => drew |= self.page.apply(cells),
@@ -694,6 +703,7 @@ impl ApplicationHandler<Waking> for Showing {
                             .scrolled
                             .zip(self.before.as_ref())
                             .map(|((room, _), before)| (room, before)),
+                        bar: self.bar,
                     },
                 ) {
                     tracing::error!(?error, "the frame was not drawn");

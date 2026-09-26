@@ -42,7 +42,7 @@ impl obelus_ui::shapes::Shapes for Heard {
     ) {
     }
 
-    fn scrolled(&self, _area: Rect, _top: i64) {}
+    fn scrolled(&self, _area: Rect, _top: i64, _bar: Option<obelus_ui::shapes::Bar>) {}
 
     fn capped(&self, keys: &str, area: Rect, cap: Color, page: Color, edge: Color) {
         if let Ok(mut said) = self.0.lock() {

@@ -20,7 +20,10 @@ use std::sync::{
 };
 
 use obelus_app::app::Caret;
-use obelus_ui::{image::Palette, shapes::Joined};
+use obelus_ui::{
+    image::Palette,
+    shapes::{Bar, Joined},
+};
 use ratatui::{
     backend::{Backend, ClearType, WindowSize},
     buffer::Cell,
@@ -116,6 +119,8 @@ pub(crate) enum Update {
         area: Rect,
         /// The row of the list its first row holds.
         top: i64,
+        /// The bar beside it, where it has one.
+        bar: Option<Bar>,
     },
     /// What is behind a pane, in the frame being laid out.
     ///
@@ -153,6 +158,8 @@ pub(crate) struct Said<'a> {
     /// before it moved -- which is the only place the rows that have
     /// scrolled off still exist.
     pub(crate) band: Option<(Rect, &'a Page)>,
+    /// And the bar beside it, which moves its own share of the distance.
+    pub(crate) bar: Option<Bar>,
 }
 
 /// What is behind the pane on the frame being drawn.
@@ -266,8 +273,8 @@ impl Capped {
 }
 
 impl obelus_ui::shapes::Shapes for Marking {
-    fn scrolled(&self, area: Rect, top: i64) {
-        let _ = self.updates.send(Update::Scrolled { area, top });
+    fn scrolled(&self, area: Rect, top: i64, bar: Option<Bar>) {
+        let _ = self.updates.send(Update::Scrolled { area, top, bar });
     }
 
     fn behind(&self, area: Rect, joined: Joined, ground: Color, cells: &[Cell]) {

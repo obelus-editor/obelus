@@ -20,10 +20,7 @@ use obelus_ui::{
     image::{Palette, SLOT},
     shapes::Joined,
 };
-use ratatui::{
-    layout::Rect,
-    style::{Color, Modifier},
-};
+use ratatui::style::{Color, Modifier};
 use winit::window::Window;
 
 use crate::{
@@ -605,8 +602,8 @@ impl Painter {
                 _ => -1.0,
             };
             self.composing(pane, along, away * (1.0 - along) * height * TRAVEL);
-        } else if let (Some((room, before)), Some((behind, moved))) = (said.band, moving.scroll) {
-            self.catching_up(room, before, behind, moved, fonts);
+        } else if let (Some(_), Some((behind, moved))) = (said.band, moving.scroll) {
+            self.catching_up(page, said, behind, moved, fonts);
         }
 
         #[expect(
@@ -872,12 +869,15 @@ impl Painter {
     /// the band itself wherever the new frame has something to say.
     fn catching_up(
         &mut self,
-        room: Rect,
-        before: &Page,
+        page: &Page,
+        said: Said<'_>,
         behind: f32,
         moved: f32,
         fonts: &mut Fonts,
     ) {
+        let Some((room, before)) = said.band else {
+            return;
+        };
         let cell = fonts.cell();
         // Where the page it scrolled off has got to, which is further back
         // than the band by however much of the move is already done.
@@ -910,6 +910,40 @@ impl Painter {
             1.0,
             behind * cell.height,
         );
+
+        // And the bar, which is not in the band and does not stand still
+        // either: its mark belongs where the band is being *drawn*, which
+        // is its own share of the same distance behind. Drawn from the
+        // page as it is rather than out of the picture, because a column
+        // of cells is a handful of quads and the sliver it leaves at one
+        // end is the bar drawn where it belongs -- a track, and the same
+        // colour all the way down.
+        if let Some(bar) = said.bar {
+            // The other way from the band, and not a slip: scrolling down
+            // moves the text up and the mark down, so a band that has not
+            // caught up is *lower* than it will end and its mark is
+            // *higher*. One distance, two directions, because they are
+            // two ends of the same movement.
+            let shift = -behind * bar.per_row * cell.height;
+            for y in bar.area.top()..bar.area.bottom() {
+                for x in bar.area.left()..bar.area.right() {
+                    let look = page.look(x, y);
+                    let left = f32::from(x) * cell.width;
+                    let top = f32::from(y).mul_add(cell.height, shift);
+                    self.block(
+                        left,
+                        top,
+                        cell.width,
+                        cell.height,
+                        rgba(look.background, Ink::Background),
+                    );
+                    if !look.text.trim().is_empty() {
+                        let ink = rgba(look.foreground, Ink::Foreground);
+                        self.glyphs_at(left, top, look, ink, fonts);
+                    }
+                }
+            }
+        }
     }
 
     /// The two quads that put a frame back on the screen with the pane in

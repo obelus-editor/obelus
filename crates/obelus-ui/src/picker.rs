@@ -499,14 +499,24 @@ impl Widget for PickerView<'_> {
         // Only when the matches do not fit, which is the window's own
         // answer -- the same one every other list asks it for.
         let matched = self.picker.match_count();
-        if self.picker.window().scrollable(list.height) {
+        let scrollable = self.picker.window().scrollable(list.height);
+        if scrollable {
             crate::scrollbar(cells, list, first, matched, self.theme);
         }
 
         // Where this list has got to, for a front end that can draw it
-        // arriving rather than simply being there.
+        // arriving rather than simply being there -- and the bar beside
+        // it, which moves its own share of the same distance.
         if let Ok(top) = i64::try_from(first) {
-            crate::shapes::scrolled(rows, top);
+            let bar = scrollable.then(|| crate::shapes::Bar {
+                area: Rect {
+                    x: list.right().saturating_sub(SCROLLBAR_WIDTH),
+                    width: SCROLLBAR_WIDTH,
+                    ..list
+                },
+                per_row: crate::bar_per_row(list.height, matched),
+            });
+            crate::shapes::scrolled(rows, top, bar);
         }
 
         let selected = self.picker.selected();

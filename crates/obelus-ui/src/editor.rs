@@ -623,6 +623,17 @@ impl Widget for EditorView<'_> {
         // rather than its own share of it, which is the whole length of
         // the file too far.
         if let Some(travelled) = self.travelled {
+            // Counted in the lines that are *shown*, which is what the bar
+            // itself counts: with a run closed the document is shorter.
+            let shown = text.line_count() - buffer.folds().hidden_total();
+            let bar = (shown > usize::from(area.height)).then(|| crate::shapes::Bar {
+                area: Rect {
+                    x: area.right().saturating_sub(SCROLLBAR_WIDTH),
+                    width: SCROLLBAR_WIDTH,
+                    ..area
+                },
+                per_row: crate::bar_per_row(area.height, shown),
+            });
             crate::shapes::scrolled(
                 Rect {
                     width: area
@@ -632,6 +643,7 @@ impl Widget for EditorView<'_> {
                     ..area
                 },
                 travelled,
+                bar,
             );
         }
         // The same total the caret's position is worked out from, which is
