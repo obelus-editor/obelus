@@ -535,10 +535,18 @@ pub fn copy(text: &str) -> io::Result<()> {
     // Kept first and whatever happens: the case this is for is the one where
     // the provider cannot be asked for it back.
     keep(text);
-    let shapes = WORDS
+    let shapes: Vec<(String, Vec<u8>)> = WORDS
         .iter()
         .map(|name| ((*name).to_string(), text.as_bytes().to_vec()))
         .collect();
+    // The platforms whose clipboard is a service take it directly. There
+    // is nothing to own there: the content is the system's the moment it
+    // is handed over, and it outlives every process without anybody
+    // holding it -- which is why those two need no owner and no
+    // hand-over.
+    if native::copy(&shapes) {
+        return Ok(());
+    }
     if owner().is_some_and(|owner| owner.offer(shapes)) {
         return Ok(());
     }

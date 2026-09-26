@@ -34,10 +34,29 @@ pub(crate) fn paste_as(_mime: &str) -> Option<Vec<u8>> {
     None
 }
 
+/// Puts a copy on it, in every shape it was made in.
+///
+/// `false` where this platform has no service to put it on, which sends
+/// the copy back to the programs.
+#[cfg(not(any(target_os = "macos", windows)))]
+pub(crate) fn copy(_shapes: &[(String, Vec<u8>)]) -> bool {
+    false
+}
+
 #[cfg(target_os = "macos")]
-pub(crate) use cocoa::{paste_as, types};
+pub(crate) use cocoa::{copy, paste_as, types};
 #[cfg(windows)]
-pub(crate) use win32::{paste_as, types};
+pub(crate) use win32::{copy, paste_as, types};
+
+/// Whether a shape is the words, under one of the names they go by.
+///
+/// Every one of them is the same bytes, and both services below have one
+/// place to put words: a copy that wrote them three times would be three
+/// writes of one thing, and on Windows the second would replace the first.
+#[cfg(any(target_os = "macos", windows))]
+fn is_words(mime: &str) -> bool {
+    mime.starts_with("text/") || mime == "UTF8_STRING"
+}
 
 /// macOS: the general pasteboard.
 #[cfg(target_os = "macos")]
@@ -46,7 +65,7 @@ mod cocoa {
     // `readObjectsForClasses` is asking for.
     use objc2::ClassType;
     use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
-    use objc2_foundation::{NSArray, NSString, NSURL};
+    use objc2_foundation::{NSArray, NSData, NSString, NSURL};
 
     /// What is on it, said in mime types.
     ///
@@ -101,6 +120,43 @@ mod cocoa {
         }
     }
 
+    /// Puts a copy on the pasteboard, in every shape it was made in.
+    ///
+    /// A pasteboard names its shapes with UTIs, and a mime type is a
+    /// perfectly good one: anything that is not a standard type is a
+    /// custom type, named by whatever string it is given. So Obelus's own
+    /// shape goes on under its own name and another Obelus asks for it by
+    /// that name, with nothing in between -- which is the whole of what
+    /// owning a selection buys on the other platform.
+    pub(crate) fn copy(shapes: &[(String, Vec<u8>)]) -> bool {
+        // Safety: the general pasteboard is a singleton that exists for
+        // the life of the process, and every object below is made, handed
+        // over and dropped inside this function.
+        unsafe {
+            let pasteboard = NSPasteboard::generalPasteboard();
+            // Everything that was on it before is somebody else's copy.
+            // A pasteboard that was not cleared would answer for a shape
+            // of the *previous* copy that this one does not have.
+            pasteboard.clearContents();
+            let mut written = false;
+            let mut said_the_words = false;
+            for (mime, bytes) in shapes {
+                let data = NSData::with_bytes(bytes);
+                let put = if super::is_words(mime) {
+                    if said_the_words {
+                        continue;
+                    }
+                    said_the_words = true;
+                    pasteboard.setData_forType(Some(&data), NSPasteboardTypeString)
+                } else {
+                    pasteboard.setData_forType(Some(&data), &NSString::from_str(mime))
+                };
+                written |= put;
+            }
+            written
+        }
+    }
+
     /// And the text on it.
     fn string() -> Option<String> {
         // Safety: as above.
@@ -119,12 +175,16 @@ mod win32 {
     use std::{os::windows::ffi::OsStringExt, path::PathBuf};
 
     use windows_sys::Win32::{
-        Foundation::{HANDLE, HWND},
+        // `GlobalFree` lives here rather than beside the rest of the
+        // memory calls, which is windows-sys's arrangement and not one
+        // that means anything.
+        Foundation::{GlobalFree, HANDLE, HWND},
         System::{
             DataExchange::{
-                CloseClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
+                CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable,
+                OpenClipboard, RegisterClipboardFormatW, SetClipboardData,
             },
-            Memory::{GlobalLock, GlobalUnlock},
+            Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock},
             Ole::CF_UNICODETEXT,
         },
         UI::Shell::{DragQueryFileW, HDROP},
@@ -187,6 +247,93 @@ mod win32 {
             return text().map(String::into_bytes);
         }
         None
+    }
+
+    /// Puts a copy on the clipboard, in every shape it was made in.
+    ///
+    /// A format is a number here rather than a name, and
+    /// `RegisterClipboardFormatW` is how a name becomes one: two programs
+    /// that register the same string get the same number, which is how
+    /// Obelus's own shape reaches another Obelus. The standard ones have
+    /// their numbers already, and the words go under theirs because that
+    /// is the one every other program on the machine looks for.
+    pub(crate) fn copy(shapes: &[(String, Vec<u8>)]) -> bool {
+        let Some(_open) = Open::taken() else {
+            return false;
+        };
+        // Safety: only reached with the clipboard open, which is what
+        // emptying it requires. Everything that was on it was somebody
+        // else's copy, and a clipboard that was not emptied would answer
+        // for a shape of the previous copy that this one does not have.
+        if unsafe { EmptyClipboard() } == 0 {
+            return false;
+        }
+        let mut written = false;
+        let mut said_the_words = false;
+        for (mime, bytes) in shapes {
+            let (format, bytes) = if super::is_words(mime) {
+                if said_the_words {
+                    continue;
+                }
+                said_the_words = true;
+                let Ok(said) = std::str::from_utf8(bytes) else {
+                    continue;
+                };
+                // Terminated, because `CF_UNICODETEXT` is a C string: a
+                // buffer without the zero is read past its end.
+                let wide: Vec<u16> = said.encode_utf16().chain(std::iter::once(0)).collect();
+                (CF_UNICODETEXT as u32, as_bytes(&wide))
+            } else {
+                // Safety: a name is a string the caller chose, and
+                // registering one twice returns the number the first call
+                // got.
+                let name: Vec<u16> = mime.encode_utf16().chain(std::iter::once(0)).collect();
+                let format = unsafe { RegisterClipboardFormatW(name.as_ptr()) };
+                if format == 0 {
+                    continue;
+                }
+                (format, bytes.clone())
+            };
+            written |= put(format, &bytes);
+        }
+        written
+    }
+
+    /// Hands one shape to the clipboard, which owns the memory afterwards.
+    ///
+    /// Moveable memory, because that is what `SetClipboardData` documents
+    /// it will free -- and it frees it, so a successful call must not free
+    /// it as well and a failed one must.
+    fn put(format: u32, bytes: &[u8]) -> bool {
+        // Safety: the block is allocated here, filled here, and either
+        // handed over or freed here.
+        unsafe {
+            let handle = GlobalAlloc(GMEM_MOVEABLE, bytes.len());
+            if handle.is_null() {
+                return false;
+            }
+            let locked = GlobalLock(handle);
+            if locked.is_null() {
+                GlobalFree(handle);
+                return false;
+            }
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), locked.cast::<u8>(), bytes.len());
+            GlobalUnlock(handle);
+            if SetClipboardData(format, handle.cast::<std::ffi::c_void>()).is_null() {
+                GlobalFree(handle);
+                return false;
+            }
+            true
+        }
+    }
+
+    /// The bytes of a UTF-16 buffer, in this machine's own order.
+    ///
+    /// Which is the order the clipboard wants: `CF_UNICODETEXT` is
+    /// whatever `wchar_t` is on the machine reading it, and that is the
+    /// machine that wrote it.
+    fn as_bytes(wide: &[u16]) -> Vec<u8> {
+        wide.iter().flat_map(|unit| unit.to_ne_bytes()).collect()
     }
 
     /// The text on the clipboard, as UTF-16 turned into a string.

@@ -898,6 +898,14 @@ this end to connect to. `obelus_clipboard::owned_by` is where the window
 says so, and everything falls back to the programs where nobody has -- a
 compositor without the globals, a window nobody has touched yet, and `ob`.
 
+All of which is Linux's problem alone. On macOS and Windows the clipboard
+*is* a service: the content is the system's the moment it is handed over,
+it outlives every process without anybody holding it, and one call puts a
+copy on it in as many shapes as it was made in. So those two need no
+owner, no hand-over, and no window -- `ob` in a terminal there offers
+Obelus's own shape exactly as `obg` does, which is why `native::copy`
+stands in front of both.
+
 What it costs is why the programs stay. The selection belongs to a live
 client, so what Obelus owns is gone the moment Obelus is, and copy, quit,
 paste is the most ordinary thing a reader does with a copy. So the last

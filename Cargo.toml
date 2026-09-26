@@ -354,7 +354,12 @@ windows-sys = { version = "0.61.2", features = [
 # and only on that platform.
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", features = ["NSPasteboard"] }
-objc2-foundation = { version = "0.3", features = ["NSArray", "NSString", "NSURL"] }
+objc2-foundation = { version = "0.3", features = [
+    "NSArray",
+    "NSData",
+    "NSString",
+    "NSURL",
+] }
 
 # Nothing but cargo's own defaults.
 #
