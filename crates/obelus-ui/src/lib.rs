@@ -583,7 +583,12 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
         match layer {
             Layer::Settings => {
                 if let Some(view) = settings::SettingsView::new(app) {
-                    shapes::behind(regions.editor, app.theme().background, cells);
+                    shapes::behind(
+                        regions.editor,
+                        shapes::Joined::Above,
+                        app.theme().background,
+                        cells,
+                    );
                     view.render(regions.editor, cells);
                 }
             }
@@ -592,26 +597,26 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
             // `Room::Screen` says about them.
             Layer::Counts => {
                 if let Some(view) = counts::CountsView::new(app) {
-                    shapes::behind(area, app.theme().background, cells);
+                    shapes::behind(area, shapes::Joined::Above, app.theme().background, cells);
                     view.render(area, cells);
                 }
             }
             Layer::Picker => {
                 if let Some(list) = app.picker() {
-                    let room = room_for_a_picker(app, regions.editor);
-                    // Said with the room the view is about to be handed,
-                    // rather than worked out again here: two answers to
-                    // where a pane is would be a backdrop that does not
-                    // line up with what is over it.
-                    shapes::behind(room, app.theme().background, cells);
-                    list_over(cells, app, list, room);
+                    // `list_over` says where the pane is, because it is
+                    // what works out the room the list takes: two answers
+                    // to that would be a backdrop that does not line up
+                    // with what is over it.
+                    list_over(cells, app, list, room_for_a_picker(app, regions.editor));
                 }
             }
             Layer::Names => {
                 if let Some(names) = app.names() {
                     let room = room_for_a_picker(app, regions.editor);
                     let region = names::region(names, room);
-                    shapes::behind(region, app.theme().background, cells);
+                    // Standing on the row below it, like every list that
+                    // leaves the page showing above it.
+                    shapes::behind(region, shapes::Joined::Below, app.theme().background, cells);
                     names::NamesView::new(names, app.theme()).render(region, cells);
                     // The edge every band gets, for the same reason a
                     // compact list gets one: two different things sharing
@@ -735,6 +740,25 @@ fn room_for_a_picker(app: &impl Screen, editor: Rect) -> Rect {
 /// the room it is given, which is the argument.
 fn list_over(cells: &mut CellBuffer, app: &impl Screen, list: &Picker, room: Rect) {
     let region = picker::region(list, room);
+    // What the list actually takes, which for a compact one is a strip at
+    // the foot of the region and not the region: saying the region would
+    // put glass over the whole file and slide the whole file with it.
+    // The rule above a compact list goes with it -- it is what says the
+    // list is not the code.
+    let (pane, joined) = match list.layout() {
+        obelus_component::picker::PickerLayout::FullArea => (room, shapes::Joined::Above),
+        obelus_component::picker::PickerLayout::Compact { .. } => (
+            Rect {
+                y: region.y.saturating_sub(1).max(room.y),
+                height: region
+                    .height
+                    .saturating_add(region.y - region.y.saturating_sub(1).max(room.y)),
+                ..region
+            },
+            shapes::Joined::Below,
+        ),
+    };
+    shapes::behind(pane, joined, app.theme().background, cells);
     picker::PickerView::new(list, app.theme(), app.phase()).render(region, cells);
 
     // A compact list sits on top of what is behind it, so it needs an edge:

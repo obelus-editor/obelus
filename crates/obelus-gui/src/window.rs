@@ -506,11 +506,13 @@ impl ApplicationHandler<Waking> for Showing {
                         // through is the one on top.
                         Update::Behind {
                             area,
+                            joined,
                             ground,
                             cells,
                         } => {
                             self.behinding = Some(Behind {
                                 area,
+                                joined,
                                 ground,
                                 cells,
                             });

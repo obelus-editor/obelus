@@ -16,7 +16,10 @@ use anyhow::{Context, Result};
 use bytemuck::{Pod, Zeroable};
 use cosmic_text::{CacheKey, SwashContent};
 use obelus_app::app::Caret;
-use obelus_ui::image::{Palette, SLOT};
+use obelus_ui::{
+    image::{Palette, SLOT},
+    shapes::Joined,
+};
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier},
@@ -168,8 +171,10 @@ const COLOURFUL: u32 = 2;
 const ROUNDED: u32 = 4;
 /// What is behind a pane, seen through it.
 const GLASS: u32 = 8;
-/// And rounded along the bottom only, which is what a pane is.
+/// Joined to the row above it, so there is no edge along the top.
 const HANGING: u32 = 16;
+/// Or to the row below it, so there is none along the bottom.
+const STANDING: u32 = 128;
 /// The frame that has just been drawn, put back everywhere but the pane.
 const FRAME: u32 = 32;
 /// And the pane out of it, higher up than it will end.
@@ -593,7 +598,13 @@ impl Painter {
         let drawn = self.quads.len();
         if let (Some(pane), Some(along)) = (pane, moving.pane) {
             let height = pane[3] - pane[1];
-            self.composing(pane, along, -(1.0 - along) * height * TRAVEL);
+            // A pane comes from the side it is joined to, which is the
+            // only side it could come from without crossing the page.
+            let away = match said.behind.map(|behind| behind.joined) {
+                Some(Joined::Below) => 1.0,
+                _ => -1.0,
+            };
+            self.composing(pane, along, away * (1.0 - along) * height * TRAVEL);
         } else if let (Some((room, before)), Some((behind, moved))) = (said.band, moving.scroll) {
             self.catching_up(room, before, behind, moved, fonts);
         }
@@ -1099,7 +1110,13 @@ impl Painter {
             rect: [left, top, (far - left).max(1.0), (low - top).max(1.0)],
             uv: self.atlas.white,
             colour: tint,
-            flags: SOLID | ROUNDED | GLASS | HANGING,
+            flags: SOLID
+                | ROUNDED
+                | GLASS
+                | match behind.joined {
+                    Joined::Above => HANGING,
+                    Joined::Below => STANDING,
+                },
             radius: cell.height * CORNER,
             padding: [0; 2],
         });

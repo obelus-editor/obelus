@@ -28,7 +28,8 @@ struct Quad {
     @location(2) colour: vec4<f32>,
     // 1: a solid colour. 2: a picture with colours of its own.
     // 4: a solid with its corners taken off. 8: glass over what is behind.
-    // 16: and square along the top, for a pane that hangs from a row.
+    // 16 and 128: square along the top or along the bottom, which is the
+    // edge a pane is joined to and no edge at all.
     // 32 and 64: the frame that has just been drawn, put back on the
     // screen in two pieces while a pane slides into it.
     @location(3) flags: u32,
@@ -88,10 +89,13 @@ fn vertex(@builtin(vertex_index) corner: u32, quad: Quad) -> Fragment {
 // catches the light. All three fall out of the one line that leaves the
 // top off the box -- and what clips the pane up there is the quad's own
 // bounds, which is where the join is.
-fn outside(point: vec2<f32>, half_size: vec2<f32>, radius: f32, hanging: bool) -> f32 {
+fn outside(point: vec2<f32>, half_size: vec2<f32>, radius: f32, joined: f32) -> f32 {
     var side = abs(point) - half_size;
-    if (hanging) {
-        side.y = point.y - half_size.y;
+    // `joined` is which way the seam is: -1 above, 1 below, 0 for a shape
+    // with edges all round. Measuring against `joined * point.y` leaves
+    // that end open, which is the whole of the difference.
+    if (joined != 0.0) {
+        side.y = joined * point.y - half_size.y;
     }
     let corner = side + vec2<f32>(radius);
     return length(max(corner, vec2<f32>(0.0))) + min(max(corner.x, corner.y), 0.0) - radius;
@@ -101,12 +105,12 @@ fn outside(point: vec2<f32>, half_size: vec2<f32>, radius: f32, hanging: bool) -
 // it. The gradient of the distance above, worked out rather than sampled:
 // a derivative would be the difference between two pixels, and what this
 // is for is the direction light bends at an edge.
-fn facing(point: vec2<f32>, half_size: vec2<f32>, radius: f32, hanging: bool) -> vec2<f32> {
+fn facing(point: vec2<f32>, half_size: vec2<f32>, radius: f32, joined: f32) -> vec2<f32> {
     var side = abs(point) - half_size;
     var way = sign(point);
-    if (hanging) {
-        side.y = point.y - half_size.y;
-        way.y = 1.0;
+    if (joined != 0.0) {
+        side.y = joined * point.y - half_size.y;
+        way.y = joined;
     }
     let corner = side + vec2<f32>(radius);
     if (max(corner.x, corner.y) > 0.0) {
@@ -185,8 +189,13 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
     // band along the rim, which is what a bevel does to what is behind it,
     // and a bright line along that rim where the light catches it.
     if ((in.flags & 8u) != 0u) {
-        let hanging = (in.flags & 16u) != 0u;
-        let distance = outside(in.middle, in.half_size, in.radius, hanging);
+        var joined = 0.0;
+        if ((in.flags & 16u) != 0u) {
+            joined = 1.0;
+        } else if ((in.flags & 128u) != 0u) {
+            joined = -1.0;
+        }
+        let distance = outside(in.middle, in.half_size, in.radius, joined);
         // Outside the rounded corners the pane is not there at all, and
         // what shows is what was drawn under it.
         if (distance > 0.0) {
@@ -196,7 +205,7 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
         let bevel = min(in.radius * BEVEL, min(in.half_size.x, in.half_size.y));
         // One at the very rim and nothing at all through the middle.
         let rim = clamp(1.0 + distance / max(bevel, 1.0), 0.0, 1.0);
-        let facing = facing(in.middle, in.half_size, in.radius, hanging);
+        let facing = facing(in.middle, in.half_size, in.radius, joined);
         let lens = pow(rim, 2.5);
 
         let uv = in.position.xy / screen.size;
@@ -240,7 +249,7 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
     }
     // Before the plain solid, because a rounded one is a solid as well.
     if ((in.flags & 4u) != 0u) {
-        let distance = outside(in.middle, in.half_size, in.radius, false);
+        let distance = outside(in.middle, in.half_size, in.radius, 0.0);
         // Softened over the one pixel either side of the edge. Without
         // it a corner is a staircase, which at the size a key's cap is
         // drawn is the whole of what the eye sees.

@@ -33,7 +33,14 @@ struct Said {
 struct Heard(Mutex<Vec<Said>>);
 
 impl obelus_ui::shapes::Shapes for Heard {
-    fn behind(&self, _area: Rect, _ground: Color, _cells: &[ratatui::buffer::Cell]) {}
+    fn behind(
+        &self,
+        _area: Rect,
+        _joined: obelus_ui::shapes::Joined,
+        _ground: Color,
+        _cells: &[ratatui::buffer::Cell],
+    ) {
+    }
 
     fn scrolled(&self, _area: Rect, _top: i64) {}
 

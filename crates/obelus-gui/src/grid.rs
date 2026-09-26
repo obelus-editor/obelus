@@ -20,7 +20,7 @@ use std::sync::{
 };
 
 use obelus_app::app::Caret;
-use obelus_ui::image::Palette;
+use obelus_ui::{image::Palette, shapes::Joined};
 use ratatui::{
     backend::{Backend, ClearType, WindowSize},
     buffer::Cell,
@@ -126,6 +126,9 @@ pub(crate) enum Update {
     Behind {
         /// Which cells it is.
         area: Rect,
+        /// Which edge it is joined to, which is also the side it arrives
+        /// from.
+        joined: Joined,
         /// The pane's own colour, which is where the glass is.
         ground: Color,
         /// Row-major, `area.width` to a row.
@@ -157,6 +160,8 @@ pub(crate) struct Said<'a> {
 pub(crate) struct Behind {
     /// Which cells it is.
     pub(crate) area: Rect,
+    /// Which edge it is joined to.
+    pub(crate) joined: Joined,
     /// The pane's own colour.
     pub(crate) ground: Color,
     /// Row-major.
@@ -265,9 +270,10 @@ impl obelus_ui::shapes::Shapes for Marking {
         let _ = self.updates.send(Update::Scrolled { area, top });
     }
 
-    fn behind(&self, area: Rect, ground: Color, cells: &[Cell]) {
+    fn behind(&self, area: Rect, joined: Joined, ground: Color, cells: &[Cell]) {
         let _ = self.updates.send(Update::Behind {
             area,
+            joined,
             ground,
             cells: cells.to_vec(),
         });
@@ -844,6 +850,7 @@ mod tests {
             .collect();
         let behind = Behind {
             area,
+            joined: Joined::Above,
             ground: Color::Reset,
             cells,
         };

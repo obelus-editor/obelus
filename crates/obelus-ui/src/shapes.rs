@@ -39,6 +39,24 @@ use ratatui::{
     style::Color,
 };
 
+/// Which edge of the region a pane is joined to.
+///
+/// One fact deciding three things, which is why it is a fact and not three
+/// settings. The edge it is joined to is not an edge at all: nothing there
+/// is rounded, nothing there bends what is behind and nothing there
+/// catches the light, because a join is a seam and not a boundary. The
+/// other end *is* an edge, so it keeps its corners. And a pane arrives
+/// from the side it is joined to, which is the only side it could come
+/// from without crossing the page.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Joined {
+    /// Hanging from the row above it: a page's whole region taken over.
+    Above,
+    /// Standing on the row below it: a list that leaves the code showing,
+    /// which is what a compact one is for.
+    Below,
+}
+
 /// What a front end that draws its own pixels can be told about a frame.
 ///
 /// `&self` throughout, the same as `image::Marks` and for the same reason:
@@ -86,7 +104,7 @@ pub trait Shapes: Send + Sync {
     /// and a cell wearing anything else -- a selected row, a tab, a rule
     /// -- is the pane saying something and stays opaque. The view knows
     /// which; a front end counting colours would be guessing.
-    fn behind(&self, area: Rect, ground: Color, cells: &[Cell]);
+    fn behind(&self, area: Rect, joined: Joined, ground: Color, cells: &[Cell]);
 
     /// This band shows a list of things starting at `top`.
     ///
@@ -122,7 +140,7 @@ pub fn drawn_by(shapes: Arc<dyn Shapes>) {
 ///
 /// Costs a terminal nothing: `DRAWING` is never set there, so the cells
 /// are not even walked.
-pub(crate) fn behind(area: Rect, ground: Color, cells: &CellBuffer) {
+pub(crate) fn behind(area: Rect, joined: Joined, ground: Color, cells: &CellBuffer) {
     let Some(shapes) = DRAWING.get() else {
         return;
     };
@@ -136,7 +154,7 @@ pub(crate) fn behind(area: Rect, ground: Color, cells: &CellBuffer) {
             under.push(cells[(x, y)].clone());
         }
     }
-    shapes.behind(room, ground, &under);
+    shapes.behind(room, joined, ground, &under);
 }
 
 /// Tells whoever is drawing where a band of rows has got to.
