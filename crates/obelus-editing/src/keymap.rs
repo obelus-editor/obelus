@@ -1091,8 +1091,12 @@ pub fn why_not(chord: KeyChord) -> Option<&'static str> {
     // arrives is not Obelus's to decide.
     //
     // Every terminal reports these the same way, unlike a modified
-    // function key -- though a terminal that binds them for itself (foot
-    // does, by default) keeps them and Obelus never sees them.
+    // function key, and no terminal shipped here binds them for itself:
+    // foot, kitty, alacritty and wezterm all put copy on `ctrl+shift+c`.
+    // A terminal that is *configured* to take them keeps them and Obelus
+    // never sees them -- which is what a desktop does to make its own
+    // chord land somewhere in a shell, and is the one case this cannot
+    // reach.
     if chord.code == KeyCode::Insert && (control || chord.modifiers == KeyModifiers::SHIFT) {
         return None;
     }

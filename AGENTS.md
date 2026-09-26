@@ -743,13 +743,18 @@ command is gone and `App::blame` reads the setting.
   arrives is not Obelus's to decide.
 
   Which is the whole of the exception, and `why_not` is where that is
-  enforced -- `alt+Insert` is still refused, because nothing sends it. A
-  terminal that binds these for itself keeps them and Obelus never sees
-  them: foot does by default, which is why `super+c` in `ob` copies the
-  terminal's selection rather than the reader's until that line is taken
-  out of the terminal's own config. That is not something Obelus can answer
-  from the inside, and pretending otherwise would be a key that looks bound
-  and does nothing.
+  enforced -- `alt+Insert` is still refused, because nothing sends it. No
+  terminal binds these for itself -- foot, kitty, alacritty and wezterm all
+  put copy on `ctrl+shift+c` -- so on a stock one they arrive and this
+  works. What takes them is a desktop *configuring* the terminal to, so
+  that its own chord lands somewhere in a shell: omarchy adds them to
+  foot's bindings for exactly that. There the key never reaches Obelus at
+  all, and since `ob` has the mouse (so the terminal has no selection to
+  copy) what it does is nothing. Which is the shape of the whole problem:
+  a desktop can tell a terminal from a window, and nothing can tell a
+  shell from a program that has taken the terminal over. Not something
+  Obelus can answer from the inside -- the terminal decides before Obelus
+  is asked, and decides unconditionally.
   **Escape always gives up on the nearest thing**, and everything else is
   reached from the palette: a chord for every command is how a key table
   stops being memorable.
