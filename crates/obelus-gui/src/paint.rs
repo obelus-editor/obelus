@@ -925,11 +925,28 @@ impl Painter {
             // *higher*. One distance, two directions, because they are
             // two ends of the same movement.
             let shift = -behind * bar.per_row * cell.height;
+            // Kept inside the bar's own rows. The mark moves a share of
+            // the band's distance, and over a page that share is rows
+            // rather than a fraction of one -- unclipped, the far end of
+            // the column went over the row above the region and the foot
+            // below it, which is a bar drawn across somebody else's
+            // writing for as long as the slide lasted.
+            //
+            // What the sliver it leaves at the other end shows is the bar
+            // where the frame drew it, which is track: the mark has moved
+            // away from that end, because that is the end it came from.
+            let (first, last) = (
+                f32::from(bar.area.top()) * cell.height,
+                f32::from(bar.area.bottom()) * cell.height,
+            );
             for y in bar.area.top()..bar.area.bottom() {
+                let top = f32::from(y).mul_add(cell.height, shift);
+                if top + cell.height <= first || top >= last {
+                    continue;
+                }
                 for x in bar.area.left()..bar.area.right() {
                     let look = page.look(x, y);
                     let left = f32::from(x) * cell.width;
-                    let top = f32::from(y).mul_add(cell.height, shift);
                     self.block(
                         left,
                         top,
