@@ -42,6 +42,9 @@ pub(crate) use win32::{paste_as, types};
 /// macOS: the general pasteboard.
 #[cfg(target_os = "macos")]
 mod cocoa {
+    // `class()` is the trait's, not the type's: a class object is what
+    // `readObjectsForClasses` is asking for.
+    use objc2::ClassType;
     use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
     use objc2_foundation::{NSArray, NSString, NSURL};
 
