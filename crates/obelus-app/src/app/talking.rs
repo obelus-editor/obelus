@@ -2368,7 +2368,7 @@ impl App {
             | acp::Incoming::Permission { session, .. } => Some(session),
             acp::Incoming::Started { .. }
             | acp::Incoming::Lost { .. }
-            | acp::Incoming::Ready(_)
+            | acp::Incoming::Ready { .. }
             // What an agent can be set to is about the agent: the
             // conversation it was asked on was opened for the asking and
             // let go before this arrived.
@@ -2912,7 +2912,9 @@ impl App {
             // hands out the name the routing goes by.
             // Answered above, both of them: one before there is a
             // conversation to name, the other because there is none.
-            acp::Incoming::Ready(_) | acp::Incoming::Started { .. } | acp::Incoming::Offers(_) => {}
+            acp::Incoming::Ready { .. }
+            | acp::Incoming::Started { .. }
+            | acp::Incoming::Offers(_) => {}
         }
     }
 

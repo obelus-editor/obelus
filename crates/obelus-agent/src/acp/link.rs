@@ -242,11 +242,36 @@ impl Chosen {
 /// hand over -- both of which the protocol has an answer for.
 pub type Answer<T> = oneshot::Sender<T>;
 
+/// What a prompt may carry, as the agent said in the handshake.
+///
+/// The protocol asks a client to send only what was advertised, and the
+/// reason is the reader's: an agent handed a picture it cannot read
+/// answers about the words around it and says nothing about the picture,
+/// which looks like the picture arriving and being ignored. So this is
+/// asked before the paste is offered, not after it fails.
+///
+/// Audio is not here. Obelus has no way to put any in a prompt, and a
+/// field nothing reads is indistinguishable from a broken feature.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Carries {
+    /// Whether a picture may go in one.
+    pub image: bool,
+    /// Whether a file's contents may be carried in one, rather than named
+    /// and left for the agent to read.
+    pub embedded: bool,
+}
+
 /// One thing from the agent worth acting on.
 #[derive(Debug)]
 pub enum Incoming {
-    /// The handshake finished. What it calls itself, if it said.
-    Ready(Option<String>),
+    /// The handshake finished: what it calls itself, if it said, and what
+    /// a prompt to it may carry.
+    Ready {
+        /// What it calls itself.
+        named: Option<String>,
+        /// What may go in a prompt.
+        carries: Carries,
+    },
     /// There is a session to talk in.
     Started {
         /// Which one, which is what everything said in it names.
@@ -1394,7 +1419,16 @@ async fn talk(
                     true => info.name.clone(),
                     false => format!("{} {}", info.name, info.version),
                 });
-                let _ = events.send(Event::Acp(Incoming::Ready(named)));
+                let prompts = &ready.agent_capabilities.prompt_capabilities;
+                let carries = Carries {
+                    image: prompts.image,
+                    embedded: prompts.embedded_context,
+                };
+                // Written down as it arrives, because "why did my picture
+                // do nothing" is answered by what the agent said it takes
+                // and by nothing else.
+                tracing::info!(?carries, "what a prompt to this agent may carry");
+                let _ = events.send(Event::Acp(Incoming::Ready { named, carries }));
 
                 // Which way the tools can be handed over, decided once from
                 // what the agent said it takes rather than guessed afresh

@@ -70,6 +70,8 @@ pub struct Talk {
     asks: mpsc::UnboundedSender<Ask>,
     /// What it calls itself, once it has said.
     info: Option<String>,
+    /// What a prompt to this agent may carry, as it said in the handshake.
+    carries: link::Carries,
     /// Whether the connection has ended, and why.
     gone: Option<Option<String>>,
     /// The conversations open on it, by the name the agent gave each.
@@ -240,6 +242,7 @@ impl Talk {
             id: id.to_string(),
             asks: link::start(command, arguments, root, tools, events),
             info: None,
+            carries: link::Carries::default(),
             gone: None,
             sessions: std::collections::HashMap::new(),
             held: None,
@@ -257,6 +260,16 @@ impl Talk {
     #[must_use]
     pub fn info(&self) -> Option<&str> {
         self.info.as_deref()
+    }
+
+    /// What a prompt to this agent may carry.
+    ///
+    /// Everything false until the handshake has finished, which is the
+    /// honest answer while nobody has said: a picture offered before the
+    /// agent has spoken is a picture Obelus guessed it would take.
+    #[must_use]
+    pub const fn carries(&self) -> link::Carries {
+        self.carries
     }
 
     /// Whether this conversation exists, and so whether a prompt in it goes
@@ -557,8 +570,9 @@ impl Talk {
     /// needs is dealt with here, and what a reader needs to see goes on.
     pub fn on(&mut self, incoming: Incoming) -> Option<Incoming> {
         match incoming {
-            Incoming::Ready(named) => {
+            Incoming::Ready { named, carries } => {
                 self.info = named;
+                self.carries = carries;
                 None
             }
             Incoming::Started { session, mode } => {
