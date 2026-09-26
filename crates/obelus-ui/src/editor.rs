@@ -615,13 +615,20 @@ impl Widget for EditorView<'_> {
         let map = map_width(self.changes).min(area.width - margin - gutter - folds);
         // Where the file's view has got to, for a front end that can draw
         // it arriving. Everything left of the map scrolls together -- the
-        // margin, the numbers, the fold column and the text are one band
-        // -- and the map does not: it is a picture of the whole file and
-        // stays where it is.
+        // margin, the numbers, the fold column and the text are one band.
+        // The two columns to the right of it are not in it and must not
+        // be: the map is a picture of the whole file, and the bar is a
+        // statement about where in the file the view *is*. Slid with the
+        // text, the bar's mark would travel the distance the text did
+        // rather than its own share of it, which is the whole length of
+        // the file too far.
         if let Some(travelled) = self.travelled {
             crate::shapes::scrolled(
                 Rect {
-                    width: area.width.saturating_sub(map),
+                    width: area
+                        .width
+                        .saturating_sub(map)
+                        .saturating_sub(SCROLLBAR_WIDTH),
                     ..area
                 },
                 travelled,
