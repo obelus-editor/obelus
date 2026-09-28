@@ -23,9 +23,34 @@ irm https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.ps1
 ```
 
 That takes the latest release, checks what it downloaded against the
-release's own `SHA256SUMS`, and puts `ob` on your PATH. `--bin obg` gets the
-window instead and `--bin both` gets the pair;
-[the releases](https://github.com/sunli829/obelus/releases) carry an archive
+release's own `SHA256SUMS`, and puts `ob` on your PATH.
+
+**`obg`, the same reader in a window**, is a second binary and is asked for
+by name. Everything after `-s --` goes to the script:
+
+```
+curl -fsSL .../contrib/install.sh | sh -s -- --bin obg    # the window
+curl -fsSL .../contrib/install.sh | sh -s -- --bin both   # both of them
+```
+
+A pipe into `iex` has nowhere to put an argument, so on Windows the script
+is fetched first:
+
+```powershell
+irm https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.ps1 -OutFile install.ps1
+.\install.ps1 -Binary obg      # or -Binary both
+```
+
+`--dir` says where to put it, and `--help` lists the rest.
+
+On Linux, `obg` from the script is a binary and nothing else: a launcher
+needs a desktop entry and an icon beside it, and those are in the `.deb`,
+the `.rpm` and the AppImage rather than here. On a desktop, install one of
+those instead. There is no `obg` for musl at all — the window finds Vulkan,
+Wayland and X11 by `dlopen`, which a static binary cannot do — and the
+script says so rather than leaving you a thing that will not start.
+
+[The releases](https://github.com/sunli829/obelus/releases) carry an archive
 for every platform as well as a `.deb`, an `.rpm`, an AppImage and a macOS
 `.app`.
 
