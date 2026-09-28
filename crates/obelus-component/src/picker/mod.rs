@@ -951,9 +951,23 @@ impl Picker {
     }
 
     /// What the list is still waiting for, if it is waiting.
+    ///
+    /// Two things can be keeping it, and they are one thing to a reader:
+    /// the rows are still arriving, or the rows are still being matched.
+    /// Either way what is on screen is not the answer yet, and the place
+    /// that says so is the same place -- a second note for the second
+    /// reason would be two answers to "is this list still moving".
+    ///
+    /// The scoring's own words, because the caller has none for it: it
+    /// does not know a scoring was sent away and should not have to. What
+    /// it is waiting *for* is the difference, and the difference is the
+    /// whole of what the note is for.
     #[must_use]
     pub fn is_filling(&self) -> Option<&str> {
-        self.filling.as_deref()
+        match self.awaiting {
+            Some(_) => Some("Matching\u{2026}"),
+            None => self.filling.as_deref(),
+        }
     }
 
     /// Says whether this list's own order is an answer, so that a query
@@ -2295,6 +2309,32 @@ mod travelling {
             picker.matches().all(|item| item.label.contains('7')),
             "a row that does not hold the query"
         );
+    }
+
+    /// A list being matched says so where a list being filled says so.
+    ///
+    /// The reader typed and the rows did not move. Without this there is
+    /// nothing on screen that says why, which is the one thing a list that
+    /// has stopped answering must not leave them to guess.
+    ///
+    /// Deliberate break: answer `self.filling` whatever `awaiting` says.
+    /// The note goes back to being about a walk alone, and a list waiting
+    /// on a scoring looks like a list that has decided nothing matches.
+    #[test]
+    fn a_list_being_matched_says_so() {
+        let mut picker = Picker::new(rows(SENT_AWAY * 2), PickerLayout::FullArea);
+        assert_eq!(picker.is_filling(), None, "nothing is happening yet");
+
+        picker.set_query("row-7");
+        assert_eq!(
+            picker.is_filling(),
+            Some("Matching\u{2026}"),
+            "a list that sent its scoring away says nothing about it"
+        );
+
+        let asked = picker.wanted_scan().expect("a scoring was asked for");
+        picker.scan_arrived(scan(&asked));
+        assert_eq!(picker.is_filling(), None, "it is still saying so");
     }
 
     /// And a batch landing while one is out does not throw it away.
