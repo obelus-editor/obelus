@@ -15,7 +15,25 @@ line as doubtful. A reader's mark, made while reading.
 ## Getting it
 
 ```
+curl -fsSL https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.sh | sh
+```
+
+```powershell
+irm https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.ps1 | iex
+```
+
+That takes the latest release, checks what it downloaded against the
+release's own `SHA256SUMS`, and puts `ob` on your PATH. `--bin obg` gets the
+window instead and `--bin both` gets the pair;
+[the releases](https://github.com/sunli829/obelus/releases) carry an archive
+for every platform as well as a `.deb`, an `.rpm`, an AppImage and a macOS
+`.app`.
+
+Or from source, which needs nothing but a stable Rust:
+
+```
 cargo install --path crates/obelus-cli    # installs as `ob`
+cargo install --path crates/obelus-gui    # and as `obg`, in a window
 ```
 
 ```
