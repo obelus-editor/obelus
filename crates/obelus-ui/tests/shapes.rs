@@ -33,6 +33,7 @@ struct Said {
 struct Heard {
     caps: Mutex<Vec<Said>>,
     switches: Mutex<Vec<(Rect, bool)>>,
+    bars: Mutex<Vec<obelus_ui::shapes::Bar>>,
 }
 
 impl obelus_ui::shapes::Shapes for Heard {
@@ -46,6 +47,12 @@ impl obelus_ui::shapes::Shapes for Heard {
     }
 
     fn scrolled(&self, _area: Rect, _top: i64, _bar: Option<obelus_ui::shapes::Bar>) {}
+
+    fn barred(&self, bar: obelus_ui::shapes::Bar) {
+        if let Ok(mut bars) = self.bars.lock() {
+            bars.push(bar);
+        }
+    }
 
     fn ticked(&self, area: Rect, on: bool) {
         if let Ok(mut switches) = self.switches.lock() {
@@ -216,4 +223,97 @@ fn the_card_of_every_key_says_a_cap_round_each() {
         "the panel's own ground"
     );
     assert_eq!(mine[0].page, DARK.raised_background);
+}
+
+/// A reading longer than its region, drawn into a grid this test owns.
+///
+/// A reading because it is the shortest way to a bar: rows in, cells out,
+/// and the one condition for drawing a bar is that there are more rows
+/// than there is room.
+fn a_long_reading(y: u16, height: u16, rows: usize) -> (CellBuffer, Rect) {
+    let area = Rect {
+        x: 0,
+        y,
+        width: 40,
+        height,
+    };
+    let mut cells = CellBuffer::empty(Rect {
+        x: 0,
+        y: 0,
+        width: 40,
+        height: y + height,
+    });
+    let rows: Vec<obelus_row::Row> = (0..rows).map(|_| obelus_row::Row::of(Vec::new())).collect();
+    obelus_ui::reading::draw(&mut cells, area, &rows, 0, &DARK, DARK.background);
+    (cells, area)
+}
+
+/// Break: drop the `shapes::barred` at the foot of `scrollbar`, and every
+/// bar in Obelus goes back to being a column of cells with nothing saying
+/// it is a bar -- so a window draws the block a terminal draws and none of
+/// the ten lists gets a shape of its own.
+#[test]
+fn a_bar_says_where_it_is_and_how_much_of_it_is_the_mark() {
+    let heard = heard();
+    // Its own row again: the recorder is shared by everything in this
+    // binary, and every other test here draws at the bottom of its grid.
+    let y = 21;
+    let (_cells, area) = a_long_reading(y, 10, 40);
+
+    let said = heard.bars.lock().expect("nothing poisoned it").clone();
+    let mine: Vec<obelus_ui::shapes::Bar> =
+        said.into_iter().filter(|bar| bar.area.y == y).collect();
+    assert_eq!(mine.len(), 1, "one reading, one bar: {mine:?}");
+    let bar = mine[0];
+
+    // The last column of the region and nothing else: a bar that claimed
+    // the whole width would have a window painting over the text.
+    assert_eq!(
+        (bar.area.x, bar.area.width),
+        (area.right() - 1, 1),
+        "{bar:?}"
+    );
+    assert_eq!(bar.area.height, area.height);
+    // Ten rows of forty, so a quarter of the bar, at the top of it.
+    assert_eq!((bar.mark, bar.thumb), (0, 2), "{bar:?}");
+}
+
+/// Break: make `BAR` the line the editor's note says this was once drawn
+/// as, and `ob` is back to a column every rule that crosses it has to
+/// decide about. Or drop the `put` and keep the `barred`, and the terminal
+/// has nothing at all -- which is the invariant everything said on this
+/// channel rests on.
+///
+/// The other half of the test above, and each passes with the other
+/// broken: that one holds what was *said* about the mark, this one holds
+/// the rows it was actually drawn on. A `thumb` that stopped agreeing with
+/// `bar_reach` fails the first; cells that stopped being a bar fail this.
+#[test]
+fn the_cells_are_the_bar_a_terminal_draws() {
+    let y = 33;
+    let height = 10;
+    let (cells, area) = a_long_reading(y, height, 40);
+    let x = area.right() - 1;
+
+    // Every row of the column is a full block, which is the shape the
+    // editor's own note says a bar has to be: a block meets a rule and
+    // needs nothing from it, where a line would have to decide.
+    for row in 0..height {
+        let cell = &cells[(x, y + row)];
+        assert_eq!(cell.symbol(), "\u{2588}", "row {row}: {cell:?}");
+    }
+
+    // And the rows the mark covers are the brighter of the two colours,
+    // which is what a front end that hears nothing has to go on.
+    let marked: Vec<u16> = (0..height)
+        .filter(|row| cells[(x, y + row)].fg == DARK.gutter_current)
+        .collect();
+    assert_eq!(marked, vec![0, 1], "the mark's rows");
+    for row in 2..height {
+        assert_eq!(
+            cells[(x, y + row)].fg,
+            DARK.scrollbar_track,
+            "the track at {row}"
+        );
+    }
 }

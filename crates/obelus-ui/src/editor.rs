@@ -627,33 +627,15 @@ impl Widget for EditorView<'_> {
         // reader is further into it than the file's own numbers say.
         // Once, because the bar is drawn from these and the front end
         // slides it to what they say -- two workings-out would be a mark
-        // slid to one row and drawn on another.
+        // slid to one row and drawn on another. Which is why what is said
+        // about it waits until the bar has actually been drawn, at the
+        // foot of this function: the bar it names is the one drawn there
+        // and not a second one worked out here from the same numbers.
         let shown = text.line_count() - buffer.folds().hidden_total();
         let above = {
             let top = buffer.viewport().top;
             top.get() - buffer.folds().hidden_before(top)
         };
-        if let Some(travelled) = self.travelled {
-            let bar = (shown > usize::from(area.height)).then(|| crate::shapes::Bar {
-                area: Rect {
-                    x: area.right().saturating_sub(SCROLLBAR_WIDTH),
-                    width: SCROLLBAR_WIDTH,
-                    ..area
-                },
-                mark: crate::bar_mark(area.height, above, shown),
-            });
-            crate::shapes::scrolled(
-                Rect {
-                    width: area
-                        .width
-                        .saturating_sub(map)
-                        .saturating_sub(SCROLLBAR_WIDTH),
-                    ..area
-                },
-                travelled,
-                bar,
-            );
-        }
         // The same total the caret's position is worked out from, which is
         // what keeps the two agreeing -- checked only where the caret is
         // drawn at all. A screen too narrow for what goes before the text
@@ -1151,11 +1133,34 @@ impl Widget for EditorView<'_> {
         // with no thumb on it is a control that does not work.
         let more_below = buffer.folds().first_shown(line).get() < text.line_count();
         let scrolled = viewport.top.get() > 0 || viewport.top_row > 0;
-        if bar > 0 && (more_below || scrolled) {
+        let drawn = (bar > 0 && (more_below || scrolled))
             // The whole region, so the bar is in the last column of it --
             // which is where every list in Obelus puts its own, and what
             // keeps them in one line when a list opens over a file.
-            crate::scrollbar(cells, area, above, shown, self.theme);
+            .then(|| crate::scrollbar(cells, area, above, shown, self.theme))
+            .flatten();
+
+        // And where the file's view has got to, for a front end that can
+        // draw it arriving. Everything left of the map scrolls together --
+        // the margin, the numbers, the fold column and the text are one
+        // band. The two columns to the right of it are not in it and must
+        // not be: the map is a picture of the whole file, and the bar is a
+        // statement about where in the file the view *is*. Slid with the
+        // text, the bar's mark would travel the distance the text did
+        // rather than its own share of it, which is the whole length of
+        // the file too far.
+        if let Some(travelled) = self.travelled {
+            crate::shapes::scrolled(
+                Rect {
+                    width: area
+                        .width
+                        .saturating_sub(map)
+                        .saturating_sub(SCROLLBAR_WIDTH),
+                    ..area
+                },
+                travelled,
+                drawn,
+            );
         }
     }
 }

@@ -124,6 +124,17 @@ pub(crate) enum Update {
         /// What draws its outline.
         edge: Color,
     },
+    /// A column that is a bar, and how much of it is the mark.
+    ///
+    /// What a terminal draws as a column of full blocks with a brighter
+    /// run in it, and a window draws as the shape it is. No colours: they
+    /// are the foreground and background of those very cells, which the
+    /// view has already written -- see `obelus_ui::shapes`.
+    Barred {
+        /// Where it is, how much of it is the mark and where the mark
+        /// starts.
+        bar: Bar,
+    },
     /// A cell that is a switch, and which way it is set.
     Ticked {
         /// Which cell it is.
@@ -172,6 +183,8 @@ pub(crate) struct Said<'a> {
     pub(crate) capped: &'a [Capped],
     /// And which cells are switches.
     pub(crate) ticked: &'a [Ticked],
+    /// And which columns are bars.
+    pub(crate) barred: &'a [Bar],
     /// And what is under the pane, where there is one.
     pub(crate) behind: Option<&'a Behind>,
     /// The band of rows that is catching up, and the page as it was
@@ -310,6 +323,10 @@ impl obelus_ui::shapes::Shapes for Marking {
 
     fn scrolled(&self, area: Rect, top: i64, bar: Option<Bar>) {
         let _ = self.updates.send(Update::Scrolled { area, top, bar });
+    }
+
+    fn barred(&self, bar: Bar) {
+        let _ = self.updates.send(Update::Barred { bar });
     }
 
     fn behind(&self, area: Rect, joined: Joined, ground: Color, cells: &[Cell]) {
@@ -815,6 +832,10 @@ impl Page {
             | Update::Behind { area, .. }
             | Update::Scrolled { area, .. } => {
                 tracing::warn!(?area, "a cap reached the page");
+                false
+            }
+            Update::Barred { bar } => {
+                tracing::warn!(?bar.area, "a cap reached the page");
                 false
             }
             Update::Frame => true,

@@ -500,22 +500,16 @@ impl Widget for PickerView<'_> {
         // answer -- the same one every other list asks it for.
         let matched = self.picker.match_count();
         let scrollable = self.picker.window().scrollable(list.height);
-        if scrollable {
-            crate::scrollbar(cells, list, first, matched, self.theme);
-        }
+        let bar = scrollable
+            .then(|| crate::scrollbar(cells, list, first, matched, self.theme))
+            .flatten();
 
         // Where this list has got to, for a front end that can draw it
         // arriving rather than simply being there -- and the bar beside
-        // it, which moves its own share of the same distance.
+        // it, which moves its own share of the same distance. The bar is
+        // the one the drawing above just made, rather than a second one
+        // worked out from the same numbers.
         if let Ok(top) = i64::try_from(first) {
-            let bar = scrollable.then(|| crate::shapes::Bar {
-                area: Rect {
-                    x: list.right().saturating_sub(SCROLLBAR_WIDTH),
-                    width: SCROLLBAR_WIDTH,
-                    ..list
-                },
-                mark: crate::bar_mark(list.height, first, matched),
-            });
             crate::shapes::scrolled(rows, top, bar);
         }
 

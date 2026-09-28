@@ -75,6 +75,20 @@ pub struct Bar {
     pub area: Rect,
     /// Which row of them its mark starts on.
     pub mark: u16,
+    /// And how many rows the mark covers.
+    ///
+    /// Said rather than left to be worked out, for the reason `bar_reach`
+    /// gives about the mark's row: a front end that divided the height by
+    /// the total again would be a second working-out of the same three
+    /// numbers, and a mark that is one length in a terminal and another in
+    /// a window is the two front ends disagreeing about how much of the
+    /// thing is on screen.
+    ///
+    /// It could be counted off the cells instead -- the mark's rows are
+    /// the ones in the brighter of the two colours -- but that is reading
+    /// the grid back to find out what it means, which is the mistake the
+    /// editor's own note is about.
+    pub thumb: u16,
 }
 
 /// What a front end that draws its own pixels can be told about a frame.
@@ -165,6 +179,24 @@ pub trait Shapes: Send + Sync {
     /// be consumed, and a redraw nobody asked for would replay a scroll
     /// that already happened.
     fn scrolled(&self, area: Rect, top: i64, bar: Option<Bar>);
+
+    /// There is a bar here, and this much of the thing is on screen.
+    ///
+    /// Said by the one function that draws one, so a front end hears about
+    /// every bar in Obelus rather than about the two that happen to sit
+    /// beside a band something else was already saying had moved.
+    ///
+    /// No colours, for the reason a switch has none: a bar is a column of
+    /// cells the view has already written, and what the track and the mark
+    /// are drawn in is the foreground of those very cells, with the page
+    /// behind them their background. Said again here they would be the
+    /// same colours from two places, and two places is somewhere for them
+    /// to differ.
+    ///
+    /// A terminal has an answer to all of this already -- a full block a
+    /// shade off the page with a brighter run in it -- which is the whole
+    /// test for whether a thing may be said here.
+    fn barred(&self, bar: Bar);
 }
 
 /// Who is drawing, where it is somebody who wants to be told.
@@ -213,6 +245,13 @@ pub(crate) fn ticked(area: Rect, on: bool) {
 pub(crate) fn scrolled(area: Rect, top: i64, bar: Option<Bar>) {
     if let Some(shapes) = DRAWING.get() {
         shapes.scrolled(area, top, bar);
+    }
+}
+
+/// Tells whoever is drawing that a bar is here.
+pub(crate) fn barred(bar: Bar) {
+    if let Some(shapes) = DRAWING.get() {
+        shapes.barred(bar);
     }
 }
 

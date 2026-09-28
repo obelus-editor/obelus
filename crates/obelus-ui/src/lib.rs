@@ -889,15 +889,20 @@ pub(crate) fn rule(cells: &mut CellBuffer, area: Rect, theme: &Theme) {
 /// The column stays reserved either way. Handing it back would change the
 /// width of the text -- and with wrapping on, that means every line rewraps
 /// when a file turns out to be one row too long.
+/// It also says it is here, and hands back what it said. One piece of code
+/// draws a bar, so one piece of code knows where one is: the two callers
+/// that pass a bar on to [`shapes::scrolled`] were each working the mark
+/// out a second time from the same three numbers, which is the one thing
+/// `bar_reach` exists to stop happening.
 pub(crate) fn scrollbar(
     cells: &mut CellBuffer,
     area: Rect,
     top: usize,
     total: usize,
     theme: &Theme,
-) {
+) -> Option<shapes::Bar> {
     if area.width == 0 || area.height == 0 {
-        return;
+        return None;
     }
     let height = usize::from(area.height);
     let total = total.max(1);
@@ -915,6 +920,20 @@ pub(crate) fn scrollbar(
         };
         put(cells, x, area.y + row, BAR, Style::new().fg(colour));
     }
+
+    let bar = shapes::Bar {
+        // The one column the cells went in, which is not `area`: a caller
+        // hands this the whole list and the bar takes its last column.
+        area: Rect {
+            x,
+            width: 1,
+            ..area
+        },
+        mark: start,
+        thumb: u16::try_from(thumb).unwrap_or(area.height),
+    };
+    shapes::barred(bar);
+    Some(bar)
 }
 
 /// How big a bar's thumb is, how far it can travel, and how far the top it

@@ -18,7 +18,7 @@ use cosmic_text::{CacheKey, SwashContent};
 use obelus_app::app::Caret;
 use obelus_ui::{
     image::{Palette, SLOT},
-    shapes::Joined,
+    shapes::{Bar, Joined},
 };
 use ratatui::style::{Color, Modifier};
 use winit::window::Window;
@@ -180,6 +180,23 @@ const BOX_CORNER: f32 = 0.30;
 const BOX_EDGE: f32 = 0.11;
 /// How far above the cell's middle it sits, as a part of the cell.
 const ABOVE: f32 = 0.05;
+
+/// How wide a bar's track is drawn, as a part of the cell it sits in.
+///
+/// A third, which is what leaves the column reading as a margin with
+/// something in it rather than as a wall. The cell stays the cell: what
+/// the view reserved is a column, and narrowing the ink inside it is the
+/// front end saying what that column looks like, not the application
+/// giving back a column it told the text it had taken.
+const BAR_TRACK: f32 = 0.32;
+
+/// And how wide its mark is.
+///
+/// Wider than the track, because the mark is the part that is doing the
+/// telling and the track is only there to say how far it can go. Two
+/// capsules about one centre line, which is the same figure a terminal
+/// draws in one column of blocks and two colours.
+const BAR_MARK: f32 = 0.5;
 /// The frame that has just been drawn, put back everywhere but the pane.
 const FRAME: u32 = 32;
 /// And the pane out of it, higher up than it will end.
@@ -588,6 +605,9 @@ impl Painter {
         // Over the letters: a switch replaces the glyph standing in for
         // it, rather than sitting beside one.
         self.ticks(page, said.ticked, cell);
+        // And so does a bar, for the same reason: what a terminal has for
+        // a track is a column of full blocks, and a window has a shape.
+        self.bars(page, said.barred, cell);
         // After the text, over cells the view left empty: a view draws its
         // glyph only where a picture could not be drawn.
         self.marks(said.marked, cell);
@@ -1019,6 +1039,76 @@ impl Painter {
     /// shape either way, because a pair that changed shape would put a
     /// jog in a column read straight down -- which is what `tick` says
     /// about the two glyphs, for the same reason.
+    /// The bars, as capsules rather than as the blocks a terminal has.
+    ///
+    /// The cells the view wrote are covered first, with their own
+    /// background and row by row: a bar can run past a rule and down the
+    /// side of a pane, so what is behind it is not one colour for its
+    /// whole length. Then the track, then the mark over it.
+    ///
+    /// The colours are the cells' own, which is the rule a switch follows
+    /// and for the same reason: what a terminal draws the blocks in is
+    /// what a window draws the capsules in, and asking the view for them
+    /// again would be the same two colours from two places.
+    fn bars(&mut self, page: &Page, barred: &[Bar], cell: CellSize) {
+        for bar in barred {
+            if bar.area.width == 0 || bar.area.height == 0 {
+                continue;
+            }
+            let column = bar.area.x;
+            for row in 0..bar.area.height {
+                let y = bar.area.y + row;
+                self.block(
+                    f32::from(column) * cell.width,
+                    f32::from(y) * cell.height,
+                    cell.width,
+                    cell.height,
+                    rgba(page.look(column, y).background, Ink::Background),
+                );
+            }
+
+            let capsule = |width: f32| {
+                let width = (cell.width * width).round().max(2.0);
+                (
+                    f32::from(column) * cell.width + (cell.width - width) / 2.0,
+                    width,
+                )
+            };
+
+            // A row the mark does not cover, which is where the track's
+            // colour is. There may be none -- a mark as long as its track
+            // -- and then there is no track to draw either: every pixel of
+            // it would be under the mark.
+            if let Some(row) = (0..bar.area.height)
+                .find(|row| *row < bar.mark || *row >= bar.mark.saturating_add(bar.thumb))
+            {
+                let (left, width) = capsule(BAR_TRACK);
+                self.rounded(
+                    left,
+                    f32::from(bar.area.y) * cell.height,
+                    width,
+                    f32::from(bar.area.height) * cell.height,
+                    width / 2.0,
+                    rgba(
+                        page.look(column, bar.area.y + row).foreground,
+                        Ink::Foreground,
+                    ),
+                );
+            }
+
+            let (left, width) = capsule(BAR_MARK);
+            let top = bar.area.y.saturating_add(bar.mark);
+            self.rounded(
+                left,
+                f32::from(top) * cell.height,
+                width,
+                f32::from(bar.thumb) * cell.height,
+                width / 2.0,
+                rgba(page.look(column, top).foreground, Ink::Foreground),
+            );
+        }
+    }
+
     fn ticks(&mut self, page: &Page, ticked: &[Ticked], cell: CellSize) {
         for tick in ticked {
             let left = f32::from(tick.area.x) * cell.width;
