@@ -385,3 +385,18 @@ objc2-foundation = { version = "0.3", features = [
 # otherwise be doing meanwhile. Between them they are minutes on the way to
 # running the thing, every time, and the few per cent they buy is not
 # something a reader of a file has ever noticed.
+
+# Which is an argument about who waits, and nobody waits for a release. The
+# minutes a link-time pass costs are a runner's, once per tag, and the few
+# per cent it buys are the reader's on every keystroke for as long as they
+# have that binary. So the two settings the profile above turned down live
+# here, where the cost is paid by a machine nobody is watching.
+#
+# Nothing is stripped. Obelus's log is where a reader's report comes from,
+# and a panic in a stripped binary names no function at all -- there is no
+# debug info in a release build to begin with, so the symbol table is the
+# whole of what a backtrace has to read.
+[profile.dist]
+inherits = "release"
+lto = "thin"
+codegen-units = 1

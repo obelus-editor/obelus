@@ -1,0 +1,348 @@
+# What a tag produces: an archive per binary per platform, a `.deb`, a
+# `.rpm`, an AppImage, a macOS bundle, and a GitHub release with all of it
+# on it.
+#
+# Two binaries, and they are shipped apart rather than together. `ob` is the
+# terminal and `obg` is the window -- gvim's relation to vim -- and a reader
+# who wants one has no use for the other's forty megabytes. Which is also
+# why the static builds carry only `ob`: a musl binary cannot `dlopen`, and
+# the window finds Vulkan, Wayland and X11 exactly that way.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  # A rehearsal. It builds everything and uploads it as workflow artifacts,
+  # and publishes nothing -- the `publish` job below is gated on a tag.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  plan:
+    name: The version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.said.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      # A tag and the version in `Cargo.toml` are one fact written twice, so
+      # this is the test that the one reads the other. Said here, once,
+      # rather than at the end: a mismatch found after eight builds is eight
+      # builds nobody needed.
+      - id: said
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "obelus-cli") | .version')
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            tag=${GITHUB_REF#refs/tags/}
+            if [[ $tag != "v$version" ]]; then
+              echo "::error::the tag is $tag and Cargo.toml says $version, so one of them is wrong"
+              exit 1
+            fi
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Building $version"
+
+  build:
+    name: ${{ matrix.target }}
+    needs: plan
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            bins: ob obg
+            packages: -p obelus-cli -p obelus-gui
+            # The two that a distribution has a format of its own for, and
+            # the one that runs where no distribution was asked.
+            distro: true
+            appimage: x86_64
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            bins: ob obg
+            packages: -p obelus-cli -p obelus-gui
+            distro: true
+            appimage: aarch64
+          # Static, and `ob` alone: see the note at the top.
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+            bins: ob
+            packages: -p obelus-cli
+            musl: true
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            bins: ob
+            packages: -p obelus-cli
+            musl: true
+          - os: windows-2025
+            target: x86_64-pc-windows-msvc
+            bins: ob obg
+            packages: -p obelus-cli -p obelus-gui
+            exe: .exe
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            bins: ob obg
+            packages: -p obelus-cli -p obelus-gui
+            exe: .exe
+    steps:
+      - uses: actions/checkout@v7
+
+      # The fifteen grammars are C compiled by their build scripts, so a
+      # musl target needs a musl C compiler. `cc` reaches for `musl-gcc` by
+      # itself once it is installed.
+      - if: matrix.musl
+        run: sudo apt-get update && sudo apt-get install --yes musl-tools
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - run: cargo build --profile dist --locked --target ${{ matrix.target }} ${{ matrix.packages }}
+
+      # One directory per binary, named the way the archive is, so that
+      # unpacking one in a downloads folder puts nothing loose in it.
+      - name: Lay the archives out
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p staging archives
+          for bin in ${{ matrix.bins }}; do
+            name="$bin-${{ needs.plan.outputs.version }}-${{ matrix.target }}"
+            mkdir -p "staging/$name"
+            cp "target/${{ matrix.target }}/dist/$bin${{ matrix.exe }}" "staging/$name/"
+            cp README.md LICENSE "staging/$name/"
+            echo "$name" >> staging/names
+          done
+
+      # xz rather than gzip. Nothing is stripped -- a release build has no
+      # debug info to begin with, so the symbol table is the whole of what a
+      # panic in somebody's log has to read -- which leaves these binaries
+      # at forty to sixty megabytes, and that is where the difference
+      # between the two is worth a reader's minute.
+      - name: Pack them (tar)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          while read -r name; do
+            tar -C staging -cJf "archives/$name.tar.xz" "$name"
+          done < staging/names
+
+      # A zip, because a Windows reader has one and may not have a tar. Its
+      # own step rather than a branch inside the one above: bsdtar and the
+      # tar Git for Windows installs disagree about how to make a zip, and
+      # PowerShell is the one thing on that runner that is not a choice.
+      - name: Pack them (zip)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          foreach ($name in Get-Content staging/names) {
+            Compress-Archive -Path "staging/$name" -DestinationPath "archives/$name.zip"
+          }
+
+      # What a distribution installs. `--no-build` because the binaries are
+      # the ones built above: building them twice would be building them
+      # differently, and the whole point of a release is that everything in
+      # it came out of one compile.
+      #
+      # `dpkg-dev` is on the runner, so cargo-deb asks it what the binary
+      # actually links and writes that into Depends rather than guessing.
+      # One comes down as a binary and the other is compiled, because
+      # cargo-generate-rpm publishes no releases to fetch.
+      - if: matrix.distro
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deb
+      - if: matrix.distro
+        run: cargo install cargo-generate-rpm --locked
+
+      - name: A .deb and a .rpm
+        if: matrix.distro
+        shell: bash
+        run: |
+          set -euo pipefail
+          for package in obelus-cli obelus-gui; do
+            cargo deb --no-build --target ${{ matrix.target }} --profile dist \
+              -p "$package" --output archives/
+            cargo generate-rpm --target ${{ matrix.target }} --profile dist \
+              -p "crates/$package" --output archives/
+          done
+
+      # A window somebody can double-click, for a desktop with no Obelus in
+      # its own package manager. `obg` alone: an AppImage of a terminal
+      # program is a file nothing would ever open.
+      - name: An AppImage of the window
+        if: matrix.appimage
+        shell: bash
+        env:
+          # appimagetool mounts itself, and a runner has no FUSE.
+          APPIMAGE_EXTRACT_AND_RUN: 1
+          ARCH: ${{ matrix.appimage }}
+        run: |
+          set -euo pipefail
+          mkdir -p AppDir/usr/bin \
+                   AppDir/usr/share/applications \
+                   AppDir/usr/share/icons/hicolor/scalable/apps
+          cp "target/${{ matrix.target }}/dist/obg" AppDir/usr/bin/
+          cp contrib/desktop/obelus.desktop AppDir/usr/share/applications/
+          cp contrib/desktop/obelus.svg AppDir/usr/share/icons/hicolor/scalable/apps/
+          # The three things appimagetool looks for at the top of an AppDir.
+          ln -s usr/share/applications/obelus.desktop AppDir/obelus.desktop
+          ln -s usr/share/icons/hicolor/scalable/apps/obelus.svg AppDir/obelus.svg
+          ln -s usr/share/icons/hicolor/scalable/apps/obelus.svg AppDir/.DirIcon
+          cat > AppDir/AppRun <<'RUN'
+          #!/bin/sh
+          exec "$(dirname "$(readlink -f "$0")")/usr/bin/obg" "$@"
+          RUN
+          chmod +x AppDir/AppRun
+          curl -fsSLo appimagetool \
+            "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${ARCH}.AppImage"
+          chmod +x appimagetool
+          ./appimagetool AppDir "archives/obg-${{ needs.plan.outputs.version }}-${ARCH}.AppImage"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.target }}
+          path: archives/*
+          if-no-files-found: error
+
+  macos:
+    # One archive for both architectures, so a reader on a Mac is never
+    # asked which one they have. Both are built here rather than in two jobs
+    # because `lipo` needs the two files side by side.
+    name: universal2-apple-darwin
+    needs: plan
+    runs-on: macos-15
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: universal2-apple-darwin
+
+      - run: cargo build --profile dist --locked --target aarch64-apple-darwin -p obelus-cli -p obelus-gui
+      - run: cargo build --profile dist --locked --target x86_64-apple-darwin -p obelus-cli -p obelus-gui
+
+      - name: Make one binary of the two
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p staging archives
+          for bin in ob obg; do
+            name="$bin-${{ needs.plan.outputs.version }}-universal2-apple-darwin"
+            mkdir -p "staging/$name"
+            lipo -create -output "staging/$name/$bin" \
+              "target/aarch64-apple-darwin/dist/$bin" \
+              "target/x86_64-apple-darwin/dist/$bin"
+
+            # An arm64 binary macOS will not run at all is one with no
+            # signature, and rustc's linker signs the arm64 build itself --
+            # which joining the two throws away. `-` is the ad-hoc identity:
+            # no certificate, nothing notarised, and the one thing needed
+            # for the thing to start. A reader who downloads this in a
+            # browser still meets Gatekeeper, because a browser marks what
+            # it saved as quarantined; `curl` and `brew` do not.
+            codesign --force --sign - "staging/$name/$bin"
+            codesign --verify --verbose "staging/$name/$bin"
+
+            cp README.md LICENSE "staging/$name/"
+            tar -C staging -cJf "archives/$name.tar.xz" "$name"
+          done
+
+      # And the window as a bundle, which is the only shape macOS draws an
+      # icon for: a bare executable in the Dock is a blank sheet with no
+      # name under it. The tarball above stays, because that is what a
+      # formula installs and what something on a PATH wants.
+      - name: A bundle of the window
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=${{ needs.plan.outputs.version }}
+          app=Obelus.app
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          cp "staging/obg-$version-universal2-apple-darwin/obg" "$app/Contents/MacOS/obg"
+          cp contrib/desktop/obelus.icns "$app/Contents/Resources/obelus.icns"
+          sed "s/@VERSION@/$version/g" contrib/desktop/Info.plist > "$app/Contents/Info.plist"
+
+          # The bundle is sealed over the executable that was signed above,
+          # so this is the one signature Gatekeeper reads. Ad-hoc again,
+          # and again the whole of what it buys is that the thing starts.
+          codesign --force --sign - "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+
+          # `ditto` and not `zip`: it is the one that writes a bundle the
+          # way the system does, and a bundle rebuilt by anything else
+          # arrives with its signature broken.
+          ditto -c -k --keepParent "$app" \
+            "archives/Obelus-$version-universal2-apple-darwin.app.zip"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: universal2-apple-darwin
+          path: archives/*
+          if-no-files-found: error
+
+  publish:
+    name: The release
+    needs: [plan, build, macos]
+    # A rehearsal leaves its archives as workflow artifacts and stops here.
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: assets
+          merge-multiple: true
+
+      # One file for all of them, because that is what an installer reads:
+      # a formula, a manifest and `contrib/install.sh` each want the sum of
+      # one archive, and none of them wants to fetch it to work it out.
+      - name: Say what each of them is
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd assets
+          # A pattern that matches nothing expands to nothing rather than to
+          # itself, so a platform dropped from the matrix is one fewer line
+          # here and not a failure.
+          shopt -s nullglob
+          sha256sum -- *.tar.xz *.zip *.deb *.rpm *.AppImage > SHA256SUMS
+          cat SHA256SUMS
+
+      # A draft. The tag is the decision to build; publishing is the
+      # decision to tell people, and that one is a reader's to make -- which
+      # is also what an installer's automation hangs on, since a release
+      # being published is an event and a draft being created is not.
+      - name: Hand them to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          tag=${GITHUB_REF#refs/tags/}
+          if gh release view "$tag" > /dev/null 2>&1; then
+            gh release upload "$tag" assets/* --clobber
+          else
+            gh release create "$tag" assets/* --draft --generate-notes --title "$tag"
+          fi
