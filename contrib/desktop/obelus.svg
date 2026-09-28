@@ -1,0 +1,36 @@
+<!-- The mark, and nothing else.
+
+     An obelus is the division sign, which a scholar put in a manuscript's
+     margin to flag a line as doubtful. Here it is reduced to what it is
+     made of: a dot, a line, a dot. The line is drawn nearly to the edge
+     because the space around it is most of the design, and the dots are
+     small enough that at a launcher's size the whole thing reads as one
+     mark rather than as three shapes.
+
+     The gradient is what keeps it from looking printed: a light running
+     across brass, dark at one corner and bright before the middle, which
+     is how a metal thing catches a room. The inset border is a hairline on
+     purpose, so that it is there at the size an icon is looked at and gone
+     at the size it is used; a frame heavy enough to see in a taskbar would
+     be a second shape competing with the mark.
+
+     One file for all of it. Everything that draws this asks for a size and
+     gets one: the desktop entry beside it, the AppImage, the .deb and the
+     .rpm. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <defs>
+    <linearGradient id="obelus-brass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8c6f33"/>
+      <stop offset="0.45" stop-color="#e8cf8f"/>
+      <stop offset="0.7" stop-color="#c9a227"/>
+      <stop offset="1" stop-color="#7d6229"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="58" fill="#0b0b0d"/>
+  <rect x="14.5" y="14.5" width="227" height="227" rx="45" fill="none" stroke="#2c2617" stroke-width="1.5"/>
+  <g fill="url(#obelus-brass)">
+    <circle cx="128" cy="88" r="7.5"/>
+    <rect x="52" y="124" width="152" height="8" rx="4"/>
+    <circle cx="128" cy="168" r="7.5"/>
+  </g>
+</svg>

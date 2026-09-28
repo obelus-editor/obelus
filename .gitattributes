@@ -22,6 +22,18 @@
 #   nobody writes into a test and counting a tree is only worth asserting
 #   on a real one. Those count bytes and lines of these files.
 #
-# Everything in here is text -- there is not one binary file in the
-# repository -- so this is one rule with nothing to except from it.
+# Everything a reader writes here is text, and `text=auto` is what says so:
+# git decides per file and leaves the rest alone. A few are not text -- the
+# font the window carries, the screenshots the site shows, and the two
+# containers built from `contrib/desktop/obelus.svg` for the two systems
+# that will not take an SVG -- and those are named rather than left to be
+# guessed at. Detection reads the first few kilobytes and these all have a
+# NUL in the first four bytes, so it would in fact get every one of them
+# right; what it would not survive is the next file somebody adds whose
+# header happens to read as text.
 * text=auto eol=lf
+
+*.icns binary
+*.ico binary
+*.png binary
+*.ttf binary

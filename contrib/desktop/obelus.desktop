@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+Name=Obelus
+# Not `TextEditor`, which is the category a program like this is usually
+# filed under: called an editor it gets measured by an editor's checklist,
+# and `Development` says what it is for without saying the wrong thing about
+# what it is.
+Categories=Development;
+GenericName=Code Reader
+Comment=A code reader in a window. It doesn't want you to type.
+Exec=obg %F
+Icon=obelus
+Terminal=false
+# What `obg` tells Wayland and X11 it is called, in `window.rs`. A desktop
+# that cannot match the two draws the window with no icon at all.
+StartupWMClass=obelus
+MimeType=text/plain;inode/directory;

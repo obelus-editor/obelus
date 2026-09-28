@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- What a macOS bundle is, for `obg`.
+
+     A template rather than the thing itself: the version is the release's,
+     and the release workflow puts it in. A plist with a placeholder in it
+     is a file nothing else will read by accident.
+
+     There is no LSMinimumSystemVersion on purpose. The binary inside is
+     universal, and Launch Services applies that key to the whole bundle
+     rather than to the slice a machine would actually run, so a floor high
+     enough for the arm64 half would refuse an Intel Mac whose own half
+     runs perfectly well. Saying nothing is the only thing that is true of
+     both. -->
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Obelus</string>
+    <key>CFBundleDisplayName</key>
+    <string>Obelus</string>
+    <key>CFBundleIdentifier</key>
+    <string>io.github.sunli829.obelus</string>
+    <key>CFBundleExecutable</key>
+    <string>obg</string>
+    <key>CFBundleIconFile</key>
+    <string>obelus</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleShortVersionString</key>
+    <string>@VERSION@</string>
+    <key>CFBundleVersion</key>
+    <string>@VERSION@</string>
+    <!-- Without this a window is drawn at half the resolution the screen
+         has, and every glyph in it is soft. -->
+    <key>NSHighResolutionCapable</key>
+    <true/>
+</dict>
+</plist>
