@@ -183,8 +183,8 @@ pub(crate) struct Said<'a> {
     pub(crate) capped: &'a [Capped],
     /// And which cells are switches.
     pub(crate) ticked: &'a [Ticked],
-    /// And which columns are bars.
-    pub(crate) barred: &'a [Bar],
+    /// And which columns are bars, with how the window is showing each.
+    pub(crate) barred: &'a [Barred],
     /// And what is under the pane, where there is one.
     pub(crate) behind: Option<&'a Behind>,
     /// The band of rows that is catching up, and the page as it was
@@ -242,6 +242,22 @@ pub(crate) struct Ticked {
     pub(crate) area: Rect,
     /// Whether it is set.
     pub(crate) on: bool,
+}
+
+/// A bar in the frame being drawn, and how the window is showing it.
+///
+/// The bar is the application's and the two numbers are not: what Obelus
+/// said is that a bar is here and this much of it is the mark, and how
+/// loudly to draw that is the window's own, the same as a caret's blink.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Barred {
+    /// What was said about it.
+    pub(crate) bar: Bar,
+    /// From nothing at all to all of it: full while it is moving and for
+    /// a moment after, and settled back down once the reader has stopped.
+    pub(crate) shown: f32,
+    /// Whether the pointer is on it, which is a reader reaching for it.
+    pub(crate) under: bool,
 }
 
 /// Where a cap is in the frame being drawn, and what it is drawn in.

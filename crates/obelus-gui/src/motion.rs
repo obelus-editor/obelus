@@ -29,7 +29,8 @@
 
 use std::time::{Duration, Instant};
 
-use ratatui::layout::Position;
+use obelus_ui::shapes::Bar;
+use ratatui::layout::{Position, Rect};
 
 use crate::blink::Blink;
 
@@ -58,6 +59,20 @@ const SLIDE: Duration = Duration::from_millis(190);
 /// two of them would be a list that never stops sliding.
 const CATCH_UP: Duration = Duration::from_millis(110);
 
+/// How long a bar stays at full strength after its mark last moved.
+///
+/// Long enough to still be there when the reader's eye arrives: what
+/// makes a bar worth lighting up is the question "where am I now", and
+/// that question is asked after the scrolling stops rather than during it.
+const BAR_HOLD: Duration = Duration::from_millis(650);
+
+/// And how long it takes to settle back afterwards.
+///
+/// Slower than it came, because a thing that leaves as fast as it arrives
+/// reads as a flicker: arriving is news and going is not, so going is the
+/// half that may take its time.
+const BAR_SETTLE: Duration = Duration::from_millis(400);
+
 /// When the window wants the loop back.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Wake {
@@ -66,6 +81,86 @@ pub(crate) enum Wake {
     /// As often as the screen is drawn, which is what something in flight
     /// wants: a glide has no next moment of interest, it has a rate.
     EveryFrame,
+}
+
+/// A bar the window has drawn, and what it was doing.
+#[derive(Clone, Copy, Debug)]
+struct Seen {
+    /// Which column it is, which is what says it is the same bar.
+    area: Rect,
+    /// Where its mark was when it was last looked at.
+    mark: u16,
+    /// And when that last changed.
+    stirred: Instant,
+}
+
+/// The bars, and how long each has had nothing to say.
+///
+/// Kept by area rather than by an index, because a frame is a fresh list
+/// every time and the second bar of one frame is not the second bar of
+/// the next -- a preview opens, a list closes, and the rows they are in
+/// move. An area that stops arriving is dropped, which is what keeps this
+/// the length of what is on the screen.
+#[derive(Debug, Default)]
+struct Bars {
+    seen: Vec<Seen>,
+}
+
+impl Bars {
+    /// The frame drew these.
+    ///
+    /// A bar nobody has seen before counts as stirred, so a list that
+    /// opens is a bar the reader can see: what is new is news, and the
+    /// alternative is a control that fades in from nothing after the
+    /// screen it belongs to has arrived.
+    fn drawn(&mut self, bars: &[Bar], now: Instant) {
+        for bar in bars {
+            match self.seen.iter_mut().find(|seen| seen.area == bar.area) {
+                Some(seen) if seen.mark == bar.mark => {}
+                Some(seen) => {
+                    seen.mark = bar.mark;
+                    seen.stirred = now;
+                }
+                None => self.seen.push(Seen {
+                    area: bar.area,
+                    mark: bar.mark,
+                    stirred: now,
+                }),
+            }
+        }
+        self.seen
+            .retain(|seen| bars.iter().any(|bar| bar.area == seen.area));
+    }
+
+    /// How strongly a bar is drawn at this moment, from nothing at all to
+    /// all of it.
+    ///
+    /// One at rest is not gone -- the column is reserved either way, and
+    /// an empty one is Obelus saying that what is on screen is all there
+    /// is, which is a different thing and must not be said by accident.
+    /// What settles is how loudly it says where the reader is, not
+    /// whether it says it.
+    fn shown(&self, area: Rect, now: Instant) -> f32 {
+        let Some(seen) = self.seen.iter().find(|seen| seen.area == area) else {
+            return 1.0;
+        };
+        let still = now.duration_since(seen.stirred);
+        let Some(settling) = still.checked_sub(BAR_HOLD) else {
+            return 1.0;
+        };
+        let gone = settling.as_secs_f32() / BAR_SETTLE.as_secs_f32();
+        if gone >= 1.0 {
+            return 0.0;
+        }
+        (1.0 - gone).powi(2)
+    }
+
+    /// Whether any of them is still on its way back down.
+    fn moving(&self, now: Instant) -> bool {
+        self.seen
+            .iter()
+            .any(|seen| now.duration_since(seen.stirred) < BAR_HOLD.saturating_add(BAR_SETTLE))
+    }
 }
 
 /// What the painter is told about a frame beyond the cells in it.
@@ -391,6 +486,7 @@ pub(crate) struct Motion {
     caret: Glide,
     pane: Sliding,
     band: Scrolling,
+    bars: Bars,
 }
 
 impl Motion {
@@ -412,6 +508,7 @@ impl Motion {
                 since: 0.0,
                 started: now,
             },
+            bars: Bars::default(),
         }
     }
 
@@ -502,9 +599,34 @@ impl Motion {
     /// A rate beats a moment: something in flight wants every frame, and a
     /// blink that is also due will be seen on one of them.
     pub(crate) fn wake(&self, now: Instant, caret: bool) -> Option<Wake> {
-        match self.caret.moving(now) || self.pane.moving(now) || self.band.moving(now) {
+        match self.caret.moving(now)
+            || self.pane.moving(now)
+            || self.band.moving(now)
+            || (self.animates && self.bars.moving(now))
+        {
             true => Some(Wake::EveryFrame),
             false => self.blink.wake(now, caret),
+        }
+    }
+
+    /// The frame drew these bars.
+    ///
+    /// Told rather than worked out from the page, for the reason the band
+    /// is: a bar that scrolled and a bar redrawn where it was are the same
+    /// handful of cells, and nothing in them says which happened.
+    pub(crate) fn bars_drawn(&mut self, bars: &[Bar], now: Instant) {
+        self.bars.drawn(bars, now);
+    }
+
+    /// How strongly a bar is drawn at this moment.
+    ///
+    /// All of it where the reader has turned animation off: what that
+    /// setting turns off is things *starting*, and a bar that settled
+    /// anyway would be the one animation the switch did not reach.
+    pub(crate) fn bar_shown(&self, area: Rect, now: Instant) -> f32 {
+        match self.animates {
+            true => self.bars.shown(area, now),
+            false => 1.0,
         }
     }
 
@@ -540,6 +662,139 @@ mod tests {
 
     fn at(x: u16, y: u16) -> Position {
         Position::new(x, y)
+    }
+
+    /// A bar in the last column of a forty-row region, with its mark
+    /// where it is put.
+    fn a_bar(x: u16, mark: u16) -> Bar {
+        Bar {
+            area: Rect {
+                x,
+                y: 0,
+                width: 1,
+                height: 40,
+            },
+            mark,
+            thumb: 4,
+        }
+    }
+
+    /// Break: stir on every frame rather than on the mark moving -- drop
+    /// the `seen.mark == bar.mark` arm -- and a bar never settles at all,
+    /// because a frame is drawn for a dozen reasons that are not the
+    /// reader scrolling.
+    #[test]
+    fn a_bar_settles_once_its_mark_stops_moving() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        let bar = a_bar(99, 0);
+        motion.bars_drawn(&[bar], base);
+
+        // Drawn again where it was, which is not news.
+        motion.bars_drawn(&[bar], base + Duration::from_millis(100));
+        assert_eq!(
+            motion.bar_shown(bar.area, base + Duration::from_millis(100)),
+            1.0
+        );
+
+        // Still inside the hold.
+        let held = base + BAR_HOLD - Duration::from_millis(1);
+        assert_eq!(motion.bar_shown(bar.area, held), 1.0);
+
+        // Part way down it, and all the way down after that.
+        let halfway = base + BAR_HOLD + BAR_SETTLE / 2;
+        let some = motion.bar_shown(bar.area, halfway);
+        assert!(some > 0.0 && some < 1.0, "part of the way: {some}");
+        let after = base + BAR_HOLD + BAR_SETTLE;
+        assert_eq!(motion.bar_shown(bar.area, after), 0.0);
+    }
+
+    /// Break: keep one `stirred` for all of them rather than one each,
+    /// and a reader scrolling a list lights up the preview's bar under
+    /// it, which is a control saying something is happening to a thing
+    /// nothing is happening to.
+    #[test]
+    fn a_bar_settles_on_its_own() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        let (list, preview) = (a_bar(40, 0), a_bar(99, 0));
+        motion.bars_drawn(&[list, preview], base);
+
+        // Long enough that both would have settled, and then one moves.
+        let later = base + BAR_HOLD + BAR_SETTLE;
+        assert_eq!(motion.bar_shown(list.area, later), 0.0);
+        motion.bars_drawn(&[a_bar(40, 7), preview], later);
+
+        assert_eq!(
+            motion.bar_shown(list.area, later),
+            1.0,
+            "the one that moved"
+        );
+        assert_eq!(
+            motion.bar_shown(preview.area, later),
+            0.0,
+            "and not the one that did not"
+        );
+    }
+
+    /// Break: drop the `retain`, and every bar the reader has ever had on
+    /// screen is still being asked about -- a list opened and closed forty
+    /// times is forty entries, and the one that comes back is found at
+    /// whatever it was doing when it left.
+    #[test]
+    fn a_bar_that_stops_being_drawn_is_forgotten() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        let list = a_bar(40, 0);
+        motion.bars_drawn(&[list], base);
+
+        let later = base + BAR_HOLD + BAR_SETTLE;
+        assert_eq!(motion.bar_shown(list.area, later), 0.0);
+
+        // The list closes, and opens again: what comes back is new, and
+        // what is new is shown.
+        motion.bars_drawn(&[], later);
+        motion.bars_drawn(&[list], later);
+        assert_eq!(motion.bar_shown(list.area, later), 1.0);
+    }
+
+    /// Break: ask `Bars` directly in `bar_shown` rather than going through
+    /// `animates`, and the one switch a reader has for this is the one
+    /// animation it does not reach.
+    #[test]
+    fn a_bar_does_not_settle_where_nothing_animates() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        let bar = a_bar(99, 0);
+        motion.bars_drawn(&[bar], base);
+        motion.animates(false);
+
+        let after = base + BAR_HOLD + BAR_SETTLE;
+        assert_eq!(motion.bar_shown(bar.area, after), 1.0);
+        assert_ne!(motion.wake(after, false), Some(Wake::EveryFrame));
+    }
+
+    /// Break: leave `bars` out of `wake`, and a bar settles only where
+    /// something else happens to be waking the window -- so it hangs at
+    /// full strength on a screen nobody is touching and steps down the
+    /// moment a key is pressed.
+    #[test]
+    fn a_settling_bar_asks_for_frames_until_it_is_down() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        let bar = a_bar(99, 0);
+        motion.bars_drawn(&[bar], base);
+
+        assert_eq!(motion.wake(base, false), Some(Wake::EveryFrame));
+        assert_eq!(
+            motion.wake(base + BAR_HOLD + BAR_SETTLE / 2, false),
+            Some(Wake::EveryFrame)
+        );
+        assert_ne!(
+            motion.wake(base + BAR_HOLD + BAR_SETTLE, false),
+            Some(Wake::EveryFrame),
+            "down, and nothing left to draw"
+        );
     }
 
     /// Break: take a missing `was` for the origin rather than for no

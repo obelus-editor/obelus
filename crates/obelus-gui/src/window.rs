@@ -47,7 +47,8 @@ use crate::{
     blink::Blink,
     font::Fonts,
     grid::{
-        Behind, Capped, Cells, Marked, Marking, Measured, Page, Said, Spelling, Ticked, Update,
+        Barred, Behind, Capped, Cells, Marked, Marking, Measured, Page, Said, Spelling, Ticked,
+        Update,
     },
     keys,
     motion::{Motion, Wake},
@@ -128,6 +129,11 @@ struct Showing {
     ticking: Vec<Ticked>,
     /// Which columns are bars on the frame being shown.
     barred: Vec<Bar>,
+    /// And those again with how the window is showing each, refilled
+    /// every frame rather than kept: `shown` is a moment's answer and
+    /// the pointer moves between frames. A `Vec` that is cleared and
+    /// filled rather than made, because this is on the frame's own path.
+    showing: Vec<Barred>,
     /// And on the one being laid out.
     barring_up: Vec<Bar>,
     /// Which band of rows is a list, how far down it the band has got and
@@ -215,6 +221,7 @@ impl Showing {
             ticking: Vec::new(),
             barred: Vec::new(),
             barring_up: Vec::new(),
+            showing: Vec::new(),
             scrolled: None,
             scrolling: None,
             bar: None,
@@ -578,6 +585,13 @@ impl ApplicationHandler<Waking> for Showing {
                             self.capped = std::mem::take(&mut self.capping);
                             self.ticked = std::mem::take(&mut self.ticking);
                             self.barred = std::mem::take(&mut self.barring_up);
+                            // Said here and not at the drawing: what
+                            // stirs a bar is its mark being somewhere
+                            // else than it was, and only the frame
+                            // arriving knows that. A frame drawn twice
+                            // for some other reason must not read as a
+                            // reader scrolling.
+                            self.motion.bars_drawn(&self.barred, Instant::now());
                             self.behind = self.behinding.take();
                             self.scrolled = self.scrolling.take();
                             self.bar = self.barring.take();
@@ -739,6 +753,28 @@ impl ApplicationHandler<Waking> for Showing {
             // it is done.
             WindowEvent::CloseRequested => self.tell(Event::Closed),
             WindowEvent::RedrawRequested => {
+                // How each bar is being shown, worked out for this frame:
+                // the settling is a moment's answer and the pointer moves
+                // between frames, so neither is a thing to keep.
+                let now = Instant::now();
+                let pointer = self.pointer;
+                self.showing.clear();
+                self.showing.extend(self.barred.iter().map(|bar| Barred {
+                    bar: *bar,
+                    shown: self.motion.bar_shown(bar.area, now),
+                    // The column itself and the one before it. A bar is
+                    // drawn thinner than the cell it is in, so a reader
+                    // aiming at it with a pointer is aiming at something
+                    // narrower than the thing they are pointing with --
+                    // the cell beside it is where the near misses land.
+                    under: pointer.is_some_and(|(x, y)| {
+                        x + 1 >= bar.area.x
+                            && x <= bar.area.x
+                            && y >= bar.area.y
+                            && y < bar.area.bottom()
+                    }),
+                }));
+
                 let (Some(painter), Some(fonts)) = (self.painter.as_mut(), self.fonts.as_mut())
                 else {
                     return;
@@ -752,7 +788,7 @@ impl ApplicationHandler<Waking> for Showing {
                         marked: &self.marked,
                         capped: &self.capped,
                         ticked: &self.ticked,
-                        barred: &self.barred,
+                        barred: &self.showing,
                         behind: self.behind.as_ref(),
                         band: self
                             .scrolled

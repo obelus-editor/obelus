@@ -18,14 +18,14 @@ use cosmic_text::{CacheKey, SwashContent};
 use obelus_app::app::Caret;
 use obelus_ui::{
     image::{Palette, SLOT},
-    shapes::{Bar, Joined},
+    shapes::Joined,
 };
 use ratatui::style::{Color, Modifier};
 use winit::window::Window;
 
 use crate::{
     font::{self, CellSize, Fonts, Size},
-    grid::{Behind, Capped, Look, Marked, Page, Said, Spelling, Ticked},
+    grid::{Barred, Behind, Capped, Look, Marked, Page, Said, Spelling, Ticked},
     motion::Moving,
 };
 
@@ -197,6 +197,29 @@ const BAR_TRACK: f32 = 0.32;
 /// capsules about one centre line, which is the same figure a terminal
 /// draws in one column of blocks and two colours.
 const BAR_MARK: f32 = 0.5;
+
+/// How wide the mark is once it has settled.
+///
+/// Thinner, and still there. The column is reserved whether or not there
+/// is anywhere to scroll, and an empty one is Obelus saying that what is
+/// on screen is all there is -- so a mark that went out altogether would
+/// be the window saying that on a file with more of it below.
+const BAR_MARK_RESTING: f32 = 0.3;
+
+/// And how wide it is with the pointer on it.
+///
+/// Thicker than either, because a pointer on a bar is a reader reaching
+/// for it: what they are about to do is take hold of the mark, and what
+/// they are aiming at should be the size of the thing they get.
+const BAR_MARK_UNDER: f32 = 0.78;
+
+/// How much of the way from the page to its own colour a settled mark is
+/// drawn.
+///
+/// Mixed toward the background rather than drawn with an alpha: the page
+/// under it is opaque and known, so this is the colour it would be, and
+/// nothing here depends on how the pipeline happens to blend.
+const BAR_RESTING: f32 = 0.42;
 /// The frame that has just been drawn, put back everywhere but the pane.
 const FRAME: u32 = 32;
 /// And the pane out of it, higher up than it will end.
@@ -1050,11 +1073,19 @@ impl Painter {
     /// and for the same reason: what a terminal draws the blocks in is
     /// what a window draws the capsules in, and asking the view for them
     /// again would be the same two colours from two places.
-    fn bars(&mut self, page: &Page, barred: &[Bar], cell: CellSize) {
-        for bar in barred {
+    fn bars(&mut self, page: &Page, barred: &[Barred], cell: CellSize) {
+        for showing in barred {
+            let bar = showing.bar;
             if bar.area.width == 0 || bar.area.height == 0 {
                 continue;
             }
+            // A pointer on it beats the settling: the reader is reaching
+            // for the thing, and a control that went on fading under the
+            // hand reaching for it is the one moment it must not.
+            let shown = match showing.under {
+                true => 1.0,
+                false => showing.shown.clamp(0.0, 1.0),
+            };
             let column = bar.area.x;
             for row in 0..bar.area.height {
                 let y = bar.area.y + row;
@@ -1082,6 +1113,10 @@ impl Painter {
             if let Some(row) = (0..bar.area.height)
                 .find(|row| *row < bar.mark || *row >= bar.mark.saturating_add(bar.thumb))
             {
+                let look = page.look(column, bar.area.y + row);
+                // The track goes out altogether, which the mark may not:
+                // what it says is how far the mark can travel, and the
+                // column it is in says that much on its own.
                 let (left, width) = capsule(BAR_TRACK);
                 self.rounded(
                     left,
@@ -1089,22 +1124,32 @@ impl Painter {
                     width,
                     f32::from(bar.area.height) * cell.height,
                     width / 2.0,
-                    rgba(
-                        page.look(column, bar.area.y + row).foreground,
-                        Ink::Foreground,
+                    mixed(
+                        rgba(look.background, Ink::Background),
+                        rgba(look.foreground, Ink::Foreground),
+                        shown,
                     ),
                 );
             }
 
-            let (left, width) = capsule(BAR_MARK);
+            let wide = match showing.under {
+                true => BAR_MARK_UNDER,
+                false => BAR_MARK_RESTING + (BAR_MARK - BAR_MARK_RESTING) * shown,
+            };
+            let (left, width) = capsule(wide);
             let top = bar.area.y.saturating_add(bar.mark);
+            let look = page.look(column, top);
             self.rounded(
                 left,
                 f32::from(top) * cell.height,
                 width,
                 f32::from(bar.thumb) * cell.height,
                 width / 2.0,
-                rgba(page.look(column, top).foreground, Ink::Foreground),
+                mixed(
+                    rgba(look.background, Ink::Background),
+                    rgba(look.foreground, Ink::Foreground),
+                    BAR_RESTING + (1.0 - BAR_RESTING) * shown,
+                ),
             );
         }
     }
@@ -2023,6 +2068,22 @@ fn mark_behind(to_come: f32, behind: f32, since: f32) -> f32 {
         return 0.0;
     }
     to_come * (behind / since).clamp(0.0, 1.0)
+}
+
+/// A colour some of the way from one to another.
+///
+/// What a settled bar is drawn in. Mixed rather than given an alpha
+/// because the page under it is opaque and already known, so this is the
+/// colour it would come out as -- and nothing here then depends on how
+/// the pipeline happens to blend, which is a thing that has to be right
+/// in the shader as well as here.
+fn mixed(from: [f32; 4], to: [f32; 4], along: f32) -> [f32; 4] {
+    let along = along.clamp(0.0, 1.0);
+    let mut out = to;
+    for channel in 0..3 {
+        out[channel] = from[channel] + (to[channel] - from[channel]) * along;
+    }
+    out
 }
 
 fn rgba(colour: Color, ink: Ink) -> [f32; 4] {
