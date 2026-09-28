@@ -388,13 +388,13 @@ impl Showing {
         // Past what is being spelled, so the candidates sit under the end
         // of the word rather than under the character it started at.
         let along = self.spelling.as_ref().map_or(0, Spelling::columns);
+        // And put back on here, for the same reason: what an input method
+        // is told is a place in the window, not a place in the grid.
+        let margin = self.margin();
         #[expect(
             clippy::cast_precision_loss,
             reason = "a caret is a few columns into what is being spelled"
         )]
-        // And put back on here, for the same reason: what an input method
-        // is told is a place in the window, not a place in the grid.
-        let margin = self.margin();
         let area = [
             (f32::from(caret.x) + along as f32) * cell.width + margin[0],
             f32::from(caret.y) * cell.height + margin[1],
