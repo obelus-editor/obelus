@@ -278,7 +278,28 @@
       <h2><span class="num">08</span><span>上手</span></h2>
 
       <h3>装它</h3>
-      <p>目前从源码构建。需要一套比较新的 Rust 工具链（edition 2024）。</p>
+      <p>一个 shell 一个脚本，你在哪个 shell 里就用哪个。两个都是取最新的 release，拿这次 release 自带的 <code>SHA256SUMS</code> 核对下载下来的东西，然后把 <code>ob</code> 放到 PATH 上。</p>
+
+      <pre><code># Linux 和 macOS
+curl -fsSL https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.sh | sh
+
+# Windows，在 PowerShell 里
+irm https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.ps1 | iex</code></pre>
+
+      <p><code>obg</code> 是第二个二进制，要点名才装。<code>-s --</code> 后面的东西都交给脚本；管道进 <code>iex</code> 没地方放参数，所以 Windows 上先把脚本下下来。</p>
+
+      <pre><code># 只装窗口，或者两个都装
+curl -fsSL .../contrib/install.sh | sh -s -- --bin obg
+curl -fsSL .../contrib/install.sh | sh -s -- --bin both
+
+# Windows 上的同一件事
+irm .../contrib/install.ps1 -OutFile install.ps1
+.\install.ps1 -Binary both</code></pre>
+
+      <p><code>--dir</code> 说放到哪儿，<code>--help</code> 列出其余的。<a href="https://github.com/sunli829/obelus/releases">Releases 页</a>上每个平台都有一份归档，另外还有 <code>.deb</code>、<code>.rpm</code>、AppImage 和 macOS 的 <code>.app</code>——Linux 桌面上该装的是这几个里的一个，因为脚本装的 <code>obg</code> 只是一个二进制，而启动器还需要旁边的 desktop entry 和图标。musl 根本没有 <code>obg</code>：窗口要靠 <code>dlopen</code> 找 Vulkan、Wayland 和 X11，静态二进制做不到，脚本会直接说出来，而不是给你一个起不来的东西。</p>
+
+      <h4>从源码</h4>
+      <p>只需要一套 stable Rust 工具链（edition 2024）。</p>
 
       <pre><code>git clone https://github.com/sunli829/obelus
 cd obelus
@@ -292,7 +313,7 @@ cargo install --path crates/obelus-gui
 # 或者只构建：target/release/ob 和 target/release/obg
 cargo build --release</code></pre>
 
-      <p>可选，但装了更好用：</p>
+      <h4>另外值得装的</h4>
       <ul>
         <li>一套 <strong>Nerd Font</strong> 补丁字体——文件名旁边、状态栏上的字形要靠它，这是终端里的事。默认就是关的，所以没装也不会出现方框。<code>obg</code> 不需要：这些字形编译在它的二进制里。</li>
         <li>你这门语言的 <strong>language server</strong>（Rust 就是 <code>rust-analyzer</code>）。没装也能读，只是没有定义跳转、诊断和大纲。</li>

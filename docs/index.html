@@ -278,7 +278,28 @@
       <h2><span class="num">08</span><span>Getting started</span></h2>
 
       <h3>Install</h3>
-      <p>From source, for now. It needs a recent Rust toolchain (edition 2024).</p>
+      <p>One script per shell, and which you want is which shell you are in. Either one takes the latest release, checks what it downloaded against the release's own <code>SHA256SUMS</code>, and puts <code>ob</code> on your PATH.</p>
+
+      <pre><code># Linux and macOS
+curl -fsSL https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.sh | sh
+
+# Windows, in PowerShell
+irm https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.ps1 | iex</code></pre>
+
+      <p><code>obg</code> is a second binary and is asked for by name. Everything after <code>-s --</code> goes to the script; a pipe into <code>iex</code> has nowhere to put an argument, so on Windows the script is fetched first instead.</p>
+
+      <pre><code># the window, or both of them
+curl -fsSL .../contrib/install.sh | sh -s -- --bin obg
+curl -fsSL .../contrib/install.sh | sh -s -- --bin both
+
+# the same, on Windows
+irm .../contrib/install.ps1 -OutFile install.ps1
+.\install.ps1 -Binary both</code></pre>
+
+      <p><code>--dir</code> says where to put it and <code>--help</code> lists the rest. <a href="https://github.com/sunli829/obelus/releases">The releases</a> carry an archive for every platform as well as a <code>.deb</code>, an <code>.rpm</code>, an AppImage and a macOS <code>.app</code> — and on a Linux desktop one of those is the one to install, because <code>obg</code> from the script is a binary and nothing else, while a launcher needs a desktop entry and an icon beside it. There is no <code>obg</code> for musl at all: the window finds Vulkan, Wayland and X11 by <code>dlopen</code>, which a static binary cannot do, and the script says so rather than leaving you something that will not start.</p>
+
+      <h4>From source</h4>
+      <p>Which needs nothing but a stable Rust toolchain (edition 2024).</p>
 
       <pre><code>git clone https://github.com/sunli829/obelus
 cd obelus
@@ -292,7 +313,7 @@ cargo install --path crates/obelus-gui
 # or just build them: target/release/ob and target/release/obg
 cargo build --release</code></pre>
 
-      <p>Optional, but worth having:</p>
+      <h4>Worth having as well</h4>
       <ul>
         <li>A <strong>Nerd Font</strong>, for the glyphs beside a file's name and on the status bar — in the terminal. They are off until <code>icons</code> is turned on, so without one no boxes appear. <code>obg</code> needs none of this: it carries the marks in the binary.</li>
         <li>A <strong>language server</strong> for your language (<code>rust-analyzer</code> for Rust). Without one, reading still works — there is just no definition, no diagnostics, no outline.</li>
