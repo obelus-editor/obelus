@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Obelus — a terminal code reader</title>
 <meta name="description" content="Obelus is a terminal code reader. It doesn't want you to type. Its principles, and how to use it.">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='92' fill='%23b23a2b'>&#247;</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='92' fill='%237e22ce'>&#247;</text></svg>">
 <link rel="alternate" hreflang="zh-Hans" href="zh/">
 <link rel="stylesheet" href="style.css">
 <script>
@@ -34,10 +34,7 @@
   </a>
   <span class="spacer"></span>
   <a class="switch" href="zh/" title="切换到中文" hreflang="zh-Hans">中文</a>
-  <button class="switch" id="theme-switch" type="button" aria-label="Switch theme">
-    <span id="theme-glyph">◐</span>
-    <span>Theme</span>
-  </button>
+  <button class="switch" id="theme-switch" type="button" title="Switch theme" data-light="Light" data-dark="Dark">Theme</button>
   <a class="switch" href="https://github.com/sunli829/obelus">GitHub</a>
 </header>
 
@@ -48,14 +45,13 @@
       <li><a href="#why"><span>Why it exists</span></a></li>
       <li><a href="#highlights"><span>Highlights</span></a></li>
       <li><a href="#tenets"><span>Principles</span></a></li>
-      <li><a href="#what"><span>What it does</span></a></li>
-      <li><a href="#start"><span>Getting started</span></a></li>
-      <li><a href="#keys"><span>Keys</span></a></li>
-      <li><a href="#commands"><span>Commands</span></a></li>
-      <li><a href="#config"><span>Config &amp; themes</span></a></li>
+      <li><a href="#what"><span>Reading code</span></a></li>
       <li><a href="#notes"><span>Notes</span></a></li>
       <li><a href="#agent"><span>Talking to an agent</span></a></li>
       <li><a href="#many"><span>Many windows</span></a></li>
+      <li><a href="#start"><span>Getting started</span></a></li>
+      <li><a href="#keys"><span>Keys &amp; commands</span></a></li>
+      <li><a href="#config"><span>Config &amp; themes</span></a></li>
     </ol>
   </nav>
 
@@ -99,12 +95,12 @@
 
       <ul class="beats">
         <li><span>Every note can have its own conversation, and it is still there tomorrow</span><a class="where" href="#agent">Talking to an agent ›</a></li>
-        <li><span>The agent can read and write your notes — and has to ask before it does</span><a class="where" href="#agent">Talking to an agent ›</a></li>
+        <li><span>Talk to an agent about a note and it writes the next steps under it — asking you first</span><a class="where" href="#planning">Notes ›</a></li>
         <li><span>A note written last week still points at the line it was written about</span><a class="where" href="#notes">Notes ›</a></li>
         <li><span>Worktrees of one repository share one set of notes, and two windows never erase each other</span><a class="where" href="#many">Many windows ›</a></li>
-        <li><span>One file, more than one reading — and more than one language</span><a class="where" href="#what">What it does ›</a></li>
-        <li><span>No modes: the keys are the ones you already know from a graphical editor</span><a class="where" href="#keys">Keys ›</a></li>
-        <li><span>The same reader in a terminal or in a window of its own, with the keys a terminal cannot send</span><a class="where" href="#what">What it does ›</a></li>
+        <li><span>One file, more than one reading — and more than one language</span><a class="where" href="#what">Reading code ›</a></li>
+        <li><span>No modes: keys work the way they do in VS Code or Emacs, not the way they do in vim or helix</span><a class="where" href="#keys">Keys ›</a></li>
+        <li><span>The same reader in a terminal or in a window of its own, with the keys a terminal cannot send</span><a class="where" href="#what">Reading code ›</a></li>
       </ul>
     </section>
 
@@ -125,7 +121,7 @@
           <span class="no">02</span>
           <div>
             <p class="claim">No dialect to learn first.</p>
-            <p class="why">No modes. Arrow keys are arrow keys, <kbd>Ctrl+c</kbd> copies, <kbd>Ctrl+z</kbd> undoes. What your hands already know from a graphical editor works here.</p>
+            <p class="why">No modes. Keys work the way they do in VS Code or Emacs — pressed, they do what they say — and not the way they do in vim or helix, where what a key does depends on which mode you are in. Arrow keys are arrow keys, <kbd>Ctrl+c</kbd> copies, <kbd>Ctrl+z</kbd> undoes.</p>
           </div>
         </li>
         <li>
@@ -153,20 +149,9 @@
     </section>
 
     <section id="what">
-      <h2><span class="num">04</span><span>What it does</span></h2>
+      <h2><span class="num">04</span><span>Reading code</span></h2>
 
       <div class="cards">
-        <div class="card">
-          <h4>Reading a file</h4>
-          <ul>
-            <li>Syntax highlighting, fifteen languages</li>
-            <li>gutter, soft wrap, folding (<kbd>Alt+f</kbd>)</li>
-            <li>Long lines break by the Unicode line breaking algorithm: Chinese breaks between characters, an English word is not cut in half, continuation rows keep the indentation</li>
-                        <li>One file, more than one reading: markdown laid out as prose (<kbd>Ctrl+t</kbd>), a log put in columns — decided by what the lines look like, not by the file's name</li>
-            <li>One file, more than one language: the code in a markdown fence and the script in an HTML page are each highlighted as what they are</li>
-          </ul>
-        </div>
-
         <div class="card">
           <h4>git</h4>
           <ul>
@@ -180,44 +165,117 @@
         </div>
 
         <div class="card">
-          <h4>Language servers</h4>
-          <ul>
-            <li>Definition <kbd>F12</kbd>, outline <kbd>F7</kbd>, symbol search <kbd>F8</kbd></li>
-            <li><kbd>Alt+Enter</kbd> opens the menu about the name under the cursor: type definition, implementations, references, calls</li>
-            <li>Hover <kbd>Alt+h</kbd>, or by resting the pointer (the delay is a setting; zero is off)</li>
-            <li>Diagnostics: all of them <kbd>Alt+e</kbd>, previous and next <kbd>Alt+[</kbd> <kbd>Alt+]</kbd> — and a server is not the only thing that makes one: what Obelus cannot make of a file it reads for its own sake is marked on the line it could not read</li>
-            <li>Rename <kbd>Alt+r</kbd>, code actions <kbd>Alt+a</kbd>, inlay hints (switchable — off puts every column back where the file has it)</li>
-            <li>Known servers: rust-analyzer, gopls, clangd, pylsp, typescript-language-server, bash-language-server, CSS / HTML / YAML</li>
-          </ul>
-        </div>
-
-        <div class="card">
           <h4>In a terminal, or in a window</h4>
           <ul>
             <li><code>ob</code> is the terminal and <code>obg</code> is a window — gvim's relation to vim, not a second program: the same grid, the same views, the same keys</li>
             <li>The window is for the two things a terminal cannot give. It cannot tell <kbd>Ctrl+i</kbd> from <kbd>Tab</kbd>, <kbd>Ctrl+m</kbd> from <kbd>Enter</kbd> or <kbd>Ctrl+[</kbd> from <kbd>Esc</kbd> — one byte each — and most send nothing at all for <kbd>Ctrl+Shift+X</kbd></li>
             <li>And it draws with a font it carries rather than one it hopes you installed: the marks are compiled in, so there are no boxes and no switch to find</li>
-            <li>It draws its own pixels, so the caret's shape says what the next key will do, the caret and the lists move rather than jump, and what an input method is spelling is on the page before it is a character</li>
-            <li>A setting says where it applies: <code>fonts</code>, <code>font_size</code> and <code>animation</code> mean nothing in a terminal and <code>icons</code> means nothing in a window, so the page shows the ones that apply — and the file keeps them all, because the other Obelus on that machine is the one they are for</li>
+            <li>It draws its own pixels, so the caret and the lists move rather than jump, and what an input method is spelling is on the page before it is a character</li>
           </ul>
         </div>
 
         <div class="card">
-          <h4>Finding things</h4>
+          <h4>A file, read more than one way</h4>
           <ul>
-            <li>One view at three radii: this file <kbd>F5</kbd>, every file <kbd>F6</kbd>, symbols <kbd>F8</kbd></li>
-            <li>Files, open documents, themes and commands: four lists that work the same way</li>
-            <li>While results are still arriving the list does not jump about, and says that it is still reading</li>
-            <li><kbd>Alt+←</kbd> / <kbd>Alt+→</kbd> go back to where a jump was made from, and undo that</li>
+            <li>Markdown laid out as prose (<kbd>Ctrl+t</kbd>), a log put in columns — decided by what the lines look like, not by the file's name</li>
+            <li>The code in a markdown fence and the script in an HTML page are each highlighted as what they are</li>
+            <li>Long lines break the way their language does: Chinese between characters, an English word never cut in half, continuation rows keeping the indentation</li>
+            <li>And the ordinary things: fifteen languages, folding, soft wrap</li>
           </ul>
         </div>
 
-
+        <div class="card">
+          <h4>Asking about the code</h4>
+          <ul>
+            <li>What an IDE answers — where a name is defined, who calls it, what it is, what is wrong — asked of the language server you already have: rust-analyzer, gopls, clangd, pylsp and the rest</li>
+            <li>One view for finding, at three radii: this file <kbd>F5</kbd>, every file <kbd>F6</kbd>, the names a server knows <kbd>F8</kbd> — and <kbd>Alt+←</kbd> goes back to where a jump began</li>
+            <li>A server is not the only thing that finds a problem: what Obelus cannot make of its own settings is marked on the line it could not read, in the same list</li>
+          </ul>
+        </div>
       </div>
     </section>
 
+    <section id="notes">
+      <h2><span class="num">05</span><span>Notes</span></h2>
+
+      <blockquote><p>An <em>obelus</em> is the mark a scholar put beside a line they doubted. This is that mark, written down.</p></blockquote>
+
+      <p><kbd>Alt+t</kbd> while reading opens the notes with one started against the line under the cursor; <code>todo</code> opens them all. The page is always being written: the caret is in it when it opens, a letter is a letter, <kbd>Enter</kbd> starts another note and <kbd>Shift+Enter</kbd> a line inside one. What acts on a note <em>as</em> a note is under <kbd>Alt</kbd>: tick it, go to what it is about, move it, take it away. The keys are along the bottom.</p>
+
+      <p>A note may be about a line or about the project, and both are ordinary: "this cache is wrong" belongs to a line, "wire the counts page up to the search" belongs to the project. Where it points goes on a row of its own under it, and one that says nothing is not kept. A note can hang under another; the indentation is the nesting.</p>
+
+      <h4 id="planning">Working out the next step with an agent</h4>
+      <p>A note is also where you think about what comes next, and that is where an agent earns its place. On a note, <kbd>Alt+a</kbd> opens a conversation about it: the agent is told what the note says, and which note it is. Ask it to work the note through — what it would take, what order it goes in, what has to be decided first.</p>
+      <p>What it comes back with does not have to stay in the transcript. It proposes the steps and writes the ones you agree to <em>under</em> the note, where the indentation says they are the note's, and they are on the page when you go back to it, the way anything another window writes is. A step it has since done it can tick off; a note it would rather reword it has to show you both ways first. Each of these it asks you about before it does it. Tomorrow the note has its steps under it, and the conversation that worked them out is still beside it.</p>
+
+      <h4>Obelus hands it the notes</h4>
+      <p>An agent can read a file and ask permission through the protocol it is already speaking. What it cannot do that way is anything about <em>obelus</em>: it has no way to say "I think that note is finished" or "here are two more worth writing down". MCP is the door for that, and Obelus is the server on the other side of it. None of the tools asks you anything: the asking is the agent's to do, through the protocol it is already speaking.</p>
+
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th><span>Tool</span></th><th><span>Does</span></th></tr></thead>
+        <tbody>
+          <tr><td><code>todo_list</code></td><td>Every note this project keeps: what it says, whether it is done, where it points</td></tr>
+          <tr><td><code>todo_add</code></td><td>Write notes down — at the top level, or under a note, which is where the steps a conversation about that note works out go. What somebody would want to come back to, not a summary of what it just did</td></tr>
+          <tr><td><code>todo_finish</code></td><td>Tick a note off. It only ticks: a list of what was decided against is worth as much as a list of what was never got to, and taking one away is yours</td></tr>
+          <tr><td><code>todo_reword</code></td><td>Rewrite what a note says. The one tool here that loses something — the notes are not in git and the page has no undo — so it is required to ask first, showing both what the note says now and what it would say instead</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h4>A note written last week still points at what it was written about</h4>
+      <p>Line numbers move. So a note keeps the commit it was written against as well as the line, and finding the place again is a question for git — rather than pointing at whatever has since moved into that line.</p>
+
+      <h4>Where they live</h4>
+      <p>In Obelus's own directory, kept per <strong>project</strong> rather than per checkout — so several worktrees of one repository open the same list. They are your notes, and they do not end up in the project's commits.</p>
+    </section>
+
+    <section id="agent">
+      <h2><span class="num">06</span><span>Talking to an agent</span></h2>
+
+      <p>Obelus implements nobody's model. It talks to whatever you already have, over <strong>ACP</strong> (the Agent Client Protocol) — the same shape as a language server: another program, over its own standard input and output.</p>
+
+      <h4>Installing one</h4>
+      <p>Which agents exist is not Obelus's to decide. There is a registry kept by the protocol's own authors, and Obelus reads it: forty entries with a name, a version, a description and how to install each one. <kbd>F4</kbd>, then the agents page, then install one. A terminal that can draw pictures gets each agent's own mark; one that cannot gets a glyph. One agent at a time — two would mean every question having to say which agent it was for, and you having to know which.</p>
+
+      <h4>A conversation is a document</h4>
+      <p>It sits in the list of open documents (<kbd>F2</kbd>). Leaving one is going somewhere else rather than closing it: what was said is still there when you come back. <kbd>Enter</kbd> sends, <kbd>Alt+Enter</kbd> makes a line (and <kbd>Shift+Enter</kbd> where the terminal reports it). The status row is the agent's own session options — mode, model, reasoning effort — walked and changed there, with <kbd>Shift+Tab</kbd> going the other way as it always does. Obelus translates none of them: which options exist is the agent's business.</p>
+
+      <h4>A conversation belongs to a note</h4>
+      <p>Opened with <kbd>F4</kbd>, a conversation is about nothing in particular. Opened from a note, it is about that note — and it stays that way: come back tomorrow and the conversation is where you left it, because the agent replays what was said and Obelus only has to remember which conversation was about which note.</p>
+      <p>Obelus tells the agent what the note says when the conversation starts. You reword the note overnight, and the next message carries what changed — nothing in the protocol would otherwise let an agent find out that a file it was told about on Monday says something else on Tuesday.</p>
+      <p>Before your first words, Obelus also says who the agent is talking to: that the person is reading code in a terminal, that what it sends lands beside the file they are reading, and that a choice which is theirs to make should be asked as a question rather than written into a reply as <code>1) … 2) …</code> — because that arrives as prose, and nothing on the screen would say an answer is wanted.</p>
+
+      <h4>When it asks you something</h4>
+      <p>A question is a card, not a picker. Above it is what the agent is actually going to do — the tool call itself, in the transcript where every call goes — and below it are the answers. Walking does not choose: the box is under the answers, so every way to it walks over them, and a card whose answer followed the focus would answer with whichever row you passed on your way somewhere else. <kbd>Enter</kbd> acts on the row you are on, and that is the whole key table.</p>
+
+      <h4>When it wants to change a file</h4>
+      <p>A change that has been made is a row with <code>+12 -4</code> on it, and the file is where it is read. A change it is <em>asking</em> to make is the opposite: those lines are in neither the file nor the last commit, so they go in the transcript, under the call's own row, open — and they stay there afterwards, which is how you find out later what you agreed to. Drawn the way an opened hunk is drawn in a file, because it is the same thing being said.</p>
+    </section>
+
+    <section id="many">
+      <h2><span class="num">07</span><span>Many windows, many worktrees</span></h2>
+
+      <p>Obelus has no splits, so several Obelus on one project is not an edge case but the premise. These are the promises it makes because of it.</p>
+
+      <h4>A repository and its worktrees are one project</h4>
+      <p>Three worktrees of one repository open <em>one</em> set of notes, and share one record of which conversations are in use. With three of them open, you mean to come back to one list rather than three.</p>
+
+      <h4>Two windows writing notes do not erase each other</h4>
+      <p>Every change is made against what is on disk at that moment, not against what this window happened to be holding. So a note the other window just wrote does not vanish because you saved second — and being killed halfway through never leaves half a file.</p>
+
+      <h4>A conversation is open in one Obelus at a time</h4>
+      <p>The agent keeps what was said and takes one turn at a time; two windows prompting one conversation is two turns in it. So a conversation is claimed, and the other windows can see that somebody has it. The claim goes when the process goes — killed, crashed, power cut — with nothing to clean up afterwards and no "it did not exit properly last time, so now it will not open".</p>
+
+      <h4>What another window did turns up by itself</h4>
+      <p>While the notes are open, a note another window just wrote and a conversation it just opened turn up on this page by themselves, without your pressing anything first.</p>
+
+      <h4>Before saving, it looks at what is on disk</h4>
+      <p>Another window, an agent or a formatter may have changed the file since you opened it. That question is asked of disk at the moment you save, rather than guessed from whether a notification happened to arrive.</p>
+    </section>
+
     <section id="start">
-      <h2><span class="num">05</span><span>Getting started</span></h2>
+      <h2><span class="num">08</span><span>Getting started</span></h2>
 
       <h3>Install</h3>
       <p>From source, for now. It needs a recent Rust toolchain (edition 2024).</p>
@@ -238,7 +296,7 @@ cargo build --release</code></pre>
       <ul>
         <li>A <strong>Nerd Font</strong>, for the glyphs beside a file's name and on the status bar — in the terminal. They are off until <code>icons</code> is turned on, so without one no boxes appear. <code>obg</code> needs none of this: it carries the marks in the binary.</li>
         <li>A <strong>language server</strong> for your language (<code>rust-analyzer</code> for Rust). Without one, reading still works — there is just no definition, no diagnostics, no outline.</li>
-        <li>An <strong>ACP</strong> agent. Obelus can install one from the registry — see below.</li>
+        <li>An <strong>ACP</strong> agent. Obelus can install one from the registry — see <a href="#agent">talking to an agent</a>.</li>
       </ul>
 
       <h3>Run it</h3>
@@ -260,9 +318,9 @@ obg src/main.rs      # the same file, in a window instead</code></pre>
     </section>
 
     <section id="keys">
-      <h2><span class="num">06</span><span>Keys</span></h2>
+      <h2><span class="num">09</span><span>Keys &amp; commands</span></h2>
 
-      <p>Three families, and the family is the memorable part. This is the default table; every one of them can be moved — see <a href="#config">config</a>.</p>
+      <p>No modes, so every key below means what it says whenever it is pressed — the VS Code and Emacs way, not the vim and helix one. Three families, and the family is the memorable part. This is the default table; every one of them can be moved — see <a href="#config">config</a>.</p>
 
       <h3>Function keys open something to look at</h3>
       <p class="quiet small">Two banks of four, which is how they sit on the keyboard. Bare, never with a modifier: terminals disagree about what a modified function key even sends, so binding one works on this machine and not the next.</p>
@@ -306,10 +364,8 @@ obg src/main.rs      # the same file, in a window instead</code></pre>
           <tr><td><kbd>Ctrl+r</kbd></td><td><code>reload-file</code></td><td>Re-read this file from disk</td></tr>
           <tr><td><kbd>Ctrl+t</kbd></td><td><code>toggle-preview</code></td><td>Show this file as rendered markdown, or stop</td></tr>
           <tr><td><kbd>Ctrl+l</kbd></td><td><code>go-to-line</code></td><td>Go to a line by number</td></tr>
-          <tr><td><kbd>Ctrl+c</kbd> <kbd>Ctrl+x</kbd> <kbd>Ctrl+v</kbd></td><td><code>copy-selection</code> <code>cut-selection</code> <code>paste</code></td><td>Copy, cut, paste — through the system clipboard. <kbd>Ctrl+Insert</kbd> copies and <kbd>Shift+Insert</kbd> pastes as well, because a desktop's own one chord for copy arrives as one pair at a window and as the other at something it reads as a terminal, and Obelus is read as either</td></tr>
+          <tr><td><kbd>Ctrl+c</kbd> <kbd>Ctrl+x</kbd> <kbd>Ctrl+v</kbd></td><td><code>copy-selection</code> <code>cut-selection</code> <code>paste</code></td><td>Copy, cut, paste — through the system clipboard</td></tr>
           <tr><td><kbd>Ctrl+z</kbd> <kbd>Ctrl+y</kbd></td><td><code>undo</code> <code>redo</code></td><td>Undo, redo</td></tr>
-          <tr><td><kbd>Ctrl+a</kbd></td><td><code>select-all</code></td><td>Select the whole file</td></tr>
-          <tr><td><kbd>Ctrl+/</kbd></td><td><code>toggle-comment</code></td><td>Comment the line or the selected lines out, or take the comment off</td></tr>
           <tr><td><kbd>Ctrl+q</kbd></td><td><code>quit</code></td><td>Leave</td></tr>
         </tbody>
       </table>
@@ -334,25 +390,17 @@ obg src/main.rs      # the same file, in a window instead</code></pre>
           <tr><td><kbd>Alt+p</kbd> <kbd>Alt+n</kbd></td><td><code>go-to-previous-change</code> <code>go-to-next-change</code></td><td>The change above / below the cursor</td></tr>
           <tr><td><kbd>Alt+f</kbd></td><td><code>fold</code></td><td>Fold the run the cursor is in, or unfold the one it is on</td></tr>
           <tr><td><kbd>Alt+m</kbd></td><td><code>go-to-bracket</code></td><td>The bracket that matches this one</td></tr>
-          <tr><td><kbd>Alt+w</kbd></td><td><code>widen-selection</code></td><td>Widen the selection: the word, then whatever holds it</td></tr>
-          <tr><td><kbd>Alt+c</kbd></td><td><code>toggle-comment</code></td><td>Same as <kbd>Ctrl+/</kbd></td></tr>
-          <tr><td><kbd>Alt+↑</kbd> <kbd>Alt+↓</kbd></td><td><code>move-line-up</code> <code>move-line-down</code></td><td>Move the line, or the selected lines, up or down</td></tr>
           <tr><td><kbd>Alt+←</kbd> <kbd>Alt+→</kbd></td><td><code>go-back</code> <code>go-forward</code></td><td>Return to where the last jump was made from; and undo that</td></tr>
           <tr><td><kbd>Alt+t</kbd></td><td><code>todo-add</code></td><td>Write a note against this line (in a conversation, it opens the notes)</td></tr>
         </tbody>
       </table>
       </div>
 
-      <h3>And one key that is none of the three</h3>
-      <p class="quiet small"><kbd>Insert</kbd> is <code>toggle-replace</code>: type over what is under the cursor instead of before it. Bare, and outside the families above, because that is what the key is called on every keyboard that has it. The caret changes shape to say so — a block stands on a character and says the next one takes its place — and the status row says <code>Replacing</code> in a word as well, because a terminal's caret is the terminal's and only a window can draw the other half.</p>
-
       <h3>Moving, and inside a list</h3>
       <p>Navigation is not a command, so it is not in the tables above: the arrows, <kbd>PageUp</kbd>/<kbd>PageDown</kbd>, <kbd>Home</kbd>/<kbd>End</kbd> for the line's ends, <kbd>Ctrl+Home</kbd>/<kbd>Ctrl+End</kbd> for the file's. Up and down move by <em>visual</em> row, so a wrapped line still moves the way it looks. <kbd>Shift</kbd> never names a command: it only ever extends.</p>
       <p>Inside a list — any picker, the settings, the counts, the notes — type to narrow, <kbd>↑</kbd><kbd>↓</kbd> to choose, <kbd>PageUp</kbd>/<kbd>PageDown</kbd> to cover ground, <kbd>Home</kbd>/<kbd>End</kbd> for either end, <kbd>Enter</kbd> acts on the row you are on, <kbd>Esc</kbd> cancels, and <kbd>Ctrl+k</kbd> lists every key. A function key works from inside a whole-screen view as well, and goes to the view it names in place of the one showing — <kbd>F6</kbd> from the files is the search, <kbd>F3</kbd> is the files' other tab.</p>
-    </section>
 
-    <section id="commands">
-      <h2><span class="num">07</span><span>Commands</span></h2>
+      <h3 id="commands">Commands</h3>
 
       <p><kbd>Ctrl+p</kbd>, then the name — verb first. The palette groups them into six tabs, roughly the order of a morning: open something, find your way about it, ask what it means, change it, see what you changed, and Obelus's own housekeeping last.</p>
 
@@ -390,11 +438,10 @@ obg src/main.rs      # the same file, in a window instead</code></pre>
         </tbody>
       </table>
       </div>
-
     </section>
 
     <section id="config">
-      <h2><span class="num">08</span><span>Config &amp; themes</span></h2>
+      <h2><span class="num">10</span><span>Config &amp; themes</span></h2>
 
       <h3>Two files</h3>
       <div class="table-wrap">
@@ -456,82 +503,6 @@ quit = ""            # taken away</code></pre>
       <p>Built-in <code>dark</code> and <code>light</code>, switched by <code>choose-theme</code> without a reparse. Beyond those, every <code>.toml</code> in <code>~/.config/obelus/themes/</code> is a theme, named by the file (<code>omarchy.toml</code> → <code>omarchy</code>). Every colour is optional and whatever is not given comes from the built-in theme it builds on — which is what keeps old files working when a colour is added later.</p>
       <p class="quiet small"><code>contrib/omarchy/</code> in the repository is a template for <a href="https://omarchy.org">omarchy</a>, so the desktop's palette writes Obelus's theme file for you. Nothing in Obelus knows about omarchy: a theme is a file.</p>
     </section>
-
-    <section id="notes">
-      <h2><span class="num">09</span><span>Notes</span></h2>
-
-      <blockquote><p>An <em>obelus</em> is the mark a scholar put beside a line they doubted. This is that mark, written down.</p></blockquote>
-
-      <p><kbd>Alt+t</kbd> while reading opens the notes with one started against the line under the cursor; <code>todo</code> opens them all. The page is always being written: the caret is in it when it opens, a letter is a letter, <kbd>Enter</kbd> starts another note and <kbd>Shift+Enter</kbd> a line inside one. What acts on a note <em>as</em> a note is under <kbd>Alt</kbd>: tick it, go to what it is about, move it, take it away. The keys are along the bottom.</p>
-
-      <p>A note may be about a line or about the project, and both are ordinary: "this cache is wrong" belongs to a line, "wire the counts page up to the search" belongs to the project. Where it points goes on a row of its own under it, and one that says nothing is not kept. A note can hang under another; the indentation is the nesting.</p>
-
-      <h4>A note written last week still points at what it was written about</h4>
-      <p>Line numbers move. So a note keeps the commit it was written against as well as the line, and finding the place again is a question for git — rather than pointing at whatever has since moved into that line.</p>
-
-      <h4>Where they live</h4>
-      <p>In Obelus's own directory, kept per <strong>project</strong> rather than per checkout — so several worktrees of one repository open the same list. They are your notes, and they do not end up in the project's commits.</p>
-    </section>
-
-    <section id="agent">
-      <h2><span class="num">10</span><span>Talking to an agent</span></h2>
-
-      <p>Obelus implements nobody's model. It talks to whatever you already have, over <strong>ACP</strong> (the Agent Client Protocol) — the same shape as a language server: another program, over its own standard input and output.</p>
-
-      <h4>Installing one</h4>
-      <p>Which agents exist is not Obelus's to decide. There is a registry kept by the protocol's own authors, and Obelus reads it: forty entries with a name, a version, a description and how to install each one. <kbd>F4</kbd>, then the agents page, then install one. A terminal that can draw pictures gets each agent's own mark; one that cannot gets a glyph. One agent at a time — two would mean every question having to say which agent it was for, and you having to know which.</p>
-
-      <h4>A conversation is a document</h4>
-      <p>It sits in the list of open documents (<kbd>F2</kbd>). Leaving one is going somewhere else rather than closing it: what was said is still there when you come back. <kbd>Enter</kbd> sends, <kbd>Alt+Enter</kbd> makes a line (and <kbd>Shift+Enter</kbd> where the terminal reports it). The status row is the agent's own session options — mode, model, reasoning effort — walked and changed there, with <kbd>Shift+Tab</kbd> going the other way as it always does. Obelus translates none of them: which options exist is the agent's business.</p>
-
-      <h4>A conversation belongs to a note</h4>
-      <p>Opened with <kbd>F4</kbd>, a conversation is about nothing in particular. Opened from a note, it is about that note — and it stays that way: come back tomorrow and the conversation is where you left it, because the agent replays what was said and Obelus only has to remember which conversation was about which note.</p>
-      <p>Obelus tells the agent what the note says when the conversation starts. You reword the note overnight, and the next message carries what changed — nothing in the protocol would otherwise let an agent find out that a file it was told about on Monday says something else on Tuesday.</p>
-      <p>Before your first words, Obelus also says who the agent is talking to: that the person is reading code in a terminal, that what it sends lands beside the file they are reading, and that a choice which is theirs to make should be asked as a question rather than written into a reply as <code>1) … 2) …</code> — because that arrives as prose, and nothing on the screen would say an answer is wanted.</p>
-
-      <h4>When it asks you something</h4>
-      <p>A question is a card, not a picker. Above it is what the agent is actually going to do — the tool call itself, in the transcript where every call goes — and below it are the answers. Walking does not choose: the box is under the answers, so every way to it walks over them, and a card whose answer followed the focus would answer with whichever row you passed on your way somewhere else. <kbd>Enter</kbd> acts on the row you are on, and that is the whole key table.</p>
-
-      <h4>When it wants to change a file</h4>
-      <p>A change that has been made is a row with <code>+12 -4</code> on it, and the file is where it is read. A change it is <em>asking</em> to make is the opposite: those lines are in neither the file nor the last commit, so they go in the transcript, under the call's own row, open — and they stay there afterwards, which is how you find out later what you agreed to. Drawn the way an opened hunk is drawn in a file, because it is the same thing being said.</p>
-
-      <h4>Obelus hands it the notes</h4>
-      <p>An agent can read a file and ask permission through the protocol it is already speaking. What it cannot do that way is anything about <em>obelus</em>: it has no way to say "I think that note is finished" or "here are two more worth writing down". MCP is the door for that, and Obelus is the server on the other side of it. None of the tools asks you anything: the asking is the agent's to do, through the protocol it is already speaking.</p>
-
-      <div class="table-wrap">
-      <table>
-        <thead><tr><th><span>Tool</span></th><th><span>Does</span></th></tr></thead>
-        <tbody>
-          <tr><td><code>todo_list</code></td><td>Every note this project keeps: what it says, whether it is done, where it points</td></tr>
-          <tr><td><code>todo_add</code></td><td>Write notes down. What somebody would want to come back to, not a summary of what it just did</td></tr>
-          <tr><td><code>todo_finish</code></td><td>Tick a note off. It only ticks: a list of what was decided against is worth as much as a list of what was never got to, and taking one away is yours</td></tr>
-          <tr><td><code>todo_reword</code></td><td>Rewrite what a note says. The one tool here that loses something — the notes are not in git and the page has no undo — so it is required to ask first, showing both what the note says now and what it would say instead</td></tr>
-        </tbody>
-      </table>
-      </div>
-    </section>
-
-    <section id="many">
-      <h2><span class="num">11</span><span>Many windows, many worktrees</span></h2>
-
-      <p>Obelus has no splits, so several Obelus on one project is not an edge case but the premise. These are the promises it makes because of it.</p>
-
-      <h4>A repository and its worktrees are one project</h4>
-      <p>Three worktrees of one repository open <em>one</em> set of notes, and share one record of which conversations are in use. With three of them open, you mean to come back to one list rather than three.</p>
-
-      <h4>Two windows writing notes do not erase each other</h4>
-      <p>Every change is made against what is on disk at that moment, not against what this window happened to be holding. So a note the other window just wrote does not vanish because you saved second — and being killed halfway through never leaves half a file.</p>
-
-      <h4>A conversation is open in one Obelus at a time</h4>
-      <p>The agent keeps what was said and takes one turn at a time; two windows prompting one conversation is two turns in it. So a conversation is claimed, and the other windows can see that somebody has it. The claim goes when the process goes — killed, crashed, power cut — with nothing to clean up afterwards and no "it did not exit properly last time, so now it will not open".</p>
-
-      <h4>What another window did turns up by itself</h4>
-      <p>While the notes are open, a note another window just wrote and a conversation it just opened turn up on this page by themselves, without your pressing anything first.</p>
-
-      <h4>Before saving, it looks at what is on disk</h4>
-      <p>Another window, an agent or a formatter may have changed the file since you opened it. That question is asked of disk at the moment you save, rather than guessed from whether a notification happened to arrive.</p>
-    </section>
-
 
   </main>
 </div>

@@ -3,11 +3,15 @@
 
 (function () {
   var root = document.documentElement;
-  var glyph = document.getElementById('theme-glyph');
   var button = document.getElementById('theme-switch');
 
+  // The button says what pressing it gives, not what is showing: what is
+  // showing is the page, and a key is named by what it does. In the page's
+  // own language, which is why the words are on the button and not here.
   function show(theme) {
-    if (glyph) glyph.textContent = theme === 'dark' ? '☀' : '☾';
+    if (!button) return;
+    var next = theme === 'dark' ? 'light' : 'dark';
+    button.textContent = button.getAttribute('data-' + next);
   }
 
   show(root.getAttribute('data-theme'));

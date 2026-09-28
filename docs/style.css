@@ -1,54 +1,63 @@
 /* Obelus — the site.
-   One stylesheet, no build step, no fonts off the network. The palette is
-   ink on paper and a scholar's red in the margin, which is what an obelus
-   was drawn in. */
+   One stylesheet, no build step, no fonts off the network.
+
+   Drawn the way Obelus draws itself, because the page is about a program
+   and a page in somebody else's style is a page about something else. The
+   colours are Obelus's own `dark` and `light`, the values in
+   `obelus-theme`'s `builtin.rs` and nothing invented here -- which is also
+   what makes the screenshots sit in the page rather than on it. The
+   furniture is Obelus's too: a line between two things rather than a card,
+   a round frame round what is put over the page, a key in a cap with a lip
+   under it, the row the reader is on marked by the ground behind it, and
+   no band of colour across a row. What is monospaced is what Obelus would
+   draw; the prose is set in the reader's own sans, because a page of it is
+   longer than anything Obelus puts on a screen. */
 
 :root {
   color-scheme: light;
 
-  --paper:      #fbfaf7;
-  --surface:    #ffffff;
-  --raised:     #f3f1eb;
-  --ink:        #1c1b19;
-  --muted:      #6d6860;
-  --faint:      #928d84;
-  --rule:       #e2ded5;
-  --accent:     #b23a2b;
-  --accent-dim: rgba(178, 58, 43, 0.10);
-  --mark:       #2f7d62;
+  /* `LIGHT` */
+  --page:           #fafafa;
+  --ink:            #18181b;
+  --gutter:         #a1a1aa;
+  --gutter-current: #52525b;
+  --status:         #27272a;
+  --raised:         #e4e4e7;
+  --selected:       #e4e4e7;
+  --selection:      #e0e7ff;
+  --function:       #1d4ed8;
+  --keyword:        #7e22ce;
+  --string:         #3f6212;
+  --modified:       #b48206;
 
-  --serif: "Iowan Old Style", "Source Serif 4", Charter, Cambria, Georgia,
-           "Songti SC", "Noto Serif CJK SC", serif;
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
           "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
-  --mono: "JetBrainsMono Nerd Font", "FiraCode Nerd Font",
-          "Hack Nerd Font", "MesloLGS NF", "Symbols Nerd Font Mono",
-          ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas,
-          "Liberation Mono", monospace;
-  --cap-face: #ffffff;
-  --cap-edge: #d6d1c6;
-  --cap-shadow: rgba(28, 27, 25, 0.16);
+  --mono: "JetBrainsMono Nerd Font", "JetBrains Mono", "FiraCode Nerd Font",
+          "Hack Nerd Font", "MesloLGS NF", ui-monospace, "SF Mono", Menlo,
+          Consolas, "Liberation Mono", "Noto Sans Mono CJK SC", monospace;
 
-  --measure: 34rem;
-  --gutter: clamp(1.1rem, 4vw, 2.5rem);
+  --measure: 36rem;
+  --gutter-width: clamp(1.1rem, 4vw, 2.5rem);
+  /* How round a frame is: `╭` is half a cell. */
+  --round: 7px;
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --paper:      #16171a;
-  --surface:    #1b1d21;
-  --raised:     #212429;
-  --ink:        #e7e4de;
-  --muted:      #a09b92;
-  --faint:      #77726a;
-  --rule:       #2b2e34;
-  --accent:     #e2705a;
-  --accent-dim: rgba(226, 112, 90, 0.13);
-  --mark:       #63b294;
-  --cap-face:   #262a30;
-  --cap-edge:   #13151a;
-  --cap-shadow: rgba(0, 0, 0, 0.45);
+  /* `DARK` */
+  --page:           #18181b;
+  --ink:            #e4e4e7;
+  --gutter:         #52525b;
+  --gutter-current: #a1a1aa;
+  --status:         #d4d4d8;
+  --raised:         #27272a;
+  --selected:       #27272a;
+  --selection:      #312e81;
+  --function:       #60a5fa;
+  --keyword:        #c084fc;
+  --string:         #a3e635;
+  --modified:       #eab308;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
@@ -58,22 +67,23 @@ html { scroll-behavior: smooth; scroll-padding-top: 5.5rem; }
 
 body {
   margin: 0;
-  background: var(--paper);
+  background: var(--page);
   color: var(--ink);
-  font-family: var(--serif);
-  font-size: 17px;
+  font-family: var(--sans);
+  font-size: 16px;
   line-height: 1.72;
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
 }
 
 /* Chinese sets its own measure: denser glyphs want a little more air. */
-html[lang="zh-Hans"] body { font-size: 16.5px; line-height: 1.85; }
+html[lang="zh-Hans"] body { line-height: 1.85; }
+
+::selection { background: var(--selection); }
 
 img { max-width: 100%; }
 [hidden] { display: none !important; }
 
-a { color: var(--accent); text-decoration: none; }
+a { color: var(--function); text-decoration: none; }
 a:hover { text-decoration: underline; text-underline-offset: 3px; }
 
 code, kbd, pre, .mono { font-family: var(--mono); }
@@ -81,50 +91,61 @@ code, kbd, pre, .mono { font-family: var(--mono); }
 code {
   font-size: 0.86em;
   background: var(--raised);
-  border-radius: 4px;
-  padding: 0.1em 0.36em;
+  border-radius: 3px;
+  padding: 0.08em 0.34em;
   word-break: break-word;
 }
 
+/* What is put over the page: a round frame in the gutter's ink, on the
+   page's own colour -- a hover, the completion list, the card of every key. */
 pre {
   margin: 1.4rem 0;
-  padding: 1rem 1.15rem;
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 8px;
+  padding: 0.9rem 1.1rem;
+  background: var(--page);
+  border: 1px solid var(--gutter);
+  border-radius: var(--round);
   overflow-x: auto;
   font-size: 0.83rem;
   line-height: 1.66;
 }
 pre code { background: none; padding: 0; font-size: inherit; }
 
-/* Key caps. One cap holds a whole chord — `ctrl+p` — which is how Obelus
-   writes a chord on its own screen. The stack prefers a Nerd Font where the
-   visitor has one and falls back to their own monospace, so nobody is shown
-   a box. */
+/* A key in a cap: a shade off the page, an outline, and a lip under it --
+   the shape a window draws the keys at the foot of a view in. One cap holds
+   a whole chord, which is how Obelus writes one. */
 kbd {
   display: inline-block;
-  font-family: var(--mono);
   font-size: 0.76em;
-  line-height: 1.5;
-  padding: 0.13em 0.45em;
+  line-height: 1.45;
+  padding: 0.08em 0.45em;
   white-space: nowrap;
   color: var(--ink);
-  background: var(--cap-face);
-  border: 1px solid var(--cap-edge);
-  border-radius: 5px;
-  box-shadow: 0 1px 0 var(--cap-edge);
-  vertical-align: 0.05em;
+  background: var(--raised);
+  border: 1px solid var(--gutter);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  vertical-align: 0.06em;
   margin: 0 0.05em;
 }
-
-/* Two chords offered side by side. */
-.keys { display: inline-flex; gap: 0.3em; white-space: nowrap; }
-.keys kbd { margin: 0; }
-
 td kbd { margin-bottom: 0.15em; }
 
-/* ── header ─────────────────────────────────────────────────────────── */
+/* The wordmark's sheen, which is the welcome screen's: a ramp from the
+   theme's keyword colour to its function colour, moving across the letters
+   -- and still for anybody who has asked the system for less motion. */
+.sheen, .hero .mark, .hero h1, .top .wordmark .obelus {
+  background: linear-gradient(90deg, var(--keyword), var(--function), var(--keyword));
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: sheen 9s linear infinite;
+}
+@keyframes sheen { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .sheen, .hero .mark, .hero h1, .top .wordmark .obelus { animation: none; }
+}
+
+/* ── header: the status row, at the top ────────────────────────────── */
 
 .top {
   position: sticky;
@@ -132,86 +153,79 @@ td kbd { margin-bottom: 0.15em; }
   z-index: 20;
   display: flex;
   align-items: center;
-  gap: 0.9rem;
-  padding: 0.7rem var(--gutter);
-  background: color-mix(in srgb, var(--paper) 88%, transparent);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--rule);
+  gap: 0.7rem;
+  padding: 0.6rem var(--gutter-width);
+  background: var(--page);
+  border-bottom: 1px solid var(--gutter);
+  font-family: var(--mono);
 }
 
 .top .wordmark {
   display: flex;
   align-items: baseline;
-  gap: 0.5rem;
-  font-family: var(--mono);
-  font-size: 0.95rem;
-  letter-spacing: 0.02em;
-  color: var(--ink);
+  gap: 0.55rem;
+  font-size: 0.92rem;
+  color: var(--status);
 }
 .top .wordmark:hover { text-decoration: none; }
-.top .wordmark .obelus { color: var(--accent); font-size: 1.1rem; }
-.top .wordmark .tag {
-  font-family: var(--sans);
-  font-size: 0.72rem;
-  color: var(--faint);
-}
+.top .wordmark .obelus { font-size: 1.1rem; }
+.top .wordmark .tag { font-size: 0.74rem; color: var(--gutter-current); }
 @media (max-width: 720px) { .top .wordmark .tag { display: none; } }
 
 .top .spacer { flex: 1; }
 
+/* The switches up there are keys, so they wear a cap. */
 .switch {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: 0.35rem;
   font-family: var(--mono);
   font-size: 0.74rem;
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 7px;
-  padding: 0.28rem 0.55rem;
-  color: var(--muted);
-  cursor: pointer;
   line-height: 1.4;
+  padding: 0.2rem 0.55rem;
+  color: var(--ink);
+  background: var(--raised);
+  border: 1px solid var(--gutter);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  cursor: pointer;
 }
-.switch:hover { color: var(--ink); border-color: var(--faint); }
-.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.switch:hover { text-decoration: none; border-color: var(--gutter-current); }
+.switch:focus-visible { outline: 1px solid var(--function); outline-offset: 2px; }
 
 /* ── page frame ─────────────────────────────────────────────────────── */
 
 .frame {
   display: grid;
-  grid-template-columns: 13.5rem minmax(0, 1fr);
+  grid-template-columns: 13rem minmax(0, 1fr);
   gap: clamp(1.5rem, 5vw, 4rem);
   max-width: 62rem;
   margin: 0 auto;
-  padding: 0 var(--gutter) 6rem;
+  padding: 0 var(--gutter-width) 6rem;
 }
 
+/* The contents are a list, and a list marks the row the reader is on with
+   the ground behind it -- nothing else. */
 .contents {
   position: sticky;
-  top: 5rem;
+  top: 4.6rem;
   align-self: start;
-  max-height: calc(100vh - 7rem);
+  max-height: calc(100vh - 6.5rem);
   overflow-y: auto;
   padding-top: 3.2rem;
-  font-family: var(--sans);
-  font-size: 0.82rem;
+  font-family: var(--mono);
+  font-size: 0.8rem;
 }
 .contents ol { list-style: none; margin: 0; padding: 0; }
-.contents li { margin: 0 0 0.1rem; }
+.contents li { margin: 0; }
 .contents a {
   display: block;
-  padding: 0.22rem 0.5rem;
-  border-left: 2px solid transparent;
-  color: var(--muted);
-  border-radius: 0 4px 4px 0;
+  padding: 0.24rem 0.6rem;
+  color: var(--gutter-current);
+  border-radius: 3px;
 }
-.contents a:hover { color: var(--ink); background: var(--raised); text-decoration: none; }
-.contents a.here {
-  color: var(--accent);
-  border-left-color: var(--accent);
-  background: var(--accent-dim);
-}
+.contents a:hover { color: var(--ink); background: var(--selected); text-decoration: none; }
+.contents a.here { color: var(--ink); background: var(--selected); }
 
 @media (max-width: 860px) {
   .frame { grid-template-columns: minmax(0, 1fr); }
@@ -223,13 +237,12 @@ td kbd { margin-bottom: 0.15em; }
     overflow-x: auto;
   }
   .contents ol { display: flex; gap: 0.2rem; }
-  .contents a { white-space: nowrap; border-left: none; border-bottom: 2px solid transparent; border-radius: 4px 4px 0 0; }
-  .contents a.here { border-left: none; border-bottom-color: var(--accent); }
+  .contents a { white-space: nowrap; }
 }
 
 main { min-width: 0; }
 
-/* ── hero ───────────────────────────────────────────────────────────── */
+/* ── hero: the welcome screen ───────────────────────────────────────── */
 
 .hero { padding: 3.6rem 0 1rem; }
 
@@ -237,40 +250,42 @@ main { min-width: 0; }
   font-family: var(--mono);
   font-size: 3.4rem;
   line-height: 1;
-  color: var(--accent);
-  margin-bottom: 1.2rem;
+  margin-bottom: 1rem;
+  display: inline-block;
 }
 
 .hero h1 {
   font-family: var(--mono);
-  font-weight: 500;
+  font-weight: 600;
   font-size: clamp(2.1rem, 6vw, 2.9rem);
   letter-spacing: -0.01em;
   margin: 0 0 0.6rem;
+  display: table;
 }
 
 .hero .lede {
-  font-size: clamp(1.1rem, 2.6vw, 1.32rem);
+  font-size: clamp(1.1rem, 2.6vw, 1.3rem);
   line-height: 1.6;
   color: var(--ink);
   max-width: var(--measure);
   margin: 0 0 1rem;
 }
-.hero .sub { color: var(--muted); max-width: var(--measure); margin: 0 0 1.8rem; }
+.hero .sub { color: var(--gutter-current); max-width: var(--measure); margin: 0 0 1.8rem; }
 
+/* Buttons are keys as well: the same cap, larger. */
 .buttons { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 2.4rem; }
 .button {
-  font-family: var(--sans);
-  font-size: 0.88rem;
-  padding: 0.5rem 1rem;
-  border-radius: 7px;
-  border: 1px solid var(--rule);
-  background: var(--surface);
+  font-family: var(--mono);
+  font-size: 0.84rem;
+  padding: 0.42rem 0.95rem;
+  border-radius: 5px;
   color: var(--ink);
+  background: var(--raised);
+  border: 1px solid var(--gutter);
+  border-bottom-width: 2px;
 }
-.button:hover { text-decoration: none; border-color: var(--faint); }
-.button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.button.primary:hover { filter: brightness(1.06); }
+.button:hover { text-decoration: none; border-color: var(--gutter-current); }
+.button.primary { color: var(--function); border-color: var(--function); }
 
 /* One screen, photographed. Two of them, because the page has a theme
    switch and a dark screenshot on a light page is a hole in it. */
@@ -279,43 +294,42 @@ main { min-width: 0; }
   display: block;
   width: 100%;
   height: auto;
-  border: 1px solid var(--rule);
-  border-radius: 10px;
+  border: 1px solid var(--gutter);
+  border-radius: var(--round);
 }
 :root[data-theme="dark"] .shot .light,
 :root[data-theme="light"] .shot .dark { display: none; }
 .shot .caption { margin: 0.55rem 0 0; }
 
-.caption { font-family: var(--sans); font-size: 0.76rem; color: var(--faint); margin: 0 0 1rem; }
+.caption { font-size: 0.78rem; color: var(--gutter-current); margin: 0 0 1rem; }
 
 /* ── sections ───────────────────────────────────────────────────────── */
 
 section { padding-top: 3.2rem; }
 
+/* A heading is a line of the screen: its number in the gutter's ink, the
+   way a line's number is, and a rule under it. */
 section > h2 {
-  font-family: var(--sans);
-  font-size: 0.78rem;
+  font-family: var(--mono);
+  font-size: 0.95rem;
   font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--accent);
+  color: var(--status);
   margin: 0 0 0.5rem;
-  padding-bottom: 0.7rem;
-  border-bottom: 1px solid var(--rule);
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--gutter);
 }
-
-section > h2 .num { color: var(--faint); margin-right: 0.6rem; font-family: var(--mono); }
+section > h2 .num { color: var(--gutter); margin-right: 0.8rem; font-weight: 400; }
 
 h3 {
-  font-family: var(--serif);
-  font-size: 1.32rem;
+  font-family: var(--mono);
+  font-size: 1.08rem;
   font-weight: 600;
-  line-height: 1.4;
+  line-height: 1.45;
   margin: 2.2rem 0 0.6rem;
 }
 h4 {
-  font-family: var(--sans);
-  font-size: 0.95rem;
+  font-family: var(--mono);
+  font-size: 0.92rem;
   font-weight: 600;
   margin: 1.8rem 0 0.4rem;
 }
@@ -323,68 +337,73 @@ h4 {
 p { max-width: var(--measure); margin: 0 0 1rem; }
 section > p, section > ul, section > ol { max-width: var(--measure); }
 
-.quiet { color: var(--muted); }
+.quiet { color: var(--gutter-current); }
 .small { font-size: 0.88rem; }
 
 ul, ol { padding-left: 1.2rem; }
 li { margin-bottom: 0.4rem; }
 li > p { margin-bottom: 0.5rem; }
 
+/* A mark in the margin beside what it is about: the half-cell bar the
+   margin draws beside a line. */
 blockquote {
   margin: 1.6rem 0;
-  padding: 0.2rem 0 0.2rem 1.1rem;
-  border-left: 3px solid var(--accent);
-  color: var(--muted);
-  font-style: italic;
+  padding: 0.1rem 0 0.1rem 1rem;
+  border-left: 3px solid var(--modified);
+  color: var(--gutter-current);
   max-width: var(--measure);
 }
 blockquote p:last-child { margin-bottom: 0; }
 
-/* numbered principles */
-.tenets { list-style: none; padding: 0; margin: 1.6rem 0 0; max-width: 40rem; }
+/* The principles, numbered the way the gutter numbers lines. No rule
+   between them: a list is rows, and what marks one is the ground behind
+   the one the reader is on. */
+.tenets { list-style: none; padding: 0; margin: 1.4rem 0 0; max-width: 40rem; }
 .tenets > li {
   display: grid;
-  grid-template-columns: 2.4rem minmax(0, 1fr);
+  grid-template-columns: 2.2rem minmax(0, 1fr);
   gap: 0.2rem 0.8rem;
-  padding: 1.05rem 0;
-  border-top: 1px solid var(--rule);
+  padding: 0.8rem 0.6rem;
   margin: 0;
+  border-radius: 3px;
 }
-.tenets > li:last-child { border-bottom: 1px solid var(--rule); }
+.tenets > li:hover { background: var(--selected); }
 .tenets .no {
   font-family: var(--mono);
-  font-size: 0.78rem;
-  color: var(--accent);
-  padding-top: 0.32rem;
+  font-size: 0.8rem;
+  color: var(--gutter);
+  text-align: right;
+  padding-top: 0.2rem;
 }
+.tenets > li:hover .no { color: var(--gutter-current); }
 .tenets .claim { font-weight: 600; margin: 0 0 0.25rem; max-width: none; }
-.tenets .why { color: var(--muted); font-size: 0.94rem; margin: 0; max-width: none; }
+.tenets .why { color: var(--gutter-current); font-size: 0.94rem; margin: 0; max-width: none; }
 
-/* the highlights: one line each, pointing at where it is explained */
-.beats { list-style: none; padding: 0; margin: 1.5rem 0 0; max-width: 40rem; }
+/* The highlights: a row each, and where it is explained on the right. */
+.beats { list-style: none; padding: 0; margin: 1.4rem 0 0; max-width: 40rem; }
 .beats li {
   display: flex;
   gap: 1.2rem;
   align-items: baseline;
   justify-content: space-between;
-  padding: 0.7rem 0;
+  padding: 0.5rem 0.6rem;
   margin: 0;
-  border-top: 1px solid var(--rule);
+  border-radius: 3px;
 }
-.beats li:last-child { border-bottom: 1px solid var(--rule); }
+.beats li:hover { background: var(--selected); }
 .beats .where {
   flex: none;
-  font-family: var(--sans);
+  font-family: var(--mono);
   font-size: 0.76rem;
-  color: var(--muted);
+  color: var(--gutter-current);
   white-space: nowrap;
 }
-.beats .where:hover { color: var(--accent); text-decoration: none; }
+.beats .where:hover { color: var(--function); text-decoration: none; }
 @media (max-width: 560px) {
   .beats li { flex-direction: column; gap: 0.25rem; }
 }
 
-/* cards */
+/* Cards are panels: a round frame on the page's own colour. */
 .cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
@@ -392,78 +411,67 @@ blockquote p:last-child { margin-bottom: 0; }
   margin: 1.6rem 0;
 }
 .card {
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: 9px;
-  padding: 1.05rem 1.15rem;
+  background: var(--page);
+  border: 1px solid var(--gutter);
+  border-radius: var(--round);
+  padding: 0.95rem 1.1rem;
 }
-.card h4 { margin: 0 0 0.35rem; font-family: var(--sans); font-size: 0.92rem; }
-.card h4 .key { font-family: var(--mono); color: var(--accent); font-weight: 500; }
-.card p { margin: 0; font-size: 0.92rem; color: var(--muted); max-width: none; }
-.card ul { margin: 0.5rem 0 0; padding-left: 1.05rem; font-size: 0.9rem; color: var(--muted); }
+.card h4 { margin: 0 0 0.4rem; }
+.card p { margin: 0; font-size: 0.92rem; color: var(--gutter-current); max-width: none; }
+.card ul { margin: 0.4rem 0 0; padding-left: 1.05rem; font-size: 0.9rem; color: var(--gutter-current); }
 .card li { margin-bottom: 0.2rem; }
 
-/* highlights */
-.highlights { counter-reset: hl; }
-.highlights .card { position: relative; }
-.highlights .card .glyph {
-  font-family: var(--mono);
-  font-size: 1.15rem;
-  color: var(--accent);
-  display: block;
-  margin-bottom: 0.45rem;
-}
-
-/* tables */
+/* Tables are lists: a rule under the heading and none between rows, and
+   the row the pointer is on marked the way a list's selection is. */
 .table-wrap { overflow-x: auto; margin: 1.4rem 0; }
 table {
   border-collapse: collapse;
   width: 100%;
   font-size: 0.9rem;
-  font-family: var(--sans);
 }
 th, td {
   text-align: left;
-  padding: 0.5rem 0.8rem 0.5rem 0;
-  border-bottom: 1px solid var(--rule);
+  padding: 0.42rem 0.8rem 0.42rem 0.5rem;
   vertical-align: top;
 }
 th {
-  font-size: 0.72rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  color: var(--gutter-current);
   font-weight: 600;
   white-space: nowrap;
+  border-bottom: 1px solid var(--gutter);
 }
 td:first-child { white-space: nowrap; }
 td code { font-size: 0.82em; white-space: nowrap; }
 td code + code { margin-left: 0.25em; }
-tbody tr:hover { background: var(--raised); }
+tbody tr:hover { background: var(--selected); }
 
-/* a note in the margin */
+/* A note beside the text is a panel, like everything put over the page. */
 .aside {
   margin: 1.6rem 0;
-  padding: 0.9rem 1.1rem;
-  background: var(--accent-dim);
-  border-radius: 8px;
+  padding: 0.85rem 1.1rem;
+  border: 1px solid var(--gutter);
+  border-radius: var(--round);
   font-size: 0.9rem;
-  color: var(--ink);
   max-width: var(--measure);
 }
 .aside p { margin: 0; max-width: none; }
 .aside p + p { margin-top: 0.6rem; }
-.aside strong { color: var(--accent); }
+.aside strong { color: var(--function); }
 
-/* ── footer ─────────────────────────────────────────────────────────── */
+/* ── footer: the status row ─────────────────────────────────────────── */
 
 footer {
-  border-top: 1px solid var(--rule);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.4rem 1.5rem;
+  border-top: 1px solid var(--gutter);
   margin-top: 4rem;
-  padding: 2rem var(--gutter) 3rem;
-  font-family: var(--sans);
-  font-size: 0.82rem;
-  color: var(--faint);
-  text-align: center;
+  padding: 0.8rem var(--gutter-width) 2.5rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--gutter-current);
 }
-footer p { max-width: none; margin: 0.3rem 0; }
+footer p { max-width: none; margin: 0; }
