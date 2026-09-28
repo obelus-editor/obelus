@@ -3749,6 +3749,17 @@ where
             tracing::debug!(?took, "a slow frame");
         }
 
+        // And the other half of the same measurement. The loop is blocked by
+        // whatever `handle` does for exactly as long as it does it, and what
+        // it does is most of Obelus -- a query refiltered, a preview read and
+        // parsed, a batch of a walk folded in. Timing only the drawing meant
+        // a keystroke that took a tenth of a second left nothing in the log
+        // at all, and "the frames are fine" was being read as "nothing is
+        // slow".
+        //
+        // The event is named because the answer is useless without it: what
+        // there is to find out is *which* keystroke, or which arrival, and a
+        // duration on its own says only that something was slow.
         let Ok(event) = events.recv() else {
             // Every sender is gone, so no further event can arrive. Which
             // is not how Obelus is meant to end -- the reader asks -- so it
@@ -3756,18 +3767,41 @@ where
             tracing::warn!("nothing is left to send events, so there is nothing to wait for");
             break;
         };
-        app.handle(event);
+        handle(app, event);
 
         // Fold in whatever else is already queued.
         for _ in 0..EVENT_DRAIN_LIMIT {
             let Ok(ready) = events.try_recv() else {
                 break;
             };
-            app.handle(ready);
+            handle(app, ready);
         }
     }
 
     Ok(())
+}
+
+/// Hands the application one event, and says so where it was slow.
+///
+/// The threshold is the frame's, because what is being measured is the same
+/// thing: how long the loop was unable to answer the reader. Which half it
+/// was is the whole of what the line is for.
+fn handle(app: &mut App, event: Event) {
+    let what = event.what();
+    // Which key, where it is one. The whole reason for this line is finding
+    // out that typing is slow, and one saying `Key` about every letter of a
+    // query would answer with the question again. `KeyCode` is `Copy`, so
+    // taking it costs nothing on the events that are not slow.
+    let key = match &event {
+        Event::Key(pressed) => Some(pressed.code),
+        _ => None,
+    };
+    let started = std::time::Instant::now();
+    app.handle(event);
+    let took = started.elapsed();
+    if took >= SLOW_FRAME {
+        tracing::debug!(?took, event = what, ?key, "a slow event");
+    }
 }
 
 /// What the renderer may ask the application.

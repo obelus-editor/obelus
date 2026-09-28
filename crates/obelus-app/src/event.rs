@@ -145,6 +145,46 @@ pub enum Event {
     Watched(obelus_watch::Changed),
 }
 
+impl Event {
+    /// What kind of thing this is, in a word.
+    ///
+    /// For the line the loop writes when handling one took long enough to
+    /// be worth knowing about. The event has to be named *before* it is
+    /// handed over and consumed, so this is paid on every event and not
+    /// only on the slow ones -- which is why it is a `&'static str` and
+    /// not the `Debug` of the thing: a `format!` per keystroke, for a line
+    /// that is almost never written, is work done for nothing.
+    ///
+    /// Which key it was is not here for the same reason. `KeyCode` is
+    /// `Copy`, so the one caller that wants it takes it off the event
+    /// itself and pays nothing either.
+    #[must_use]
+    pub const fn what(&self) -> &'static str {
+        match self {
+            Self::Key(_) => "Key",
+            Self::Resize => "Resize",
+            Self::Fonts { .. } => "Fonts",
+            Self::Closed => "Closed",
+            Self::Scroll(_) => "Scroll",
+            Self::Pointer { .. } => "Pointer",
+            Self::Paste(_) => "Paste",
+            Self::Tick => "Tick",
+            Self::NotesSettled => "NotesSettled",
+            Self::SyntaxSettled => "SyntaxSettled",
+            Self::ChangesSettled => "ChangesSettled",
+            Self::PointerRested => "PointerRested",
+            Self::RenameOverdue => "RenameOverdue",
+            Self::Search(_) => "Search",
+            Self::Git(_) => "Git",
+            Self::Agent(_) => "Agent",
+            Self::Lsp(_) => "Lsp",
+            Self::Notes(_) => "Notes",
+            Self::Counted(_) => "Counted",
+            Self::Watched(_) => "Watched",
+        }
+    }
+}
+
 macro_rules! from_worker {
     ($($from:ty => $variant:ident),* $(,)?) => {
         $(impl From<$from> for Event {
