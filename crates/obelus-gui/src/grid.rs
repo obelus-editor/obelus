@@ -770,6 +770,30 @@ pub(crate) struct Spelling {
 }
 
 impl Spelling {
+    /// What an input method said, as a spelling -- or nothing, where it
+    /// said the spelling is over.
+    ///
+    /// `caret` is as winit hands it on: a run of bytes, or nothing for a
+    /// caret the input method would rather not show. A run whose two ends
+    /// meet is a caret; one whose ends differ is text the input method is
+    /// highlighting, and the caret is its *far* end, which is where typing
+    /// carries on from. fcitx5 says `(0, 6)` for `ni hao` -- the whole of
+    /// it, ending where the next letter goes -- and a caret taken from the
+    /// near end sat at the front of the pinyin however much was typed.
+    ///
+    /// In characters rather than bytes: the window counts cells, and a
+    /// byte offset into what is being spelled is not one.
+    pub(crate) fn new(text: String, caret: Option<(usize, usize)>) -> Option<Self> {
+        if text.is_empty() {
+            return None;
+        }
+        let caret = match caret {
+            Some((_, end)) => text.get(..end).map_or(0, |before| before.chars().count()),
+            None => text.chars().count(),
+        };
+        Some(Self { text, caret })
+    }
+
     /// How many columns of the grid it takes up to its caret, which is
     /// where the caret is drawn and where the candidates are pointed.
     pub(crate) fn columns(&self) -> usize {
@@ -1114,6 +1138,24 @@ mod tests {
     fn a_frame_missing_a_corner_is_not_drawn() {
         let page = written(&["xx\u{256e}", "\u{2570}\u{2500}\u{256f}"]);
         assert!(!a_box(3, 2).framed(&page));
+    }
+
+    /// The caret in a spelling is at the far end of what the input method
+    /// named, which is where the next letter goes.
+    ///
+    /// Deliberate break: take the near end, `Some((start, _))`, as this
+    /// once did. The first case below is what fcitx5 actually sent, read
+    /// off the log, and with the near end the caret sat at the front of
+    /// the pinyin however much of it had been typed.
+    #[test]
+    fn a_spelling_carries_on_from_the_far_end_of_what_is_named() {
+        let caret = |text: &str, at| Spelling::new(text.to_string(), at).map(|it| it.caret);
+        assert_eq!(caret("ni hao", Some((0, 6))), Some(6), "fcitx5's whole run");
+        assert_eq!(caret("ni hao", Some((2, 2))), Some(2), "a caret of its own");
+        assert_eq!(caret("ni hao", None), Some(6), "a caret not shown");
+        // Bytes in, characters out: two characters of Chinese are six bytes.
+        assert_eq!(caret("\u{4f60}\u{597d}hao", Some((0, 6))), Some(2));
+        assert_eq!(caret("", Some((0, 0))), None, "nothing is being spelled");
     }
 
     /// A cap is about cells, and the cells are the truth.

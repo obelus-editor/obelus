@@ -116,6 +116,14 @@ struct Showing {
     /// committed would be putting somebody's half-typed pinyin into a
     /// buffer with an undo history.
     spelling: Option<Spelling>,
+    /// Where the input method was last told the caret is, in pixels:
+    /// left, top, width, height.
+    ///
+    /// So that it is told again only when that moves. Telling it commits
+    /// the text box's state on Wayland, and an input method that answers a
+    /// commit by sending its spelling again would be answered in turn --
+    /// for as long as the reader was typing.
+    pointed: Option<[f32; 4]>,
     /// Where the marks go on the frame being shown.
     marked: Vec<Marked>,
     /// And where its key caps are, kept the same way and for the same
@@ -222,6 +230,7 @@ impl Showing {
             rolled: 0.0,
             composing: false,
             spelling: None,
+            pointed: None,
             marked: Vec::new(),
             marking: Vec::new(),
             capped: Vec::new(),
@@ -354,7 +363,14 @@ impl Showing {
     /// Tells the input method where the caret is, so that its candidates
     /// are drawn beside the word being typed rather than in the corner of
     /// the screen.
-    fn point_the_input_method(&self) {
+    ///
+    /// Asked on every frame and on every change to what is being spelled,
+    /// and said only when the answer moved -- see `pointed`. The spelling
+    /// is the one that matters: the window draws it without Obelus hearing
+    /// of it, so no frame comes while a word grows, and on macOS and
+    /// Windows the candidates go wherever this last said. Asked on frames
+    /// alone, they stayed at the first letter of the pinyin.
+    fn point_the_input_method(&mut self) {
         let (Some(window), Some(fonts), Some(caret)) =
             (self.window.as_ref(), self.fonts.as_ref(), self.page.caret())
         else {
@@ -364,12 +380,23 @@ impl Showing {
         // Past what is being spelled, so the candidates sit under the end
         // of the word rather than under the character it started at.
         let along = self.spelling.as_ref().map_or(0, Spelling::columns);
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "a caret is a few columns into what is being spelled"
+        )]
+        let area = [
+            (f32::from(caret.x) + along as f32) * cell.width,
+            f32::from(caret.y) * cell.height,
+            cell.width,
+            cell.height,
+        ];
+        if self.pointed == Some(area) {
+            return;
+        }
+        self.pointed = Some(area);
         window.set_ime_cursor_area(
-            PhysicalPosition::new(
-                (f32::from(caret.x) + along as f32) * cell.width,
-                f32::from(caret.y) * cell.height,
-            ),
-            PhysicalSize::new(cell.width, cell.height),
+            PhysicalPosition::new(area[0], area[1]),
+            PhysicalSize::new(area[2], area[3]),
         );
     }
 
@@ -848,18 +875,14 @@ impl ApplicationHandler<Waking> for Showing {
                     // will not leave alone is *where the word is being typed*,
                     // which belongs on the page with the code it is going into.
                     Ime::Preedit(spelling, caret) => {
+                        // As it arrived: where an input method says its own
+                        // caret is differs by input method and by
+                        // compositor, and a caret drawn in the wrong place
+                        // is otherwise a question with no answer to look at.
+                        tracing::debug!(?spelling, ?caret, "the input method is spelling");
                         self.composing = !spelling.is_empty();
-                        self.spelling = (!spelling.is_empty()).then(|| Spelling {
-                            // Where the input method's own caret is, in
-                            // characters rather than in bytes: the window
-                            // counts cells, and a byte offset into pinyin is
-                            // not one.
-                            caret: caret.map_or_else(
-                                || spelling.chars().count(),
-                                |(start, _)| spelling[..start].chars().count(),
-                            ),
-                            text: spelling,
-                        });
+                        self.spelling = Spelling::new(spelling, caret);
+                        self.point_the_input_method();
                         self.redraw();
                     }
                     // The word. It goes in the way pasted text goes in --
