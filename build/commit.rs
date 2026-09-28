@@ -25,7 +25,12 @@
 // because what is being built is a code reader and not a release process.
 use std::process::Command;
 
-fn main() {
+/// Says which commit this is, as `OBELUS_BUILD`.
+///
+/// A function rather than the `main` it used to be: the window's build
+/// script has a second errand, and a file included into two others cannot
+/// be the whole of either any more.
+fn stamp_the_commit() {
     // A new commit moves the branch's ref; a different branch moves `HEAD`.
     // Neither is watched by default, so without these the log goes on
     // naming the commit this was first built at.

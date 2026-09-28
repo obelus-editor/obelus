@@ -6,3 +6,7 @@
 //! ran". Included rather than copied, because a build script is not a
 //! library and there is nowhere else for a Cargo workspace to put one.
 include!("../../build/commit.rs");
+
+fn main() {
+    stamp_the_commit();
+}

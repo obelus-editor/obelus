@@ -377,11 +377,11 @@ impl ApplicationHandler<Waking> for Showing {
         let Some(mut app) = self.starting.take() else {
             return;
         };
-        let attributes = named(
+        let attributes = marked(named(
             Window::default_attributes()
                 .with_title("Obelus")
                 .with_inner_size(LogicalSize::new(1100.0, 720.0)),
-        );
+        ));
         let window = match events.create_window(attributes) {
             Ok(window) => Arc::new(window),
             Err(error) => {
@@ -953,4 +953,65 @@ fn named(attributes: winit::window::WindowAttributes) -> winit::window::WindowAt
 #[cfg(not(all(unix, not(target_os = "macos"))))]
 fn named(attributes: winit::window::WindowAttributes) -> winit::window::WindowAttributes {
     attributes
+}
+
+/// The icon, as the file itself. Fourteen kilobytes, seven sizes, and the
+/// decoder hands back the largest of them.
+const MARK: &[u8] = include_bytes!("../../../contrib/desktop/obelus.ico");
+
+/// The mark the window wears.
+///
+/// X11 is who needs it. A Wayland compositor takes the icon from the
+/// desktop entry the name above points it at, and macOS from the bundle,
+/// so on those two this is dropped; Windows does take it, and gets the
+/// same picture it would have taken out of the executable's own resources
+/// anyway, because both are built from the one file below.
+///
+/// Set on all of them rather than behind a `cfg` for each: a platform that
+/// does not want it drops it, and three cfgs would be three places to be
+/// wrong about somebody else's rules. Read from the file rather than
+/// written out as pixels beside it, because an icon is an icon in one
+/// place.
+///
+/// A window with no icon is a window, so nothing here is fatal.
+fn marked(attributes: winit::window::WindowAttributes) -> winit::window::WindowAttributes {
+    let icon = match image::load_from_memory_with_format(MARK, image::ImageFormat::Ico) {
+        Ok(mark) => {
+            let mark = mark.to_rgba8();
+            let (width, height) = mark.dimensions();
+            match winit::window::Icon::from_rgba(mark.into_raw(), width, height) {
+                Ok(icon) => Some(icon),
+                Err(error) => {
+                    tracing::warn!(%error, "the window has no icon");
+                    None
+                }
+            }
+        }
+        Err(error) => {
+            tracing::warn!(%error, "the window has no icon");
+            None
+        }
+    };
+    attributes.with_window_icon(icon)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MARK;
+
+    /// What the window draws and what Windows draws are one file, and this
+    /// is the half of that a test can hold: that the file is one an ICO
+    /// decoder makes a picture of, at the size the largest entry claims.
+    ///
+    /// `include_bytes!` is happy with any bytes at all, so nothing else
+    /// here would notice the file going wrong -- `marked` answers a warning
+    /// in the log and a window with no icon on it. Broken by truncating
+    /// `contrib/desktop/obelus.ico`, which fails this and nothing else.
+    #[test]
+    fn the_window_can_read_its_own_icon() {
+        let mark = image::load_from_memory_with_format(MARK, image::ImageFormat::Ico)
+            .expect("the icon decodes")
+            .to_rgba8();
+        assert_eq!(mark.dimensions(), (256, 256));
+    }
 }

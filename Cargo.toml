@@ -217,9 +217,11 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 # a sixteen-pixel mark pressed into two half-block cells is four coloured
 # squares.
 ratatui-image = { version = "11.0.8", default-features = false, features = ["crossterm"] }
-# The pixels themselves. Only png, because Obelus decodes no image files at
-# all -- this is the buffer type `ratatui-image` takes.
-image = { version = "0.25.10", default-features = false, features = ["png"] }
+# The pixels themselves. `png` is the buffer type `ratatui-image` takes and
+# nothing is decoded with it. `ico` is decoded, in one place: the window
+# reads its own icon out of the very file Windows reads it out of, so what
+# a title bar draws and what a taskbar draws cannot become two pictures.
+image = { version = "0.25.10", default-features = false, features = ["png", "ico"] }
 # The registry's marks are SVG, so something has to draw them. Without its
 # default features: no text, no system fonts, no raster images inside an SVG.
 # These are single-path drawings, and the text support alone is a font stack
@@ -349,6 +351,13 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_System_Ole",
     "Win32_UI_Shell",
 ] }
+
+# The icon, into the executable's own resources. A build-dependency, and
+# only where the build is happening: what it drives is the resource
+# compiler in the Windows SDK, which is the only thing that can put a
+# resource in a PE, and there is nowhere else for Explorer or a taskbar to
+# read a program's icon from.
+winresource = "0.1.31"
 
 # macOS's pasteboard, for the same reason. Only the clipboard names these,
 # and only on that platform.
