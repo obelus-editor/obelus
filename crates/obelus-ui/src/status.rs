@@ -278,6 +278,86 @@ fn typed(question: Option<&str>, words: &str) -> String {
     }
 }
 
+/// Says a row that is typed into is still working on what was typed.
+///
+/// After the words and never in front of them: what the reader is reading
+/// is what they typed, and a mark that pushed it along would move the text
+/// under their eyes every time an answer started or landed. After them it
+/// also leaves the caret where it is -- `typed_caret` measures what comes
+/// *before* the caret, so nothing appended can reach it.
+///
+/// A mark that turns and nothing else. The words for it belong to whoever
+/// is waiting and are said where their list says them; what this row adds
+/// is the one thing a list cannot say about itself from off screen, which
+/// is that the waiting is still going on.
+///
+/// Here rather than in the picker because the next thing that types and
+/// waits will want it too -- a search of a whole project is a query with a
+/// walk behind it, and a second mark drawn a second way would be two
+/// answers to "is this still going".
+pub fn still_working(
+    cells: &mut CellBuffer,
+    area: Rect,
+    question: Option<&str>,
+    words: &str,
+    phase: u32,
+    theme: &Theme,
+) {
+    let after = 1usize
+        .saturating_add(text_width(&typed(question, words)))
+        .saturating_add(1);
+    let Ok(offset) = u16::try_from(after) else {
+        return;
+    };
+    if area.x + offset >= area.right() {
+        return;
+    }
+    write(
+        cells,
+        area.x + offset,
+        area.y,
+        &crate::spinning(phase).to_string(),
+        Style::new().fg(theme.gutter).bg(theme.background),
+    );
+}
+
+/// The row a list is typed into: what was typed, what is held, and
+/// whether the list has answered for it yet.
+///
+/// A function of its own rather than a method, because the row is about
+/// the *picker* and nothing else on the status bar: what the view around
+/// it holds -- a buffer, a server, a note -- has no part in it, and a test
+/// of this should not have to build one.
+pub fn prompt_row(
+    picker: &Picker,
+    area: Rect,
+    cells: &mut CellBuffer,
+    style: Style,
+    theme: &Theme,
+    phase: u32,
+) {
+    let said = picker.query();
+    let line = typed(picker.question(), &said);
+    // What is held, marked where it is: the prefix in front of the
+    // query is not part of what was typed, so the run moves right by
+    // however wide that is.
+    let marked = match picker.query_held() {
+        Some(held) => {
+            let ahead = typed(picker.question(), "").chars().count();
+            Marked::run(
+                held.start + ahead..held.end + ahead,
+                theme.selection_background,
+            )
+        }
+        None => Marked::plain(),
+    };
+    write_marked(cells, area, area.x + 1, area.y, &line, style, &marked);
+    // And that the list has not answered for what is in it yet.
+    if picker.is_filling().is_some() {
+        still_working(cells, area, picker.question(), &said, phase, theme);
+    }
+}
+
 /// How many cells sit in front of what was typed on a status row.
 ///
 /// The mark or the question, and the blank after it. Shared with whoever
@@ -603,22 +683,7 @@ impl StatusView<'_> {
     }
 
     fn render_prompt(&self, picker: &Picker, area: Rect, cells: &mut CellBuffer, style: Style) {
-        let said = picker.query();
-        let line = typed(picker.question(), &said);
-        // What is held, marked where it is: the prefix in front of the
-        // query is not part of what was typed, so the run moves right by
-        // however wide that is.
-        let marked = match picker.query_held() {
-            Some(held) => {
-                let ahead = typed(picker.question(), "").chars().count();
-                Marked::run(
-                    held.start + ahead..held.end + ahead,
-                    self.theme.selection_background,
-                )
-            }
-            None => Marked::plain(),
-        };
-        write_marked(cells, area, area.x + 1, area.y, &line, style, &marked);
+        prompt_row(picker, area, cells, style, self.theme, self.phase);
     }
 }
 

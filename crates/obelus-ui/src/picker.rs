@@ -153,13 +153,6 @@ pub fn room_for(picker: &Picker, editor: Rect) -> Rect {
 /// strip of decoration above the prompt.
 const LEAST_PREVIEW_ROWS: u16 = 4;
 
-/// How much of the tab row's right-hand end is spoken for.
-///
-/// The glyphs that say the tabs can be walked, and a column either side of
-/// them, so a note about what is still arriving sits beside them rather
-/// than on top of them.
-const FILLING_INSET: usize = 6;
-
 /// Where the preview goes, if there is room for one.
 ///
 /// Below the list rather than beside it: a terminal is usually wider than one
@@ -443,31 +436,13 @@ impl Widget for PickerView<'_> {
                 height: area.height.saturating_sub(about_rows),
                 ..area
             };
-            let used = crate::tabs(
+            crate::tabs(
                 cells,
                 under,
                 self.picker.tabs(),
                 self.picker.tab(),
                 self.theme,
             );
-            // Beside the tabs, inside the key glyphs that already sit there: a
-            // list still filling has to say so somewhere that does not move
-            // its rows out from under the reader when it stops.
-            if let Some(note) = self.picker.is_filling() {
-                let room = usize::from(under.width)
-                    .saturating_sub(obelus_text::text_width(note) + FILLING_INSET);
-                if let Ok(offset) = u16::try_from(room)
-                    && under.x + offset > used
-                {
-                    crate::write(
-                        cells,
-                        under.x + offset,
-                        under.y,
-                        note,
-                        Style::new().fg(self.theme.gutter).bg(self.theme.background),
-                    );
-                }
-            }
             crate::rule(
                 cells,
                 Rect {

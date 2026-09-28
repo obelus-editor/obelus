@@ -1560,6 +1560,14 @@ impl App {
             // selection that stops at the edge of the screen is a
             // selection of what fits on it.
             || self.dragging.is_some()
+            // And a list being matched somewhere else. The same rule once
+            // more: the row that says so turns, and a mark drawn once and
+            // never again is a mark saying nothing is happening -- which
+            // is the one thing this row exists to contradict.
+            || self
+                .picker
+                .as_ref()
+                .is_some_and(obelus_component::picker::Picker::is_matching)
     }
 
     /// Whether an agent is at work in any conversation at all.
