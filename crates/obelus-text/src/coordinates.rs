@@ -183,6 +183,101 @@ impl Span {
     }
 }
 
+/// One edit, as a place after it sees it: `removed` characters at `at`,
+/// replaced by `inserted` of them.
+///
+/// Taken before the edit, because afterwards the document it is measured
+/// against is gone -- and in characters, which is the one coordinate that
+/// makes moving across it a rule rather than four cases.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Replacement {
+    /// Where it happened.
+    pub at: CharOffset,
+    /// How many characters it took out.
+    pub removed: usize,
+    /// And how many it put in.
+    pub inserted: usize,
+}
+
+/// Which end of a run a place is.
+///
+/// Because the two move differently when an edit lands on them: see
+/// [`Replacement::carry`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum End {
+    /// Where a run starts.
+    Start,
+    /// One past where it finishes.
+    Finish,
+}
+
+impl Replacement {
+    /// Where a place is after the edit.
+    ///
+    /// A place before the edit does not move, one after it moves by what
+    /// the edit added or took away, and one the edit reached into is
+    /// clamped to what is left of it: the start of a run stays where the
+    /// edit began, and the finish follows what was put in -- typing into a
+    /// run makes the run what was typed. Which is also the finish of a run
+    /// the edit landed on exactly, and not its start: text typed right
+    /// after a run is part of it, and text typed right before it is not.
+    ///
+    /// A run the edit took all of comes out empty, at the edit.
+    #[must_use]
+    pub const fn carry(self, place: CharOffset, end: End) -> CharOffset {
+        let (at, place) = (self.at.0, place.0);
+        let finish = matches!(end, End::Finish);
+        if place < at || (place == at && !finish) {
+            return CharOffset(place);
+        }
+        if place <= at + self.removed {
+            return CharOffset(match finish {
+                true => at + self.inserted,
+                false => at,
+            });
+        }
+        CharOffset(place + self.inserted - self.removed)
+    }
+}
+
+#[cfg(test)]
+mod replacements {
+    use super::*;
+
+    /// Deliberate break: move a start the edit reached into to
+    /// `at + inserted` as well. A run whose first characters were typed
+    /// over then loses them, and one the edit took all of is not empty.
+    #[test]
+    fn a_place_moves_by_what_came_before_it() {
+        // Three characters at 10 replaced by five.
+        let edit = Replacement {
+            at: CharOffset(10),
+            removed: 3,
+            inserted: 5,
+        };
+        let carry = |place, end| edit.carry(CharOffset(place), end).0;
+        assert_eq!(carry(4, End::Start), 4, "before it");
+        assert_eq!(carry(20, End::Start), 22, "after it, by two");
+        assert_eq!(carry(11, End::Start), 10, "a start reached into");
+        assert_eq!(carry(11, End::Finish), 15, "a finish reached into");
+        assert_eq!(carry(10, End::Start), 10, "a start the edit landed on");
+        assert_eq!(carry(10, End::Finish), 15, "a finish the edit landed on");
+        // A run the edit took all of.
+        let (start, finish) = (carry(10, End::Start), carry(13, End::Finish));
+        let taken = Replacement {
+            inserted: 0,
+            ..edit
+        };
+        assert_eq!(start, 10);
+        assert!(finish > start, "retyped, it is what was typed");
+        assert_eq!(
+            taken.carry(CharOffset(10), End::Start),
+            taken.carry(CharOffset(13), End::Finish),
+            "taken away, it is empty"
+        );
+    }
+}
+
 #[cfg(test)]
 mod spans {
     use super::*;

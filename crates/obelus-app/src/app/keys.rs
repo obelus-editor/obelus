@@ -672,7 +672,15 @@ impl App {
         let Some(index) = self.current.map(DocumentId::get) else {
             return;
         };
-        self.change_in(index, span, with, doing);
+        // The reader's own edit, on the document they are reading: the
+        // line it left the caret on is the line they are typing on. Only
+        // where it changed something -- a key a document refused is not
+        // a line being written.
+        if self.change_in(index, span, with, doing) {
+            self.typed_on = self
+                .current_buffer()
+                .map(|buffer| (DocumentId::new(index), buffer.cursor().line));
+        }
     }
 
     /// The same, to a document that is not the one being read.
@@ -681,25 +689,34 @@ impl App {
     /// not opened, and the ones that *are* open have to be edited rather
     /// than written over -- an unwritten buffer is the reader's work, and
     /// a file written under it would take it away.
+    ///
+    /// Says whether anything changed, which a document nobody may write
+    /// and an edit of nothing into nothing both answer no to.
     pub(super) fn change_in(
         &mut self,
         index: usize,
         span: obelus_text::coordinates::Span,
         with: &str,
         doing: obelus_buffer::undo::Doing,
-    ) {
+    ) -> bool {
         let before = self
             .file(DocumentId::new(index))
             .map_or(0, |buffer| buffer.text().line_count());
         // Where the edit lands and how much it moves, in the one coordinate
         // a snippet's holes are kept in. Taken before the edit, because
-        // afterwards the document it is measured against is gone.
+        // afterwards the document it is measured against is gone -- and
+        // so is where each thing a server said is wrong starts and ends.
         let moving = self.file(DocumentId::new(index)).map(|buffer| {
             let text = buffer.text();
             let at = text.char_offset(span.line, span.column);
             let to = text.char_offset(span.end_line, span.end_column);
-            (at, to.get().saturating_sub(at.get()), with.chars().count())
+            obelus_text::coordinates::Replacement {
+                at,
+                removed: to.get().saturating_sub(at.get()),
+                inserted: with.chars().count(),
+            }
         });
+        let troubles = self.hold_troubles(index);
         let changed = self
             .file_mut(DocumentId::new(index))
             .is_some_and(|buffer| buffer.edit(span, with, doing));
@@ -717,13 +734,19 @@ impl App {
             );
             // And the holes a snippet left, which are places in this
             // document too -- the reader is typing into one of them.
-            if let Some((at, removed, inserted)) = moving {
-                self.keep_filling_across(at, removed, inserted);
+            if let Some(moving) = moving {
+                self.keep_filling_across(moving);
+                // And what a server said is wrong, which is about the
+                // text it was said about -- see `keep_troubles_across`.
+                if let Some(troubles) = troubles {
+                    self.keep_troubles_across(index, troubles, moving);
+                }
             }
             // The server's copy of this document is now a document nobody
             // has. Everything else keyed on the version notices by itself.
             self.change_document(index);
         }
+        changed
     }
 }
 

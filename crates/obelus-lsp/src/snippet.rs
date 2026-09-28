@@ -15,7 +15,7 @@
 //! two `$1`s are two stops in the order they appear, which is wrong in the
 //! rare snippet that has them and comprehensible everywhere else.
 
-use obelus_text::coordinates::CharOffset;
+use obelus_text::coordinates::{CharOffset, End, Replacement};
 
 /// A snippet, expanded.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -202,35 +202,14 @@ impl Filling {
         self.at.is_some_and(|at| at >= self.stops.len())
     }
 
-    /// Moves the stops across an edit.
+    /// Moves the stops across an edit -- see [`Replacement::carry`].
     ///
-    /// The same rule the jump list follows, in the one coordinate that
-    /// makes it a rule rather than four cases: a stop before the edit does
-    /// not move, one after it moves by what the edit added or took away,
-    /// and one the edit reached into is clamped to what is left of it. The
-    /// stop being typed into is the interesting case, and it is the one the
-    /// end of a stop moving with the insertion covers.
-    pub fn keep_across(&mut self, at: CharOffset, removed: usize, inserted: usize) {
-        let end = at.get() + removed;
-        let moved = |offset: CharOffset, inclusive: bool| {
-            let offset = offset.get();
-            if offset < at.get() || (offset == at.get() && !inclusive) {
-                return CharOffset::new(offset);
-            }
-            if offset <= end {
-                // Inside what the edit replaced. The end of a stop follows
-                // what was put in -- typing into a hole makes the hole what
-                // was typed -- and the start of one stays where it was.
-                return CharOffset::new(match inclusive {
-                    true => at.get() + inserted,
-                    false => at.get(),
-                });
-            }
-            CharOffset::new(offset + inserted - removed)
-        };
+    /// The stop being typed into is the case that matters: its finish
+    /// follows what is put in, so the hole becomes what was typed.
+    pub fn keep_across(&mut self, edit: Replacement) {
         for (start, end) in &mut self.stops {
-            *start = moved(*start, false);
-            *end = moved(*end, true);
+            *start = edit.carry(*start, End::Start);
+            *end = edit.carry(*end, End::Finish);
         }
     }
 }

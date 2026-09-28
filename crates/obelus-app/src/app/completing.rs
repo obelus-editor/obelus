@@ -605,9 +605,9 @@ impl App {
     }
 
     /// Moves the snippet's stops across an edit somebody made.
-    pub(super) fn keep_filling_across(&mut self, at: CharOffset, removed: usize, inserted: usize) {
+    pub(super) fn keep_filling_across(&mut self, edit: obelus_text::coordinates::Replacement) {
         if let Some(filling) = self.filling.as_mut() {
-            filling.keep_across(at, removed, inserted);
+            filling.keep_across(edit);
         }
     }
 

@@ -1659,3 +1659,89 @@ fn a_server_with_nothing_to_say_leaves_what_obelus_said() {
         "Obelus's mark went with the server's"
     );
 }
+
+/// The line being typed on says nothing about what is wrong with it until
+/// the reader leaves it.
+///
+/// Half a line of code is wrong in every way a server can say, and the
+/// complaint is a row of the file's own space: opened and shut under the
+/// caret keystroke by keystroke, it moved everything below it with it.
+/// helix holds it back for the whole of insert mode; Obelus has no modes,
+/// so it is the line -- leaving it is what says it is finished.
+///
+/// Broken deliberately two ways. Taking the `typed_on` check out of
+/// `show_what_is_wrong` puts the complaint under the line again the moment
+/// a character is typed on it. And leaving `let_go_of_a_line_left` out of
+/// `App::handle` leaves it shut after a down and an up with no frame
+/// between them -- the line was left, and nothing looked in between.
+#[test]
+fn the_line_being_typed_on_says_nothing_until_it_is_left() {
+    let (_scratch, mut app, path) = editing("trouble-typing", "fn main() {\n    nmae;\n}\n");
+    app.publish_for_test(published(&path, 1, 4, 8, 1));
+    let said = |app: &mut App| {
+        let dump = support::render(app, 60, 16);
+        support::text_block(&dump).contains("cannot find value")
+    };
+
+    support::press(&mut app, crossterm::event::KeyCode::Down);
+    assert!(said(&mut app), "arriving on the line opens it");
+
+    support::type_text(&mut app, "x");
+    assert!(!said(&mut app), "the line being typed on still says it");
+
+    // Away and back, which is the reader finishing the line.
+    support::press(&mut app, crossterm::event::KeyCode::Down);
+    support::press(&mut app, crossterm::event::KeyCode::Up);
+    assert!(said(&mut app), "coming back to the line did not open it");
+}
+
+/// What a server said is wrong goes with the text it is about until the
+/// server says again, and goes altogether with text that is taken away.
+///
+/// Broken deliberately two ways. Leaving `keep_troubles_across` uncalled
+/// in `change_in` keeps the underline on line 1 after a line is put in
+/// above it -- under code that is not what it was about. And dropping the
+/// `to <= from` check keeps an empty trouble about text that is gone.
+#[test]
+fn what_is_wrong_moves_with_the_text_it_is_about() {
+    let (_scratch, mut app, path) = editing("trouble-moving", "fn main() {\n    nmae;\n}\n");
+    app.publish_for_test(published(&path, 1, 4, 8, 1));
+    let spans = |app: &App| {
+        app.troubles()
+            .iter()
+            .map(|trouble| {
+                (
+                    trouble.span.line.get(),
+                    trouble.span.column.get(),
+                    trouble.span.end_column.get(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(spans(&app), vec![(1, 4, 8)]);
+
+    // A line above it.
+    support::press(&mut app, crossterm::event::KeyCode::Enter);
+    support::lay_out(&mut app, 60, 16);
+    assert_eq!(spans(&app), vec![(2, 4, 8)], "it stayed where the text was");
+
+    // And the text it is about, taken away from its end.
+    support::press(&mut app, crossterm::event::KeyCode::Down);
+    support::press(&mut app, crossterm::event::KeyCode::End);
+    support::press(&mut app, crossterm::event::KeyCode::Left);
+    for _ in 0..4 {
+        support::press(&mut app, crossterm::event::KeyCode::Backspace);
+    }
+    support::lay_out(&mut app, 60, 16);
+    assert_eq!(
+        app.current_buffer()
+            .map(|buffer| buffer.text().rope().line(2).to_string()),
+        Some("    ;\n".to_string()),
+        "the test did not take the word away"
+    );
+    assert!(
+        spans(&app).is_empty(),
+        "about text that is gone: {:?}",
+        spans(&app)
+    );
+}

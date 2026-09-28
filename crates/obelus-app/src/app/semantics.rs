@@ -5,6 +5,8 @@
 //! split is deliberate -- everything here needs the application's state, and
 //! nothing there does.
 
+use obelus_text::coordinates::{CharOffset, End, Replacement, Span};
+
 use super::*;
 
 /// What Obelus calls itself where a diagnostic says which tool said it.
@@ -599,6 +601,16 @@ impl App {
         else {
             return;
         };
+        // Nothing about the line the reader is typing on -- see
+        // `typed_on`. A list's row is not the caret's line, and is shown
+        // whatever the caret was doing.
+        if chosen.is_none()
+            && self.typed_on.is_some()
+            && self.typed_on == self.current.map(|id| (id, line))
+        {
+            self.close_the_complaint();
+            return;
+        }
         let room = self.text_area().width;
         let Self {
             documents,
@@ -617,6 +629,101 @@ impl App {
             .get(buffer.path())
             .map_or(&[] as &[_], Vec::as_slice);
         say_what_is_wrong(buffer, here, line, chosen.map(|(_, column)| column), room);
+    }
+
+    /// Forgets the line the reader was typing on, once the caret is
+    /// anywhere else -- another line, another document.
+    ///
+    /// Asked of where the caret *is*, rather than switched off by the keys
+    /// that move it: there are a great many of those, and the pointer, and
+    /// a list that opens a file, and every one added later would be one
+    /// more that had to remember.
+    pub(super) fn let_go_of_a_line_left(&mut self) {
+        let Some((id, typed)) = self.typed_on else {
+            return;
+        };
+        let here = self.current_buffer().map(|buffer| buffer.cursor().line);
+        if self.current != Some(id) || here != Some(typed) {
+            self.typed_on = None;
+        }
+    }
+
+    /// Where each thing a server said is wrong with this document starts
+    /// and finishes, as offsets into its text as it is now.
+    ///
+    /// Taken before an edit, for [`App::keep_troubles_across`]: afterwards
+    /// the text the spans were counted against is gone.
+    pub(super) fn hold_troubles(&self, index: usize) -> Option<Vec<(CharOffset, CharOffset)>> {
+        let buffer = self.file(DocumentId::new(index))?;
+        let text = buffer.text();
+        let held = self
+            .troubles
+            .get(buffer.path())?
+            .iter()
+            .map(|trouble| {
+                let span = trouble.span;
+                (
+                    text.char_offset(span.line, span.column),
+                    text.char_offset(span.end_line, span.end_column),
+                )
+            })
+            .collect();
+        Some(held)
+    }
+
+    /// Moves what a server said is wrong across an edit the reader made.
+    ///
+    /// Each one is about a piece of text, and until the server looks again
+    /// the piece it named has moved: an underline left where it was is
+    /// under whatever the edit pushed into its place. So it goes with the
+    /// text -- the same rule a snippet's holes follow -- and one whose text
+    /// the edit took away goes with that, because what it was about is not
+    /// there. helix and zed both keep them this way, until the next set.
+    pub(super) fn keep_troubles_across(
+        &mut self,
+        index: usize,
+        held: Vec<(CharOffset, CharOffset)>,
+        edit: Replacement,
+    ) {
+        let Self {
+            documents,
+            troubles,
+            ..
+        } = self;
+        let Some(buffer) = file_in(documents, DocumentId::new(index)) else {
+            return;
+        };
+        let Some(these) = troubles.get_mut(buffer.path()) else {
+            return;
+        };
+        let text = buffer.text();
+        let mut held = held.into_iter();
+        these.retain_mut(|trouble| {
+            let Some((start, finish)) = held.next() else {
+                return true;
+            };
+            let (from, to) = (
+                edit.carry(start, End::Start),
+                edit.carry(finish, End::Finish),
+            );
+            // A run that had text and has none left was taken away. One
+            // that never had any is a place, which a server may name.
+            if to <= from && finish > start {
+                return false;
+            }
+            let ((line, column), (end_line, end_column)) = (text.position(from), text.position(to));
+            trouble.span = Span {
+                line,
+                column,
+                end_line,
+                end_column,
+            };
+            true
+        });
+        if these.is_empty() {
+            let path = buffer.path().to_path_buf();
+            troubles.remove(&path);
+        }
     }
 
     /// Takes away whatever complaint is showing.

@@ -248,8 +248,20 @@ pub struct App {
     /// Keyed by path rather than by buffer, for the reason the tokens are:
     /// a buffer is a slot that is reused, and a closed file's troubles
     /// would otherwise be shown against whatever is opened into its place.
-    /// Replaced wholesale, because that is what a server sends.
+    /// Replaced wholesale, because that is what a server sends -- and
+    /// carried across the reader's edits until it does, because each one
+    /// is about a piece of text and the text moves under it.
     troubles: HashMap<PathBuf, Vec<obelus_lsp::trouble::Trouble>>,
+    /// The line the reader is typing on, until they leave it.
+    ///
+    /// Whose complaint stays shut: half a line of code is wrong in every
+    /// way a server can say, and a row that opened and closed under the
+    /// caret on every keystroke moved the whole of the file below it with
+    /// it. Not a pause -- somebody who stops to think on a line has not
+    /// finished it -- but the line, which is what helix's insert mode
+    /// holds it back for as well. Leaving is what says the line is done:
+    /// going to the next problem does, and so does walking there.
+    typed_on: Option<(DocumentId, LineNumber)>,
     /// What every server has said about every file, as it said it.
     ///
     /// The whole project rather than the files Obelus has open, and in the
@@ -818,6 +830,7 @@ impl App {
             notes_pause: None,
             syntax_pause: None,
             changes_pause: None,
+            typed_on: None,
             hover_pause: None,
             renaming: None,
             opened: std::collections::HashSet::new(),
@@ -2204,6 +2217,10 @@ impl App {
     /// moves, not about which key it is. Navigation belongs to whatever holds
     /// the position it moves; commands are the named actions left over.
     pub fn handle(&mut self, event: Event) {
+        // Whatever the last one did to the caret, before this one is
+        // offered anywhere: several events can arrive between two frames,
+        // and a line left and come back to within them was still left.
+        self.let_go_of_a_line_left();
         match event {
             Event::Key(key) => self.handle_key(key),
             // Redrawing is unconditional after every event, so a resize needs
