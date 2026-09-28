@@ -1271,10 +1271,19 @@ impl Painter {
     /// about the two glyphs, for the same reason.
     /// The bars, as capsules rather than as the blocks a terminal has.
     ///
-    /// The cells the view wrote are covered first, with their own
-    /// background and row by row: a bar can run past a rule and down the
-    /// side of a pane, so what is behind it is not one colour for its
-    /// whole length. Then the track, then the mark over it.
+    /// Nothing is covered over. `letters` is told to leave a bar's cells
+    /// alone, the way it leaves a rule's and a cap's, so the blocks a
+    /// terminal draws are never put on the screen here at all -- and then
+    /// what is behind the capsule is whatever the page already had there.
+    ///
+    /// Which is the whole of why it is done that way round. This did once
+    /// draw the blocks and paint over them with the cell's own background,
+    /// and a bar inside a pane sits on *glass*: the cells there carry the
+    /// pane's own colour, which `backgrounds` deliberately does not paint
+    /// because painting it is covering up what the reader is meant to see
+    /// through. The cover put it back, opaque, in one strip down the side
+    /// of every list. `catching_up` has the same note for the same reason,
+    /// one bug earlier.
     ///
     /// The colours are the cells' own, which is the rule a switch follows
     /// and for the same reason: what a terminal draws the blocks in is
@@ -1295,17 +1304,6 @@ impl Painter {
             let shown = showing.shown.clamp(0.0, 1.0);
             let under = showing.under.clamp(0.0, 1.0);
             let column = bar.area.x;
-            for row in 0..bar.area.height {
-                let y = bar.area.y + row;
-                self.block(
-                    f32::from(column) * cell.width,
-                    f32::from(y) * cell.height,
-                    cell.width,
-                    cell.height,
-                    rgba(page.look(column, y).background, Ink::Background),
-                );
-            }
-
             let capsule = |width: f32| {
                 let width = (cell.width * width).round().max(2.0);
                 (
@@ -1889,18 +1887,7 @@ impl Painter {
                 if look.text.trim().is_empty() {
                     continue;
                 }
-                let within = |area: ratatui::layout::Rect| {
-                    (area.left()..area.right()).contains(&column)
-                        && (area.top()..area.bottom()).contains(&row)
-                };
-                let drawn = said
-                    .ruled
-                    .iter()
-                    .any(|rule| rule.spans(page, column, row).is_some())
-                    || framed.iter().any(|card| card.ring_holds(page, column, row))
-                    || capped.iter().any(|cap| within(cap.area))
-                    || said.ticked.iter().any(|tick| within(tick.area));
-                if drawn {
+                if drawn_as_a_shape(page, &said, framed, capped, column, row) {
                     continue;
                 }
                 let colour = rgba(look.foreground, Ink::Foreground);
@@ -2481,6 +2468,36 @@ fn drawing(pass: &mut wgpu::RenderPass<'_>, quads: std::ops::Range<usize>) {
 /// Which is the question every square of colour drawn over a pane has to
 /// ask first, because the glass is already there and a square of the
 /// pane's colour on it is a hole in it.
+/// Whether this cell's picture is some shape the window draws, rather
+/// than the character a terminal stands that shape in with.
+///
+/// One list, because they are one rule, and the rule is not only that the
+/// character would look wrong under the shape. A cap, a bar and a rule can
+/// all sit on a pane, and a pane is *glass*: `backgrounds` leaves those
+/// cells unpainted on purpose, so a shape that had to cover a leftover
+/// glyph would have to paint over them -- and painting over glass is
+/// covering up the very thing the reader is meant to see through. Nothing
+/// covers anything here; the glyph is simply never drawn.
+fn drawn_as_a_shape(
+    page: &Page,
+    said: &Said<'_>,
+    framed: &[&Behind],
+    capped: &[&Capped],
+    column: u16,
+    row: u16,
+) -> bool {
+    let within = |area: ratatui::layout::Rect| {
+        (area.left()..area.right()).contains(&column) && (area.top()..area.bottom()).contains(&row)
+    };
+    said.ruled
+        .iter()
+        .any(|rule| rule.spans(page, column, row).is_some())
+        || framed.iter().any(|card| card.ring_holds(page, column, row))
+        || capped.iter().any(|cap| within(cap.area))
+        || said.ticked.iter().any(|tick| within(tick.area))
+        || said.barred.iter().any(|bar| within(bar.bar.area))
+}
+
 fn seen_through(panes: &[&Behind], x: u16, y: u16, colour: Color) -> bool {
     panes.iter().any(|pane| {
         let area = pane.area;
@@ -2793,6 +2810,55 @@ mod tests {
         assert!(!seen_through(&panes, 5, 1, ground), "beside it");
         assert!(!seen_through(&panes, 2, 3, ground), "under it");
         assert!(!seen_through(&[], 2, 1, ground), "no pane at all");
+    }
+
+    /// A bar's cells are the window's to draw, so the letters leave them
+    /// alone.
+    ///
+    /// Deliberate break: take the `barred` clause out of
+    /// `drawn_as_a_shape`. The block a terminal draws a bar with is then
+    /// put on the screen under the capsule, and the only way to be rid of
+    /// it is to paint over the cell -- which is what this did first, and
+    /// on a pane those cells are glass, so every list in Obelus got an
+    /// opaque strip down its right-hand side where the reader was meant to
+    /// see through.
+    #[test]
+    fn a_bar_is_not_drawn_as_letters_as_well() {
+        let page = page("");
+        let bar = Barred {
+            bar: obelus_ui::shapes::Bar {
+                area: ratatui::layout::Rect {
+                    x: 9,
+                    y: 0,
+                    width: 1,
+                    height: 1,
+                },
+                mark: 0,
+                thumb: 1,
+            },
+            shown: 1.0,
+            under: 0.0,
+        };
+        let barred = [bar];
+        let said = Said {
+            marked: &[],
+            capped: &[],
+            ticked: &[],
+            barred: &barred,
+            ruled: &[],
+            behind: None,
+            cards: &[],
+            band: None,
+            bar: None,
+        };
+        assert!(
+            drawn_as_a_shape(&page, &said, &[], &[], 9, 0),
+            "the column the bar is in"
+        );
+        assert!(
+            !drawn_as_a_shape(&page, &said, &[], &[], 8, 0),
+            "and not the one beside it, which is the file"
+        );
     }
 
     /// What is left of a run once the holes are cut out of it, whatever
