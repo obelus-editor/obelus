@@ -41,6 +41,9 @@ cosmic-text.workspace = true
 # ends.
 crossterm.workspace = true
 etagere.workspace = true
+# The window's own icon, decoded at startup from the same file the resource
+# below is built from. See `window.rs`.
+image.workspace = true
 pollster.workspace = true
 ratatui.workspace = true
 tracing.workspace = true
@@ -59,3 +62,49 @@ x11rb.workspace = true
 # setting to read. See `blink.rs`.
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true
+
+# A build-dependency's `cfg` is the *host's*, which is the right question
+# here: this drives a program that only exists on Windows. See `build.rs`.
+[target.'cfg(windows)'.build-dependencies]
+winresource.workspace = true
+
+# What `cargo deb` and `cargo generate-rpm` make of this crate, which is the
+# `.deb` and the `.rpm` on a release. Its own package rather than a second
+# binary in the other one: `obg` is forty megabytes a reader in a terminal
+# has no use for.
+#
+# The desktop entry and the icon are here and not only in the AppImage,
+# because a window with no `.desktop` file beside it is a window a launcher
+# cannot start and a taskbar draws without a name.
+[package.metadata.deb]
+name = "obelus-gui"
+maintainer = "Sunli <scott_s829@163.com>"
+copyright = "2026 Sunli"
+license-file = ["../../LICENSE", "0"]
+section = "devel"
+priority = "optional"
+extended-description = """\
+The same code reader as `obelus`, drawn in a window rather than in a \
+terminal: the presses a terminal cannot report arrive as themselves, and \
+the marks are compiled in rather than guessed at from the reader's font."""
+# Two spellings, and they are not a mistake. `target/release` is written
+# the plain way because that exact prefix is the one cargo-deb rewrites for
+# the target and the profile it was given -- `../../target/release` is not
+# it, and packaged whatever an old `cargo build --release` had left lying
+# there. Every other path is resolved against this crate's own directory,
+# which is what the `../../` is.
+assets = [
+    ["target/release/obg", "usr/bin/", "755"],
+    ["../../contrib/desktop/obelus.desktop", "usr/share/applications/", "644"],
+    ["../../contrib/desktop/obelus.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
+]
+
+[package.metadata.generate-rpm]
+name = "obelus-gui"
+assets = [
+    { source = "target/release/obg", dest = "/usr/bin/obg", mode = "755" },
+    { source = "contrib/desktop/obelus.desktop", dest = "/usr/share/applications/obelus.desktop", mode = "644" },
+    { source = "contrib/desktop/obelus.svg", dest = "/usr/share/icons/hicolor/scalable/apps/obelus.svg", mode = "644" },
+    { source = "LICENSE", dest = "/usr/share/doc/obelus-gui/LICENSE", mode = "644", doc = true },
+    { source = "README.md", dest = "/usr/share/doc/obelus-gui/README.md", mode = "644", doc = true },
+]

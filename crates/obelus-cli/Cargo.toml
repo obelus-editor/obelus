@@ -24,3 +24,34 @@ crossterm.workspace = true
 image.workspace = true
 ratatui.workspace = true
 tracing.workspace = true
+
+# What `cargo deb` and `cargo generate-rpm` make of this crate, which is the
+# `.deb` and the `.rpm` on a release. The package is named for the program
+# and not for the crate: a reader installs `obelus`, and `obelus-cli` is a
+# thing only this workspace says.
+#
+# The two do not read each other's table, so everything here is said twice.
+# What is not said twice is the version, the licence and the description,
+# which both take from the package above.
+[package.metadata.deb]
+name = "obelus"
+maintainer = "Sunli <scott_s829@163.com>"
+copyright = "2026 Sunli"
+license-file = ["../../LICENSE", "0"]
+section = "devel"
+priority = "optional"
+extended-description = """\
+Syntax highlighting for fifteen languages, folding, soft wrap, git in the \
+margin, a language server and an agent, on the page you are reading. In the \
+AI era every line you read is a line you did not write, so browsing is the \
+product and editing is incidental."""
+
+[package.metadata.generate-rpm]
+name = "obelus"
+# `target/release` is what the tool rewrites when it is given a `--target`
+# and a `--profile`, so this is written the plain way on purpose.
+assets = [
+    { source = "target/release/ob", dest = "/usr/bin/ob", mode = "755" },
+    { source = "LICENSE", dest = "/usr/share/doc/obelus/LICENSE", mode = "644", doc = true },
+    { source = "README.md", dest = "/usr/share/doc/obelus/README.md", mode = "644", doc = true },
+]
