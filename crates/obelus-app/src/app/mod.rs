@@ -2149,6 +2149,7 @@ impl App {
         self.refresh_preview(editor_area);
         self.look_at_the_selection();
 
+        let painted = obelus_ui::editor_canvas(self.screen_area).height;
         let Self {
             documents,
             current,
@@ -2167,7 +2168,13 @@ impl App {
             highlights.clear();
             return;
         };
-        let range = buffer.visible_bytes(area.height);
+        // Over the rows that are *painted*, not the rows the reader has.
+        // A compact list covers the foot of the document rather than
+        // shortening it -- see `obelus_ui::editor_canvas` -- and what is
+        // highlighted has to be what is drawn, or the rows under the list
+        // come out in the plain foreground and a window shows them that
+        // way through the glass.
+        let range = buffer.visible_bytes(painted);
         highlights.refresh(state, buffer.text(), range);
     }
 

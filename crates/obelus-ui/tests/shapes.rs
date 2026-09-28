@@ -34,16 +34,22 @@ struct Heard {
     caps: Mutex<Vec<Said>>,
     switches: Mutex<Vec<(Rect, bool)>>,
     bars: Mutex<Vec<obelus_ui::shapes::Bar>>,
+    rules: Mutex<Vec<Rect>>,
+    panes: Mutex<Vec<(Rect, obelus_ui::shapes::Joined, Color, String)>>,
 }
 
 impl obelus_ui::shapes::Shapes for Heard {
     fn behind(
         &self,
-        _area: Rect,
-        _joined: obelus_ui::shapes::Joined,
-        _ground: Color,
-        _cells: &[ratatui::buffer::Cell],
+        area: Rect,
+        joined: obelus_ui::shapes::Joined,
+        ground: Color,
+        cells: &[ratatui::buffer::Cell],
     ) {
+        if let Ok(mut panes) = self.panes.lock() {
+            let under = cells.iter().map(ratatui::buffer::Cell::symbol).collect();
+            panes.push((area, joined, ground, under));
+        }
     }
 
     fn scrolled(&self, _area: Rect, _top: i64, _bar: Option<obelus_ui::shapes::Bar>) {}
@@ -57,6 +63,12 @@ impl obelus_ui::shapes::Shapes for Heard {
     fn ticked(&self, area: Rect, on: bool) {
         if let Ok(mut switches) = self.switches.lock() {
             switches.push((area, on));
+        }
+    }
+
+    fn ruled(&self, area: Rect) {
+        if let Ok(mut rules) = self.rules.lock() {
+            rules.push(area);
         }
     }
 
@@ -218,11 +230,85 @@ fn the_card_of_every_key_says_a_cap_round_each() {
     // the page's rather than the cap's: the cells are untouched.
     assert_eq!(mine[0].area.width, 7, "{:?}", mine[0]);
     assert_eq!(mine[0].keys, "Alt+m");
+    assert_eq!(mine[0].cap, DARK.background, "the panel's own ground");
+    assert_eq!(mine[0].page, DARK.background);
+}
+
+/// Break: drop the `shapes::ruled` at the end of `rule`, and a window has
+/// a row of `─` with nothing saying it is a line -- so it spells it in the
+/// font, half a row from the edge of any pane the line is the edge of.
+#[test]
+fn a_rule_says_which_row_it_is_on() {
+    let heard = heard();
+    // Its own height, so that the rule is on a row no other test's is.
+    let rows = 17;
+    let cells = a_foot(rows);
+    let said = heard.rules.lock().expect("nothing poisoned it").clone();
+    let mine: Vec<Rect> = said.into_iter().filter(|area| area.y == rows - 2).collect();
+    assert_eq!(mine.len(), 1, "one rule over the foot: {mine:?}");
+    // One row, and every cell of it the glyph a terminal draws: what the
+    // window checks it against.
+    assert_eq!(mine[0].height, 1);
+    for x in mine[0].left()..mine[0].right() {
+        assert_eq!(cells[(x, mine[0].y)].symbol(), "\u{2500}", "at {x}");
+    }
+}
+
+/// A panel says what it was put over, and that is the whole of what a
+/// window needs to draw its frame: which cells are the ring, and what
+/// shows outside the line.
+///
+/// Break: move the `shapes::behind` in `panel` below its `fill`, and what
+/// a window is told is under the card of every key is the card itself --
+/// the glass inside its frame shows a blurred copy of the panel instead
+/// of the list it was opened over. Break again by dropping it, and the
+/// card is spelled in `╭─╮` on a square of its own ground, an opaque box
+/// whatever the window can do.
+#[test]
+fn a_panel_says_what_it_was_put_over() {
+    let heard = heard();
+    let hints = [obelus_ui::Hint::common(
+        KeyChord::parse("alt+w").expect("alt+w is a key"),
+        "Go",
+    )];
+    // Forty rows, so the card is centred where no other test's is.
+    let area = Rect {
+        x: 0,
+        y: 0,
+        width: 60,
+        height: 40,
+    };
+    let mut cells = CellBuffer::empty(area);
+    // What it is put over: a page of one letter.
+    for y in 0..area.height {
+        for x in 0..area.width {
+            cells[(x, y)].set_symbol("z");
+        }
+    }
+    obelus_ui::keys_card(&mut cells, area, &hints, &DARK);
+
+    let panes = heard.panes.lock().expect("nothing poisoned it").clone();
+    let mine: Vec<_> = panes
+        .into_iter()
+        .filter(|(pane, ..)| pane.y == 17)
+        .collect();
+    assert_eq!(mine.len(), 1, "one card, one pane: {mine:?}");
+    let (frame, joined, ground, under) = &mine[0];
     assert_eq!(
-        mine[0].cap, DARK.raised_background,
-        "the panel's own ground"
+        *joined,
+        obelus_ui::shapes::Joined::Nowhere,
+        "edges all round"
     );
-    assert_eq!(mine[0].page, DARK.raised_background);
+    assert_eq!(*ground, DARK.background, "the card's own ground");
+    assert!(
+        under.chars().all(|letter| letter == 'z'),
+        "what was there before the card: {under:?}"
+    );
+    // The frame is the pane's outermost ring, which is what the window
+    // checks the pane against.
+    let (right, bottom) = (frame.right() - 1, frame.bottom() - 1);
+    assert_eq!(cells[(frame.x, frame.y)].symbol(), "\u{256d}");
+    assert_eq!(cells[(right, bottom)].symbol(), "\u{256f}");
 }
 
 /// A reading longer than its region, drawn into a grid this test owns.

@@ -194,19 +194,21 @@ fn the_paging_keys_read_the_rest_of_it() {
     );
 }
 
-/// Nothing inside a panel touches its border, and the panel is not the
-/// colour of the page behind it.
+/// Nothing inside a panel touches its border, and the panel is on the
+/// page's own colour.
 ///
 /// A hover holds a README, and a README's fenced blocks are boxes of their
 /// own -- so without the blank there were two lines side by side with
-/// nothing between them, one Obelus's and one the document's. The raised
-/// ground says the same thing a second way, for a panel whose contents
-/// reach its edge: a box outlined in one thin line over code of exactly
-/// the same colour is a box that disappears into what it covers.
+/// nothing between them, one Obelus's and one the document's.
 ///
-/// Broken deliberately by setting `ui::PANEL_INSET` to 1, or by filling in
-/// `ui::panel` with `theme.background`: the first puts the fence against
-/// the side, the second leaves the panel the colour of the file.
+/// The colour is the page's because the frame is what says a panel is not
+/// the file, and in a window its ground is the colour of its glass: a
+/// ground a shade off the page was a grey box over glass that is the
+/// page's colour everywhere else.
+///
+/// Broken deliberately by setting `ui::PANEL_INSET` to 1, or by giving
+/// `ui::panel` the ground `theme.raised_background`: the first puts the
+/// fence against the side, the second puts the grey box back.
 #[test]
 fn a_panel_holds_its_contents_off_its_own_edge() {
     let (_scratch, mut app) = editing("hover-inset", SOURCE);
@@ -234,11 +236,10 @@ fn a_panel_holds_its_contents_off_its_own_edge() {
         assert_eq!(after, ' ', "{after:?} is against the panel's side:\n{dump}");
     }
 
-    // And the panel's own cells wear the raised ground -- asked of the
-    // cells and not of the legend, because the themes Obelus ships give a
-    // selected row the same colour, so a legend that has it says nothing
-    // about which thing on screen is wearing it.
-    let ground = support::spelled(app.theme().raised_background);
+    // And the panel's own cells wear the page's colour -- asked of the
+    // cells and not of the legend, because the legend has the page's
+    // colour whatever the panel wears: the code round it is on it.
+    let ground = support::spelled(app.theme().background);
     let letters: Vec<char> = support::legend_block(&dump)
         .lines()
         .filter(|entry| entry.contains(&format!("bg={ground}")))
@@ -254,7 +255,7 @@ fn a_panel_holds_its_contents_off_its_own_edge() {
         .expect("a cell inside the panel");
     assert!(
         letters.contains(&under),
-        "the panel is the colour of the file it covers:\n{dump}"
+        "the panel is not on the page's colour:\n{dump}"
     );
 }
 

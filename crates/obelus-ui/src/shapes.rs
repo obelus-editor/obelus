@@ -55,6 +55,18 @@ pub enum Joined {
     /// Standing on the row below it: a list that leaves the code showing,
     /// which is what a compact one is for.
     Below,
+    /// Joined to nothing: a box put over the page for a moment. Every
+    /// side is an edge, so every corner is rounded, and it arrives from
+    /// nowhere because it does not travel at all.
+    ///
+    /// Its edge is a frame, which is the outermost ring of its cells: a
+    /// terminal draws it in `╭─╮` on cells painted the box's own ground,
+    /// so a round corner stands on a square one -- the only corner a cell
+    /// has. A window draws the shape itself, the line where the glyphs put
+    /// it and the glass inside the line, and outside it what the box was
+    /// put over: which is in the cells this is said with, and is why a
+    /// frame needs saying no more than this.
+    Nowhere,
 }
 
 /// The bar beside a band, for a front end that can slide it.
@@ -165,6 +177,20 @@ pub trait Shapes: Send + Sync {
     /// anybody is listening here.
     fn ticked(&self, area: Rect, on: bool);
 
+    /// This row is a line between two things.
+    ///
+    /// A terminal draws it in `─`, which is a glyph: it sits where the
+    /// font put it and on the ground its cell was painted, and a window
+    /// with glass behind a pane has nowhere to put the pane's edge but on
+    /// a cell's boundary -- half a row from any line a glyph can draw. A
+    /// window drawing the line itself puts the two in the same place.
+    ///
+    /// No colours, for the reason a switch has none: the ink is the one
+    /// the view wrote in those cells. What travels is only which cells,
+    /// and the cells say whether they still are one -- see `ruled` in the
+    /// window.
+    fn ruled(&self, area: Rect);
+
     /// This band shows a list of things starting at `top`.
     ///
     /// A number to be *compared*, not read: what a front end does with it
@@ -238,6 +264,13 @@ pub(crate) fn behind(area: Rect, joined: Joined, ground: Color, cells: &CellBuff
 pub(crate) fn ticked(area: Rect, on: bool) {
     if let Some(shapes) = DRAWING.get() {
         shapes.ticked(area, on);
+    }
+}
+
+/// Tells whoever is drawing that a row is a line between two things.
+pub(crate) fn ruled(area: Rect) {
+    if let Some(shapes) = DRAWING.get() {
+        shapes.ruled(area);
     }
 }
 

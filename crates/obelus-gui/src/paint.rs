@@ -10,7 +10,7 @@
 //! What is *not* here is any idea of what the cells mean. This file is
 //! handed a page and a set of faces and turns them into rectangles.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, ops::Range, sync::Arc};
 
 use anyhow::{Context, Result};
 use bytemuck::{Pod, Zeroable};
@@ -25,7 +25,7 @@ use winit::window::Window;
 
 use crate::{
     font::{self, CellSize, Fonts, Size},
-    grid::{Barred, Behind, Capped, Look, Marked, Page, Said, Spelling, Ticked},
+    grid::{Barred, Behind, Capped, Look, Marked, Page, Ruled, Said, Spelling, Ticked},
     motion::Moving,
 };
 
@@ -36,6 +36,13 @@ use crate::{
 /// Thin enough that what is under it reads as shapes, thick enough that
 /// what is written on it is what is being read.
 const TINT: f32 = 0.74;
+
+/// The same, for a box whose glass is over another pane's.
+///
+/// Thinner, because what it is over has been tinted once already: at the
+/// first pane's measure the two together let through a few hundredths of
+/// what is behind, and a box of glass that shows nothing is a grey box.
+const ON_GLASS_TINT: f32 = 0.55;
 
 /// How far a pane travels on its way in, as a part of its own height.
 ///
@@ -66,6 +73,18 @@ const SIDE: f32 = 0.15;
 const LIP: f32 = 0.12;
 /// How round its corners are, as a part of its height.
 const ROUNDING: f32 = 0.22;
+
+/// How thick a line between two things is, as a part of a cell's height.
+///
+/// About what a font's own light rule is, and never less than a pixel: a
+/// line that rounds away is two things with nothing between them.
+const LINE: f32 = 0.06;
+
+/// How round a frame's corners are, as a part of a cell's width.
+///
+/// Half of it, which is the curve `╭` draws: the frame is the same shape
+/// in a window as in a terminal, drawn rather than spelled.
+const FRAME_CORNER: f32 = 0.5;
 
 /// How wide the bar caret is, as a part of a cell.
 ///
@@ -98,7 +117,6 @@ pub(crate) struct Painter {
     view: wgpu::TextureFormat,
     pipeline: wgpu::RenderPipeline,
     uniforms: wgpu::Buffer,
-    bindings: wgpu::BindGroup,
     atlas: Atlas,
     /// What each mark is drawn from, until it has been drawn.
     ///
@@ -111,16 +129,23 @@ pub(crate) struct Painter {
     /// The instances of the frame being built, kept so that a screenful of
     /// rectangles is allocated once rather than once a frame.
     quads: Vec<Quad>,
-    /// How many of them are the backdrop, which is drawn twice: once into
-    /// the texture the glass reads, and again on the screen, where it is
-    /// what shows through the pane's rounded corners.
-    behind_quads: usize,
+    /// Where things are in it, which the passes that draw it read.
+    placed: Placed,
     instances: wgpu::Buffer,
     layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
     smooth: wgpu::Sampler,
-    /// What is behind the pane, as a picture of the window.
-    backdrop: wgpu::TextureView,
+    /// What the first pane's glass reads -- and the bindings the whole
+    /// frame is drawn with, because nothing else reads a picture.
+    sheet: Seen,
+    /// What a box's glass reads, which is a second picture because it is
+    /// a second pane: over the first one where both are up, and what it
+    /// sees through itself is that pane's glass.
+    card: Seen,
+    /// Where a blur's first way is put, for the second to read, and the
+    /// bindings that read it.
+    scratch: wgpu::TextureView,
+    scratch_bindings: wgpu::BindGroup,
     /// And the whole frame as one, which is drawn only while a pane is on
     /// its way in.
     picture: wgpu::TextureView,
@@ -131,9 +156,59 @@ pub(crate) struct Painter {
     /// the pass that *draws* it: a texture cannot be read and written in
     /// one pass, and what goes in the slot is never sampled there.
     plain_bindings: wgpu::BindGroup,
-    /// Whether that picture was made again and the bindings still point at
-    /// the old one.
-    bindings_are_stale: bool,
+}
+
+/// What one pane's glass reads: what is behind the pane, as a picture of
+/// the window; the same picture blurred; and the bindings that read both.
+///
+/// The blur is a picture of its own rather than worked out by the glass,
+/// because a blur worked out a pixel at a time is a handful of taps, and a
+/// handful of taps over text is a handful of faint copies of it -- a
+/// picture that looks enlarged from one a fraction of its size. Blurred
+/// one way and then the other, which is what a Gaussian allows and is a
+/// few dozen samples a pixel where doing it at once would be several
+/// hundred.
+struct Seen {
+    backdrop: wgpu::TextureView,
+    blurred: wgpu::TextureView,
+    bindings: wgpu::BindGroup,
+}
+
+impl Seen {
+    /// Both pictures, the size of the window.
+    fn made(binder: &Binder<'_>, format: wgpu::TextureFormat, width: u32, height: u32) -> Self {
+        let backdrop = made_to_draw_into(binder.device, format, width, height);
+        let blurred = made_to_draw_into(binder.device, format, width, height);
+        let bindings = binder.bound(&backdrop, &blurred);
+        Self {
+            backdrop,
+            blurred,
+            bindings,
+        }
+    }
+}
+
+/// Where things are in the frame being built, which the passes that draw
+/// it read.
+#[derive(Clone, Debug, Default)]
+struct Placed {
+    /// How many quads are what is behind the first pane, which is drawn
+    /// twice: into its picture, and on the screen, where it is what shows
+    /// round the pane's edge.
+    behind: usize,
+    /// How many are that pane and everything about it: what a box's
+    /// picture draws first, because what is under the box is that pane.
+    sheet: usize,
+    /// The box's: the picture of what is under it, which is drawn into
+    /// its own and nowhere else, and the glass that reads it.
+    card: Option<(Range<usize>, usize)>,
+    /// How many are what the screen draws.
+    drawn: usize,
+    /// And with the pieces a sliding pane is put back in, which is where
+    /// the blurs start.
+    moved: usize,
+    /// The first quad of each blur's pair: the first pane's and the box's.
+    blurs: [Option<usize>; 2],
 }
 
 /// One rectangle, as the shader reads it.
@@ -167,6 +242,11 @@ const HANGING: u32 = 16;
 const STANDING: u32 = 128;
 /// The mark in a switch that is set.
 const CHECKED: u32 = 256;
+/// Glass over glass, which takes none of the extra colour a pane adds
+/// where what is behind is close to its own -- see `paint.wgsl`.
+const ON_GLASS: u32 = 512;
+/// What is behind a pane, blurred one way -- see `Painter::blurring`.
+const BLUR: u32 = 1024;
 
 /// How much of a cell a switch's box takes, across.
 ///
@@ -415,6 +495,16 @@ impl Painter {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
         // Smooth, unlike the glyphs': what this samples is a picture being
@@ -427,35 +517,22 @@ impl Painter {
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             ..Default::default()
         });
-        let backdrop = made_to_draw_into(&device, view, configured.width, configured.height);
-        let bindings = bound(
-            &device,
-            &layout,
-            &uniforms,
-            &atlas.view,
-            &sampler,
-            &backdrop,
-            &smooth,
-        );
-        let plain_bindings = bound(
-            &device,
-            &layout,
-            &uniforms,
-            &atlas.view,
-            &sampler,
-            &atlas.view,
-            &smooth,
-        );
-        let picture = made_to_draw_into(&device, view, configured.width, configured.height);
-        let showing_bindings = bound(
-            &device,
-            &layout,
-            &uniforms,
-            &atlas.view,
-            &sampler,
-            &picture,
-            &smooth,
-        );
+        let (width, height) = (configured.width, configured.height);
+        let binder = Binder {
+            device: &device,
+            layout: &layout,
+            uniforms: &uniforms,
+            atlas: &atlas.view,
+            sampler: &sampler,
+            smooth: &smooth,
+        };
+        let sheet = Seen::made(&binder, view, width, height);
+        let card = Seen::made(&binder, view, width, height);
+        let scratch = made_to_draw_into(&device, view, width, height);
+        let scratch_bindings = binder.bound(&scratch, &atlas.view);
+        let picture = made_to_draw_into(&device, view, width, height);
+        let showing_bindings = binder.bound(&picture, &atlas.view);
+        let plain_bindings = binder.bound(&atlas.view, &atlas.view);
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("obelus"),
@@ -520,21 +597,22 @@ impl Painter {
             view,
             pipeline,
             uniforms,
-            bindings,
             atlas,
             drawings: HashMap::new(),
             palette: None,
             quads: Vec::new(),
-            behind_quads: 0,
+            placed: Placed::default(),
             instances,
             layout,
             sampler,
             smooth,
-            backdrop,
+            sheet,
+            card,
+            scratch,
+            scratch_bindings,
             picture,
-            plain_bindings,
             showing_bindings,
-            bindings_are_stale: false,
+            plain_bindings,
         })
     }
 
@@ -560,22 +638,33 @@ impl Painter {
         self.configured.width = width.clamp(1, most);
         self.configured.height = height.clamp(1, most);
         self.surface.configure(&self.device, &self.configured);
-        // The pane's backdrop is a picture of the window, so it is the
-        // size of the window: one that stayed the old size would be
-        // sampled at the wrong place for every pixel of the glass.
-        self.backdrop = made_to_draw_into(
-            &self.device,
-            self.view,
-            self.configured.width,
-            self.configured.height,
-        );
-        self.picture = made_to_draw_into(
-            &self.device,
-            self.view,
-            self.configured.width,
-            self.configured.height,
-        );
-        self.bindings_are_stale = true;
+        // Every picture is a picture of the window, so it is the size of
+        // the window: one that stayed the old size would be sampled at the
+        // wrong place for every pixel of the glass.
+        let (width, height) = (self.configured.width, self.configured.height);
+        let binder = self.binder();
+        let sheet = Seen::made(&binder, self.view, width, height);
+        let card = Seen::made(&binder, self.view, width, height);
+        let scratch = made_to_draw_into(&self.device, self.view, width, height);
+        let scratch_bindings = binder.bound(&scratch, &self.atlas.view);
+        let picture = made_to_draw_into(&self.device, self.view, width, height);
+        let showing_bindings = binder.bound(&picture, &self.atlas.view);
+        self.sheet = sheet;
+        self.card = card;
+        (self.scratch, self.scratch_bindings) = (scratch, scratch_bindings);
+        (self.picture, self.showing_bindings) = (picture, showing_bindings);
+    }
+
+    /// What every bind group is made of, but the two pictures it reads.
+    fn binder(&self) -> Binder<'_> {
+        Binder {
+            device: &self.device,
+            layout: &self.layout,
+            uniforms: &self.uniforms,
+            atlas: &self.atlas.view,
+            sampler: &self.sampler,
+            smooth: &self.smooth,
+        }
     }
 
     /// The text is a different size now, so nothing kept about its glyphs
@@ -615,19 +704,46 @@ impl Painter {
     ) -> Result<()> {
         let cell = fonts.cell();
         self.quads.clear();
-        self.behind_quads = 0;
+        self.placed = Placed::default();
         // First of everything, because these are the quads the backdrop
         // pass draws and it draws the front of the buffer.
-        let pane = said.behind.map(|behind| self.glass(page, behind, fonts));
-        self.backgrounds(page, cell.width, cell.height, said.behind);
-        self.letters(page, fonts);
+        let pane = said
+            .behind
+            .map(|behind| self.glass(page, behind, said.ruled, fonts));
+        self.placed.sheet = self.quads.len();
+        // The boxes whose frames are still there to hold them -- see
+        // `Behind::framed` -- which four passes ask about. The nearest is
+        // glass; the rest, which are rare, are drawn on their own ground.
+        let framed: Vec<&Behind> = said.cards.iter().filter(|card| card.framed(page)).collect();
+        let (card, opaque) = match framed.split_last() {
+            Some((card, rest)) => (Some(*card), rest),
+            None => (None, &[][..]),
+        };
+        if let Some(card) = card {
+            self.card_glass(page, card, said.behind, fonts);
+        }
+        let panes: Vec<&Behind> = said.behind.into_iter().chain(card).collect();
+        // Before the backgrounds, which paint every cell inside a frame
+        // over it: the ground a selected row wears in a list with a frame
+        // round it is the row's, and goes on top of the box's.
+        self.frames(page, opaque, &panes, cell);
+        // The caps still about the cells they were said about -- see
+        // `Capped::still_said`.
+        let capped: Vec<&Capped> = said
+            .capped
+            .iter()
+            .filter(|cap| cap.still_said(page))
+            .collect();
+        self.backgrounds(page, cell, &panes, &framed, &capped);
+        self.rules(page, said.ruled, cell);
+        self.letters(page, fonts, said, &framed, &capped);
         // Over the text, which it covers: a cap is the shape the cells
         // behind a key are, and it writes the key on itself, smaller than
         // the words beside it.
-        self.caps(page, said.capped, fonts);
+        self.caps(page, &capped, &panes, fonts);
         // Over the letters: a switch replaces the glyph standing in for
         // it, rather than sitting beside one.
-        self.ticks(page, said.ticked, cell);
+        self.ticks(page, said.ticked, &panes, cell);
         // And so does a bar, for the same reason: what a terminal has for
         // a track is a column of full blocks, and a window has a shape.
         self.bars(page, said.barred, cell);
@@ -647,7 +763,7 @@ impl Painter {
         // Everything the frame says has been said. What is left is
         // putting it back on the screen in two pieces, where a pane is on
         // its way in -- see `paint.wgsl`.
-        let drawn = self.quads.len();
+        self.placed.drawn = self.quads.len();
         if let (Some(pane), Some(along)) = (pane, moving.pane) {
             let height = pane[3] - pane[1];
             // A pane comes from the side it is joined to, which is the
@@ -660,6 +776,16 @@ impl Painter {
         } else if let (Some(_), Some((behind, since))) = (said.band, moving.scroll) {
             self.catching_up(said, behind, since, fonts);
         }
+        // Last, because none of it is drawn on the screen: the blurs are
+        // passes of their own, before any of the above.
+        self.placed.moved = self.quads.len();
+        self.placed.blurs = [
+            pane.map(|pane| self.blurs_over(pane)),
+            self.placed.card.clone().map(|(_, glass)| {
+                let [left, top, wide, tall] = self.quads[glass].rect;
+                self.blurs_over([left, top, left + wide, top + tall])
+            }),
+        ];
 
         #[expect(
             clippy::cast_precision_loss,
@@ -685,28 +811,6 @@ impl Painter {
         }
         self.queue
             .write_buffer(&self.instances, 0, bytemuck::cast_slice(&self.quads));
-
-        if self.bindings_are_stale {
-            self.bindings = bound(
-                &self.device,
-                &self.layout,
-                &self.uniforms,
-                &self.atlas.view,
-                &self.sampler,
-                &self.backdrop,
-                &self.smooth,
-            );
-            self.showing_bindings = bound(
-                &self.device,
-                &self.layout,
-                &self.uniforms,
-                &self.atlas.view,
-                &self.sampler,
-                &self.picture,
-                &self.smooth,
-            );
-            self.bindings_are_stale = false;
-        }
 
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(frame)
@@ -738,107 +842,63 @@ impl Painter {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("obelus"),
             });
+        let placed = self.placed.clone();
         // What is behind the pane, into a picture of its own. Only the
         // front of the buffer, which is exactly those cells -- and only
         // where there is a pane at all, so a window with nothing over the
         // page does none of this.
-        if self.behind_quads > 0 {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("obelus behind"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.backdrop,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            pass.set_pipeline(&self.pipeline);
-            // Not `self.bindings`: those have the texture this pass is
-            // drawing into bound for reading, which is the one thing a
-            // pass may not have.
+        if placed.behind > 0 {
+            let mut pass = self.pass(&mut encoder, "obelus behind", &self.sheet.backdrop);
+            // Not the pane's own bindings: those have the texture this
+            // pass is drawing into bound for reading, which is the one
+            // thing a pass may not have.
             pass.set_bind_group(0, &self.plain_bindings, &[]);
-            pass.set_vertex_buffer(0, self.instances.slice(..));
-            pass.draw(0..4, 0..self.behind_quads as u32);
+            drawing(&mut pass, 0..placed.behind);
+        }
+        if let Some(first) = placed.blurs[0] {
+            self.blurring(&mut encoder, first, &self.sheet);
+        }
+        // What is behind the box, into a picture of its own: the first
+        // pane as the screen shows it, glass and all, and then the cells
+        // the box was put over. Reading the first picture while drawing
+        // into the second, which is two textures and allowed.
+        if let Some((under, _)) = placed.card.clone() {
+            let mut pass = self.pass(&mut encoder, "obelus behind the box", &self.card.backdrop);
+            pass.set_bind_group(0, &self.sheet.bindings, &[]);
+            drawing(&mut pass, 0..placed.sheet);
+            drawing(&mut pass, under);
+        }
+        if let Some(first) = placed.blurs[1] {
+            self.blurring(&mut encoder, first, &self.card);
         }
         // A pane on its way in: the frame goes into a picture of its own
         // first, and the screen is put together out of it below. Only
         // while one is moving -- an arrived pane is drawn straight to the
         // screen like everything else.
-        let composing = self.quads.len() > drawn;
+        let composing = placed.moved > placed.drawn;
         if composing {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("obelus frame"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.picture,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            pass.set_pipeline(&self.pipeline);
             // The glass is drawn in here, and what it reads is the
             // backdrop -- which this pass is not writing to.
-            pass.set_bind_group(0, &self.bindings, &[]);
-            pass.set_vertex_buffer(0, self.instances.slice(..));
-            pass.draw(0..4, 0..drawn as u32);
+            let mut pass = self.pass(&mut encoder, "obelus frame", &self.picture);
+            self.the_frame(&mut pass);
         }
         {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("obelus"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &target,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        // Black, which is only ever seen in the strip below
-                        // the last whole row: every cell draws its own
-                        // background over the rest.
-                        load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            pass.set_pipeline(&self.pipeline);
-            pass.set_vertex_buffer(0, self.instances.slice(..));
+            // Cleared to black, which is only ever seen in the strip below
+            // the last whole row: every cell draws its own background over
+            // the rest.
+            let mut pass = self.pass(&mut encoder, "obelus", &target);
             match composing {
-                // The page first, and the glass over it -- which is the
-                // quad straight after the page's own, because `glass`
-                // pushes the one and then the other.
-                //
-                // The glass and not only the page, because what slides in
-                // over it is a pane that is *itself* glass: laid over the
-                // page as it is, the arriving text would be read through
-                // one frosting and the text under it through none, which
-                // is the same words twice in two states. Over glass that
-                // is already there, only the pane's own content arrives.
+                // The page first, and nothing of the pane: the glass is
+                // part of the pane and arrives with it. Left standing in
+                // place, it was a pane already open with only its words
+                // sliding into it -- which is not what the list does.
                 true => {
-                    pass.set_bind_group(0, &self.bindings, &[]);
-                    pass.draw(0..4, 0..self.behind_quads as u32 + 1);
+                    pass.set_bind_group(0, &self.sheet.bindings, &[]);
+                    drawing(&mut pass, 0..placed.behind);
                     pass.set_bind_group(0, &self.showing_bindings, &[]);
-                    pass.draw(0..4, drawn as u32..self.quads.len() as u32);
+                    drawing(&mut pass, placed.drawn..placed.moved);
                 }
-                false => {
-                    pass.set_bind_group(0, &self.bindings, &[]);
-                    pass.draw(0..4, 0..drawn as u32);
-                }
+                false => self.the_frame(&mut pass),
             }
         }
         self.queue.submit([encoder.finish()]);
@@ -851,7 +911,15 @@ impl Painter {
     /// A run of cells with the same background is one rectangle: a screen
     /// is mostly the page's own colour, and a quad per cell would be ten
     /// thousand of them to say so.
-    fn backgrounds(&mut self, page: &Page, width: f32, height: f32, behind: Option<&Behind>) {
+    fn backgrounds(
+        &mut self,
+        page: &Page,
+        cell: CellSize,
+        panes: &[&Behind],
+        framed: &[&Behind],
+        capped: &[&Capped],
+    ) {
+        let (width, height) = (cell.width, cell.height);
         // A window is not a whole number of cells across, so there is a
         // strip down the right and along the bottom that no cell reaches.
         // The last run of each row is stretched into it, and the last row
@@ -867,23 +935,42 @@ impl Painter {
                 true => (bottom - f32::from(row) * height).max(height),
                 false => height,
             };
+            // A frame's own cells, which `frames` has drawn already: what
+            // the cells hold there is a terminal's square corner under a
+            // round one.
+            let ring: Vec<u16> = (0..page.columns())
+                .filter(|&x| framed.iter().any(|card| card.ring_holds(page, x, row)))
+                .collect();
             for (start, end, colour) in runs(page, row) {
                 // The pane's own colour inside the pane is where the glass
                 // is: it is the pane saying nothing there, and drawing it
                 // would be painting over what the reader is meant to see
                 // through. Anything else it wears -- a selected row, a
                 // tab, a rule -- is the pane speaking, and stays.
-                let glass = behind.filter(|behind| {
-                    colour == behind.ground && row >= behind.area.y && row < behind.area.bottom()
-                });
-                let pieces: [Option<(u16, u16)>; 2] = match glass {
-                    None => [Some((start, end)), None],
-                    Some(behind) => [
-                        (start < behind.area.x).then(|| (start, end.min(behind.area.x))),
-                        (end > behind.area.right()).then(|| (start.max(behind.area.right()), end)),
-                    ],
-                };
-                for (start, end) in pieces.into_iter().flatten() {
+                let mut holes: Vec<(u16, u16)> = ring.iter().map(|&x| (x, x + 1)).collect();
+                holes.extend(
+                    panes
+                        .iter()
+                        .filter(|pane| {
+                            colour == pane.ground && row >= pane.area.y && row < pane.area.bottom()
+                        })
+                        .map(|pane| (pane.area.x, pane.area.right())),
+                );
+                // And a cap on glass, whose cells are the run a shade off
+                // the page that is a terminal's cap: `caps` draws the
+                // rounded one, and what is round its corners is the glass.
+                // Painted, the square the cells make stood behind the
+                // round cap as a ground of its own.
+                holes.extend(
+                    capped
+                        .iter()
+                        .filter(|cap| {
+                            cap.area.y == row
+                                && seen_through(panes, cap.area.x, cap.area.y, cap.page)
+                        })
+                        .map(|cap| (cap.area.x, cap.area.right())),
+                );
+                for (start, end) in without(start, end, &mut holes) {
                     let wide = match end == page.columns() {
                         true => (right - f32::from(start) * width).max(width),
                         false => f32::from(end - start) * width,
@@ -1050,6 +1137,126 @@ impl Painter {
         });
     }
 
+    /// The lines between two things, drawn where `─` would be.
+    ///
+    /// On the cells' own ground, which `backgrounds` has painted, and in
+    /// their own ink, which the view wrote -- the glyph is what is left
+    /// out, by `letters`. Cell by cell, because a rule some later view
+    /// covered part of is a line only where it was not covered.
+    fn rules(&mut self, page: &Page, ruled: &[Ruled], cell: CellSize) {
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "a window is thousands of pixels, not millions"
+        )]
+        let right = self.configured.width as f32;
+        let line = thickness(cell.height);
+        for rule in ruled {
+            let y = rule.area.y;
+            let top = middle(f32::from(y) * cell.height, cell.height, line);
+            for x in rule.area.left()..rule.area.right() {
+                let Some((from, to)) = rule.spans(page, x, y) else {
+                    continue;
+                };
+                let left = f32::from(x) * cell.width;
+                // The strip past the last whole cell, which a line that
+                // reaches the window's edge has to reach as well -- see
+                // `backgrounds`.
+                let end = match x + 1 == page.columns() && to >= 1.0 {
+                    true => right,
+                    false => cell.width.mul_add(to, left),
+                };
+                let start = cell.width.mul_add(from, left);
+                self.block(
+                    start,
+                    top,
+                    (end - start).max(1.0),
+                    line,
+                    rgba(page.look(x, y).foreground, Ink::Foreground),
+                );
+            }
+        }
+    }
+
+    /// The boxes with frames round them that are not glass, each on its
+    /// own ground inside its line.
+    ///
+    /// Which leaves the cells *inside* the ring to `backgrounds`, drawn
+    /// over this, so that whatever they wear -- a selected row most often
+    /// -- is theirs.
+    fn frames(&mut self, page: &Page, cards: &[&Behind], panes: &[&Behind], cell: CellSize) {
+        for card in cards {
+            let ([left, top, wide, tall], radius) = self.frame(page, card, panes, cell);
+            self.rounded(
+                left,
+                top,
+                wide,
+                tall,
+                radius,
+                rgba(card.ground, Ink::Background),
+            );
+        }
+    }
+
+    /// A box's frame, drawn as the shape a terminal spells in `╭─╮`: the
+    /// line where the glyphs put it, down the middle of the ring of cells,
+    /// and outside it what the box was put over, where a terminal has its
+    /// square corners.
+    ///
+    /// What was put over is the ground of the cells under the ring, and
+    /// not their letters: a letter a line cuts in half is not something
+    /// anybody put there. Nor that ground where it is glass, which is
+    /// already under it -- an opaque strip of it would be the one square
+    /// edge left on a round box.
+    ///
+    /// What goes inside the line is the caller's, the box's own ground or
+    /// glass, so what this answers is where that is: the rectangle inside
+    /// the line, and how round it is.
+    fn frame(
+        &mut self,
+        page: &Page,
+        card: &Behind,
+        panes: &[&Behind],
+        cell: CellSize,
+    ) -> ([f32; 4], f32) {
+        let area = card.area;
+        for y in area.top()..area.bottom() {
+            for x in area.left()..area.right() {
+                let Some(under) = card.look(x, y) else {
+                    continue;
+                };
+                if card.ring_holds(page, x, y) && !seen_through(panes, x, y, under.background) {
+                    self.block(
+                        f32::from(x) * cell.width,
+                        f32::from(y) * cell.height,
+                        cell.width,
+                        cell.height,
+                        rgba(under.background, Ink::Background),
+                    );
+                }
+            }
+        }
+        let line = thickness(cell.height);
+        let [left, top, right, bottom] = outline(area, cell, line);
+        let radius = cell.width * FRAME_CORNER;
+        self.rounded(
+            left,
+            top,
+            right - left,
+            bottom - top,
+            radius,
+            rgba(page.look(area.x, area.y).foreground, Ink::Foreground),
+        );
+        (
+            [
+                left + line,
+                top + line,
+                (right - left - line * 2.0).max(1.0),
+                (bottom - top - line * 2.0).max(1.0),
+            ],
+            (radius - line).max(0.0),
+        )
+    }
+
     /// The switches, drawn as the box a glyph was standing in for.
     ///
     /// After the letters, because what it goes over is that glyph: a
@@ -1159,7 +1366,7 @@ impl Painter {
         }
     }
 
-    fn ticks(&mut self, page: &Page, ticked: &[Ticked], cell: CellSize) {
+    fn ticks(&mut self, page: &Page, ticked: &[Ticked], panes: &[&Behind], cell: CellSize) {
         for tick in ticked {
             let left = f32::from(tick.area.x) * cell.width;
             let top = f32::from(tick.area.y) * cell.height;
@@ -1169,8 +1376,12 @@ impl Painter {
             let look = page.look(tick.area.x, tick.area.y);
             let ground = rgba(look.background, Ink::Background);
             // The glyph the view wrote, covered: it is what a terminal
-            // draws, and here it is what is being replaced.
-            self.block(left, top, cell.width, cell.height, ground);
+            // draws, and here it is what is being replaced. Left out on
+            // glass, where the letters leave nothing to cover and a
+            // square of the cell's ground would be a hole in the pane.
+            if !seen_through(panes, tick.area.x, tick.area.y, look.background) {
+                self.block(left, top, cell.width, cell.height, ground);
+            }
 
             let side = (cell.width * BOX).round().max(3.0);
             // A shade above the middle of the cell, which is where the
@@ -1233,15 +1444,9 @@ impl Painter {
     /// three sides and further in at the bottom, so what is left showing
     /// under it is a lip. Which is the whole of the trick a keyboard's own
     /// keys use.
-    fn caps(&mut self, page: &Page, capped: &[Capped], fonts: &mut Fonts) {
+    fn caps(&mut self, page: &Page, capped: &[&Capped], panes: &[&Behind], fonts: &mut Fonts) {
         let cell = fonts.cell();
         for cap in capped {
-            // A cap whose cells no longer hold its key belongs to a view
-            // that was drawn over inside the frame that said it -- see
-            // `Capped::still_said`.
-            if !cap.still_said(page) {
-                continue;
-            }
             let left = f32::from(cap.area.x) * cell.width;
             let top = f32::from(cap.area.y) * cell.height;
             let width = f32::from(cap.area.width) * cell.width;
@@ -1255,14 +1460,18 @@ impl Painter {
             let radius = (height * ROUNDING).min(cell.width);
             // What the cells said, put back: the corners this is about to
             // round away are painted in the cap's own ground, and a cap
-            // drawn over them would have square shoulders.
-            self.block(
-                left,
-                top,
-                width,
-                cell.height,
-                rgba(cap.page, Ink::Background),
-            );
+            // drawn over them would have square shoulders. Unless what is
+            // behind the cap is glass, which is already there and is the
+            // right thing to show round a corner.
+            if !seen_through(panes, cap.area.x, cap.area.y, cap.page) {
+                self.block(
+                    left,
+                    top,
+                    width,
+                    cell.height,
+                    rgba(cap.page, Ink::Background),
+                );
+            }
             // Held off the cells either side, which the ground above is
             // not: what was put back is every cell the cap was said
             // about, and what is drawn on it stops short of them.
@@ -1358,7 +1567,13 @@ impl Painter {
     /// with what is behind is in `paint.wgsl`: the shape is the same
     /// rounded box a key's cap is, and it is the same function that says
     /// where its edge is.
-    fn glass(&mut self, page: &Page, behind: &Behind, fonts: &mut Fonts) -> [f32; 4] {
+    fn glass(
+        &mut self,
+        page: &Page,
+        behind: &Behind,
+        ruled: &[Ruled],
+        fonts: &mut Fonts,
+    ) -> [f32; 4] {
         let cell = fonts.cell();
         // A window is not a whole number of cells across, and a pane that
         // reaches the edge of one has to reach the edge of the window:
@@ -1401,11 +1616,11 @@ impl Painter {
                 }
             }
         }
-        self.behind_quads = self.quads.len();
+        self.placed.behind = self.quads.len();
 
         let mut tint = rgba(behind.ground, Ink::Background);
         tint[3] = TINT;
-        let (left, top) = (
+        let (left, mut top) = (
             f32::from(behind.area.x) * cell.width,
             f32::from(behind.area.y) * cell.height,
         );
@@ -1413,10 +1628,53 @@ impl Painter {
             true => right,
             false => f32::from(behind.area.right()) * cell.width,
         };
-        let low = match to_the_foot {
+        let mut low = match to_the_foot {
             true => bottom,
             false => f32::from(behind.area.bottom()) * cell.height,
         };
+        // A rule along the pane's first or last row is its edge, and the
+        // glass starts or stops where the rule's line is, which is the
+        // middle of that row. A glass edge on the row's boundary was half a
+        // row from the line that said where the pane was.
+        //
+        // Above the line over the pane is what the rule was drawn over,
+        // which is in `behind` and has been drawn already, first of
+        // everything. A terminal has to give a rule the whole of its row,
+        // because a glyph takes a cell; a line drawn here takes a pixel.
+        // Painted in the rule's own ground, that half row was a blank band
+        // across whatever the list was opened over -- the welcome screen,
+        // a line of the file. Under the line below it is the rule's own
+        // row and nothing else, since it is the status row's rule and
+        // nothing is under it, so that half is painted: it covers the
+        // rule's glyph, which is what `behind` holds there.
+        //
+        // The line above is inside the glass and the line below is not:
+        // the first is the list's own edge and arrives with it, and the
+        // second is the status row's, which the list stands on.
+        let line = thickness(cell.height);
+        let edge = |y: u16| {
+            ruled.iter().find(|rule| {
+                rule.area.y == y
+                    && rule.area.x == behind.area.x
+                    && rule.area.width == behind.area.width
+                    && rule.still_said(page)
+            })
+        };
+        if edge(behind.area.y).is_some() {
+            top = middle(top, cell.height, line);
+        }
+        let mut under = None;
+        if behind.area.height > 1
+            && let Some(rule) = edge(behind.area.bottom() - 1)
+        {
+            let row = f32::from(rule.area.y) * cell.height;
+            let at = middle(row, cell.height, line);
+            under = Some((
+                [at, low - at],
+                page.look(rule.area.x, rule.area.y).background,
+            ));
+            low = at;
+        }
         self.quads.push(Quad {
             rect: [left, top, (far - left).max(1.0), (low - top).max(1.0)],
             uv: self.atlas.white,
@@ -1426,21 +1684,223 @@ impl Painter {
                 | match behind.joined {
                     Joined::Above => HANGING,
                     Joined::Below => STANDING,
+                    // Never here: a box is `card_glass`'s, and the window
+                    // keeps it apart from the pane this is.
+                    Joined::Nowhere => 0,
                 },
             // Unread: a pane has no corners to round -- see `outside` in
             // `paint.wgsl`.
             radius: 0.0,
             padding: [0; 2],
         });
+        if let Some(([over, tall], ground)) = under {
+            self.block(
+                left,
+                over,
+                (far - left).max(1.0),
+                tall,
+                rgba(ground, Ink::Background),
+            );
+        }
         [left, top, far, low]
     }
 
+    /// What is under a box with a frame round it, and the glass inside
+    /// its line.
+    ///
+    /// The picture first, which goes into the box's own backdrop and never
+    /// onto the screen: the cells the box was put over, as the screen had
+    /// them. Where those were the first pane's glass -- the card of every
+    /// key is nearly always over a list or a page of settings -- they are
+    /// the letters alone, because the picture draws that pane's glass
+    /// before them and a ground under the letters would cover it.
+    ///
+    /// Then on the screen, the frame and the glass inside its line. The
+    /// cells inside the ring are drawn after all of this by `backgrounds`
+    /// and `letters`, which leave the box's own ground to the glass.
+    fn card_glass(
+        &mut self,
+        page: &Page,
+        card: &Behind,
+        sheet: Option<&Behind>,
+        fonts: &mut Fonts,
+    ) {
+        let cell = fonts.cell();
+        let sheet = sheet.as_slice();
+        let start = self.quads.len();
+        for y in card.area.top()..card.area.bottom() {
+            for x in card.area.left()..card.area.right() {
+                let Some(under) = card.look(x, y) else {
+                    continue;
+                };
+                let left = f32::from(x) * cell.width;
+                let top = f32::from(y) * cell.height;
+                if !seen_through(sheet, x, y, under.background) {
+                    self.block(
+                        left,
+                        top,
+                        cell.width,
+                        cell.height,
+                        rgba(under.background, Ink::Background),
+                    );
+                }
+                if !under.text.trim().is_empty() {
+                    let ink = rgba(under.foreground, Ink::Foreground);
+                    self.glyphs_at(left, top, under, ink, fonts, Size::Cell);
+                }
+            }
+        }
+        let under = start..self.quads.len();
+
+        let (inside, radius) = self.frame(page, card, sheet, cell);
+        // Over the first pane where it is over one at all: the card of
+        // every key always is, a hover over the code never.
+        let on_glass = sheet.iter().any(|sheet| sheet.area.intersects(card.area));
+        let mut tint = rgba(card.ground, Ink::Background);
+        tint[3] = match on_glass {
+            true => ON_GLASS_TINT,
+            false => TINT,
+        };
+        let glass = self.quads.len();
+        self.quads.push(Quad {
+            rect: inside,
+            uv: self.atlas.white,
+            colour: tint,
+            // Neither hanging nor standing, which is a box with an edge on
+            // every side -- see `outside` in `paint.wgsl`.
+            flags: SOLID
+                | GLASS
+                | match on_glass {
+                    true => ON_GLASS,
+                    false => 0,
+                },
+            radius,
+            padding: [0; 2],
+        });
+        self.placed.card = Some((under, glass));
+    }
+
+    /// The two quads that blur what is behind a pane, one way and then
+    /// the other, over the pane's own rectangle and no further: the glass
+    /// reads nothing outside it, and what is outside it in the picture is
+    /// nothing -- a blur that reached out for it would darken the pane's
+    /// edges, which is why the shader holds its samples inside `box_`.
+    fn blurs_over(&mut self, box_: [f32; 4]) -> usize {
+        let [left, top, far, low] = box_;
+        let first = self.quads.len();
+        for way in [[1.0, 0.0], [0.0, 1.0]] {
+            self.quads.push(Quad {
+                rect: [left, top, (far - left).max(1.0), (low - top).max(1.0)],
+                uv: box_,
+                colour: [way[0], way[1], 0.0, 0.0],
+                flags: BLUR,
+                radius: 0.0,
+                padding: [0; 2],
+            });
+        }
+        first
+    }
+
+    /// What is behind a pane, blurred: across into the scratch picture,
+    /// then down out of it into the pane's own.
+    fn blurring(&self, encoder: &mut wgpu::CommandEncoder, first: usize, seen: &Seen) {
+        for (target, bindings, quad) in [
+            (&self.scratch, &seen.bindings, first),
+            (&seen.blurred, &self.scratch_bindings, first + 1),
+        ] {
+            let mut pass = self.pass(encoder, "obelus blur", target);
+            pass.set_bind_group(0, bindings, &[]);
+            drawing(&mut pass, quad..quad + 1);
+        }
+    }
+
+    /// A pass that draws into `target`, cleared, with everything set but
+    /// what it reads.
+    fn pass<'e>(
+        &self,
+        encoder: &'e mut wgpu::CommandEncoder,
+        label: &str,
+        target: &wgpu::TextureView,
+    ) -> wgpu::RenderPass<'e> {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some(label),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: target,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                    store: wgpu::StoreOp::Store,
+                },
+                depth_slice: None,
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.pipeline);
+        pass.set_vertex_buffer(0, self.instances.slice(..));
+        pass
+    }
+
+    /// The quads the screen draws, each with whatever it reads.
+    ///
+    /// Everything reads the first pane's pictures, which only the first
+    /// pane's glass samples -- except the box's glass, which reads its
+    /// own, and the picture of what is under the box, which is not on the
+    /// screen at all.
+    fn the_frame(&self, pass: &mut wgpu::RenderPass<'_>) {
+        let end = self.placed.drawn;
+        pass.set_bind_group(0, &self.sheet.bindings, &[]);
+        let Some((under, glass)) = self.placed.card.clone() else {
+            drawing(pass, 0..end);
+            return;
+        };
+        drawing(pass, 0..under.start);
+        drawing(pass, under.end..glass);
+        pass.set_bind_group(0, &self.card.bindings, &[]);
+        drawing(pass, glass..glass + 1);
+        pass.set_bind_group(0, &self.sheet.bindings, &[]);
+        drawing(pass, glass + 1..end);
+    }
+
     /// The text.
-    fn letters(&mut self, page: &Page, fonts: &mut Fonts) {
+    ///
+    /// Less what is drawn rather than spelled: a rule's line and a
+    /// frame's are `rules` and `frames`, and the glyph a terminal draws
+    /// them in would be a second line half a pixel from the first.
+    ///
+    /// And less what is written again: a cap's key, which `caps` writes
+    /// smaller on its face, and the glyph a switch stands in for, which
+    /// `ticks` draws as a box. Both used to be covered by a square of the
+    /// cells' ground, which on glass is a square nobody wants -- so they
+    /// are left out instead, whatever is behind them.
+    fn letters(
+        &mut self,
+        page: &Page,
+        fonts: &mut Fonts,
+        said: Said<'_>,
+        framed: &[&Behind],
+        capped: &[&Capped],
+    ) {
         for row in 0..page.rows() {
             for column in 0..page.columns() {
                 let look = page.look(column, row);
                 if look.text.trim().is_empty() {
+                    continue;
+                }
+                let within = |area: ratatui::layout::Rect| {
+                    (area.left()..area.right()).contains(&column)
+                        && (area.top()..area.bottom()).contains(&row)
+                };
+                let drawn = said
+                    .ruled
+                    .iter()
+                    .any(|rule| rule.spans(page, column, row).is_some())
+                    || framed.iter().any(|card| card.ring_holds(page, column, row))
+                    || capped.iter().any(|cap| within(cap.area))
+                    || said.ticked.iter().any(|tick| within(tick.area));
+                if drawn {
                     continue;
                 }
                 let colour = rgba(look.foreground, Ink::Foreground);
@@ -1981,6 +2441,89 @@ fn runs(page: &Page, row: u16) -> Vec<(u16, u16, Color)> {
     runs
 }
 
+/// What is left of a run of cells once the holes in it are taken out.
+///
+/// The holes in any order and overlapping as they please: a frame's ring
+/// and a pane's glass can both be in one row.
+fn without(start: u16, end: u16, holes: &mut [(u16, u16)]) -> Vec<(u16, u16)> {
+    holes.sort_unstable();
+    let mut left = Vec::new();
+    let mut from = start;
+    for &(hole, after) in holes.iter() {
+        if after <= from || hole >= end {
+            continue;
+        }
+        if hole > from {
+            left.push((from, hole));
+        }
+        from = from.max(after);
+    }
+    if from < end {
+        left.push((from, end));
+    }
+    left
+}
+
+/// A run of quads, drawn; nothing where the run is empty.
+fn drawing(pass: &mut wgpu::RenderPass<'_>, quads: std::ops::Range<usize>) {
+    if quads.start < quads.end {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a frame is thousands of quads, not billions"
+        )]
+        pass.draw(0..4, quads.start as u32..quads.end as u32);
+    }
+}
+
+/// Whether a cell wearing this colour is glass rather than a colour: it
+/// is inside a pane, and the colour is that pane's own.
+///
+/// Which is the question every square of colour drawn over a pane has to
+/// ask first, because the glass is already there and a square of the
+/// pane's colour on it is a hole in it.
+fn seen_through(panes: &[&Behind], x: u16, y: u16, colour: Color) -> bool {
+    panes.iter().any(|pane| {
+        let area = pane.area;
+        pane.ground == colour
+            && (area.left()..area.right()).contains(&x)
+            && (area.top()..area.bottom()).contains(&y)
+    })
+}
+
+/// Where a frame's line is, in pixels: left, top, right, bottom of its
+/// outside edge, down the middle of the ring of cells it is drawn in.
+fn outline(area: ratatui::layout::Rect, cell: CellSize, line: f32) -> [f32; 4] {
+    [
+        along(area.x, cell.width, line),
+        middle(f32::from(area.y) * cell.height, cell.height, line),
+        along(area.right() - 1, cell.width, line) + line,
+        middle(
+            f32::from(area.bottom() - 1) * cell.height,
+            cell.height,
+            line,
+        ) + line,
+    ]
+}
+
+/// How thick a line between two things is, in pixels.
+fn thickness(cell_height: f32) -> f32 {
+    (cell_height * LINE).round().max(1.0)
+}
+
+/// Where a line runs across a row, so that it is in the middle of it: the
+/// pixel its top edge is on.
+///
+/// Whole pixels, because a line between two of them is two lines at half
+/// the colour.
+fn middle(top: f32, cell_height: f32, line: f32) -> f32 {
+    (top + (cell_height - line) / 2.0).round()
+}
+
+/// And where one runs down a column, the same way.
+fn along(column: u16, cell_width: f32, line: f32) -> f32 {
+    (f32::from(column) * cell_width + (cell_width - line) / 2.0).round()
+}
+
 /// Which half of a cell a colour is for, which is the whole of what `Reset`
 /// means.
 #[derive(Clone, Copy, Debug)]
@@ -2020,43 +2563,56 @@ fn made_to_draw_into(
         .create_view(&wgpu::TextureViewDescriptor::default())
 }
 
-/// Everything the shader is handed, in one place because the backdrop is
-/// made again whenever the window changes size and the rest goes with it.
-fn bound(
-    device: &wgpu::Device,
-    layout: &wgpu::BindGroupLayout,
-    uniforms: &wgpu::Buffer,
-    atlas: &wgpu::TextureView,
-    sampler: &wgpu::Sampler,
-    backdrop: &wgpu::TextureView,
-    smooth: &wgpu::Sampler,
-) -> wgpu::BindGroup {
-    device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("obelus"),
-        layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniforms.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::TextureView(atlas),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: wgpu::BindingResource::Sampler(sampler),
-            },
-            wgpu::BindGroupEntry {
-                binding: 3,
-                resource: wgpu::BindingResource::TextureView(backdrop),
-            },
-            wgpu::BindGroupEntry {
-                binding: 4,
-                resource: wgpu::BindingResource::Sampler(smooth),
-            },
-        ],
-    })
+/// Everything the shader is handed but the two pictures a bind group
+/// reads, in one place because the pictures are made again whenever the
+/// window changes size and the rest goes with them.
+///
+/// Six things that are the same in every one of them, kept together so
+/// that what differs between bind groups is all that is written at each.
+struct Binder<'a> {
+    device: &'a wgpu::Device,
+    layout: &'a wgpu::BindGroupLayout,
+    uniforms: &'a wgpu::Buffer,
+    atlas: &'a wgpu::TextureView,
+    sampler: &'a wgpu::Sampler,
+    smooth: &'a wgpu::Sampler,
+}
+
+impl Binder<'_> {
+    /// A bind group reading `backdrop` as what is behind a pane and
+    /// `blurred` as the same, blurred.
+    fn bound(&self, backdrop: &wgpu::TextureView, blurred: &wgpu::TextureView) -> wgpu::BindGroup {
+        self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("obelus"),
+            layout: self.layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.uniforms.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(self.atlas),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(self.sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wgpu::BindingResource::TextureView(backdrop),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::Sampler(self.smooth),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: wgpu::BindingResource::TextureView(blurred),
+                },
+            ],
+        })
+    }
 }
 
 /// How far a bar's mark is drawn from where the frame put it, while the
@@ -2204,6 +2760,55 @@ mod tests {
 
     use super::*;
     use crate::grid::Update;
+
+    /// A square of colour is a hole in a pane only where it is the pane's
+    /// own colour, inside the pane.
+    ///
+    /// Deliberate break: drop `pane.ground == colour`. A key's cap in the
+    /// card of every key then leaves the cells beside its rounded corners
+    /// unpainted wherever the cap's page differs from the glass -- and the
+    /// selected row's ground inside a list, asked the same question, would
+    /// be taken for glass.
+    #[test]
+    fn only_the_panes_own_colour_is_seen_through() {
+        let ground = Color::Rgb(1, 2, 3);
+        let pane = Behind {
+            area: ratatui::layout::Rect {
+                x: 2,
+                y: 1,
+                width: 3,
+                height: 2,
+            },
+            joined: Joined::Nowhere,
+            ground,
+            cells: Vec::new(),
+        };
+        let panes = [&pane];
+        assert!(seen_through(&panes, 2, 1, ground), "a corner of it");
+        assert!(seen_through(&panes, 4, 2, ground), "the other corner");
+        assert!(
+            !seen_through(&panes, 3, 1, Color::Rgb(9, 9, 9)),
+            "another colour"
+        );
+        assert!(!seen_through(&panes, 5, 1, ground), "beside it");
+        assert!(!seen_through(&panes, 2, 3, ground), "under it");
+        assert!(!seen_through(&[], 2, 1, ground), "no pane at all");
+    }
+
+    /// What is left of a run once the holes are cut out of it, whatever
+    /// order they came in and however they overlap.
+    ///
+    /// Deliberate break: drop the `sort_unstable`. The glass hole, pushed
+    /// after the frame's ring, then comes first, and a frame on the left
+    /// of a pane has its ring painted square after all.
+    #[test]
+    fn a_run_loses_its_holes_in_any_order() {
+        let mut holes = vec![(6, 7), (2, 3), (2, 5)];
+        assert_eq!(without(0, 10, &mut holes), vec![(0, 2), (5, 6), (7, 10)]);
+        assert_eq!(without(3, 6, &mut [(0, 4)]), vec![(4, 6)]);
+        assert!(without(3, 6, &mut [(0, 9)]).is_empty(), "all of it");
+        assert_eq!(without(3, 6, &mut []), vec![(3, 6)], "none of it");
+    }
 
     /// A page with one row of text on it, for asking what would be drawn.
     fn page(text: &str) -> Page {

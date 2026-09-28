@@ -18,6 +18,9 @@ struct Screen {
 // Sampled only by a glass quad; every other quad ignores it.
 @group(0) @binding(3) var behind: texture_2d<f32>;
 @group(0) @binding(4) var behind_sampler: sampler;
+// And the same picture blurred, by the two passes the blur quads are drawn
+// in. Read only by a glass quad, beside the sharp one.
+@group(0) @binding(5) var blurred: texture_2d<f32>;
 
 // What the instance buffer holds.
 struct Quad {
@@ -32,7 +35,8 @@ struct Quad {
     // edge a pane is joined to and no edge at all.
     // 32 and 64: the frame that has just been drawn, put back on the
     // screen in two pieces while a pane slides into it. 256: the mark in
-    // a switch that is set.
+    // a switch that is set. 512: glass over another pane's glass. 1024:
+    // what is behind a pane, blurred one way.
     @location(3) flags: u32,
     // How far those corners are taken off, in pixels.
     @location(4) radius: f32,
@@ -96,6 +100,10 @@ fn vertex(@builtin(vertex_index) corner: u32, quad: Quad) -> Fragment {
 // Which leaves the distance to the one edge it has, and `point.x` out of
 // it altogether. What clips the other three is the quad's own bounds,
 // which is where the seams are.
+//
+// A box with a frame round it is the other kind: joined to nothing, so
+// every side is an edge and every corner is rounded, the same as a cap.
+// It is glass all the same, inside the frame's line.
 fn outside(point: vec2<f32>, half_size: vec2<f32>, radius: f32, joined: f32) -> f32 {
     if (joined != 0.0) {
         return joined * point.y - half_size.y;
@@ -138,19 +146,34 @@ const BEVEL: f32 = 1.7;
 // rows come out as teeth. So the bend is enough to see and not enough to
 // count.
 const DEPTH: f32 = 13.0;
-// How wide the softening is, in pixels.
+// How wide the softening is: the spread of the Gaussian, in pixels.
 //
 // Wide enough that what is written behind the glass stops being letters
 // and becomes the texture of a page with writing on it. A frost that left
 // the words legible would be two things to read in one place, which is
 // worse than either of them alone -- and it is the one thing a reader
 // would rather the glass did not do.
-const FROST: f32 = 11.0;
-// How many places it is sampled from, on two rings and the middle.
-const TAPS: i32 = 12;
+const FROST: f32 = 5.5;
+// How many pairs of pixels either side of the middle it reaches, which is
+// three spreads: past that a Gaussian has nothing left to add.
+//
+// Pairs, because a sample between two pixels is both of them weighted by
+// where it falls -- one read of a smooth sampler is two of the blur.
+const PAIRS: i32 = 8;
+// How much of the sharp picture shows at the very rim, against the blur.
+//
+// Some, because the rim is where the glass has a thickness to show: the
+// bend above is the whole of it, and a bend in something already smeared
+// flat is a bend nobody can see.
+const RIM_SHARP: f32 = 0.45;
 // Where the light is, which is above and a little to the left -- the one
 // direction every raised thing in every interface is lit from.
 const LIGHT: vec2<f32> = vec2<f32>(-0.42, -1.0);
+
+// How much a Gaussian of the frost's spread weighs a pixel this far out.
+fn gauss(far: f32) -> f32 {
+    return exp(-far * far / (2.0 * FROST * FROST));
+}
 
 // How far a point is from the line between two others.
 fn to_line(point: vec2<f32>, one_end: vec2<f32>, other: vec2<f32>) -> f32 {
@@ -210,11 +233,39 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
         let taken = textureSample(behind, behind_sampler, taken_at / screen.size);
         return vec4<f32>(taken.rgb, in.colour.a);
     }
+    // What is behind a pane, blurred one way: across on the first pass and
+    // down on the second, which together are a Gaussian in both.
+    //
+    // Every sample held inside the pane, whose rectangle is `box`: what is
+    // outside it in the picture is nothing, and a blur that reached for it
+    // would darken the glass along every edge.
+    if ((in.flags & 1024u) != 0u) {
+        let way = in.colour.xy;
+        let at = in.position.xy;
+        let low = in.box.xy + vec2<f32>(0.5);
+        let high = max(in.box.zw - vec2<f32>(0.5), low);
+        var sum = textureSampleLevel(behind, behind_sampler, clamp(at, low, high) / screen.size, 0.0).rgb * gauss(0.0);
+        var weight = gauss(0.0);
+        for (var pair = 1; pair <= PAIRS; pair = pair + 1) {
+            let near = f32(pair * 2 - 1);
+            let far = f32(pair * 2);
+            let both = gauss(near) + gauss(far);
+            // Between the two, where a smooth sampler reads each of them
+            // in the proportion the Gaussian gives it.
+            let out = (near * gauss(near) + far * gauss(far)) / both;
+            let ahead = clamp(at + way * out, low, high) / screen.size;
+            let behind_it = clamp(at - way * out, low, high) / screen.size;
+            sum += (textureSampleLevel(behind, behind_sampler, ahead, 0.0).rgb
+                + textureSampleLevel(behind, behind_sampler, behind_it, 0.0).rgb) * both;
+            weight += both * 2.0;
+        }
+        return vec4<f32>(sum / weight, 1.0);
+    }
     // Glass: what is behind, bent at the edges, tinted, and lit.
     //
-    // Not a blur. The blur is the smallest part of it -- three taps, and
-    // only so that what is behind stops competing with what is written on
-    // top. What says glass is the other two: content pulled sideways in a
+    // Not only a blur. The blur is the smallest part of it -- worked out a
+    // pass earlier, and only so that what is behind stops competing with
+    // what is written on top. What says glass is the other two: content pulled sideways in a
     // band along the rim, which is what a bevel does to what is behind it,
     // and a bright line along that rim where the light catches it.
     if ((in.flags & 8u) != 0u) {
@@ -244,28 +295,28 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
         let shift = -facing * lens * DEPTH / screen.size;
         // Two rings and the middle, which at this width is enough that a
         // row of text behind comes out as a band rather than as a comb.
-        var frosted = textureSample(behind, behind_sampler, uv + shift).rgb * 2.0;
-
-        var weight = 2.0;
-        for (var tap = 0; tap < TAPS; tap = tap + 1) {
-            let angle = f32(tap) * 0.5236;
-            let ring = select(1.0, 0.55, (tap & 1) == 0);
-            // Least at the rim and most through the middle. Which is the
-            // whole of why the bending above can be seen at all: a frost
-            // laid on evenly would smear away the one band where the
-            // glass has any thickness to show.
-            let width = FROST * (0.42 + 0.58 * (1.0 - lens));
-            let step = vec2<f32>(cos(angle), sin(angle)) * width * ring / screen.size;
-            frosted += textureSample(behind, behind_sampler, uv + shift + step).rgb;
-            weight += 1.0;
-        }
-        frosted = frosted / weight;
+        //
+        // The blurred picture, with the sharp one let back in toward the
+        // rim: least blur at the rim and most through the middle, which is
+        // the whole of why the bending can be seen at all -- a frost laid
+        // on evenly would smear away the one band where the glass has any
+        // thickness to show.
+        let soft = textureSampleLevel(blurred, behind_sampler, uv + shift, 0.0).rgb;
+        let sharp = textureSampleLevel(behind, behind_sampler, uv + shift, 0.0).rgb;
+        let frosted = mix(soft, sharp, lens * RIM_SHARP);
 
         // More of the pane's own colour where what is behind is close to
         // it in brightness, because that is where what is written on the
         // glass would otherwise have the least to stand out against.
         let grey = vec3<f32>(0.2126, 0.7152, 0.0722);
-        let near = 1.0 - clamp(abs(dot(frosted, grey) - dot(in.colour.rgb, grey)) * 3.0, 0.0, 1.0);
+        var near = 1.0 - clamp(abs(dot(frosted, grey) - dot(in.colour.rgb, grey)) * 3.0, 0.0, 1.0);
+        // Not over another pane's glass: what is behind is that pane's
+        // colour, which is always close to this one's, so this would add
+        // the most colour exactly where the other pane had already -- and
+        // a box whose glass shows nothing is a grey box.
+        if ((in.flags & 512u) != 0u) {
+            near = 0.0;
+        }
         let tint = clamp(in.colour.a + (1.0 - in.colour.a) * near * 0.4, 0.0, 1.0);
         var glass = mix(frosted, in.colour.rgb, tint);
 

@@ -142,6 +142,11 @@ pub(crate) enum Update {
         /// Whether it is set.
         on: bool,
     },
+    /// A row that is a line between two things.
+    Ruled {
+        /// Which cells it is.
+        area: Rect,
+    },
     /// A band of rows, and which row of its list it starts at.
     Scrolled {
         /// Which cells it is.
@@ -185,8 +190,13 @@ pub(crate) struct Said<'a> {
     pub(crate) ticked: &'a [Ticked],
     /// And which columns are bars, with how the window is showing each.
     pub(crate) barred: &'a [Barred],
+    /// And which rows are lines between two things.
+    pub(crate) ruled: &'a [Ruled],
     /// And what is under the pane, where there is one.
     pub(crate) behind: Option<&'a Behind>,
+    /// And under each box with a frame round it, nearest the reader last:
+    /// over that pane where both are up.
+    pub(crate) cards: &'a [Behind],
     /// The band of rows that is catching up, and the page as it was
     /// before it moved -- which is the only place the rows that have
     /// scrolled off still exist.
@@ -233,6 +243,47 @@ impl Behind {
         self.cells
             .get(usize::from(down) * usize::from(self.area.width) + usize::from(along))
     }
+
+    /// Whether a box's frame is still there to be drawn: its four corners
+    /// still hold the corners the view put in them.
+    ///
+    /// The corners and not the whole ring, because the ring is asked
+    /// again cell by cell -- see [`Behind::ring_holds`] -- and a list
+    /// drawn over one side of a hover leaves a frame that is still a
+    /// frame everywhere the list is not.
+    pub(crate) fn framed(&self, page: &Page) -> bool {
+        let area = self.area;
+        if self.joined != Joined::Nowhere || area.width < 2 || area.height < 2 {
+            return false;
+        }
+        let (right, bottom) = (area.right() - 1, area.bottom() - 1);
+        [
+            (area.x, area.y, "\u{256d}"),
+            (right, area.y, "\u{256e}"),
+            (area.x, bottom, "\u{2570}"),
+            (right, bottom, "\u{256f}"),
+        ]
+        .into_iter()
+        .all(|(x, y, corner)| page.look(x, y).text == corner)
+    }
+
+    /// Whether this cell is part of a box's frame, and still holds it.
+    ///
+    /// A cell of the ring holding anything but a line is somebody else's
+    /// by now, and is drawn as its own cell.
+    pub(crate) fn ring_holds(&self, page: &Page, x: u16, y: u16) -> bool {
+        let area = self.area;
+        let inside = x >= area.x && x < area.right() && y >= area.y && y < area.bottom();
+        let ring = x == area.x || x + 1 == area.right() || y == area.y || y + 1 == area.bottom();
+        inside
+            && ring
+            && page
+                .look(x, y)
+                .text
+                .chars()
+                .next()
+                .is_some_and(|glyph| ('\u{2500}'..='\u{257f}').contains(&glyph))
+    }
 }
 
 /// Where a switch is in the frame being drawn, and how it stands.
@@ -260,6 +311,43 @@ pub(crate) struct Barred {
     /// second number because the pointer widens it as well: a reader
     /// reaching for a control is about to take hold of it.
     pub(crate) under: f32,
+}
+
+/// A row the view drew a line along, in the frame being drawn.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Ruled {
+    /// Which cells it is.
+    pub(crate) area: Rect,
+}
+
+impl Ruled {
+    /// How much of this cell the line runs across, where the cell is
+    /// still this rule's: from which part of its width to which.
+    ///
+    /// Asked cell by cell rather than of the whole row, because what a
+    /// view drew over inside the same frame may cover part of a line and
+    /// leave the rest -- and the cells are the truth, the same as they
+    /// are for a cap. A cell holding anything but the rule's glyphs is
+    /// somebody else's, and keeps what they wrote in it.
+    ///
+    /// A tee is where the line meets a frame's side, so it starts or
+    /// stops in the middle, where that side's line is.
+    pub(crate) fn spans(&self, page: &Page, x: u16, y: u16) -> Option<(f32, f32)> {
+        if y != self.area.y || x < self.area.x || x >= self.area.right() {
+            return None;
+        }
+        match page.look(x, y).text {
+            "\u{2500}" => Some((0.0, 1.0)),
+            "\u{251c}" => Some((0.5, 1.0)),
+            "\u{2524}" => Some((0.0, 0.5)),
+            _ => None,
+        }
+    }
+
+    /// Whether every cell of the row is still this rule's.
+    pub(crate) fn still_said(&self, page: &Page) -> bool {
+        (self.area.left()..self.area.right()).all(|x| self.spans(page, x, self.area.y).is_some())
+    }
 }
 
 /// Where a cap is in the frame being drawn, and what it is drawn in.
@@ -354,6 +442,10 @@ impl obelus_ui::shapes::Shapes for Marking {
             ground,
             cells: cells.to_vec(),
         });
+    }
+
+    fn ruled(&self, area: Rect) {
+        let _ = self.updates.send(Update::Ruled { area });
     }
 
     fn capped(&self, keys: &str, area: Rect, cap: Color, page: Color, edge: Color) {
@@ -847,6 +939,7 @@ impl Page {
             // with the marks.
             Update::Capped { area, .. }
             | Update::Ticked { area, .. }
+            | Update::Ruled { area }
             | Update::Behind { area, .. }
             | Update::Scrolled { area, .. } => {
                 tracing::warn!(?area, "a cap reached the page");
@@ -924,6 +1017,103 @@ mod tests {
             caret: 0,
         };
         assert_eq!(start.columns(), 0);
+    }
+
+    /// Rows of text written into a page, one character to a cell.
+    fn written(rows: &[&str]) -> Page {
+        let mut page = Page::default();
+        let width = rows
+            .iter()
+            .map(|row| row.chars().count())
+            .max()
+            .unwrap_or(0);
+        page.resized(
+            u16::try_from(width).expect("a short row"),
+            u16::try_from(rows.len()).expect("a few rows"),
+        );
+        for (y, row) in rows.iter().enumerate() {
+            for (x, character) in row.chars().enumerate() {
+                let mut cell = Cell::default();
+                cell.set_symbol(&character.to_string());
+                page.apply(Update::Cell {
+                    x: u16::try_from(x).expect("a short row"),
+                    y: u16::try_from(y).expect("a few rows"),
+                    cell: Box::new(cell),
+                });
+            }
+        }
+        page
+    }
+
+    /// A rule is a line only where its cells still say `─`, and a tee
+    /// stops the line in the middle, where the side it meets is.
+    ///
+    /// Deliberate break: answer `Some((0.0, 1.0))` from `Ruled::spans`
+    /// for every cell in the row. The letter a later view wrote over the
+    /// rule is then left out by `letters` and drawn over by a line, and
+    /// the line at a frame's side pokes half a cell out of the frame.
+    #[test]
+    fn a_rule_is_a_line_only_where_its_cells_still_say_so() {
+        let page = written(&["\u{251c}\u{2500}x\u{2500}\u{2524}"]);
+        let rule = Ruled {
+            area: Rect {
+                x: 0,
+                y: 0,
+                width: 5,
+                height: 1,
+            },
+        };
+        assert_eq!(rule.spans(&page, 0, 0), Some((0.5, 1.0)), "a tee");
+        assert_eq!(rule.spans(&page, 1, 0), Some((0.0, 1.0)));
+        assert_eq!(rule.spans(&page, 2, 0), None, "written over");
+        assert_eq!(rule.spans(&page, 4, 0), Some((0.0, 0.5)), "the other tee");
+        assert!(!rule.still_said(&page), "one cell is not the rule's");
+    }
+
+    /// A box with a frame, as the view says one: a pane joined to nothing,
+    /// of which only where it is matters here.
+    fn a_box(width: u16, height: u16) -> Behind {
+        Behind {
+            area: Rect {
+                x: 0,
+                y: 0,
+                width,
+                height,
+            },
+            joined: Joined::Nowhere,
+            ground: Color::Reset,
+            cells: Vec::new(),
+        }
+    }
+
+    /// A frame's ring is the frame's only where it still holds a line.
+    ///
+    /// Deliberate break: drop the glyph check from `Behind::ring_holds`. The
+    /// cell a list drew over one side of a hover is then taken for the
+    /// frame, its letter is left out and its ground is not painted.
+    #[test]
+    fn a_frame_leaves_a_cell_drawn_over_to_what_is_in_it() {
+        let page = written(&[
+            "\u{256d}\u{2500}\u{2500}\u{256e}",
+            "x ab\u{2502}",
+            "\u{2570}\u{2500}\u{2500}\u{256f}",
+        ]);
+        let frame = a_box(4, 3);
+        assert!(frame.framed(&page), "the four corners are there");
+        assert!(frame.ring_holds(&page, 1, 0), "a line of the ring");
+        assert!(!frame.ring_holds(&page, 0, 1), "written over");
+        assert!(!frame.ring_holds(&page, 1, 1), "inside the box");
+    }
+
+    /// A frame with a corner drawn over is not drawn at all.
+    ///
+    /// Deliberate break: answer `true` from `Behind::framed`. The
+    /// hover a list covered the top of then has its round box drawn under
+    /// the list, as a line crossing somebody else's rows.
+    #[test]
+    fn a_frame_missing_a_corner_is_not_drawn() {
+        let page = written(&["xx\u{256e}", "\u{2570}\u{2500}\u{256f}"]);
+        assert!(!a_box(3, 2).framed(&page));
     }
 
     /// A cap is about cells, and the cells are the truth.

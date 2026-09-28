@@ -109,6 +109,6 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
         hover.rows(),
         hover.scrolled(),
         theme,
-        theme.raised_background,
+        theme.background,
     );
 }

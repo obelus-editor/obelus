@@ -389,6 +389,22 @@ pub struct EditorView<'a> {
     wrap: bool,
     /// Whether this is the document being read or a look at another one.
     editing: Editing,
+    /// How many of the painted rows the reader actually has, where that is
+    /// fewer than the rows painted.
+    ///
+    /// A compact list is drawn *over* the document -- see
+    /// `crate::editor_canvas` -- so the rows under it are painted and then
+    /// covered. The text is painted to the bottom, because that is what
+    /// the list is laid over and a front end that can see through it has
+    /// to have something to see. What says *where in the file this is*
+    /// stops where the reader can still read it: a scrollbar whose lower
+    /// third is behind a list would put the thumb for the end of a file
+    /// somewhere nobody can see, and the map beside it is a picture of the
+    /// whole file that would be cropped by exactly that much.
+    ///
+    /// `None` where the two are the same, which is every view but the one
+    /// with a compact list over it.
+    reader_rows: Option<u16>,
 }
 
 impl EditorView<'_> {
@@ -507,7 +523,17 @@ impl<'a> EditorView<'a> {
                 .is_some_and(|buffer| buffer.content().at().is_some()),
             wrap: app.config().wrap,
             editing: Editing::Allowed,
+            reader_rows: None,
         }
+    }
+
+    /// How many of the rows this is painted on the reader can reach.
+    ///
+    /// Said by the one place that knows both counts, which is `draw`.
+    #[must_use]
+    pub fn the_reader_has(mut self, rows: u16) -> Self {
+        self.reader_rows = Some(rows);
+        self
     }
 
     /// Draws a document that is not the one being read.
@@ -563,6 +589,9 @@ impl<'a> EditorView<'a> {
             // way to scroll it would be a line nobody can read.
             wrap: true,
             editing: Editing::Refused,
+            // A preview is drawn in the room it is given, and nothing is
+            // over it: the two counts are one.
+            reader_rows: None,
         }
     }
 
@@ -636,6 +665,10 @@ impl Widget for EditorView<'_> {
             let top = buffer.viewport().top;
             top.get() - buffer.folds().hidden_before(top)
         };
+        // How many of this region's rows the reader can see: where a list
+        // covers the foot of it, the rest is not theirs. The map and the
+        // bar are both this tall, so the two measure one screen.
+        let reached = self.reader_rows.unwrap_or(area.height).min(area.height);
         // The same total the caret's position is worked out from, which is
         // what keeps the two agreeing -- checked only where the caret is
         // drawn at all. A screen too narrow for what goes before the text
@@ -657,6 +690,7 @@ impl Widget for EditorView<'_> {
             let column = Rect {
                 x: area.right() - bar - map,
                 width: map,
+                height: reached,
                 ..area
             };
             self.change_map(cells, column, buffer);
@@ -1134,10 +1168,25 @@ impl Widget for EditorView<'_> {
         let more_below = buffer.folds().first_shown(line).get() < text.line_count();
         let scrolled = viewport.top.get() > 0 || viewport.top_row > 0;
         let drawn = (bar > 0 && (more_below || scrolled))
-            // The whole region, so the bar is in the last column of it --
-            // which is where every list in Obelus puts its own, and what
-            // keeps them in one line when a list opens over a file.
-            .then(|| crate::scrollbar(cells, area, above, shown, self.theme))
+            // The region's whole width, so the bar is in the last column
+            // of it -- which is where every list in Obelus puts its own,
+            // and what keeps them in one line when a list opens over a
+            // file. Only as tall as the reader's own rows, though: where
+            // that same list covers the foot of the region, a track
+            // running on under it would put the thumb for the end of a
+            // file where nobody can see it.
+            .then(|| {
+                crate::scrollbar(
+                    cells,
+                    Rect {
+                        height: reached,
+                        ..area
+                    },
+                    above,
+                    shown,
+                    self.theme,
+                )
+            })
             .flatten();
 
         // And where the file's view has got to, for a front end that can

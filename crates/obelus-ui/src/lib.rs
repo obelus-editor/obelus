@@ -388,6 +388,27 @@ pub fn editor_room(area: Rect, app: &impl Screen) -> Rect {
     picker::room_above(list, editor)
 }
 
+/// The rows a document is *painted* on, which is not the room it is read
+/// in.
+///
+/// Two counts, and they differ for exactly one reason: a compact list is
+/// drawn *over* the document. The reader's room stops above it, which is
+/// what [`editor_room`] says and what the scrolling, the paging, the
+/// preview's placement and the caret are all measured in -- so the line a
+/// selection is about never lands under the list. The painting does not
+/// stop there, because what a list is laid over has to be *there* for it
+/// to be laid over: a pane in a window shows what is behind it, and cells
+/// nobody wrote are not a page seen through glass, they are a hole.
+///
+/// So this is the whole region, always. The list is drawn afterwards and
+/// covers what it covers, which in a terminal leaves the same cells as
+/// before -- the difference is only visible where the front end can see
+/// through.
+#[must_use]
+pub fn editor_canvas(area: Rect) -> Rect {
+    regions(area).editor
+}
+
 /// The screen as a `Rect` starting at the origin.
 #[must_use]
 pub fn area_of(size: Size) -> Rect {
@@ -555,9 +576,14 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     // list is sitting on the status bar over it. A conversation is the one
     // that takes the whole region: it puts a list *inside* itself, above
     // the box a message is written in, so it has already made the room.
+    // The room the reader has, and the rows it is painted on -- see
+    // `editor_canvas` for why those are two answers. The chrome that says
+    // *where in the file this is* belongs to the first: a scrollbar whose
+    // bottom third is behind a list is a scrollbar that cannot be read.
     let room = editor_room(area, app);
+    let canvas = editor_canvas(area);
     if let Some(view) = todo::TodoUi::new(app) {
-        view.render(room, cells);
+        view.render(canvas, cells);
     } else {
         match chat::ChatView::new(app) {
             Some(view) => view.render(regions.editor, cells),
@@ -566,9 +592,18 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
                     let top = app
                         .current_buffer()
                         .map_or(0, |buffer| buffer.viewport().top.get());
-                    reading::draw(cells, room, rows, top, app.theme(), app.theme().background);
+                    reading::draw(
+                        cells,
+                        canvas,
+                        rows,
+                        top,
+                        app.theme(),
+                        app.theme().background,
+                    );
                 }
-                None => editor::EditorView::new(app).render(room, cells),
+                None => editor::EditorView::new(app)
+                    .the_reader_has(room.height)
+                    .render(canvas, cells),
             },
         }
     }
@@ -589,7 +624,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
             Layer::Settings => {
                 if let Some(view) = settings::SettingsView::new(app) {
                     shapes::behind(
-                        regions.editor,
+                        with_its_rules(regions.editor, regions.editor, regions.edge),
                         shapes::Joined::Above,
                         app.theme().background,
                         cells,
@@ -612,7 +647,13 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
                     // what works out the room the list takes: two answers
                     // to that would be a backdrop that does not line up
                     // with what is over it.
-                    list_over(cells, app, list, room_for_a_picker(app, regions.editor));
+                    list_over(
+                        cells,
+                        app,
+                        list,
+                        room_for_a_picker(app, regions.editor),
+                        regions.edge,
+                    );
                 }
             }
             Layer::Names => {
@@ -620,8 +661,14 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
                     let room = room_for_a_picker(app, regions.editor);
                     let region = names::region(names, room);
                     // Standing on the row below it, like every list that
-                    // leaves the page showing above it.
-                    shapes::behind(region, shapes::Joined::Below, app.theme().background, cells);
+                    // leaves the page showing above it -- and its rule
+                    // with it, the same as a compact list's.
+                    shapes::behind(
+                        with_its_rules(region, room, regions.edge),
+                        shapes::Joined::Below,
+                        app.theme().background,
+                        cells,
+                    );
                     names::NamesView::new(names, app.theme()).render(region, cells);
                     // The edge every band gets, for the same reason a
                     // compact list gets one: two different things sharing
@@ -651,7 +698,13 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     if !layers.has(Layer::Picker)
         && let Some(list) = app.slash()
     {
-        list_over(cells, app, list, room_for_the_commands(app, regions.editor));
+        list_over(
+            cells,
+            app,
+            list,
+            room_for_the_commands(app, regions.editor),
+            regions.edge,
+        );
     }
 
     // The three panels that belong to a place in the file. Each is empty
@@ -738,30 +791,53 @@ fn room_for_a_picker(app: &impl Screen, editor: Rect) -> Rect {
     chat::above_a_question(editor, app.card())
 }
 
+/// A pane, and the rules either side of it that are its edges.
+///
+/// The row above a band that stands lower than the top of its room is the
+/// rule it draws over itself, and the row under anything that reaches
+/// the foot of the region is the rule the status row has over it. A
+/// window draws both lines itself, in the middle of their rows, and ends
+/// the glass at them -- see `shapes::Shapes::ruled`. Left out, the glass
+/// stopped at the cell boundary, half a row short of the line that said
+/// where the pane ends.
+///
+/// One answer, asked by every pane with a rule beside it.
+fn with_its_rules(band: Rect, room: Rect, edge: Rect) -> Rect {
+    let top = match band.y > room.y {
+        true => band.y - 1,
+        false => band.y,
+    };
+    let bottom = match edge.height > 0 && band.bottom() == edge.y {
+        true => edge.bottom(),
+        false => band.bottom(),
+    };
+    Rect {
+        y: top,
+        height: bottom - top,
+        ..band
+    }
+}
+
 /// Draws a list over whatever is behind it, with its edge and its preview.
 ///
 /// One function for all of them, because a list opened over the code, over
 /// the settings and over a conversation is the same list: what differs is
 /// the room it is given, which is the argument.
-fn list_over(cells: &mut CellBuffer, app: &impl Screen, list: &Picker, room: Rect) {
+fn list_over(cells: &mut CellBuffer, app: &impl Screen, list: &Picker, room: Rect, edge: Rect) {
     let region = picker::region(list, room);
     // What the list actually takes, which for a compact one is a strip at
     // the foot of the region and not the region: saying the region would
     // put glass over the whole file and slide the whole file with it.
-    // The rule above a compact list goes with it -- it is what says the
-    // list is not the code.
+    //
+    // And the rules either side of it go with it, because they are its
+    // edges -- see `with_its_rules`.
     let (pane, joined) = match list.layout() {
-        obelus_component::picker::PickerLayout::FullArea => (room, shapes::Joined::Above),
-        obelus_component::picker::PickerLayout::Compact { .. } => (
-            Rect {
-                y: region.y.saturating_sub(1).max(room.y),
-                height: region
-                    .height
-                    .saturating_add(region.y - region.y.saturating_sub(1).max(room.y)),
-                ..region
-            },
-            shapes::Joined::Below,
-        ),
+        obelus_component::picker::PickerLayout::FullArea => {
+            (with_its_rules(room, room, edge), shapes::Joined::Above)
+        }
+        obelus_component::picker::PickerLayout::Compact { .. } => {
+            (with_its_rules(region, room, edge), shapes::Joined::Below)
+        }
     };
     shapes::behind(pane, joined, app.theme().background, cells);
     picker::PickerView::new(list, app.theme(), app.phase()).render(region, cells);
@@ -864,6 +940,7 @@ pub(crate) fn rule(cells: &mut CellBuffer, area: Rect, theme: &Theme) {
     for x in area.left()..area.right() {
         put(cells, x, area.y, '\u{2500}', Style::new().fg(theme.gutter));
     }
+    shapes::ruled(Rect { height: 1, ..area });
 }
 
 /// A bar down the right-hand edge of a region: where its window sits.
@@ -1791,25 +1868,28 @@ pub const PANEL_INSET: u16 = 2;
 /// something put over the page for a moment -- and four of them wearing two
 /// shapes was a screen where the shape said nothing.
 ///
-/// Rounded, and on a ground a shade off the page. The rounding is not
-/// decoration: what a hover holds is a *document*, and a document's own
-/// boxes -- a markdown table, a fenced block -- are square, because that is
-/// what every markdown renderer draws. A square frame around a square frame
-/// is one thing that looks like two; a round one says which of them is
-/// Obelus's furniture and which is the reader's text. The ground says the
-/// same thing again for a panel whose contents reach its edge.
+/// Rounded, and on the page's own colour. The rounding is not decoration:
+/// what a hover holds is a *document*, and a document's own boxes -- a
+/// markdown table, a fenced block -- are square, because that is what
+/// every markdown renderer draws. A square frame around a square frame is
+/// one thing that looks like two; a round one says which of them is
+/// Obelus's furniture and which is the reader's text.
+///
+/// The frame is what says it, and says it alone. It was on a ground a
+/// shade off the page as well, which in a window is the colour of its
+/// glass -- a grey box over glass that is the page's colour everywhere
+/// else, the lists and the settings under it included.
 pub fn panel(cells: &mut CellBuffer, area: Rect, theme: &Theme) {
     if area.width < 2 || area.height < 2 {
         return;
     }
-    fill(
-        cells,
-        area,
-        Style::new()
-            .fg(theme.foreground)
-            .bg(theme.raised_background),
-    );
-    let edge = Style::new().fg(theme.gutter).bg(theme.raised_background);
+    let ground = theme.background;
+    // What it is put over, said before it is: a window draws the panel as
+    // glass inside its frame, and glass is what is behind it seen through
+    // -- see `shapes::Joined::Nowhere`.
+    shapes::behind(area, shapes::Joined::Nowhere, ground, cells);
+    fill(cells, area, Style::new().fg(theme.foreground).bg(ground));
+    let edge = Style::new().fg(theme.gutter).bg(ground);
     let (left, right) = (area.x, area.right() - 1);
     let (top, bottom) = (area.y, area.bottom() - 1);
     for (x, y, glyph) in [
@@ -2041,6 +2121,8 @@ pub fn keys_card(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &The
         height,
     };
 
+    // The panel's own ground -- see `panel`.
+    let paper = theme.background;
     panel(cells, card, theme);
     let room = inside(card);
 
@@ -2049,14 +2131,10 @@ pub fn keys_card(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &The
         room.x,
         room.y,
         "The keys here",
-        Style::new()
-            .fg(theme.status_foreground)
-            .bg(theme.raised_background),
+        Style::new().fg(theme.status_foreground).bg(paper),
     );
-    let ground = Style::new()
-        .fg(theme.foreground)
-        .bg(theme.raised_background);
-    let off = Style::new().fg(theme.gutter).bg(theme.raised_background);
+    let ground = Style::new().fg(theme.foreground).bg(paper);
+    let off = Style::new().fg(theme.gutter).bg(paper);
     for (at, hint) in hints.iter().enumerate() {
         let Ok(offset) = u16::try_from(at) else { break };
         let y = room.y + 2 + offset;
@@ -2077,8 +2155,8 @@ pub fn keys_card(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &The
             y,
             &keys,
             text_width(&keys),
-            theme.raised_background,
-            theme.raised_background,
+            paper,
+            paper,
             theme.gutter,
         );
         let mut x = room.x + column;

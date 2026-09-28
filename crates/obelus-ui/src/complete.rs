@@ -178,12 +178,17 @@ pub fn draw(cells: &mut CellBuffer, panel: Panel, app: &impl Screen) {
             true => room.y + panel.documentation,
             false => room.y + panel.list,
         };
-        let edge = Style::new().fg(theme.gutter).bg(theme.raised_background);
+        let edge = Style::new().fg(theme.gutter).bg(theme.background);
         put(cells, area.x, y, '\u{251c}', edge);
         for x in area.x + 1..area.right() - 1 {
             put(cells, x, y, '\u{2500}', edge);
         }
         put(cells, area.right() - 1, y, '\u{2524}', edge);
+        crate::shapes::ruled(Rect {
+            y,
+            height: 1,
+            ..area
+        });
     }
 
     rows(cells, list, completion, theme);
@@ -196,7 +201,7 @@ pub fn draw(cells: &mut CellBuffer, panel: Panel, app: &impl Screen) {
             completion.documentation_rows(),
             completion.scrolled(),
             theme,
-            theme.raised_background,
+            theme.background,
         );
     }
 }

@@ -1397,7 +1397,10 @@ src/
                     of waiting, and none of it crosses to the application
                     (motion); a full-width character takes the cells it
                     covers with it, because the diff will not (grid); a
-                    pane has one edge and so no corners, glass is a bend
+                    pane joined to the page has one edge and so no
+                    corners while a box joined to nothing has four, a
+                    line is drawn where its glyph would be and the glass
+                    starts at the line, glass is a bend
                     and a light before it is a blur, and a region of the
                     frame is put back somewhere else rather than drawn
                     again (paint); a key's cap is the one place the grid is
@@ -1619,8 +1622,9 @@ own colour, like the conversation's row below the box: it has a rule above it
 saying it is a different subject from the file, and saying that twice makes a
 strip -- the heaviest thing Obelus draws -- out of the smallest part of the
 screen. What is left of that band is `raised_background`, one shade off the
-page, behind the cap a key is drawn in at the foot of a view and behind the
-card that lists every key -- a few cells wide, and a box, never a row.
+page, behind the cap a key is drawn in at the foot of a view -- a few cells
+wide, and a box, never a row. Not behind a panel, which is on the page's
+colour with a frame round it: in a window its ground is its glass.
 
 A preview's margin comes from git, so a fixture that shows one depends on
 the fixture file being *committed*: edit `tests/fixtures/long.rs` without

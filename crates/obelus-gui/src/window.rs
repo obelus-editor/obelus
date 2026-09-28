@@ -32,7 +32,7 @@ use obelus_app::{
     app::{self, App},
     event::{Event, Pointer},
 };
-use obelus_ui::shapes::Bar;
+use obelus_ui::shapes::{Bar, Joined};
 use ratatui::layout::Rect;
 use winit::{
     application::ApplicationHandler,
@@ -47,8 +47,8 @@ use crate::{
     blink::Blink,
     font::Fonts,
     grid::{
-        Barred, Behind, Capped, Cells, Marked, Marking, Measured, Page, Said, Spelling, Ticked,
-        Update,
+        Barred, Behind, Capped, Cells, Marked, Marking, Measured, Page, Ruled, Said, Spelling,
+        Ticked, Update,
     },
     keys,
     motion::{Motion, Wake},
@@ -136,6 +136,10 @@ struct Showing {
     showing: Vec<Barred>,
     /// And on the one being laid out.
     barring_up: Vec<Bar>,
+    /// Which rows are rules on the frame being shown.
+    ruled: Vec<Ruled>,
+    /// And on the one being laid out.
+    ruling: Vec<Ruled>,
     /// Which band of rows is a list, how far down it the band has got and
     /// what bar says so, on the frame being shown.
     scrolled: Option<(Rect, i64)>,
@@ -165,6 +169,11 @@ struct Showing {
     behind: Option<Behind>,
     /// And on the frame being laid out.
     behinding: Option<Behind>,
+    /// What is behind a box with a frame round it, on the frame being
+    /// shown -- a second pane, over the first where there is one.
+    cards: Vec<Behind>,
+    /// And on the one being laid out.
+    carding: Vec<Behind>,
     /// And the ones the frame being laid out has asked for so far.
     ///
     /// Two lists because a frame is drawn from what it said, not from what
@@ -222,6 +231,8 @@ impl Showing {
             barred: Vec::new(),
             barring_up: Vec::new(),
             showing: Vec::new(),
+            ruled: Vec::new(),
+            ruling: Vec::new(),
             scrolled: None,
             scrolling: None,
             bar: None,
@@ -230,6 +241,8 @@ impl Showing {
             before: None,
             behind: None,
             behinding: None,
+            cards: Vec::new(),
+            carding: Vec::new(),
             // The blink is asked once, on the way up: it is a question
             // about the system rather than about this window.
             motion: Motion::new(Blink::asked()),
@@ -543,18 +556,33 @@ impl ApplicationHandler<Waking> for Showing {
                         // nearest the reader: a setting's choices open
                         // over the settings, and what the reader sees
                         // through is the one on top.
+                        //
+                        // A box with a frame is kept beside that rather
+                        // than in its place, because it is put over one:
+                        // the card of every key opens over a list, the
+                        // settings and the counts, all of which are glass.
+                        // A sheet said after one was drawn over it, so a
+                        // box is nearer the reader than the sheet or it is
+                        // not kept at all.
                         Update::Behind {
                             area,
                             joined,
                             ground,
                             cells,
                         } => {
-                            self.behinding = Some(Behind {
+                            let behind = Behind {
                                 area,
                                 joined,
                                 ground,
                                 cells,
-                            });
+                            };
+                            match joined {
+                                Joined::Nowhere => self.carding.push(behind),
+                                Joined::Above | Joined::Below => {
+                                    self.behinding = Some(behind);
+                                    self.carding.clear();
+                                }
+                            }
                         }
                         Update::Scrolled { area, top, bar } => {
                             self.scrolling = Some((area, top));
@@ -564,6 +592,7 @@ impl ApplicationHandler<Waking> for Showing {
                             self.ticking.push(Ticked { area, on });
                         }
                         Update::Barred { bar } => self.barring_up.push(bar),
+                        Update::Ruled { area } => self.ruling.push(Ruled { area }),
                         Update::Capped {
                             keys,
                             area,
@@ -593,7 +622,9 @@ impl ApplicationHandler<Waking> for Showing {
                             // reader scrolling.
                             self.motion
                                 .bars_drawn(&self.barred, self.pointer, Instant::now());
+                            self.ruled = std::mem::take(&mut self.ruling);
                             self.behind = self.behinding.take();
+                            self.cards = std::mem::take(&mut self.carding);
                             self.scrolled = self.scrolling.take();
                             self.bar = self.barring.take();
                             drew = true;
@@ -779,7 +810,9 @@ impl ApplicationHandler<Waking> for Showing {
                         capped: &self.capped,
                         ticked: &self.ticked,
                         barred: &self.showing,
+                        ruled: &self.ruled,
                         behind: self.behind.as_ref(),
+                        cards: &self.cards,
                         band: self
                             .scrolled
                             .zip(self.before.as_ref())
