@@ -2028,6 +2028,11 @@ impl App {
         if let (Some(rows), Some(picker)) = (rows, self.picker.as_mut()) {
             picker.refresh_indices(rows);
         }
+        // And a scoring the list wants done somewhere that is not here.
+        // Taken on the frame rather than where the query changed, for the
+        // reason the indices above are: one place asks, so a path that
+        // changes a query cannot forget to.
+        self.send_the_scan();
         // The same question for the list a setting's names are built in,
         // and the same reason: its window moves when the rows about to be
         // drawn say where it goes.
@@ -2442,6 +2447,11 @@ impl App {
                 // superseded by another tab, another file, another key.
                 if self.history_generation.is_current(generation) {
                     self.on_logged(commits, walked, done);
+                }
+            }
+            Event::Scanned(scanned) => {
+                if let Some(picker) = self.picker.as_mut() {
+                    picker.scan_arrived(*scanned);
                 }
             }
             Event::Search(obelus_search::Event::FilesFound {

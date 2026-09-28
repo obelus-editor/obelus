@@ -390,6 +390,31 @@ impl App {
         );
     }
 
+    /// Has whatever scoring the list is waiting on done somewhere else.
+    ///
+    /// The picker asks and this answers, because spawning is the
+    /// application's: it is the only part of Obelus that has heard of every
+    /// worker, which is the same reason the walk is started here and not in
+    /// the list it fills.
+    ///
+    /// Nothing is cancelled when a newer one is asked for. A scoring holds
+    /// no lock and writes nothing, so the cost of one nobody wants is the
+    /// thread it finishes on -- and the answer is dropped where the count
+    /// is kept, which is the same shape the walk's generations have.
+    pub(super) fn send_the_scan(&mut self) {
+        let Some(asked) = self.picker.as_mut().and_then(Picker::wanted_scan) else {
+            return;
+        };
+        let Some(sender) = self.events.clone() else {
+            return;
+        };
+        obelus_runtime::handle().spawn_blocking(move || {
+            let _ = sender.send(Event::Scanned(Box::new(obelus_component::picker::scan(
+                &asked,
+            ))));
+        });
+    }
+
     /// Whatever a key means to a file list, beyond moving about in it.
     ///
     /// One key, and it is a setting: which files the list offers. Answered

@@ -54,7 +54,7 @@ pub mod files;
 /// enough that the list it is about is still the thing on screen.
 const MOST_ABOUT: u16 = 5;
 
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use nucleo_matcher::{
     Matcher, Utf32Str,
@@ -393,6 +393,106 @@ pub enum PickerLayout {
     },
 }
 
+/// A scoring the picker wants done somewhere that is not the loop.
+///
+/// The list is the reader's whole project and the scoring is tens of
+/// milliseconds of it, which is a keystroke they would watch arrive. So the
+/// rule the history already follows applies here too: a list long enough to
+/// be worth searching is long enough to be worth threading.
+///
+/// The picker does not spawn it. What spawns workers is the application --
+/// the only part of Obelus that has heard of every one of them -- so this
+/// is handed out, done elsewhere, and handed back.
+pub struct Scan {
+    /// Which scoring this is.
+    ///
+    /// An answer about an older one is dropped rather than drawn: a reader
+    /// who typed three characters while one was out would otherwise watch
+    /// the list settle on the first of them.
+    pub generation: u64,
+    /// What to score against.
+    pub query: String,
+    /// The rows, shared rather than copied.
+    pub items: Arc<Vec<PickerItem>>,
+    /// And which of them to ask about, in the order they are in.
+    pub candidates: Vec<usize>,
+}
+
+/// What a [`Scan`] found.
+#[derive(Debug)]
+pub struct Scanned {
+    /// Which scoring it was.
+    pub generation: u64,
+    /// The rows that matched and what they scored.
+    pub matched: Vec<(usize, u32)>,
+}
+
+/// Scores a scan, wherever it is being done.
+///
+/// Its own matcher, because the picker's is on the loop's side of this and
+/// a matcher is scratch space rather than state: two of them cannot
+/// disagree about anything, they only hold the buffers a scoring needs.
+#[must_use]
+pub fn scan(asked: &Scan) -> Scanned {
+    let pattern = Pattern::parse(&asked.query, CaseMatching::Smart, Normalization::Smart);
+    let mut matcher = Matcher::new(nucleo_matcher::Config::DEFAULT);
+    let mut haystack = Vec::new();
+    let mut matched = Vec::new();
+    for &index in &asked.candidates {
+        let Some(item) = asked.items.get(index) else {
+            continue;
+        };
+        let text = Utf32Str::new(&item.label, &mut haystack);
+        if let Some(score) = pattern.score(text, &mut matcher) {
+            matched.push((index, score));
+        }
+    }
+    Scanned {
+        generation: asked.generation,
+        matched,
+    }
+}
+
+/// Which rows a pass of the matcher has to ask about.
+///
+/// Every one of these is the same answer worked out from fewer questions:
+/// no row is dropped, no order changes, and what comes out is what a pass
+/// over everything would have produced. A list that answered less than the
+/// whole truth would be a limit on what can be found in it.
+#[derive(Clone, Copy, Debug)]
+enum Candidates {
+    /// All of them, which is what anything but the two below gets.
+    Everything,
+    /// The items from here on, with what `matched` holds for the ones
+    /// before kept: a batch of a walk appends and changes nothing behind
+    /// it.
+    From(usize),
+    /// Whatever matched last time, for a query that only grew.
+    Survivors,
+}
+
+impl Candidates {
+    /// Whether this pass may be done somewhere other than the loop.
+    ///
+    /// A batch's own rows may not. The answer for them is wanted before
+    /// the next batch lands and the list is one row longer, and a scan out
+    /// while the walk is still arriving would be answering about a list
+    /// that has moved on -- the walk is where the rows a reader is about
+    /// to type over come from.
+    const fn may_travel(self) -> bool {
+        matches!(self, Self::Everything | Self::Survivors)
+    }
+}
+
+/// How many rows a scoring has to be about before it is worth sending away.
+///
+/// Not a limit on anything -- every row is scored either way, and what a
+/// reader can find is the same. It is where a thread starts being cheaper
+/// than the work: a few thousand rows score in well under a millisecond,
+/// and a frame of lag bought for that would be the machinery becoming the
+/// thing it was added to fix.
+const SENT_AWAY: usize = 20_000;
+
 /// What a key did.
 #[derive(Debug)]
 pub enum PickerOutcome {
@@ -414,7 +514,17 @@ pub enum PickerOutcome {
 
 /// A prompt and a filtered list.
 pub struct Picker {
-    items: Vec<PickerItem>,
+    /// Behind an `Arc` so that scoring them somewhere else costs an atomic
+    /// increment rather than a copy of the list. A project's files are a
+    /// hundred thousand rows, and handing a worker its own copy of them --
+    /// or even of their labels alone -- is dearer than the scoring it was
+    /// sent away to do.
+    ///
+    /// Written through `Arc::make_mut`, which copies only while a scan is
+    /// actually out. A batch landing mid-scan pays for one; a reader typing
+    /// into a finished list pays for none, which is every keystroke that
+    /// matters.
+    items: Arc<Vec<PickerItem>>,
     query: Field,
     /// Indices into `items` that match, best first.
     ///
@@ -503,6 +613,32 @@ pub struct Picker {
     /// worse than one that never moved.
     prefer: Option<String>,
     layout: PickerLayout,
+    /// The query `matched` was worked out for.
+    ///
+    /// So that a query which grew can be told from one that changed, which
+    /// is what says whether the rows that matched last time are the only
+    /// rows worth asking about.
+    filtered_on: String,
+    /// A scoring waiting to be taken away and done.
+    ///
+    /// Left here rather than started: the picker is a view and knows no
+    /// threads. Whoever is driving it takes this, has it done and brings
+    /// the answer back.
+    wanted: Option<Scan>,
+    /// Which scoring the answer being waited for belongs to.
+    ///
+    /// `None` where nothing is out, which is also what says the list on
+    /// screen is the list the query asked for.
+    awaiting: Option<u64>,
+    /// How many scorings have been asked for, ever.
+    scans: u64,
+    /// Whether the last row a query could be about matched, as the last
+    /// pass left it.
+    ///
+    /// Kept because a pass may start part way along: a batch landing
+    /// between a commit and the files under it would otherwise begin with
+    /// no parent and drop them.
+    parent_matched: bool,
     matcher: Matcher,
     /// Whether a row with a depth belongs to the row above it.
     ///
@@ -614,10 +750,15 @@ impl Picker {
     #[must_use]
     pub fn new(items: Vec<PickerItem>, layout: PickerLayout) -> Self {
         let mut picker = Self {
-            items,
+            items: Arc::new(items),
             query: Field::new(),
             matched: Vec::new(),
             indices: Vec::new(),
+            filtered_on: String::new(),
+            wanted: None,
+            awaiting: None,
+            scans: 0,
+            parent_matched: false,
             window: Window::new(),
             outline: Option::None,
             tabs: Vec::new(),
@@ -1002,7 +1143,7 @@ impl Picker {
     /// goes back to the top: the rows are not the rows that were there, so
     /// where the selection was means nothing.
     pub fn replace(&mut self, items: Vec<PickerItem>) {
-        self.items = items;
+        self.items = Arc::new(items);
         self.window.set_focus(0);
         self.refilter();
     }
@@ -1026,7 +1167,7 @@ impl Picker {
     /// that matched. What a row *says about itself* is another matter, and
     /// [`Said`] is the whole of it.
     pub fn remark(&mut self, mut mark: impl FnMut(&PickerValue) -> Remark) {
-        for item in &mut self.items {
+        for item in Arc::make_mut(&mut self.items) {
             if let Remark::Now(now) = mark(&item.value) {
                 item.marker = now.marker;
                 item.enabled = now.enabled;
@@ -1053,7 +1194,7 @@ impl Picker {
     /// list impossible to read.
     pub fn relist(&mut self, items: Vec<PickerItem>) {
         let selected = self.window.focus();
-        self.items = items;
+        self.items = Arc::new(items);
         self.refilter();
         self.select_row(selected);
     }
@@ -1187,7 +1328,7 @@ impl Picker {
 
     /// One row, to fill in what only the application can work out.
     pub fn row_mut(&mut self, index: usize) -> Option<&mut PickerItem> {
-        self.items.get_mut(index)
+        Arc::make_mut(&mut self.items).get_mut(index)
     }
 
     /// Asks for a row to be selected once the list holds one with this label.
@@ -1261,7 +1402,7 @@ impl Picker {
     /// Puts a run of text into the query, which is what a paste is.
     pub fn put_in_query(&mut self, said: &str) {
         self.query.put(said);
-        self.refilter();
+        self.refilter_typed();
     }
 
     /// Puts the query's caret where a cell of its row is.
@@ -1469,13 +1610,55 @@ impl Picker {
         }
     }
 
+    /// The scoring this list wants done somewhere else, if it wants one.
+    ///
+    /// Taken rather than read: there is one of them and whoever takes it
+    /// owes an answer.
+    pub fn wanted_scan(&mut self) -> Option<Scan> {
+        self.wanted.take()
+    }
+
+    /// Whether a scoring is out, so the rows on screen are the rows the
+    /// query before this one asked for.
+    ///
+    /// What a view says about it is the same thing it says about a list
+    /// still arriving: something is happening, and the rows have not
+    /// changed yet.
+    #[must_use]
+    pub const fn is_matching(&self) -> bool {
+        self.awaiting.is_some()
+    }
+
+    /// An answer to a scoring this list asked for.
+    ///
+    /// One that is not the one being waited for is dropped: a reader who
+    /// typed again while it was out has asked a newer question, and drawing
+    /// the older answer would settle the list on a query they have already
+    /// moved past.
+    pub fn scan_arrived(&mut self, scanned: Scanned) {
+        if self.awaiting != Some(scanned.generation) {
+            return;
+        }
+        self.awaiting = None;
+        self.matched = scanned.matched;
+        if !self.ordered {
+            self.matched
+                .sort_by(|left, right| right.1.cmp(&left.1).then(left.0.cmp(&right.0)));
+        }
+        self.settled();
+    }
+
     /// Adds more items to a list that is still being gathered.
     ///
     /// The file walk arrives in batches, and the user is already typing while
     /// it does.
     pub fn extend(&mut self, items: impl IntoIterator<Item = PickerItem>) {
-        self.items.extend(items);
-        self.refilter();
+        let was = self.items.len();
+        Arc::make_mut(&mut self.items).extend(items);
+        // Only what the batch brought. The rows before it are rows the last
+        // pass already answered for, and a batch appends rather than
+        // changing any of them.
+        self.filter(Candidates::From(was));
     }
 
     /// Handles a key.
@@ -1595,7 +1778,7 @@ impl Picker {
             // reaches the key table and leaves Obelus from in here.
             _ => match self.query.handle_key(key) {
                 true => {
-                    self.refilter();
+                    self.refilter_typed();
                     PickerOutcome::Consumed
                 }
                 false => PickerOutcome::Ignored,
@@ -1645,19 +1828,85 @@ impl Picker {
         }
     }
 
+    /// Works the matched list out again, asking about every item.
+    ///
+    /// The one to call where anything but the query has moved: a list
+    /// relisted, a tab walked to, a preference put on it. What `matched`
+    /// held before says nothing about a list whose items are not the items
+    /// it was built from.
     fn refilter(&mut self) {
-        self.matched.clear();
-        // One more pass over a list this function already walks whole, and
-        // the only place that knows about every row rather than the visible
-        // ones.
+        self.filter(Candidates::Everything);
+    }
+
+    /// The same, after the reader has typed into the query.
+    ///
+    /// A query that only grew can only narrow: everything matching `rr`
+    /// matched `r`, because a fuzzy match is a subsequence and a longer
+    /// pattern is a stricter one. So the rows to ask about are the rows
+    /// that answered last time, which on a list of a hundred thousand
+    /// files is the difference between every keystroke costing the whole
+    /// tree and only the first one doing.
+    ///
+    /// Not a limit and not a guess -- the answer is the same list in the
+    /// same order, and nothing is hidden. A limit on a list is a limit on
+    /// what can be found in it, which is a trade this project has turned
+    /// down once already.
+    ///
+    /// Two lists cannot take it. A search's rows are answers rather than
+    /// candidates and never go through the matcher at all; and a nested
+    /// list's children are kept by whether their parent matched, which is
+    /// a fact about the order the items are in and not about any row on
+    /// its own.
+    fn refilter_typed(&mut self) {
+        let said = self.query.said();
+        let narrows = !said.is_empty()
+            && !self.filtered_on.is_empty()
+            && !self.searching
+            && !self.nests
+            && said.starts_with(&self.filtered_on);
+        match narrows {
+            true => self.filter(Candidates::Survivors),
+            false => self.filter(Candidates::Everything),
+        }
+    }
+
+    /// Works out which rows match, over the candidates it is given.
+    fn filter(&mut self, candidates: Candidates) {
+        // The rows before a batch are rows this already answered for, and a
+        // batch cannot change what they said: the walk appends. Re-asking
+        // about them is what made a list of a hundred thousand files cost
+        // the whole list once per batch of five hundred -- the same answer,
+        // worked out two hundred times over.
+        let from = match candidates {
+            Candidates::From(first) => first,
+            _ => 0,
+        };
+        // Nothing is cleared yet. Whether this pass does the scoring here
+        // or hands it out is not known until the candidates are counted,
+        // and a list emptied before that question is answered is a list
+        // that says there is nothing while it thinks.
+
         // A marker or an arrow: the column is kept for whichever of them a
         // row has, because both are drawn in it and the names of a list
         // have to line up whether the row beside them opens or is merely
         // marked.
-        self.marked = self
-            .items
-            .iter()
-            .any(|item| item.marker.is_some() || item.opens.is_some());
+        //
+        // A batch can only add rows, so a list that had one still has one
+        // and only the new rows are worth asking about. A narrowing pass
+        // adds none at all.
+        self.marked = match candidates {
+            Candidates::Survivors => self.marked,
+            Candidates::From(_) => {
+                self.marked
+                    || self.items[from..]
+                        .iter()
+                        .any(|item| item.marker.is_some() || item.opens.is_some())
+            }
+            Candidates::Everything => self
+                .items
+                .iter()
+                .any(|item| item.marker.is_some() || item.opens.is_some()),
+        };
 
         // The first tab is every row; any other one is its own. Scope tabs
         // do not filter at all -- every row in the list belongs to the scope
@@ -1681,12 +1930,16 @@ impl Picker {
         // the order of its lines -- both of which mean something, where a
         // match score here would not.
         if self.query.is_empty() || self.searching {
+            if !matches!(candidates, Candidates::From(_)) {
+                self.matched.clear();
+            }
             // An empty query keeps the given order, which is the order the
             // caller thought worth showing: recent buffers, the command table.
             self.matched.extend(
                 self.items
                     .iter()
                     .enumerate()
+                    .skip(from)
                     .filter(|(_, item)| showing(item))
                     .map(|(index, _)| (index, 0)),
             );
@@ -1698,8 +1951,62 @@ impl Picker {
             );
             // Whether the last row a query could be about matched, for the
             // rows that hang under it.
-            let mut parent = false;
-            for (index, item) in self.items.iter().enumerate() {
+            //
+            // A pass that starts part way along carries the flag the pass
+            // before it ended on, or a batch landing between a commit and
+            // its files would drop the files.
+            let mut parent = self.parent_matched;
+            let scan: Vec<usize> = match candidates {
+                Candidates::Survivors => {
+                    let mut kept: Vec<usize> =
+                        self.matched.iter().map(|(index, _)| *index).collect();
+                    // In the order the items are in, which is not the order
+                    // they are kept in: a ranked list holds them by score.
+                    // Worth nothing that was measured -- a hundred and
+                    // twenty-six thousand rows cost the same either way --
+                    // and kept because the rows come out of here in the
+                    // order they go in everywhere else, which is one less
+                    // thing to be surprised by.
+                    kept.sort_unstable();
+                    kept
+                }
+                _ => (from..self.items.len()).collect(),
+            };
+            // Big, and flat, and the loop is the wrong place for it. A
+            // nested list is not sent away because what keeps a child is
+            // whether its parent matched, which is a fact about the order
+            // the rows are in rather than about any row on its own -- and
+            // a list with tabs filters as it goes, which is the same kind
+            // of fact. Both of those are small.
+            //
+            // The number is not a limit on anything. It is where handing
+            // the work to another thread stops costing more than doing it:
+            // a scan of a few thousand rows is under a millisecond, and a
+            // frame of lag for that would be the machinery making the
+            // thing it was added to fix.
+            if candidates.may_travel() && scan.len() >= SENT_AWAY && !self.nests && !self.scopes {
+                self.scans += 1;
+                self.awaiting = Some(self.scans);
+                self.wanted = Some(Scan {
+                    generation: self.scans,
+                    query: self.query.said(),
+                    items: Arc::clone(&self.items),
+                    candidates: scan,
+                });
+                // What is on screen stays on screen, which is why nothing
+                // above cleared it: the rows the reader is looking at are
+                // the rows enter acts on, and a list that emptied itself
+                // while it thought would be Obelus saying there is nothing,
+                // about a question it has not answered yet.
+                self.filtered_on = self.query.said();
+                return;
+            }
+            // Doing it here after all, so what was on screen goes now.
+            if !matches!(candidates, Candidates::From(_)) {
+                self.matched.clear();
+            }
+            for index in scan {
+                let item = &self.items[index];
                 if !showing(item) {
                     continue;
                 }
@@ -1716,6 +2023,7 @@ impl Picker {
                     self.matched.push((index, score));
                 }
             }
+            self.parent_matched = parent;
             // Best first, and ties by the original order so the list does not
             // reshuffle as more items arrive. A list whose order is itself an
             // answer keeps it: the scoring above has already said which rows
@@ -1726,6 +2034,18 @@ impl Picker {
             }
         }
 
+        // What this pass answered for, so the next one can tell a query that
+        // grew from a query that changed.
+        self.filtered_on = self.query.said();
+        self.settled();
+    }
+
+    /// What every pass ends with, wherever the scoring was done.
+    ///
+    /// One piece rather than two, because a list that came back from a
+    /// worker and a list worked out here are the same list: two endings
+    /// would be somewhere for the selection to be put back differently.
+    fn settled(&mut self) {
         self.window.set_count(self.matched.len());
         // A query can narrow the list to rows that cannot be chosen, or move
         // one under the selection: whatever else happens, the selection is
@@ -1735,8 +2055,6 @@ impl Picker {
         }
 
         // Last, because it is the strongest claim about which row to start
-        // on: it beats both the order the items came in and where the
-        // selection happened to be before the list changed under it.
         if let Some(label) = self.prefer.as_deref()
             && let Some(row) = self
                 .matched
@@ -1816,7 +2134,7 @@ mod tests {
     }
 
     /// One row, for the tests above.
-    fn named(label: &str) -> PickerItem {
+    pub(super) fn named(label: &str) -> PickerItem {
         PickerItem {
             prose: false,
             marker: None,
@@ -1886,5 +2204,90 @@ mod tests {
             plain + about,
             "the prose did not take its room from the list"
         );
+    }
+}
+
+/// What a list of a whole project costs, which is the only size that ever
+/// showed any of this up.
+///
+/// A hundred and twenty-six thousand rows, which is what `ignored_files`
+/// makes of this repository once `target` has been built in a few times.
+/// Every number in the comments around `filter` was taken here, and taking
+/// them needs no walk, no application and no disk: the rows are made up,
+/// and what is being measured is the matching.
+///
+/// `#[ignore]`d because it is a stopwatch and asserts almost nothing. Run
+/// it deliberately:
+///
+/// ```text
+/// cargo test --release -p obelus-component --lib scale -- --ignored --nocapture
+/// ```
+///
+/// Release, because the answer in a debug build is the answer about
+/// nucleo at `opt-level = 0` rather than about anything written here.
+#[cfg(test)]
+mod scale {
+    use super::{tests::named, *};
+
+    fn paths(count: usize) -> Vec<PickerItem> {
+        (0..count)
+            .map(|n| {
+                named(&format!(
+                    "target/debug/deps/obelus_app-{n:06}/build/some-crate-{n}/out/render.rs"
+                ))
+            })
+            .collect()
+    }
+
+    #[test]
+    #[ignore = "a stopwatch"]
+    fn how_long_a_hundred_thousand_rows_take() {
+        let count = 126_000;
+        let built = std::time::Instant::now();
+        let items = paths(count);
+        println!("building {count} rows: {:?}", built.elapsed());
+
+        // The walk's own shape: batches of five hundred into a list.
+        let batched = std::time::Instant::now();
+        let mut picker = Picker::new(Vec::new(), PickerLayout::FullArea);
+        for batch in items.chunks(512) {
+            picker.extend(batch.to_vec());
+        }
+        println!("the walk, in batches of 512: {:?}", batched.elapsed());
+        assert_eq!(picker.match_count(), count);
+
+        // And then four of the same letter, which is what was reported.
+        for press in 1..=4 {
+            let typed = std::time::Instant::now();
+            picker.handle_key(
+                &crossterm::event::KeyEvent::new(
+                    crossterm::event::KeyCode::Char('r'),
+                    crossterm::event::KeyModifiers::NONE,
+                ),
+                40,
+            );
+            println!(
+                "'r' x{press}: {:?}, {} rows left",
+                typed.elapsed(),
+                picker.match_count()
+            );
+        }
+
+        // The control. `set_query` takes the full-scan path, so this is the
+        // same four-character pattern over the same hundred and twenty-six
+        // thousand rows with no narrowing at all: whatever it costs is the
+        // pattern's, not the narrowing's.
+        let whole = std::time::Instant::now();
+        picker.set_query("rrrr");
+        println!(
+            "a full scan for `rrrr`: {:?}, {} rows",
+            whole.elapsed(),
+            picker.match_count()
+        );
+
+        // And one character, scanned whole, for the other end of it.
+        let one = std::time::Instant::now();
+        picker.set_query("r");
+        println!("a full scan for `r`: {:?}", one.elapsed());
     }
 }

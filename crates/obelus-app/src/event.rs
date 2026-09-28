@@ -143,6 +143,12 @@ pub enum Event {
     Counted(Box<obelus_search::counts::Counted>),
     /// A file on disk changed.
     Watched(obelus_watch::Changed),
+    /// A list finished scoring its rows against a query.
+    ///
+    /// The scoring of a project's whole file list is tens of milliseconds,
+    /// which on the loop is a keystroke the reader watches arrive. So it
+    /// goes where every other long answer goes: a worker, and back here.
+    Scanned(Box<obelus_component::picker::Scanned>),
 }
 
 impl Event {
@@ -181,6 +187,7 @@ impl Event {
             Self::Notes(_) => "Notes",
             Self::Counted(_) => "Counted",
             Self::Watched(_) => "Watched",
+            Self::Scanned(_) => "Scanned",
         }
     }
 }
@@ -193,6 +200,12 @@ macro_rules! from_worker {
             }
         })*
     };
+}
+
+impl From<Box<obelus_component::picker::Scanned>> for Event {
+    fn from(scanned: Box<obelus_component::picker::Scanned>) -> Self {
+        Self::Scanned(scanned)
+    }
 }
 
 // What joins a worker's own events to the one channel the loop reads. The
