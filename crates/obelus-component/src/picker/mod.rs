@@ -416,6 +416,8 @@ pub struct Scan {
     pub items: Arc<Vec<PickerItem>>,
     /// And which of them to ask about, in the order they are in.
     pub candidates: Vec<usize>,
+    /// Which listing of the rows these positions are in.
+    pub listings: u64,
 }
 
 /// What a [`Scan`] found.
@@ -423,9 +425,9 @@ pub struct Scan {
 pub struct Scanned {
     /// Which scoring it was.
     pub generation: u64,
-    /// The rows it was about, so the picker can tell whether they are
-    /// still the rows it holds.
-    pub items: Arc<Vec<PickerItem>>,
+    /// Which listing of the rows it was about, so an answer that outlived
+    /// the rows it is about is dropped rather than drawn.
+    pub listings: u64,
     /// The rows that matched and what they scored.
     pub matched: Vec<(usize, u32)>,
 }
@@ -452,7 +454,7 @@ pub fn scan(asked: &Scan) -> Scanned {
     }
     Scanned {
         generation: asked.generation,
-        items: Arc::clone(&asked.items),
+        listings: asked.listings,
         matched,
     }
 }
@@ -643,12 +645,21 @@ pub struct Picker {
     /// is what keeping the old rows on screen across a hand-off did until
     /// this was here to stop it.
     ///
-    /// Compared by pointer rather than by a count of changes: `Arc` already
-    /// knows, and `make_mut` gives a fresh one exactly when the rows are
-    /// copied out from under a scoring that is still reading them.
-    matched_for: Arc<Vec<PickerItem>>,
+    /// A count rather than the rows themselves. Holding a second `Arc` to
+    /// them was the obvious way and is the wrong one: `make_mut` copies
+    /// whenever anything else is holding the rows, so a picker that kept
+    /// one deep-copied the whole list on every batch of the walk and then
+    /// found its own rows unrecognisable -- which is a list that matches
+    /// nothing at all.
+    ///
+    /// Counted up only where the rows are *replaced*. A batch appends, and
+    /// appending leaves every position that already existed pointing at
+    /// the row it always did.
+    matched_for: u64,
     /// How many scorings have been asked for, ever.
     scans: u64,
+    /// How many times the rows have been replaced wholesale.
+    listings: u64,
     /// Whether the last row a query could be about matched, as the last
     /// pass left it.
     ///
@@ -775,7 +786,8 @@ impl Picker {
             filtered_on: String::new(),
             wanted: None,
             awaiting: None,
-            matched_for: Arc::clone(&items),
+            matched_for: 0,
+            listings: 0,
             scans: 0,
             parent_matched: false,
             window: Window::new(),
@@ -1163,6 +1175,7 @@ impl Picker {
     /// where the selection was means nothing.
     pub fn replace(&mut self, items: Vec<PickerItem>) {
         self.items = Arc::new(items);
+        self.listings += 1;
         self.window.set_focus(0);
         self.refilter();
     }
@@ -1214,6 +1227,7 @@ impl Picker {
     pub fn relist(&mut self, items: Vec<PickerItem>) {
         let selected = self.window.focus();
         self.items = Arc::new(items);
+        self.listings += 1;
         self.refilter();
         self.select_row(selected);
     }
@@ -1663,7 +1677,7 @@ impl Picker {
         // came back with are positions in a list this picker no longer
         // holds -- which is a panic on the next frame rather than a wrong
         // row. Asked again instead, against the rows there are now.
-        if !Arc::ptr_eq(&scanned.items, &self.items) {
+        if scanned.listings != self.listings {
             self.awaiting = None;
             self.refilter();
             return;
@@ -2021,6 +2035,7 @@ impl Picker {
                     query: self.query.said(),
                     items: Arc::clone(&self.items),
                     candidates: scan,
+                    listings: self.listings,
                 });
                 // What is on screen stays on screen, which is why nothing
                 // above cleared it: the rows the reader is looking at are
@@ -2031,9 +2046,8 @@ impl Picker {
                 // Only where they are rows of *this* list. `replace` and
                 // `relist` hand over different ones, and positions kept
                 // across that are numbers about a list that is gone.
-                if !Arc::ptr_eq(&self.matched_for, &self.items) {
+                if self.matched_for != self.listings {
                     self.matched.clear();
-                    self.matched_for = Arc::clone(&self.items);
                     self.settled();
                 }
                 self.filtered_on = self.query.said();
@@ -2084,7 +2098,7 @@ impl Picker {
     /// worker and a list worked out here are the same list: two endings
     /// would be somewhere for the selection to be put back differently.
     fn settled(&mut self) {
-        self.matched_for = Arc::clone(&self.items);
+        self.matched_for = self.listings;
         self.window.set_count(self.matched.len());
         // A query can narrow the list to rows that cannot be chosen, or move
         // one under the selection: whatever else happens, the selection is
@@ -2253,6 +2267,57 @@ mod travelling {
     /// A list of `rows`, every one of which matches `row`.
     fn rows(count: usize) -> Vec<PickerItem> {
         (0..count).map(|n| named(&format!("row-{n}"))).collect()
+    }
+
+    /// A scoring that goes away and comes back matches what it should.
+    ///
+    /// The happy path, which nothing held until a picker that handed every
+    /// scoring out and accepted none of the answers shipped: it matched
+    /// nothing at all, and every test here passed, because each of them was
+    /// about an answer being *refused*.
+    ///
+    /// Deliberate break: refuse the answer in `scan_arrived` whatever it
+    /// says. The list keeps whatever was on screen when the query changed
+    /// and never narrows again.
+    #[test]
+    fn a_scoring_that_comes_back_is_the_list() {
+        let mut picker = Picker::new(rows(SENT_AWAY * 2), PickerLayout::FullArea);
+        picker.set_query("row-7");
+        let asked = picker.wanted_scan().expect("a scoring was asked for");
+        assert!(picker.is_matching());
+
+        picker.scan_arrived(scan(&asked));
+        assert!(!picker.is_matching(), "it is still waiting");
+        let found = picker.matches().count();
+        assert!(found > 0, "a query that matches rows matched none");
+        assert!(found < SENT_AWAY * 2, "it narrowed nothing: {found}");
+        assert!(
+            picker.matches().all(|item| item.label.contains('7')),
+            "a row that does not hold the query"
+        );
+    }
+
+    /// And a batch landing while one is out does not throw it away.
+    ///
+    /// Appending leaves every position that already existed pointing at the
+    /// row it always did, so the answer is still about rows this list
+    /// holds. Refusing it there is what a picker does when it identifies
+    /// the rows by the `Arc` they are in: the walk copies them out from
+    /// under the scoring on the very next batch, every answer looks stale,
+    /// and nothing is ever matched.
+    ///
+    /// Deliberate break: count `listings` up in `extend` as well.
+    #[test]
+    fn a_batch_while_a_scoring_is_out_does_not_refuse_it() {
+        let mut picker = Picker::new(rows(SENT_AWAY * 2), PickerLayout::FullArea);
+        picker.set_query("row-7");
+        let asked = picker.wanted_scan().expect("a scoring was asked for");
+
+        picker.extend(vec![named("row-70000")]);
+        picker.scan_arrived(scan(&asked));
+
+        assert!(!picker.is_matching(), "the answer was thrown away");
+        assert!(picker.matches().count() > 0, "it matched nothing");
     }
 
     /// A position is about a list, and the list can be swapped while a
