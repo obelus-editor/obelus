@@ -1,0 +1,114 @@
+# What every push has to pass.
+#
+# The commands are the ones in `AGENTS.md`, word for word, so that a reader
+# can run any step of this at their own terminal and get the same answer. A
+# CI that checks something the project does not is a CI that goes red for a
+# reason nobody can reproduce.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+# A second push to a branch makes the first one's answer moot.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # `missing_docs` is a *warning* in the workspace's lints, so a public item
+  # with no doc comment is only refused where warnings are refused. Registry
+  # dependencies are compiled with `--cap-lints allow`, so this is about
+  # Obelus's own code and nothing that Obelus depends on.
+  RUSTFLAGS: -D warnings
+
+jobs:
+  format:
+    name: cargo +nightly fmt
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      # Nightly, and not stable: `.rustfmt.toml` names five nightly-only
+      # options and stable rustfmt ignores them in silence, so a stable
+      # check here would pass a file the project would reformat.
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
+      - run: cargo +nightly fmt --all --check
+
+  clippy:
+    name: cargo clippy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-features --all-targets --locked -- -D warnings
+
+  test:
+    # Every platform Obelus is released on runs the whole suite. The suite
+    # was written for that: a fixture is compared after both spellings of a
+    # separator are made one (`one_spelling`), `.gitattributes` keeps the
+    # line feeds the same on a Windows checkout, and the fake agent asks
+    # `cygpath` how the Obelus beside it spells a directory. Anything here
+    # that only passes on Linux is a test that is wrong about the program,
+    # which is the whole point of running it.
+    name: cargo test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      # One platform's failure is not the others' answer, so the others
+      # finish and say what they found.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, windows-2025]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.os }}
+      # The `#[ignore]`d ones are left out on purpose: they wait on a real
+      # rust-analyzer and walk a corpus of diffs, which is something to run
+      # deliberately (`cargo test -- --ignored`) and not on every push.
+      #
+      # `OBELUS_REQUIRE_LSP` is not set either. A missing rust-analyzer
+      # skips those tests rather than failing them, and what a runner has
+      # installed is not a thing this repository decides.
+      - run: cargo test --locked
+
+  scripts:
+    # The two install scripts, which are the one thing here that nothing
+    # else compiles. A shell script with a typo in it is found by whoever
+    # runs `curl | sh` first, and that is the worst possible reader to find
+    # it. Both are checked on the same runner: `shellcheck` and `pwsh` are
+    # already on it.
+    name: the install scripts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - run: sh -n contrib/install.sh
+      - run: shellcheck --shell=sh contrib/install.sh
+      # Parsed, not run. What it would do is download a release, and there
+      # is nothing to say the release it picked is the one this commit is.
+      - shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path contrib/install.ps1), [ref] $null, [ref] $errors) | Out-Null
+          if ($errors) {
+            $errors | ForEach-Object { Write-Host "::error::$($_.Message)" }
+            exit 1
+          }
+          Write-Host 'install.ps1 parses'
