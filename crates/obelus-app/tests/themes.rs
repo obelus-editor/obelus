@@ -1,9 +1,10 @@
 //! Themes read from a file.
 //!
-//! What is compiled in is two of them. What a reader wants is their own
-//! colours, and what a desktop that themes every program it has wants is
-//! somewhere to write them -- and neither can be served by a palette that
-//! only exists inside the binary.
+//! What is compiled in is a shelf of them, and a shelf is still a shelf:
+//! what a reader wants is their own colours, and what a desktop that
+//! themes every program it has wants is somewhere to write them -- and
+//! neither can be served by a palette that only exists inside the binary,
+//! however many are on it.
 
 mod support;
 

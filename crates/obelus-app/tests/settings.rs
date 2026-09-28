@@ -136,7 +136,10 @@ fn a_choice_opens_the_list_every_other_choice_uses() {
             .matches()
             .map(|item| item.label.clone())
             .collect::<Vec<_>>(),
-        ["dark", "light"],
+        obelus_theme::builtin::ALL
+            .iter()
+            .map(|(name, _)| (*name).to_string())
+            .collect::<Vec<_>>(),
         "not the theme's choices"
     );
     // Opened on the one in force, so the list starts by saying which.
@@ -144,18 +147,32 @@ fn a_choice_opens_the_list_every_other_choice_uses() {
         picker.selected_item().map(|item| item.label.clone()),
         Some("dark".to_string())
     );
-    // And the settings are still there, underneath.
+    // And the settings are still there, underneath. Twenty rows rather than
+    // twelve: the list is allowed ten of them and there are eleven themes to
+    // put in it, so on a screen that short there is nothing left for what it
+    // is over -- which is the screen being small, not the list being wrong.
     assert!(app.settings().is_some(), "the view went away");
-    let dump = support::render(&mut app, 66, 12);
+    let dump = support::render(&mut app, 66, 20);
     assert!(
         support::text_block(&dump).contains("Appearance"),
         "the settings are not behind the list:\n{dump}"
     );
 
     // It filters by typing, which is the whole reason it is this list.
-    support::type_text(&mut app, "li");
+    let all = app.picker().expect("the choices").match_count();
+    support::type_text(&mut app, "light");
     let picker = app.picker().expect("the choices");
-    assert_eq!(picker.match_count(), 1, "the query narrowed nothing");
+    assert!(picker.match_count() < all, "the query narrowed nothing");
+    // Narrowed, and not down to one: three of the themes have `light` in
+    // their names. What the reader typed is the whole of this one's, which
+    // is what puts it at the top -- and asserting a count here instead
+    // would be a test that has to be edited every time a theme is added,
+    // which is a test about the shelf rather than about the list.
+    assert_eq!(
+        picker.selected_item().map(|item| item.label.clone()),
+        Some("light".to_string()),
+        "the closest match is not the one typed"
+    );
     support::press(&mut app, KeyCode::Enter);
 
     assert!(app.picker().is_none(), "the list stayed open");

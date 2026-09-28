@@ -1,0 +1,55 @@
+screen 60x20  editor 60x18  status 60x1
+-- text --
+ 0|   1 ▾fn main() {                                           
+ 1|   2      let greeting = "你好";                            
+ 2|   3      println!("{greeting} world");                     
+ 3|   4  }                                                     
+ 4|   5                                                        
+ 5|                                                            
+ 6|                                                            
+ 7|────────────────────────────────────────────────────────────
+ 8| dark                                                      █
+ 9| light                                                     █
+10| gruvbox-dark                                              █
+11| gruvbox-light                                             █
+12| catppuccin-mocha                                          █
+13| catppuccin-latte                                          █
+14| nord                                                      █
+15| tokyo-night                                               █
+16| solarized-dark                                            █
+17| solarized-light                                           █
+18|────────────────────────────────────────────────────────────
+19| >                                                          
+-- style --
+ 0|aaabacddaeeeebbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 1|aaacaaaaaadddaaaaaaaaaaaaffffffbaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 2|aaacaaaaaaeeeeeeeebffffffffffffffffffbbaaaaaaaaaaaaaaaaaaaaa
+ 3|aaacaabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 4|aaacaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 6|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 7|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 8|gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggb
+ 9|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+10|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+11|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+12|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+13|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+14|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+15|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+16|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
+17|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaah
+18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+19|iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii
+-- legend --
+a fg=#e4e4e7 bg=#18181b
+b fg=#a1a1aa bg=#18181b
+c fg=#52525b bg=#18181b
+d fg=#c084fc bg=#18181b
+e fg=#60a5fa bg=#18181b
+f fg=#a3e635 bg=#18181b
+g fg=#e4e4e7 bg=#27272a
+h fg=#404047 bg=#18181b
+i fg=#d4d4d8 bg=#18181b
+-- cursor --
+3,19

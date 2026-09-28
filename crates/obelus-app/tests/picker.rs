@@ -1324,9 +1324,17 @@ fn a_long_label_never_overlaps_the_key() {
     }
 }
 
-/// The theme picker is a short, fixed list, so it hugs the status bar like the
-/// palette does. Covering the code to offer two choices would be the wrong
-/// trade: the reason to change theme is usually the code you are looking at.
+/// The theme picker hugs the status bar like the palette does, rather than
+/// taking the region the way a file list does. The reason to change theme is
+/// usually the code you are looking at, so the code stays on the screen.
+///
+/// It used to say "a short, fixed list", and it was short because there were
+/// two themes in the binary. There are eleven, so it is now as long as the
+/// palette and capped the same way -- which is what `COMPACT_ROWS` is, and
+/// what this holds it to. Twenty rows rather than twelve because twelve is
+/// shorter than the cap: a list allowed ten rows, with its rule and its
+/// prompt, is the whole of a terminal that small, and that is the terminal
+/// being small rather than the list being wrong.
 #[test]
 fn the_theme_picker_leaves_the_code_visible() {
     let mut app = app();
@@ -1334,15 +1342,25 @@ fn the_theme_picker_leaves_the_code_visible() {
     type_text(&mut app, "theme");
     press(&mut app, KeyCode::Enter);
 
-    let dump = support::render(&mut app, 60, 12);
+    let dump = support::render(&mut app, 60, 20);
     let text = support::text_block(&dump);
 
     assert!(text.contains("dark") && text.contains("light"), "{dump}");
     assert!(
         text.contains("fn main()"),
-        "the code was covered by two rows of choices:\n{dump}"
+        "the code was covered by the choices:\n{dump}"
     );
-    support::check("themes_60x12", &dump);
+    // Capped, which is a sharper thing than "some code is left": a list that
+    // grew a row per theme would pass the line above on a terminal tall
+    // enough and be the whole screen on an ordinary one. There are eleven
+    // themes and the cap is ten, so the last of them is below the fold --
+    // reached by typing its name or by walking down, which is what a list
+    // with more rows than room is for.
+    assert!(
+        !text.contains("high-contrast"),
+        "the eleventh theme is on screen, so the list grew to fit them all:\n{dump}"
+    );
+    support::check("themes_60x20", &dump);
 }
 
 /// A question no server can answer is dim rather than gone, and keeps the
