@@ -138,6 +138,33 @@ pub fn project(root: &Path) -> String {
         .collect()
 }
 
+/// The working tree a path is in, where it is in one.
+///
+/// Which is the project a reader opening a file means: `ob src/main.rs`
+/// names the tree that file belongs to, not the one directory it happens
+/// to sit in -- where the file list would hold four files, the search
+/// would never leave them, and the project's own settings would be looked
+/// for in a directory nobody puts them in.
+///
+/// This tree and not [`main_checkout`], which is the other half of the
+/// same question and deliberately answers differently: what Obelus
+/// *keeps* about a project is shared by every worktree of it, and what it
+/// *shows* is the one the reader is actually in. A linked worktree has
+/// its own files, and they are the files on the screen.
+///
+/// Made absolute rather than canonical, which is the rule the command
+/// line already follows: a tree reached through a symlink stays under the
+/// name the reader typed.
+///
+/// `None` where git has never heard of the path, and for a bare
+/// repository, which has no working tree to read.
+#[must_use]
+pub fn worktree(path: &Path) -> Option<PathBuf> {
+    let repository = repository(path)?;
+    let work_dir = repository.workdir()?;
+    std::path::absolute(work_dir).ok()
+}
+
 /// The checkout a project's things are named after, where git knows of one.
 ///
 /// The main worktree, which every linked one shares: `common_dir` is its

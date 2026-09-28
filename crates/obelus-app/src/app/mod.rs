@@ -3668,10 +3668,14 @@ pub struct Opening {
 
 /// What a set of command-line paths means.
 ///
-/// A file names the project it is in and is opened; a directory *is* the
-/// project, and the question it leaves -- which file -- is the one the list
-/// answers. The first path decides the project, because a reader who names
-/// two has said which they meant first.
+/// A file names the tree it is in and is opened: the repository, which is
+/// what a reader means by the project, and the directory the file sits in
+/// only where git has never heard of it. A directory *is* the project --
+/// naming one is a reader saying where to work, so it is taken at its word
+/// and not widened to the repository over it -- and the question it leaves,
+/// which file, is the one the list answers. The first path decides the
+/// project, because a reader who names two has said which they meant
+/// first.
 ///
 /// Absolute, and by the same rule [`obelus_buffer::Buffer::open`] uses on
 /// a file: made absolute rather than canonical, so a project reached through
@@ -3694,11 +3698,17 @@ pub fn opening(paths: &[PathBuf]) -> Opening {
         .collect();
     let root = match first.is_dir() {
         true => first.clone(),
-        // The directory the file is in. Absolute first, because the parent
-        // of a bare `main.rs` is nothing at all.
-        false => absolute(first)
-            .parent()
-            .map_or_else(|| absolute(first), Path::to_path_buf),
+        // The tree the file is in, which is what a reader naming a file
+        // means by the project: `ob src/main.rs` from anywhere opens the
+        // repository that file belongs to. The directory it sits in is
+        // the answer only where git has never heard of it -- a file in
+        // `/tmp`, a scratch note, something downloaded. Absolute first,
+        // because the parent of a bare `main.rs` is nothing at all.
+        false => obelus_git::worktree(&absolute(first)).unwrap_or_else(|| {
+            absolute(first)
+                .parent()
+                .map_or_else(|| absolute(first), Path::to_path_buf)
+        }),
     };
     Opening {
         root: Some(absolute(&root)),
