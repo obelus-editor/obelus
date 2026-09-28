@@ -24,7 +24,7 @@
   })();
 </script>
 </head>
-<body>
+<body data-copy="Copy" data-copied="Copied">
 
 <header class="top">
   <a class="wordmark" href="#top">
@@ -82,23 +82,21 @@
       <h3>Install</h3>
       <p>One script per shell, and which you want is which shell you are in. Either one takes the latest release, checks what it downloaded against the release's own <code>SHA256SUMS</code>, and puts <code>ob</code> on your PATH.</p>
 
-      <pre><code># Linux and macOS
-curl -fsSL https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.sh | sh
+      <h4>Linux and macOS</h4>
+      <pre><code>curl -fsSL https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.sh | sh</code></pre>
 
-# Windows, in PowerShell
-irm https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.ps1 | iex</code></pre>
+      <h4>Windows, in PowerShell</h4>
+      <pre><code>irm https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.ps1 | iex</code></pre>
 
+      <h4>The window as well</h4>
       <p><code>obg</code> is a second binary and is asked for by name. Everything after <code>-s --</code> goes to the script; a pipe into <code>iex</code> has nowhere to put an argument, so on Windows the script is fetched first instead.</p>
 
-      <pre><code># the window, or both of them
-curl -fsSL .../contrib/install.sh | sh -s -- --bin obg
-curl -fsSL .../contrib/install.sh | sh -s -- --bin both
+      <pre><code>curl -fsSL https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.sh | sh -s -- --bin both</code></pre>
 
-# the same, on Windows
-irm .../contrib/install.ps1 -OutFile install.ps1
+      <pre><code>irm https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.ps1 -OutFile install.ps1
 .\install.ps1 -Binary both</code></pre>
 
-      <p><code>--dir</code> says where to put it and <code>--help</code> lists the rest. <a href="https://github.com/sunli829/obelus/releases">The releases</a> carry an archive for every platform as well as a <code>.deb</code>, an <code>.rpm</code>, an AppImage and a macOS <code>.app</code> — and on a Linux desktop one of those is the one to install, because <code>obg</code> from the script is a binary and nothing else, while a launcher needs a desktop entry and an icon beside it. There is no <code>obg</code> for musl at all: the window finds Vulkan, Wayland and X11 by <code>dlopen</code>, which a static binary cannot do, and the script says so rather than leaving you something that will not start.</p>
+      <p><code>--bin obg</code> is the window on its own, <code>--dir</code> says where to put it, and <code>--help</code> lists the rest. <a href="https://github.com/sunli829/obelus/releases">The releases</a> carry an archive for every platform as well as a <code>.deb</code>, an <code>.rpm</code>, an AppImage and a macOS <code>.app</code> — and on a Linux desktop one of those is the one to install, because <code>obg</code> from the script is a binary and nothing else, while a launcher needs a desktop entry and an icon beside it. There is no <code>obg</code> for musl at all: the window finds Vulkan, Wayland and X11 by <code>dlopen</code>, which a static binary cannot do, and the script says so rather than leaving you something that will not start.</p>
 
       <h4>From source</h4>
       <p>Which needs nothing but a stable Rust toolchain (edition 2024).</p>

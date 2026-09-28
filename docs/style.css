@@ -110,6 +110,16 @@ pre {
 }
 pre code { background: none; padding: 0; font-size: inherit; }
 
+/* A command is there to be run, so it is there to be taken away. The button
+   is a sibling of the <pre> rather than inside it: a <pre> scrolls, and
+   anything positioned within one walks off sideways with the text. It sits
+   on the frame's top edge rather than inside the box, because an install
+   line is wider than the box on most screens -- over the text, the button
+   covers the end of the very command it is offering. */
+.block { position: relative; }
+.block > .copy { position: absolute; top: -1.1rem; right: 0.7rem; }
+.copy.done { color: var(--function); border-color: var(--function); }
+
 /* A key in a cap: a shade off the page, an outline, and a lip under it --
    the shape a window draws the keys at the foot of a view in. One cap holds
    a whole chord, which is how Obelus writes one. */
