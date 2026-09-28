@@ -42,6 +42,7 @@
 
   <nav class="contents" aria-label="Contents">
     <ol>
+      <li><a href="#start"><span>上手</span></a></li>
       <li><a href="#why"><span>为什么写它</span></a></li>
       <li><a href="#highlights"><span>几个亮点</span></a></li>
       <li><a href="#tenets"><span>设计理念</span></a></li>
@@ -49,7 +50,6 @@
       <li><a href="#notes"><span>笔记</span></a></li>
       <li><a href="#agent"><span>和 agent 对话</span></a></li>
       <li><a href="#many"><span>多窗口、多 worktree</span></a></li>
-      <li><a href="#start"><span>上手</span></a></li>
       <li><a href="#keys"><span>按键与命令</span></a></li>
       <li><a href="#config"><span>配置与主题</span></a></li>
     </ol>
@@ -76,206 +76,8 @@
       </figure>
     </div>
 
-    <section id="why">
-      <h2><span class="num">01</span>为什么写它</h2>
-
-      <p><strong>说实话：它首先是写给我自己用的。</strong>每一个取舍先回答的是「我用着顺不顺手」，而不是「会不会有人因为缺某个功能而不用」。</p>
-
-      <p>vim 那套用法我一直不习惯。模式、<code>hjkl</code>、冒号命令——它们对习惯的人来说是肌肉记忆，对我来说是每次进终端都要重新想一遍的东西。我想要的是：<em>打开就能读</em>，方向键就是方向键，<kbd>Ctrl+c</kbd> 就是复制，不用先按 <kbd>Esc</kbd> 想一想自己在哪个模式里。</p>
-
-      <p>另一半原因是这几年读代码的方式真的变了。AI 写走了很多行，我坐在终端前面做的事越来越偏向「读、确认、标出存疑的地方、问一下 agent」，而不是「敲」。终端里好用的编辑器不少，但它们都是<em>编辑器</em>：功能表按编辑器的清单展开——多光标、宏、补全、片段。我要的东西在另一条线上：语法树、git 的时间线、语言服务器，以及和 agent 的对话——全部围着「读」这一件事组织。</p>
-
-      <h3>我平时是什么样子</h3>
-      <p>现在用 AI 写代码，我经常同时推进好几个项目：开着一堆 claude code、codex，一个编辑器，外加一份 todo 用来计划下一步做什么。同一个仓库我也常常开很多个 worktree，各自完善不同的部分。Obelus 是照着这个样子长的：它不分屏，而是假定你同时开着好几个，并<a href="#many">为此做了准备</a>。</p>
-      <p>那份 todo 也是我把<a href="#notes">笔记</a>做进 Obelus 的原因：计划下一步这件事发生在读代码的中间，而不是发生在另一个应用里。</p>
-    </section>
-
-    <section id="highlights">
-      <h2><span class="num">02</span>几个亮点</h2>
-
-      <ul class="beats">
-        <li><span>每条笔记都能有自己的对话，明天回来它还在</span><a class="where" href="#agent">和 agent 对话 ›</a></li>
-        <li><span>就着一条笔记和 agent 聊，它会把下一步写在那条笔记底下——先问过你</span><a class="where" href="#planning">笔记 ›</a></li>
-        <li><span>上周写在某一行旁边的笔记，靠 git 还指着当初那一行</span><a class="where" href="#notes">笔记 ›</a></li>
-        <li><span>一个仓库的几个 worktree 共用一份笔记，两个窗口同时记不会互相抹掉</span><a class="where" href="#many">多窗口 ›</a></li>
-        <li><span>同一个文件不止一种读法，也不止一种语言</span><a class="where" href="#what">读代码 ›</a></li>
-        <li><span>没有模式：按键像 VS Code、Emacs 那样按了就生效，不是 vim、helix 那一套</span><a class="where" href="#keys">按键 ›</a></li>
-        <li><span>同一个 reader，跑在终端里或跑在自己的窗口里，后者收得到终端发不出的键</span><a class="where" href="#what">读代码 ›</a></li>
-      </ul>
-    </section>
-
-    <section id="tenets">
-      <h2><span class="num">03</span><span>设计理念</span></h2>
-
-      <p>这些不是事后总结的口号，是遇到每个取舍时反复拿来做决定的那几句话。大多是踩过一次才写下来的。</p>
-
-      <ol class="tenets">
-        <li>
-          <span class="no">01</span>
-          <div>
-            <p class="claim">读是主角，编辑是顺带的。</p>
-            <p class="why">叫它「编辑器」，它就会被按编辑器的清单去量：多光标？宏？片段？——那些它一个都不想要。有基本的编辑，是为了读到一半顺手改一行。</p>
-          </div>
-        </li>
-        <li>
-          <span class="no">02</span>
-          <div>
-            <p class="claim">不用先学一门方言。</p>
-            <p class="why">没有模式。按键像 VS Code、Emacs 那样，按下去就做它说的事；不像 vim、helix，同一个键干什么要看你当时在哪个模式。方向键就是方向键，<kbd>Ctrl+c</kbd> 就是复制，<kbd>Ctrl+z</kbd> 就是撤销。</p>
-          </div>
-        </li>
-        <li>
-          <span class="no">03</span>
-          <div>
-            <p class="claim">不做分屏。</p>
-            <p class="why">想并排看两个文件？再开一个 Obelus 就行了。这不是「还没做」，是不会做。因此多开才是常态，Obelus 为这件事做了准备——见 <a href="#many">多窗口、多 worktree</a>。</p>
-          </div>
-        </li>
-        <li>
-          <span class="no">04</span>
-          <div>
-            <p class="claim">已经发生的改动在文件里；还在请求的改动在对话里。</p>
-            <p class="why">agent 改完的，就是工作区和上次提交的差别，边栏一直在画它；对话里再画一遍，就是同一件事的第二个说法。它<em>正在请求</em>做的改动才摆在对话里，而且事后留着。</p>
-          </div>
-        </li>
-        <li>
-          <span class="no">05</span>
-          <div>
-            <p class="claim">文件在你读的时候被改写，是常态。</p>
-            <p class="why">不是意外——agent 在改你正开着的文件，格式化工具在跑，分支在脚底下换。所以 Obelus 自己重读，不问你，位置也不丢；文件没了就标上 <code>[stale]</code>，内容仍然留在屏幕上。</p>
-          </div>
-        </li>
-      </ol>
-    </section>
-
-    <section id="what">
-      <h2><span class="num">04</span><span>读代码</span></h2>
-
-      <div class="cards">
-        <div class="card">
-          <h4>git</h4>
-          <ul>
-            <li>边栏标出改了哪些行，和 <code>git diff</code> 说的是同一件事</li>
-            <li>滚动条内侧是整份文件的改动地图</li>
-            <li><kbd>Alt+d</kbd> 就地展开 / 收起一个 hunk，<kbd>Alt+p</kbd> / <kbd>Alt+n</kbd> 在改动之间走</li>
-            <li>边栏显示这一行最后是谁改的（可关）</li>
-            <li>文件的历史 <kbd>F9</kbd>、项目的历史 <kbd>F10</kbd>、这一行是哪个提交写的 <kbd>F11</kbd>；提交信息悬在文件上方，远端还没见过的提交有标记</li>
-            <li>只读：Obelus 不碰你的仓库，也不替你跑 git</li>
-          </ul>
-        </div>
-
-        <div class="card">
-          <h4>在终端里，或者在窗口里</h4>
-          <ul>
-            <li><code>ob</code> 是终端，<code>obg</code> 是窗口——gvim 之于 vim 的那种关系，不是第二个程序：同一套网格、同一套视图、同一套键</li>
-            <li>窗口是为了终端给不了的两件事。终端分不出 <kbd>Ctrl+i</kbd> 和 <kbd>Tab</kbd>、<kbd>Ctrl+m</kbd> 和 <kbd>Enter</kbd>、<kbd>Ctrl+[</kbd> 和 <kbd>Esc</kbd>——各自都只有一个字节——而 <kbd>Ctrl+Shift+X</kbd> 大多数终端干脆什么都不发</li>
-            <li>而且它用自己带的字体画，不用赌你装了哪一套：字形编译在二进制里，所以没有方框，也没有开关要找</li>
-            <li>它自己画像素，所以光标和列表是移过去而不是跳过去，输入法正在拼的字也会先画在页面上</li>
-          </ul>
-        </div>
-
-        <div class="card">
-          <h4>同一个文件，不止一种读法</h4>
-          <ul>
-            <li>markdown 排成文章（<kbd>Ctrl+t</kbd>）、日志排成列——按内容判断，不是按文件名</li>
-            <li>markdown 里的代码块、HTML 里的脚本，各按各自的语言上色</li>
-            <li>长行按各自语言的规矩折：中文按字断，英文单词不会被拦腰切开，续行保持缩进</li>
-            <li>还有那些寻常的：15 门语言、折叠、软换行</li>
-          </ul>
-        </div>
-
-        <div class="card">
-          <h4>问代码</h4>
-          <ul>
-            <li>IDE 能回答的那些——名字在哪定义、谁调用它、它是什么、哪里有错——去问你本来就装着的语言服务器：rust-analyzer、gopls、clangd、pylsp 等</li>
-            <li>找东西是一个界面、三个半径：本文件 <kbd>F5</kbd>、整个项目 <kbd>F6</kbd>、服务器认得的名字 <kbd>F8</kbd>——<kbd>Alt+←</kbd> 回到跳转开始的地方</li>
-            <li>问题不只来自服务器：Obelus 自己读不懂的设置，会标在读不懂的那一行上，和服务器的问题在同一个列表里</li>
-          </ul>
-        </div>
-      </div>
-    </section>
-
-    <section id="notes">
-      <h2><span class="num">05</span><span>笔记</span></h2>
-
-      <blockquote><p><em>obelus</em> 是学者在手稿边上标「此处存疑」的那个记号。笔记就是把那个记号写下来。</p></blockquote>
-
-      <p>读到一半按 <kbd>Alt+t</kbd>，笔记页打开，第一条就已经就着光标那一行起好了头；命令 <code>todo</code> 打开全部。这一页<em>一直在被写</em>：打开时光标就在里面，敲一个字母就是一个字母，<kbd>Enter</kbd> 起下一条，<kbd>Shift+Enter</kbd> 在同一条里换行。把一条笔记<em>当笔记</em>来操作的键都在 <kbd>Alt</kbd> 底下：打勾、跳到它说的那一行、挪位置、拿掉。底下那行列着当下能用的键，<kbd>Ctrl+k</kbd> 给全部。</p>
-
-      <p>一条笔记可以是关于某一行的，也可以是关于整个项目的，两者都很正常：「这个缓存是错的」属于某一行，「把统计页接到搜索上」属于整个项目。它指着哪儿，写在它下面单独的一行；什么都没写的笔记不会被留下。笔记可以挂在另一条底下，缩进就是层级。</p>
-
-      <h4 id="planning">和 agent 一起想下一步</h4>
-      <p>笔记也是想「接下来做什么」的地方，agent 在这里最有用。在一条笔记上按 <kbd>Alt+a</kbd>，就开了一段关于它的对话：agent 会被告知这条笔记写的是什么、是哪一条。让它把这条笔记想透——要做成它需要哪些事，先后怎么排，哪些得先拍板。</p>
-      <p>它想出来的东西不必只留在对话里。它把步骤列出来，把你同意的那些写在这条笔记<em>底下</em>，缩进说明它们属于这条笔记；你回到笔记页，它们已经在那儿了，和别的窗口写进来的笔记一样。做完的一步它可以打勾；想改写某条笔记，得先把改前改后两个样子都给你看。这些事它每一件都会先问你再动手。第二天，这条笔记底下挂着它的步骤，把它们想出来的那段对话也还在旁边。</p>
-
-      <h4>Obelus 也把自己的笔记交给它</h4>
-      <p>agent 用协议能读文件、能请求权限，但它没有办法说「我觉得那条笔记可以勾了」或者「这儿还有两条值得记下来」。MCP 是为这个开的门，Obelus 就是门后面应答的那一端。四个工具，全都不自己问你——要不要做，是 agent 自己去问，走它已经在说的那套协议。</p>
-
-      <div class="table-wrap">
-      <table>
-        <thead><tr><th><span>工具</span></th><th><span>做什么</span></th></tr></thead>
-        <tbody>
-          <tr><td><code>todo_list</code></td><td>这个项目的每一条笔记：说了什么、有没有勾、指着哪儿</td></tr>
-          <tr><td><code>todo_add</code></td><td>写下新的笔记——放在最外层，或者挂在某条笔记底下；就着那条笔记的对话想出来的步骤，就放在那儿。写「有人会想回头看的东西」，而不是「我刚才干了什么」的总结</td></tr>
-          <tr><td><code>todo_finish</code></td><td>勾掉一条。只勾，不删——「当初决定不做」的清单和「一直没顾上」的清单一样值钱，而删不删是你自己的事</td></tr>
-          <tr><td><code>todo_reword</code></td><td>改写一条的措辞。四个里唯一会弄丢东西的一个（笔记不在 git 里，页面也没有撤销），所以它被要求先问你，并且把改前改后都摆给你看</td></tr>
-        </tbody>
-      </table>
-      </div>
-
-      <h4>上周写的笔记，还指着当初那一行</h4>
-      <p>行号会变。所以笔记记下的不只是行号，还有当时那个提交——重新找回位置这件事交给 git 去算，而不是让它指着后来挪进那一行的东西。</p>
-
-      <h4>它们存在哪</h4>
-      <p>在 Obelus 自己的目录里，按<strong>项目</strong>存，而不是按某一个 checkout 存。所以同一个仓库的几个 worktree 打开的是同一份清单；它们是你自己的笔记，不会进到项目的提交里去。</p>
-    </section>
-
-    <section id="agent">
-      <h2><span class="num">06</span><span>和 agent 对话</span></h2>
-
-      <p>Obelus 不实现任何人的模型，它只和你已经有的那个说话——用 <strong>ACP</strong>（Agent Client Protocol），和语言服务器一样的形状：另一个程序，走它自己的标准输入输出。</p>
-
-      <h4>装一个</h4>
-      <p>哪些 agent 存在不是 Obelus 说了算。协议的作者维护着一份注册表，Obelus 读它：四十来条，每条有名字、版本、说明和安装方式。<code>Ctrl+p</code> → <code>talk-to-agent</code>（或 <kbd>F4</kbd>），在 agents 页里挑一个装。能画图的终端会直接显示每个 agent 自己的 logo，不能的显示一个字形。同一时刻只有一个 agent：两个就意味着每次提问都要先说「问哪个」，而你得记住这件事。</p>
-
-      <h4>对话是一份文档</h4>
-      <p>它就在 <kbd>F2</kbd> 的那份列表里。走开是「去了别处」，不是「关掉了」——回来的时候，说过的话都还在。<kbd>Enter</kbd> 发送，<kbd>Alt+Enter</kbd>（终端支持的话 <kbd>Shift+Enter</kbd> 也行）换行。状态栏那一行是这个 agent 自己声明的会话选项——模式、模型、推理强度之类——就地走、就地改；<kbd>Shift+Tab</kbd> 一直是反着走的那一个。Obelus 一个字也不翻译：哪些选项存在是 agent 的事。</p>
-
-      <h4>一场对话属于一条笔记</h4>
-      <p>用 <kbd>F4</kbd> 开的对话不关于任何特定的事；从一条笔记开的，就是关于那条笔记的——而且一直是：明天回来，对话还在你离开的地方，因为说过的话由 agent 自己重放，Obelus 只需要记住哪个对话是关于哪条笔记的。</p>
-      <p>对话开始时，Obelus 会把这条笔记说了什么告诉 agent。你半夜把笔记改写了，下一条消息会带上改了什么——否则按协议，agent 没有任何办法知道周一告诉它的那段话周二已经变了。</p>
-      <p>在你说第一句话之前，Obelus 还会先说清楚它在跟谁说话：这个人正在终端里读代码，你说的话会落在他正读的文件旁边；凡是该由他决定的事，用提问的方式问，而不要在回复里写成 <code>1) … 2) …</code>——那样到他那里只是一段文字，屏幕上没有任何东西表示这是在等一个回答。</p>
-
-      <h4>它问你的时候</h4>
-      <p>问题是一张卡片，不是一个选择列表。卡片上方是它<em>要做什么</em>——那个工具调用本身，就画在对话里它该在的位置——下面是答案。走过某一行不等于选中它：输入框在答案下面，任何走到输入框的路都会经过它们，如果焦点走到哪儿就答到哪儿，那你路过时就把问题答了。<kbd>Enter</kbd> 作用于你所在的那一行，这就是全部的规则。</p>
-
-      <h4>它想改文件的时候</h4>
-      <p>已经改完的：那就是工作区和上一次提交的差别，去文件里看——对话里只是一行 <code>+12 -4</code>。还没改、正在<em>请求</em>你同意的：那些行既不在文件里也不在上一次提交里，所以它们画在对话里，就画在那次调用底下，敞着；而且事后也留在那儿——这就是你以后翻回去确认「我当初同意了什么」的地方。画法和文件里展开的 hunk 一模一样，因为它们说的是同一件事。</p>
-    </section>
-
-    <section id="many">
-      <h2><span class="num">07</span><span>多窗口、多 worktree</span></h2>
-
-      <p>Obelus 不分屏，所以「同一个项目上同时跑着好几个 Obelus」不是边缘情况，而是设计前提。下面这些是它为此给的保证。</p>
-
-      <h4>一个仓库和它的 worktree 是同一个项目</h4>
-      <p>你为同一个仓库开了三个 worktree，它们打开的是<em>同一份</em>笔记，也共用同一份「哪个对话正被人用着」。你开着三个 worktree，想回头看的本来就是一张清单，而不是三张。</p>
-
-      <h4>两个窗口同时记笔记，不会互相抹掉</h4>
-      <p>每一次改动都以磁盘上当下的内容为准，而不是以这个窗口开着的时候看到的那份为准。所以另一个窗口刚记下的东西不会因为你这边后保存就消失——而且中途被杀掉也不会留下半个文件。</p>
-
-      <h4>一个对话同一时刻只能在一个 Obelus 里打开</h4>
-      <p>agent 那边记着说过的话，而且一次只接一轮。两个窗口同时往同一个对话里提问，就是把两轮塞进一轮里去。所以对话是被<em>占用</em>的：别的窗口看得见它已经有人在用。占用随进程消失而消失——被 kill、崩掉、断电都一样，不用谁去清理，也不存在「上次没退干净所以现在打不开了」。</p>
-
-      <h4>另一个窗口做的事，这边自己会出现</h4>
-      <p>笔记页开着的时候，另一个窗口新写的笔记、新开的对话，会自己出现在这一页上，不用你先按点什么。</p>
-
-      <h4>保存之前，先看一眼别人动过没有</h4>
-      <p>另一个窗口、agent 或者格式化工具可能已经改过这个文件。这个问题是在你按下保存的那一刻去问磁盘的，而不是靠「刚才好像没收到通知」来猜。</p>
-    </section>
-
     <section id="start">
-      <h2><span class="num">08</span><span>上手</span></h2>
+      <h2><span class="num">01</span><span>上手</span></h2>
 
       <h3>装它</h3>
       <p>一个 shell 一个脚本，你在哪个 shell 里就用哪个。两个都是取最新的 release，拿这次 release 自带的 <code>SHA256SUMS</code> 核对下载下来的东西，然后把 <code>ob</code> 放到 PATH 上。</p>
@@ -337,7 +139,197 @@ obg src/main.rs      # 同一个文件，改在窗口里读</code></pre>
         <li><kbd>Ctrl+q</kbd> 走人。</li>
       </ol>
     </section>
+    <section id="why">
+      <h2><span class="num">02</span>为什么写它</h2>
 
+      <p><strong>说实话：它首先是写给我自己用的。</strong>每一个取舍先回答的是「我用着顺不顺手」，而不是「会不会有人因为缺某个功能而不用」。</p>
+
+      <p>vim 那套用法我一直不习惯。模式、<code>hjkl</code>、冒号命令——它们对习惯的人来说是肌肉记忆，对我来说是每次进终端都要重新想一遍的东西。我想要的是：<em>打开就能读</em>，方向键就是方向键，<kbd>Ctrl+c</kbd> 就是复制，不用先按 <kbd>Esc</kbd> 想一想自己在哪个模式里。</p>
+
+      <p>另一半原因是这几年读代码的方式真的变了。AI 写走了很多行，我坐在终端前面做的事越来越偏向「读、确认、标出存疑的地方、问一下 agent」，而不是「敲」。终端里好用的编辑器不少，但它们都是<em>编辑器</em>：功能表按编辑器的清单展开——多光标、宏、补全、片段。我要的东西在另一条线上：语法树、git 的时间线、语言服务器，以及和 agent 的对话——全部围着「读」这一件事组织。</p>
+
+      <h3>我平时是什么样子</h3>
+      <p>现在用 AI 写代码，我经常同时推进好几个项目：开着一堆 claude code、codex，一个编辑器，外加一份 todo 用来计划下一步做什么。同一个仓库我也常常开很多个 worktree，各自完善不同的部分。Obelus 是照着这个样子长的：它不分屏，而是假定你同时开着好几个，并<a href="#many">为此做了准备</a>。</p>
+      <p>那份 todo 也是我把<a href="#notes">笔记</a>做进 Obelus 的原因：计划下一步这件事发生在读代码的中间，而不是发生在另一个应用里。</p>
+    </section>
+    <section id="highlights">
+      <h2><span class="num">03</span>几个亮点</h2>
+
+      <ul class="beats">
+        <li><span>每条笔记都能有自己的对话，明天回来它还在</span><a class="where" href="#agent">和 agent 对话 ›</a></li>
+        <li><span>就着一条笔记和 agent 聊，它会把下一步写在那条笔记底下——先问过你</span><a class="where" href="#planning">笔记 ›</a></li>
+        <li><span>上周写在某一行旁边的笔记，靠 git 还指着当初那一行</span><a class="where" href="#notes">笔记 ›</a></li>
+        <li><span>一个仓库的几个 worktree 共用一份笔记，两个窗口同时记不会互相抹掉</span><a class="where" href="#many">多窗口 ›</a></li>
+        <li><span>同一个文件不止一种读法，也不止一种语言</span><a class="where" href="#what">读代码 ›</a></li>
+        <li><span>没有模式：按键像 VS Code、Emacs 那样按了就生效，不是 vim、helix 那一套</span><a class="where" href="#keys">按键 ›</a></li>
+        <li><span>同一个 reader，跑在终端里或跑在自己的窗口里，后者收得到终端发不出的键</span><a class="where" href="#what">读代码 ›</a></li>
+      </ul>
+    </section>
+    <section id="tenets">
+      <h2><span class="num">04</span><span>设计理念</span></h2>
+
+      <p>这些不是事后总结的口号，是遇到每个取舍时反复拿来做决定的那几句话。大多是踩过一次才写下来的。</p>
+
+      <ol class="tenets">
+        <li>
+          <span class="no">01</span>
+          <div>
+            <p class="claim">读是主角，编辑是顺带的。</p>
+            <p class="why">叫它「编辑器」，它就会被按编辑器的清单去量：多光标？宏？片段？——那些它一个都不想要。有基本的编辑，是为了读到一半顺手改一行。</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">02</span>
+          <div>
+            <p class="claim">不用先学一门方言。</p>
+            <p class="why">没有模式。按键像 VS Code、Emacs 那样，按下去就做它说的事；不像 vim、helix，同一个键干什么要看你当时在哪个模式。方向键就是方向键，<kbd>Ctrl+c</kbd> 就是复制，<kbd>Ctrl+z</kbd> 就是撤销。</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">03</span>
+          <div>
+            <p class="claim">不做分屏。</p>
+            <p class="why">想并排看两个文件？再开一个 Obelus 就行了。这不是「还没做」，是不会做。因此多开才是常态，Obelus 为这件事做了准备——见 <a href="#many">多窗口、多 worktree</a>。</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">04</span>
+          <div>
+            <p class="claim">已经发生的改动在文件里；还在请求的改动在对话里。</p>
+            <p class="why">agent 改完的，就是工作区和上次提交的差别，边栏一直在画它；对话里再画一遍，就是同一件事的第二个说法。它<em>正在请求</em>做的改动才摆在对话里，而且事后留着。</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">05</span>
+          <div>
+            <p class="claim">文件在你读的时候被改写，是常态。</p>
+            <p class="why">不是意外——agent 在改你正开着的文件，格式化工具在跑，分支在脚底下换。所以 Obelus 自己重读，不问你，位置也不丢；文件没了就标上 <code>[stale]</code>，内容仍然留在屏幕上。</p>
+          </div>
+        </li>
+      </ol>
+    </section>
+    <section id="what">
+      <h2><span class="num">05</span><span>读代码</span></h2>
+
+      <div class="cards">
+        <div class="card">
+          <h4>git</h4>
+          <ul>
+            <li>边栏标出改了哪些行，和 <code>git diff</code> 说的是同一件事</li>
+            <li>滚动条内侧是整份文件的改动地图</li>
+            <li><kbd>Alt+d</kbd> 就地展开 / 收起一个 hunk，<kbd>Alt+p</kbd> / <kbd>Alt+n</kbd> 在改动之间走</li>
+            <li>边栏显示这一行最后是谁改的（可关）</li>
+            <li>文件的历史 <kbd>F9</kbd>、项目的历史 <kbd>F10</kbd>、这一行是哪个提交写的 <kbd>F11</kbd>；提交信息悬在文件上方，远端还没见过的提交有标记</li>
+            <li>只读：Obelus 不碰你的仓库，也不替你跑 git</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h4>在终端里，或者在窗口里</h4>
+          <ul>
+            <li><code>ob</code> 是终端，<code>obg</code> 是窗口——gvim 之于 vim 的那种关系，不是第二个程序：同一套网格、同一套视图、同一套键</li>
+            <li>窗口是为了终端给不了的两件事。终端分不出 <kbd>Ctrl+i</kbd> 和 <kbd>Tab</kbd>、<kbd>Ctrl+m</kbd> 和 <kbd>Enter</kbd>、<kbd>Ctrl+[</kbd> 和 <kbd>Esc</kbd>——各自都只有一个字节——而 <kbd>Ctrl+Shift+X</kbd> 大多数终端干脆什么都不发</li>
+            <li>而且它用自己带的字体画，不用赌你装了哪一套：字形编译在二进制里，所以没有方框，也没有开关要找</li>
+            <li>它自己画像素，所以光标和列表是移过去而不是跳过去，输入法正在拼的字也会先画在页面上</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h4>同一个文件，不止一种读法</h4>
+          <ul>
+            <li>markdown 排成文章（<kbd>Ctrl+t</kbd>）、日志排成列——按内容判断，不是按文件名</li>
+            <li>markdown 里的代码块、HTML 里的脚本，各按各自的语言上色</li>
+            <li>长行按各自语言的规矩折：中文按字断，英文单词不会被拦腰切开，续行保持缩进</li>
+            <li>还有那些寻常的：15 门语言、折叠、软换行</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h4>问代码</h4>
+          <ul>
+            <li>IDE 能回答的那些——名字在哪定义、谁调用它、它是什么、哪里有错——去问你本来就装着的语言服务器：rust-analyzer、gopls、clangd、pylsp 等</li>
+            <li>找东西是一个界面、三个半径：本文件 <kbd>F5</kbd>、整个项目 <kbd>F6</kbd>、服务器认得的名字 <kbd>F8</kbd>——<kbd>Alt+←</kbd> 回到跳转开始的地方</li>
+            <li>问题不只来自服务器：Obelus 自己读不懂的设置，会标在读不懂的那一行上，和服务器的问题在同一个列表里</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+    <section id="notes">
+      <h2><span class="num">06</span><span>笔记</span></h2>
+
+      <blockquote><p><em>obelus</em> 是学者在手稿边上标「此处存疑」的那个记号。笔记就是把那个记号写下来。</p></blockquote>
+
+      <p>读到一半按 <kbd>Alt+t</kbd>，笔记页打开，第一条就已经就着光标那一行起好了头；命令 <code>todo</code> 打开全部。这一页<em>一直在被写</em>：打开时光标就在里面，敲一个字母就是一个字母，<kbd>Enter</kbd> 起下一条，<kbd>Shift+Enter</kbd> 在同一条里换行。把一条笔记<em>当笔记</em>来操作的键都在 <kbd>Alt</kbd> 底下：打勾、跳到它说的那一行、挪位置、拿掉。底下那行列着当下能用的键，<kbd>Ctrl+k</kbd> 给全部。</p>
+
+      <p>一条笔记可以是关于某一行的，也可以是关于整个项目的，两者都很正常：「这个缓存是错的」属于某一行，「把统计页接到搜索上」属于整个项目。它指着哪儿，写在它下面单独的一行；什么都没写的笔记不会被留下。笔记可以挂在另一条底下，缩进就是层级。</p>
+
+      <h4 id="planning">和 agent 一起想下一步</h4>
+      <p>笔记也是想「接下来做什么」的地方，agent 在这里最有用。在一条笔记上按 <kbd>Alt+a</kbd>，就开了一段关于它的对话：agent 会被告知这条笔记写的是什么、是哪一条。让它把这条笔记想透——要做成它需要哪些事，先后怎么排，哪些得先拍板。</p>
+      <p>它想出来的东西不必只留在对话里。它把步骤列出来，把你同意的那些写在这条笔记<em>底下</em>，缩进说明它们属于这条笔记；你回到笔记页，它们已经在那儿了，和别的窗口写进来的笔记一样。做完的一步它可以打勾；想改写某条笔记，得先把改前改后两个样子都给你看。这些事它每一件都会先问你再动手。第二天，这条笔记底下挂着它的步骤，把它们想出来的那段对话也还在旁边。</p>
+
+      <h4>Obelus 也把自己的笔记交给它</h4>
+      <p>agent 用协议能读文件、能请求权限，但它没有办法说「我觉得那条笔记可以勾了」或者「这儿还有两条值得记下来」。MCP 是为这个开的门，Obelus 就是门后面应答的那一端。四个工具，全都不自己问你——要不要做，是 agent 自己去问，走它已经在说的那套协议。</p>
+
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th><span>工具</span></th><th><span>做什么</span></th></tr></thead>
+        <tbody>
+          <tr><td><code>todo_list</code></td><td>这个项目的每一条笔记：说了什么、有没有勾、指着哪儿</td></tr>
+          <tr><td><code>todo_add</code></td><td>写下新的笔记——放在最外层，或者挂在某条笔记底下；就着那条笔记的对话想出来的步骤，就放在那儿。写「有人会想回头看的东西」，而不是「我刚才干了什么」的总结</td></tr>
+          <tr><td><code>todo_finish</code></td><td>勾掉一条。只勾，不删——「当初决定不做」的清单和「一直没顾上」的清单一样值钱，而删不删是你自己的事</td></tr>
+          <tr><td><code>todo_reword</code></td><td>改写一条的措辞。四个里唯一会弄丢东西的一个（笔记不在 git 里，页面也没有撤销），所以它被要求先问你，并且把改前改后都摆给你看</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h4>上周写的笔记，还指着当初那一行</h4>
+      <p>行号会变。所以笔记记下的不只是行号，还有当时那个提交——重新找回位置这件事交给 git 去算，而不是让它指着后来挪进那一行的东西。</p>
+
+      <h4>它们存在哪</h4>
+      <p>在 Obelus 自己的目录里，按<strong>项目</strong>存，而不是按某一个 checkout 存。所以同一个仓库的几个 worktree 打开的是同一份清单；它们是你自己的笔记，不会进到项目的提交里去。</p>
+    </section>
+    <section id="agent">
+      <h2><span class="num">07</span><span>和 agent 对话</span></h2>
+
+      <p>Obelus 不实现任何人的模型，它只和你已经有的那个说话——用 <strong>ACP</strong>（Agent Client Protocol），和语言服务器一样的形状：另一个程序，走它自己的标准输入输出。</p>
+
+      <h4>装一个</h4>
+      <p>哪些 agent 存在不是 Obelus 说了算。协议的作者维护着一份注册表，Obelus 读它：四十来条，每条有名字、版本、说明和安装方式。<code>Ctrl+p</code> → <code>talk-to-agent</code>（或 <kbd>F4</kbd>），在 agents 页里挑一个装。能画图的终端会直接显示每个 agent 自己的 logo，不能的显示一个字形。同一时刻只有一个 agent：两个就意味着每次提问都要先说「问哪个」，而你得记住这件事。</p>
+
+      <h4>对话是一份文档</h4>
+      <p>它就在 <kbd>F2</kbd> 的那份列表里。走开是「去了别处」，不是「关掉了」——回来的时候，说过的话都还在。<kbd>Enter</kbd> 发送，<kbd>Alt+Enter</kbd>（终端支持的话 <kbd>Shift+Enter</kbd> 也行）换行。状态栏那一行是这个 agent 自己声明的会话选项——模式、模型、推理强度之类——就地走、就地改；<kbd>Shift+Tab</kbd> 一直是反着走的那一个。Obelus 一个字也不翻译：哪些选项存在是 agent 的事。</p>
+
+      <h4>一场对话属于一条笔记</h4>
+      <p>用 <kbd>F4</kbd> 开的对话不关于任何特定的事；从一条笔记开的，就是关于那条笔记的——而且一直是：明天回来，对话还在你离开的地方，因为说过的话由 agent 自己重放，Obelus 只需要记住哪个对话是关于哪条笔记的。</p>
+      <p>对话开始时，Obelus 会把这条笔记说了什么告诉 agent。你半夜把笔记改写了，下一条消息会带上改了什么——否则按协议，agent 没有任何办法知道周一告诉它的那段话周二已经变了。</p>
+      <p>在你说第一句话之前，Obelus 还会先说清楚它在跟谁说话：这个人正在终端里读代码，你说的话会落在他正读的文件旁边；凡是该由他决定的事，用提问的方式问，而不要在回复里写成 <code>1) … 2) …</code>——那样到他那里只是一段文字，屏幕上没有任何东西表示这是在等一个回答。</p>
+
+      <h4>它问你的时候</h4>
+      <p>问题是一张卡片，不是一个选择列表。卡片上方是它<em>要做什么</em>——那个工具调用本身，就画在对话里它该在的位置——下面是答案。走过某一行不等于选中它：输入框在答案下面，任何走到输入框的路都会经过它们，如果焦点走到哪儿就答到哪儿，那你路过时就把问题答了。<kbd>Enter</kbd> 作用于你所在的那一行，这就是全部的规则。</p>
+
+      <h4>它想改文件的时候</h4>
+      <p>已经改完的：那就是工作区和上一次提交的差别，去文件里看——对话里只是一行 <code>+12 -4</code>。还没改、正在<em>请求</em>你同意的：那些行既不在文件里也不在上一次提交里，所以它们画在对话里，就画在那次调用底下，敞着；而且事后也留在那儿——这就是你以后翻回去确认「我当初同意了什么」的地方。画法和文件里展开的 hunk 一模一样，因为它们说的是同一件事。</p>
+    </section>
+    <section id="many">
+      <h2><span class="num">08</span><span>多窗口、多 worktree</span></h2>
+
+      <p>Obelus 不分屏，所以「同一个项目上同时跑着好几个 Obelus」不是边缘情况，而是设计前提。下面这些是它为此给的保证。</p>
+
+      <h4>一个仓库和它的 worktree 是同一个项目</h4>
+      <p>你为同一个仓库开了三个 worktree，它们打开的是<em>同一份</em>笔记，也共用同一份「哪个对话正被人用着」。你开着三个 worktree，想回头看的本来就是一张清单，而不是三张。</p>
+
+      <h4>两个窗口同时记笔记，不会互相抹掉</h4>
+      <p>每一次改动都以磁盘上当下的内容为准，而不是以这个窗口开着的时候看到的那份为准。所以另一个窗口刚记下的东西不会因为你这边后保存就消失——而且中途被杀掉也不会留下半个文件。</p>
+
+      <h4>一个对话同一时刻只能在一个 Obelus 里打开</h4>
+      <p>agent 那边记着说过的话，而且一次只接一轮。两个窗口同时往同一个对话里提问，就是把两轮塞进一轮里去。所以对话是被<em>占用</em>的：别的窗口看得见它已经有人在用。占用随进程消失而消失——被 kill、崩掉、断电都一样，不用谁去清理，也不存在「上次没退干净所以现在打不开了」。</p>
+
+      <h4>另一个窗口做的事，这边自己会出现</h4>
+      <p>笔记页开着的时候，另一个窗口新写的笔记、新开的对话，会自己出现在这一页上，不用你先按点什么。</p>
+
+      <h4>保存之前，先看一眼别人动过没有</h4>
+      <p>另一个窗口、agent 或者格式化工具可能已经改过这个文件。这个问题是在你按下保存的那一刻去问磁盘的，而不是靠「刚才好像没收到通知」来猜。</p>
+    </section>
     <section id="keys">
       <h2><span class="num">09</span><span>按键与命令</span></h2>
 
@@ -460,7 +452,6 @@ obg src/main.rs      # 同一个文件，改在窗口里读</code></pre>
       </table>
       </div>
     </section>
-
     <section id="config">
       <h2><span class="num">10</span><span>配置与主题</span></h2>
 
