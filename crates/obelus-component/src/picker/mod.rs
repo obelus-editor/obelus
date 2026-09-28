@@ -423,6 +423,9 @@ pub struct Scan {
 pub struct Scanned {
     /// Which scoring it was.
     pub generation: u64,
+    /// The rows it was about, so the picker can tell whether they are
+    /// still the rows it holds.
+    pub items: Arc<Vec<PickerItem>>,
     /// The rows that matched and what they scored.
     pub matched: Vec<(usize, u32)>,
 }
@@ -449,6 +452,7 @@ pub fn scan(asked: &Scan) -> Scanned {
     }
     Scanned {
         generation: asked.generation,
+        items: Arc::clone(&asked.items),
         matched,
     }
 }
@@ -630,6 +634,19 @@ pub struct Picker {
     /// `None` where nothing is out, which is also what says the list on
     /// screen is the list the query asked for.
     awaiting: Option<u64>,
+    /// The rows `matched` holds positions in.
+    ///
+    /// A position is about a list, not about a picker: `replace` and
+    /// `relist` hand over different rows, and a position kept across one of
+    /// those is a number about a list that is gone. Which is not a subtle
+    /// failure -- it is a panic on the next frame, out of `matches`, and it
+    /// is what keeping the old rows on screen across a hand-off did until
+    /// this was here to stop it.
+    ///
+    /// Compared by pointer rather than by a count of changes: `Arc` already
+    /// knows, and `make_mut` gives a fresh one exactly when the rows are
+    /// copied out from under a scoring that is still reading them.
+    matched_for: Arc<Vec<PickerItem>>,
     /// How many scorings have been asked for, ever.
     scans: u64,
     /// Whether the last row a query could be about matched, as the last
@@ -749,14 +766,16 @@ impl Picker {
     /// Opens a picker over `items`.
     #[must_use]
     pub fn new(items: Vec<PickerItem>, layout: PickerLayout) -> Self {
+        let items = Arc::new(items);
         let mut picker = Self {
-            items: Arc::new(items),
+            items: Arc::clone(&items),
             query: Field::new(),
             matched: Vec::new(),
             indices: Vec::new(),
             filtered_on: String::new(),
             wanted: None,
             awaiting: None,
+            matched_for: Arc::clone(&items),
             scans: 0,
             parent_matched: false,
             window: Window::new(),
@@ -1639,6 +1658,16 @@ impl Picker {
         if self.awaiting != Some(scanned.generation) {
             return;
         }
+        // And about the rows it was asked about. A batch that landed while
+        // it was out copied them out from under it, so the positions it
+        // came back with are positions in a list this picker no longer
+        // holds -- which is a panic on the next frame rather than a wrong
+        // row. Asked again instead, against the rows there are now.
+        if !Arc::ptr_eq(&scanned.items, &self.items) {
+            self.awaiting = None;
+            self.refilter();
+            return;
+        }
         self.awaiting = None;
         self.matched = scanned.matched;
         if !self.ordered {
@@ -1998,6 +2027,15 @@ impl Picker {
                 // the rows enter acts on, and a list that emptied itself
                 // while it thought would be Obelus saying there is nothing,
                 // about a question it has not answered yet.
+                //
+                // Only where they are rows of *this* list. `replace` and
+                // `relist` hand over different ones, and positions kept
+                // across that are numbers about a list that is gone.
+                if !Arc::ptr_eq(&self.matched_for, &self.items) {
+                    self.matched.clear();
+                    self.matched_for = Arc::clone(&self.items);
+                    self.settled();
+                }
                 self.filtered_on = self.query.said();
                 return;
             }
@@ -2046,6 +2084,7 @@ impl Picker {
     /// worker and a list worked out here are the same list: two endings
     /// would be somewhere for the selection to be put back differently.
     fn settled(&mut self) {
+        self.matched_for = Arc::clone(&self.items);
         self.window.set_count(self.matched.len());
         // A query can narrow the list to rows that cannot be chosen, or move
         // one under the selection: whatever else happens, the selection is
@@ -2204,6 +2243,61 @@ mod tests {
             plain + about,
             "the prose did not take its room from the list"
         );
+    }
+}
+
+#[cfg(test)]
+mod travelling {
+    use super::{tests::named, *};
+
+    /// A list of `rows`, every one of which matches `row`.
+    fn rows(count: usize) -> Vec<PickerItem> {
+        (0..count).map(|n| named(&format!("row-{n}"))).collect()
+    }
+
+    /// A position is about a list, and the list can be swapped while a
+    /// scoring of it is still out.
+    ///
+    /// Both lists are big enough to be scored somewhere else and the second
+    /// is the shorter, which is the whole of the setup: the rows kept on
+    /// screen are positions in the list that has gone, and the highest of
+    /// them is past the end of the one that replaced it.
+    ///
+    /// Deliberate break: drop the `Arc::ptr_eq` guard in `filter`. The next
+    /// thing to read the list -- `matches`, on the very next frame -- walks
+    /// off the end of it and panics, which is what it did.
+    #[test]
+    fn rows_are_not_kept_across_a_list_that_was_swapped() {
+        let long = SENT_AWAY * 2;
+        let short = SENT_AWAY + 1;
+        let mut picker = Picker::new(rows(long), PickerLayout::FullArea);
+        picker.set_query("row");
+        assert!(picker.is_matching(), "a list this big was scored here");
+
+        picker.replace(rows(short));
+        assert!(picker.is_matching(), "and so was the one that replaced it");
+        // Every row it offers has to be a row it holds.
+        assert!(
+            picker.matches().count() <= short,
+            "more rows than the list has"
+        );
+    }
+
+    /// And an answer about rows the picker no longer holds is not drawn.
+    ///
+    /// Deliberate break: drop the `Arc::ptr_eq` in `scan_arrived`. The
+    /// answer is about the rows it was handed, the list has been relisted
+    /// shorter since, and its positions are about neither of them.
+    #[test]
+    fn an_answer_about_rows_that_moved_is_not_drawn() {
+        let mut picker = Picker::new(rows(SENT_AWAY * 2), PickerLayout::FullArea);
+        picker.set_query("row");
+        let asked = picker.wanted_scan().expect("a scoring was asked for");
+
+        picker.relist(rows(1));
+        picker.scan_arrived(scan(&asked));
+
+        assert!(picker.matches().count() <= 1, "more rows than the list has");
     }
 }
 
