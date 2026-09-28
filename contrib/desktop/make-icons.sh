@@ -65,3 +65,10 @@ pathlib.Path('obelus.icns').write_bytes(b'icns' + struct.pack('>I', len(chunks) 
 
 print('obelus.ico and obelus.icns rebuilt from obelus.svg')
 PY
+
+# And the site's, which is the SVG itself and so is a copy rather than a
+# conversion. Here all the same: a copy nobody regenerates is a copy that
+# goes stale, and the two pages that point at it are the one place in the
+# project where the mark is drawn by somebody else's renderer.
+cp obelus.svg ../../docs/obelus.svg
+echo 'docs/obelus.svg copied from obelus.svg'
