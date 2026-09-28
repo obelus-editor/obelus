@@ -73,6 +73,23 @@ const BAR_HOLD: Duration = Duration::from_millis(650);
 /// half that may take its time.
 const BAR_SETTLE: Duration = Duration::from_millis(400);
 
+/// How long it takes to come up.
+///
+/// Short, and not nothing. Arriving is the half that is news, so it is the
+/// quick one -- but a bar that went from settled to full between two
+/// frames is a thing appearing rather than a thing brightening, and what
+/// the reader sees then is a flash at the edge of the page while they were
+/// looking at the middle of it.
+const BAR_RISE: Duration = Duration::from_millis(110);
+
+/// And how long the pointer's own brightening takes, either way.
+///
+/// The same coming and going, because neither is news: the reader moved a
+/// pointer, and what they are owed is that the thing under it answers.
+/// Slower than a scroll's rise, so that a pointer crossing the column on
+/// its way somewhere else does not set the bar flashing.
+const BAR_UNDER: Duration = Duration::from_millis(140);
+
 /// When the window wants the loop back.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Wake {
@@ -92,6 +109,23 @@ struct Seen {
     mark: u16,
     /// And when that last changed.
     stirred: Instant,
+    /// How strongly it was being drawn at that moment, which is where the
+    /// rise sets out from.
+    ///
+    /// Kept, rather than rising from nothing every time: a bar stirred
+    /// half way down its settling would otherwise drop to where it was
+    /// not and climb from there, which on screen is a flicker at the one
+    /// moment the reader is looking at it. The same reason the caret's
+    /// flight sets out from where it is being *drawn*.
+    from: f32,
+    /// Whether the pointer is on it.
+    under: bool,
+    /// And the same two again for that, because the pointer is its own
+    /// reason to be bright and comes and goes on its own: a reader can put
+    /// a pointer on a bar that has been still for a minute, and take it
+    /// off one that is moving.
+    under_from: f32,
+    under_since: Instant,
 }
 
 /// The bars, and how long each has had nothing to say.
@@ -113,18 +147,44 @@ impl Bars {
     /// opens is a bar the reader can see: what is new is news, and the
     /// alternative is a control that fades in from nothing after the
     /// screen it belongs to has arrived.
-    fn drawn(&mut self, bars: &[Bar], now: Instant) {
+    fn drawn(&mut self, bars: &[Bar], pointer: Option<(u16, u16)>, now: Instant) {
         for bar in bars {
+            // Its own column and the one before it. A bar is drawn thinner
+            // than the cell it is in, so a reader aiming at it with a
+            // pointer is aiming at something narrower than the thing they
+            // are pointing with, and the near misses land next to it.
+            let under = pointer.is_some_and(|(x, y)| {
+                x + 1 >= bar.area.x && x <= bar.area.x && y >= bar.area.y && y < bar.area.bottom()
+            });
             match self.seen.iter_mut().find(|seen| seen.area == bar.area) {
-                Some(seen) if seen.mark == bar.mark => {}
                 Some(seen) => {
-                    seen.mark = bar.mark;
-                    seen.stirred = now;
+                    if seen.mark != bar.mark {
+                        // From where it is being drawn, not from nothing:
+                        // see `Seen::from`.
+                        seen.from = Self::risen(seen, now);
+                        seen.mark = bar.mark;
+                        seen.stirred = now;
+                    }
+                    if seen.under != under {
+                        seen.under_from = Self::pointed(seen, now);
+                        seen.under = under;
+                        seen.under_since = now;
+                    }
                 }
+                // A bar nobody has seen before is already up: `from` is
+                // where the rise sets out from, and setting out from the
+                // top is how "there is no rise here" is said. What is new
+                // arrives with a whole new screen, and a control that
+                // brightened into one that had already arrived would be
+                // answering a question nobody had got to yet.
                 None => self.seen.push(Seen {
                     area: bar.area,
                     mark: bar.mark,
                     stirred: now,
+                    from: 1.0,
+                    under,
+                    under_from: if under { 1.0 } else { 0.0 },
+                    under_since: now,
                 }),
             }
         }
@@ -140,12 +200,29 @@ impl Bars {
     /// is, which is a different thing and must not be said by accident.
     /// What settles is how loudly it says where the reader is, not
     /// whether it says it.
+    ///
+    /// The pointer is the other half of it, and the louder of the two
+    /// wins: a bar under the pointer stays up however long ago it moved,
+    /// and one that moves under a pointer that is elsewhere comes up all
+    /// the same.
     fn shown(&self, area: Rect, now: Instant) -> f32 {
         let Some(seen) = self.seen.iter().find(|seen| seen.area == area) else {
             return 1.0;
         };
-        let still = now.duration_since(seen.stirred);
-        let Some(settling) = still.checked_sub(BAR_HOLD) else {
+        Self::risen(seen, now).max(Self::pointed(seen, now))
+    }
+
+    /// How far up the scrolling has brought it: a rise, then the hold,
+    /// then the settling back down.
+    fn risen(seen: &Seen, now: Instant) -> f32 {
+        let since = now.duration_since(seen.stirred);
+        if since < BAR_RISE {
+            let along = since.as_secs_f32() / BAR_RISE.as_secs_f32();
+            // Into the top of it rather than at one speed, which is what
+            // makes it read as brightening rather than as switching on.
+            return seen.from + (1.0 - seen.from) * (1.0 - (1.0 - along).powi(2));
+        }
+        let Some(settling) = since.checked_sub(BAR_RISE.saturating_add(BAR_HOLD)) else {
             return 1.0;
         };
         let gone = settling.as_secs_f32() / BAR_SETTLE.as_secs_f32();
@@ -155,11 +232,42 @@ impl Bars {
         (1.0 - gone).powi(2)
     }
 
-    /// Whether any of them is still on its way back down.
-    fn moving(&self, now: Instant) -> bool {
+    /// And how far the pointer has: the same ramp either way, with no
+    /// hold, because what is holding it up is the pointer still being
+    /// there.
+    fn pointed(seen: &Seen, now: Instant) -> f32 {
+        let to = if seen.under { 1.0 } else { 0.0 };
+        let since = now.duration_since(seen.under_since);
+        if since >= BAR_UNDER {
+            return to;
+        }
+        let along = since.as_secs_f32() / BAR_UNDER.as_secs_f32();
+        seen.under_from + (to - seen.under_from) * (1.0 - (1.0 - along).powi(2))
+    }
+
+    /// How far the pointer's brightening has come on one of them.
+    fn under(&self, area: Rect, now: Instant) -> f32 {
         self.seen
             .iter()
-            .any(|seen| now.duration_since(seen.stirred) < BAR_HOLD.saturating_add(BAR_SETTLE))
+            .find(|seen| seen.area == area)
+            .map_or(0.0, |seen| Self::pointed(seen, now))
+    }
+
+    /// And where it would be with no time taken over it at all.
+    fn under_now(&self, area: Rect) -> f32 {
+        self.seen
+            .iter()
+            .find(|seen| seen.area == area)
+            .map_or(0.0, |seen| if seen.under { 1.0 } else { 0.0 })
+    }
+
+    /// Whether any of them is still on its way anywhere.
+    fn moving(&self, now: Instant) -> bool {
+        self.seen.iter().any(|seen| {
+            now.duration_since(seen.stirred)
+                < BAR_RISE.saturating_add(BAR_HOLD).saturating_add(BAR_SETTLE)
+                || now.duration_since(seen.under_since) < BAR_UNDER
+        })
     }
 }
 
@@ -614,8 +722,8 @@ impl Motion {
     /// Told rather than worked out from the page, for the reason the band
     /// is: a bar that scrolled and a bar redrawn where it was are the same
     /// handful of cells, and nothing in them says which happened.
-    pub(crate) fn bars_drawn(&mut self, bars: &[Bar], now: Instant) {
-        self.bars.drawn(bars, now);
+    pub(crate) fn bars_drawn(&mut self, bars: &[Bar], pointer: Option<(u16, u16)>, now: Instant) {
+        self.bars.drawn(bars, pointer, now);
     }
 
     /// How strongly a bar is drawn at this moment.
@@ -627,6 +735,21 @@ impl Motion {
         match self.animates {
             true => self.bars.shown(area, now),
             false => 1.0,
+        }
+    }
+
+    /// And how far the pointer's own brightening has come, which is a
+    /// second thing because it is drawn differently: what the pointer
+    /// changes is the width as well as the colour, and only it does.
+    ///
+    /// Not gated on `animates`. A reader who wants nothing to move has
+    /// still put a pointer on a control and is owed an answer, and what
+    /// that switch turns off is time passing on its own -- the pointer is
+    /// the reader, moving.
+    pub(crate) fn bar_under(&self, area: Rect, now: Instant) -> f32 {
+        match self.animates {
+            true => self.bars.under(area, now),
+            false => self.bars.under_now(area),
         }
     }
 
@@ -679,34 +802,78 @@ mod tests {
         }
     }
 
+    /// How long a bar takes to go all the way up and all the way back.
+    const BAR_ROUND: Duration = BAR_RISE.saturating_add(BAR_HOLD).saturating_add(BAR_SETTLE);
+
     /// Break: stir on every frame rather than on the mark moving -- drop
-    /// the `seen.mark == bar.mark` arm -- and a bar never settles at all,
-    /// because a frame is drawn for a dozen reasons that are not the
+    /// the `seen.mark != bar.mark` guard -- and a bar never settles at
+    /// all, because a frame is drawn for a dozen reasons that are not the
     /// reader scrolling.
     #[test]
     fn a_bar_settles_once_its_mark_stops_moving() {
         let base = Instant::now();
         let mut motion = Motion::new(None);
         let bar = a_bar(99, 0);
-        motion.bars_drawn(&[bar], base);
+        motion.bars_drawn(&[bar], None, base);
 
         // Drawn again where it was, which is not news.
-        motion.bars_drawn(&[bar], base + Duration::from_millis(100));
-        assert_eq!(
-            motion.bar_shown(bar.area, base + Duration::from_millis(100)),
-            1.0
-        );
+        let soon = base + Duration::from_millis(100);
+        motion.bars_drawn(&[bar], None, soon);
+        assert_eq!(motion.bar_shown(bar.area, soon), 1.0);
 
         // Still inside the hold.
-        let held = base + BAR_HOLD - Duration::from_millis(1);
+        let held = base + BAR_RISE + BAR_HOLD - Duration::from_millis(1);
         assert_eq!(motion.bar_shown(bar.area, held), 1.0);
 
         // Part way down it, and all the way down after that.
-        let halfway = base + BAR_HOLD + BAR_SETTLE / 2;
+        let halfway = base + BAR_RISE + BAR_HOLD + BAR_SETTLE / 2;
         let some = motion.bar_shown(bar.area, halfway);
         assert!(some > 0.0 && some < 1.0, "part of the way: {some}");
-        let after = base + BAR_HOLD + BAR_SETTLE;
-        assert_eq!(motion.bar_shown(bar.area, after), 0.0);
+        assert_eq!(motion.bar_shown(bar.area, base + BAR_ROUND), 0.0);
+    }
+
+    /// Break: set `from` to nothing when a bar is stirred rather than to
+    /// where it is being drawn, and a bar touched part way down its
+    /// settling drops to black and climbs out of it -- a flicker at the
+    /// one moment the reader is looking straight at it.
+    #[test]
+    fn a_bar_stirred_part_way_down_comes_up_from_where_it_is() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        let bar = a_bar(99, 0);
+        motion.bars_drawn(&[bar], None, base);
+
+        // Half way through the settling, where it is dim but not out.
+        let dim = base + BAR_RISE + BAR_HOLD + BAR_SETTLE / 2;
+        let was = motion.bar_shown(bar.area, dim);
+        assert!(was > 0.0 && was < 1.0, "part of the way: {was}");
+
+        // And the reader scrolls again. The next moment is brighter than
+        // the one before it, all the way up.
+        motion.bars_drawn(&[a_bar(99, 9)], None, dim);
+        let mut last = was;
+        for step in 1..=10 {
+            let at = dim + BAR_RISE * step / 10;
+            let now = motion.bar_shown(bar.area, at);
+            assert!(
+                now >= last - f32::EPSILON,
+                "went down at {step}: {last} to {now}"
+            );
+            last = now;
+        }
+        assert_eq!(last, 1.0, "and arrives");
+    }
+
+    /// Break: give a bar nobody has seen before a `from` of nothing, and
+    /// every list that opens has a bar brightening into a screen that has
+    /// already arrived.
+    #[test]
+    fn a_bar_that_was_not_there_is_simply_there() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        let bar = a_bar(99, 0);
+        motion.bars_drawn(&[bar], None, base);
+        assert_eq!(motion.bar_shown(bar.area, base), 1.0);
     }
 
     /// Break: keep one `stirred` for all of them rather than one each,
@@ -718,20 +885,22 @@ mod tests {
         let base = Instant::now();
         let mut motion = Motion::new(None);
         let (list, preview) = (a_bar(40, 0), a_bar(99, 0));
-        motion.bars_drawn(&[list, preview], base);
+        motion.bars_drawn(&[list, preview], None, base);
 
         // Long enough that both would have settled, and then one moves.
-        let later = base + BAR_HOLD + BAR_SETTLE;
+        let later = base + BAR_ROUND;
         assert_eq!(motion.bar_shown(list.area, later), 0.0);
-        motion.bars_drawn(&[a_bar(40, 7), preview], later);
+        motion.bars_drawn(&[a_bar(40, 7), preview], None, later);
 
+        assert_eq!(motion.bar_shown(list.area, later), 0.0, "setting out");
+        let risen = later + BAR_RISE;
         assert_eq!(
-            motion.bar_shown(list.area, later),
+            motion.bar_shown(list.area, risen),
             1.0,
             "the one that moved"
         );
         assert_eq!(
-            motion.bar_shown(preview.area, later),
+            motion.bar_shown(preview.area, risen),
             0.0,
             "and not the one that did not"
         );
@@ -746,16 +915,65 @@ mod tests {
         let base = Instant::now();
         let mut motion = Motion::new(None);
         let list = a_bar(40, 0);
-        motion.bars_drawn(&[list], base);
+        motion.bars_drawn(&[list], None, base);
 
-        let later = base + BAR_HOLD + BAR_SETTLE;
+        let later = base + BAR_ROUND;
         assert_eq!(motion.bar_shown(list.area, later), 0.0);
 
         // The list closes, and opens again: what comes back is new, and
-        // what is new is shown.
-        motion.bars_drawn(&[], later);
-        motion.bars_drawn(&[list], later);
+        // what is new is simply there.
+        motion.bars_drawn(&[], None, later);
+        motion.bars_drawn(&[list], None, later);
         assert_eq!(motion.bar_shown(list.area, later), 1.0);
+    }
+
+    /// Break: take the pointer for a switch rather than for something
+    /// that arrives -- return `1.0` from `pointed` the moment `under` is
+    /// set -- and a pointer crossing the column on its way somewhere else
+    /// flashes the bar.
+    #[test]
+    fn a_pointer_brightens_a_bar_rather_than_switching_it_on() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        let bar = a_bar(99, 0);
+        motion.bars_drawn(&[bar], None, base);
+
+        // Settled, and then the pointer arrives on its column.
+        let still = base + BAR_ROUND;
+        assert_eq!(motion.bar_under(bar.area, still), 0.0);
+        motion.bars_drawn(&[bar], Some((99, 5)), still);
+
+        assert_eq!(motion.bar_under(bar.area, still), 0.0, "setting out");
+        let part = motion.bar_under(bar.area, still + BAR_UNDER / 2);
+        assert!(part > 0.0 && part < 1.0, "part of the way: {part}");
+        assert_eq!(motion.bar_under(bar.area, still + BAR_UNDER), 1.0);
+
+        // And it holds there, however long ago the bar last moved.
+        let ages = still + BAR_UNDER + BAR_ROUND;
+        assert_eq!(motion.bar_under(bar.area, ages), 1.0);
+        assert_eq!(motion.bar_shown(bar.area, ages), 1.0, "and holds it up");
+
+        // Off again, the same way.
+        motion.bars_drawn(&[bar], None, ages);
+        let going = motion.bar_under(bar.area, ages + BAR_UNDER / 2);
+        assert!(going > 0.0 && going < 1.0, "part of the way back: {going}");
+        assert_eq!(motion.bar_under(bar.area, ages + BAR_UNDER), 0.0);
+    }
+
+    /// Break: take the bar's own column alone, and a reader aiming at
+    /// something a third of a cell wide with a pointer misses it.
+    #[test]
+    fn a_pointer_beside_a_bar_counts_as_on_it() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        let bar = a_bar(99, 0);
+        motion.bars_drawn(&[bar], Some((98, 5)), base);
+        assert_eq!(motion.bar_under(bar.area, base + BAR_UNDER), 1.0);
+
+        // And two columns off is somewhere else.
+        let mut elsewhere = Motion::new(None);
+        elsewhere.bars_drawn(&[bar], Some((97, 5)), base);
+        assert_eq!(elsewhere.bar_under(bar.area, base + BAR_UNDER), 0.0);
     }
 
     /// Break: ask `Bars` directly in `bar_shown` rather than going through
@@ -766,12 +984,30 @@ mod tests {
         let base = Instant::now();
         let mut motion = Motion::new(None);
         let bar = a_bar(99, 0);
-        motion.bars_drawn(&[bar], base);
+        motion.bars_drawn(&[bar], None, base);
         motion.animates(false);
 
-        let after = base + BAR_HOLD + BAR_SETTLE;
+        let after = base + BAR_ROUND;
         assert_eq!(motion.bar_shown(bar.area, after), 1.0);
         assert_ne!(motion.wake(after, false), Some(Wake::EveryFrame));
+    }
+
+    /// Break: gate `bar_under` on `animates` the way `bar_shown` is, and a
+    /// reader who wants nothing to move puts a pointer on a control and is
+    /// told nothing. What that switch turns off is time passing on its
+    /// own; a pointer is the reader, moving.
+    #[test]
+    fn a_pointer_is_answered_even_where_nothing_animates() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        let bar = a_bar(99, 0);
+        motion.animates(false);
+        motion.bars_drawn(&[bar], Some((99, 5)), base);
+        assert_eq!(
+            motion.bar_under(bar.area, base),
+            1.0,
+            "at once, and not over time"
+        );
     }
 
     /// Break: leave `bars` out of `wake`, and a bar settles only where
@@ -783,15 +1019,15 @@ mod tests {
         let base = Instant::now();
         let mut motion = Motion::new(None);
         let bar = a_bar(99, 0);
-        motion.bars_drawn(&[bar], base);
+        motion.bars_drawn(&[bar], None, base);
 
         assert_eq!(motion.wake(base, false), Some(Wake::EveryFrame));
         assert_eq!(
-            motion.wake(base + BAR_HOLD + BAR_SETTLE / 2, false),
+            motion.wake(base + BAR_RISE + BAR_HOLD + BAR_SETTLE / 2, false),
             Some(Wake::EveryFrame)
         );
         assert_ne!(
-            motion.wake(base + BAR_HOLD + BAR_SETTLE, false),
+            motion.wake(base + BAR_ROUND, false),
             Some(Wake::EveryFrame),
             "down, and nothing left to draw"
         );

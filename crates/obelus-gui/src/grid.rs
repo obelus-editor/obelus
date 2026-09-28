@@ -256,8 +256,10 @@ pub(crate) struct Barred {
     /// From nothing at all to all of it: full while it is moving and for
     /// a moment after, and settled back down once the reader has stopped.
     pub(crate) shown: f32,
-    /// Whether the pointer is on it, which is a reader reaching for it.
-    pub(crate) under: bool,
+    /// And how far the pointer's own brightening has come, which is a
+    /// second number because the pointer widens it as well: a reader
+    /// reaching for a control is about to take hold of it.
+    pub(crate) under: f32,
 }
 
 /// Where a cap is in the frame being drawn, and what it is drawn in.

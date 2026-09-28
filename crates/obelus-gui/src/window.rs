@@ -591,7 +591,8 @@ impl ApplicationHandler<Waking> for Showing {
                             // arriving knows that. A frame drawn twice
                             // for some other reason must not read as a
                             // reader scrolling.
-                            self.motion.bars_drawn(&self.barred, Instant::now());
+                            self.motion
+                                .bars_drawn(&self.barred, self.pointer, Instant::now());
                             self.behind = self.behinding.take();
                             self.scrolled = self.scrolling.take();
                             self.bar = self.barring.take();
@@ -757,22 +758,11 @@ impl ApplicationHandler<Waking> for Showing {
                 // the settling is a moment's answer and the pointer moves
                 // between frames, so neither is a thing to keep.
                 let now = Instant::now();
-                let pointer = self.pointer;
                 self.showing.clear();
                 self.showing.extend(self.barred.iter().map(|bar| Barred {
                     bar: *bar,
                     shown: self.motion.bar_shown(bar.area, now),
-                    // The column itself and the one before it. A bar is
-                    // drawn thinner than the cell it is in, so a reader
-                    // aiming at it with a pointer is aiming at something
-                    // narrower than the thing they are pointing with --
-                    // the cell beside it is where the near misses land.
-                    under: pointer.is_some_and(|(x, y)| {
-                        x + 1 >= bar.area.x
-                            && x <= bar.area.x
-                            && y >= bar.area.y
-                            && y < bar.area.bottom()
-                    }),
+                    under: self.motion.bar_under(bar.area, now),
                 }));
 
                 let (Some(painter), Some(fonts)) = (self.painter.as_mut(), self.fonts.as_mut())

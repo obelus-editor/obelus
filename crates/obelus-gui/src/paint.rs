@@ -1082,10 +1082,11 @@ impl Painter {
             // A pointer on it beats the settling: the reader is reaching
             // for the thing, and a control that went on fading under the
             // hand reaching for it is the one moment it must not.
-            let shown = match showing.under {
-                true => 1.0,
-                false => showing.shown.clamp(0.0, 1.0),
-            };
+            // `shown` already carries the pointer's own brightening, which
+            // is the louder of the two: a bar under the pointer stays up
+            // however long ago it moved.
+            let shown = showing.shown.clamp(0.0, 1.0);
+            let under = showing.under.clamp(0.0, 1.0);
             let column = bar.area.x;
             for row in 0..bar.area.height {
                 let y = bar.area.y + row;
@@ -1132,10 +1133,14 @@ impl Painter {
                 );
             }
 
-            let wide = match showing.under {
-                true => BAR_MARK_UNDER,
-                false => BAR_MARK_RESTING + (BAR_MARK - BAR_MARK_RESTING) * shown,
-            };
+            // Two widths in one: how far up the scrolling has brought it,
+            // and then how far the pointer has taken it past that. The
+            // second is laid over the first rather than chosen instead of
+            // it, so a bar the pointer arrives on while it is still moving
+            // widens from where it is and not from where it would have
+            // been standing still.
+            let moved = BAR_MARK_RESTING + (BAR_MARK - BAR_MARK_RESTING) * shown;
+            let wide = moved + (BAR_MARK_UNDER - moved) * under;
             let (left, width) = capsule(wide);
             let top = bar.area.y.saturating_add(bar.mark);
             let look = page.look(column, top);
