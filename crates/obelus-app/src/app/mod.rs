@@ -95,6 +95,7 @@ use ratatui::{
     backend::Backend,
     buffer::Buffer as CellBuffer,
     layout::{Position, Rect},
+    style::Color,
 };
 use semantics::{Asked, Question, named as server_named};
 
@@ -3572,6 +3573,20 @@ pub trait Drawing: std::fmt::Debug + Send + Sync {
     /// moments. A name this machine does not have is the front end's to
     /// step over: a settings file is read on more than one machine.
     fn use_fonts(&self, names: &[String]);
+
+    /// What the page is drawn on, for the margin round the grid.
+    ///
+    /// A window's size is the compositor's and a cell's is the font's, so
+    /// the one is not a whole number of the other and a strip is left over
+    /// on each side. The cells are all one size and none of them is
+    /// stretched to cover it, so something has to say what colour it is --
+    /// and that is the theme's, which the cells never have to say because
+    /// a terminal has no such strip: there the grid *is* the cells.
+    ///
+    /// A setting, so it is said the way the size is and at the same two
+    /// moments: a theme changes under a reader when another Obelus writes
+    /// the settings.
+    fn drawn_on(&self, ground: Color);
 }
 
 /// Lays out, scrolls and draws one frame.

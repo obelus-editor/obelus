@@ -8,7 +8,12 @@
 struct Screen {
     // The window, in real pixels.
     size: vec2<f32>,
-    padding: vec2<f32>,
+    // Where the grid starts in it. A window is not a whole number of cells
+    // across or down, and the strip left over is halved and put outside
+    // both ends rather than swallowed by the cells on the edge -- see
+    // `grid::margin`. Added here, which is the one place a quad's pixels
+    // become a place on the screen.
+    origin: vec2<f32>,
 };
 
 @group(0) @binding(0) var<uniform> screen: Screen;
@@ -63,7 +68,7 @@ struct Fragment {
 fn vertex(@builtin(vertex_index) corner: u32, quad: Quad) -> Fragment {
     // A triangle strip: top left, top right, bottom left, bottom right.
     let along = vec2<f32>(f32(corner & 1u), f32(corner >> 1u));
-    let pixels = quad.rect.xy + along * quad.rect.zw;
+    let pixels = quad.rect.xy + along * quad.rect.zw + screen.origin;
     // Pixels to the clip space the hardware draws in, which puts the
     // origin in the middle and points the second axis the other way.
     let clip = vec2<f32>(
@@ -79,7 +84,7 @@ fn vertex(@builtin(vertex_index) corner: u32, quad: Quad) -> Fragment {
     out.half_size = quad.rect.zw * 0.5;
     out.middle = (along - vec2<f32>(0.5)) * quad.rect.zw;
     out.radius = quad.radius;
-    out.box = quad.uv;
+    out.box = quad.uv + vec4<f32>(screen.origin, screen.origin);
     return out;
 }
 

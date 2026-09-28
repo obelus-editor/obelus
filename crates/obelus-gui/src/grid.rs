@@ -68,6 +68,12 @@ pub(crate) enum Update {
     /// The same journey again: a setting the application cannot act on
     /// because there is nothing in a terminal for it to mean.
     Animates(bool),
+    /// What the page is drawn on, for the margin round the grid.
+    ///
+    /// The same journey once more. A terminal never asks: there the cells
+    /// are the whole of the screen, and it is only a window that has a
+    /// strip outside them to put a colour in.
+    Ground(Color),
     /// What shape the caret is, and whose it is.
     ///
     /// Which is a fact about the frame it arrives with -- both depend on
@@ -350,6 +356,21 @@ impl Ruled {
     }
 }
 
+/// How far in from one edge of the window the grid starts.
+///
+/// The compositor picks the window's size and the font picks the cell's,
+/// so the one is not a whole number of the other and a strip is left over
+/// on each axis. It is halved and put outside both ends -- the grid is
+/// middled in the window rather than pushed into a corner -- and what is
+/// in it is the page's own ground: every cell is the same size, and the
+/// one on the edge is not stretched to cover the strip up.
+///
+/// Floored, so that a cell's corner lands on a whole pixel. Half a pixel
+/// down, every glyph in the window is drawn across two rows of them.
+pub(crate) fn margin(window: f32, cell: f32, count: u16) -> f32 {
+    ((window - f32::from(count) * cell) / 2.0).max(0.0).floor()
+}
+
 /// Where a cap is in the frame being drawn, and what it is drawn in.
 #[derive(Clone, Debug)]
 pub(crate) struct Capped {
@@ -522,6 +543,12 @@ impl obelus_app::app::Drawing for Telling {
 
     fn use_fonts(&self, names: &[String]) {
         if self.updates.send(Update::Fonts(names.to_vec())).is_ok() {
+            (self.wake)();
+        }
+    }
+
+    fn drawn_on(&self, ground: Color) {
+        if self.updates.send(Update::Ground(ground)).is_ok() {
             (self.wake)();
         }
     }
@@ -985,6 +1012,10 @@ impl Page {
                 tracing::warn!(faces = names.len(), "a list of faces reached the page");
                 false
             }
+            Update::Ground(_) => {
+                tracing::warn!("a page's ground reached the page");
+                false
+            }
         }
     }
 
@@ -1277,5 +1308,40 @@ mod tests {
         assert!(behind.look(5, 1).is_none());
         assert!(behind.look(3, 0).is_none());
         assert!(behind.look(3, 3).is_none());
+    }
+
+    /// The strip the cells do not reach is halved, and both halves are
+    /// outside the grid.
+    ///
+    /// Deliberate break: drop the `/ 2.0`. The margin then swallows the
+    /// whole strip, the grid's far edge lands a strip short of the
+    /// window's, and the first assertion here fails by exactly the amount
+    /// the last one says must be left over on the other side.
+    #[test]
+    fn the_strip_the_grid_does_not_reach_is_halved() {
+        // Nineteen pixels over, which is what a compositor's height and a
+        // font's line height do to each other.
+        let over = 19.0_f32;
+        let (cell, count) = (36.0_f32, 20_u16);
+        let window = f32::from(count) * cell + over;
+        let before = super::margin(window, cell, count);
+        assert_eq!(before, 9.0, "the strip was not halved");
+        let after = window - (before + f32::from(count) * cell);
+        assert_eq!(after, 10.0, "what is left over is the other half");
+    }
+
+    /// A margin is a whole number of pixels, and never negative.
+    ///
+    /// Deliberate break: take the `.floor()` off and the first assertion
+    /// gets 9.5, which is a grid half a pixel down the window and a glyph
+    /// drawn across two rows of pixels. Take the `.max(0.0)` off and the
+    /// last one goes negative, which is a grid drawn off the top of a
+    /// window whose page is momentarily wider than it is -- the ordinary
+    /// case one frame into a resize.
+    #[test]
+    fn a_margin_is_whole_pixels_and_never_negative() {
+        assert_eq!(super::margin(379.0, 36.0, 10), 9.0);
+        assert_eq!(super::margin(360.0, 36.0, 10), 0.0, "nothing is left over");
+        assert_eq!(super::margin(100.0, 36.0, 10), 0.0, "the page is too big");
     }
 }

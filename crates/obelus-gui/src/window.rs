@@ -33,7 +33,7 @@ use obelus_app::{
     event::{Event, Pointer},
 };
 use obelus_ui::shapes::{Bar, Joined};
-use ratatui::layout::Rect;
+use ratatui::{layout::Rect, style::Color};
 use winit::{
     application::ApplicationHandler,
     dpi::{LogicalSize, PhysicalPosition, PhysicalSize},
@@ -131,6 +131,13 @@ struct Showing {
     capped: Vec<Capped>,
     /// The ones the frame being laid out has asked for so far.
     capping: Vec<Capped>,
+    /// What the page is drawn on, for the margin round the grid.
+    ///
+    /// The application's, said when it hears who is drawing and again
+    /// after every change to the settings. `Reset` until it has: a window
+    /// is drawing nothing at all before the first of those, so the default
+    /// is never on the screen.
+    ground: Color,
     /// Which cells are switches on the frame being shown.
     ticked: Vec<Ticked>,
     /// And on the one being laid out.
@@ -235,6 +242,7 @@ impl Showing {
             marking: Vec::new(),
             capped: Vec::new(),
             capping: Vec::new(),
+            ground: Color::Reset,
             ticked: Vec::new(),
             ticking: Vec::new(),
             barred: Vec::new(),
@@ -384,9 +392,12 @@ impl Showing {
             clippy::cast_precision_loss,
             reason = "a caret is a few columns into what is being spelled"
         )]
+        // And put back on here, for the same reason: what an input method
+        // is told is a place in the window, not a place in the grid.
+        let margin = self.margin();
         let area = [
-            (f32::from(caret.x) + along as f32) * cell.width,
-            f32::from(caret.y) * cell.height,
+            (f32::from(caret.x) + along as f32) * cell.width + margin[0],
+            f32::from(caret.y) * cell.height + margin[1],
             cell.width,
             cell.height,
         ];
@@ -400,22 +411,52 @@ impl Showing {
         );
     }
 
+    /// How far in from the window's edges the grid starts.
+    ///
+    /// Worked out from the window as it is rather than kept: a resize
+    /// changes it, and a second copy is a second thing to put back in
+    /// step. Nothing where there is no window or no font yet, which is
+    /// also a window with nothing on the screen to point at.
+    fn margin(&self) -> [f32; 2] {
+        let (Some(window), Some(fonts)) = (self.window.as_ref(), self.fonts.as_ref()) else {
+            return [0.0, 0.0];
+        };
+        let cell = fonts.cell();
+        let size = window.inner_size();
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "a window is thousands of pixels, not millions"
+        )]
+        let (across, down) = (size.width as f32, size.height as f32);
+        [
+            crate::grid::margin(across, cell.width, self.page.columns()),
+            crate::grid::margin(down, cell.height, self.page.rows()),
+        ]
+    }
+
     /// Which cell a place in the window is in.
     fn cell_at(&self, at: PhysicalPosition<f64>) -> Option<(u16, u16)> {
         let fonts = self.fonts.as_ref()?;
         let cell = fonts.cell();
+        // Taken off first: the grid is middled in the window, so a place
+        // in the window is a margin further along than the same place in
+        // the grid. A pointer that skipped this would read the last row
+        // where the reader was on the one before it.
+        let margin = self.margin();
         #[expect(
             clippy::cast_possible_truncation,
             clippy::cast_sign_loss,
             reason = "a place inside the window, divided by a cell"
         )]
-        let column = ((at.x.max(0.0) as f32 / cell.width) as u32).min(u32::from(u16::MAX)) as u16;
+        let column = (((at.x as f32 - margin[0]).max(0.0) / cell.width) as u32)
+            .min(u32::from(u16::MAX)) as u16;
         #[expect(
             clippy::cast_possible_truncation,
             clippy::cast_sign_loss,
             reason = "a place inside the window, divided by a cell"
         )]
-        let row = ((at.y.max(0.0) as f32 / cell.height) as u32).min(u32::from(u16::MAX)) as u16;
+        let row = (((at.y as f32 - margin[1]).max(0.0) / cell.height) as u32)
+            .min(u32::from(u16::MAX)) as u16;
         Some((
             column.min(self.page.columns().saturating_sub(1)),
             row.min(self.page.rows().saturating_sub(1)),
@@ -566,6 +607,7 @@ impl ApplicationHandler<Waking> for Showing {
                         Update::TextSize(points) => sized = Some(points),
                         Update::Animates(on) => self.motion.animates(on),
                         Update::Fonts(names) => faces = Some(names),
+                        Update::Ground(ground) => self.ground = ground,
                         Update::Mark {
                             id,
                             focused,
@@ -827,6 +869,7 @@ impl ApplicationHandler<Waking> for Showing {
                 else {
                     return;
                 };
+                painter.drawn_on(self.ground);
                 if let Err(error) = painter.paint(
                     &self.page,
                     fonts,

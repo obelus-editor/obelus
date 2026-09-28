@@ -2846,11 +2846,20 @@ fn an_empty_filter_has_no_caret() {
 
 /// What a front end is told, kept for a test to look at.
 #[derive(Debug, Default)]
-struct Told(std::sync::Mutex<Vec<usize>>);
+struct Told {
+    /// Every size it was told, in order.
+    sizes: std::sync::Mutex<Vec<usize>>,
+    /// And every ground.
+    grounds: std::sync::Mutex<Vec<ratatui::style::Color>>,
+}
 
 impl obelus_app::app::Drawing for Told {
     fn text_size(&self, points: usize) {
-        self.0.lock().expect("what was said").push(points);
+        self.sizes.lock().expect("what was said").push(points);
+    }
+
+    fn drawn_on(&self, ground: ratatui::style::Color) {
+        self.grounds.lock().expect("what was said").push(ground);
     }
 
     /// Nothing: what this is a test of is the size, and the shape of the
@@ -2872,7 +2881,12 @@ impl Told {
     /// them more than once -- the reader's answers, then the project's laid
     /// over them -- and how many times is not something this is about.
     fn last(&self) -> Option<usize> {
-        self.0.lock().expect("what was said").last().copied()
+        self.sizes.lock().expect("what was said").last().copied()
+    }
+
+    /// And the last ground, for the same reason.
+    fn ground(&self) -> Option<ratatui::style::Color> {
+        self.grounds.lock().expect("what was said").last().copied()
     }
 }
 
@@ -2906,6 +2920,41 @@ fn the_size_of_the_text_reaches_whatever_is_drawing() {
     std::fs::write(&file, "font_size = 24\n").expect("the settings");
     app.config_file_for_test(file);
     assert_eq!(told.last(), Some(24), "the size it was changed to");
+}
+
+/// And so does what the page is drawn on, which a window wants for the
+/// margin round the grid: a window is not a whole number of cells, and
+/// the strip left over is the one part of it no cell says the colour of.
+///
+/// Both moments again, and for the same reason each half fails on its
+/// own: a front end told only at startup paints last week's theme round
+/// this week's page, and one told only on a change has no colour at all
+/// until the reader touches a setting.
+///
+/// Deliberate break: take the call out of `apply_config` and the second
+/// assertion still holds the light theme's ground; take it out of
+/// `drawn_by` and the first has nothing to compare.
+#[test]
+fn what_the_page_is_drawn_on_reaches_whatever_is_drawing() {
+    let _taken = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("grounding");
+    let file = settings_file(&scratch);
+    std::fs::write(&file, "theme = \"light\"\n").expect("the settings");
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.config_file_for_test(file.clone());
+    let told = std::sync::Arc::new(Told::default());
+    app.drawn_by(told.clone());
+    let light = app.theme().background;
+    assert_eq!(told.ground(), Some(light), "the ground it starts on");
+
+    std::fs::write(&file, "theme = \"dark\"\n").expect("the settings");
+    app.config_file_for_test(file);
+    let dark = app.theme().background;
+    assert_ne!(light, dark, "the two themes are drawn on the same colour");
+    assert_eq!(told.ground(), Some(dark), "the ground it was changed to");
 }
 
 /// A settings file that will not read is a problem marked on that file.

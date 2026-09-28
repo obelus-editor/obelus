@@ -341,6 +341,7 @@ impl App {
         drawing.text_size(self.settled.config.font_size);
         drawing.use_fonts(&self.settled.config.fonts);
         drawing.animates(self.settled.config.animation);
+        drawing.drawn_on(self.theme().background);
         self.drawing = Some(drawing);
     }
 

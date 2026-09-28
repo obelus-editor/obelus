@@ -126,6 +126,9 @@ pub(crate) struct Painter {
     /// The colours those drawings are inked in. A theme change is a new
     /// palette, and every mark already drawn is the old theme's.
     palette: Option<Palette>,
+    /// What the page is drawn on, which is what the margin round the grid
+    /// is painted in -- see `grid::margin`.
+    ground: Color,
     /// The instances of the frame being built, kept so that a screenful of
     /// rectangles is allocated once rather than once a frame.
     quads: Vec<Quad>,
@@ -310,7 +313,10 @@ const SLID: u32 = 64;
 #[derive(Clone, Copy, Debug, Pod, Zeroable)]
 struct Screen {
     size: [f32; 2],
-    padding: [f32; 2],
+    /// Where the grid starts in it: half of what the cells do not reach --
+    /// see `grid::margin`. Added to every quad in the vertex stage, which
+    /// is the one place a pixel becomes a place on the screen.
+    origin: [f32; 2],
 }
 
 /// Where every glyph drawn this session is kept.
@@ -600,6 +606,7 @@ impl Painter {
             atlas,
             drawings: HashMap::new(),
             palette: None,
+            ground: Color::Reset,
             quads: Vec::new(),
             placed: Placed::default(),
             instances,
@@ -705,6 +712,29 @@ impl Painter {
         let cell = fonts.cell();
         self.quads.clear();
         self.placed = Placed::default();
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "a window is thousands of pixels, not millions"
+        )]
+        let (across, down) = (self.configured.width as f32, self.configured.height as f32);
+        let margin = [
+            crate::grid::margin(across, cell.width, page.columns()),
+            crate::grid::margin(down, cell.height, page.rows()),
+        ];
+        // The whole window, in the page's own ground, under everything.
+        //
+        // The cells are all one size and the grid is middled in the
+        // window, so there is a margin round it that no cell reaches: this
+        // is what is in it. Before the pane's own cells, so it is in the
+        // picture taken of what is behind one as well -- where it used to
+        // be the black the pass clears to.
+        self.block(
+            -margin[0],
+            -margin[1],
+            across,
+            down,
+            rgba(self.ground, Ink::Background),
+        );
         // First of everything, because these are the quads the backdrop
         // pass draws and it draws the front of the buffer.
         let pane = said
@@ -793,7 +823,7 @@ impl Painter {
         )]
         let screen = Screen {
             size: [self.configured.width as f32, self.configured.height as f32],
-            padding: [0.0, 0.0],
+            origin: margin,
         };
         self.queue
             .write_buffer(&self.uniforms, 0, bytemuck::bytes_of(&screen));
@@ -883,9 +913,9 @@ impl Painter {
             self.the_frame(&mut pass);
         }
         {
-            // Cleared to black, which is only ever seen in the strip below
-            // the last whole row: every cell draws its own background over
-            // the rest.
+            // Cleared to black, which is never seen: the first quad of
+            // every frame is the whole window in the page's own ground,
+            // and the cells are drawn over that.
             let mut pass = self.pass(&mut encoder, "obelus", &target);
             match composing {
                 // The page first, and nothing of the pane: the glass is
@@ -920,21 +950,7 @@ impl Painter {
         capped: &[&Capped],
     ) {
         let (width, height) = (cell.width, cell.height);
-        // A window is not a whole number of cells across, so there is a
-        // strip down the right and along the bottom that no cell reaches.
-        // The last run of each row is stretched into it, and the last row
-        // down into the one below: the alternative is what was there
-        // before, which is a black seam beside a page that is not black.
-        #[expect(
-            clippy::cast_precision_loss,
-            reason = "a window is thousands of pixels, not millions"
-        )]
-        let (right, bottom) = (self.configured.width as f32, self.configured.height as f32);
         for row in 0..page.rows() {
-            let tall = match row + 1 == page.rows() {
-                true => (bottom - f32::from(row) * height).max(height),
-                false => height,
-            };
             // A frame's own cells, which `frames` has drawn already: what
             // the cells hold there is a terminal's square corner under a
             // round one.
@@ -971,15 +987,11 @@ impl Painter {
                         .map(|cap| (cap.area.x, cap.area.right())),
                 );
                 for (start, end) in without(start, end, &mut holes) {
-                    let wide = match end == page.columns() {
-                        true => (right - f32::from(start) * width).max(width),
-                        false => f32::from(end - start) * width,
-                    };
                     self.block(
                         f32::from(start) * width,
                         f32::from(row) * height,
-                        wide,
-                        tall,
+                        f32::from(end - start) * width,
+                        height,
                         rgba(colour, Ink::Background),
                     );
                 }
@@ -988,6 +1000,15 @@ impl Painter {
     }
 
     /// One block of colour, in pixels.
+    /// What the page is drawn on, for the margin round the grid.
+    ///
+    /// Handed over every frame rather than when the application says it:
+    /// the painter is built after the application is told who is drawing,
+    /// so the first one would have nowhere to land.
+    pub(crate) const fn drawn_on(&mut self, ground: Color) {
+        self.ground = ground;
+    }
+
     fn block(&mut self, left: f32, top: f32, width: f32, height: f32, colour: [f32; 4]) {
         self.quads.push(Quad {
             rect: [left, top, width, height],
@@ -1573,39 +1594,18 @@ impl Painter {
         fonts: &mut Fonts,
     ) -> [f32; 4] {
         let cell = fonts.cell();
-        // A window is not a whole number of cells across, and a pane that
-        // reaches the edge of one has to reach the edge of the window:
-        // the strip past the last whole cell is stretched into here for
-        // the same reason `backgrounds` stretches it, and it was left
-        // black the first time because the run that used to cover it is
-        // the very run this leaves out.
-        #[expect(
-            clippy::cast_precision_loss,
-            reason = "a window is thousands of pixels, not millions"
-        )]
-        let (right, bottom) = (self.configured.width as f32, self.configured.height as f32);
-        let to_the_edge = behind.area.right() == page.columns();
-        let to_the_foot = behind.area.bottom() == page.rows();
         for y in behind.area.top()..behind.area.bottom() {
-            let tall = match to_the_foot && y + 1 == behind.area.bottom() {
-                true => (bottom - f32::from(y) * cell.height).max(cell.height),
-                false => cell.height,
-            };
             for x in behind.area.left()..behind.area.right() {
                 let Some(under) = behind.look(x, y) else {
                     continue;
-                };
-                let wide = match to_the_edge && x + 1 == behind.area.right() {
-                    true => (right - f32::from(x) * cell.width).max(cell.width),
-                    false => cell.width,
                 };
                 let left = f32::from(x) * cell.width;
                 let top = f32::from(y) * cell.height;
                 self.block(
                     left,
                     top,
-                    wide,
-                    tall,
+                    cell.width,
+                    cell.height,
                     rgba(under.background, Ink::Background),
                 );
                 if !under.text.trim().is_empty() {
@@ -1622,14 +1622,8 @@ impl Painter {
             f32::from(behind.area.x) * cell.width,
             f32::from(behind.area.y) * cell.height,
         );
-        let far = match to_the_edge {
-            true => right,
-            false => f32::from(behind.area.right()) * cell.width,
-        };
-        let mut low = match to_the_foot {
-            true => bottom,
-            false => f32::from(behind.area.bottom()) * cell.height,
-        };
+        let far = f32::from(behind.area.right()) * cell.width;
+        let mut low = f32::from(behind.area.bottom()) * cell.height;
         // A rule along the pane's first or last row is its edge, and the
         // glass starts or stops where the rule's line is, which is the
         // middle of that row. A glass edge on the row's boundary was half a
