@@ -232,6 +232,14 @@ pub trait Screen {
     /// The file the picker's selection names, if it has been read, and the
     /// part of it the selection is about.
     fn preview(&self) -> Option<Previewed<'_>>;
+    /// Whether what Obelus has to say is about something that would not
+    /// go.
+    ///
+    /// The ink it is drawn in and nothing else. A note that reports and a
+    /// note that refuses are the same words in the same place, and the
+    /// row has nothing else to tell them apart with -- which is what left
+    /// a reader reading `Not saved` in the same colour as `Saved`.
+    fn note_is_wrong(&self) -> bool;
     /// The question being asked, if one is.
     fn prompt(&self) -> Option<&Prompt>;
     /// The directory the question being asked would put a file in.

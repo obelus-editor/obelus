@@ -92,7 +92,7 @@ impl App {
             .current_buffer()
             .map(|buffer| buffer.path().to_path_buf())
         else {
-            self.note = Some("No file to rename".to_string());
+            self.wrong("No file to rename".to_string());
             return;
         };
         self.ask_what_to_call_it(&path);
@@ -149,7 +149,7 @@ impl App {
         // cannot be put back, and a reader who meant it can say so by
         // taking the other file away first.
         if to.exists() {
-            self.note = Some(format!(
+            self.wrong(format!(
                 "{} is already there",
                 relative(&to, &self.working_directory)
             ));
@@ -161,7 +161,7 @@ impl App {
         if let Some(parent) = to.parent()
             && let Err(error) = std::fs::create_dir_all(parent)
         {
-            self.note = Some(format!("Could not make {}: {error}", parent.display()));
+            self.wrong(format!("Could not make {}: {error}", parent.display()));
             return;
         }
         let waiting = self.ask_what_the_rename_changes(&from, &to);
@@ -169,7 +169,7 @@ impl App {
             self.make_the_rename(&from, &to, &Wanted::default(), None);
             return;
         }
-        self.note = Some(format!(
+        self.say(format!(
             "asking what renaming {} changes\u{2026}",
             relative(&from, &self.working_directory)
         ));
@@ -348,7 +348,7 @@ impl App {
             false => Some(self.apply_wanted(wanted)),
         };
         if let Err(error) = std::fs::rename(from, to) {
-            self.note = Some(format!("Could not rename it: {error}"));
+            self.wrong(format!("Could not rename it: {error}"));
             return;
         }
         self.followed(from, to);
@@ -360,7 +360,7 @@ impl App {
         if let Some(aside) = aside {
             said.push_str(&format!("; {aside}"));
         }
-        self.note = Some(said);
+        self.say(said);
     }
 
     /// Takes everything that was pointing at the old place to the new one.

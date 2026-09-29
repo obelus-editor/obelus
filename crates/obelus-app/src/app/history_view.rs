@@ -143,7 +143,7 @@ impl App {
     pub fn open_history(&mut self, about: About) {
         let radii = self.historic(about);
         let Some(tab) = radii.iter().position(|shown| *shown == about) else {
-            self.note = Some(match about {
+            self.wrong(match about {
                 About::File | About::Refs => "No file open".to_string(),
                 About::Project => "No history here".to_string(),
             });
@@ -632,7 +632,7 @@ impl App {
     ) {
         let full = self.working_directory.join(path);
         let Some(text) = obelus_git::history::text_at(&self.working_directory, id, &full) else {
-            self.note = Some("Nothing to read there".to_string());
+            self.wrong("Nothing to read there".to_string());
             return;
         };
         let from = self.here();
@@ -680,7 +680,7 @@ impl App {
     /// has no number in the file on screen.
     pub fn open_line_commit(&mut self) {
         let Some(line) = self.current_buffer().map(|buffer| buffer.cursor().line) else {
-            self.note = Some("No file open".to_string());
+            self.wrong("No file open".to_string());
             return;
         };
         self.open_line_commit_at(line);
@@ -693,7 +693,7 @@ impl App {
     /// they are on by the time it lands.
     pub(super) fn open_line_commit_at(&mut self, line: LineNumber) {
         let Some(buffer) = self.current_buffer() else {
-            self.note = Some("No file open".to_string());
+            self.wrong("No file open".to_string());
             return;
         };
         let (version, path) = (buffer.content().at(), buffer.path().to_path_buf());
@@ -712,10 +712,13 @@ impl App {
                 self.asked_line = Some((path.clone(), version, line));
                 self.ask_blame();
             }
-            self.note = Some(match walked {
-                true => "No commit has this line".to_string(),
-                false => "still reading who wrote this\u{2026}".to_string(),
-            });
+            match walked {
+                true => self.wrong("No commit has this line".to_string()),
+                // Not a refusal: the walk is under way and the answer is
+                // coming. What is refused is a walk that finished and
+                // found nothing.
+                false => self.say("still reading who wrote this\u{2026}".to_string()),
+            }
             return;
         };
         let (id, at) = (blamed.id, LineNumber::new(blamed.line as usize));
@@ -727,11 +730,11 @@ impl App {
             .and_then(|buffer| buffer.content().at())
             == Some(id)
         {
-            self.note = Some("This commit wrote this line".to_string());
+            self.wrong("This commit wrote this line".to_string());
             return;
         }
         // Whatever was being said about waiting for this is answered.
-        self.note = None;
+        self.quiet();
         self.open_at_commit(id, &path, Some(at));
     }
 

@@ -33,18 +33,18 @@ impl App {
     /// is on.
     pub fn ask_code_actions(&mut self) {
         let Some(id) = self.current else {
-            self.note = Some("No file open".to_string());
+            self.wrong("No file open".to_string());
             return;
         };
         let Some(buffer) = file_in(&self.documents, id) else {
             return;
         };
         if !buffer.content().is_file() || buffer.mode() != obelus_buffer::Mode::Edit {
-            self.note = Some("This is not a file to change".to_string());
+            self.wrong("This is not a file to change".to_string());
             return;
         }
         let Some(language) = buffer.language() else {
-            self.note = Some("No language server for this file".to_string());
+            self.wrong("No language server for this file".to_string());
             return;
         };
         let Ok(uri) = obelus_lsp::client::uri_for(buffer.path()) else {
@@ -84,14 +84,14 @@ impl App {
         let end = position::to_lsp(buffer.text(), span.end_line, span.end_column, &encoding);
 
         if let Some(why) = self.why_not_asking(language) {
-            self.note = Some(why);
+            self.wrong(why);
             return;
         }
         let Some(client) = self.servers.get_mut(&language) else {
             return;
         };
         if !client.capabilities().is_some_and(actions::supported) {
-            self.note = Some(format!("{} does not offer actions", server_named(language)));
+            self.wrong(format!("{} does not offer actions", server_named(language)));
             return;
         }
         let params = serde_json::json!({
@@ -109,7 +109,7 @@ impl App {
                     version,
                 },
             );
-            self.note = Some("Asking what can be done\u{2026}".to_string());
+            self.say("Asking what can be done\u{2026}".to_string());
         }
     }
 
@@ -122,12 +122,12 @@ impl App {
     /// notice.
     pub(super) fn on_code_actions(&mut self, id: DocumentId, version: i32, reply: Reply) {
         if !self.unmoved(id, version) {
-            self.note = Some("The file changed while asking".to_string());
+            self.wrong("The file changed while asking".to_string());
             return;
         }
         let offered = actions::offered_in(&reply.result);
         if offered.is_empty() {
-            self.note = Some("Nothing to do here".to_string());
+            self.wrong("Nothing to do here".to_string());
             return;
         }
         // Everything the server offered is an offer it will not carry
@@ -139,7 +139,7 @@ impl App {
                 .iter()
                 .filter_map(|action| action.disabled.as_deref())
                 .collect();
-            self.note = Some(format!("Nothing can be done here: {}", reasons.join("; ")));
+            self.wrong(format!("Nothing can be done here: {}", reasons.join("; ")));
             return;
         }
         let items = offered
@@ -177,7 +177,7 @@ impl App {
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
         picker.keeps_order(true);
         picker.about("What the language server offers to do here");
-        self.note = None;
+        self.quiet();
         self.show_list(picker);
     }
 
@@ -209,7 +209,7 @@ impl App {
             return;
         };
         if !client.capabilities().is_some_and(actions::resolves) {
-            self.note = Some("The server left this one unfinished".to_string());
+            self.wrong("The server left this one unfinished".to_string());
             return;
         }
         if let Ok(request) = client.request("codeAction/resolve", &item) {
@@ -233,11 +233,11 @@ impl App {
     /// the edit out.
     pub(super) fn on_action(&mut self, at: usize, id: DocumentId, version: i32, reply: Reply) {
         if !self.unmoved(id, version) {
-            self.note = Some("The file changed while asking".to_string());
+            self.wrong("The file changed while asking".to_string());
             return;
         }
         let Ok(result) = reply.result else {
-            self.note = Some("The server could not work that out".to_string());
+            self.wrong("The server could not work that out".to_string());
             return;
         };
         let Some(action) = self.code_actions.get_mut(at) else {
@@ -263,10 +263,10 @@ impl App {
         if let Some(command) = action.command() {
             said.push(self.run_server_command(&command));
         }
-        self.note = Some(match said.is_empty() {
-            true => format!("{} did nothing", action.title),
-            false => said.join("; "),
-        });
+        match said.is_empty() {
+            true => self.wrong(format!("{} did nothing", action.title)),
+            false => self.say(said.join("; ")),
+        }
     }
 
     /// Asks the server to run one of its own commands.
@@ -359,7 +359,7 @@ impl App {
     pub(super) fn next_on_save(&mut self, index: usize, from: usize) {
         for kind in from..ON_SAVE.len() {
             if self.ask_on_save(index, kind) {
-                self.note = Some("Tidying it up\u{2026}".to_string());
+                self.say("Tidying it up\u{2026}".to_string());
                 return;
             }
         }

@@ -507,12 +507,12 @@ impl App {
             return;
         };
         if !self.settled.readable {
-            self.note = Some("Not saved: the settings will not read".to_string());
+            self.wrong("Not saved: the settings will not read".to_string());
             return;
         }
         if let Err(error) = obelus_config::save_to(&path, &self.settled.readers) {
             tracing::warn!(%error, "not saving the configuration");
-            self.note = Some(format!("Not saved: {error}"));
+            self.wrong(format!("Not saved: {error}"));
         }
     }
 
@@ -576,7 +576,7 @@ impl App {
             }
             Err(wrong) => {
                 tracing::warn!(why = wrong.why, "a theme that would not read");
-                self.note = Some(format!("{name} will not read"));
+                self.wrong(format!("{name} will not read"));
                 // And on the theme's own file, where the line is. The
                 // colours on screen stay as they are: a reader who cannot
                 // read the screen cannot fix the file.
@@ -709,12 +709,12 @@ impl App {
             // Said when it was found to be unreadable, and again here,
             // because this is the moment the reader finds out their change
             // is not being kept.
-            self.note = Some("Not saved: the settings will not read".to_string());
+            self.wrong("Not saved: the settings will not read".to_string());
             return;
         }
         if let Err(error) = obelus_config::save_to(&path, &self.settled.readers) {
             tracing::warn!(%error, "not saving the configuration");
-            self.note = Some(format!("Not saved: {error}"));
+            self.wrong(format!("Not saved: {error}"));
         }
     }
 
@@ -740,7 +740,7 @@ impl App {
         let path = obelus_config::project_path_for(&self.working_directory);
         if let Err(error) = obelus_config::write_project(&path, key, value) {
             tracing::warn!(%error, path = %path.display(), "not writing the project's settings");
-            self.note = Some(format!("Not saved: {error}"));
+            self.wrong(format!("Not saved: {error}"));
             return;
         }
         // Read back the way any other change to that file arrives, so the
@@ -764,14 +764,14 @@ impl App {
     /// made in it by hand is picked up the next time Obelus starts.
     pub fn open_config_file(&mut self) {
         let Some(path) = self.settled.path.clone() else {
-            self.note = Some("This system has nowhere for a settings file".to_string());
+            self.wrong("This system has nowhere for a settings file".to_string());
             return;
         };
         if !path.exists()
             && let Err(error) = obelus_config::save_to(&path, &self.settled.config)
         {
             tracing::warn!(%error, "not writing the configuration");
-            self.note = Some(format!("No settings file, and none written: {error}"));
+            self.wrong(format!("No settings file, and none written: {error}"));
             return;
         }
         self.open(&path);
@@ -797,7 +797,7 @@ impl App {
         };
         if let Err(error) = obelus_config::save_to(&path, &self.settled.config) {
             tracing::warn!(%error, "not saving the configuration");
-            self.note = Some(format!("Not saved: {error}"));
+            self.wrong(format!("Not saved: {error}"));
         }
     }
 
@@ -1142,7 +1142,7 @@ impl App {
         // Short, because the status row is one row and shares it with the
         // file and the position: which file and what went wrong are in the
         // log, where there is room for them.
-        self.note = Some("The settings will not read, so none are saved".to_string());
+        self.wrong("The settings will not read, so none are saved".to_string());
     }
 
     /// Uses a configuration without reading a file.

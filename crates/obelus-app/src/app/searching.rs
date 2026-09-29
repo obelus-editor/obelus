@@ -19,7 +19,7 @@ impl App {
         // work, and the tabs are how a reader moves between them.
         let scopes = self.searchable();
         let Some(tab) = scopes.iter().position(|shown| *shown == scope) else {
-            self.note = Some(match scope {
+            self.wrong(match scope {
                 Scope::File => "No file open".to_string(),
                 Scope::Symbols => "No language server to ask".to_string(),
                 Scope::Project => "Nowhere to search".to_string(),

@@ -193,7 +193,7 @@ impl App {
         // program should say so: the reader pressed enter on a card and a
         // node process started.
         if let Some(name) = self.agent_name() {
-            self.note = Some(format!("Asking {name} what it can be set to"));
+            self.say(format!("Asking {name} what it can be set to"));
         }
     }
 
@@ -2798,7 +2798,7 @@ impl App {
                     // not answer because nobody has signed in says so
                     // here, and a failure written into a log is a failure
                     // the reader never sees.
-                    None => self.note = Some(said),
+                    None => self.wrong(said),
                 }
             }
             // Answered above, before the session it is about can arrive.
@@ -3204,7 +3204,7 @@ impl App {
                 });
                 if changed {
                     self.change_document(index);
-                    self.note = Some("The agent changed this file".to_string());
+                    self.say("The agent changed this file".to_string());
                 }
                 // A write of what is already there changed nothing and is
                 // not a failure: the agent asked for a state, and that is

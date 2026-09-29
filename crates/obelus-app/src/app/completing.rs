@@ -65,11 +65,11 @@ impl App {
     /// finds nothing to offer says nothing at all.
     pub fn ask_completion(&mut self) {
         let Some(language) = self.current_buffer().and_then(Buffer::language) else {
-            self.note = Some("No language server for this file".to_string());
+            self.wrong("No language server for this file".to_string());
             return;
         };
         if let Some(why) = self.why_not_asking(language) {
-            self.note = Some(why);
+            self.wrong(why);
             return;
         }
         if !self
@@ -78,7 +78,7 @@ impl App {
             .and_then(Client::capabilities)
             .is_some_and(complete::supported)
         {
-            self.note = Some(format!(
+            self.wrong(format!(
                 "{} does not offer completions",
                 server_named(language)
             ));

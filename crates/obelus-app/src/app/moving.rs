@@ -46,7 +46,7 @@ impl App {
             .current_buffer()
             .is_none_or(|buffer| buffer.path() != path)
         {
-            self.note = Some(format!("Could not open {}", path.display()));
+            self.wrong(format!("Could not open {}", path.display()));
             return;
         }
 
@@ -121,7 +121,7 @@ impl App {
         let Some(here) = self.here() else { return };
         match self.jumps.back(here) {
             Some(there) => self.go(there),
-            None => self.note = Some("Nowhere further back".to_string()),
+            None => self.wrong("Nowhere further back".to_string()),
         }
     }
 
@@ -129,7 +129,7 @@ impl App {
     pub fn go_forward(&mut self) {
         match self.jumps.forward() {
             Some(there) => self.go(there),
-            None => self.note = Some("Nowhere further forward".to_string()),
+            None => self.wrong("Nowhere further forward".to_string()),
         }
     }
 
@@ -166,11 +166,11 @@ impl App {
     /// get back to where you were reading.
     pub fn go_to_bracket(&mut self) {
         let Some(buffer) = self.current_buffer() else {
-            self.note = Some("No file open".to_string());
+            self.wrong("No file open".to_string());
             return;
         };
         let Some(state) = buffer.syntax() else {
-            self.note = Some("Not a language Obelus knows".to_string());
+            self.wrong("Not a language Obelus knows".to_string());
             return;
         };
         let text = buffer.text();
@@ -181,7 +181,7 @@ impl App {
         let mut highlights = Highlights::default();
         highlights.refresh(state, text, whole.clone());
         let Some((open, close)) = brackets::pair_at(text, &highlights, at, whole) else {
-            self.note = Some("No bracket here".to_string());
+            self.wrong("No bracket here".to_string());
             return;
         };
 
@@ -207,7 +207,7 @@ impl App {
     /// answer, which is the shape searching a file will want too.
     pub fn open_line_prompt(&mut self) {
         if self.current_buffer().is_none() {
-            self.note = Some("No file to go into".to_string());
+            self.wrong("No file to go into".to_string());
             return;
         }
         self.ask_on_the_status_row(Prompt::new(PromptKind::Line));
@@ -231,7 +231,7 @@ impl App {
     /// what the reader has just taken all of ends there.
     pub fn select_all(&mut self) {
         let Some(buffer) = self.current_buffer_mut() else {
-            self.note = Some("No file open".to_string());
+            self.wrong("No file open".to_string());
             return;
         };
         buffer.select_all();
@@ -250,11 +250,11 @@ impl App {
         // answer.
         self.settle_syntax();
         let Some(buffer) = self.current_buffer_mut() else {
-            self.note = Some("No file open".to_string());
+            self.wrong("No file open".to_string());
             return;
         };
         if !buffer.widen_selection() {
-            self.note = Some("Nothing wider to select".to_string());
+            self.wrong("Nothing wider to select".to_string());
         }
     }
 
@@ -320,10 +320,10 @@ impl App {
     /// that one of them is lying.
     pub(super) fn copied(&mut self, text: &str, what: &str) {
         match obelus_clipboard::copy(text) {
-            Ok(()) => self.note = Some(format!("Copied {what}")),
+            Ok(()) => self.say(format!("Copied {what}")),
             Err(error) => {
                 tracing::warn!(%error, what, "copying failed");
-                self.note = Some(format!("Could not copy {what}"));
+                self.wrong(format!("Could not copy {what}"));
             }
         }
     }
@@ -336,10 +336,10 @@ impl App {
     /// for it where it no longer is.
     pub(super) fn cut_away(&mut self, text: &str, what: &str) {
         match obelus_clipboard::copy(text) {
-            Ok(()) => self.note = Some(format!("Cut {what}")),
+            Ok(()) => self.say(format!("Cut {what}")),
             Err(error) => {
                 tracing::warn!(%error, what, "copying the cut failed");
-                self.note = Some(format!("Cut {what}, but could not copy it"));
+                self.wrong(format!("Cut {what}, but could not copy it"));
             }
         }
     }
@@ -425,7 +425,7 @@ impl App {
     /// because a reader who selected something and pasted meant to.
     pub fn paste(&mut self) {
         let Some(what) = obelus_clipboard::paste() else {
-            self.note = Some("Nothing to paste".to_string());
+            self.wrong("Nothing to paste".to_string());
             return;
         };
         self.paste_text(&what);
@@ -556,7 +556,7 @@ impl App {
             .is_some_and(Buffer::undo);
         match went_back {
             true => self.change_document(index),
-            false => self.note = Some("Nothing to undo".to_string()),
+            false => self.wrong("Nothing to undo".to_string()),
         }
     }
 
@@ -570,7 +570,7 @@ impl App {
             .is_some_and(Buffer::redo);
         match went_forward {
             true => self.change_document(index),
-            false => self.note = Some("Nothing to redo".to_string()),
+            false => self.wrong("Nothing to redo".to_string()),
         }
     }
 
@@ -645,7 +645,7 @@ impl App {
             PromptKind::NewPath => self.make_file(std::path::Path::new(text.trim())),
             PromptKind::Line => {
                 let Ok(line) = text.trim().parse::<usize>() else {
-                    self.note = Some(format!("{text:?} is not a line number"));
+                    self.wrong(format!("{text:?} is not a line number"));
                     return;
                 };
                 let from = self.here();

@@ -455,6 +455,9 @@ pub struct ChatView<'a> {
     /// there is no history for this, there was nothing to close -- would
     /// press its key and get silence back.
     note: Option<&'a str>,
+    /// And whether it is about something that would not go, which is the
+    /// ink it is drawn in -- see `StatusView::wrong_ink`.
+    note_is_wrong: bool,
     /// How full the agent's memory of this conversation is, once it has
     /// said.
     usage: Option<&'a acp::Usage>,
@@ -486,6 +489,7 @@ impl<'a> ChatView<'a> {
             phase: app.phase(),
             about: app.what_this_conversation_is_about(),
             note: app.note(),
+            note_is_wrong: app.note_is_wrong(),
             usage: app.agent_usage(),
             conversations: app
                 .offers(obelus_command::Command::ConversationSelect)
@@ -1215,12 +1219,22 @@ impl ChatView<'_> {
         // a note is the answer to the key just pressed, and an answer that
         // waits its turn is an answer nobody reads.
         if let Some(note) = self.note {
+            // In the red everything that would not go is written in, the
+            // same as the status row's: the words are the same in either
+            // place and a reader glancing at the row has nothing else to
+            // tell a refusal from a report.
+            let ink = match self.note_is_wrong {
+                true => plain.fg(self
+                    .theme
+                    .colour_for(Some(obelus_text::kind::SyntaxKind::Error))),
+                false => plain,
+            };
             write(
                 cells,
                 area.x + 1,
                 area.y,
                 &super::truncate_from_right(note, room),
-                plain,
+                ink,
             );
             return;
         }
@@ -1903,6 +1917,7 @@ mod caret {
                         phase: 0,
                         about: None,
                         note: None,
+                        note_is_wrong: false,
                         conversations: None,
                         usage: None,
                     };

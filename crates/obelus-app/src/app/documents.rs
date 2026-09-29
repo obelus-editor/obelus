@@ -296,7 +296,7 @@ impl App {
             .filter(|shown| *shown == Listing::All || !self.statuses.is_empty())
             .collect();
         let Some(tab) = listings.iter().position(|shown| *shown == listing) else {
-            self.note = Some("Nothing has changed".to_string());
+            self.wrong("Nothing has changed".to_string());
             return;
         };
 
@@ -447,7 +447,7 @@ impl App {
         // and the row on the settings page says which file did. Here there
         // is no row to say it, so the status bar does.
         if let Some(path) = self.pinned_by("ignored_files") {
-            self.note = Some(format!("{} says which files to offer", path.display()));
+            self.wrong(format!("{} says which files to offer", path.display()));
             return true;
         }
         let showing = !self.config().ignored_files;
@@ -858,7 +858,7 @@ impl App {
         }
 
         let Some(id) = self.current else {
-            self.note = Some("No file to close".to_string());
+            self.wrong("No file to close".to_string());
             return;
         };
         self.close(id);
@@ -950,7 +950,7 @@ impl App {
             // entry would answer correctly for as long as the file stayed shut,
             // and then be one version behind whoever opened it next.
             self.tokens.remove(buffer.path());
-            self.note = Some(format!(
+            self.say(format!(
                 "closed {}",
                 relative(buffer.path(), &self.working_directory)
             ));
@@ -991,7 +991,7 @@ impl App {
             return;
         }
         if self.reading_of_current().is_none() {
-            self.note = Some(match self.current_buffer() {
+            self.wrong(match self.current_buffer() {
                 Some(_) => "Nothing to preview in this file".to_string(),
                 None => "No file to preview".to_string(),
             });
@@ -1117,7 +1117,7 @@ impl App {
             Err(error) => {
                 tracing::warn!(%error, "could not open");
                 let name = relative(path, &self.working_directory);
-                self.note = Some(if !path.exists() {
+                self.wrong(if !path.exists() {
                     format!("{name} is not there any more")
                 } else if path.is_dir() {
                     format!("{name} is a directory")
@@ -1269,7 +1269,7 @@ impl App {
             // than an errno to translate. Anything else -- a permission,
             // a read-only disk -- has no such fact behind it and gets the
             // shape that names no reason.
-            self.note = Some(match parent.exists() && !parent.is_dir() {
+            self.wrong(match parent.exists() && !parent.is_dir() {
                 true => format!("{shown} is not a directory"),
                 false => format!("Could not make {shown}"),
             });
@@ -1292,7 +1292,7 @@ impl App {
                 // whole, and a warning nobody sees is not a warning. The
                 // whole of it is in the log, which is where `save-file`
                 // puts its own for the same reason.
-                self.note = Some(match path.exists() {
+                self.wrong(match path.exists() {
                     true => format!("{name} is already there"),
                     false => format!("Could not make {name}"),
                 });
@@ -1496,7 +1496,7 @@ impl App {
     /// Writes the file being read back to disk.
     pub fn save_current(&mut self) {
         let Some(index) = self.current.map(DocumentId::get) else {
-            self.note = Some("No file open".to_string());
+            self.wrong("No file open".to_string());
             return;
         };
         let Some(buffer) = self.file_mut(DocumentId::new(index)) else {
@@ -1505,11 +1505,11 @@ impl App {
         // A commit's version is not a file anybody can write back, and the
         // path it wears belongs to a different document.
         if !buffer.content().is_file() {
-            self.note = Some("This is a commit's version, not the file".to_string());
+            self.wrong("This is a commit's version, not the file".to_string());
             return;
         }
         if !buffer.is_dirty() {
-            self.note = Some("Nothing to save".to_string());
+            self.wrong("Nothing to save".to_string());
             return;
         }
         // The file moved under the reader while they were editing it.
@@ -1553,7 +1553,7 @@ impl App {
     /// arrives here, having settled the one thing it stopped for.
     pub(super) fn format_then_write(&mut self, index: usize) {
         if self.settled.config.format_on_save && self.ask_formatting(index) {
-            self.note = Some("Laying it out\u{2026}".to_string());
+            self.say("Laying it out\u{2026}".to_string());
             return;
         }
         self.write_now(index);
@@ -1574,11 +1574,11 @@ impl App {
                     self.change_document(index);
                     self.ask_standing_questions(index);
                 }
-                self.note = Some("Took what is on disk -- undo brings yours back".to_string());
+                self.say("Took what is on disk -- undo brings yours back".to_string());
             }
             Err(error) => {
                 tracing::warn!(%error, "taking what is on disk failed");
-                self.note = Some("Could not read it".to_string());
+                self.wrong("Could not read it".to_string());
             }
         }
     }
@@ -1596,7 +1596,7 @@ impl App {
         };
         match buffer.save() {
             Ok(()) => {
-                self.note = Some("Saved".to_string());
+                self.say("Saved".to_string());
                 self.saved_document(index);
                 true
             }
@@ -1610,10 +1610,14 @@ impl App {
                 // Two shapes rather than one with a blank in it: after a
                 // name it reads as a label and its reason, and with no name
                 // it is a sentence of its own and starts like one.
-                self.note = Some(match buffer.path().file_name() {
+                // Worked out before it is said, because saying it is a
+                // method on the application and the buffer is borrowed out
+                // of the application to have been saved at all.
+                let said = match buffer.path().file_name() {
                     Some(name) => format!("{}: not saved", name.to_string_lossy()),
                     None => "Not saved".to_string(),
-                });
+                };
+                self.wrong(said);
                 false
             }
         }

@@ -36,7 +36,7 @@ impl App {
             let cursor = buffer.cursor();
             (cursor.line, cursor.column)
         }) else {
-            self.note = Some("No file open".to_string());
+            self.wrong("No file open".to_string());
             return;
         };
         self.ask_hover_at(at, false);
@@ -63,7 +63,7 @@ impl App {
         }
         let Some(language) = buffer.language() else {
             if !pointed {
-                self.note = Some("No language server for this file".to_string());
+                self.wrong("No language server for this file".to_string());
             }
             return;
         };
@@ -76,7 +76,7 @@ impl App {
         // server would be reading a status row that never stops saying so.
         if let Some(why) = self.why_not_asking(language) {
             if !pointed {
-                self.note = Some(why);
+                self.wrong(why);
             }
             return;
         }
@@ -85,7 +85,7 @@ impl App {
         };
         if !client.capabilities().is_some_and(hover::supported) {
             if !pointed {
-                self.note = Some(format!(
+                self.wrong(format!(
                     "{} does not say what things are",
                     server_named(language)
                 ));

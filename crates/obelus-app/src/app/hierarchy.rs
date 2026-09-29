@@ -576,11 +576,11 @@ impl App {
     /// asked for.
     pub(super) fn on_prepared(&mut self, buffer: DocumentId, language: LanguageId, reply: Reply) {
         let Some(item) = obelus_lsp::hierarchy::prepared(&reply.result) else {
-            self.note = Some("Nothing here to follow".to_string());
+            self.wrong("Nothing here to follow".to_string());
             return;
         };
         let Some(root) = obelus_lsp::hierarchy::root_of(&item) else {
-            self.note = Some("Nothing here to follow".to_string());
+            self.wrong("Nothing here to follow".to_string());
             return;
         };
         // Whatever the tree being replaced still had out. Without this a
@@ -589,7 +589,7 @@ impl App {
         // what the reader sees is one function's callers under another
         // function's name.
         self.close_calls();
-        self.note = None;
+        self.quiet();
         let mut calls = Calls {
             tree: Tree::about(root.clone(), Direction::Callers),
             root,
@@ -721,7 +721,7 @@ impl App {
         let Ok(request) = client.request(direction.method(), &serde_json::json!({ "item": item }))
         else {
             if wanted {
-                self.note = Some("The language server is not listening".to_string());
+                self.wrong("The language server is not listening".to_string());
             }
             return;
         };
@@ -757,7 +757,7 @@ impl App {
         // not answer and one that answered nothing look the same from the
         // list, and only one of them is worth pressing the key again over.
         if nothing {
-            self.note = Some(match &reply.result {
+            self.wrong(match &reply.result {
                 Err(why) => why.clone(),
                 Ok(_) => direction.nothing().to_string(),
             });
@@ -851,7 +851,7 @@ impl App {
             // Asked already, and there was nothing. Said again rather than
             // shut, because shutting one would put the mark back and offer
             // the reader the same empty answer a second time.
-            (false, Some(false)) => self.note = Some(direction.nothing().to_string()),
+            (false, Some(false)) => self.wrong(direction.nothing().to_string()),
             // Asked already, and kept: the dear part of this was paid when
             // nobody was waiting.
             (false, Some(true)) => {

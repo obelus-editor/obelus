@@ -463,7 +463,7 @@ impl App {
             .language()
             .and_then(|language| language.line_comment())
         else {
-            self.note = Some("No line comment in this language".to_string());
+            self.wrong("No line comment in this language".to_string());
             return;
         };
         let text = buffer.text();

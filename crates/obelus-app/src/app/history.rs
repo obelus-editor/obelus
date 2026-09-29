@@ -41,7 +41,7 @@ impl App {
     /// it obvious they are not part of the file.
     pub fn toggle_hunk(&mut self) {
         let Some(line) = self.current_buffer().map(|buffer| buffer.cursor().line) else {
-            self.note = Some("No file open".to_string());
+            self.wrong("No file open".to_string());
             return;
         };
         // Which block is in front of the reader, and it is not always the
@@ -80,7 +80,7 @@ impl App {
             }
         }
         let Some(hunk) = hunk.as_ref() else {
-            self.note = Some("Nothing changed here".to_string());
+            self.wrong("Nothing changed here".to_string());
             return;
         };
         // Every hunk opens, including one that replaced nothing: opening it

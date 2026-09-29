@@ -269,7 +269,7 @@ impl App {
             // offers nothing. The reason belongs on the status bar, which is
             // where every other passing word about state goes.
             Err(why) => {
-                self.note = Some(why);
+                self.wrong(why);
                 return;
             }
         };
@@ -1023,11 +1023,11 @@ impl App {
                         version,
                     },
                 );
-                self.note = Some(format!("{}\u{2026}", action.title()));
+                self.say(format!("{}\u{2026}", action.title()));
             }
             Err(error) => {
                 tracing::warn!(%error, "could not ask");
-                self.note = Some("The language server is not listening".to_string());
+                self.wrong("The language server is not listening".to_string());
             }
         }
     }
@@ -1313,21 +1313,21 @@ impl App {
                     now = ?now,
                     "dropping an answer about a version that has been replaced"
                 );
-                self.note = Some("The file changed while asking".to_string());
+                self.wrong("The file changed while asking".to_string());
             }
-            Outcome::Failed(message) => self.note = Some(message),
-            Outcome::NotYet => self.note = Some("Still indexing".to_string()),
+            Outcome::Failed(message) => self.wrong(message),
+            Outcome::NotYet => self.wrong("Still indexing".to_string()),
             Outcome::Nothing => {
-                self.note = Some(format!("Nothing for {}", action.title()));
+                self.wrong(format!("Nothing for {}", action.title()));
             }
             Outcome::Places(mut places) if places.len() == 1 => {
                 let place = places.remove(0);
-                self.note = None;
+                self.quiet();
                 self.go_to(&place.path, place.line, place.character);
             }
             Outcome::Places(places) => {
                 let items = place_rows(&places, &self.working_directory);
-                self.note = None;
+                self.quiet();
                 let mut picker = Picker::new(items, PickerLayout::FullArea);
                 picker.previews();
                 self.show_list(picker);
@@ -1344,7 +1344,7 @@ impl App {
     /// is offered whether or not there is one.
     pub fn restart_server(&mut self) {
         let Some(language) = self.current_buffer().and_then(Buffer::language) else {
-            self.note = Some("No file to restart a server for".to_string());
+            self.wrong("No file to restart a server for".to_string());
             return;
         };
 
@@ -1370,12 +1370,16 @@ impl App {
             self.serve(index);
         }
 
-        self.note = Some(match obelus_lsp::command_for(language) {
-            Some(command) if self.servers.contains_key(&language) => format!("restarted {command}"),
-            Some(command) if !obelus_lsp::on_path(command) => format!("{command} is not installed"),
-            Some(command) => format!("{command} would not start"),
-            None => format!("no language server for {}", language.name()),
-        });
+        match obelus_lsp::command_for(language) {
+            Some(command) if self.servers.contains_key(&language) => {
+                self.say(format!("restarted {command}"));
+            }
+            Some(command) if !obelus_lsp::on_path(command) => {
+                self.wrong(format!("{command} is not installed"));
+            }
+            Some(command) => self.wrong(format!("{command} would not start")),
+            None => self.wrong(format!("no language server for {}", language.name())),
+        }
     }
 
     /// Stops the server for the current file and leaves it stopped.
@@ -1385,16 +1389,16 @@ impl App {
     /// file of that language would start it again.
     pub fn stop_server(&mut self) {
         let Some(language) = self.current_buffer().and_then(Buffer::language) else {
-            self.note = Some("No file to stop a server for".to_string());
+            self.wrong("No file to stop a server for".to_string());
             return;
         };
         let was_running = self.stop(language);
         self.stopped.insert(language);
-        self.note = Some(match (obelus_lsp::command_for(language), was_running) {
-            (Some(command), true) => format!("stopped {command}"),
-            (Some(command), false) => format!("{command} was not running"),
-            (None, _) => format!("no language server for {}", language.name()),
-        });
+        match (obelus_lsp::command_for(language), was_running) {
+            (Some(command), true) => self.say(format!("stopped {command}")),
+            (Some(command), false) => self.wrong(format!("{command} was not running")),
+            (None, _) => self.wrong(format!("no language server for {}", language.name())),
+        }
     }
 
     /// Everything the current file defines, to jump into.
@@ -1411,12 +1415,12 @@ impl App {
     /// root.
     pub fn open_outline(&mut self) {
         let Some(buffer) = self.current_buffer() else {
-            self.note = Some("No file to outline".to_string());
+            self.wrong("No file to outline".to_string());
             return;
         };
         let path = buffer.path().to_path_buf();
         let Some(language) = buffer.syntax().map(SyntaxState::language) else {
-            self.note = Some("Not a language Obelus knows".to_string());
+            self.wrong("Not a language Obelus knows".to_string());
             return;
         };
 
@@ -1680,7 +1684,7 @@ impl App {
     fn on_formatting(&mut self, id: DocumentId, version: i32, reply: Reply) {
         if !self.unmoved(id, version) {
             tracing::debug!("the file changed while it was being laid out");
-            self.note = Some("The file changed while formatting".to_string());
+            self.wrong("The file changed while formatting".to_string());
         } else if let Some(edits) = action::edits_in(reply.result.ok()) {
             let encoding = self.file(id).and_then(Buffer::language).map_or_else(
                 || lsp_types::PositionEncodingKind::UTF16,
@@ -1971,13 +1975,16 @@ impl App {
         // that is not answering, or none at all -- which is the difference
         // between "this is fine" and "nobody has said".
         if here == 0 && self.troubled().is_empty() {
-            self.note = Some(match self.server_state() {
+            // A server that looked and found nothing is good news, and
+            // the other two are the key not having been answered at all --
+            // which is the difference this match was already about.
+            match self.server_state() {
                 Some((_, obelus_lsp::ServerState::Ready)) => {
-                    "Nothing wrong with this file".to_string()
+                    self.say("Nothing wrong with this file".to_string());
                 }
-                Some((command, _)) => format!("{command} is not answering"),
-                None => "No language server for this file".to_string(),
-            });
+                Some((command, _)) => self.wrong(format!("{command} is not answering")),
+                None => self.wrong("No language server for this file".to_string()),
+            }
             return;
         }
         let radii = self.wrongs();

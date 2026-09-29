@@ -208,7 +208,7 @@ impl App {
         }) {
             Ok((todo, missed)) => {
                 if !missed.is_empty() {
-                    self.note = Some("That note was taken away elsewhere".to_string());
+                    self.wrong("That note was taken away elsewhere".to_string());
                 }
                 // The names whose words were in that, so the page knows
                 // which of what it is holding is the only copy there is.
@@ -261,7 +261,7 @@ impl App {
         tracing::warn!(%why, "the notes were not written");
         // Short, because the status row is one row: which file and what went
         // wrong are in the log, where there is room for them.
-        self.note = Some(match why {
+        self.wrong(match why {
             obelus_git::todo::NotChanged::Unreadable(_) => {
                 "The notes will not read, so none are written".to_string()
             }
@@ -291,7 +291,7 @@ impl App {
             // has begun replacing their own list one note at a time.
             obelus_git::todo::Reading::Unreadable(why, at) => {
                 tracing::warn!(why, "the notes will not read");
-                self.note = Some("The notes will not read".to_string());
+                self.wrong("The notes will not read".to_string());
                 // And on the file itself. It is a file a reader opens --
                 // they write notes into it from the page and edit it by
                 // hand -- so being told the whole list will not read
@@ -725,7 +725,7 @@ impl App {
             TodoOutcome::Paste => {
                 match obelus_clipboard::paste() {
                     Some(what) => self.paste_into_notes(&what),
-                    None => self.note = Some("Nothing to paste".to_string()),
+                    None => self.wrong("Nothing to paste".to_string()),
                 }
                 true
             }

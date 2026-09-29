@@ -59,6 +59,9 @@ pub struct StatusView<'a> {
     /// The directory that question would put a file in, where it is the
     /// question that makes one.
     making_in: Option<String>,
+    /// Whether what Obelus has to say is about something that would not
+    /// go, which is the ink it is drawn in.
+    note_is_wrong: bool,
     /// The notes, while they are what is being read.
     notes: Option<&'a obelus_component::todo::TodoView>,
     /// Which of them is nearest the reader, and so whose row this is.
@@ -98,6 +101,7 @@ impl<'a> StatusView<'a> {
             settings: app.settings(),
             prompt: app.prompt(),
             making_in: app.making_in(),
+            note_is_wrong: app.note_is_wrong(),
             notes: app.notes(),
             nearest: app.layers().nearest(),
             replacing: app.replacing(),
@@ -207,7 +211,7 @@ impl Widget for StatusView<'_> {
                         area.x + 1,
                         area.y,
                         &truncate_from_right(note, usize::from(area.width).saturating_sub(2)),
-                        style,
+                        self.wrong_ink().map_or(style, |ink| style.fg(ink)),
                     );
                 }
             }
@@ -498,6 +502,28 @@ impl StatusView<'_> {
         }
     }
 
+    /// The ink a note is written in where it is about something that
+    /// would not go.
+    ///
+    /// `Saved` and `Not saved` are the same words in the same place, and
+    /// the row had nothing else to tell them apart with -- so a reader
+    /// glancing at it read them the same.
+    ///
+    /// `None` for a note that reports, because what *that* is written in
+    /// depends on what else is on the row: a dim aside beside the file's
+    /// own name, and the row's own ink where it is the row. Which is a
+    /// thing each caller knows and this does not.
+    fn wrong_ink(&self) -> Option<ratatui::style::Color> {
+        // Through `colour_for`, which is where the count of what is wrong
+        // with the file gets the same red a few columns along: one door,
+        // so the two things on this row that mean "wrong" cannot come to
+        // mean it in two shades.
+        self.note_is_wrong.then(|| {
+            self.theme
+                .colour_for(Some(obelus_text::kind::SyntaxKind::Error))
+        })
+    }
+
     fn render_file(&self, buffer: &Buffer, area: Rect, cells: &mut CellBuffer, style: Style) {
         // Sits with the path rather than with the cursor position, because it
         // is a fact about the file. In its own colour: the whole point is that
@@ -671,7 +697,7 @@ impl StatusView<'_> {
                 area.x + offset,
                 area.y,
                 &working,
-                style.fg(self.theme.gutter),
+                style.fg(self.wrong_ink().unwrap_or(self.theme.gutter)),
             );
         }
 

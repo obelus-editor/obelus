@@ -613,7 +613,7 @@ impl App {
             return;
         }
         let Some(root) = self.agents_root() else {
-            self.note = Some("This system has nowhere to install to".to_string());
+            self.wrong("This system has nowhere to install to".to_string());
             return;
         };
         // Nothing to report yet -- a download says how far through it is
@@ -651,7 +651,7 @@ impl App {
             .is_none()
         {
             tracing::warn!(id, "not using an agent that is not installed");
-            self.note = Some(format!("{id} is not installed"));
+            self.wrong(format!("{id} is not installed"));
             return;
         }
         // Whatever was running is not this one. Stopped rather than left

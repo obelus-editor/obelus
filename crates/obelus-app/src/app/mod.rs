@@ -38,6 +38,7 @@ mod preferences;
 mod previewing;
 mod renaming;
 mod renaming_files;
+mod saying;
 mod searching;
 mod semantics;
 mod switching;
@@ -677,7 +678,10 @@ pub struct App {
     /// Half of what a language server does is answer with nothing, and
     /// nothing is invisible: without somewhere to say "no definition found" or
     /// "still indexing", pressing the key looks like the key not working.
-    note: Option<String>,
+    ///
+    /// Written through [`App::say`] and [`App::wrong`] and nowhere else,
+    /// which is what keeps every note saying which kind it is.
+    note: Option<saying::Note>,
     /// What went wrong on the way up that no file can be marked with.
     ///
     /// A watcher that would not start, an agent offered no tools. Most of
@@ -1850,7 +1854,34 @@ impl App {
     /// What Obelus has to say, until the next key.
     #[must_use]
     pub fn note(&self) -> Option<&str> {
-        self.note.as_deref()
+        self.note.as_ref().map(saying::Note::words)
+    }
+
+    /// And whether it is about something that would not go.
+    #[must_use]
+    pub fn note_is_wrong(&self) -> bool {
+        self.note.as_ref().is_some_and(saying::Note::is_wrong)
+    }
+
+    /// Says what happened, or what is happening.
+    pub(crate) fn say(&mut self, said: impl Into<String>) {
+        self.note = Some(saying::Note::said(said));
+    }
+
+    /// Says what would not go.
+    ///
+    /// Two doors rather than a flag set beside the words: a flag is a
+    /// second thing to remember at a hundred and thirty call sites, and
+    /// the one that was forgotten would be a refusal drawn as a report.
+    /// Which of these a note went through is the whole of how it says
+    /// which it is.
+    pub(crate) fn wrong(&mut self, said: impl Into<String>) {
+        self.note = Some(saying::Note::wrong(said));
+    }
+
+    /// Takes back whatever was said.
+    pub(crate) fn quiet(&mut self) {
+        self.note = None;
     }
 
     /// Stops one server, and says whether there was one to stop.
@@ -2375,7 +2406,7 @@ impl App {
                 if let Some(said) = complaints.last() {
                     let name = obelus_lsp::command_for(language).unwrap_or(language.name());
                     tracing::warn!(language = language.name(), "{said}");
-                    self.note = Some(format!("{name}: {said}"));
+                    self.wrong(format!("{name}: {said}"));
                 }
                 for edit in &asked {
                     self.on_asked_edit(language, edit);
@@ -2544,7 +2575,7 @@ impl App {
         }
         // Whatever Obelus had to say has been read by now, or was not going to
         // be.
-        self.note = None;
+        self.quiet();
         // And a drag is over. Mostly it ended with the button coming up,
         // but a pointer that leaves the terminal takes its release with
         // it, and a drag nothing ever ended would go on scrolling under
@@ -3961,6 +3992,9 @@ impl Screen for App {
     }
     fn note(&self) -> Option<&str> {
         App::note(self)
+    }
+    fn note_is_wrong(&self) -> bool {
+        App::note_is_wrong(self)
     }
     fn talked_about(&self) -> Vec<obelus_component::todo::Talked> {
         App::talked_about(self)

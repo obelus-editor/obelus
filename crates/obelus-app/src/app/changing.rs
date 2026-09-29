@@ -124,10 +124,17 @@ impl App {
         // sentence that says why is the reason the protocol asks for.
         let applied = !wanted.is_empty();
         let said = self.apply_wanted(&wanted);
-        self.note = Some(match asked.label.as_deref() {
+        let row = match asked.label.as_deref() {
             Some(label) => format!("{label}: {said}"),
             None => said.clone(),
-        });
+        };
+        // Which kind of note it is, out of the bit the server is being
+        // answered with: an edit with nothing in it did not happen, and
+        // what `apply_wanted` hands back is then a sentence about why.
+        match applied {
+            true => self.say(row),
+            false => self.wrong(row),
+        }
         obelus_lsp::client::edit_answer(&asked.id, applied, &said)
     }
 

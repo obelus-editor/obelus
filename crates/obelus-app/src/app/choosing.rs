@@ -134,7 +134,7 @@ impl App {
             // Logging is allowed to fail without stopping Obelus starting, so
             // there may genuinely be no file -- and a server log exists only
             // once a server has said something.
-            None => self.note = Some(missing.to_string()),
+            None => self.wrong(missing.to_string()),
         }
     }
 
