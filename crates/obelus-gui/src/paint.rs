@@ -1268,6 +1268,22 @@ impl Painter {
             .map(|row| self.holds(page, row, capped))
             .collect();
         for (row, holds) in rows.iter().enumerate() {
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "a row of a grid is inside the window"
+            )]
+            let at = row as u16;
+            // Whether a box with a frame round it is over this cell. A
+            // run that stops because something was put over it has not
+            // stopped: the row carries on underneath, so that end is not
+            // an end -- it is square, and it keeps no rim, the same as a
+            // row the hold carries on into.
+            let covered = |x: u16| {
+                framed.iter().any(|card| {
+                    (card.area.left()..card.area.right()).contains(&x)
+                        && (card.area.top()..card.area.bottom()).contains(&at)
+                })
+            };
             let touching = |beside: Option<&Vec<(u16, u16, Color)>>, run: (u16, u16, Color)| {
                 beside.is_some_and(|beside| {
                     beside
@@ -1281,6 +1297,7 @@ impl Painter {
                     (start, end, colour),
                 );
                 let below = touching(rows.get(row + 1), (start, end, colour));
+                let cut = (start.checked_sub(1).is_some_and(covered), covered(end));
                 #[expect(
                     clippy::cast_precision_loss,
                     reason = "a window is thousands of pixels, not millions"
@@ -1289,11 +1306,7 @@ impl Painter {
                 let left = f32::from(start) * cell.width;
                 let wide = f32::from(end - start) * cell.width;
                 let ink = rgba(colour, Ink::Background);
-                #[expect(
-                    clippy::cast_possible_truncation,
-                    reason = "a row of a grid is inside the window"
-                )]
-                let under = self.under(panes, framed, start, row as u16);
+                let under = self.under(panes, framed, start, at);
                 // The rim, further from what is under it than the colour
                 // itself: it is the thing being seen.
                 let edge = mixed(ink, away(under, ink), HELD_RIM);
@@ -1309,16 +1322,17 @@ impl Painter {
                         .find(|&&(from, to, theirs)| theirs == colour && from < end && to > start)
                         .copied()
                 };
-                let turns = Turn::corners(start, end, beside(true), beside(false));
+                let turns = Turn::corners(start, end, beside(true), beside(false), cut);
                 self.plate([left, top, wide, cell.height], corner, edge, turns);
                 // The face, inside the rim where there is one. No inset
                 // where the hold carries on: an edge there is a seam
                 // across the middle of one thing.
                 let (up, down) = (if above { 0.0 } else { rim }, if below { 0.0 } else { rim });
+                let (near, far) = (if cut.0 { 0.0 } else { rim }, if cut.1 { 0.0 } else { rim });
                 let face = [
-                    left + rim,
+                    left + near,
                     top + up,
-                    (wide - rim * 2.0).max(0.0),
+                    (wide - near - far).max(0.0),
                     (cell.height - up - down).max(0.0),
                 ];
                 self.plate(
@@ -1354,6 +1368,11 @@ impl Painter {
             .find(|&(from, to, _)| (from..to).contains(&at.x))?;
         let under = self.under(panes, framed, from, at.y);
         Some(mixed(under, rgba(colour, Ink::Background), HELD))
+    }
+
+    /// The page's own ground, as a colour.
+    fn ground_colour(&self) -> [f32; 4] {
+        rgba(self.ground, Ink::Background)
     }
 
     /// What a hold at this cell is standing on: a pane's own ground where
@@ -1698,12 +1717,14 @@ impl Painter {
                     continue;
                 };
                 if card.ring_holds(page, x, y) && !seen_through(panes, x, y, under.background) {
+                    let ground = self.under(panes, &[], x, y);
                     self.block(
                         f32::from(x) * cell.width,
                         f32::from(y) * cell.height,
                         cell.width,
                         cell.height,
-                        rgba(under.background, Ink::Background),
+                        as_held(under.background, self.holding, ground)
+                            .unwrap_or_else(|| rgba(under.background, Ink::Background)),
                     );
                 }
             }
@@ -2058,12 +2079,16 @@ impl Painter {
                 };
                 let left = f32::from(x) * cell.width;
                 let top = f32::from(y) * cell.height;
+                // What a pane was put over is the page, so a hold in it
+                // is a plate on the page's own ground.
+                let ground = self.ground_colour();
                 self.block(
                     left,
                     top,
                     cell.width,
                     cell.height,
-                    rgba(under.background, Ink::Background),
+                    as_held(under.background, self.holding, ground)
+                        .unwrap_or_else(|| rgba(under.background, Ink::Background)),
                 );
                 if lettered_behind(under, barred, x, y) {
                     let ink = rgba(under.foreground, Ink::Foreground);
@@ -2255,12 +2280,14 @@ impl Painter {
                 let left = f32::from(x) * cell.width;
                 let top = f32::from(y) * cell.height;
                 if !seen_through(sheet, x, y, under.background) {
+                    let ground = self.under(sheet, &[], x, y);
                     self.block(
                         left,
                         top,
                         cell.width,
                         cell.height,
-                        rgba(under.background, Ink::Background),
+                        as_held(under.background, self.holding, ground)
+                            .unwrap_or_else(|| rgba(under.background, Ink::Background)),
                     );
                 }
                 if !under.text.trim().is_empty() {
@@ -3288,11 +3315,20 @@ enum Turn {
 impl Turn {
     /// The four corners of a run, packed two bits each in the order the
     /// shader reads them: top left, top right, bottom left, bottom right.
+    ///
+    /// `cut` says whether something was put *over* the run at either end
+    /// -- a box with a frame round it, sitting on the row. That end is
+    /// not an end: the row carries on under the box, so the corners
+    /// there are no corners, the same as where the row beside it is
+    /// level. Without it a selected row with a card over its middle is
+    /// two little plates with four round corners each, one at either end
+    /// of the row, which read as badges rather than as the row they are.
     fn corners(
         start: u16,
         end: u16,
         above: Option<(u16, u16, Color)>,
         below: Option<(u16, u16, Color)>,
+        cut: (bool, bool),
     ) -> u32 {
         let left = |beside: Option<(u16, u16, Color)>| match beside {
             Some((from, _, _)) if from < start => Self::Other,
@@ -3304,10 +3340,19 @@ impl Turn {
             Some((_, to, _)) if to == end => Self::None,
             _ => Self::Corner,
         };
-        [left(above), right(above), left(below), right(below)]
-            .into_iter()
-            .enumerate()
-            .fold(0, |turns, (at, turn)| turns | ((turn as u32) << (at * 2)))
+        let cut_to = |side: bool, turn: Self| match side {
+            true => Self::None,
+            false => turn,
+        };
+        [
+            cut_to(cut.0, left(above)),
+            cut_to(cut.1, right(above)),
+            cut_to(cut.0, left(below)),
+            cut_to(cut.1, right(below)),
+        ]
+        .into_iter()
+        .enumerate()
+        .fold(0, |turns, (at, turn)| turns | ((turn as u32) << (at * 2)))
     }
 }
 
@@ -3316,6 +3361,23 @@ impl Turn {
 /// What a rim wants: the colour the cells wear, carried on in the
 /// direction it already went from the ground, so a hold barely off its
 /// page still has an edge to be found by.
+/// The face a hold wearing this colour is drawn in, over this ground.
+///
+/// The cell's question rather than the run's: whoever is painting a cell
+/// back knows where it is and only wants to know what colour to put
+/// there. Three things put a cell's own ground back and every one of
+/// them had to be told -- a switch replacing its glyph, the ring of
+/// cells a box's frame is drawn on, and the picture taken of what a pane
+/// or a box was put over. The cells carry the hold's colour at full
+/// strength, because that is the whole of what a terminal has for it, so
+/// painting one back is a square of it standing where a plate is drawn:
+/// a switch in a dark box of its own, a bar of grey across the top of a
+/// card, a band through the glass.
+fn as_held(colour: Color, holding: (Color, Color), ground: [f32; 4]) -> Option<[f32; 4]> {
+    let (held, chosen) = holding;
+    (colour == held || colour == chosen).then(|| mixed(ground, rgba(colour, Ink::Background), HELD))
+}
+
 fn away(from: [f32; 4], to: [f32; 4]) -> [f32; 4] {
     let mut out = to;
     for channel in 0..3 {
@@ -3469,6 +3531,7 @@ mod tests {
                 20,
                 above.map(|(from, to)| (from, to, ink)),
                 below.map(|(from, to)| (from, to, ink)),
+                (false, false),
             )
         };
         // Top left, top right, bottom left, bottom right.
@@ -3512,6 +3575,17 @@ mod tests {
             "bottom left, below runs on"
         );
         assert_eq!(at(step, 3), Turn::None as u32, "bottom right, level");
+
+        // And where something was put over the run, the end it stops at
+        // is not an end: the row carries on under the box.
+        let under_a_box = Turn::corners(10, 20, None, None, (true, false));
+        assert_eq!(at(under_a_box, 0), Turn::None as u32, "top left, cut");
+        assert_eq!(at(under_a_box, 2), Turn::None as u32, "bottom left, cut");
+        assert_eq!(
+            at(under_a_box, 1),
+            Turn::Corner as u32,
+            "and the other end is still the hold's own"
+        );
     }
 
     /// A quad that wants the whole window covers the whole window.
