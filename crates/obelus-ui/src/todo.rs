@@ -451,7 +451,15 @@ impl Widget for TodoUi<'_> {
                         width: list.width.saturating_sub(step),
                         height: 1,
                     },
-                    self.theme.gutter,
+                    // One shade off the page, which is what this theme
+                    // calls that -- not the gutter's, which is what a
+                    // `ruled` glyph is drawn in. A rule is a boundary
+                    // between two subjects and is meant to be seen; this
+                    // is a seam between two of one kind of thing, and a
+                    // seam as loud as the rule over the page would say
+                    // the notes were as far apart as the list is from
+                    // its foot.
+                    self.theme.raised_background,
                 );
             }
             self.row(

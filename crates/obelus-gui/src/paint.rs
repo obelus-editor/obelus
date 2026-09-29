@@ -1298,22 +1298,26 @@ impl Painter {
     /// frame round it -- a line drawn on either would be the page
     /// underneath reaching through.
     fn partings(&mut self, parted: &[Parted], over: &[&Behind], cell: CellSize) {
-        let line = thickness(cell.height);
         for parting in parted {
             if !parting.still_said(over) {
                 continue;
             }
             let left = f32::from(parting.area.x) * cell.width;
             let width = f32::from(parting.area.width) * cell.width;
-            // On the boundary rather than in the middle of a row, which is
-            // where `rules` puts its line: a rule *is* the row it is on
-            // and this is the seam between two.
             self.block(
                 left,
                 f32::from(parting.area.y) * cell.height,
                 width.max(1.0),
-                line,
-                rgba(parting.edge, Ink::Foreground),
+                // One pixel, whatever the cell is. `thickness` is a rule's,
+                // and a rule *is* the row it is on -- three pixels of it at
+                // the size a window draws -- where this is the seam between
+                // two rows of a list and wants to be the thinnest thing the
+                // screen can draw.
+                1.0,
+                // As it was said, and not mixed down again: what the view
+                // names is already a shade off the page, and a shade off
+                // the page halved is the page.
+                rgba(parting.edge, Ink::Background),
             );
         }
     }
