@@ -1266,6 +1266,92 @@ fn the_agents_page_is_a_list_of_cards() {
     );
 }
 
+/// And the cards have the bar every other list in Obelus has.
+///
+/// The page of settings drew one and the page of cards did not, so the one
+/// page in Obelus whose rows are tallest and whose list is longest was the
+/// one with nothing saying how much of it there was.
+///
+/// Both halves, because each passes with the other broken: a page with
+/// more cards than screen has a bar down every row of it, and one with a
+/// single card has none -- a track with no thumb on it is a control that
+/// does not work.
+///
+/// Deliberate break: take the `scrollbar` call out, or drop the `total >
+/// height` around it, or hand the cards the region's own width: a card
+/// fills the row it is on, so it blanks the block the bar wrote there and
+/// the page comes out with a hole in its bar.
+///
+/// What this asks of the bar is where it *starts* and that it has no hole
+/// in it, rather than how long it is, because how long the page is is not
+/// settled: the window is told the editor's height while the page is drawn
+/// into what the tabs and the foot leave of it, two rows fewer -- so the
+/// last card on screen is drawn a row or two past the rule over the foot,
+/// and the page's body is not the bar's own extent. One question, and it
+/// is not this one.
+#[test]
+fn the_cards_have_a_bar_where_there_is_somewhere_to_scroll() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("card-bar");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+    support::press(&mut app, KeyCode::BackTab);
+    assert!(app.settings().expect("the settings").on_agents());
+
+    let listed = |count: usize| -> Vec<obelus_agent::Agent> {
+        (0..count)
+            .map(|index| obelus_agent::Agent {
+                id: format!("agent-{index}"),
+                name: format!("Agent {index}"),
+                version: "1.0.0".to_string(),
+                description: "One of several".to_string(),
+                authors: vec!["Somebody".to_string()],
+                license: "MIT".to_string(),
+                website: None,
+                icon: None,
+                distribution: obelus_agent::Distribution::Node {
+                    package: format!("agent-{index}@1.0.0"),
+                    arguments: Vec::new(),
+                },
+            })
+            .collect()
+    };
+
+    app.handle(Event::Agent(obelus_agent::Event::Registry {
+        agents: listed(12),
+        failure: None,
+    }));
+    // Which rows of the page the bar is on.
+    let barred = |dump: &str| -> Vec<bool> {
+        body_of(dump)
+            .iter()
+            .map(|row| row.ends_with('\u{2588}'))
+            .collect()
+    };
+
+    let dump = support::render(&mut app, 76, 16);
+    let column = barred(&dump);
+    assert!(column[0], "no bar at the top of the page:\n{dump}");
+    let bar = column.iter().take_while(|on| **on).count();
+    assert!(
+        column[bar..].iter().all(|on| !on),
+        "a hole in the bar:\n{dump}"
+    );
+
+    // And one card fits, so there is nothing to say.
+    app.handle(Event::Agent(obelus_agent::Event::Registry {
+        agents: listed(1),
+        failure: None,
+    }));
+    let dump = support::render(&mut app, 76, 16);
+    assert!(
+        barred(&dump).iter().all(|on| !on),
+        "a bar with nowhere to go:\n{dump}"
+    );
+}
+
 /// The list is read on a thread -- both the cached copy and the fetched
 /// one -- so opening the settings does no file reading and no waiting. A
 /// fetch that fails says so on the page and lets the next visit try again:
@@ -3303,32 +3389,35 @@ fn nothing_on_the_page_writes_in_the_column_the_bar_is_in() {
     let mut app = open(&file);
 
     let dump = support::render(&mut app, 66, 12);
-    // What each row of the page holds, without the dump's own row numbers.
-    let rows: Vec<&str> = support::text_block(&dump)
+    for (at, row) in body_of(&dump).iter().enumerate() {
+        assert!(
+            row.ends_with('\u{2588}'),
+            "row {at} of the body is not the bar's: {row:?}\n{dump}"
+        );
+    }
+}
+
+/// The rows of a settings page's body: what is between the rule under the
+/// tabs and the rule over the foot, without the dump's own row numbers.
+///
+/// The whole body, because the first row and the last are where a heading
+/// and a foot reach into the bar's column -- and a test that looked only
+/// at the run between the first block and the last would see neither.
+fn body_of(dump: &str) -> Vec<&str> {
+    let rows: Vec<&str> = support::text_block(dump)
         .lines()
         .filter_map(|row| row.split_once('|'))
         .map(|(_, said)| said)
         .collect();
-    // The page's body is between the rule under the tabs and the rule over
-    // the foot, and every row of it is the bar's -- the first and the last
-    // most of all, which is where a heading and a foot reach in and where
-    // looking only at the run between the blocks would see nothing.
-    let rule = |row: &str| !row.is_empty() && row.chars().all(|cell| cell == '\u{2500}');
-    let top = rows.iter().position(|row| rule(row)).expect("a rule");
+    let rule = |row: &&str| !row.is_empty() && row.chars().all(|cell| cell == '\u{2500}');
+    let top = rows.iter().position(rule).expect("a rule under the tabs");
     let foot = rows
         .iter()
         .skip(top + 1)
-        .position(|row| rule(row))
-        .expect("another rule")
+        .position(rule)
+        .expect("a rule over the foot")
         + top
         + 1;
     assert!(foot > top + 1, "the page has a body: {rows:?}");
-    for (at, row) in rows[top + 1..foot].iter().enumerate() {
-        assert_eq!(
-            row.chars().last(),
-            Some('\u{2588}'),
-            "row {} of the body is not the bar's: {row:?}",
-            at + top + 1
-        );
-    }
+    rows[top + 1..foot].to_vec()
 }

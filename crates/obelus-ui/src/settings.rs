@@ -1055,6 +1055,25 @@ impl SettingsView<'_> {
         let focus = self.settings.focus().min(listed.len().saturating_sub(1));
         let first = self.settings.top().min(focus);
 
+        // The same bar the page of settings has, measured in rows rather
+        // than in cards: a card is as tall as its description needs, so
+        // how far down a page of them the reader is cannot be counted in
+        // cards.
+        let rows = |taken: &[u16]| taken.iter().map(|rows| usize::from(*rows)).sum::<usize>();
+        let total = rows(&heights);
+        if total > usize::from(area.height) {
+            crate::scrollbar(cells, area, rows(&heights[..first]), total, self.theme);
+        }
+        // And the column it is in is kept back from the cards whether
+        // there is a bar in it or not. Handing it back would re-wrap every
+        // description the moment one appeared -- and it is the width
+        // `Settings::card_width` already answers with, which is what the
+        // window and the marks are laid out at.
+        let area = Rect {
+            width: area.width.saturating_sub(crate::editor::SCROLLBAR_WIDTH),
+            ..area
+        };
+
         let mut y = area.y;
         for (index, agent) in listed.iter().enumerate().skip(first) {
             if y >= area.bottom() {
