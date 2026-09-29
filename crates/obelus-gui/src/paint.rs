@@ -132,6 +132,10 @@ pub(crate) struct Painter {
     /// How wide and how tall the grid is, in pixels: the cells and nothing
     /// else, which is what a glyph is cut back to -- see `clipped`.
     grid: [f32; 2],
+    /// How far in from the window's own edges that grid starts -- see
+    /// `grid::margin`. Kept because `whole_window` is wanted below
+    /// `draw`, where the margin is worked out.
+    margin: [f32; 2],
     /// The instances of the frame being built, kept so that a screenful of
     /// rectangles is allocated once rather than once a frame.
     quads: Vec<Quad>,
@@ -327,6 +331,25 @@ const BAR_MARK_UNDER: f32 = 0.78;
 /// under it is opaque and known, so this is the colour it would be, and
 /// nothing here depends on how the pipeline happens to blend.
 const BAR_RESTING: f32 = 0.42;
+/// The whole window, in the coordinates a quad's rectangle is written in.
+///
+/// Which are the grid's, not the window's: the vertex shader adds
+/// `screen.origin` -- the margin the grid is middled in -- to every
+/// rectangle it is handed, so a quad that wants the *window* has to start
+/// that far back. Two of them do, the ground under everything and the
+/// frame put back while a pane slides, and the second was written
+/// `[0.0, 0.0, width, height]`: it went on the screen a margin down and
+/// to the right of where it meant to, leaving the strip along the top and
+/// down the left at the black the pass clears to, for as long as the
+/// slide lasted.
+///
+/// Which is visible only where the window is not a whole number of cells
+/// -- the compositor picks one size and the font the other, so that is
+/// most windows and no test.
+fn whole_window(window: [f32; 2], margin: [f32; 2]) -> [f32; 4] {
+    [-margin[0], -margin[1], window[0], window[1]]
+}
+
 /// The frame that has just been drawn, put back everywhere but the pane.
 const FRAME: u32 = 32;
 /// And the pane out of it, higher up than it will end.
@@ -643,6 +666,7 @@ impl Painter {
             palette: None,
             ground: Color::Reset,
             grid: [0.0, 0.0],
+            margin: [0.0, 0.0],
             quads: Vec::new(),
             placed: Placed::default(),
             instances,
@@ -761,6 +785,7 @@ impl Painter {
             f32::from(page.columns()) * cell.width,
             f32::from(page.rows()) * cell.height,
         ];
+        self.margin = margin;
         // The whole window, in the page's own ground, under everything.
         //
         // The cells are all one size and the grid is middled in the
@@ -768,13 +793,8 @@ impl Painter {
         // is what is in it. Before the pane's own cells, so it is in the
         // picture taken of what is behind one as well -- where it used to
         // be the black the pass clears to.
-        self.block(
-            -margin[0],
-            -margin[1],
-            across,
-            down,
-            rgba(self.ground, Ink::Background),
-        );
+        let [left, top, wide, tall] = whole_window([across, down], margin);
+        self.block(left, top, wide, tall, rgba(self.ground, Ink::Background));
         // First of everything, because these are the quads the backdrop
         // pass draws and it draws the front of the buffer.
         let pane = said
@@ -1208,7 +1228,7 @@ impl Painter {
         let [left, top, far, low] = pane;
         let room = [left, top, far, low];
         self.quads.push(Quad {
-            rect: [0.0, 0.0, right, bottom],
+            rect: whole_window([right, bottom], self.margin),
             uv: room,
             colour: [0.0, 0.0, 0.0, 1.0],
             flags: FRAME,
@@ -3009,6 +3029,40 @@ mod tests {
 
     use super::*;
     use crate::grid::Update;
+
+    /// A quad that wants the whole window covers the whole window.
+    ///
+    /// Checked against what the vertex shader does with a rectangle it is
+    /// handed, which is to add the grid's origin to it -- so this is the
+    /// shader's half of the bargain written out, not the function's own
+    /// answer read back.
+    ///
+    /// Deliberate break: answer `[0.0, 0.0, window[0], window[1]]`, which
+    /// is the window in the window's own coordinates. That is what the
+    /// frame put back during a slide was written in, and on a window five
+    /// pixels wider than its cells it left a five-pixel black strip down
+    /// the left for as long as the scroll took. A margin of nothing is in
+    /// the list below because that break passes it: the bug is invisible
+    /// on exactly the windows a test would think to try.
+    #[test]
+    fn a_quad_that_wants_the_whole_window_covers_it() {
+        let window = [1882.0, 1012.0];
+        for margin in [[0.0, 0.0], [4.0, 0.0], [0.0, 3.0], [4.0, 3.0]] {
+            let [left, top, wide, tall] = whole_window(window, margin);
+            // What the shader draws it at.
+            let (x, y) = (left + margin[0], top + margin[1]);
+            assert!(x.abs() < f32::EPSILON, "{margin:?}: a strip down the left");
+            assert!(y.abs() < f32::EPSILON, "{margin:?}: a strip along the top");
+            assert!(
+                (x + wide - window[0]).abs() < f32::EPSILON,
+                "{margin:?}: it stops short of the right"
+            );
+            assert!(
+                (y + tall - window[1]).abs() < f32::EPSILON,
+                "{margin:?}: it stops short of the bottom"
+            );
+        }
+    }
 
     /// A square of colour is a hole in a pane only where it is the pane's
     /// own colour, inside the pane.
