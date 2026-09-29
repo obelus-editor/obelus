@@ -140,6 +140,34 @@ impl Watcher {
                     if matches!(event.kind, EventKind::Access(_)) && !closed_by_a_writer {
                         return;
                     }
+                    // And what the file's *record* says, rather than what
+                    // the file says. A mode, an owner, an extended
+                    // attribute, a time: none of them changes a line, so
+                    // none of them is a reason to read one again.
+                    //
+                    // Which is the same refusal as the one above wearing
+                    // another platform's clothes. inotify has an event for
+                    // a file being closed and FSEvents has none, so on
+                    // macOS a read announces itself the only way that API
+                    // can: the access time moves, which is
+                    // `kFSEventStreamEventFlagItemInodeMetaMod`, which
+                    // `notify` hands over as this. Obelus reading a file
+                    // then woke Obelus, which read it again -- the loop
+                    // the test beside this one is named for, and it was
+                    // shut on one platform only.
+                    //
+                    // Nothing real is lost with it. FSEvents says a
+                    // content change in a flag of its own
+                    // (`kFSEventStreamEventFlagItemModified`), a rename in
+                    // another, a creation and a removal in two more; on
+                    // Linux this is `IN_ATTRIB`, which is a `chmod` and
+                    // not a write.
+                    if matches!(
+                        event.kind,
+                        EventKind::Modify(notify::event::ModifyKind::Metadata(_))
+                    ) {
+                        return;
+                    }
                     let spellings = spelled.lock().unwrap_or_else(|poison| poison.into_inner());
                     for path in event
                         .paths

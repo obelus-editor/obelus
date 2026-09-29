@@ -253,6 +253,42 @@ fn a_file_written_continuously_is_still_reported() {
     );
 }
 
+/// A change to what the file's record says is not a change to the file.
+///
+/// A mode, an owner, a time: none of them changes a line, so none of them
+/// is a reason to read one again. Which matters most where it cannot be
+/// seen from here: FSEvents has no event for a file being closed, so on
+/// macOS a *read* announces itself the only way that API can -- the access
+/// time moves, and `notify` hands that over as a metadata change. Obelus
+/// reading a file then woke Obelus, which read it again.
+///
+/// Asked here with a mode, because that is the one metadata change a Linux
+/// watcher reports (`IN_ATTRIB`) and a read is not: the two tests above
+/// about reading say nothing at all on this platform, and pass whether the
+/// rule is there or not.
+///
+/// Deliberate break: take the `Modify(Metadata(_))` refusal out of
+/// `obelus_watch` and this arrives.
+#[test]
+fn a_change_of_mode_is_not_a_change_to_the_file() {
+    let scratch = Scratch::new("mode");
+    let path = scratch.write("a.rs", "fn main() {}\n");
+
+    let (sender, events) = obelus_app::event::channel();
+    let mut watcher = Watcher::new(sender).expect("starting the watcher");
+    watcher.watch(&path).expect("watching");
+
+    let mut how = fs::metadata(&path).expect("its mode").permissions();
+    how.set_readonly(true);
+    fs::set_permissions(&path, how).expect("changing it");
+
+    let seen = collect(&events, Duration::from_millis(400));
+    assert!(
+        !seen.contains(&path),
+        "a mode was reported as the file changing"
+    );
+}
+
 /// An Obelus that is killed reports that it let go of what it was holding.
 ///
 /// The one thing on disk that nothing writes: a claim on a conversation is

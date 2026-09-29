@@ -481,7 +481,14 @@ mod tests {
         let mut runs = Runs::default();
         let id = runs
             .start(
-                "printf 'aaaaaaaaaa%.0s' $(seq 1 100)",
+                // Written in the shell that will run it -- see `shell`.
+                // What is under test is not: the limit is kept in code
+                // with no `cfg` in it, and this is only how a thousand
+                // characters are asked for.
+                match cfg!(windows) {
+                    true => "for /L %i in (1,1,100) do @echo aaaaaaaaaa",
+                    false => "printf 'aaaaaaaaaa%.0s' $(seq 1 100)",
+                },
                 &[],
                 &[],
                 None,
@@ -535,7 +542,14 @@ mod tests {
         let mut runs = Runs::default();
         let id = runs
             .start(
-                "printf '%s|%s|%s' \"$PAGER\" \"$GIT_PAGER\" \"$TERM\"",
+                // The same again: the three are set in code with no `cfg`
+                // in it, and this asks the shell to say them back. `^|`
+                // is how cmd is told a bar is a character rather than a
+                // pipe.
+                match cfg!(windows) {
+                    true => "echo %PAGER%^|%GIT_PAGER%^|%TERM%",
+                    false => "printf '%s|%s|%s' \"$PAGER\" \"$GIT_PAGER\" \"$TERM\"",
+                },
                 &[],
                 // Even where the reader's own environment has one.
                 &[("PAGER".to_string(), "less".to_string())],
