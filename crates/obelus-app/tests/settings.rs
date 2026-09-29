@@ -335,11 +335,8 @@ fn every_setting_is_on_one_page_under_a_heading() {
     // in. Shown rather than every setting there is: a terminal does not
     // offer how big the text is, because its font is its own.
     assert_eq!(rows(&app).len(), shown());
-    assert_eq!(rows(&app)[0], "Colour theme");
-    assert_eq!(
-        rows(&app).last().map(String::as_str),
-        Some("Files a project ignores")
-    );
+    assert_eq!(rows(&app)[0], "Theme");
+    assert_eq!(rows(&app).last().map(String::as_str), Some("Ignored files"));
 
     // A heading on the first of each group and on nothing else, so the
     // focus never has a row to step over.
@@ -386,6 +383,48 @@ fn every_setting_is_on_one_page_under_a_heading() {
     assert!(app.settings().expect("the settings").on_keys());
 }
 
+/// A setting whose name is the whole of it keeps the blank under it.
+///
+/// The blank is what makes an entry an entry -- so that the next name is
+/// not read as part of this one -- and a setting with no gloss has nothing
+/// else between the two. It is also the one shape where the walk that lays
+/// the page out and `Settings::setting_rows`, which the window is settled
+/// by, disagreed: the window counted a row the walk never left room for,
+/// which is a reader stepping onto an entry nobody drew.
+///
+/// Deliberate break: `y += tall + u16::from(!row.body.is_empty())` in
+/// `placed`, which is what it was while every setting had a gloss.
+/// `Nerd Font glyphs` is then drawn hard against `Theme`.
+#[test]
+fn a_setting_with_no_gloss_keeps_the_blank_under_it() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("no-gloss");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+
+    let dump = support::render(&mut app, 66, 12);
+    let rows: Vec<&str> = support::text_block(&dump)
+        .lines()
+        .filter_map(|row| row.split_once('|'))
+        .map(|(_, said)| said)
+        .collect();
+    let at = rows
+        .iter()
+        .position(|row| row.contains("Theme"))
+        .expect("the row the theme is on");
+    assert!(
+        at + 1 < rows.len(),
+        "the theme is the last row of the page:\n{dump}"
+    );
+    // Nothing on it but the bar's own column, which is every row's.
+    assert!(
+        !rows[at + 1].chars().any(char::is_alphanumeric),
+        "the next setting is hard against the theme:\n{dump}"
+    );
+}
+
 /// Typing narrows the rows, and the count on the status bar says how many
 /// are left. Plainly by substring, because a reader typing "the" means the
 /// word.
@@ -409,7 +448,7 @@ fn typing_narrows_the_settings() {
         "the query narrowed nothing:\n{dump}"
     );
     assert!(
-        support::text_block(&dump).contains("Colour theme"),
+        support::text_block(&dump).contains("Theme"),
         "not the row that matched:\n{dump}"
     );
     assert!(
@@ -427,9 +466,9 @@ fn typing_narrows_the_settings() {
     let row = support::text_block(&dump)
         .lines()
         .filter(|row| !row.is_empty())
-        .position(|row| row.contains("Colour theme"))
+        .position(|row| row.contains("Theme"))
         .expect("the row that matched");
-    // The "C" of "Colour theme" is the first cell of the name: past the
+    // The "T" of "Theme" is the first cell of the name: past the
     // `NN|` the dump writes down its side, past the row's own left-hand
     // padding, and past the indent that puts a setting under its group.
     let name_at = 3 + 1 + usize::from(obelus_component::settings::GROUP_INDENT);
@@ -905,7 +944,7 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
     let dump = support::render(&mut app, 76, 32);
     let wrap = support::text_block(&dump)
         .lines()
-        .find(|row| row.contains("Wrap long lines"))
+        .find(|row| row.contains("Wrapping"))
         .expect("the row");
     assert!(
         wrap.contains("Project"),
@@ -918,7 +957,7 @@ fn the_trees_page_says_which_settings_are_not_its_own() {
     // told they had never been here.
     let blame = support::text_block(&dump)
         .lines()
-        .find(|row| row.contains("Blame in the margin"))
+        .find(|row| row.contains("Blame"))
         .expect("the row")
         .to_string();
     assert!(
@@ -1016,11 +1055,14 @@ fn the_trees_page_does_not_grey_out_what_can_be_set() {
 
     // The project's page: the name is ordinary ink, the word beside it is not.
     dispatch::dispatch(&mut app, Command::ConfigProject);
-    support::type_text(&mut app, "blame");
+    // Short of the whole name, so there is a letter of it the query did not
+    // match: what a match wears is a background of its own, and a letter
+    // carrying that says nothing about the ink this is asking after.
+    support::type_text(&mut app, "bla");
     let dump = support::render(&mut app, 76, 16);
     assert_ne!(
-        letter(&dump, "Blame in the margin", "margin"),
-        letter(&dump, "Blame in the margin", "Default"),
+        letter(&dump, "Blame", "me"),
+        letter(&dump, "Blame", "Default"),
         "the name is as dim as the word saying the value is not the project's:\n{dump}"
     );
 
@@ -1030,12 +1072,8 @@ fn the_trees_page_does_not_grey_out_what_can_be_set() {
     support::type_text(&mut app, "wrap");
     let dump = support::render(&mut app, 76, 16);
     assert_eq!(
-        letter(&dump, "Wrap long lines", "long"),
-        letter(
-            &dump,
-            "Wrap long lines",
-            &support::as_shown(".obelus/config.toml")
-        ),
+        letter(&dump, "Wrapping", "ping"),
+        letter(&dump, "Wrapping", &support::as_shown(".obelus/config.toml")),
         "a row the reader cannot use is not dim throughout:\n{dump}"
     );
 }

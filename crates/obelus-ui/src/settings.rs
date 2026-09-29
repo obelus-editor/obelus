@@ -245,7 +245,13 @@ fn placed(region: Rect, rows: &[Row], window: &obelus_component::window::Window)
                 ..region
             },
         });
-        y += tall + u16::from(!row.body.is_empty());
+        // And the blank under it, whatever it says: the blank is what makes
+        // an entry an entry, and a setting whose name is the whole of it has
+        // no gloss to keep it off the next name. Conditional, it was the one
+        // shape `Settings::setting_rows` disagreed with -- the window
+        // counting a row the walk never left room for, which is a reader
+        // stepping onto an entry nobody drew.
+        y += tall + 1;
     }
     placed
 }

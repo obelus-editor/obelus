@@ -29,9 +29,12 @@
 //! the window deciding which are on screen: two answers there is a reader
 //! walking onto an entry nobody drew.
 //!
-//! A setting is a name and a gloss, not a sentence. `Colour theme`, `Nerd Font
-//! glyphs`, `Wrap long lines`, `Blame in the margin` -- a noun phrase naming
-//! the thing, not a clause about it. These were whole sentences ("Who last
+//! A setting is a name and a gloss, not a sentence. `Theme`, `Wrapping`,
+//! `Blame`, `Ignored files` -- a noun phrase naming the thing, not a clause
+//! about it, and one word where one will do: what the name says the gloss
+//! does not say again, and where the name is the whole of it there is no
+//! gloss at all. A line reading "the colours Obelus draws in" beside
+//! `Theme` is the footnote this is about. These were whole sentences ("Who last
 //! changed the line the cursor is on") on the grounds that a name and a
 //! description side by side read as a heading and a footnote. True when the
 //! footnote says what the heading already had; what it produced was a page of

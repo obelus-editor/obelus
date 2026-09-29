@@ -448,8 +448,11 @@ const DELAYS: &[&str] = &["0", "200", "400", "800"];
 pub const ALL: &[Setting] = &[
     Setting {
         key: "theme",
-        name: "Colour theme",
-        about: "The colours Obelus draws in",
+        name: "Theme",
+        // Nothing: the name is the whole of it. A line of prose saying "the
+        // colours Obelus draws in" beside it is the footnote `Setting::about`
+        // is about not having.
+        about: "",
         group: Group::Appearance,
         reach: Reach::Anywhere,
         kind: Kind::Choice(THEMES),
@@ -470,7 +473,7 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "wrap",
-        name: "Wrap long lines",
+        name: "Wrapping",
         about: "A line too long for the screen carries onto the next row, broken between words",
         group: Group::Reading,
         reach: Reach::Anywhere,
@@ -479,7 +482,7 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "blame_margin",
-        name: "Blame in the margin",
+        name: "Blame",
         about: "Who last changed the line the cursor is on",
         group: Group::Reading,
         reach: Reach::Anywhere,
@@ -533,7 +536,7 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "format_on_save",
-        name: "Format when saving",
+        name: "Formatting",
         about: "Ask the language server to lay the file out before writing it",
         group: Group::Reading,
         reach: Reach::Anywhere,
@@ -542,7 +545,7 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "code_actions_on_save",
-        name: "Server fixes when saving",
+        name: "Server fixes",
         about: "before writing, make the changes the language server offers for the whole file -- the imports sorted, the corrections it can make on its own. Servers differ in how much of this they do and some offer none",
         group: Group::Reading,
         reach: Reach::Anywhere,
@@ -551,7 +554,7 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "inlay_hints",
-        name: "What the server works out",
+        name: "Inferred types",
         about: "draw the types and parameter names a language server infers, in the places they would be written. They are not in the file: nothing in one can be selected or copied, and turning this off puts every column back where the file has it",
         group: Group::Reading,
         reach: Reach::Anywhere,
@@ -560,7 +563,7 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "diagnostics",
-        name: "What a server says is wrong",
+        name: "Problem messages",
         about: "open the words under the line the caret is on. What is wrong is underlined on every line either way; this is whether the complaint itself is read where it is, which costs that line a row of the file's own space",
         group: Group::Reading,
         reach: Reach::Anywhere,
@@ -569,7 +572,7 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "ignored_files",
-        name: "Files a project ignores",
+        name: "Ignored files",
         about: "offer them in the file list as well -- what `.gitignore` keeps out is build output most days and the file you are looking for on the others",
         group: Group::Files,
         reach: Reach::Anywhere,
