@@ -461,7 +461,7 @@ pub const ALL: &[Setting] = &[
     Setting {
         key: "icons",
         name: "Nerd Font glyphs",
-        about: "in lists, on the status bar, and beside a file's name -- a terminal without a patched font draws a box instead",
+        about: "In lists, on the status bar, and beside a file's name -- a terminal without a patched font draws a box instead",
         group: Group::Appearance,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
@@ -528,7 +528,7 @@ pub const ALL: &[Setting] = &[
     Setting {
         key: "hover_delay",
         name: "Ask on a rest",
-        about: "how long the pointer has to rest on a word before Obelus says what it is, in milliseconds -- zero asks only when a key does",
+        about: "How long the pointer has to rest on a word before Obelus says what it is, in milliseconds -- zero asks only when a key does",
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Count(DELAYS),
@@ -546,7 +546,7 @@ pub const ALL: &[Setting] = &[
     Setting {
         key: "code_actions_on_save",
         name: "Server fixes",
-        about: "before writing, make the changes the language server offers for the whole file -- the imports sorted, the corrections it can make on its own. Servers differ in how much of this they do and some offer none",
+        about: "Before writing, make the changes the language server offers for the whole file -- the imports sorted, the corrections it can make on its own",
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
@@ -555,7 +555,7 @@ pub const ALL: &[Setting] = &[
     Setting {
         key: "inlay_hints",
         name: "Inferred types",
-        about: "draw the types and parameter names a language server infers, in the places they would be written. They are not in the file: nothing in one can be selected or copied, and turning this off puts every column back where the file has it",
+        about: "Draw the types and parameter names a language server infers, where they would be written. They are not in the file: nothing in one can be selected or copied",
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
@@ -564,7 +564,7 @@ pub const ALL: &[Setting] = &[
     Setting {
         key: "diagnostics",
         name: "Problem messages",
-        about: "open the words under the line the caret is on. What is wrong is underlined on every line either way; this is whether the complaint itself is read where it is, which costs that line a row of the file's own space",
+        about: "Open the words under the line the caret is on, which costs that line a row of the file's own space. What is wrong is underlined on every line either way",
         group: Group::Reading,
         reach: Reach::Anywhere,
         kind: Kind::Switch,
@@ -573,7 +573,7 @@ pub const ALL: &[Setting] = &[
     Setting {
         key: "ignored_files",
         name: "Ignored files",
-        about: "offer them in the file list as well -- what `.gitignore` keeps out is build output most days and the file you are looking for on the others",
+        about: "Offer them in the file list as well -- what `.gitignore` keeps out is build output most days and the file you are looking for on the others",
         group: Group::Files,
         reach: Reach::Anywhere,
         kind: Kind::Switch,

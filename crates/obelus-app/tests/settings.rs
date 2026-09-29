@@ -617,11 +617,11 @@ fn what_a_setting_does_goes_under_it_and_wraps() {
     // Under it, and indented from it.
     let at = |row: &str, needle: &str| row.find(needle).map(|byte| row[..byte].chars().count());
     assert!(
-        at(rows[name + 1], "in lists").is_some(),
+        at(rows[name + 1], "In lists").is_some(),
         "what it does is not under its name:\n{dump}"
     );
     assert!(
-        at(rows[name + 1], "in lists") > at(rows[name], "Nerd Font"),
+        at(rows[name + 1], "In lists") > at(rows[name], "Nerd Font"),
         "it is not indented under the name:\n{dump}"
     );
 
