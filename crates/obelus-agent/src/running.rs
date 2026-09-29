@@ -559,9 +559,17 @@ mod tests {
             )
             .expect("the shell");
         let (text, _, _) = finished(&mut runs, &id);
+        // `%PAGER%` unexpanded is cmd saying there is no such variable,
+        // which is Windows keeping the same promise in its own terms: an
+        // environment variable set to nothing there *is* an absent one,
+        // and `Command::env(name, "")` leaves the child without it. The
+        // other two are set to something and come back as it.
         assert_eq!(
             text.trim(),
-            "|cat|dumb",
+            match cfg!(windows) {
+                true => "%PAGER%|cat|dumb",
+                false => "|cat|dumb",
+            },
             "the command was given something that waits for a key"
         );
     }

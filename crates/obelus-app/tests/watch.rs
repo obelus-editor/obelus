@@ -7,7 +7,7 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    sync::mpsc::Receiver,
+    sync::{Arc, Mutex, mpsc::Receiver},
     time::{Duration, Instant},
 };
 
@@ -76,6 +76,40 @@ fn wait_for(events: &Receiver<Event>, path: &Path) -> bool {
         }
     }
     false
+}
+
+/// A second watcher on the same path, saying what kind each event was.
+///
+/// `obelus_watch` hands over a path and nothing else, which is the whole
+/// of what Obelus wants to know and leaves a failing test with nothing to
+/// say but "something arrived". What these tests are about is which
+/// things a platform reports and which of those Obelus should refuse, and
+/// that question cannot be asked without the kinds -- so where one of
+/// them fails, this is what it fails *with*.
+fn kinds(path: &Path) -> (notify::RecommendedWatcher, Arc<Mutex<Vec<String>>>) {
+    use notify::Watcher as _;
+    let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let into = Arc::clone(&seen);
+    let mut watcher = notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
+        if let Ok(event) = event
+            && let Ok(mut into) = into.lock()
+        {
+            into.push(format!("{:?} {:?}", event.kind, event.paths));
+        }
+    })
+    .expect("a second watcher");
+    let directory = path.parent().unwrap_or(path);
+    watcher
+        .watch(directory, notify::RecursiveMode::NonRecursive)
+        .expect("watching it too");
+    (watcher, seen)
+}
+
+/// What that second watcher saw, for a failure to name.
+fn said(seen: &Arc<Mutex<Vec<String>>>) -> String {
+    seen.lock()
+        .map(|seen| seen.join("\n  "))
+        .unwrap_or_else(|_| "(poisoned)".to_string())
 }
 
 /// Collects every change that arrives in `window`.
@@ -204,6 +238,7 @@ fn reading_the_file_is_not_a_change() {
     let (sender, events) = obelus_app::event::channel();
     let mut watcher = Watcher::new(sender).expect("starting the watcher");
     watcher.watch(&path).expect("watching");
+    let (_kinds, kinds) = kinds(&path);
 
     // Exactly what a reload does.
     let _ = fs::read_to_string(&path).expect("reading");
@@ -211,7 +246,8 @@ fn reading_the_file_is_not_a_change() {
     let seen = collect(&events, Duration::from_millis(400));
     assert!(
         !seen.contains(&path),
-        "reading the file was reported as changing it, which is a feedback loop"
+        "reading the file was reported as changing it, which is a feedback loop.\n  {}",
+        said(&kinds)
     );
 }
 
@@ -277,6 +313,7 @@ fn a_change_of_mode_is_not_a_change_to_the_file() {
     let (sender, events) = obelus_app::event::channel();
     let mut watcher = Watcher::new(sender).expect("starting the watcher");
     watcher.watch(&path).expect("watching");
+    let (_kinds, kinds) = kinds(&path);
 
     let mut how = fs::metadata(&path).expect("its mode").permissions();
     how.set_readonly(true);
@@ -285,7 +322,8 @@ fn a_change_of_mode_is_not_a_change_to_the_file() {
     let seen = collect(&events, Duration::from_millis(400));
     assert!(
         !seen.contains(&path),
-        "a mode was reported as the file changing"
+        "a mode was reported as the file changing.\n  {}",
+        said(&kinds)
     );
 }
 
@@ -385,6 +423,7 @@ fn reading_a_file_says_nothing() {
     let (sender, events) = obelus_app::event::channel();
     let mut watcher = Watcher::new(sender).expect("starting the watcher");
     watcher.watch(&path).expect("watching");
+    let (_kinds, kinds) = kinds(&path);
 
     // Opened for reading and closed, which is what looking at a claim is.
     {
@@ -396,6 +435,7 @@ fn reading_a_file_says_nothing() {
 
     assert!(
         collect(&events, Duration::from_millis(400)).is_empty(),
-        "looking at a file woke the loop, which would wake it again"
+        "looking at a file woke the loop, which would wake it again.\n  {}",
+        said(&kinds)
     );
 }
