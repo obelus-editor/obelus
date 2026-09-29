@@ -51,7 +51,7 @@ here=$PWD
 # that will run it -- see where it is sent, below.
 ran='sleep 0.3; printf %s obelus-ran-this; exit 3'
 if command -v cygpath >/dev/null 2>&1; then
-    ran='ping -n 2 127.0.0.1 >nul & <nul set /p =obelus-ran-this & exit 3'
+    ran='ping -n 2 127.0.0.1 >nul & <nul set /p =obelus-ran-this& exit 3'
     here=$(cygpath -m "$here")
 fi
 

@@ -4,6 +4,15 @@
 //! tests in it take turns for the same reason: there is one clipboard, so
 //! a fake that two of them were setting up at once would be answering
 //! either's question with the other's copy.
+//!
+//! And only where owning it is a thing anybody has to do. On macOS and
+//! Windows the clipboard *is* a service: the content is the system's the
+//! moment it is handed over and outlives every process, so `copy` gives it
+//! to `native::copy` and never reaches an owner at all -- see
+//! `obelus_clipboard::copy`, where that is the first of the three doors in
+//! the order it is tried. These would be asking a fake to be offered
+//! something the platform took first, which it is right not to be.
+#![cfg(not(any(target_os = "macos", windows)))]
 
 use std::sync::{Mutex, MutexGuard};
 

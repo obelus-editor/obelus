@@ -196,10 +196,13 @@ fn remember_a_note_conversation(scratch: &support::Scratch, note: &str, session:
 /// it has to be: one of them is a shell script and the other is this, and
 /// what the row shows is the command line as it was sent. `cmd` knows
 /// neither `;` nor a quoted argument surviving `/C`, so that side chains
-/// with `&`, waits with `ping` and prints with `set /p`.
+/// with `&`, waits with `ping` and prints with `set /p`. No space before
+/// that `&`: `set /p` prints everything up to the separator, so one there
+/// is a space on the end of the output, and the page came back saying
+/// `obelus-ran-this  and ended 3`.
 fn ran_command() -> &'static str {
     match cfg!(windows) {
-        true => "ping -n 2 127.0.0.1 >nul & <nul set /p =obelus-ran-this & exit 3",
+        true => "ping -n 2 127.0.0.1 >nul & <nul set /p =obelus-ran-this& exit 3",
         false => "sleep 0.3; printf %s obelus-ran-this; exit 3",
     }
 }
