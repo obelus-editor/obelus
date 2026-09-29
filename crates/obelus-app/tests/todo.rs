@@ -195,6 +195,101 @@ fn the_arrows_walk_the_lines_then_the_notes() {
     assert_eq!(row(&mut app), 4);
 }
 
+/// Backspace and delete take a note with nothing in it, and walk the way
+/// they name.
+///
+/// Not a new act: a note with nothing in it is already one Obelus does not
+/// keep, and the caret leaving is what lets it go. What the keys add is
+/// the leaving, in the direction they mean -- backspace to the end of the
+/// note above, delete to the start of the one below -- which is what a
+/// reader means by them in every outline they have used.
+///
+/// Deliberate break: let `says_nothing` answer `keep`'s question instead
+/// and a note holding a character loses the note rather than the
+/// character. Pass `false` for `end` and backspace lands at the top of the
+/// note above rather than after its last word. Walk to the note by
+/// position rather than by name and delete lands one note too far, because
+/// letting the empty one go moves everything under it up.
+#[test]
+fn backspace_and_delete_take_a_note_with_nothing_in_it() {
+    const FIRST: &str = "wire the counts tree up to the search";
+    let scratch = tree("empty-note", THREE);
+    let mut app = open(&scratch, 76, 18);
+    let heads = |app: &App| {
+        app.notes()
+            .expect("the view")
+            .rows()
+            .iter()
+            .filter(|row| row.head)
+            .count()
+    };
+    let said = |app: &App| {
+        app.notes()
+            .expect("the view")
+            .selected_note()
+            .map_or(String::new(), |note| note.said.clone())
+    };
+    let column = |app: &mut App| {
+        support::cursor_line(&support::render(app, 76, 18))
+            .split_once(',')
+            .and_then(|(x, _)| x.trim().parse::<usize>().ok())
+            .expect("the caret")
+    };
+    // Where a note's words begin: the caret opens at the start of the
+    // first one, so this is the column asked of the screen rather than
+    // counted off the drawing again.
+    let start = column(&mut app);
+    assert_eq!(heads(&app), 3);
+
+    // Backspace: the fresh note goes, and the caret lands after the last
+    // word of the note above rather than in front of its first.
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(heads(&app), 4, "enter did not start a note");
+    press(&mut app, KeyCode::Backspace);
+    assert_eq!(heads(&app), 3, "backspace did not take the empty note");
+    assert!(
+        said(&app).starts_with("wire the counts"),
+        "backspace did not walk up: {}",
+        said(&app)
+    );
+    assert_eq!(
+        column(&mut app),
+        start + FIRST.chars().count(),
+        "backspace landed at the top of the note above, not after its words"
+    );
+
+    // Delete: the same note goes, and the caret lands at the start of the
+    // note *below* -- the next one, not the one after it.
+    press(&mut app, KeyCode::Enter);
+    assert_eq!(heads(&app), 4, "enter did not start a second note");
+    press(&mut app, KeyCode::Delete);
+    assert_eq!(heads(&app), 3, "delete did not take the empty note");
+    assert!(
+        said(&app).starts_with("this cache"),
+        "delete walked to the wrong note: {}",
+        said(&app)
+    );
+    assert_eq!(column(&mut app), start, "delete did not land at the start");
+
+    // And a note with a character in it loses the character. A space,
+    // which is where the two questions part: `keep` would not write that
+    // note down, and backspace still has something to take.
+    press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, " ");
+    press(&mut app, KeyCode::Backspace);
+    assert_eq!(
+        heads(&app),
+        4,
+        "backspace took the note, not the space in it"
+    );
+    press(&mut app, KeyCode::Backspace);
+    assert_eq!(
+        heads(&app),
+        3,
+        "backspace did not take the note once there was nothing in it"
+    );
+}
+
 /// The blank between two notes is a row of the list, and nowhere to stand.
 ///
 /// A row rather than a gap the drawing leaves, because the window, the

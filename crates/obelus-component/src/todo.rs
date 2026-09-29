@@ -974,6 +974,18 @@ impl TodoView {
         }
     }
 
+    /// Whether the box has no character in it.
+    ///
+    /// Not [`Self::keep`]'s question, which is whether there is anything
+    /// worth writing down: that one trims, and a note of two spaces is
+    /// nothing to it. This one is about whether backspace has a character
+    /// to take.
+    fn says_nothing(&self) -> bool {
+        self.writing
+            .as_ref()
+            .is_some_and(|(_, composer)| composer.text().is_empty())
+    }
+
     /// Puts a run of text into the note the caret is in, over whatever is
     /// held.
     ///
@@ -1373,6 +1385,60 @@ impl TodoView {
                 true => TodoOutcome::Changed,
                 false => TodoOutcome::Consumed,
             },
+            // And on their own they take a character while there is one,
+            // and the note when there is not. Which is the same act a
+            // reader means by them in every outline they have used, and
+            // is nothing new here either: a note with nothing in it is
+            // already a note Obelus does not keep -- `keep` lets it go the
+            // moment the caret leaves -- so what this adds is the leaving,
+            // in the direction the key names. Backspace to the end of the
+            // note above, delete to the start of the one below.
+            //
+            // Empty means the box holds no character, not `keep`'s
+            // question of whether there is anything worth writing down.
+            // They differ over a note of two spaces, and the key's is the
+            // right one of the two: a reader who has typed a space has
+            // something for backspace to take, and taking the note out
+            // from under them instead is the key doing the larger thing
+            // when the smaller one was available.
+            KeyCode::Backspace | KeyCode::Delete if bare && self.says_nothing() => {
+                let back = key.code == KeyCode::Backspace;
+                let Some(at) = self.selected() else {
+                    return TodoOutcome::Consumed;
+                };
+                // The next note that is on the page, the way the arrows
+                // find one: what hangs under a folded note is nowhere to
+                // go.
+                let to = match back {
+                    true => (0..at).rev().find(|to| self.on_the_page(*to) == *to),
+                    false => {
+                        (at + 1..self.todo.notes.len()).find(|to| self.on_the_page(*to) == *to)
+                    }
+                };
+                // Nowhere to go leaves it alone: an empty note with no
+                // neighbour is the whole list, and a page with nothing on
+                // it is what taking it away would leave -- which is what
+                // the page already looks like, with nowhere for the caret
+                // to be.
+                let Some(id) = to
+                    .and_then(|to| self.todo.notes.get(to))
+                    .map(|n| n.id.clone())
+                else {
+                    return TodoOutcome::Consumed;
+                };
+                // By name over the drop, not by position: letting the
+                // empty note go moves every note under it up one, and the
+                // one being walked to is under it whenever the key is
+                // delete.
+                let went = self.keep();
+                if let Some(now) = self.todo.find(&id) {
+                    self.enter_note(now, back);
+                }
+                match went {
+                    true => TodoOutcome::Changed,
+                    false => TodoOutcome::Consumed,
+                }
+            }
             // Where a note sits is the reader's to decide, so nothing else
             // reorders the list: ticking one leaves it where it is.
             KeyCode::Up | KeyCode::Down if alt => {
