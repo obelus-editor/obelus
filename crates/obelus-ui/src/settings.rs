@@ -12,7 +12,12 @@ use obelus_component::settings::{
 use obelus_config::{Config, Kind, Value};
 use obelus_text::text_width;
 use obelus_theme::Theme;
-use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets::Widget};
+use ratatui::{
+    buffer::Buffer as CellBuffer,
+    layout::Rect,
+    style::{Modifier, Style},
+    widgets::Widget,
+};
 
 use crate::{
     Hint, Marked, Matched, Screen, fill, put, rule, truncate_from_right, write, write_marked,
@@ -945,6 +950,12 @@ impl SettingsView<'_> {
     /// groups were told apart by a line across it would have six lines on
     /// it, counting the tabs' and the foot's, and the lines would be the
     /// loudest thing on a page of words.
+    ///
+    /// Bold, which is the third thing it could have been and the one that
+    /// costs no room and draws no line: the weight is on the word itself,
+    /// so what tells a heading from a setting is the heading. The same
+    /// answer a heading gets when Obelus is reading somebody's markdown,
+    /// which is where the reader has met it before.
     fn heading(&self, cells: &mut CellBuffer, area: Rect, opens: &Heading) {
         let plain = Style::new()
             .fg(self.theme.foreground)
@@ -959,7 +970,9 @@ impl SettingsView<'_> {
             area.x + 1,
             area.y,
             &truncate_from_right(name, usize::from(area.width.saturating_sub(2))),
-            plain.fg(self.theme.status_foreground),
+            plain
+                .fg(self.theme.status_foreground)
+                .add_modifier(Modifier::BOLD),
         );
         // And under the agent's name, when what is under it takes effect.
         // The group is the only one on this page whose settings are about

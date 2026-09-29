@@ -3570,3 +3570,59 @@ fn body_of(dump: &str) -> Vec<&str> {
     assert!(foot > top + 1, "the page has a body: {rows:?}");
     rows[top + 1..foot].to_vec()
 }
+
+/// A group's name is bold, which is what tells a heading from a setting.
+///
+/// The word and nothing else stands for a group -- no rule across the page
+/// and no second colour -- so the weight is what is left, and it is on the
+/// word itself rather than on a row of its own. The same answer a heading
+/// gets when Obelus is reading somebody's markdown.
+///
+/// The cells rather than the dump, because what says a character is bold is
+/// a modifier and the dump names a style by its colours.
+///
+/// Deliberate break: drop the `add_modifier` in `SettingsView::heading`. A
+/// group's name is then a setting's name with nothing on it, on a page
+/// whose whole shape is names under names.
+#[test]
+fn a_groups_name_is_bold() {
+    let scratch = temporary("heading-bold");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+
+    let dump = support::render(&mut app, 76, 16);
+    let rows: Vec<&str> = support::text_block(&dump)
+        .lines()
+        .filter(|row| row.contains('|'))
+        .collect();
+    // The first group's heading, and the first setting under it.
+    let heading = rows
+        .iter()
+        .position(|row| row.contains("Appearance"))
+        .unwrap_or_else(|| panic!("no heading:\n{dump}"));
+    let setting = rows
+        .iter()
+        .position(|row| row.contains("Theme"))
+        .unwrap_or_else(|| panic!("no setting:\n{dump}"));
+
+    let cells = support::cells_of(&mut app, 76, 16);
+    let bold = |row: usize, word: &str| {
+        let at = support::column_of(rows[row], word);
+        cells
+            .cell((
+                u16::try_from(at).expect("a column"),
+                u16::try_from(row).expect("a row"),
+            ))
+            .expect("a cell")
+            .modifier
+            .contains(ratatui::style::Modifier::BOLD)
+    };
+    assert!(
+        bold(heading, "Appearance"),
+        "the heading is not bold:\n{dump}"
+    );
+    assert!(
+        !bold(setting, "Theme"),
+        "a setting is bold as well, so the weight says nothing:\n{dump}"
+    );
+}
