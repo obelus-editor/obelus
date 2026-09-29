@@ -1,6 +1,8 @@
 [package]
 name = "obelus-cli"
-description.workspace = true
+# Its own, the way `obelus-gui`'s is: the workspace says what Obelus is,
+# and this is the half of it that lives in a terminal.
+description = "A terminal code reader. It doesn't want you to type."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
