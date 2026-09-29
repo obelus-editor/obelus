@@ -112,6 +112,46 @@ pub struct Previewed<'a> {
     pub marked: &'a [Span],
     /// What git says about the file.
     pub changes: Option<&'a obelus_git::Changes>,
+    /// The room its text was laid out in, which is what anything drawn
+    /// against the same rows has to measure by.
+    pub text: obelus_buffer::TextArea,
+    /// What is wrong with the line this preview is showing, where the list
+    /// showing it is about a problem.
+    ///
+    /// The row above carries only the message's first line -- a paragraph
+    /// in a row is a row nobody can read -- so the box is where the whole
+    /// of it fits.
+    pub complaint: Option<Complained<'a>>,
+}
+
+/// What is wrong with the line the reader is on, for the box that says so.
+///
+/// A borrow rather than a tuple, the same as [`Previewed`], and here for
+/// the same reason: it exists so that one box can be drawn, and every
+/// field of it is something the renderer would otherwise be handed one at
+/// a time.
+///
+/// What is *not* here is the wrapping and the frame. Those were worked out
+/// in the application, because the words went into the file as a block and
+/// a block is rows -- so the width had to be known before there was
+/// anywhere to put them. A box floated over the page is laid out to the
+/// room it is given, like every other one, and the room is the view's to
+/// know.
+pub struct Complained<'a> {
+    /// The line it is about, which is what the box is anchored under.
+    pub line: obelus_text::coordinates::LineNumber,
+    /// And the character of it the trouble starts at, so the box hangs
+    /// under the thing it is about rather than under the left-hand edge of
+    /// code that may have nothing to do with it.
+    pub column: obelus_text::coordinates::CharColumn,
+    /// The worst one's own words, in the server's spelling.
+    pub said: &'a str,
+    /// How bad it is, which is the colour they are written in -- the same
+    /// colour the underline under the word is in.
+    pub severity: obelus_lsp::trouble::Severity,
+    /// How many others are on that line, which the box counts rather than
+    /// lists: one of them is a box, and five is the screen.
+    pub others: usize,
 }
 
 /// Everything a frame is drawn from.
@@ -240,6 +280,12 @@ pub trait Screen {
     /// row has nothing else to tell them apart with -- which is what left
     /// a reader reading `Not saved` in the same colour as `Saved`.
     fn note_is_wrong(&self) -> bool;
+    /// What is wrong with the line the reader is on, where anything is.
+    ///
+    /// Only the caret's line, or the row a list of problems has walked
+    /// them to. Every other one is said by the underline, which costs no
+    /// room at all and is on all of them.
+    fn complaint(&self) -> Option<Complained<'_>>;
     /// The question being asked, if one is.
     fn prompt(&self) -> Option<&Prompt>;
     /// The directory the question being asked would put a file in.
@@ -306,6 +352,7 @@ pub mod shapes;
 pub mod signature;
 pub mod status;
 pub mod todo;
+pub mod trouble;
 pub mod welcome;
 
 use std::ops::Range;
@@ -743,6 +790,12 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     if let Some(panel) = hover::layout(app, regions.editor) {
         hover::draw(cells, panel, app);
     }
+    // And what is *wrong* with the line the reader is on, which is the
+    // one of the four nobody asked for -- so it is drawn last and gives
+    // nothing while any of the others is up.
+    if let Some(panel) = trouble::layout(app, regions.editor) {
+        trouble::draw(cells, panel, app);
+    }
 
     // The status row, last, and whose it is. A conversation puts its own
     // there while it is what the reader is looking at -- and the moment
@@ -890,6 +943,21 @@ fn list_over(cells: &mut CellBuffer, app: &impl Screen, list: &Picker, room: Rec
             shown.troubles,
         )
         .render(over, cells);
+        // And what is wrong with the line it is showing, floated over it
+        // the way the editor floats one over the caret's. Here and not
+        // under a full list's rows: the box is an answer to a row that
+        // *names* a problem, and the one list that does is compact.
+        //
+        // In the room the preview was laid out in, which it carries: a sum
+        // of its own here would be a second reckoning of the gutter, the
+        // change map and the bar, and the one that forgot any of them
+        // would put the box a row from where the line is.
+        if let Some(complaint) = shown.complaint.as_ref()
+            && let Some(area) =
+                trouble::where_it_goes(complaint, shown.buffer, shown.changes, shown.text, over)
+        {
+            trouble::write(cells, area, complaint, app.theme());
+        }
     }
 
     // Below the list, with a rule between them. The preview is drawn by the

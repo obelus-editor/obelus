@@ -579,13 +579,13 @@ impl App {
     /// happening follows, so there is no way for a complaint to be left on
     /// a line that no longer has one.
     ///
-    /// Only the caret's line. One of these costs a row of the file's own
-    /// space, and a file with thirty of them is a file whose shape is the
-    /// complaints rather than the code. Every other one is said by the
-    /// underline, which costs no room at all and is on all of them.
+    /// Only where the caret is standing. One of these covers the code
+    /// under the line, and a file with thirty of them open at once is a
+    /// file nobody can read. Every other one is said by the underline,
+    /// which costs no room at all and is on all of them.
     pub(super) fn show_what_is_wrong(&mut self) {
         if !self.config().diagnostics {
-            self.close_the_complaint();
+            self.complaining = None;
             return;
         }
         // Whatever the reader is looking at, which is the caret's line
@@ -608,27 +608,22 @@ impl App {
             && self.typed_on.is_some()
             && self.typed_on == self.current.map(|id| (id, line))
         {
-            self.close_the_complaint();
+            self.complaining = None;
             return;
         }
-        let room = self.text_area().width;
-        let Self {
-            documents,
-            current,
-            troubles,
-            ..
-        } = self;
-        let Some(buffer) = current
-            .and_then(|id| documents.get_mut(id.get()))
-            .and_then(Option::as_mut)
-            .and_then(Document::file_mut)
+        let Some(path) = self
+            .current_buffer()
+            .map(|buffer| buffer.path().to_path_buf())
         else {
             return;
         };
-        let here = troubles
-            .get(buffer.path())
-            .map_or(&[] as &[_], Vec::as_slice);
-        say_what_is_wrong(buffer, here, line, chosen.map(|(_, column)| column), room);
+        let here = self.troubles.get(&path).map_or(&[] as &[_], Vec::as_slice);
+        // Where the caret is, because the box is about the thing it is
+        // standing on. A list's row brings its own column and wins.
+        let column = self
+            .current_buffer()
+            .map_or_else(|| CharColumn::new(0), |buffer| buffer.cursor().column);
+        self.complaining = what_is_wrong(here, line, column, chosen.map(|(_, column)| column));
     }
 
     /// Forgets the line the reader was typing on, once the caret is
@@ -723,13 +718,6 @@ impl App {
         if these.is_empty() {
             let path = buffer.path().to_path_buf();
             troubles.remove(&path);
-        }
-    }
-
-    /// Takes away whatever complaint is showing.
-    fn close_the_complaint(&mut self) {
-        if let Some(buffer) = self.current_buffer_mut() {
-            buffer.close_blocks(obelus_buffer::Held::Wrong);
         }
     }
 
@@ -2320,103 +2308,55 @@ fn trouble_row(
     }
 }
 
-/// Puts what is wrong with a line under it, in whatever buffer that line is
-/// in.
+/// What is wrong where the reader is standing, for the box that says so.
 ///
-/// One box, wherever it is drawn: under the caret in the file being read,
-/// and under the line a preview is showing of somewhere else. A preview
-/// whose box said something other than the editor's would be a promise
-/// Obelus does not keep, and two of these would be two sets of decisions
-/// about wrapping, framing and which of several troubles to show.
+/// One answer, wherever the box is drawn: under the caret in the file
+/// being read, and under the line a preview is showing of somewhere else.
+/// A preview whose box said something other than the editor's would be a
+/// promise Obelus does not keep.
 ///
-/// `chosen` is the column of the one the reader picked out of a list, where
-/// they picked one. A line can hold several, and told only the line the box
-/// would show the worst of them whichever row was selected -- two rows that
-/// say different things would look like one thing said twice.
+/// On the *span*, not on the line. A line is where the underline is and
+/// the underline is under the word: a box that opened for the whole line
+/// covered the code below it every time the caret passed through, and what
+/// it said was about a word the reader might be nowhere near. Standing on
+/// the thing is asking about the thing.
 ///
-/// `room` is the width the words have: the text's, not the window's.
-pub(super) fn say_what_is_wrong(
-    buffer: &mut Buffer,
+/// `chosen` is the column a list of problems walked the reader to, and it
+/// wins: a reader who picked a row is looking at that one, and the caret
+/// lands at the start of the span rather than inside it.
+///
+/// Nothing about the wrapping or the frame, which were worked out here
+/// while the words went into the file as a block -- a block is rows, so
+/// the width had to be known before there was anywhere to put them. A box
+/// floated over the page is laid out to the room it is given, and the room
+/// is the view's to know.
+pub(super) fn what_is_wrong(
     troubles: &[obelus_lsp::trouble::Trouble],
     line: LineNumber,
+    column: CharColumn,
     chosen: Option<CharColumn>,
-    room: u16,
-) {
-    // The worst of them where a line has several, and how many others
-    // there are: the same two facts the underline settles, settled the
-    // same way.
+) -> Option<Complaint> {
     let mut here: Vec<&obelus_lsp::trouble::Trouble> = troubles
         .iter()
         .filter(|trouble| trouble.span.line == line)
         .collect();
     here.sort_by_key(|trouble| trouble.severity);
-    let worst = chosen
-        .and_then(|column| here.iter().find(|trouble| trouble.span.column == column))
-        .or_else(|| here.first());
-    let Some(worst) = worst else {
-        buffer.close_blocks(obelus_buffer::Held::Wrong);
-        return;
-    };
-    // Indented to the column the trouble starts at, so the words hang
-    // under the thing they are about rather than under the left-hand
-    // edge of code they may have nothing to do with. In display
-    // columns, because that is what a tab is worth on screen and the
-    // block's own indent is spaces.
-    //
-    // Never more than half the room: a complaint about something near
-    // the right-hand edge would otherwise be a word to a row.
-    let column = buffer.text().display_column(line, worst.span.column).get();
-    // What the frame costs the row: a rail and a space at either end.
-    const FRAME: u16 = 4;
-    // And the least room worth leaving the words if the indent is to
-    // be kept.
-    const LEAST: u16 = 24;
-    // The indent is the one thing given up as the window narrows, and
-    // it is given up outright rather than shaved: which word the
-    // complaint is about is a nicety, and it is not worth buying at
-    // the price of every sentence wrapping twice as hard.
-    //
-    // The frame itself is never given up. It is the thing that says
-    // these rows are not the file, and half a frame says it worse than
-    // none -- so what a narrow window costs is harder wrapping inside
-    // it, which is only prose being prose.
-    let indent = if room >= FRAME + LEAST + column {
-        column
-    } else {
-        0
-    };
-    let inside = room.saturating_sub(FRAME + indent);
-    // Under a window with no room for a rail, a space and a character
-    // and the same again: a frame there could not be whole whatever it
-    // gave up, and an unclosed one is the shape this is drawn to avoid.
-    let framing = inside > 0;
-    let words = obelus_text::wrapped(&worst.message, inside.max(1));
-    let tally = (here.len() > 1).then(|| format!("and {} more here", here.len() - 1));
-    let said = if framing {
-        framed(&" ".repeat(usize::from(indent)), &words, tally.as_deref())
-    } else {
-        words.into_iter().chain(tally).collect()
-    };
-    // Under the line, which is where a complaint about it belongs. Past
-    // the end of the file on its last line, which is a place a block
-    // can hang: the row after the last line is counted by
-    // `screen_rows_of` and drawn by the pass the view makes past the
-    // end, both of which a hunk deleting the end of a file needed
-    // first.
-    let under = LineNumber::new(line.get() + 1);
-    // Already saying exactly this, in exactly this place: rebuilding it
-    // would put the caret out of it on every frame, and a reader cannot
-    // select what is rebuilt underneath them.
-    let standing = buffer
-        .block_above(under)
-        .filter(|block| block.kind == obelus_buffer::Held::Wrong)
-        .is_some_and(|block| block.opened_with() == said);
-    if standing {
-        return;
-    }
-    let severity = worst.severity;
-    buffer.close_blocks(obelus_buffer::Held::Wrong);
-    buffer.open_saying(under, &said, obelus_buffer::Held::Wrong, Some(severity));
+    let worst = match chosen {
+        Some(chosen) => here.iter().find(|trouble| trouble.span.column == chosen),
+        // The worst of the ones the caret is actually inside, where it is
+        // inside more than one: two spans over one word is two things
+        // wrong with it, and the reader is owed the worse.
+        None => here
+            .iter()
+            .find(|trouble| trouble.span.contains(line, column)),
+    }?;
+    Some(Complaint {
+        line,
+        column: worst.span.column,
+        said: worst.message.clone(),
+        severity: worst.severity,
+        others: here.len() - 1,
+    })
 }
 
 /// How many of each severity, as a phrase.
@@ -2747,52 +2687,6 @@ fn place_rows(places: &[obelus_lsp::action::Place], root: &Path) -> Vec<PickerIt
 /// they would install, start or look in the log of.
 pub(super) fn named(language: LanguageId) -> &'static str {
     obelus_lsp::command_for(language).unwrap_or("The language server")
-}
-
-/// A complaint's words with a frame drawn round them.
-///
-/// The frame is text rather than something the view draws over these rows,
-/// because it needs two rows of its own and rows come from the block's
-/// text: everything that counts them, wraps them or scrolls to them asks
-/// the text, and a frame the text did not know about would be drawn where
-/// nothing had made room for it. The words arrive already wrapped to fit
-/// inside, so the editor's own wrapping never has a rail to break.
-///
-/// The count of the other troubles on the line rides the bottom rail
-/// rather than sitting inside it. What is inside the frame is what a
-/// server said; the frame is Obelus's, and so is the arithmetic -- the
-/// same line [`obelus_buffer::Block::changed`] draws for a commit's
-/// `+n -n`. Told apart by where it is rather than by a shade, because the
-/// whole of this is drawn in one colour: the rails share their rows with
-/// the words, so a dimmer frame would mean colouring by which character a
-/// cell happens to hold.
-fn framed(indent: &str, words: &[String], tally: Option<&str>) -> Vec<String> {
-    use unicode_width::UnicodeWidthStr;
-
-    let cells = |text: &str| UnicodeWidthStr::width(text);
-    // One cell wider than the count, so the bottom rail always has a stroke
-    // of frame left after it.
-    let widest = words
-        .iter()
-        .map(|word| cells(word))
-        .chain(tally.map(|tally| cells(tally) + 1))
-        .max()
-        .unwrap_or(0);
-    let mut lines = Vec::with_capacity(words.len() + 2);
-    let rail = |length: usize| "\u{2500}".repeat(length);
-    lines.push(format!("{indent}\u{250c}{}\u{2510}", rail(widest + 2)));
-    for word in words {
-        let padding = " ".repeat(widest - cells(word));
-        lines.push(format!("{indent}\u{2502} {word}{padding} \u{2502}"));
-    }
-    let bottom = match tally {
-        // `-- and 2 more here ------`: a stroke, the count, then the rest
-        // of the rail.
-        Some(tally) => format!("\u{2500} {tally} {}", rail(widest - cells(tally) - 1)),
-        None => rail(widest + 2),
-    };
-    lines.push(format!("{indent}\u{2514}{bottom}\u{2518}"));
-    lines
 }
 
 #[cfg(test)]

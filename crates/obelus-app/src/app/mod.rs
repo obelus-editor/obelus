@@ -673,6 +673,13 @@ pub struct App {
     /// with the scanning threads, which read it to find out that they are
     /// answering a question nobody is asking any more.
     search_generation: obelus_runtime::cancel::Latest,
+    /// What is wrong with the line the reader is on, where anything is.
+    ///
+    /// Worked out every frame from the troubles and the caret rather than
+    /// remembered -- the same rule the row that says what is happening
+    /// follows, so there is no way for a complaint to be left on a line
+    /// that no longer has one.
+    complaining: Option<Complaint>,
     /// Something to tell the reader, until the next key.
     ///
     /// Half of what a language server does is answer with nothing, and
@@ -860,6 +867,7 @@ impl App {
             asked_line: None,
             rendered: None,
             theme_before: None,
+            complaining: None,
             note: None,
             walk_generation: obelus_runtime::cancel::Latest::default(),
             events: None,
@@ -3561,6 +3569,27 @@ pub(crate) fn relative(path: &Path, root: &Path) -> String {
         .to_string()
 }
 
+/// What is wrong with the line the reader is on.
+///
+/// The worst of what a server says about that one line, and how many
+/// others it said -- which is what the box floated under it says. Kept
+/// rather than drawn straight from the troubles because two things settle
+/// it and neither is the drawing: which line the reader is looking at, and
+/// which of that line's troubles a list of them has walked to.
+#[derive(Debug)]
+struct Complaint {
+    /// The line it is about.
+    line: LineNumber,
+    /// And the character of it the trouble starts at.
+    column: CharColumn,
+    /// The worst one's own words, in the server's spelling.
+    said: String,
+    /// How bad it is, which is the colour they are drawn in.
+    severity: obelus_lsp::trouble::Severity,
+    /// How many others are on that line.
+    others: usize,
+}
+
 /// What shape the caret is drawn in.
 ///
 /// Two, because there are two things the next character can do: go between
@@ -4028,6 +4057,16 @@ impl Screen for App {
     }
     fn preview(&self) -> Option<Previewed<'_>> {
         App::preview(self)
+    }
+    fn complaint(&self) -> Option<obelus_ui::Complained<'_>> {
+        let complaint = self.complaining.as_ref()?;
+        Some(obelus_ui::Complained {
+            line: complaint.line,
+            column: complaint.column,
+            said: &complaint.said,
+            severity: complaint.severity,
+            others: complaint.others,
+        })
     }
     fn prompt(&self) -> Option<&Prompt> {
         App::prompt(self)

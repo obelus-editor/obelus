@@ -39,6 +39,17 @@ impl App {
             marked: &preview.marked,
             changes: preview.changes.as_ref(),
             troubles: &preview.troubles,
+            text: preview.text,
+            complaint: preview
+                .complaint
+                .as_ref()
+                .map(|complaint| obelus_ui::Complained {
+                    line: complaint.line,
+                    column: complaint.column,
+                    said: &complaint.said,
+                    severity: complaint.severity,
+                    others: complaint.others,
+                }),
         })
     }
 
@@ -222,6 +233,15 @@ impl App {
 
         if self.preview.as_ref().map(|preview| &preview.subject) != Some(&subject) {
             let read = self.read(&subject).map(|(buffer, changes)| Preview {
+                // Both settled further down, once the room is known and
+                // the row has been asked what it is about. Nothing is
+                // drawn from a preview before then.
+                text: obelus_buffer::TextArea {
+                    width: 0,
+                    height: 0,
+                    wrap: true,
+                },
+                complaint: None,
                 subject: subject.clone(),
                 changes,
                 troubles: self.wrong_in(&subject, &buffer),
@@ -298,12 +318,8 @@ impl App {
         // a search's rows it would be four lines about something the query
         // was not asking after, in the room the match was to be read in.
         //
-        // Before the view is put anywhere: the block is rows, and rows are
-        // what the centring counts.
-        let Preview {
-            buffer, troubles, ..
-        } = preview;
-        match complaining && troubling {
+        let Preview { troubles, .. } = preview;
+        let said = match complaining && troubling {
             // Which of the line's troubles the row is about, where the row
             // is about one at all: a search's mark is characters a query
             // matched, and a column of that is not a column anything was
@@ -312,14 +328,21 @@ impl App {
                 let chosen = matches!(marked, Marked::Span { .. })
                     .then(|| runs.first().map(|span| span.column))
                     .flatten();
-                semantics::say_what_is_wrong(buffer, troubles, target, chosen, text.width);
+                semantics::what_is_wrong(troubles, target, CharColumn::new(0), chosen)
             }
-            // Closed rather than left alone: the same file previewed from
+            // Nothing rather than left alone: the same file previewed from
             // the list of problems and then from a search is one preview
             // read twice, and the box the first list opened is not the
             // second one's to keep. The same for the setting going off.
-            false => buffer.close_blocks(obelus_buffer::Held::Wrong),
-        }
+            false => None,
+        };
+        // Beside the buffer rather than in it. A complaint is somebody
+        // else's prose about the file and not text the file ever had, so
+        // rows of it in the buffer are rows of the code the reader is
+        // previewing pushed out of the way. The room goes with it, because
+        // the box has to land on the row the text was laid out on.
+        preview.complaint = said;
+        preview.text = text;
         // A problem is not marked in its own preview. The box says which
         // line, which column and what was said, and a run of colour over
         // the same characters is that said again -- differently, because a
@@ -867,6 +890,24 @@ pub(super) struct Preview {
     /// somewhere else, and the diff of a file nobody is editing does not
     /// change while it is being looked at.
     changes: Option<obelus_git::Changes>,
+    /// The room its text was laid out in.
+    ///
+    /// Kept rather than worked out again wherever it is wanted: the width
+    /// takes off the change map and the bar as well as the gutter, and a
+    /// second sum that forgot either would wrap the preview at a column
+    /// wider than the room it has -- which the note where it is worked out
+    /// is already about. What reads it is the box that says what is wrong
+    /// with the line, which has to land on the same row the text did.
+    text: obelus_buffer::TextArea,
+    /// What is wrong with the line this preview is showing, where the list
+    /// showing it is about a problem.
+    ///
+    /// The box that says so is floated over the preview, the way the
+    /// editor floats one over the caret's line. Carried here rather than
+    /// worked out at the drawing because two things settle it and neither
+    /// is the drawing: which list is up, and which of that line's troubles
+    /// the row is about.
+    complaint: Option<super::Complaint>,
     /// The parts of it the selection is about, once converted.
     marked: Vec<Span>,
     /// Which part of the file the selection is about, as it arrived.

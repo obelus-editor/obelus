@@ -7,6 +7,7 @@
 
 mod support;
 
+use crossterm::event::KeyCode;
 use obelus_app::app::App;
 use obelus_buffer::Buffer;
 use serde_json::json;
@@ -39,6 +40,40 @@ fn published(
             "message": "cannot find value `nmae` in this scope\nhelp: a local variable with a similar name exists"
         }]
     })
+}
+
+/// Puts the caret on a place, which is where the box that says what is
+/// wrong with it opens.
+///
+/// On the *span* and not on the line: the box is about the thing the
+/// reader is standing on, so a test that pressed `Down` and stopped at
+/// column zero is a test about a caret beside the word rather than on it.
+fn stand_on(app: &mut App, line: usize, column: usize) {
+    support::press_control_key(app, KeyCode::Home);
+    for _ in 0..line {
+        support::press(app, KeyCode::Down);
+    }
+    // `Home` stops at the first character that is not a blank, so where it
+    // lands is the indent and the walk from there goes either way.
+    support::press(app, KeyCode::Home);
+    let at = |app: &App| {
+        app.current_buffer()
+            .map_or(0, |buffer| buffer.cursor().column.get())
+    };
+    for _ in 0..at(app).saturating_sub(column) {
+        support::press(app, KeyCode::Left);
+    }
+    for _ in 0..column.saturating_sub(at(app)) {
+        support::press(app, KeyCode::Right);
+    }
+    let landed = app
+        .current_buffer()
+        .map(|buffer| (buffer.cursor().line.get(), buffer.cursor().column.get()));
+    assert_eq!(
+        landed,
+        Some((line, column)),
+        "the caret would not stand where the trouble is"
+    );
 }
 
 #[test]
@@ -340,12 +375,20 @@ fn the_shapes_a_notification_arrives_in() {
 /// eye, in the words the server used.
 ///
 /// The underline says *that* something is wrong and costs no room; this
-/// says *what*, and costs the line a row of the file's own space. Which is
-/// why it is only ever the caret's line: a file with thirty of these is a
-/// file whose shape is the complaints rather than the code.
+/// says *what*, and covers the code under the line. Which is why it is
+/// only ever where the caret is standing: a file with thirty of these is
+/// a file whose shape is the complaints rather than the code.
 ///
-/// Broken deliberately by leaving `show_what_is_wrong` uncalled: the words
-/// are nowhere on the page and this goes red.
+/// On the *span* and not on the line. A line holds a great deal and the
+/// server said this about one word of it, so a caret at the start of that
+/// line is a caret beside the word rather than on it -- and a box that
+/// opened there would open on every line a reader walked down through.
+///
+/// Broken deliberately two ways. Leaving `show_what_is_wrong` uncalled
+/// puts the words nowhere on the page. And asking `what_is_wrong` for the
+/// whole line -- `span.line == line` rather than `span.contains` -- opens
+/// it with the caret at the line's own start, which is the third
+/// assertion here.
 #[test]
 fn what_is_wrong_with_this_line_is_opened_under_it() {
     let (_scratch, mut app, path) = editing("trouble-block", "fn main() {\n    nmae;\n}\n");
@@ -358,16 +401,26 @@ fn what_is_wrong_with_this_line_is_opened_under_it() {
         "a complaint about a line the caret is not on:\n{dump}"
     );
 
-    // Onto the line that has.
-    support::press(&mut app, crossterm::event::KeyCode::Down);
+    // Onto the line that has, but at its start rather than on the word:
+    // the line is not enough, because the box is about the thing the
+    // caret is standing on.
+    stand_on(&mut app, 1, 0);
+    let dump = support::render(&mut app, 60, 16);
+    assert!(
+        !support::text_block(&dump).contains("cannot find value"),
+        "a complaint about a word the caret is beside rather than on:\n{dump}"
+    );
+
+    // And onto the word itself.
+    stand_on(&mut app, 1, 4);
     let dump = support::render(&mut app, 60, 16);
     assert!(
         support::text_block(&dump).contains("cannot find value"),
         "the words the server used are not under the line:\n{dump}"
     );
 
-    // And away again -- one key, not two: the caret steps over a complaint
-    // rather than into it, because it is not a thing the reader opened.
+    // And away again -- one key, because there is nothing in the file to
+    // step over: the words are a box floated over the page, not rows.
     support::press(&mut app, crossterm::event::KeyCode::Down);
     assert_eq!(
         app.current_buffer()
@@ -382,74 +435,29 @@ fn what_is_wrong_with_this_line_is_opened_under_it() {
     );
 }
 
-/// And it puts nothing in the margin, which is git's news and nothing else.
+/// A complaint about the file's last line opens over it instead.
 ///
-/// A complaint is said twice already -- the underline under the word, and
-/// the prose framed under the line -- so a bar out in the margin is the
-/// same news a third time, in the one cell it would have to share with
-/// marks whose colours it cannot be told apart from. Which is the rule
-/// `draw_marker` is written to and the one the block's own bar broke: a
-/// `Held::Removed` block earns that bar because the lines it stands for
-/// are not in the file and nothing else says so, and a complaint's block
-/// is prose about a line that is.
-///
-/// Deliberate break: widen the block's condition back to
-/// `block.kind != Held::Message`. Every row of the frame grows a bar in
-/// the severity's colour.
-#[test]
-fn a_complaint_puts_nothing_in_the_margin() {
-    let (_scratch, mut app, path) = editing("trouble-margin", "fn main() {\n    nmae;\n}\n");
-    app.publish_for_test(published(&path, 1, 4, 8, 1));
-    // Onto the line that has something wrong with it, which is the only
-    // line a complaint ever opens under.
-    support::press(&mut app, crossterm::event::KeyCode::Down);
-
-    let dump = support::render(&mut app, 60, 12);
-    let rows: Vec<&str> = support::text_block(&dump)
-        .lines()
-        .filter(|row| row.contains('|'))
-        .map(|row| &row[row.find('|').expect("a divider") + 1..])
-        .collect();
-    let top = rows
-        .iter()
-        .position(|row| row.contains('\u{250c}'))
-        .unwrap_or_else(|| panic!("the complaint is not framed:\n{dump}"));
-    let bottom = rows
-        .iter()
-        .position(|row| row.contains('\u{2514}'))
-        .unwrap_or_else(|| panic!("the frame has no foot:\n{dump}"));
-
-    for row in rows.iter().take(bottom + 1).skip(top) {
-        assert_eq!(
-            row.chars().next(),
-            Some(' '),
-            "a mark in the margin beside the complaint:\n{dump}"
-        );
-    }
-}
-
-/// A complaint about the file's last line still opens under it.
-///
-/// The row after the last line is a place a block can hang, which nothing
-/// could use before: a hunk that deleted the end of a file hung its removed
-/// lines off a line the view never reached, so they could not be opened at
-/// all. The alternative was a complaint that opened above its line at the
-/// bottom of a file and below it everywhere else.
+/// Under the line is where a complaint belongs, and the last line of a
+/// file scrolled to the bottom of the screen has nothing under it -- so
+/// the box goes above it, which is the other half of the same rule: a
+/// complaint nobody can see belongs nowhere. It is what a hover does when
+/// it runs out of room, and the reason this one does not simply prefer
+/// above is that a complaint is about the line it hangs off.
 ///
 /// Reached by walking there rather than by starting there, in a file
-/// taller than the screen, because the three things this needs each only
-/// bite once the view has to scroll. Broken deliberately, three ways, each
-/// leaving the words nowhere on the page: stopping the view's pass past the
-/// end; taking `rows_below` out of `screen_rows_of`, so the last screenful
-/// stops one row short of the block; and capping `scroll_into_view`'s tail
-/// at nothing, so the block hangs just under the bottom edge with nothing
-/// to pull it up.
+/// taller than the screen, because the room below is only nothing once
+/// the view has had to scroll.
+///
+/// Broken deliberately by hanging it under the line whatever the room --
+/// `if below >= height` made unconditional -- which draws it past the
+/// bottom of the region, where it is clipped away and the words are
+/// nowhere on the page at all.
 #[test]
-fn what_is_wrong_with_the_last_line_is_opened_under_it() {
+fn what_is_wrong_with_the_last_line_opens_over_it_instead() {
     // Long enough that the last line is only reached by scrolling, and no
     // newline at the end so that line really is the last one: with a
-    // trailing newline there is an empty line after it and the block hangs
-    // off that, which is the ordinary case and not this one.
+    // trailing newline there is an empty line after it, which has a row
+    // under it and is the ordinary case rather than this one.
     let mut file = "fn main() {\n".to_string();
     for _ in 0..40 {
         file.push_str("    let _ = 1;\n");
@@ -457,9 +465,7 @@ fn what_is_wrong_with_the_last_line_is_opened_under_it() {
     file.push_str("    nmae");
     let (_scratch, mut app, path) = editing("trouble-last", &file);
     app.publish_for_test(published(&path, 41, 4, 8, 1));
-    for _ in 0..41 {
-        support::press(&mut app, crossterm::event::KeyCode::Down);
-    }
+    stand_on(&mut app, 41, 4);
 
     let dump = support::render(&mut app, 60, 16);
     let rows: Vec<&str> = support::text_block(&dump)
@@ -470,13 +476,15 @@ fn what_is_wrong_with_the_last_line_is_opened_under_it() {
         .iter()
         .position(|row| row.contains("cannot find value"))
         .unwrap_or_else(|| panic!("the words are not on the page:\n{dump}"));
+    // From the bottom: what the server said has the word in it too, and
+    // the row being looked for is the file's.
     let about = rows
         .iter()
-        .position(|row| row.contains("nmae"))
+        .rposition(|row| row.contains("nmae"))
         .expect("the line it is about");
     assert!(
-        said > about,
-        "the complaint about the last line opened above it:\n{dump}"
+        said < about,
+        "the complaint about the last line opened where there was no room:\n{dump}"
     );
 }
 
@@ -544,22 +552,30 @@ fn the_caret_walks_from_one_problem_to_the_next() {
     );
 }
 
-/// The words are framed, and the frame starts under the word they are about.
+/// The words are framed under the word they are about, and the box says
+/// how many more there are.
 ///
-/// A complaint is prose about a line, and prose drawn in the plain colour
-/// at the code's own left edge reads as a line of the file written in
-/// English. The frame says it is not the file; the indent says which word
-/// it is about.
+/// A complaint is prose about a place, and prose drawn in the plain
+/// colour at the code's own left edge reads as a line of the file written
+/// in English. The frame says it is not the file; where it starts says
+/// which word it is about. Under the line and not on it: the line is what
+/// the reader is looking at.
 ///
-/// The count of the others on the line rides the bottom rail rather than
-/// sitting inside: what is inside is what the server said, and the frame
-/// is Obelus's, and so is the arithmetic.
+/// The frame is the panel's -- the one the completion list and a hover
+/// wear -- so the count of the others on the line is a row *inside* it,
+/// after the server's own words. It rode the bottom rail while Obelus drew
+/// that frame itself, and a panel's rail is not Obelus's to write on.
 ///
-/// Broken deliberately by returning the words unframed, by putting the
-/// count inside the frame with them, or by dropping the indent: each is a
-/// different assertion here and each goes red.
+/// Wide enough that the box is narrower than the room: at sixty columns a
+/// sixty-four column box is the whole row, and a box that starts at the
+/// left edge because there is nowhere else says nothing about the indent.
+///
+/// Broken deliberately three ways, one assertion each: hanging the box on
+/// `anchor_y` rather than the row under it covers the line it is about;
+/// putting it at `editor.x` drops the indent; and leaving the `others` row
+/// out of `rows` takes the count away.
 #[test]
-fn a_complaint_is_framed_and_its_count_rides_the_rail() {
+fn a_complaint_is_framed_under_the_word_and_says_how_many_more() {
     let (_scratch, mut app, path) = editing("trouble-frame", "fn main() {\n    nmae;\n}\n");
     // Two of them on the one line, so there is something left to count.
     let one = |from: u32, to: u32, severity: u8, message: &str| {
@@ -576,9 +592,9 @@ fn a_complaint_is_framed_and_its_count_rides_the_rail() {
         "diagnostics": [one(4, 8, 1, "cannot find value `nmae` in this scope"),
                         one(4, 8, 2, "unused something")]
     }));
-    support::press(&mut app, crossterm::event::KeyCode::Down);
+    stand_on(&mut app, 1, 4);
 
-    let dump = support::render(&mut app, 60, 16);
+    let dump = support::render(&mut app, 100, 16);
     let rows: Vec<&str> = support::text_block(&dump)
         .lines()
         .filter(|row| row.contains('|'))
@@ -590,25 +606,31 @@ fn a_complaint_is_framed_and_its_count_rides_the_rail() {
             .unwrap_or_else(|| panic!("{of:?} is not on {row:?}:\n{dump}"))
     };
 
+    // The semicolon, because the word is in what the server said as well.
     let about = rows
         .iter()
-        .position(|row| row.contains("nmae"))
+        .position(|row| row.contains("nmae;"))
         .expect("the line it is about");
     let top = rows
         .iter()
-        .position(|row| row.contains('\u{250c}'))
+        .position(|row| row.contains('\u{256d}'))
         .unwrap_or_else(|| panic!("the words are not framed:\n{dump}"));
     let bottom = rows
         .iter()
-        .position(|row| row.contains('\u{2514}'))
+        .position(|row| row.contains('\u{2570}'))
         .unwrap_or_else(|| panic!("the frame has no bottom rail:\n{dump}"));
     let said = rows
         .iter()
         .position(|row| row.contains("cannot find value"))
         .expect("the words");
+    assert_eq!(
+        top,
+        about + 1,
+        "the box is not on the row under the line it is about:\n{dump}"
+    );
     assert!(
-        top == about + 1 && said > top && bottom > said,
-        "the frame is not wrapped round the words under the line:\n{dump}"
+        said > top && bottom > said,
+        "the frame is not wrapped round the words:\n{dump}"
     );
     assert!(
         rows[said].contains('\u{2502}'),
@@ -616,72 +638,61 @@ fn a_complaint_is_framed_and_its_count_rides_the_rail() {
     );
     // Under the word it is about, not at the code's own left edge.
     assert_eq!(
-        column(rows[top], "\u{250c}"),
-        column(rows[about], "nmae"),
+        column(rows[top], "\u{256d}"),
+        column(rows[about], "nmae;"),
         "the frame does not start under the word it is about:\n{dump}"
     );
-    // On the rail, which is Obelus's, and not inside, which is the
-    // server's.
+    // Inside the frame and after what the server said, which is where
+    // Obelus's own row goes now that the frame is not Obelus's.
+    let count = rows
+        .iter()
+        .position(|row| row.contains("and 1 more here"))
+        .unwrap_or_else(|| panic!("the box does not say how many more there are:\n{dump}"));
     assert!(
-        rows[bottom].contains("and 1 more here"),
-        "the count is not on the bottom rail:\n{dump}"
-    );
-    assert!(
-        !rows[said].contains("and 1 more here") && !rows[said - 1].contains("more here"),
-        "the count is inside the frame with the server's own words:\n{dump}"
+        count > said && count < bottom,
+        "the count is not a row inside the frame:\n{dump}"
     );
 }
 
-/// A narrow window gives up the indent and keeps the frame whole.
+/// A box with less room to its right than it is wide slides left rather
+/// than running off the page.
 ///
-/// The frame is the thing that says these rows are not the file, and half
-/// a frame says it worse than none -- so what a narrow window costs is the
-/// words wrapping harder inside it, which is only prose being prose. The
-/// indent is the one thing given up, and given up outright rather than
-/// shaved: which word the complaint is about is a nicety, and it is not
-/// worth every sentence wrapping twice as hard.
+/// It hangs off the word it is about, and a word near the right-hand edge
+/// has nowhere to hang from -- so the box slides left until it fits.
+/// Half a frame says what these rows are worse than no frame at all, and
+/// the frame is the whole of what says they are not the file.
 ///
-/// Anything wider than the room is wrapped by the editor like any other
-/// text, and a wrapped frame is a rail to a row: the frame taken apart
-/// into exactly the shape it was drawn to avoid. So the room decides what
-/// is affordable before the words are laid out, rather than the frame
-/// being built and clamped afterwards.
+/// At three widths, because the arithmetic has three answers: one where
+/// the box fits where the word is, one where it has to slide, and one
+/// where the room itself is narrower than the box wants and the box is
+/// the room.
 ///
-/// Broken deliberately by shaving the indent rather than dropping it, or
-/// by letting the words inside be wider than what is left of the row --
-/// which is what a `max` on that width does, however reasonable the number
-/// in it looks.
+/// Broken deliberately by taking the clamp off `x` in `where_it_goes`:
+/// the frame starts under the word at every width, and at two of them its
+/// right-hand rail is off the page.
 #[test]
-fn a_narrow_window_gives_up_the_indent_and_keeps_the_frame_whole() {
+fn a_box_with_no_room_to_its_right_slides_left() {
+    // The word a long way in, so that where the box would like to start
+    // is further right than a box's width from the edge.
+    let indented = format!("{}step_99;\n", " ".repeat(30));
     let rows_at = |width: u16| {
-        let scratch = support::Scratch::new(&format!("trouble-narrow-{width}"));
+        let scratch = support::Scratch::new(&format!("trouble-sliding-{width}"));
         let path = scratch.path().join("sample.rs");
-        std::fs::write(&path, "fn main() {\n    let _ = step_99(point);\n}\n").expect("writing");
+        std::fs::write(&path, format!("fn main() {{\n{indented}}}\n")).expect("writing");
         let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
         app.working_directory_for_test(scratch.path().to_path_buf());
-        // Wrapped, because it is the wrapping that took the frame apart.
-        app.configure(
-            obelus_config::Config {
-                wrap: true,
-                ..obelus_config::Config::default()
-            },
-            Vec::new(),
-        );
         support::lay_out(&mut app, width, 24);
-        // One sentence, so the whole frame fits the screen: what is being
-        // measured is its width, and a bottom rail scrolled off the bottom
-        // would read as a bottom rail that was never drawn.
         app.publish_for_test(json!({
             "uri": support::uri_for(path),
             "diagnostics": [{
-                "range": { "start": { "line": 1, "character": 12 },
-                           "end": { "line": 1, "character": 19 } },
+                "range": { "start": { "line": 1, "character": 30 },
+                           "end": { "line": 1, "character": 37 } },
                 "severity": 1,
                 "source": "rustc",
                 "message": "cannot find function `step_99` in this scope"
             }]
         }));
-        support::press(&mut app, crossterm::event::KeyCode::Down);
+        stand_on(&mut app, 1, 30);
         let dump = support::render(&mut app, width, 24);
         let rows: Vec<String> = support::text_block(&dump)
             .lines()
@@ -691,13 +702,13 @@ fn a_narrow_window_gives_up_the_indent_and_keeps_the_frame_whole() {
         (rows, dump)
     };
 
-    // Whole at every width, which is four facts: one top rail with both
+    // Whole at every width, which is three facts: one top rail with both
     // its corners, one bottom rail with both of its, and a pair of side
     // rails on every row of words.
     let whole = |rows: &[String], dump: &str, width: u16| {
         for (corner, opposite, which) in [
-            ('\u{250c}', '\u{2510}', "top"),
-            ('\u{2514}', '\u{2518}', "bottom"),
+            ('\u{256d}', '\u{256e}', "top"),
+            ('\u{2570}', '\u{256f}', "bottom"),
         ] {
             let found: Vec<&String> = rows.iter().filter(|row| row.contains(corner)).collect();
             assert_eq!(
@@ -713,7 +724,7 @@ fn a_narrow_window_gives_up_the_indent_and_keeps_the_frame_whole() {
         }
         let words: Vec<&String> = rows
             .iter()
-            .filter(|row| row.contains("cannot") || row.contains("scope"))
+            .filter(|row| row.contains("cannot find") || row.contains("this scope"))
             .collect();
         assert!(
             !words.is_empty(),
@@ -731,49 +742,44 @@ fn a_narrow_window_gives_up_the_indent_and_keeps_the_frame_whole() {
     let starts = |rows: &[String]| {
         let row = rows
             .iter()
-            .find(|row| row.contains('\u{250c}'))
+            .find(|row| row.contains('\u{256d}'))
             .expect("a top rail");
-        let byte = row.find('\u{250c}').expect("the corner");
+        let byte = row.find('\u{256d}').expect("the corner");
+        row[..byte].chars().count()
+    };
+    // And where the word it is about is.
+    let word = |rows: &[String]| {
+        let row = rows
+            .iter()
+            .find(|row| row.contains("step_99;"))
+            .expect("the line it is about");
+        let byte = row.find("step_99;").expect("the word");
         row[..byte].chars().count()
     };
 
-    let (wide, dump) = rows_at(60);
-    whole(&wide, &dump, 60);
-    let (narrow, dump) = rows_at(20);
-    whole(&narrow, &dump, 20);
-    // And one in between, where a shaved indent and a given-up one are
-    // different numbers: at the narrowest they both come out at nothing,
-    // so a width where they disagree is the only place the rule is
-    // actually being read.
-    let (between, middle) = rows_at(40);
-    whole(&between, &middle, 40);
+    let (roomy, dump) = rows_at(120);
+    whole(&roomy, &dump, 120);
+    assert_eq!(
+        starts(&roomy),
+        word(&roomy),
+        "there was room and the box did not hang off the word:\n{dump}"
+    );
 
-    // And the indent is what paid for it: at the wider width the frame
-    // hangs under the word, at the narrower one it is back at the code's
-    // own left edge.
+    let (slid, dump) = rows_at(80);
+    whole(&slid, &dump, 80);
     assert!(
-        starts(&wide) > starts(&narrow),
-        "the narrow window kept an indent it could not afford:\n{dump}"
+        starts(&slid) < word(&slid),
+        "the box stayed under the word with no room for it:\n{dump}"
     );
-    let left = |rows: &[String]| {
-        rows.iter()
-            .find(|row| row.contains("fn main"))
-            // In characters: the fold mark before it is three bytes wide.
-            .map(|row| {
-                let byte = row.find("fn").expect("the word");
-                row[..byte].chars().count()
-            })
-            .expect("the first line")
-    };
+
+    // Narrower than the box would like to be, so it is the room -- and
+    // starts at the region's own edge, gutter and all.
+    let (tight, dump) = rows_at(40);
+    whole(&tight, &dump, 40);
     assert_eq!(
-        starts(&narrow),
-        left(&narrow),
-        "the narrowest window kept an indent:\n{dump}"
-    );
-    assert_eq!(
-        starts(&between),
-        left(&between),
-        "the indent was shaved rather than given up:\n{middle}"
+        starts(&tight),
+        0,
+        "the box is narrower than the room it was given:\n{dump}"
     );
 }
 
@@ -1055,9 +1061,7 @@ fn the_complaint_follows_the_list_rather_than_the_caret() {
     }));
     // On the first of them, so the caret has a complaint of its own to be
     // told apart from the list's.
-    for _ in 0..4 {
-        support::press(&mut app, crossterm::event::KeyCode::Down);
-    }
+    stand_on(&mut app, 4, 4);
     let dump = support::render(&mut app, 60, 20);
     let says = |dump: &str, what: &str| {
         support::text_block(dump)
@@ -1322,8 +1326,8 @@ fn a_row_in_another_file_shows_that_file_above_the_list() {
 /// is where the words fit, and it is the editor's own box: the same frame,
 /// the same wrapping, hanging under the same line.
 ///
-/// Broken deliberately by taking `say_what_is_wrong` out of
-/// `refresh_preview`: the first line is on the row and the rest is nowhere.
+/// Broken deliberately by taking `what_is_wrong` out of `refresh_preview`:
+/// the first line is on the row and the rest is nowhere.
 #[test]
 fn a_previewed_problem_opens_its_own_words_under_it() {
     let (_scratch, mut app, path) = editing("trouble-preview-words", "fn main() {}\n");
@@ -1729,16 +1733,17 @@ fn the_line_being_typed_on_says_nothing_until_it_is_left() {
         support::text_block(&dump).contains("cannot find value")
     };
 
-    support::press(&mut app, crossterm::event::KeyCode::Down);
-    assert!(said(&mut app), "arriving on the line opens it");
+    stand_on(&mut app, 1, 4);
+    assert!(said(&mut app), "standing on it opens it");
 
     support::type_text(&mut app, "x");
     assert!(!said(&mut app), "the line being typed on still says it");
 
-    // Away and back, which is the reader finishing the line.
+    // Away and back, which is the reader finishing the line. Back onto the
+    // word, because the box is about the word.
     support::press(&mut app, crossterm::event::KeyCode::Down);
-    support::press(&mut app, crossterm::event::KeyCode::Up);
-    assert!(said(&mut app), "coming back to the line did not open it");
+    stand_on(&mut app, 1, 4);
+    assert!(said(&mut app), "coming back to it did not open it");
 }
 
 /// What a server said is wrong goes with the text it is about until the

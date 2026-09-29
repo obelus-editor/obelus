@@ -475,20 +475,6 @@ pub enum Held {
     Removed,
     /// What a commit said about itself.
     Message,
-    /// What a server says is wrong with a line.
-    ///
-    /// Under that line, which is where a complaint about something goes.
-    /// On the last line of the file that is the row past the end, which
-    /// `Held::Removed` needed before this did and neither had: a hunk that
-    /// deleted the end of a file hung its removed lines off a line the view
-    /// never reached, so they could not be opened at all.
-    ///
-    /// Only ever the line the caret is on. One of these costs a row of the
-    /// file's own space, and a file with thirty of them is a file whose
-    /// shape is the complaints rather than the code -- which is the thing
-    /// Obelus is for looking at. The rest are said by the underline, which
-    /// costs nothing and is on every one of them.
-    Wrong,
 }
 
 /// The room the text has, and whether it wraps in it.

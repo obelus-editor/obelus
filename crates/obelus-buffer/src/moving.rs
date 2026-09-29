@@ -622,15 +622,11 @@ impl Buffer {
             Motion::Down => below.and_then(|line| self.block_above(line)),
             _ => None,
         }
-        .filter(|block| !block.is_empty())
-        // Not into a complaint. The others are rows the reader *opened*,
-        // and walking into what you opened is the point of opening it;
-        // this one arrived on its own because the caret came to rest on
-        // the line above, and stepping through it would charge a keystroke
-        // for every line a server has something to say about -- on the one
-        // motion the whole thing is built around, which is moving to the
-        // line to read it.
-        .filter(|block| block.kind != Held::Wrong)?;
+        // Every block left is rows the reader *opened*, and walking into
+        // what you opened is the point of opening it. A complaint was the
+        // one that arrived on its own and had to be stepped round; it is a
+        // box floated over the page now and is not rows at all.
+        .filter(|block| !block.is_empty())?;
         let width = area.wrap_width();
         let (row, _) = self
             .editing

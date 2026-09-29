@@ -843,16 +843,7 @@ impl Widget for EditorView<'_> {
                                 // height of somebody's prose, was the
                                 // loudest thing on a screen whose subject
                                 // is the code underneath.
-                                // The page's own colour for a complaint
-                                // too, and for the same reason twice over:
-                                // it has the bar and no line numbers
-                                // already, and a red panel across the file
-                                // would be the loudest thing on a screen
-                                // whose subject is the code the complaint
-                                // is about.
-                                obelus_buffer::Held::Message | obelus_buffer::Held::Wrong => {
-                                    self.theme.background
-                                }
+                                obelus_buffer::Held::Message => self.theme.background,
                             }),
                         );
                         // A bar down the whole height rather than the
