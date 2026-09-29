@@ -1322,15 +1322,21 @@ impl Painter {
             }
             let left = f32::from(parting.area.x) * cell.width;
             let width = f32::from(parting.area.width) * cell.width;
-            // The row's own two colours, and the row this sits on top of
-            // rather than the page's: the row above a seam can be the one
-            // the reader is on, which wears a ground of its own, and a
-            // seam drawn against the wrong one changes weight as they walk
-            // the list.
+            // Through the middle of the row, which is the blank between
+            // two notes: on its top edge the line would hug whatever is
+            // above it, and a boundary that belongs to one side of itself
+            // is read as that side's underline.
+            let top = f32::from(parting.area.y) * cell.height;
+            let middle = (top + (cell.height - line) / 2.0).round();
+            // The row's own two colours rather than the page's. They are
+            // the page's here, because the row is blank and is nowhere
+            // the reader can stand -- but a seam is drawn against what it
+            // is drawn on, and asking the cell is how that stays true of
+            // wherever this is said next.
             let look = page.look(parting.area.x, parting.area.y);
             self.block(
                 left,
-                f32::from(parting.area.y) * cell.height,
+                middle,
                 width.max(1.0),
                 line,
                 mixed(

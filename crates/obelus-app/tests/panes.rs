@@ -200,26 +200,25 @@ fn the_mark_says_where_it_is_and_what_the_light_runs_between() {
     assert!(letters > 100, "the mark is barely on the screen: {letters}");
 }
 
-/// The notes say where one stops and the next begins, and say it from the
-/// note's own indent.
+/// The notes say where one stops and the next begins, across the list.
 ///
-/// A boundary with no row to be on: the notes are a list whose rows are
-/// already as many as the screen has, so a rule between two of them would
-/// take a third of the page to say what a line in the pixel between two
-/// rows says for nothing. Which only a window can draw -- see
-/// `obelus_ui::shapes::parted` -- and which the window cannot work out,
-/// because nothing in a cell says which row begins a note.
+/// The blank between two notes is a row in both front ends -- see
+/// `Row::gap` -- and a window draws a hairline through the middle of it,
+/// which a grid of cells cannot. Said by the view, because nothing in a
+/// cell says which row is that blank; drawn only by the window, because
+/// the terminal's answer is the blank itself. See
+/// `obelus_ui::shapes::parted`.
 ///
-/// From the note's own indent rather than across the page, so a note
-/// hanging under another is parted from it where it begins: a full-width
-/// line there would cut a note from what hangs under it, which is the one
-/// relation this page is drawn to show.
+/// Across the list whatever the note's depth, and short of the column the
+/// bar is in. What the indent says the indent says -- the words step in
+/// and the box steps in with them -- and a line starting in a different
+/// column every time is a second thing to read down the one edge a reader
+/// runs their eye along.
 ///
-/// Deliberate break: drop the `row.head` and every line of every note is
-/// parted from the one above it. Drop the `offset > 0` and the first note
-/// on screen is parted from the rule over the page, which is already a
-/// line. Take the `step` out of the `x` and a child is cut off from its
-/// parent.
+/// Deliberate break: say it on every row rather than on `row.gap` and the
+/// page is ruled like a table. Put the note's indent back in the `x` and
+/// the seams come out ragged down the left. Take the `SCROLLBAR_WIDTH`
+/// off and a seam runs through the bar's own column.
 #[test]
 fn the_notes_say_where_one_stops_and_the_next_begins() {
     let heard = heard();
@@ -264,21 +263,21 @@ depth = 1
 
     let said = heard.partings.lock().expect("the partings").clone();
     // Two, for three notes: the first on screen has the page's own rule
-    // above it and needs no second line. And two rather than one per row:
-    // the middle note is four rows of screen and none of the three after
-    // its first begins anything.
+    // above it and needs no blank. And two rather than one per row: the
+    // middle note is four rows of screen and none of them is a blank.
     assert_eq!(said.len(), 2, "not one line between each pair:\n{dump}");
     assert!(said[0].y < said[1].y, "out of order: {said:?}");
-    // The one under another starts further in, and the one beside it does
-    // not: what a line says here is "a new note", and where it starts says
-    // whose it is.
-    assert!(
-        said[1].x > said[0].x,
-        "a note under another is parted across the whole page: {said:?}"
-    );
+    // One of them is a note hanging under another and the other is not,
+    // and they are the same line: a seam says "a new note here" and says
+    // nothing about whose.
+    assert_eq!(said[0].x, said[1].x, "ragged down the left: {said:?}");
+    assert_eq!(said[0].width, said[1].width, "and down the right: {said:?}");
+    // And it stops where the rows do: that column is the bar's for the
+    // whole page, and a line through it would show either side of the
+    // mark.
     assert_eq!(
         said[0].right(),
-        said[1].right(),
-        "they stop in different places: {said:?}"
+        76 - obelus_ui::editor::SCROLLBAR_WIDTH,
+        "through the bar's own column: {said:?}"
     );
 }

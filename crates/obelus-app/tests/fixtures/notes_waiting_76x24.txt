@@ -1,8 +1,8 @@
 screen 76x24  editor 76x22  status 76x1
 -- text --
  0|▐? *  □ talked about                                                        
- 1|      □ never mentioned                                                     
- 2|                                                                            
+ 1|                                                                            
+ 2|      □ never mentioned                                                     
  3|                                                                            
  4|                                                                            
  5|                                                                            

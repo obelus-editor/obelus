@@ -38,6 +38,19 @@ pub struct Row {
     pub said: String,
     /// Whether this is the note's own row, or a line of its body.
     pub head: bool,
+    /// Whether this row is the blank between two notes.
+    ///
+    /// A row of the list rather than a gap the drawing leaves, so that
+    /// everything counting rows counts the same ones: the window, the
+    /// scrollbar and the keys that page would each have to add it back,
+    /// and a page that overshot by however much they disagreed is what
+    /// two answers to "how tall is this" buys. Nowhere to stand, like the
+    /// boundary row in `names`, so every way the caret moves steps over
+    /// it.
+    ///
+    /// It belongs to the note *below* it, which is the one it announces:
+    /// a key that pages onto one lands in the note it was heading for.
+    pub gap: bool,
     /// Whether this row is where the note points rather than what it says.
     ///
     /// Its own row, under the note. Hung off the end of the first line it
@@ -67,6 +80,20 @@ pub struct Row {
     /// folding thing in Obelus wears, because it is the same act: one row
     /// standing in for several, and a key that opens it.
     pub under: Option<bool>,
+}
+
+impl Row {
+    /// Whether the caret can stand here.
+    ///
+    /// The note's own lines and nothing else: the place it points at is a
+    /// fact about the note rather than a line of it, and the blank above
+    /// it belongs to no line at all. Asked in one place because the four
+    /// callers that look a note's rows up are four chances to remember
+    /// only one of them.
+    #[must_use]
+    pub fn words(&self) -> bool {
+        !self.place && !self.gap
+    }
 }
 
 /// Whether a note has a conversation about it, and whether that
@@ -537,7 +564,7 @@ impl TodoView {
         if let Some(row) = self
             .rows
             .iter()
-            .position(|row| row.note == at && !row.place)
+            .position(|row| row.note == at && row.words())
         {
             self.window.set_focus(row);
         }
@@ -733,10 +760,30 @@ impl TodoView {
             };
             let mut lines = laid.into_iter();
             let first: Laid = lines.next().unwrap_or_default();
+            // A blank above every note but the first on the page: what
+            // one note stops saying and the next starts is the one thing
+            // this list has to make plain, and a row of nothing says it
+            // in both front ends. The window draws a seam through it as
+            // well -- see `shapes::parted` -- which is the same boundary
+            // said a second way, for the front end that can.
+            if !rows.is_empty() {
+                rows.push(Row {
+                    note: index,
+                    said: String::new(),
+                    head: false,
+                    gap: true,
+                    place: false,
+                    done: note.done,
+                    depth: note.depth,
+                    held: None,
+                    under: None,
+                });
+            }
             rows.push(Row {
                 note: index,
                 said: first.said,
                 head: true,
+                gap: false,
                 place: false,
                 done: note.done,
                 depth: note.depth,
@@ -748,6 +795,7 @@ impl TodoView {
                     note: index,
                     said: line.said,
                     head: false,
+                    gap: false,
                     place: false,
                     done: note.done,
                     depth: note.depth,
@@ -770,6 +818,7 @@ impl TodoView {
                         _ => format!("{}:gone", at.path.display()),
                     },
                     head: false,
+                    gap: false,
                     place: true,
                     done: note.done,
                     depth: note.depth,
@@ -885,18 +934,18 @@ impl TodoView {
         }
         self.writing = Some((to, composer));
         self.rebuild();
-        // Never the place: it is a fact about the note rather than a line
-        // of it, and a caret standing on it would be a caret in text the
+        // Never the place and never the blank: neither is a line of the
+        // note, and a caret standing on one would be a caret in text the
         // reader cannot change.
         let row = match end {
             true => self
                 .rows
                 .iter()
-                .rposition(|row| row.note == to && !row.place),
+                .rposition(|row| row.note == to && row.words()),
             false => self
                 .rows
                 .iter()
-                .position(|row| row.note == to && !row.place),
+                .position(|row| row.note == to && row.words()),
         };
         if let Some(row) = row {
             self.window.set_focus(row);
@@ -1126,7 +1175,7 @@ impl TodoView {
         let (note, _) = self.writing.as_ref()?;
         self.rows
             .iter()
-            .position(|row| row.note == *note && !row.place)
+            .position(|row| row.note == *note && row.words())
     }
 
     /// Whatever a key means here.
@@ -1471,7 +1520,7 @@ impl TodoView {
         let Some(first) = self
             .rows
             .iter()
-            .position(|row| row.note == *at && !row.place)
+            .position(|row| row.note == *at && row.words())
         else {
             return;
         };

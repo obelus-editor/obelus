@@ -154,8 +154,9 @@ fn enter_starts_another_note_and_shift_enter_a_line() {
             .position(|row| row.contains(needle))
             .unwrap_or_else(|| panic!("no {needle:?}:\n{dump}"))
     };
-    // Right after the note it was started from, not at the end of the list.
-    assert_eq!(at("a fresh one"), at("wire the counts") + 1);
+    // Right after the note it was started from, not at the end of the list
+    // -- one row further down, because a note has a blank above it.
+    assert_eq!(at("a fresh one"), at("wire the counts") + 2);
     assert_eq!(at("and more of it"), at("a fresh one") + 1);
 
     press(&mut app, KeyCode::Esc);
@@ -183,13 +184,87 @@ fn the_arrows_walk_the_lines_then_the_notes() {
     assert_eq!(row(&mut app), 0);
     // Into the second note, down its own three lines, and then over the row
     // saying where it points -- that is a fact about the note rather than a
-    // line of it, so there is nowhere on it for a caret to be.
-    for expected in [1, 2, 3, 5] {
+    // line of it, so there is nowhere on it for a caret to be. Nor on the
+    // blank above each note, which is why none of these is the row after
+    // the one before it.
+    for expected in [2, 3, 4, 7] {
         press(&mut app, KeyCode::Down);
         assert_eq!(row(&mut app), expected, "the caret did not walk down");
     }
     press(&mut app, KeyCode::Up);
-    assert_eq!(row(&mut app), 3);
+    assert_eq!(row(&mut app), 4);
+}
+
+/// The blank between two notes is a row of the list, and nowhere to stand.
+///
+/// A row rather than a gap the drawing leaves, because the window, the
+/// scrollbar and the keys that page all count rows and two answers to how
+/// many there are is a page that overshoots by however much they disagree.
+/// What that costs is this: every way the caret moves has to step over it,
+/// and a press on it has to do nothing at all.
+///
+/// Deliberate break: let `Row::words` forget the blank and the caret stops
+/// on one the first time it walks to another note. Let `todo::place_at`
+/// take a press one row past the note's own rows -- `row <= rows` -- and
+/// the blank under a note becomes a way to its last line.
+#[test]
+fn the_blank_between_two_notes_is_nowhere_to_stand() {
+    let scratch = tree("nowhere-to-stand", THREE);
+    let mut app = open(&scratch, 76, 18);
+    let blank = |app: &App, at: usize| {
+        app.notes()
+            .expect("the view")
+            .rows()
+            .get(at)
+            .is_some_and(|row| row.gap)
+    };
+    let on = |app: &App| app.notes().expect("the view").window().focus();
+    let blanks = |app: &App| {
+        app.notes()
+            .expect("the view")
+            .rows()
+            .iter()
+            .filter(|row| row.gap)
+            .count()
+    };
+    // Three notes and two blanks: above each of them but the first, which
+    // has the page's own rule above it.
+    assert_eq!(blanks(&app), 2, "not one blank between each pair of notes");
+
+    // Down the whole list and back up it, a row at a time.
+    for _ in 0..12 {
+        press(&mut app, KeyCode::Down);
+        assert!(!blank(&app, on(&app)), "walking down stopped on a blank");
+    }
+    for _ in 0..12 {
+        press(&mut app, KeyCode::Up);
+        assert!(!blank(&app, on(&app)), "walking up stopped on a blank");
+    }
+    // And by the screenful, which moves the window rather than the caret
+    // and puts the caret back afterwards.
+    for code in [KeyCode::PageDown, KeyCode::PageUp] {
+        press(&mut app, code);
+        assert!(!blank(&app, on(&app)), "a page landed on a blank");
+    }
+
+    // A press on one does nothing: not the note above it, whose last line
+    // it sits under, and not the note below, which it announces. Asked of
+    // where the caret is on the screen rather than of which row it is on,
+    // because a press carries a column too -- a blank that let one through
+    // and then clamped it back to the note above would leave the row alone
+    // and move the caret along it.
+    let was = support::cursor_line(&support::render(&mut app, 76, 18)).to_string();
+    assert_eq!(on(&app), 0, "the caret is not where this test thinks");
+    assert!(blank(&app, 1), "the second row is not a blank");
+    let area = app.editor_area_for_test();
+    let top = obelus_ui::todo::list_region(area, &[]).y;
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: area.x + 10,
+        y: top + 1,
+    });
+    let now = support::cursor_line(&support::render(&mut app, 76, 18)).to_string();
+    assert_eq!(was, now, "a press on the blank moved the caret");
 }
 
 /// What the reader has hold of is marked, and `ctrl+c` takes a copy of it.
@@ -842,7 +917,7 @@ fn a_place_is_a_row_of_its_own() {
             .expect("the view")
             .rows()
             .iter()
-            .filter(|row| row.note == note && !row.place)
+            .filter(|row| row.note == note && row.words())
             .count()
     };
     assert_eq!(
@@ -2290,8 +2365,9 @@ fn a_note_being_started_stays_where_it_is_when_the_file_is_read_again() {
         rows.first().copied(),
         Some("wire the counts tree up to the search")
     );
+    // Two along: a note has a blank above it, and that blank is a row.
     assert_eq!(
-        rows.get(1).copied(),
+        rows.get(2).copied(),
         Some("mine"),
         "reading the file again moved the note being started: {rows:?}"
     );
@@ -2472,11 +2548,12 @@ fn down_lets_go_of_what_is_held_before_it_leaves_the_note() {
     );
     assert_eq!(on(&app), 0, "the first press left the note as well");
 
-    // The second walks the list, the way it always has.
+    // The second walks the list, the way it always has -- over the blank
+    // between the two notes, which is nowhere to stand.
     press(&mut app, KeyCode::Down);
     assert_eq!(
         on(&app),
-        1,
+        2,
         "the second press did not step to the next note"
     );
 }
@@ -2911,8 +2988,9 @@ fn a_press_on_a_notes_box_ticks_it_and_on_its_mark_opens_the_conversation() {
     let mut app = open(&scratch, 76, 18);
     let _ = support::render(&mut app, 76, 18);
 
-    // The second note's row, so that the press has to move the caret to
-    // reach it: the caret opens in the first.
+    // The second note's row, which is the third of the list: a note has a
+    // blank above it. So the press has to move the caret to reach it, the
+    // caret having opened in the first.
     let rows = app.notes().expect("the notes").rows().len();
     assert!(rows >= 2, "there is only one row, so this proves nothing");
     let area = app.editor_area_for_test();
@@ -2930,7 +3008,7 @@ fn a_press_on_a_notes_box_ticks_it_and_on_its_mark_opens_the_conversation() {
     // one, and the one a note's arrow goes in -- kept on a note with
     // nothing under it, because a column that comes and goes moves every
     // note beside it.
-    press(&mut app, 1, area.x + 6);
+    press(&mut app, 2, area.x + 6);
     let written = obelus_git::todo::read(scratch.path())
         .notes()
         .expect("the notes");
@@ -2946,7 +3024,7 @@ fn a_press_on_a_notes_box_ticks_it_and_on_its_mark_opens_the_conversation() {
     // And the mark, which opens the conversation about that note. There is
     // no agent here, so what is asserted is that Obelus went to a
     // conversation rather than staying in the notes.
-    press(&mut app, 1, area.x + 1);
+    press(&mut app, 2, area.x + 1);
     assert!(
         app.chat().is_some(),
         "the press on the mark did not open the conversation"

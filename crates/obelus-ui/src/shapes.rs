@@ -224,8 +224,8 @@ pub trait Shapes: Send + Sync {
     /// test for whether a thing may be said here.
     fn barred(&self, bar: Bar);
 
-    /// A boundary with no row to be on: what is above this row and what
-    /// is from here down are different things.
+    /// A seam: what is above this row and what is below it are different
+    /// things, and the row itself is the blank between them.
     ///
     /// The one thing said here that a terminal has no answer to, and it is
     /// said anyway because of what this module's own test says about such
@@ -235,13 +235,12 @@ pub trait Shapes: Send + Sync {
     /// where, and only a window draws it.
     ///
     /// What makes that safe is the same thing that makes the caret's shape
-    /// safe: a terminal loses nothing it had. [`ruled`] is the boundary a
-    /// terminal can draw, and it costs the row it is on; the notes are a
-    /// list whose rows are already as many as the screen has, and a rule
-    /// between every note would take a third of the page to say what the
-    /// indentation says. So the terminal's answer is the page as it stands
-    /// and the window's is a line in the pixel between two rows -- which
-    /// is a thing a grid of cells does not have.
+    /// safe: a terminal loses nothing it had. The row is blank in both --
+    /// it is a row of the list, so the window, the scrollbar and the keys
+    /// that page all count it -- and where a terminal leaves it blank a
+    /// window draws a hairline through the middle of it. Not [`ruled`],
+    /// which is a rule: a rule is a boundary between two *subjects*, and
+    /// a run of them down a list of notes would read as a table.
     ///
     /// No colour, and that is the point of it. What a seam has to do is
     /// be seen and not be read as a rule, and a *name* out of a theme
@@ -252,9 +251,10 @@ pub trait Shapes: Send + Sync {
     /// its own ground, and a little of the way between them -- which every
     /// theme keeps far enough apart to read words across.
     ///
-    /// `area` is the run the line covers: a note's own indent to the edge,
-    /// so a note hanging under another is parted from it where it begins
-    /// rather than across the whole page.
+    /// `area` is the blank row itself, and the run of it the line covers:
+    /// across the list whatever the note's depth, because what the indent
+    /// says the indent already says, and short of the column a scrollbar
+    /// is in.
     fn parted(&self, area: Rect);
 
     /// The mark is here, and the light on it runs between these two.

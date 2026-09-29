@@ -434,33 +434,32 @@ impl Widget for TodoUi<'_> {
             let Ok(offset) = u16::try_from(at - window.top()) else {
                 break;
             };
-            // Where one note stops and the next begins, for a front end
-            // with a pixel between two rows to put it in -- see
-            // `shapes::parted`. Not above the first on screen, which is
-            // parted from the rule over the page by the rule itself, and
-            // from a note off the top of the window by the window's own
-            // edge. From the note's own indent, so one hanging under
-            // another is parted where it begins rather than across the
-            // whole page.
-            if row.head && offset > 0 {
-                let step = row.depth * obelus_git::todo::INDENT;
+            let at_row = Rect {
+                y: list.y + offset,
+                height: 1,
+                ..list
+            };
+            // The blank between two notes: nothing to draw, because the
+            // page is already this colour, and not the selected row's
+            // ground either -- it is not somewhere the reader is.
+            //
+            // What a front end with a pixel to put a line in draws
+            // through it, it draws here -- see `shapes::parted`. Across
+            // the list whatever the note's depth: what the indent says
+            // the indent says, the words step in and the box steps in
+            // with them, and a line starting in a different column every
+            // time is a second thing to read down the one edge a reader
+            // runs their eye along. Short of the bar's column, which the
+            // rows are short of too, because that column is the bar's for
+            // the whole page.
+            if row.gap {
                 crate::shapes::parted(Rect {
-                    x: list.x + step,
-                    y: list.y + offset,
-                    width: list.width.saturating_sub(step),
-                    height: 1,
+                    width: at_row.width.saturating_sub(SCROLLBAR_WIDTH),
+                    ..at_row
                 });
+                continue;
             }
-            self.row(
-                cells,
-                Rect {
-                    y: list.y + offset,
-                    height: 1,
-                    ..list
-                },
-                row,
-                Some(row.note) == on,
-            );
+            self.row(cells, at_row, row, Some(row.note) == on);
         }
 
         // Only where there is somewhere to scroll: a track with no thumb on
