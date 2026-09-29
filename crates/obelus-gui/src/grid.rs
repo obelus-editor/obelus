@@ -301,6 +301,23 @@ pub(crate) struct Ticked {
     pub(crate) on: bool,
 }
 
+impl Ticked {
+    /// Whether the page still says what this switch was said about.
+    ///
+    /// The same question `Capped::still_said` asks: the settings are drawn
+    /// and then the list of a setting's choices is drawn over them, and a
+    /// switch further down the page had already been said -- so a box sat
+    /// on the list, on a row with nothing to switch, and the letter it
+    /// was over was missing as well, because `letters` leaves a switch's
+    /// cell to `ticks`.
+    pub(crate) fn still_said(&self, page: &Page) -> bool {
+        page.look(self.area.x, self.area.y)
+            .text
+            .chars()
+            .eq(std::iter::once(obelus_ui::tick(self.on)))
+    }
+}
+
 /// A bar in the frame being drawn, and how the window is showing it.
 ///
 /// The bar is the application's and the two numbers are not: what Obelus
@@ -421,6 +438,24 @@ pub(crate) struct Marked {
     pub(crate) x: u16,
     /// And the row.
     pub(crate) y: u16,
+}
+
+impl Marked {
+    /// Whether the cells this mark was drawn at are still nobody's.
+    ///
+    /// The same question again, asked the other way round: a view that has
+    /// a picture drawn writes nothing in the cells it goes in -- that is
+    /// what `Images::draw` answering `true` means -- so there is no glyph
+    /// of its own to look for, and anything in them at all is somebody
+    /// else's writing. The card of every key, opened over the agents page,
+    /// had two agents' marks sitting on its frame.
+    pub(crate) fn still_said(&self, page: &Page) -> bool {
+        let slot = obelus_ui::image::SLOT;
+        (self.y..self.y.saturating_add(slot.height)).all(|y| {
+            (self.x..self.x.saturating_add(slot.width))
+                .all(|x| page.look(x, y).text.trim().is_empty())
+        })
+    }
 }
 
 /// The window's end of what a view says about marks.
@@ -1124,6 +1159,84 @@ mod tests {
         page
     }
 
+    /// A rule is a line only where its cells still say `─`, and a tee
+    /// stops the line in the middle, where the side it meets is.
+    ///
+    /// Deliberate break: answer `Some((0.0, 1.0))` from `Ruled::spans`
+    /// for every cell in the row. The letter a later view wrote over the
+    /// rule is then left out by `letters` and drawn over by a line, and
+    /// the line at a frame's side pokes half a cell out of the frame.
+    #[test]
+    fn a_rule_is_a_line_only_where_its_cells_still_say_so() {
+        let page = written(&["\u{251c}\u{2500}x\u{2500}\u{2524}"]);
+        let rule = Ruled {
+            area: Rect {
+                x: 0,
+                y: 0,
+                width: 5,
+                height: 1,
+            },
+        };
+        assert_eq!(rule.spans(&page, 0, 0), Some((0.5, 1.0)), "a tee");
+        assert_eq!(rule.spans(&page, 1, 0), Some((0.0, 1.0)));
+        assert_eq!(rule.spans(&page, 2, 0), None, "written over");
+        assert_eq!(rule.spans(&page, 4, 0), Some((0.0, 0.5)), "the other tee");
+        assert!(!rule.still_said(&page), "one cell is not the rule's");
+    }
+
+    /// And a switch is a switch only where its cell still says so.
+    ///
+    /// Deliberate break: answer `true`. A setting's switch is then drawn
+    /// on the list of another setting's choices opened over it -- a box
+    /// on a row with nothing to switch, and the list's own letter missing
+    /// under it, because `letters` leaves a switch's cell to `ticks`.
+    #[test]
+    fn a_switch_is_a_switch_only_where_its_cell_still_says_so() {
+        let set = obelus_ui::tick(true).to_string();
+        let page = written(&[&set, "x"]);
+        let switch = |y: u16, on: bool| Ticked {
+            area: Rect {
+                x: 0,
+                y,
+                width: 1,
+                height: 1,
+            },
+            on,
+        };
+        assert!(switch(0, true).still_said(&page), "the settings' own");
+        assert!(!switch(1, true).still_said(&page), "and one a list covered");
+        assert!(
+            !switch(0, false).still_said(&page),
+            "nor one drawn unset where the page says it is set"
+        );
+    }
+
+    /// And a mark is drawn only where the cells are still nobody's.
+    ///
+    /// Deliberate break: answer `true`. The card of every key, opened over
+    /// the agents page, then has two agents' marks sitting on its frame.
+    /// Or ask about the first cell alone: a mark is two cells wide, and a
+    /// card whose edge lands in the second of them is a picture over a
+    /// line.
+    #[test]
+    fn a_mark_is_drawn_only_where_the_cells_are_still_nobody_s() {
+        // A row the card's frame reached the third cell of, and a row it
+        // did not reach at all.
+        let page = written(&["  \u{2502}", "   "]);
+        let mark = |x: u16, y: u16| Marked {
+            id: "claude".to_string(),
+            focused: false,
+            x,
+            y,
+        };
+        assert!(mark(0, 1).still_said(&page), "two cells nobody wrote in");
+        assert!(mark(0, 0).still_said(&page), "and the two before the line");
+        assert!(
+            !mark(1, 0).still_said(&page),
+            "but not where the line is the second of them"
+        );
+    }
+
     /// And a bar is a bar only where its cells still say so.
     ///
     /// Deliberate break: answer `true`. The file's own bar is then drawn
@@ -1154,31 +1267,6 @@ mod tests {
             "the list's own, drawn last"
         );
         assert!(!showing(0, 4).still_said(&page), "and the file's, under it");
-    }
-
-    /// A rule is a line only where its cells still say `─`, and a tee
-    /// stops the line in the middle, where the side it meets is.
-    ///
-    /// Deliberate break: answer `Some((0.0, 1.0))` from `Ruled::spans`
-    /// for every cell in the row. The letter a later view wrote over the
-    /// rule is then left out by `letters` and drawn over by a line, and
-    /// the line at a frame's side pokes half a cell out of the frame.
-    #[test]
-    fn a_rule_is_a_line_only_where_its_cells_still_say_so() {
-        let page = written(&["\u{251c}\u{2500}x\u{2500}\u{2524}"]);
-        let rule = Ruled {
-            area: Rect {
-                x: 0,
-                y: 0,
-                width: 5,
-                height: 1,
-            },
-        };
-        assert_eq!(rule.spans(&page, 0, 0), Some((0.5, 1.0)), "a tee");
-        assert_eq!(rule.spans(&page, 1, 0), Some((0.0, 1.0)));
-        assert_eq!(rule.spans(&page, 2, 0), None, "written over");
-        assert_eq!(rule.spans(&page, 4, 0), Some((0.0, 0.5)), "the other tee");
-        assert!(!rule.still_said(&page), "one cell is not the rule's");
     }
 
     /// A box with a frame, as the view says one: a pane joined to nothing,

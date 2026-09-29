@@ -752,17 +752,33 @@ impl Painter {
         if let Some(card) = card {
             self.card_glass(page, card, said.behind, fonts);
         }
-        // The bars the page still holds -- see `Barred::still_said` -- which
-        // is asked here rather than in `bars` so that the cells `letters`
-        // leaves alone are the cells a bar is actually drawn over.
+        // The shapes the page still holds -- see `Barred::still_said` and
+        // the two beside it, and `Capped`'s a few lines down, which is
+        // kept apart only because the caps are wanted as borrows. Asked
+        // here rather than where each is drawn, so that the cells
+        // `letters` leaves alone are the cells a shape is drawn over.
         let barred: Vec<Barred> = said
             .barred
             .iter()
             .copied()
             .filter(|showing| showing.still_said(page))
             .collect();
+        let ticked: Vec<Ticked> = said
+            .ticked
+            .iter()
+            .copied()
+            .filter(|tick| tick.still_said(page))
+            .collect();
+        let marked: Vec<Marked> = said
+            .marked
+            .iter()
+            .filter(|mark| mark.still_said(page))
+            .cloned()
+            .collect();
         let said = Said {
             barred: &barred,
+            ticked: &ticked,
+            marked: &marked,
             ..said
         };
         let panes: Vec<&Behind> = said.behind.into_iter().chain(card).collect();
