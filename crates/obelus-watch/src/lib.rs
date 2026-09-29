@@ -106,6 +106,31 @@ impl Watcher {
                     // `obelus_agent::chats`, where checking a claim opens
                     // the file without write access on purpose, so that
                     // Obelus's own looking cannot wake Obelus.
+                    //
+                    // Linux's, and nowhere else. This event is inotify's
+                    // `IN_CLOSE_WRITE`; macOS's FSEvents and Windows's
+                    // `ReadDirectoryChangesW` report what a file *is*
+                    // after a change and have nothing for one another
+                    // process closed, so there is nothing for `notify` to
+                    // hand over and this arm never fires there.
+                    //
+                    // What that costs is one sentence going stale rather
+                    // than a lock going missing. The lock is the kernel's
+                    // and is released on those platforms exactly as it is
+                    // here; the claim is asked for again at the moment the
+                    // reader presses the key, so the conversation opens.
+                    // What is wrong until the view is opened again is what
+                    // the row *says*: a lock drawn on a claim nobody
+                    // holds, and a foot that does not offer `Talk`. Every
+                    // other way a claim begins or ends is a file appearing
+                    // or going, which all three platforms report.
+                    //
+                    // A poll would close it and is not here on purpose:
+                    // walking the claims directory was what this replaced.
+                    // If it comes back it belongs where the sentence is
+                    // wrong and nowhere else -- those two platforms, while
+                    // a view that draws a lock is showing, and only while
+                    // the snapshot has one in it.
                     let closed_by_a_writer = matches!(
                         event.kind,
                         EventKind::Access(notify::event::AccessKind::Close(

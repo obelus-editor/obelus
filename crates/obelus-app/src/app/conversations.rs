@@ -561,6 +561,13 @@ impl App {
     /// going, and one let go by an Obelus dying is that file closed by a
     /// writer -- all three are things a watcher reports.
     ///
+    /// The third on Linux alone. The close a dying process makes is
+    /// inotify's and has no counterpart on macOS or Windows, so there this
+    /// is stale from the moment another Obelus is killed until whichever
+    /// of the other three moments comes first. The row says a lock that is
+    /// not there; the key still works, because it asks for the claim
+    /// rather than reading it off the row. See `obelus_watch`.
+    ///
     /// Obelus's own claims are in here too. A lock belongs to the open file
     /// and not to the process, so a second look finds this window's own in
     /// the way; which of them are its own it knows from the conversations

@@ -7591,7 +7591,16 @@ fn a_conversation_about_a_note_watches_the_notes_without_the_page() {
 /// `chats` for a lock seen through a descriptor that cannot write, and the
 /// two beside this for the watch being taken -- and this is the one that
 /// puts them together.
+///
+/// Linux's, and only there. What the notice is made of is inotify's
+/// `IN_CLOSE_WRITE` -- and neither macOS's FSEvents nor Windows's
+/// `ReadDirectoryChangesW` has an event for a file another process
+/// closed, so there is nothing for `notify` to hand over. See
+/// `obelus_watch` for what that costs, which is a stale lock on a page
+/// the reader is already looking at and not a conversation they cannot
+/// open.
 #[test]
+#[cfg(target_os = "linux")]
 fn an_obelus_that_is_killed_gives_its_conversation_back() {
     let scratch = support::Scratch::new("agent-killed-gives-back");
     support::make_room_for_notes(scratch.path());

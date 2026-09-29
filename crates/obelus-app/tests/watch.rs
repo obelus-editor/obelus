@@ -269,7 +269,16 @@ fn a_file_written_continuously_is_still_reported() {
 /// Broken deliberately by putting `EventKind::Access(_)` back as a blanket
 /// refusal in `obelus_watch`: nothing arrives and this waits out its
 /// deadline.
+///
+/// Linux's, and only there. What the notice is made of is inotify's
+/// `IN_CLOSE_WRITE` -- and neither macOS's FSEvents nor Windows's
+/// `ReadDirectoryChangesW` has an event for a file another process
+/// closed, so there is nothing for `notify` to hand over. See
+/// `obelus_watch` for what that costs, which is a stale lock on a page
+/// the reader is already looking at and not a conversation they cannot
+/// open.
 #[test]
+#[cfg(target_os = "linux")]
 fn a_process_that_is_killed_reports_letting_go_of_what_it_held() {
     let scratch = Scratch::new("killed");
     let path = scratch.write("claim", "");

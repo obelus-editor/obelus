@@ -218,6 +218,21 @@ reading everywhere but `claim`; `flock` allows it, where `fcntl` locks would
 not. Being refused a claim counts as being told, too, and is the freshest
 news there is: the row the reader pressed goes dim under them.
 
+That notice is Linux's. It is inotify's `IN_CLOSE_WRITE`, and neither
+macOS's FSEvents nor Windows's `ReadDirectoryChangesW` has an event for a
+file another process closed -- so there the answer really is "nothing can
+tell you", for that one way a claim can end. What it costs is a sentence
+and not a lock: the lock is the kernel's everywhere and goes with the
+process, and the key asks for the claim rather than reading it off the
+row, so the conversation opens. What is wrong until the view opens again
+is what the row *says*. Every other way a claim begins or ends is a file
+appearing or going, which all three report. A poll would close it and is
+deliberately not there -- walking that directory is what this replaced;
+if it ever comes back it belongs where the sentence is wrong and nowhere
+else, which is those two platforms, while a view drawing a lock is
+showing, and only while there is a lock in the snapshot to be wrong
+about.
+
 That leaves three moments a thing is read: when the view that shows it
 opens (a watch says what happens next, not what was already there), when
 the watcher says so, and when Obelus is the one who changed it.

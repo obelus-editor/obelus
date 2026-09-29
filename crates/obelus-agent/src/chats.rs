@@ -147,6 +147,12 @@ pub fn claim(root: &Path, which: &ChatId) -> Option<Claim> {
     // way out of a process it is killing. Opened for reading, a claim would
     // end in silence and the next window would go on drawing a lock nobody
     // holds until it looked again for some other reason.
+    //
+    // Which is what happens on macOS and Windows whatever this is opened
+    // as: the event is inotify's and they have none like it. The lock
+    // itself is the kernel's on all three and goes with the process
+    // everywhere, so nothing is ever unopenable -- what is wrong there is
+    // the drawing, until the view opens again. See `obelus_watch`.
     let file = File::options()
         .create(true)
         .write(true)
