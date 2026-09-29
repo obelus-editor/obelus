@@ -12,9 +12,9 @@ terminal tool does today.
 An *obelus* (÷, †) is the mark a scholar put in a manuscript's margin to flag a
 line as doubtful. A reader's mark, made while reading.
 
-[sunli829.github.io/obelus](https://sunli829.github.io/obelus/) — what it does,
+[obelus-editor.github.io/obelus](https://obelus-editor.github.io/obelus/) — what it does,
 how to use it, and why it is shaped this way. Also in
-[中文](https://sunli829.github.io/obelus/zh/).
+[中文](https://obelus-editor.github.io/obelus/zh/).
 
 ## Getting it
 
@@ -22,13 +22,13 @@ There is one script per shell, and which you want is which shell you are in.
 On Linux and macOS:
 
 ```
-curl -fsSL https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/obelus-editor/obelus/master/contrib/install.sh | sh
 ```
 
 On Windows, in PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.ps1 | iex
+irm https://raw.githubusercontent.com/obelus-editor/obelus/master/contrib/install.ps1 | iex
 ```
 
 Either one takes the latest release, checks what it downloaded against the
@@ -53,7 +53,7 @@ A pipe into `iex` has nowhere to put an argument, so on Windows the script
 is fetched first:
 
 ```powershell
-irm https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.ps1 -OutFile install.ps1
+irm https://raw.githubusercontent.com/obelus-editor/obelus/master/contrib/install.ps1 -OutFile install.ps1
 .\install.ps1 -Binary ob       # or -Binary both
 ```
 
@@ -70,7 +70,7 @@ instead, which carry all three. And on musl there is no `obg` to install at
 all — the window finds Vulkan, Wayland and X11 by `dlopen`, which a static
 binary cannot do — so the script says so and installs `ob`.
 
-[The releases](https://github.com/sunli829/obelus/releases) carry an archive
+[The releases](https://github.com/obelus-editor/obelus/releases) carry an archive
 for every platform as well as a `.deb`, an `.rpm`, an AppImage and a macOS
 `.app`.
 

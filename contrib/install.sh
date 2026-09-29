@@ -1,7 +1,7 @@
 #!/bin/sh
 # Fetches a released Obelus and puts it somewhere on your PATH.
 #
-#   curl -fsSL https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/obelus-editor/obelus/master/contrib/install.sh | sh
 #   curl -fsSL .../install.sh | sh -s -- --bin ob --dir /usr/local/bin
 #
 # POSIX sh, because the one machine this has to work on is somebody else's.
@@ -14,7 +14,7 @@
 # asked for trust twice and earned it once.
 set -eu
 
-repository=sunli829/obelus
+repository=obelus-editor/obelus
 # The window, because that is the Obelus to meet first: the presses a
 # terminal cannot report arrive as themselves and the marks are in the
 # binary rather than guessed at from somebody else's font. The terminal one

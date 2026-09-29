@@ -1,6 +1,6 @@
 # Fetches a released Obelus and puts it somewhere on your PATH.
 #
-#   irm https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/obelus-editor/obelus/master/contrib/install.ps1 | iex
 #
 # With options, which a pipe into `iex` has nowhere to put, download it
 # first:
@@ -49,7 +49,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'   # or every download draws a bar over the output
 
-$repository = 'sunli829/obelus'
+$repository = 'obelus-editor/obelus'
 
 # Where the Start menu entry goes, which both halves of this need to know.
 $link = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Obelus.lnk'

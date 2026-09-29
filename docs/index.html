@@ -42,7 +42,7 @@
   <span class="spacer"></span>
   <a class="switch" href="zh/" title="切换到中文" hreflang="zh-Hans">中文</a>
   <button class="switch" id="theme-switch" type="button" title="Switch theme" data-light="Light" data-dark="Dark">Theme</button>
-  <a class="switch" href="https://github.com/sunli829/obelus">GitHub</a>
+  <a class="switch" href="https://github.com/obelus-editor/obelus">GitHub</a>
 </header>
 
 <div class="frame" id="top">
@@ -73,7 +73,7 @@
       <div class="buttons">
         <a class="button primary" href="#start"><span>Get started</span></a>
         <a class="button" href="#tenets"><span>Read the principles</span></a>
-        <a class="button" href="https://github.com/sunli829/obelus">GitHub</a>
+        <a class="button" href="https://github.com/obelus-editor/obelus">GitHub</a>
       </div>
 
       <figure class="shot">
@@ -90,25 +90,25 @@
       <p>One script per shell, and which you want is which shell you are in. Either one takes the latest release, checks what it downloaded against the release's own <code>SHA256SUMS</code>, and puts <code>obg</code> on your PATH — Obelus in a window of its own.</p>
 
       <h4>Linux and macOS</h4>
-      <pre><code>curl -fsSL https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.sh | sh</code></pre>
+      <pre><code>curl -fsSL https://raw.githubusercontent.com/obelus-editor/obelus/master/contrib/install.sh | sh</code></pre>
 
       <h4>Windows, in PowerShell</h4>
-      <pre><code>irm https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.ps1 | iex</code></pre>
+      <pre><code>irm https://raw.githubusercontent.com/obelus-editor/obelus/master/contrib/install.ps1 | iex</code></pre>
 
       <h4>The terminal one as well</h4>
       <p><code>ob</code> is the other binary and is asked for by name. Everything after <code>-s --</code> goes to the script; a pipe into <code>iex</code> has nowhere to put an argument, so on Windows the script is fetched first instead.</p>
 
-      <pre><code>curl -fsSL https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.sh | sh -s -- --bin both</code></pre>
+      <pre><code>curl -fsSL https://raw.githubusercontent.com/obelus-editor/obelus/master/contrib/install.sh | sh -s -- --bin both</code></pre>
 
-      <pre><code>irm https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.ps1 -OutFile install.ps1
+      <pre><code>irm https://raw.githubusercontent.com/obelus-editor/obelus/master/contrib/install.ps1 -OutFile install.ps1
 .\install.ps1 -Binary both</code></pre>
 
-      <p><code>--bin ob</code> is the terminal one on its own, <code>--dir</code> says where to put it, and <code>--help</code> lists the rest. <a href="https://github.com/sunli829/obelus/releases">The releases</a> carry an archive for every platform as well as a <code>.deb</code>, an <code>.rpm</code>, an AppImage and a macOS <code>.app</code> — and on a Linux desktop one of those is the one to install, because what the script gives you there is a binary and nothing else, while a launcher needs a desktop entry and an icon beside it. On Windows it puts Obelus in the Start menu as well as on your PATH — the icon is in the binary, so the shortcut is the whole of it, and <code>-NoShortcut</code> leaves the menu alone. <code>-Uninstall</code> takes all three back, which is the half that matters there: a PATH and a Start menu are what a reader cannot simply delete. On musl there is no <code>obg</code> at all: the window finds Vulkan, Wayland and X11 by <code>dlopen</code>, which a static binary cannot do, so the script says so and installs <code>ob</code>.</p>
+      <p><code>--bin ob</code> is the terminal one on its own, <code>--dir</code> says where to put it, and <code>--help</code> lists the rest. <a href="https://github.com/obelus-editor/obelus/releases">The releases</a> carry an archive for every platform as well as a <code>.deb</code>, an <code>.rpm</code>, an AppImage and a macOS <code>.app</code> — and on a Linux desktop one of those is the one to install, because what the script gives you there is a binary and nothing else, while a launcher needs a desktop entry and an icon beside it. On Windows it puts Obelus in the Start menu as well as on your PATH — the icon is in the binary, so the shortcut is the whole of it, and <code>-NoShortcut</code> leaves the menu alone. <code>-Uninstall</code> takes all three back, which is the half that matters there: a PATH and a Start menu are what a reader cannot simply delete. On musl there is no <code>obg</code> at all: the window finds Vulkan, Wayland and X11 by <code>dlopen</code>, which a static binary cannot do, so the script says so and installs <code>ob</code>.</p>
 
       <h4>From source</h4>
       <p>Which needs nothing but a stable Rust toolchain (edition 2024).</p>
 
-      <pre><code>git clone https://github.com/sunli829/obelus
+      <pre><code>git clone https://github.com/obelus-editor/obelus
 cd obelus
 
 # installs as `obg` into ~/.cargo/bin: Obelus in a window of its own
@@ -525,7 +525,7 @@ quit = ""            # taken away</code></pre>
 </div>
 
 <footer>
-  <p><span class="mono">÷</span> &nbsp; Obelus &nbsp;·&nbsp; Apache-2.0 &nbsp;·&nbsp; <a href="https://github.com/sunli829/obelus">github.com/sunli829/obelus</a></p>
+  <p><span class="mono">÷</span> &nbsp; Obelus &nbsp;·&nbsp; Apache-2.0 &nbsp;·&nbsp; <a href="https://github.com/obelus-editor/obelus">github.com/obelus-editor/obelus</a></p>
   <p>A reader's mark, made while reading.</p>
 </footer>
 

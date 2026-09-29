@@ -19,7 +19,7 @@
     <key>CFBundleDisplayName</key>
     <string>Obelus</string>
     <key>CFBundleIdentifier</key>
-    <string>io.github.sunli829.obelus</string>
+    <string>io.github.obelus-editor.obelus</string>
     <key>CFBundleExecutable</key>
     <string>obg</string>
     <key>CFBundleIconFile</key>
