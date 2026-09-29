@@ -34,6 +34,7 @@ struct Heard {
     caps: Mutex<Vec<Said>>,
     switches: Mutex<Vec<(Rect, bool)>>,
     bars: Mutex<Vec<obelus_ui::shapes::Bar>>,
+    strokes: Mutex<Vec<obelus_ui::shapes::Stroke>>,
     rules: Mutex<Vec<Rect>>,
     panes: Mutex<Vec<(Rect, obelus_ui::shapes::Joined, Color, String)>>,
 }
@@ -57,6 +58,12 @@ impl obelus_ui::shapes::Shapes for Heard {
     fn barred(&self, bar: obelus_ui::shapes::Bar) {
         if let Ok(mut bars) = self.bars.lock() {
             bars.push(bar);
+        }
+    }
+
+    fn stroked(&self, stroke: obelus_ui::shapes::Stroke) {
+        if let Ok(mut strokes) = self.strokes.lock() {
+            strokes.push(stroke);
         }
     }
 
@@ -406,4 +413,180 @@ fn the_cells_are_the_bar_a_terminal_draws() {
             "the track at {row}"
         );
     }
+}
+
+/// How tall the region `a_changed_file` draws in is.
+///
+/// As many rows as the file has lines counting the empty one after its last
+/// newline, so that a row of the map is a line of the file and the two
+/// columns can be read against each other. At any other height they are the
+/// same facts at two scales, which is true of the map and beside the point
+/// here.
+const ROWS: u16 = 8;
+
+/// Whether a stroke is one of the ones drawn at this test's row.
+///
+/// The recorder is shared by everything in this binary and several of these
+/// draw the same file, so a test that took "at or below my row" for its own
+/// would count the strokes of every test that drew under it.
+fn within(stroke: obelus_ui::shapes::Stroke, y: u16) -> bool {
+    (y..y + ROWS).contains(&stroke.area.y)
+}
+
+/// A file with something changed in it, drawn as the editor draws it.
+///
+/// `y` is the row the region starts on, so that each test here reads only
+/// its own strokes: the recorder is shared by everything in this binary.
+///
+/// Two lines replaced and one removed, with a line between the two so they
+/// are two hunks: a run of more than one row, so coalescing has something
+/// to coalesce, and a deletion, which is the one said differently in the
+/// two columns. Adjacent, git reads the pair as one replacement of three
+/// lines by two and there is no deletion in it at all.
+fn a_changed_file(y: u16, width: u16) -> (CellBuffer, Rect) {
+    let committed = "a\nb\nc\nd\ne\nf\ng\nh\n";
+    let working = "a\nB\nC\nd\ne\ng\nh\n";
+    let changes = obelus_git::Changes::between(committed, working);
+    let buffer = obelus_buffer::Buffer::from_text(std::path::Path::new("changed.txt"), working);
+    let area = Rect {
+        x: 0,
+        y,
+        width,
+        height: ROWS,
+    };
+    let mut cells = CellBuffer::empty(Rect {
+        x: 0,
+        y: 0,
+        width,
+        height: y + area.height,
+    });
+    let highlights = obelus_syntax::highlight::Highlights::default();
+    ratatui::widgets::Widget::render(
+        obelus_ui::editor::EditorView::for_buffer(
+            &buffer,
+            &highlights,
+            &DARK,
+            &[],
+            Some(&changes),
+            &[],
+        ),
+        area,
+        &mut cells,
+    );
+    (cells, area)
+}
+
+/// Break: drop the `say_strokes` under the row loop in `editor::render`,
+/// and a window has a margin with nothing saying which cells are change
+/// marks -- so it spells the half blocks in the font and the reader gets
+/// the terminal's margin in a window that could draw the shape.
+///
+/// Break again: join the seam to the run above it in `say_strokes` -- take
+/// the `About::Seam` arm out, so a deletion coalesces like anything else --
+/// and the arrow on the boundary becomes another row of bar, which is the
+/// one claim the margin must not make: that the line is different when it
+/// is not.
+#[test]
+fn the_margin_says_its_change_marks_in_runs() {
+    let heard = heard();
+    // Its own row, and one no other test in this binary draws at.
+    let y = 51;
+    let (_cells, _area) = a_changed_file(y, 40);
+
+    let said = heard.strokes.lock().expect("nothing poisoned it").clone();
+    let mine: Vec<obelus_ui::shapes::Stroke> = said
+        .into_iter()
+        .filter(|stroke| within(*stroke, y) && stroke.area.x == 0)
+        .collect();
+    assert_eq!(mine.len(), 2, "one run and one seam: {mine:?}");
+
+    // The two replaced lines are one stroke of two rows, not two of one:
+    // a hunk is one bar with two rounded ends.
+    let run = mine[0];
+    assert_eq!(run.about, obelus_ui::shapes::About::Rows, "{run:?}");
+    assert_eq!((run.area.y, run.area.height), (y + 1, 2), "{run:?}");
+    assert_eq!(run.area.width, 1, "one column: {run:?}");
+    // Beside the text, which is the side the margin's own glyph leans.
+    assert_eq!(run.side, obelus_ui::shapes::Side::Right, "{run:?}");
+
+    // And the deletion is the boundary above the line that is now there,
+    // which is a row of its own and never joined to anything.
+    let seam = mine[1];
+    assert_eq!(seam.about, obelus_ui::shapes::About::Seam, "{seam:?}");
+    assert_eq!((seam.area.y, seam.area.height), (y + 5, 1), "{seam:?}");
+    assert_eq!(seam.side, obelus_ui::shapes::Side::Right, "{seam:?}");
+}
+
+/// Break: say `About::Seam` for a deletion in `change_map` -- match on the
+/// marker there the way `draw_marker` does -- and the map grows an arrow
+/// pointing between two of its rows. Which is a lie at that scale: a row of
+/// the map is a row of the *file* compressed, so the boundary between two
+/// of them is the boundary between two dozen lines and not a place
+/// anything can point at.
+#[test]
+fn the_map_says_every_change_the_same_way() {
+    let heard = heard();
+    // Its own row again.
+    let y = 61;
+    let width = 40;
+    let (_cells, _area) = a_changed_file(y, width);
+
+    // Just inside the bar, which is the last column of the region.
+    let column = width - 2;
+    let said = heard.strokes.lock().expect("nothing poisoned it").clone();
+    let mine: Vec<obelus_ui::shapes::Stroke> = said
+        .into_iter()
+        .filter(|stroke| within(*stroke, y) && stroke.area.x == column)
+        .collect();
+    assert_eq!(mine.len(), 2, "the replacement and the deletion: {mine:?}");
+    assert!(
+        mine.iter()
+            .all(|stroke| stroke.about == obelus_ui::shapes::About::Rows),
+        "a deletion is a row here like any other: {mine:?}"
+    );
+    // Away from the bar, which is the side `MAP_MARK` leans -- the other
+    // way from the margin's, and both of them the edge nearest the text.
+    assert!(
+        mine.iter()
+            .all(|stroke| stroke.side == obelus_ui::shapes::Side::Left),
+        "{mine:?}"
+    );
+    // Seven lines in seven rows, so the rows are the lines: the two
+    // replaced ones as one stroke, and the deletion on its own.
+    assert_eq!(
+        (mine[0].area.y, mine[0].area.height),
+        (y + 1, 2),
+        "{mine:?}"
+    );
+    assert_eq!(
+        (mine[1].area.y, mine[1].area.height),
+        (y + 5, 1),
+        "{mine:?}"
+    );
+}
+
+/// Break: drop the `put` in `draw_marker` and keep the `marked.push`, or
+/// the one in `change_map` and keep its own -- and `ob` loses the only
+/// margin a terminal has, which is the invariant everything said on this
+/// channel rests on. The window would go on drawing the strokes; the
+/// terminal would have a blank column.
+///
+/// The other half of the two tests above, and each passes with the other
+/// broken: they hold what was *said*, this holds what was written.
+#[test]
+fn the_cells_are_the_change_marks_a_terminal_draws() {
+    let y = 71;
+    let width = 40;
+    let (cells, _area) = a_changed_file(y, width);
+    let margin: String = (0..ROWS).map(|row| cells[(0, y + row)].symbol()).collect();
+    // A bar beside each line that is there and differs, and the top edge
+    // of the cell below the boundary where lines are not there at all.
+    assert_eq!(margin, " \u{2590}\u{2590}  \u{2594}  ");
+
+    let map: String = (0..ROWS)
+        .map(|row| cells[(width - 2, y + row)].symbol())
+        .collect();
+    // Half a block for all three, leaning the other way: what kind of
+    // change it is, this column says in the colour alone.
+    assert_eq!(map, " \u{258c}\u{258c}  \u{258c}  ");
 }

@@ -49,9 +49,14 @@ struct Quad {
     // screen in two pieces while a pane slides into it. 256: the mark in
     // a switch that is set. 512: glass over another pane's glass. 1024:
     // what is behind a pane, blurred one way. 2048: a letter of the
-    // welcome screen's mark, which the light runs across.
+    // welcome screen's mark, which the light runs across. 2097152: a
+    // triangle filling the quad, which is the arrow on the seam a
+    // deletion left.
     @location(3) flags: u32,
-    // How far those corners are taken off, in pixels.
+    // How far those corners are taken off, in pixels -- and for the two
+    // quads that carry no corners, the one number each of them needs
+    // instead: how far a sliding pane has still to come, and which way a
+    // wedge points.
     @location(4) radius: f32,
 };
 
@@ -252,6 +257,28 @@ const NIB: f32 = 0.085;
 
 @fragment
 fn fragment(in: Fragment) -> @location(0) vec4<f32> {
+    // The arrow on the seam a deletion left: a triangle filling the quad,
+    // its point in the middle of one short side. `radius` says which side,
+    // because the direction is the one thing a wedge has to carry and the
+    // field is going spare.
+    //
+    // Before the solid, which it is one of, and drawn as coverage rather
+    // than clipped: at the size a cell is, a triangle with hard edges is a
+    // staircase, and the point is the part the eye is on.
+    if ((in.flags & 2097152u) != 0u) {
+        let at = in.middle / (in.half_size * 2.0) + vec2<f32>(0.5);
+        var along = at.x;
+        if (in.radius < 0.0) {
+            along = 1.0 - at.x;
+        }
+        // Half as tall as the base, closing to nothing at the point.
+        let half = 0.5 * (1.0 - along);
+        let over = abs(at.y - 0.5) - half;
+        // Back into pixels, so the edge is a pixel wide whatever size the
+        // text is -- the same as the switch's mark below.
+        let covered = clamp(0.5 - over * in.half_size.y * 2.0, 0.0, 1.0);
+        return vec4<f32>(in.colour.rgb, in.colour.a * covered);
+    }
     // The mark in a switch that is set.
     if ((in.flags & 256u) != 0u) {
         let at = in.middle / (in.half_size * 2.0) + vec2<f32>(0.5);

@@ -105,7 +105,10 @@ use ratatui::{
     widgets::Widget,
 };
 
-use crate::{Screen, fill, put, rule};
+use crate::{
+    Screen, fill, put, rule,
+    shapes::{About, Side},
+};
 
 /// The narrowest the gutter is allowed to be.
 ///
@@ -452,6 +455,7 @@ impl EditorView<'_> {
             }
         }
 
+        let mut marked = Vec::new();
         for (row, marker) in rows.iter().enumerate() {
             let (Ok(row), Some(marker)) = (u16::try_from(row), marker) else {
                 continue;
@@ -464,7 +468,17 @@ impl EditorView<'_> {
                 MAP_MARK,
                 Style::new().fg(colour),
             );
+            // Every kind of change is one stroke here, deletions included:
+            // these rows are lines of the *file* rather than of the screen,
+            // and a boundary between two of them is a boundary between two
+            // dozen lines -- which is not a place a mark could point at.
+            // The margin is where a deletion is said to be somewhere
+            // exactly; this column says where else to look.
+            marked.push((area.y + row, About::Rows, colour));
         }
+        // Away from the bar, which is the edge nearest the text -- the same
+        // side `MAP_MARK` leans, and for the same reason.
+        say_strokes(area.x, Side::Left, &marked);
     }
 
     /// What to write after a line: who changed it and how long ago.
@@ -757,6 +771,10 @@ impl Widget for EditorView<'_> {
         // that deleted the end of a file, or what a server says is wrong
         // with its last line. That pass draws the block and stops -- there
         // is no line at it to draw, and nothing after it.
+        // What the margin drew, for a front end that draws that column its
+        // own way. Gathered rather than said row by row, because a hunk of
+        // six lines is one bar with two rounded ends -- see `say_strokes`.
+        let mut marked: Vec<(u16, About, Color)> = Vec::new();
         while screen_row < area.height && line.get() <= text.line_count() {
             let past = line.get() == text.line_count();
             if !past {
@@ -874,6 +892,7 @@ impl Widget for EditorView<'_> {
                                 Marker::Modified,
                                 self.theme.change_removed,
                                 cells,
+                                &mut marked,
                             );
                         }
                         // No line number: these lines have no number in
@@ -1045,7 +1064,14 @@ impl Widget for EditorView<'_> {
                     && let Some(marker) = changes.marker_at(line)
                     && !(marker == Marker::Removed && given_rows(buffer, line))
                 {
-                    draw_marker(area.x, y, marker, self.theme.marker_colour(marker), cells);
+                    draw_marker(
+                        area.x,
+                        y,
+                        marker,
+                        self.theme.marker_colour(marker),
+                        cells,
+                        &mut marked,
+                    );
                 }
 
                 // Beside the number, and on the numbered row only: a
@@ -1176,6 +1202,11 @@ impl Widget for EditorView<'_> {
             skip = 0;
             line = line.saturating_add(1);
         }
+
+        // Beside the text, which is the edge the margin's own glyph leans
+        // against. Said after the loop rather than inside it: a run is only
+        // a run once the row that would have continued it has been drawn.
+        say_strokes(area.x, Side::Right, &marked);
 
         // The bar last, because whether there is anywhere to scroll is a
         // question only the loop above can answer: the file can run out
@@ -1359,18 +1390,95 @@ fn given_rows(buffer: &Buffer, line: LineNumber) -> bool {
 /// it, by the complaint framed underneath -- a third mark beside the line
 /// would be the same news a third time, and it would have to share this
 /// cell with marks whose colours it cannot be told apart from.
-fn draw_marker(x: u16, y: u16, marker: Marker, colour: Color, cells: &mut CellBuffer) {
-    let glyph = match marker {
+fn draw_marker(
+    x: u16,
+    y: u16,
+    marker: Marker,
+    colour: Color,
+    cells: &mut CellBuffer,
+    marked: &mut Vec<(u16, About, Color)>,
+) {
+    let (glyph, about) = match marker {
         // A line that is there and differs: a bar down its whole height,
         // half a cell wide and against the *right* edge of its cell. It
         // then sits beside the text it is about; against the other edge it
         // would float a cell away from it.
-        Marker::Added | Marker::Modified => '\u{2590}',
+        Marker::Added | Marker::Modified => ('\u{2590}', About::Rows),
         // Lines that are not there: a mark on the boundary they were on,
         // which is the top edge of this cell.
-        Marker::Removed => '\u{2594}',
+        Marker::Removed => ('\u{2594}', About::Seam),
     };
     put(cells, x, y, glyph, Style::new().fg(colour));
+    // Recorded here, where the glyph is chosen, because the two are one
+    // decision: a front end drawing this column its own way has to be told
+    // which of the two things the cell says, and a second place that
+    // worked it out from the marker again is a second place to get it
+    // wrong. Said in runs once the whole column is drawn -- see
+    // `say_strokes`.
+    marked.push((y, about, colour));
+}
+
+/// Says a one-cell column of change marks, in runs.
+///
+/// `marked` is a row of the column per entry, in the order they were
+/// drawn. Consecutive rows in one colour are one stroke, because a hunk of
+/// six lines is one bar with two rounded ends and not six beads; a seam is
+/// joined to nothing, because each is a boundary of its own.
+///
+/// The colour is what the runs are cut on rather than the marker, and the
+/// difference is a hunk the reader has opened: the rows of the block above
+/// it are marked `Modified` and drawn in the colour of the change they
+/// stand for, so a run cut on the marker alone would join those rows to
+/// the line below them and draw both in whichever colour it read first.
+///
+/// Costs a terminal nothing: `shapes::stroked` is a call that goes nowhere
+/// where nobody has said they are drawing.
+fn say_strokes(x: u16, side: crate::shapes::Side, marked: &[(u16, About, Color)]) {
+    let mut run: Option<(u16, u16, Color)> = None;
+    let say = |(y, height, _): (u16, u16, Color)| {
+        crate::shapes::stroked(crate::shapes::Stroke {
+            area: Rect {
+                x,
+                y,
+                width: 1,
+                height,
+            },
+            side,
+            about: About::Rows,
+        });
+    };
+    for (y, about, colour) in marked.iter().copied() {
+        if about == About::Seam {
+            if let Some(open) = run.take() {
+                say(open);
+            }
+            crate::shapes::stroked(crate::shapes::Stroke {
+                area: Rect {
+                    x,
+                    y,
+                    width: 1,
+                    height: 1,
+                },
+                side,
+                about: About::Seam,
+            });
+            continue;
+        }
+        match run {
+            Some((top, height, ink)) if ink == colour && top + height == y => {
+                run = Some((top, height + 1, ink));
+            }
+            open => {
+                if let Some(open) = open {
+                    say(open);
+                }
+                run = Some((y, 1, colour));
+            }
+        }
+    }
+    if let Some(open) = run {
+        say(open);
+    }
 }
 
 /// Everything about how a row looks, as against where it goes.

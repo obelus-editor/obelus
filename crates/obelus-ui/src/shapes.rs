@@ -69,6 +69,60 @@ pub enum Joined {
     Nowhere,
 }
 
+/// A run of rows in a one-cell column, saying what git says about them.
+///
+/// Two columns are drawn this way and they are one figure: the margin
+/// beside the text, which says what changed *here*, and the map beside the
+/// bar, which says where else to look. A terminal has half a block for
+/// each of them already -- and half a block is the only bar a cell can
+/// draw -- so this is the same answer drawn rather than spelled.
+///
+/// A *run*, because a hunk of six lines is one bar with two rounded ends
+/// and not six beads. Coalesced by whoever draws the column, for the
+/// reason [`Bar::thumb`] is said rather than worked out: a front end that
+/// joined the rows up itself would be reading the grid back to find out
+/// what it means.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Stroke {
+    /// The rows it covers, in the one column it is in.
+    pub area: Rect,
+    /// Which edge of that column it is against.
+    pub side: Side,
+    /// And what it is about.
+    pub about: About,
+}
+
+/// Which edge of its column a stroke is against.
+///
+/// Both of Obelus's are against the edge nearest the text -- the margin's
+/// on its right, where it sits beside the line it is about, and the map's
+/// on its left, away from the bar it is next to -- so "nearest the text"
+/// is not something a front end can work out. It depends on which column
+/// the stroke is in, and the column is all the front end has.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Side {
+    /// The left-hand edge of the cell: the map's, away from the bar.
+    Left,
+    /// The right-hand edge: the margin's, beside the text.
+    Right,
+}
+
+/// What a stroke is about.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum About {
+    /// The rows themselves, which are there and differ.
+    Rows,
+    /// The boundary above the first of them, where lines were removed and
+    /// have no row of their own.
+    ///
+    /// The whole difficulty of showing a deletion in a grid of cells, and
+    /// a terminal answers it with the top edge of the cell below the
+    /// boundary -- which is the boundary, as near as a cell can put it.
+    /// Never joined to the stroke above or below: each is a boundary of
+    /// its own, and two in a row are two boundaries.
+    Seam,
+}
+
 /// The bar beside a band, for a front end that can slide it.
 ///
 /// A bar is not part of the band -- it says where the band *is*, and slid
@@ -275,6 +329,15 @@ pub trait Shapes: Send + Sync {
     /// the view read them, and checked against the extremes of what the
     /// cells hold.
     fn sheened(&self, area: Rect, from: Color, to: Color);
+
+    /// This run of rows is a change mark, in a column one cell wide.
+    ///
+    /// No colours, for the reason a bar has none: what the stroke is drawn
+    /// in is the foreground of those very cells, which whoever drew the
+    /// column has already written there.
+    ///
+    /// Said once per run rather than once per row -- see [`Stroke`].
+    fn stroked(&self, stroke: Stroke);
 }
 
 /// Who is drawing, where it is somebody who wants to be told.
@@ -351,6 +414,13 @@ pub(crate) fn parted(area: Rect) {
 pub(crate) fn sheened(area: Rect, from: Color, to: Color) {
     if let Some(shapes) = DRAWING.get() {
         shapes.sheened(area, from, to);
+    }
+}
+
+/// Tells whoever is drawing that a run of change marks is here.
+pub(crate) fn stroked(stroke: Stroke) {
+    if let Some(shapes) = DRAWING.get() {
+        shapes.stroked(stroke);
     }
 }
 

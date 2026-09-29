@@ -18,14 +18,16 @@ use cosmic_text::{CacheKey, SwashContent};
 use obelus_app::app::Caret;
 use obelus_ui::{
     image::{Palette, SLOT},
-    shapes::Joined,
+    shapes::{About, Joined, Side},
 };
 use ratatui::style::{Color, Modifier};
 use winit::window::Window;
 
 use crate::{
     font::{self, CellSize, Fonts, Size},
-    grid::{Barred, Behind, Capped, Look, Marked, Page, Parted, Ruled, Said, Spelling, Ticked},
+    grid::{
+        Barred, Behind, Capped, Look, Marked, Page, Parted, Ruled, Said, Spelling, Stroked, Ticked,
+    },
     motion::Moving,
 };
 
@@ -261,6 +263,15 @@ const CHECKED: u32 = 256;
 const ON_GLASS: u32 = 512;
 /// What is behind a pane, blurred one way -- see `Painter::blurring`.
 const BLUR: u32 = 1024;
+/// A triangle filling its quad, its point in the middle of one short
+/// side: the arrow on the seam a deletion left -- see `paint.wgsl`. Which
+/// side it points to is the sign of the quad's `radius`, that field being
+/// the one a wedge has nothing else to say with.
+///
+/// Past the bits the four corners' turns take, which is why it is so far
+/// along: a plate says how each of its corners bends in two bits apiece
+/// from `HELD_TURNS`, and a flag inside that run would be read as a turn.
+const WEDGE: u32 = 2_097_152;
 
 /// A letter the light on the welcome screen's mark runs across.
 ///
@@ -419,6 +430,36 @@ const BAR_RESTING: f32 = 0.42;
 fn whole_window(window: [f32; 2], margin: [f32; 2]) -> [f32; 4] {
     [-margin[0], -margin[1], window[0], window[1]]
 }
+
+/// How wide a change mark is drawn, as a part of the cell it sits in.
+///
+/// The same as a bar's track, because the map and the bar are next to each
+/// other and what they say is one picture: a stroke a different weight
+/// from the bar beside it would read as two columns that happened to line
+/// up. A terminal has half a cell for both, which is the only stroke a
+/// cell can draw.
+const STROKE: f32 = 0.32;
+
+/// How far the arrow on a seam reaches across its cell.
+///
+/// Its point is on the edge the stroke is against -- beside the text,
+/// where a bar would be -- and it reaches back from there, so the whole of
+/// it is inside the column the view reserved.
+const SEAM_REACH: f32 = 0.46;
+
+/// And how wide its base is, as a part of that reach.
+///
+/// Of the *reach*, and not of the cell's height, which is what this was
+/// first: a cell is about twice as tall as it is wide, so a base measured
+/// down the cell came out two and a half times the length and the
+/// arrowhead was a spike. What decides the shape of an arrow is the shape
+/// of an arrow, and the column it is in is the only thing here with a
+/// size of its own.
+///
+/// Half again, which is an arrowhead; and short enough that the two rows
+/// it sits between are still two rows, because what it points at is the
+/// boundary and a mark as tall as a row would be a mark on the row.
+const SEAM_BASE: f32 = 1.5;
 
 /// The frame that has just been drawn, put back everywhere but the pane.
 const FRAME: u32 = 32;
@@ -947,6 +988,10 @@ impl Painter {
         // And so does a bar, for the same reason: what a terminal has for
         // a track is a column of full blocks, and a window has a shape.
         self.bars(page, said.barred, cell);
+        // And so does a change mark: half a block per row is what a cell
+        // has, and a window has one shape however many rows the hunk
+        // covers.
+        self.strokes(page, said.stroked, cell);
         // After the text, over cells the view left empty: a view draws its
         // glyph only where a picture could not be drawn.
         self.marks(said.marked, cell);
@@ -1856,6 +1901,88 @@ impl Painter {
                 ),
             );
         }
+    }
+
+    /// The change marks, as strokes rather than as the half blocks a
+    /// terminal has.
+    ///
+    /// Nothing is covered over, the same as a bar: `letters` is told to
+    /// leave these cells alone, so the blocks a terminal draws are never
+    /// put on the screen here at all. Which matters for the same reason it
+    /// matters there -- a margin inside a pane sits on glass, and a cover
+    /// painted in the cell's own ground would be a hole in it.
+    ///
+    /// The colour is the cell's own, which is the rule a bar and a switch
+    /// both follow: what a terminal draws the block in is what a window
+    /// draws the stroke in, and asking the view again would be the same
+    /// colour from two places.
+    fn strokes(&mut self, page: &Page, stroked: &[Stroked], cell: CellSize) {
+        for mark in stroked {
+            let column = mark.stroke.area.x;
+            // Against the edge nearest the text, which is the side the
+            // view said -- see `obelus_ui::shapes::Side`.
+            let width = (cell.width * STROKE).round().max(2.0);
+            let left = match mark.stroke.side {
+                Side::Left => f32::from(column) * cell.width,
+                Side::Right => f32::from(column + 1) * cell.width - width,
+            };
+            // Only the rows still this stroke's, and in the runs they are
+            // left in: a hunk whose middle rows were drawn over is two
+            // strokes, and one bar spanning the hole would be a mark on
+            // somebody else's cells.
+            for (top, rows) in mark.runs(page) {
+                let ink = rgba(page.look(column, top).foreground, Ink::Foreground);
+                match mark.stroke.about {
+                    // A bar down the rows, with its ends rounded: a hunk of
+                    // six lines is one stroke and not six beads, which is
+                    // the whole reason the view says it in runs.
+                    About::Rows => self.rounded(
+                        left,
+                        f32::from(top) * cell.height,
+                        width,
+                        f32::from(rows) * cell.height,
+                        width / 2.0,
+                        ink,
+                    ),
+                    // An arrow on the boundary above the row, pointing the
+                    // way the stroke leans -- which is at the text, and so
+                    // at the place the missing lines were. The rows are
+                    // there and the lines between them are not, so the one
+                    // thing this must not be is a mark *on* a row.
+                    About::Seam => {
+                        let reach = (cell.width * SEAM_REACH).round().max(2.0);
+                        let height = (reach * SEAM_BASE).round().max(2.0);
+                        let (at, way) = match mark.stroke.side {
+                            Side::Left => (f32::from(column) * cell.width, -1.0),
+                            Side::Right => (f32::from(column + 1) * cell.width - reach, 1.0),
+                        };
+                        self.wedge(
+                            at,
+                            f32::from(top).mul_add(cell.height, -(height / 2.0)),
+                            reach,
+                            height,
+                            way,
+                            ink,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    /// A triangle filling a box, its point in the middle of one short side.
+    ///
+    /// `way` is which side: positive for the right-hand one, negative for
+    /// the left.
+    fn wedge(&mut self, left: f32, top: f32, width: f32, height: f32, way: f32, colour: [f32; 4]) {
+        self.quads.push(Quad {
+            rect: [left, top, width, height],
+            uv: self.atlas.white,
+            colour,
+            flags: SOLID | WEDGE,
+            radius: way,
+            padding: [0; 2],
+        });
     }
 
     fn ticks(
@@ -3064,6 +3191,14 @@ fn drawn_as_a_shape(
         || capped.iter().any(|cap| within(cap.area))
         || said.ticked.iter().any(|tick| within(tick.area))
         || said.barred.iter().any(|bar| within(bar.bar.area))
+        // Per cell rather than per run, and against the glyph, the same as
+        // a rule: the margin is drawn to the foot of the editor's region
+        // and a compact list goes over the bottom of it, so the rows under
+        // the list are the list's and keep what it wrote in them.
+        || said
+            .stroked
+            .iter()
+            .any(|mark| mark.holds(page, column, row))
 }
 
 /// Whether the picture of what a pane was opened over writes this cell.
@@ -3692,6 +3827,7 @@ mod tests {
             ruled: &[],
             sheened: None,
             parted: &[],
+            stroked: &[],
             behind: None,
             cards: &[],
             band: None,
@@ -3813,6 +3949,114 @@ mod tests {
         assert_eq!(without(3, 6, &mut [(0, 4)]), vec![(4, 6)]);
         assert!(without(3, 6, &mut [(0, 9)]).is_empty(), "all of it");
         assert_eq!(without(3, 6, &mut []), vec![(3, 6)], "none of it");
+    }
+
+    /// A page with one column of text down it, for asking about a shape
+    /// that covers several rows.
+    fn column(x: u16, glyphs: &str) -> Page {
+        let mut page = Page::default();
+        page.resized(
+            12,
+            u16::try_from(glyphs.chars().count()).expect("a few rows"),
+        );
+        for (row, character) in glyphs.chars().enumerate() {
+            let mut cell = Cell::default();
+            cell.set_symbol(&character.to_string());
+            cell.fg = Color::Rgb(9, 8, 7);
+            page.apply(Update::Cell {
+                x,
+                y: u16::try_from(row).expect("a few rows"),
+                cell: Box::new(cell),
+            });
+        }
+        page
+    }
+
+    /// One change mark over those rows of that column.
+    fn stroke(x: u16, y: u16, height: u16, side: Side, about: About) -> Stroked {
+        Stroked {
+            stroke: obelus_ui::shapes::Stroke {
+                area: ratatui::layout::Rect {
+                    x,
+                    y,
+                    width: 1,
+                    height,
+                },
+                side,
+                about,
+            },
+        }
+    }
+
+    /// A change mark's cells are the window's to draw, so the letters leave
+    /// them alone.
+    ///
+    /// Deliberate break: take the `stroked` clause out of
+    /// `drawn_as_a_shape`. The half block a terminal draws the margin with
+    /// is then put on the screen under the stroke -- and the only way to be
+    /// rid of it is to paint over the cell, which inside a pane is a hole
+    /// in the glass. The bar's own note is about the same bug, one column
+    /// along.
+    #[test]
+    fn a_change_mark_is_not_drawn_as_letters_as_well() {
+        let page = column(3, "\u{2590}\u{2590}\u{2594}");
+        let stroked = [
+            stroke(3, 0, 2, Side::Right, About::Rows),
+            stroke(3, 2, 1, Side::Right, About::Seam),
+        ];
+        let said = Said {
+            marked: &[],
+            capped: &[],
+            ticked: &[],
+            barred: &[],
+            ruled: &[],
+            stroked: &stroked,
+            sheened: None,
+            parted: &[],
+            behind: None,
+            cards: &[],
+            band: None,
+            bar: None,
+        };
+        for row in 0..3 {
+            assert!(
+                drawn_as_a_shape(&page, &said, &[], &[], 3, row),
+                "the margin at row {row}"
+            );
+        }
+        assert!(
+            !drawn_as_a_shape(&page, &said, &[], &[], 4, 0),
+            "and not the column beside it, which is the file"
+        );
+    }
+
+    /// A run whose middle was drawn over is two strokes, not one bar across
+    /// the hole.
+    ///
+    /// Which is what a compact list over the foot of the editor does: the
+    /// margin is drawn to the bottom of its region and the list goes over
+    /// it, so the rows under the list are the list's and keep what it wrote
+    /// in them.
+    ///
+    /// Deliberate break: have `runs` return the whole area as one run and
+    /// skip `holds`. A four-row hunk with a list over its middle two rows
+    /// is then one stroke four rows tall, drawn straight down the list.
+    #[test]
+    fn a_change_mark_drawn_over_is_what_is_left_of_it() {
+        // The list wrote a blank over the second and third rows of it.
+        let page = column(3, "\u{2590}  \u{2590}");
+        let mark = stroke(3, 0, 4, Side::Right, About::Rows);
+        assert_eq!(mark.runs(&page), vec![(0, 1), (3, 1)]);
+
+        // And where nothing covered it, it is the one run the view said.
+        let whole = column(3, "\u{2590}\u{2590}\u{2590}\u{2590}");
+        assert_eq!(mark.runs(&whole), vec![(0, 4)]);
+
+        // A stroke is told from the column beside it by the glyph, which is
+        // the side it leans: the map's mark in the margin's place is not
+        // this stroke, whatever the cells say about anything else.
+        let leaning = column(3, "\u{258c}\u{258c}\u{258c}\u{258c}");
+        assert!(mark.runs(&leaning).is_empty(), "the other half of the cell");
     }
 
     /// A page with one row of text on it, for asking what would be drawn.

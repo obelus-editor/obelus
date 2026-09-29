@@ -39,6 +39,8 @@ impl obelus_ui::shapes::Shapes for Heard {
     fn parted(&self, _area: Rect) {}
 
     fn sheened(&self, _area: Rect, _from: Color, _to: Color) {}
+
+    fn stroked(&self, _stroke: obelus_ui::shapes::Stroke) {}
 }
 
 fn heard() -> &'static Arc<Heard> {

@@ -23,7 +23,7 @@ use obelus_app::app::Caret;
 use obelus_component::layers::Layer;
 use obelus_ui::{
     image::Palette,
-    shapes::{Bar, Joined},
+    shapes::{About, Bar, Joined, Side, Stroke},
 };
 use ratatui::{
     backend::{Backend, ClearType, WindowSize},
@@ -154,6 +154,15 @@ pub(crate) enum Update {
         /// starts.
         bar: Bar,
     },
+    /// A run of rows in a one-cell column that is a change mark.
+    ///
+    /// What a terminal draws as half a block per row, and a window draws
+    /// as one shape however many rows it covers. No colours, for a bar's
+    /// reason -- see `obelus_ui::shapes`.
+    Stroked {
+        /// Which rows, which edge of the column, and what it is about.
+        stroke: Stroke,
+    },
     /// A cell that is a switch, and which way it is set.
     Ticked {
         /// Which cell it is.
@@ -231,6 +240,8 @@ pub(crate) struct Said<'a> {
     /// And which rows begin something new, with nowhere to say so but the
     /// pixel between two rows.
     pub(crate) parted: &'a [Parted],
+    /// And which runs of a one-cell column are change marks.
+    pub(crate) stroked: &'a [Stroked],
     /// And what is under the pane, where there is one.
     pub(crate) behind: Option<&'a Behind>,
     /// And under each box with a frame round it, nearest the reader last:
@@ -524,6 +535,65 @@ impl Ruled {
     }
 }
 
+/// Where a change mark is in the frame being drawn.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Stroked {
+    /// Which rows, which edge of the column, and what it is about.
+    pub(crate) stroke: Stroke,
+}
+
+impl Stroked {
+    /// The glyph a terminal stands this stroke in with.
+    ///
+    /// Which is the same fact twice over, and deliberately: the side is
+    /// what the view *said*, and the glyph is what it *wrote*. The first
+    /// is what the shape is drawn from; the second is only what says the
+    /// cell is still this stroke's, the way a rule's glyphs are -- and a
+    /// stroke that disagrees with the cells is about a screen that is not
+    /// on the screen.
+    const fn glyph(&self) -> &'static str {
+        match (self.stroke.about, self.stroke.side) {
+            (About::Seam, _) => "\u{2594}",
+            (About::Rows, Side::Left) => "\u{258c}",
+            (About::Rows, Side::Right) => "\u{2590}",
+        }
+    }
+
+    /// Whether this cell is still the stroke's.
+    ///
+    /// Asked row by row rather than of the run, because a view that drew
+    /// and was then drawn over inside the same frame keeps the rows
+    /// nobody covered: the editor's margin is drawn to the foot of its
+    /// region and a compact list goes over the bottom of it, so the rows
+    /// under the list belong to the list.
+    pub(crate) fn holds(&self, page: &Page, x: u16, y: u16) -> bool {
+        let area = self.stroke.area;
+        x == area.x
+            && (area.top()..area.bottom()).contains(&y)
+            && page.look(x, y).text == self.glyph()
+    }
+
+    /// The rows of it that are still its own, as runs: where each starts
+    /// and how many rows it is.
+    ///
+    /// A run cut in half by something drawn over its middle is two
+    /// strokes, for the reason a rule covered in the middle is two lines.
+    pub(crate) fn runs(&self, page: &Page) -> Vec<(u16, u16)> {
+        let area = self.stroke.area;
+        let mut runs: Vec<(u16, u16)> = Vec::new();
+        for y in area.top()..area.bottom() {
+            if !self.holds(page, area.x, y) {
+                continue;
+            }
+            match runs.last_mut() {
+                Some(run) if run.0 + run.1 == y => run.1 += 1,
+                _ => runs.push((y, 1)),
+            }
+        }
+        runs
+    }
+}
+
 /// How far in from one edge of the window the grid starts.
 ///
 /// The compositor picks the window's size and the font picks the cell's,
@@ -640,6 +710,10 @@ impl obelus_ui::shapes::Shapes for Marking {
 
     fn barred(&self, bar: Bar) {
         let _ = self.updates.send(Update::Barred { bar });
+    }
+
+    fn stroked(&self, stroke: Stroke) {
+        let _ = self.updates.send(Update::Stroked { stroke });
     }
 
     fn behind(&self, area: Rect, joined: Joined, ground: Color, cells: &[Cell]) {
@@ -1200,6 +1274,10 @@ impl Page {
             }
             Update::Barred { bar } => {
                 tracing::warn!(?bar.area, "a cap reached the page");
+                false
+            }
+            Update::Stroked { stroke } => {
+                tracing::warn!(?stroke.area, "a cap reached the page");
                 false
             }
             Update::Frame => true,

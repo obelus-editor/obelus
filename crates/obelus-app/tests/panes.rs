@@ -52,6 +52,7 @@ impl obelus_ui::shapes::Shapes for Heard {
             marks.push((area, from, to));
         }
     }
+    fn stroked(&self, _stroke: obelus_ui::shapes::Stroke) {}
 }
 
 fn heard() -> &'static Arc<Heard> {
