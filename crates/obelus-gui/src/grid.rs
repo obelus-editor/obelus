@@ -278,6 +278,7 @@ impl Behind {
             foreground: cell.fg,
             background: cell.bg,
             modifier: cell.modifier,
+            underline: cell.underline_color,
         })
     }
 
@@ -1133,6 +1134,13 @@ pub(crate) struct Look<'a> {
     pub(crate) background: ratatui::style::Color,
     /// Bold, italic, and the rest of what a style can say.
     pub(crate) modifier: ratatui::style::Modifier,
+    /// What colour the line under it is, where it is underlined.
+    ///
+    /// Its own colour and not the ink: a server's complaint is underlined
+    /// in the colour that kind of trouble is written in, under a word the
+    /// syntax has already coloured. `Reset` is a terminal saying "the ink",
+    /// which is what an underline nobody coloured gets.
+    pub(crate) underline: ratatui::style::Color,
 }
 
 impl Look<'_> {
@@ -1335,6 +1343,7 @@ impl Page {
                 foreground: ratatui::style::Color::Reset,
                 background: ratatui::style::Color::Reset,
                 modifier: ratatui::style::Modifier::empty(),
+                underline: ratatui::style::Color::Reset,
             };
         };
         let cell = &self.cells[at];
@@ -1343,6 +1352,7 @@ impl Page {
             foreground: cell.fg,
             background: cell.bg,
             modifier: cell.modifier,
+            underline: cell.underline_color,
         }
     }
 

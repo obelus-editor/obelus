@@ -977,6 +977,10 @@ impl Painter {
         // under except the ground.
         self.partings(page, said.parted, &panes, cell);
         self.letters(page, fonts, said, &framed, &capped);
+        // Over the glyph, the way a terminal draws one: a descender
+        // crossing the line is what an underline looks like everywhere
+        // else.
+        self.underlines(page, cell);
         // Over the text, which it covers: a cap is the shape the cells
         // behind a key are, and it writes the key on itself, smaller than
         // the words beside it.
@@ -1620,6 +1624,43 @@ impl Painter {
             radius: radius.max(0.0).min(width.min(height) / 2.0),
             padding: [0; 2],
         });
+    }
+
+    /// The line under every cell a view underlined.
+    ///
+    /// A pass of its own rather than something `letters` does, because an
+    /// underline is about the cell and not about the glyph: a span a
+    /// server complained about runs over the spaces in it too, and
+    /// `letters` skips a cell with nothing in it. A terminal draws these
+    /// itself, off the modifier; a window has to be told, which is the
+    /// same seam a full-width character crosses.
+    fn underlines(&mut self, page: &Page, cell: CellSize) {
+        for row in 0..page.rows() {
+            for column in 0..page.columns() {
+                let look = page.look(column, row);
+                let Some(ink) = underline_ink(&look) else {
+                    continue;
+                };
+                self.underline(
+                    f32::from(column) * cell.width,
+                    f32::from(row) * cell.height,
+                    f32::from(look.columns()) * cell.width,
+                    cell.height,
+                    ink,
+                );
+            }
+        }
+    }
+
+    /// One line under one run of cells.
+    ///
+    /// Two callers and one line: what a server says is wrong with a word,
+    /// and what an input method is in the middle of spelling. They are the
+    /// same mark, and a window that drew them two thicknesses would be
+    /// saying they were two different things.
+    fn underline(&mut self, left: f32, top: f32, width: f32, height: f32, ink: [f32; 4]) {
+        let thick = (height * UNDERLINE).round().max(1.0);
+        self.block(left, top + height - thick, width, thick, ink);
     }
 
     /// The lines between two things, drawn where `─` would be.
@@ -2862,13 +2903,17 @@ impl Painter {
                 text: &written,
                 foreground: look.foreground,
                 background: look.background,
-                modifier: look.modifier,
+                // Less the underline the cell under it may carry: what is
+                // being spelled wears its own, drawn below, and the word
+                // it is going into is not the word a server complained
+                // about yet.
+                modifier: look.modifier.difference(Modifier::UNDERLINED),
+                underline: Color::Reset,
             };
             self.glyphs(column, caret.y, over, ink, 0, fonts);
             // The line under it, which is what every input method's inline
             // spelling wears and what tells it apart from the file.
-            let thick = (cell.height * UNDERLINE).round().max(1.0);
-            self.block(left, top + cell.height - thick, width, thick, ink);
+            self.underline(left, top, width, cell.height, ink);
             column = column.saturating_add(wide);
         }
     }
@@ -3336,6 +3381,25 @@ fn middle(top: f32, cell_height: f32, line: f32) -> f32 {
 /// And where one runs down a column, the same way.
 fn along(column: u16, cell_width: f32, line: f32) -> f32 {
     (f32::from(column) * cell_width + (cell_width - line) / 2.0).round()
+}
+
+/// What colour to draw the line under a cell in, where there is one.
+///
+/// Its own colour where the view gave it one and the ink where it did not,
+/// which is what a terminal does with an underline nobody coloured -- and
+/// the reason it is asked here rather than taken for the foreground is the
+/// one view that colours it: a server's complaint is underlined in the
+/// colour that kind of trouble is written in, under a word the syntax has
+/// already coloured something else. Taking the ink there would draw the
+/// mark in the colour of whatever the word happened to be.
+fn underline_ink(look: &Look<'_>) -> Option<[f32; 4]> {
+    if !look.modifier.contains(Modifier::UNDERLINED) {
+        return None;
+    }
+    Some(match look.underline {
+        Color::Reset => rgba(look.foreground, Ink::Foreground),
+        colour => rgba(colour, Ink::Foreground),
+    })
 }
 
 /// Which half of a cell a colour is for, which is the whole of what `Reset`
@@ -3998,6 +4062,65 @@ mod tests {
         assert!(
             clipped([0.0, 60.0, 10.0, 10.0], whole, grid).is_none(),
             "nor under it"
+        );
+    }
+
+    /// A word a server complained about wears its line, in the colour the
+    /// complaint is written in rather than the colour the word is.
+    ///
+    /// A terminal draws this itself off the modifier, so both halves have
+    /// to cross the seam for a window to draw anything at all -- and
+    /// neither did: nothing in `obg` ever read `Modifier::UNDERLINED`, so
+    /// the one mark Obelus puts under a word was missing from the window
+    /// entirely.
+    ///
+    /// Deliberate break, one assertion each. Dropping `underline_color`
+    /// from `Page::look` -- or reading `look.foreground` here -- draws the
+    /// mark in whatever colour the syntax gave the word. Taking the
+    /// `UNDERLINED` check out puts a line under every cell on the screen.
+    /// And a cell nobody coloured has to keep the ink, or what an input
+    /// method is spelling loses its own line.
+    #[test]
+    fn a_cell_a_view_underlined_says_so_and_in_which_colour() {
+        let word = Color::Rgb(9, 8, 7);
+        let trouble = Color::Rgb(0xef, 0x44, 0x44);
+        let mut page = Page::default();
+        page.resized(4, 1);
+        let marked = |x: u16, underline: Color| {
+            let mut cell = Cell::default();
+            cell.set_symbol("n");
+            cell.fg = word;
+            cell.modifier = Modifier::UNDERLINED;
+            cell.underline_color = underline;
+            Update::Cell {
+                x,
+                y: 0,
+                cell: Box::new(cell),
+            }
+        };
+        page.apply(marked(1, trouble));
+        page.apply(marked(2, Color::Reset));
+
+        assert!(
+            underline_ink(&page.look(0, 0)).is_none(),
+            "a line under a cell nobody marked"
+        );
+        assert_eq!(
+            underline_ink(&page.look(1, 0)),
+            Some(rgba(trouble, Ink::Foreground)),
+            "not the colour the complaint is written in"
+        );
+        assert_ne!(
+            underline_ink(&page.look(1, 0)),
+            Some(rgba(word, Ink::Foreground)),
+            "the colour the word is written in"
+        );
+        // Nobody coloured this one, which is a terminal saying "the ink":
+        // it is what the line under a spelling wears.
+        assert_eq!(
+            underline_ink(&page.look(2, 0)),
+            Some(rgba(word, Ink::Foreground)),
+            "an uncoloured line is not the ink"
         );
     }
 
