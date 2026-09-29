@@ -896,13 +896,19 @@ fn the_walk_offers_the_ignored_files_only_when_asked() {
     scratch.write("skip.rs", "fn skip() {}\n");
     scratch.write(".ignore", "skip.rs\n");
 
-    let found = |ignored: bool, generation: u64| -> Vec<String> {
+    let found = |ignored: bool, hidden: bool, generation: u64| -> Vec<String> {
         let (sender, events) = std::sync::mpsc::channel();
         let latest = obelus_runtime::cancel::Latest::default();
         for _ in 0..generation {
             latest.next();
         }
-        obelus_search::spawn_walk(scratch.path(), latest.claim(generation), ignored, sender);
+        obelus_search::spawn_walk(
+            scratch.path(),
+            latest.claim(generation),
+            ignored,
+            hidden,
+            sender,
+        );
         let mut names = Vec::new();
         while let Ok(Event::Search(obelus_search::Event::FilesFound { paths, .. })) = events.recv()
         {
@@ -914,8 +920,8 @@ fn the_walk_offers_the_ignored_files_only_when_asked() {
 
     // `.ignore` itself is not offered either way: it is a hidden file, and
     // hidden is the one thing this key does not change.
-    assert_eq!(found(false, 1), vec!["keep.rs"]);
-    assert_eq!(found(true, 2), vec!["keep.rs", "skip.rs"]);
+    assert_eq!(found(false, false, 1), vec!["keep.rs"]);
+    assert_eq!(found(true, false, 2), vec!["keep.rs", "skip.rs"]);
 }
 
 /// Paging through the list has to bring the rows with it.
@@ -3784,7 +3790,7 @@ fn a_walk_nobody_wants_stops() {
     let latest = Latest::default();
     let mine = latest.next();
     let (sender, events) = std::sync::mpsc::channel();
-    obelus_search::spawn_walk(scratch.path(), latest.claim(mine), false, sender);
+    obelus_search::spawn_walk(scratch.path(), latest.claim(mine), false, false, sender);
 
     // The reader asks for something else before the walk has finished.
     latest.next();

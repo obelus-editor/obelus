@@ -121,6 +121,19 @@ pub struct Config {
     /// "where is that build log" is a question asked once and then not
     /// again for a week.
     pub ignored_files: bool,
+    /// Whether the file list offers the files whose names begin with a dot.
+    ///
+    /// Its own switch and not part of [`Config::ignored_files`], because
+    /// they keep two different things out: one is what a project said to
+    /// ignore and the other is what a convention says not to show. A
+    /// reader after `.github/workflows/ci.yml` is not asking to see
+    /// `target`, and one after a build log is not asking to see `.env`.
+    ///
+    /// `.git` comes with it, which is the cost of the switch meaning what
+    /// it says: a directory whose files are a database is still a
+    /// directory of files, and an exception carved out here would be
+    /// Obelus deciding which of the reader's hidden files they meant.
+    pub hidden_files: bool,
     /// How long the pointer has to rest on a word before Obelus asks what
     /// it is, in milliseconds.
     ///
@@ -198,6 +211,7 @@ impl Default for Config {
             // a list whose first hundred rows are `target` is a list nobody
             // can find anything in.
             ignored_files: false,
+            hidden_files: false,
             // Long enough that crossing a line of code does not ask about
             // every word on the way, short enough that a reader who has
             // stopped does not wonder whether Obelus noticed. The figure
@@ -579,6 +593,15 @@ pub const ALL: &[Setting] = &[
         kind: Kind::Switch,
         drawn: Drawn::Anywhere,
     },
+    Setting {
+        key: "hidden_files",
+        name: "Files whose names begin with a dot",
+        about: "offer them in the file list as well -- `.github` and `.env` are files like any other, and `.git` comes with them",
+        group: Group::Files,
+        reach: Reach::Anywhere,
+        kind: Kind::Switch,
+        drawn: Drawn::Anywhere,
+    },
 ];
 
 impl Config {
@@ -603,6 +626,7 @@ impl Config {
             "inlay_hints" => Some(Value::Switch(self.inlay_hints)),
             "diagnostics" => Some(Value::Switch(self.diagnostics)),
             "ignored_files" => Some(Value::Switch(self.ignored_files)),
+            "hidden_files" => Some(Value::Switch(self.hidden_files)),
             "agent" => Some(Value::Choice(self.agent.clone().unwrap_or_default())),
             _ => None,
         }
@@ -627,6 +651,7 @@ impl Config {
             ("inlay_hints", Value::Switch(on)) => self.inlay_hints = *on,
             ("diagnostics", Value::Switch(on)) => self.diagnostics = *on,
             ("ignored_files", Value::Switch(on)) => self.ignored_files = *on,
+            ("hidden_files", Value::Switch(on)) => self.hidden_files = *on,
             // An empty word is nobody, which is how a reader stops talking
             // to an agent without a second setting meaning "off".
             ("agent", Value::Choice(word)) => {
@@ -1084,6 +1109,11 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
     {
         config.ignored_files = on;
     }
+    if let Some(on) = table.get("hidden_files").and_then(toml::Value::as_bool)
+        && allowed("hidden_files")
+    {
+        config.hidden_files = on;
+    }
     if let Some(word) = table.get("agent").and_then(toml::Value::as_str)
         && allowed("agent")
     {
@@ -1299,6 +1329,11 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
         "ignored_files",
         config.ignored_files != default.ignored_files,
         toml_edit::value(config.ignored_files),
+    );
+    put(
+        "hidden_files",
+        config.hidden_files != default.hidden_files,
+        toml_edit::value(config.hidden_files),
     );
     put(
         "agent",
@@ -1639,6 +1674,7 @@ mod tests {
             inlay_hints: true,
             diagnostics: true,
             ignored_files: true,
+            hidden_files: true,
             agent: Some("claude-acp".to_string()),
             // A key moved and a key taken away: both are decisions, and
             // both have to survive the file or the reader makes them again

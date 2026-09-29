@@ -23,7 +23,7 @@ fn a_directory_with_nothing_in_it_does_not_offer_to_open() {
     std::fs::write(root.join("src/lsp/hint.rs"), "").expect("writing it");
     std::fs::write(root.join("Cargo.toml"), "").expect("writing it");
 
-    let found = files::inside(root, root, false);
+    let found = files::inside(root, root, false, false);
     let said: Vec<(String, bool, bool)> = found
         .iter()
         .map(|entry| {
@@ -59,14 +59,14 @@ fn a_directory_of_ignored_files_holds_nothing() {
     std::fs::write(root.join("target/debug/obelus"), "").expect("writing it");
     std::fs::write(root.join("Cargo.toml"), "").expect("writing it");
 
-    let found = files::inside(root, root, false);
+    let found = files::inside(root, root, false, false);
     assert!(
         !found.iter().any(|entry| entry.path.ends_with("target")),
         "an ignored directory is in the tree: {found:?}"
     );
 
     // And with the switch on, it is there and it holds something.
-    let found = files::inside(root, root, true);
+    let found = files::inside(root, root, true, false);
     let target = found
         .iter()
         .find(|entry| entry.path.ends_with("target"))
@@ -83,13 +83,13 @@ fn what_it_holds_is_one_level_and_no_further() {
     std::fs::create_dir_all(root.join("one/two/three")).expect("making it");
     std::fs::write(root.join("one/two/three/deep.rs"), "").expect("writing it");
 
-    let found = files::inside(root, root, false);
+    let found = files::inside(root, root, false, false);
     let one = found.first().expect("the directory");
     assert_eq!(one.path.display().to_string(), "one");
     assert!(one.holds, "it holds `two`, which is a row");
 
     // And the empty-looking middle of it holds the one below it.
-    let found = files::inside(root, &root.join("one/two"), false);
+    let found = files::inside(root, &root.join("one/two"), false, false);
     assert_eq!(found.len(), 1);
     assert!(found[0].holds, "it holds the file under it");
 }

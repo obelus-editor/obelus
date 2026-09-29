@@ -387,6 +387,7 @@ impl App {
             &self.working_directory,
             self.walk_generation.claim(mine),
             self.config().ignored_files,
+            self.config().hidden_files,
             sender,
         );
     }
@@ -432,9 +433,15 @@ impl App {
         if key.code == KeyCode::Char('n') {
             return self.rename_selected();
         }
-        if key.code != KeyCode::Char('i') {
-            return false;
-        }
+        // Two switches about which files the list offers, and they keep
+        // two different things out: what the project said to ignore, and
+        // what a convention says not to show. The dot is the second's own
+        // mark and what every file manager puts it on.
+        let setting = match key.code {
+            KeyCode::Char('i') => "ignored_files",
+            KeyCode::Char('.') => "hidden_files",
+            _ => return false,
+        };
         // Only where the key means something: on the changed tab these rows
         // are git's answer, and the foot greys it there.
         if !self
@@ -447,12 +454,15 @@ impl App {
         // A tree that has pinned it has said so for everybody who opens it,
         // and the row on the settings page says which file did. Here there
         // is no row to say it, so the status bar does.
-        if let Some(path) = self.pinned_by("ignored_files") {
+        if let Some(path) = self.pinned_by(setting) {
             self.wrong(format!("{} says which files to offer", path.display()));
             return true;
         }
-        let showing = !self.config().ignored_files;
-        self.change_setting("ignored_files", &obelus_config::Value::Switch(showing));
+        let showing = !self
+            .config()
+            .value_of(setting)
+            .is_some_and(|value| matches!(value, obelus_config::Value::Switch(true)));
+        self.change_setting(setting, &obelus_config::Value::Switch(showing));
         // A different answer to "which files", so a different walk.
         self.start_walk();
         self.refresh_listing();
@@ -498,8 +508,9 @@ impl App {
     /// opened is one row, and the rows under it do not exist.
     fn tree_rows(&self) -> Vec<PickerItem> {
         let ignored = self.config().ignored_files;
+        let hidden = self.config().hidden_files;
         let mut rows = Vec::new();
-        self.tree_rows_under(&self.working_directory, 0, ignored, &mut rows);
+        self.tree_rows_under(&self.working_directory, 0, ignored, hidden, &mut rows);
         rows
     }
 
@@ -509,9 +520,10 @@ impl App {
         directory: &Path,
         depth: u16,
         ignored: bool,
+        hidden: bool,
         rows: &mut Vec<PickerItem>,
     ) {
-        for entry in files::inside(&self.working_directory, directory, ignored) {
+        for entry in files::inside(&self.working_directory, directory, ignored, hidden) {
             let open = self.opened.contains(&entry.path);
             let full = self.working_directory.join(&entry.path);
             let name = entry.path.file_name().map_or_else(
@@ -552,7 +564,7 @@ impl App {
                 tab: None,
             });
             if entry.directory && open {
-                self.tree_rows_under(&full, depth.saturating_add(1), ignored, rows);
+                self.tree_rows_under(&full, depth.saturating_add(1), ignored, hidden, rows);
             }
         }
     }
@@ -587,6 +599,7 @@ impl App {
             Listing::All if self.picker.as_ref().is_some_and(|it| it.query().is_empty()) => {
                 let rows = self.tree_rows();
                 let ignored = self.config().ignored_files;
+                let hidden = self.config().hidden_files;
                 let prefer = self
                     .current_buffer()
                     .and_then(|buffer| buffer.path().file_name())
@@ -603,6 +616,7 @@ impl App {
                 });
                 if let Some(picker) = self.picker.as_mut() {
                     picker.offering_ignored(Some(ignored));
+                    picker.offering_hidden(Some(hidden));
                     // The same: the row a query's answer was on says
                     // nothing about where it is in the tree. What puts the
                     // reader back is the name.
@@ -627,8 +641,10 @@ impl App {
             Listing::All if !self.found.is_empty() => {
                 let rows = self.found_rows();
                 let ignored = self.config().ignored_files;
+                let hidden = self.config().hidden_files;
                 if let Some(picker) = self.picker.as_mut() {
                     picker.offering_ignored(Some(ignored));
+                    picker.offering_hidden(Some(hidden));
                     // Replaced rather than relisted: these are not the tree
                     // with more in it, they are a different question's
                     // answer, and the row the reader was on in the tree is
@@ -642,11 +658,13 @@ impl App {
             // this is also what a tree with nothing in it looks like.
             Listing::All => {
                 let ignored = self.config().ignored_files;
+                let hidden = self.config().hidden_files;
                 let prefer = self
                     .current_buffer()
                     .map(|buffer| relative(buffer.path(), &self.working_directory));
                 if let Some(picker) = self.picker.as_mut() {
                     picker.offering_ignored(Some(ignored));
+                    picker.offering_hidden(Some(hidden));
                     picker.relist(Vec::new());
                     picker.when_empty("No files under this directory");
                     // Open on the file being read. The walk decides where in
@@ -668,6 +686,7 @@ impl App {
                 // git does not report a file it was told to ignore.
                 if let Some(picker) = self.picker.as_mut() {
                     picker.offering_ignored(None);
+                    picker.offering_hidden(None);
                 }
                 let root = self.working_directory.clone();
                 let mut rows: Vec<(String, obelus_git::Standing)> = self

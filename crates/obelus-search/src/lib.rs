@@ -340,21 +340,33 @@ const WALK_BATCH: usize = 512;
 /// reopened while a walk is still running, and the batches from the old one
 /// have to be recognizable as stale rather than merged into the new list.
 ///
-/// `ignored` offers the files the tree has said to ignore as well. Only the
-/// ignore rules go: hidden files stay hidden either way, because `.git` is a
-/// directory with one file per object in it and a reader who asked to see
-/// what `.gitignore` hides did not ask for that.
+/// `ignored` offers the files the tree has said to ignore as well, and
+/// `hidden` the ones whose names begin with a dot. Two switches and not
+/// one, because they keep two different things out: what a project said to
+/// ignore, and what a convention says not to show. A reader after
+/// `.github/workflows/ci.yml` is not asking to see `target`.
+///
+/// `.git` comes with the second, which is the cost of it meaning what it
+/// says -- a directory whose files are a database is still a directory of
+/// files, and an exception carved out here would be this walk deciding
+/// which of the reader's hidden files they meant.
 ///
 /// A thread because `WalkBuilder` is a blocking API, and the walk of a large
 /// tree is long enough that the picker has to be usable while it runs.
-pub fn spawn_walk(root: &Path, wanted: cancel::Wanted, ignored: bool, sender: impl Sink<Event>) {
+pub fn spawn_walk(
+    root: &Path,
+    wanted: cancel::Wanted,
+    ignored: bool,
+    hidden: bool,
+    sender: impl Sink<Event>,
+) {
     let root = root.to_path_buf();
     obelus_runtime::handle().spawn_blocking(move || {
         // The files the tree keeps, first and on their own: they are what
         // a reader is usually after, and this is the quick walk -- it is
         // the one that does not descend into `target`.
         let mut sent = HashSet::new();
-        if !walk(&root, true, &wanted, &sender, &mut sent) || !ignored {
+        if !walk(&root, true, hidden, &wanted, &sender, &mut sent) || !ignored {
             return;
         }
         // And then the ones it does not keep, which are whatever the
@@ -362,7 +374,7 @@ pub fn spawn_walk(root: &Path, wanted: cancel::Wanted, ignored: bool, sender: im
         // is ignored would be asking the same question twice and leaving
         // the two answers free to differ; this way "ignored" means
         // exactly "the walk that obeys the rules did not offer it".
-        walk(&root, false, &wanted, &sender, &mut sent);
+        walk(&root, false, hidden, &wanted, &sender, &mut sent);
     });
 }
 
@@ -372,11 +384,16 @@ pub fn spawn_walk(root: &Path, wanted: cancel::Wanted, ignored: bool, sender: im
 /// remembers in `sent` what it offered; the walk that does not obey them
 /// leaves those out and sends the rest, marked as ignored.
 ///
-/// Hidden files are skipped either way. Returns whether there is still
-/// anybody to send to.
+/// `hidden` says whether the ones whose names begin with a dot come too,
+/// and it is the reader's switch rather than this walk's own: both walks
+/// obey it, so "ignored" keeps meaning exactly "the walk that obeys the
+/// rules did not offer it" whichever way it is set.
+///
+/// Returns whether there is still anybody to send to.
 fn walk(
     root: &Path,
     obeying: bool,
+    hidden: bool,
     wanted: &cancel::Wanted,
     sender: &impl Sink<Event>,
     sent: &mut HashSet<PathBuf>,
@@ -387,7 +404,11 @@ fn walk(
         .git_global(obeying)
         .git_exclude(obeying)
         .ignore(obeying)
-        .parents(obeying);
+        .parents(obeying)
+        // The other way round from every switch above it: `hidden(true)`
+        // is what skips them, so what the reader turned on is what this
+        // turns off.
+        .hidden(!hidden);
 
     for entry in walk.build() {
         let entry = match entry {
@@ -456,6 +477,7 @@ pub fn spawn_scan(
     needle: &Needle,
     wanted: cancel::Wanted,
     ignored: bool,
+    hidden: bool,
     sender: impl Sink<Event> + Clone,
 ) {
     let root = root.to_path_buf();
@@ -469,7 +491,12 @@ pub fn spawn_scan(
             .git_global(!ignored)
             .git_exclude(!ignored)
             .ignore(!ignored)
-            .parents(!ignored);
+            .parents(!ignored)
+            // The same switch the list of files obeys: a reader who turned
+            // these on is reading them, and a search that skipped them
+            // would be looking at a different project from the one the
+            // list is offering.
+            .hidden(!hidden);
         for entry in walk.build() {
             // Per file rather than per line: a file is the unit of work
             // here, and reading the flag for every line of a large file

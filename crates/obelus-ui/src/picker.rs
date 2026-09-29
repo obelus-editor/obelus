@@ -106,11 +106,20 @@ pub fn hints(picker: &Picker) -> Vec<Hint> {
         ];
     }
     let offering = picker.offers_ignored();
+    let showing = picker.offers_hidden();
     vec![
         Hint::common(alt('i'), "Ignored files")
             .saying("Offer the files the project ignores, or leave them out")
             .set(offering.unwrap_or(false))
             .when(offering.is_some()),
+        // Beside it and not folded into it: what a project said to ignore
+        // and what a convention says not to show are two different things
+        // kept out, and one switch for both would say one was set when the
+        // other was. The dot is the second's own mark.
+        Hint::common(alt('.'), "Hidden files")
+            .saying("Offer the files whose names begin with a dot, `.git` and all")
+            .set(showing.unwrap_or(false))
+            .when(showing.is_some()),
         // Not a switch: what it does depends on the row the reader is on,
         // which is why it draws no setting.
         Hint::common(alt('n'), "Rename")

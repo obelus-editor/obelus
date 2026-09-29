@@ -366,6 +366,7 @@ fn the_search_reaches_what_the_file_list_offers() {
             &obelus_search::Needle::new("needle", obelus_search::Looking::default()),
             latest.claim(generation),
             ignored,
+            false,
             sender,
         );
         let mut names = Vec::new();
@@ -692,6 +693,7 @@ fn a_scan_that_has_been_typed_past_stops() {
         &obelus_search::Needle::new("needle", obelus_search::Looking::default()),
         latest.claim(4),
         false,
+        false,
         sender,
     );
 
@@ -714,6 +716,7 @@ fn a_scan_that_has_been_typed_past_stops() {
         scratch.path(),
         &obelus_search::Needle::new("needle", obelus_search::Looking::default()),
         latest.claim(4),
+        false,
         false,
         sender,
     );
@@ -1018,6 +1021,7 @@ fn scan(root: &std::path::Path, query: &str) -> Vec<Hit> {
         root,
         &obelus_search::Needle::new(query, obelus_search::Looking::default()),
         latest.claim(7),
+        false,
         false,
         sender,
     );

@@ -336,7 +336,10 @@ fn every_setting_is_on_one_page_under_a_heading() {
     // offer how big the text is, because its font is its own.
     assert_eq!(rows(&app).len(), shown());
     assert_eq!(rows(&app)[0], "Theme");
-    assert_eq!(rows(&app).last().map(String::as_str), Some("Ignored files"));
+    assert_eq!(
+        rows(&app).last().map(String::as_str),
+        Some("Files whose names begin with a dot")
+    );
 
     // A heading on the first of each group and on nothing else, so the
     // focus never has a row to step over.

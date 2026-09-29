@@ -747,6 +747,13 @@ pub struct Picker {
     /// is drawn from it, and a foot that had to guess would guess wrong on
     /// the first frame after the key.
     ignored: Option<bool>,
+    /// And whether it is offering the ones whose names begin with a dot.
+    ///
+    /// Its own, beside [`Picker::offers_ignored`] and for the reason that
+    /// one is its own: they keep two different things out, so a foot that
+    /// drew one switch for both would say one of them was set when the
+    /// other was.
+    hidden: Option<bool>,
     /// Whether the rows of this list open and close.
     ///
     /// Which decides what its two enters mean. A list of places answers
@@ -818,6 +825,7 @@ impl Picker {
             looking: None,
             outside: None,
             ignored: None,
+            hidden: None,
             layout,
             matcher: Matcher::new(nucleo_matcher::Config::DEFAULT),
             haystack: Vec::new(),
@@ -1097,6 +1105,18 @@ impl Picker {
     #[must_use]
     pub const fn offers_ignored(&self) -> Option<bool> {
         self.ignored
+    }
+
+    /// Says whether this list is offering the files whose names begin with
+    /// a dot, or that the question does not arise here.
+    pub const fn offering_hidden(&mut self, offering: Option<bool>) {
+        self.hidden = offering;
+    }
+
+    /// And what it was told.
+    #[must_use]
+    pub const fn offers_hidden(&self) -> Option<bool> {
+        self.hidden
     }
 
     /// The tab names, empty for a picker without tabs.

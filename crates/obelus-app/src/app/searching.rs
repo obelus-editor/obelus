@@ -468,6 +468,7 @@ impl App {
                 &needle,
                 self.search_generation.claim(generation),
                 self.config().ignored_files,
+                self.config().hidden_files,
                 sender,
             );
         }

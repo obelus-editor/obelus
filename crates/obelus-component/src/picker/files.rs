@@ -53,12 +53,13 @@ pub struct Entry {
 /// rather than a listing per directory found, which on a directory of
 /// thirty is thirty system calls for thirty arrows.
 ///
-/// `ignored` offers the files the project has said to ignore as well, the same
-/// switch the flat listing reads -- so what counts as a file worth showing
-/// has one answer at both depths.
+/// `ignored` offers the files the project has said to ignore as well and
+/// `hidden` the ones whose names begin with a dot -- the same two switches
+/// the flat listing reads, so what counts as a file worth showing has one
+/// answer at both depths and in both shapes of the list.
 #[must_use]
-pub fn inside(root: &Path, directory: &Path, ignored: bool) -> Vec<Entry> {
-    let mut found = looking(root, directory, true);
+pub fn inside(root: &Path, directory: &Path, ignored: bool, hidden: bool) -> Vec<Entry> {
+    let mut found = looking(root, directory, true, hidden);
     if !ignored {
         return found;
     }
@@ -67,7 +68,7 @@ pub fn inside(root: &Path, directory: &Path, ignored: bool) -> Vec<Entry> {
     // offered without saying it is ignored is a row that lies about the
     // tree.
     let offered: HashSet<PathBuf> = found.iter().map(|entry| entry.path.clone()).collect();
-    for entry in looking(root, directory, false) {
+    for entry in looking(root, directory, false, hidden) {
         if !offered.contains(&entry.path) {
             found.push(Entry {
                 ignored: true,
@@ -85,14 +86,22 @@ pub fn inside(root: &Path, directory: &Path, ignored: bool) -> Vec<Entry> {
 }
 
 /// One walk of one level, obeying the rules or not.
-fn looking(root: &Path, directory: &Path, obeying: bool) -> Vec<Entry> {
+///
+/// `hidden` is the reader's switch and not this walk's own, so both walks
+/// obey it: "ignored" then keeps meaning exactly "the walk that obeys the
+/// rules did not offer it" whichever way the other one is set.
+fn looking(root: &Path, directory: &Path, obeying: bool, hidden: bool) -> Vec<Entry> {
     let mut walk = WalkBuilder::new(directory);
     walk.max_depth(Some(2))
         .git_ignore(obeying)
         .git_global(obeying)
         .git_exclude(obeying)
         .ignore(obeying)
-        .parents(obeying);
+        .parents(obeying)
+        // The other way round from every switch above it: `hidden(true)`
+        // is what skips them, so what the reader turned on is what this
+        // turns off.
+        .hidden(!hidden);
 
     let mut found: Vec<Entry> = Vec::new();
     let mut holding: HashSet<PathBuf> = HashSet::new();
