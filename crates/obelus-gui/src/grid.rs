@@ -158,8 +158,6 @@ pub(crate) enum Update {
     Parted {
         /// The run the line covers.
         area: Rect,
-        /// What draws it.
-        edge: Color,
     },
     /// The mark with the light on it, and the two colours it runs between.
     Sheened {
@@ -392,8 +390,6 @@ impl Barred {
 pub(crate) struct Parted {
     /// The run the line covers.
     pub(crate) area: Rect,
-    /// What draws it.
-    pub(crate) edge: Color,
 }
 
 impl Parted {
@@ -642,8 +638,8 @@ impl obelus_ui::shapes::Shapes for Marking {
         });
     }
 
-    fn parted(&self, area: Rect, edge: Color) {
-        let _ = self.updates.send(Update::Parted { area, edge });
+    fn parted(&self, area: Rect) {
+        let _ = self.updates.send(Update::Parted { area });
     }
 
     fn sheened(&self, area: Rect, from: Color, to: Color) {
@@ -1177,7 +1173,7 @@ impl Page {
             | Update::Ticked { area, .. }
             | Update::Ruled { area }
             | Update::Sheened { area, .. }
-            | Update::Parted { area, .. }
+            | Update::Parted { area }
             | Update::Behind { area, .. }
             | Update::Scrolled { area, .. } => {
                 tracing::warn!(?area, "a cap reached the page");
@@ -1386,7 +1382,6 @@ mod tests {
                 width: 20,
                 height: 1,
             },
-            edge: Color::Rgb(1, 2, 3),
         };
         let pane = Behind {
             area: Rect {

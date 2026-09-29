@@ -243,11 +243,19 @@ pub trait Shapes: Send + Sync {
     /// and the window's is a line in the pixel between two rows -- which
     /// is a thing a grid of cells does not have.
     ///
-    /// The colour, because there is no glyph here to read one off. `area`
-    /// is the run the line covers: a note's own indent to the edge, so a
-    /// note hanging under another is parted from it where it begins rather
-    /// than across the whole page.
-    fn parted(&self, area: Rect, edge: Color);
+    /// No colour, and that is the point of it. What a seam has to do is
+    /// be seen and not be read as a rule, and a *name* out of a theme
+    /// cannot promise either: it went in wearing `raised_background`,
+    /// which is what a theme calls the ground behind a key's cap, and a
+    /// theme whose caps sit five levels off its page had a seam nobody
+    /// could see. What the front end has instead is the row's own ink and
+    /// its own ground, and a little of the way between them -- which every
+    /// theme keeps far enough apart to read words across.
+    ///
+    /// `area` is the run the line covers: a note's own indent to the edge,
+    /// so a note hanging under another is parted from it where it begins
+    /// rather than across the whole page.
+    fn parted(&self, area: Rect);
 
     /// The mark is here, and the light on it runs between these two.
     ///
@@ -333,9 +341,9 @@ pub(crate) fn barred(bar: Bar) {
 }
 
 /// Tells whoever is drawing that a row begins something new.
-pub(crate) fn parted(area: Rect, edge: Color) {
+pub(crate) fn parted(area: Rect) {
     if let Some(shapes) = DRAWING.get() {
-        shapes.parted(area, edge);
+        shapes.parted(area);
     }
 }
 

@@ -670,8 +670,8 @@ impl ApplicationHandler<Waking> for Showing {
                         Update::Ticked { area, on } => {
                             self.ticking.push(Ticked { area, on });
                         }
-                        Update::Parted { area, edge } => {
-                            self.parting.push(Parted { area, edge });
+                        Update::Parted { area } => {
+                            self.parting.push(Parted { area });
                         }
                         Update::Sheened { area, from, to } => {
                             self.sheening = Some(Sheened { area, from, to });

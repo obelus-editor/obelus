@@ -262,6 +262,19 @@ const BLUR: u32 = 1024;
 /// sheen on it.
 const SHEENED: u32 = 2048;
 
+/// How far from a row's own ground toward its own ink a seam between two
+/// entries is drawn.
+///
+/// A seventh, which is a faint line in every theme and a rule in none. Out
+/// of the row's own two colours rather than out of a name, because a name
+/// promises nothing: this was `raised_background` first -- what a theme
+/// calls the ground behind a key's cap -- and a theme whose caps sit five
+/// levels off its page had a seam nobody could see. What ink and ground
+/// are is settled by having to read words in the one against the other, so
+/// a part of the way between them is a part of something every theme
+/// keeps.
+const SEAM: f32 = 0.14;
+
 /// How much of a cell a switch's box takes, across.
 ///
 /// Nearly all of it: what it stands in for is a glyph, and a glyph fills
@@ -827,7 +840,7 @@ impl Painter {
         // letters, like a rule, because a line through a letter is a line
         // nobody put there -- and there is nothing on that pixel to be
         // under except the ground.
-        self.partings(said.parted, &panes, cell);
+        self.partings(page, said.parted, &panes, cell);
         self.letters(page, fonts, said, &framed, &capped);
         // Over the text, which it covers: a cap is the shape the cells
         // behind a key are, and it writes the key on itself, smaller than
@@ -1297,27 +1310,34 @@ impl Painter {
     /// a whole-screen view, and what covers one is a pane or a box with a
     /// frame round it -- a line drawn on either would be the page
     /// underneath reaching through.
-    fn partings(&mut self, parted: &[Parted], over: &[&Behind], cell: CellSize) {
+    fn partings(&mut self, page: &Page, parted: &[Parted], over: &[&Behind], cell: CellSize) {
+        // Half a rule's, which on a screen drawn at twice its own pixels
+        // is one of the reader's. `thickness` is a rule's own, and a rule
+        // *is* the row it is on; a single device pixel is half a pixel of
+        // theirs, which on such a screen is a line nobody sees.
+        let line = (thickness(cell.height) / 2.0).round().max(1.0);
         for parting in parted {
             if !parting.still_said(over) {
                 continue;
             }
             let left = f32::from(parting.area.x) * cell.width;
             let width = f32::from(parting.area.width) * cell.width;
+            // The row's own two colours, and the row this sits on top of
+            // rather than the page's: the row above a seam can be the one
+            // the reader is on, which wears a ground of its own, and a
+            // seam drawn against the wrong one changes weight as they walk
+            // the list.
+            let look = page.look(parting.area.x, parting.area.y);
             self.block(
                 left,
                 f32::from(parting.area.y) * cell.height,
                 width.max(1.0),
-                // One pixel, whatever the cell is. `thickness` is a rule's,
-                // and a rule *is* the row it is on -- three pixels of it at
-                // the size a window draws -- where this is the seam between
-                // two rows of a list and wants to be the thinnest thing the
-                // screen can draw.
-                1.0,
-                // As it was said, and not mixed down again: what the view
-                // names is already a shade off the page, and a shade off
-                // the page halved is the page.
-                rgba(parting.edge, Ink::Background),
+                line,
+                mixed(
+                    rgba(look.background, Ink::Background),
+                    rgba(look.foreground, Ink::Foreground),
+                    SEAM,
+                ),
             );
         }
     }
