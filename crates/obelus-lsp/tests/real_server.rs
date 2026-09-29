@@ -1001,7 +1001,13 @@ fn alive(pid: u32) -> bool {
     {
         use windows_sys::Win32::{
             Foundation::{CloseHandle, WAIT_TIMEOUT},
-            System::Threading::{OpenProcess, SYNCHRONIZE, WaitForSingleObject},
+            // `SYNCHRONIZE` is a standard access right, which every kind
+            // of kernel object takes and no kind owns -- and windows-sys
+            // generates it under the first module that names it, which is
+            // the file system's. Asking `System::Threading` for it reads
+            // right and does not compile.
+            Storage::FileSystem::SYNCHRONIZE,
+            System::Threading::{OpenProcess, WaitForSingleObject},
         };
 
         // Safety: a handle is asked for, waited on for no time at all, and

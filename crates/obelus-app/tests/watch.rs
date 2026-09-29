@@ -282,9 +282,22 @@ fn a_process_that_is_killed_reports_letting_go_of_what_it_held() {
     // killed, which is the way out that writes nothing.
     let mut theirs = std::process::Command::new("sh")
         .arg("-c")
-        .arg(format!("exec 9>{} ; sleep 30", path.display()))
+        .arg(format!("exec 9>{} ; echo open ; sleep 30", path.display()))
+        .stdout(std::process::Stdio::piped())
         .spawn()
         .expect("the other Obelus");
+    // Waited on rather than slept through. Four hundred milliseconds was
+    // the shell's whole head start, and on a busy runner it had not opened
+    // the claim yet when the kill arrived -- a close that never happened
+    // reports nothing, and the test read that as the watcher's silence.
+    // It says so itself now, which is a fact rather than a guess about how
+    // long a shell takes.
+    let mut said = String::new();
+    std::io::BufRead::read_line(
+        &mut std::io::BufReader::new(theirs.stdout.take().expect("its stdout")),
+        &mut said,
+    )
+    .expect("the other Obelus saying it had the claim open");
     // What opening it said, which is not what this is about.
     let _ = collect(&events, Duration::from_millis(400));
     theirs.kill().expect("killing it");

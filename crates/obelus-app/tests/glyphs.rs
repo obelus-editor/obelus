@@ -9,6 +9,14 @@
 //! test beside the fixtures, it would move underneath whichever of them was
 //! drawing at the time. Nothing in here turns it off.
 //!
+//! Which is not the whole of it, and the first CI run said so. The switch
+//! is process-wide and so is the resetting: `App::new` applies the
+//! settings and puts it back to their default, so a test building its
+//! application flips the switch out from under whichever test beside it is
+//! drawing. `app()` gets the order right for one test and cannot for two,
+//! so they take turns -- the same `Mutex` the settings' own tests take,
+//! for the same reason.
+//!
 //! Broken deliberately by leaving the switch where the settings put it:
 //! the three about a glyph that should be there go red, which is what they
 //! did in the binaries they came from once the glyphs were off by default.
@@ -23,6 +31,17 @@ use obelus_app::{app::App, event::Event};
 use obelus_buffer::Buffer;
 use serde_json::json;
 use support::{press, press_control, press_function, type_text};
+
+/// The turn at the switch, which every test here takes and holds while it
+/// draws. See the note at the top.
+static GLYPHS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Takes it, and does not mind one a panicking test left poisoned.
+fn turn() -> std::sync::MutexGuard<'static, ()> {
+    GLYPHS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 /// An application with the glyphs on, over the fixture file.
 fn app() -> App {
@@ -54,6 +73,7 @@ fn editing(name: &str, contents: &str) -> (support::Scratch, App) {
 /// never matches it and the matched characters of the name still line up.
 #[test]
 fn the_file_picker_shows_a_glyph_for_each_file() {
+    let _turn = turn();
     let mut app = app();
     press_function(&mut app, 1);
     app.handle(Event::Search(obelus_search::Event::FilesFound {
@@ -82,6 +102,7 @@ fn the_file_picker_shows_a_glyph_for_each_file() {
 /// colour cannot: a module and a keyword are both keyword-coloured.
 #[test]
 fn the_picture_on_a_row_says_what_the_candidate_is() {
+    let _turn = turn();
     let (_scratch, mut app) = editing("complete-pictures", "fn main() {\n    p\n}\n");
     support::press(&mut app, crossterm::event::KeyCode::Down);
     support::press(&mut app, crossterm::event::KeyCode::End);
@@ -110,6 +131,7 @@ fn the_picture_on_a_row_says_what_the_candidate_is() {
 /// left in the plain foreground reads as a second thing on the row.
 #[test]
 fn a_glyph_is_the_colour_of_the_name_beside_it() {
+    let _turn = turn();
     use obelus_git::FileStatus;
 
     let mut app = app();
@@ -174,6 +196,7 @@ fn a_glyph_is_the_colour_of_the_name_beside_it() {
 /// codepoint, and having one in there would only skew the scores.
 #[test]
 fn a_query_matches_the_name_and_not_the_glyph() {
+    let _turn = turn();
     let mut app = app();
     press_function(&mut app, 1);
     app.handle(Event::Search(obelus_search::Event::FilesFound {
@@ -205,6 +228,7 @@ fn a_query_matches_the_name_and_not_the_glyph() {
 /// Commands and themes are not files; a glyph for each would be decoration.
 #[test]
 fn the_command_palette_has_no_glyphs() {
+    let _turn = turn();
     let mut app = app();
     press_control(&mut app, 'p');
     // One row taller than the list needs, because the screen keeps one for
