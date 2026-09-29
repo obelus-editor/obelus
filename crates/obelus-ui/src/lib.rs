@@ -195,13 +195,6 @@ pub trait Screen {
     fn replacing(&self) -> bool;
     /// The list of names a setting is being built into, while one is open.
     fn names(&self) -> Option<&obelus_component::names::Names>;
-    /// Which build this is, where whatever started Obelus has said.
-    ///
-    /// Empty where nothing has, which is every test: the welcome screen
-    /// then says the version alone, the way it always did. A commit in a
-    /// golden fixture would be a fixture that has to be written again
-    /// every time anybody commits anything.
-    fn built(&self) -> &str;
     /// The card an agent's question is on, while one is up.
     fn card(&self) -> Option<&Card>;
     /// What has changed in the current file, if Obelus can tell.

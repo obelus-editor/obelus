@@ -78,9 +78,6 @@ pub fn start(paths: &[PathBuf], built: &'static str) -> Result<App> {
     // Read here rather than in `App::new`, so that a test gets the defaults
     // rather than whatever the machine it runs on has in `~/.config`.
     app.load_config();
-    // The welcome screen says it too, because the log is not where a reader
-    // looks when they want to know what they are looking at.
-    app.built_at(built);
     Ok(app)
 }
 

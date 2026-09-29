@@ -416,14 +416,6 @@ pub struct App {
     /// the edge and waited would wait for ever: the selection they are
     /// making stops where the screen does.
     dragging: Option<Dragging>,
-    /// Which build this is, as whatever started Obelus was told at compile
-    /// time.
-    ///
-    /// Held rather than worked out, because Obelus cannot work it out: the
-    /// commit is known to the one crate with a build script, which is the
-    /// binary's own, and everything under it takes it as a string like any
-    /// other fact about how Obelus was started.
-    built: &'static str,
     /// What this machine's faces are called, as whatever is drawing
     /// Obelus reported them.
     ///
@@ -815,7 +807,6 @@ impl App {
             ticker: None,
             waking: false,
             dragging: None,
-            built: "",
             fonts_here: Vec::new(),
             monospace_here: None,
             names: None,
@@ -1008,11 +999,6 @@ impl App {
     /// reader's at the end, so this only has to have happened by then.
     pub fn work_in(&mut self, root: PathBuf) {
         self.working_directory = root;
-    }
-
-    /// Says which build this is, which only the binary knows.
-    pub const fn built_at(&mut self, said: &'static str) {
-        self.built = said;
     }
 
     /// Says to open on the file list rather than on a file.
@@ -3970,9 +3956,6 @@ impl Screen for App {
     }
     fn names(&self) -> Option<&obelus_component::names::Names> {
         App::names(self)
-    }
-    fn built(&self) -> &str {
-        self.built
     }
     fn card(&self) -> Option<&Card> {
         App::card(self)
