@@ -486,6 +486,28 @@ impl Showing {
     }
 }
 
+/// Whether this pass through the loop has to draw.
+///
+/// Two questions, and only the first was ever asked. `stepped` is
+/// `Motion::advance`, which speaks for the things that *step* -- the
+/// blink, a glide, a slide, a band catching up -- and something drawn
+/// from the clock alone steps nothing: the light across the welcome
+/// screen's mark is where a cell is at this instant, worked out from
+/// `now` at the drawing. So a window that asked only `advance` set
+/// `ControlFlow::Poll` for that light and then drew not one frame of it.
+/// The loop polled as fast as it could be asked to, the screen stayed at
+/// whatever it last held, and the process sat at a hundred per cent --
+/// which from the outside is indistinguishable from Obelus having hung.
+///
+/// `Wake::EveryFrame` is the second question already answered: it is the
+/// window saying something is in flight. A pass about to poll for a frame
+/// is a pass that wants one, and asking for it is also what lets the
+/// surface pace the loop at all -- the vertical blank holds nothing back
+/// from a loop that never presents.
+fn wants_a_frame(stepped: bool, wake: Option<Wake>) -> bool {
+    stepped || wake == Some(Wake::EveryFrame)
+}
+
 impl ApplicationHandler<Waking> for Showing {
     fn resumed(&mut self, events: &ActiveEventLoop) {
         // Once. A platform that suspends and resumes says so again, and the
@@ -879,16 +901,19 @@ impl ApplicationHandler<Waking> for Showing {
     fn about_to_wait(&mut self, events: &ActiveEventLoop) {
         let now = Instant::now();
         let caret = self.page.caret().is_some();
-        if self.motion.advance(now, caret) {
+        let wake = self.motion.wake(now, caret);
+        if wants_a_frame(self.motion.advance(now, caret), wake) {
             self.redraw();
         }
-        events.set_control_flow(match self.motion.wake(now, caret) {
+        events.set_control_flow(match wake {
             Some(Wake::At(when)) => ControlFlow::WaitUntil(when),
             // Something is in flight, so the next frame is wanted as soon
             // as the screen will take one. What paces it is the surface
             // itself, which is presented on the vertical blank: that is
             // the rate an animation is meant to run at, and the one
-            // number nobody here has to pick.
+            // number nobody here has to pick -- and it paces nothing at
+            // all unless a frame was actually asked for, which is what
+            // the line above is.
             Some(Wake::EveryFrame) => ControlFlow::Poll,
             None => ControlFlow::Wait,
         });
@@ -1183,7 +1208,54 @@ fn marked(attributes: winit::window::WindowAttributes) -> winit::window::WindowA
 
 #[cfg(test)]
 mod tests {
-    use super::MARK;
+    use std::time::Instant;
+
+    use super::{MARK, wants_a_frame};
+    use crate::motion::{Motion, Wake};
+
+    /// A pass that is about to poll asks for the frame it is polling for.
+    ///
+    /// Otherwise the loop polls for nothing: `ControlFlow::Poll` with no
+    /// redraw requested is a busy wait that draws nothing and is paced by
+    /// nothing, because what paces an animation here is the surface being
+    /// presented and a loop that never presents is never held back. The
+    /// welcome screen sat at a hundred per cent behind a frozen picture.
+    ///
+    /// The second half is why the first cannot be `advance` alone, and it
+    /// is asked of `Motion` rather than assumed: the light is out, so the
+    /// window wants every frame, and nothing stepped to say so.
+    ///
+    /// Deliberate break: drop the `EveryFrame` arm from `wants_a_frame`.
+    /// The third assertion goes red, which is exactly the case this is
+    /// about -- in flight, and nothing stepped for it.
+    #[test]
+    fn a_pass_that_polls_asks_for_the_frame_it_is_polling_for() {
+        assert!(!wants_a_frame(false, None), "nothing is moving");
+        assert!(wants_a_frame(true, None), "something stepped");
+        assert!(
+            wants_a_frame(false, Some(Wake::EveryFrame)),
+            "in flight, and nothing stepped for it"
+        );
+        assert!(
+            !wants_a_frame(false, Some(Wake::At(Instant::now()))),
+            "a moment to come back at is not a rate"
+        );
+
+        // And that third case is the one that was on the screen: the light
+        // asks for a rate and steps nothing.
+        let mut motion = Motion::new(None);
+        let now = Instant::now();
+        motion.sheen_drawn(true, now);
+        assert_eq!(
+            motion.wake(now, false),
+            Some(Wake::EveryFrame),
+            "the light is out"
+        );
+        assert!(
+            !motion.advance(now, false),
+            "and nothing stepped, so `advance` cannot be what asks"
+        );
+    }
 
     /// What the window draws and what Windows draws are one file, and this
     /// is the half of that a test can hold: that the file is one an ICO
