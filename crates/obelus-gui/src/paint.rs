@@ -254,6 +254,14 @@ const ON_GLASS: u32 = 512;
 /// What is behind a pane, blurred one way -- see `Painter::blurring`.
 const BLUR: u32 = 1024;
 
+/// A letter the light on the welcome screen's mark runs across.
+///
+/// Set on the glyphs rather than on a rectangle over them, because what is
+/// lit is the ink: a band drawn over the plate would light the page showing
+/// between the letters as well, which is a lamp behind the mark and not a
+/// sheen on it.
+const SHEENED: u32 = 2048;
+
 /// How much of a cell a switch's box takes, across.
 ///
 /// Nearly all of it: what it stands in for is a glyph, and a glyph fills
@@ -320,6 +328,17 @@ struct Screen {
     /// see `grid::margin`. Added to every quad in the vertex stage, which
     /// is the one place a pixel becomes a place on the screen.
     origin: [f32; 2],
+    /// Where the light on the welcome screen's mark is, in real pixels:
+    /// its middle, how far its falloff reaches either side, how much of
+    /// the glow it carries, and nothing.
+    ///
+    /// In the uniform rather than on the quads because there is one light
+    /// on the screen and a thousand letters under it: said per quad it
+    /// would be the same numbers written a thousand times a frame, and a
+    /// quad has no room left for them anyway.
+    sheen: [f32; 4],
+    /// And the colour it carries the mark to.
+    glow: [f32; 4],
 }
 
 /// Where every glyph drawn this session is kept.
@@ -854,6 +873,28 @@ impl Painter {
             }),
         ];
 
+        // Where the light is, in the pixels a fragment knows itself by:
+        // the mark's own left edge plus how far along it the clock has
+        // brought it, and the grid's origin, because a fragment's `x` is
+        // the screen's rather than the grid's.
+        let (sheen, glow) = match said.sheened.zip(moving.sheen) {
+            Some((mark, along)) => {
+                let left = f32::from(mark.area.x) * cell.width;
+                let wide = f32::from(mark.area.width) * cell.width;
+                (
+                    [
+                        margin[0] + left + wide * along,
+                        (wide * crate::motion::SHEEN_WIDTH).max(1.0),
+                        1.0,
+                        0.0,
+                    ],
+                    rgba(mark.to, Ink::Foreground),
+                )
+            }
+            // Nothing carried, so the letters keep the colour they were
+            // given: the mark at rest is the mark in one colour.
+            None => ([0.0, 1.0, 0.0, 0.0], [0.0; 4]),
+        };
         #[expect(
             clippy::cast_precision_loss,
             reason = "a window is thousands of pixels, not millions"
@@ -861,6 +902,8 @@ impl Painter {
         let screen = Screen {
             size: [self.configured.width as f32, self.configured.height as f32],
             origin: margin,
+            sheen,
+            glow,
         };
         self.queue
             .write_buffer(&self.uniforms, 0, bytemuck::bytes_of(&screen));
@@ -1089,7 +1132,7 @@ impl Painter {
                 );
                 if !look.text.trim().is_empty() {
                     let ink = rgba(look.foreground, Ink::Foreground);
-                    self.glyphs_at(left, top, look, ink, fonts, Size::Cell);
+                    self.glyphs_at((left, top), look, ink, 0, fonts, Size::Cell);
                 }
             }
         }
@@ -1604,7 +1647,7 @@ impl Painter {
                     reason = "a key is a few columns wide, never billions"
                 )]
                 let along = left + column as f32 * pitch;
-                self.glyphs_at(along, top, look, ink, fonts, Size::Capped);
+                self.glyphs_at((along, top), look, ink, 0, fonts, Size::Capped);
             }
             column += obelus_text::text_width(look.text).max(1);
         }
@@ -1648,7 +1691,7 @@ impl Painter {
                 );
                 if lettered_behind(under, barred, x, y) {
                     let ink = rgba(under.foreground, Ink::Foreground);
-                    self.glyphs_at(left, top, under, ink, fonts, Size::Cell);
+                    self.glyphs_at((left, top), under, ink, 0, fonts, Size::Cell);
                 }
             }
         }
@@ -1776,7 +1819,7 @@ impl Painter {
                 }
                 if !under.text.trim().is_empty() {
                     let ink = rgba(under.foreground, Ink::Foreground);
-                    self.glyphs_at(left, top, under, ink, fonts, Size::Cell);
+                    self.glyphs_at((left, top), under, ink, 0, fonts, Size::Cell);
                 }
             }
         }
@@ -1922,8 +1965,19 @@ impl Painter {
                 if drawn_as_a_shape(page, &said, framed, capped, column, row) {
                     continue;
                 }
-                let colour = rgba(look.foreground, Ink::Foreground);
-                self.glyphs(column, row, look, colour, fonts);
+                // The mark's own cells rest at one colour and are carried
+                // to the other by the light, which is the shader's -- see
+                // `SHEENED`. What the cell holds is the terminal's answer
+                // to the same question, eight bands of it, and reading
+                // that as a base would be the light travelling over a ramp
+                // that is already travelling.
+                let lit = said.sheened.is_some_and(|mark| mark.holds(column, row));
+                let ink = match said.sheened.filter(|_| lit) {
+                    Some(mark) => mark.from,
+                    None => look.foreground,
+                };
+                let colour = rgba(ink, Ink::Foreground);
+                self.glyphs(column, row, look, colour, u32::from(lit) * SHEENED, fonts);
             }
         }
     }
@@ -1936,14 +1990,15 @@ impl Painter {
         row: u16,
         look: Look<'_>,
         colour: [f32; 4],
+        lit: u32,
         fonts: &mut Fonts,
     ) {
         let cell = fonts.cell();
         self.glyphs_at(
-            f32::from(column) * cell.width,
-            f32::from(row) * cell.height,
+            (f32::from(column) * cell.width, f32::from(row) * cell.height),
             look,
             colour,
+            lit,
             fonts,
             Size::Cell,
         );
@@ -1956,13 +2011,14 @@ impl Painter {
     /// block is.
     fn glyphs_at(
         &mut self,
-        left: f32,
-        top: f32,
+        at: (f32, f32),
         look: Look<'_>,
         colour: [f32; 4],
+        lit: u32,
         fonts: &mut Fonts,
         size: Size,
     ) {
+        let (left, top) = at;
         let cell = fonts.cell();
         let bold = look.modifier.contains(Modifier::BOLD);
         let italic = look.modifier.contains(Modifier::ITALIC);
@@ -1997,7 +2053,7 @@ impl Painter {
                 colour,
                 flags: match spot.colourful {
                     true => COLOURFUL,
-                    false => 0,
+                    false => lit,
                 },
                 radius: 0.0,
                 padding: [0; 2],
@@ -2136,7 +2192,7 @@ impl Painter {
                 // What is under the caret, drawn again in the colour behind
                 // it, so that a block does not hide the character it is on.
                 if !look.text.trim().is_empty() {
-                    self.glyphs_at(left, top, look, behind, fonts, Size::Cell);
+                    self.glyphs_at((left, top), look, behind, 0, fonts, Size::Cell);
                 }
             }
         }
@@ -2184,7 +2240,7 @@ impl Painter {
                 background: look.background,
                 modifier: look.modifier,
             };
-            self.glyphs(column, caret.y, over, ink, fonts);
+            self.glyphs(column, caret.y, over, ink, 0, fonts);
             // The line under it, which is what every input method's inline
             // spelling wears and what tells it apart from the file.
             let thick = (cell.height * UNDERLINE).round().max(1.0);
@@ -2952,6 +3008,7 @@ mod tests {
             ticked: &[],
             barred: &barred,
             ruled: &[],
+            sheened: None,
             behind: None,
             cards: &[],
             band: None,

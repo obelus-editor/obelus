@@ -153,6 +153,15 @@ pub(crate) enum Update {
         /// Which cells it is.
         area: Rect,
     },
+    /// The mark with the light on it, and the two colours it runs between.
+    Sheened {
+        /// Which cells it is.
+        area: Rect,
+        /// What it rests at.
+        from: Color,
+        /// And what the light carries it to.
+        to: Color,
+    },
     /// A band of rows, and which row of its list it starts at.
     Scrolled {
         /// Which cells it is.
@@ -198,6 +207,8 @@ pub(crate) struct Said<'a> {
     pub(crate) barred: &'a [Barred],
     /// And which rows are lines between two things.
     pub(crate) ruled: &'a [Ruled],
+    /// And the mark the light runs across, where one is showing.
+    pub(crate) sheened: Option<&'a Sheened>,
     /// And what is under the pane, where there is one.
     pub(crate) behind: Option<&'a Behind>,
     /// And under each box with a frame round it, nearest the reader last:
@@ -357,6 +368,68 @@ impl Barred {
         // What `obelus_ui::scrollbar` draws a bar with, which is a surface
         // rather than a line -- see the `BAR` it writes.
         (area.top()..area.bottom()).all(|y| page.look(area.x, y).text == "\u{2588}")
+    }
+}
+
+/// The mark the light runs across, in the frame being drawn.
+///
+/// One at a time: it is the welcome screen's plate, and the welcome screen
+/// is what shows when nothing is open.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Sheened {
+    /// Which cells it is.
+    pub(crate) area: Rect,
+    /// What the mark rests at.
+    pub(crate) from: Color,
+    /// And what the light carries it to as it passes.
+    pub(crate) to: Color,
+}
+
+impl Sheened {
+    /// Whether this cell is one of the mark's.
+    pub(crate) fn holds(&self, x: u16, y: u16) -> bool {
+        (self.area.left()..self.area.right()).contains(&x)
+            && (self.area.top()..self.area.bottom()).contains(&y)
+    }
+
+    /// Whether the page still holds the mark this was said about.
+    ///
+    /// The same question `Capped::still_said` asks, and the welcome screen
+    /// is where it is asked most: it is what shows when nothing is open,
+    /// so it is under every list a reader opens from there. The cells the
+    /// plate was written into then belong to the list, and a light run
+    /// across them lights somebody else's letters -- which is how this was
+    /// found, with the tail of every file name past the plate's left edge
+    /// coming out in the mark's own colour.
+    ///
+    /// What says a cell is still the mark's is its ink: a colour on the
+    /// ramp between the two this was said with, which is what the cells
+    /// say about the sheen in their own way -- a step of it per column,
+    /// out and back. A cell with nothing in it is one of the gaps in the
+    /// letters and says nothing either way.
+    pub(crate) fn still_said(&self, page: &Page) -> bool {
+        let (Color::Rgb(from_r, from_g, from_b), Color::Rgb(to_r, to_g, to_b)) =
+            (self.from, self.to)
+        else {
+            // A theme in named colours has no ramp for a cell to be on,
+            // and nothing to check one against.
+            return false;
+        };
+        let between = |one: u8, other: u8, at: u8| at >= one.min(other) && at <= one.max(other);
+        (self.area.top()..self.area.bottom()).all(|y| {
+            (self.area.left()..self.area.right()).all(|x| {
+                let look = page.look(x, y);
+                if look.text.trim().is_empty() {
+                    return true;
+                }
+                let Color::Rgb(red, green, blue) = look.foreground else {
+                    return false;
+                };
+                between(from_r, to_r, red)
+                    && between(from_g, to_g, green)
+                    && between(from_b, to_b, blue)
+            })
+        })
     }
 }
 
@@ -522,6 +595,10 @@ impl obelus_ui::shapes::Shapes for Marking {
             ground,
             cells: cells.to_vec(),
         });
+    }
+
+    fn sheened(&self, area: Rect, from: Color, to: Color) {
+        let _ = self.updates.send(Update::Sheened { area, from, to });
     }
 
     fn ruled(&self, area: Rect) {
@@ -1050,6 +1127,7 @@ impl Page {
             Update::Capped { area, .. }
             | Update::Ticked { area, .. }
             | Update::Ruled { area }
+            | Update::Sheened { area, .. }
             | Update::Behind { area, .. }
             | Update::Scrolled { area, .. } => {
                 tracing::warn!(?area, "a cap reached the page");
@@ -1235,6 +1313,75 @@ mod tests {
             !mark(1, 0).still_said(&page),
             "but not where the line is the second of them"
         );
+    }
+
+    /// And the mark is the mark only where the page still holds it.
+    ///
+    /// The welcome screen is what shows when nothing is open, so it is
+    /// under every list a reader opens from there, and the light is the
+    /// one shape that does not stop at a letter -- it runs across a
+    /// rectangle. Asked of the area alone it lit the list: every file
+    /// name whose tail reached past the plate's left edge came out in the
+    /// mark's own colour, which is how this was found.
+    ///
+    /// Deliberate break: answer `true`. The second assertion goes, which
+    /// is the list's own row inside the plate's rectangle.
+    #[test]
+    fn a_mark_a_list_was_opened_over_is_not_lit() {
+        let from = Color::Rgb(0, 0, 0);
+        let to = Color::Rgb(100, 100, 100);
+        // Two rows of the plate, in colours along the ramp between them,
+        // and a third the list wrote in its own ink.
+        let page = inked(&[
+            ("\u{2588}\u{2588}\u{2588}", Color::Rgb(0, 0, 0)),
+            ("\u{2588} \u{2588}", Color::Rgb(60, 60, 60)),
+            ("abc", Color::Rgb(220, 30, 30)),
+        ]);
+        let mark = |height: u16| Sheened {
+            area: Rect {
+                x: 0,
+                y: 0,
+                width: 3,
+                height,
+            },
+            from,
+            to,
+        };
+        assert!(
+            mark(2).still_said(&page),
+            "the plate's own rows, gaps and all"
+        );
+        assert!(
+            !mark(3).still_said(&page),
+            "a row of the list is inside the plate and is not the plate"
+        );
+    }
+
+    /// Rows of text, each in one colour.
+    fn inked(rows: &[(&str, Color)]) -> Page {
+        let mut page = Page::default();
+        let width = rows
+            .iter()
+            .map(|(row, _)| row.chars().count())
+            .max()
+            .unwrap_or(0);
+        page.resized(
+            u16::try_from(width).expect("a short row"),
+            u16::try_from(rows.len()).expect("a few rows"),
+        );
+        for (y, (row, ink)) in rows.iter().enumerate() {
+            for (x, character) in row.chars().enumerate() {
+                let mut cell = Cell::default();
+                cell.set_symbol(&character.to_string());
+                cell.fg = *ink;
+                page.apply(Update::Cell {
+                    x: u16::try_from(x).expect("a short row"),
+                    y: u16::try_from(y).expect("a few rows"),
+                    cell: Box::new(cell),
+                });
+            }
+        }
+        page
     }
 
     /// And a bar is a bar only where its cells still say so.

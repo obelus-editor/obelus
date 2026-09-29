@@ -288,6 +288,20 @@ impl WelcomeView<'_> {
         let from = self.theme.syntax.keyword;
         let to = self.theme.syntax.function;
         let foot = foot(self.built);
+        // And the same two colours said as a shape, for a front end that
+        // can draw a light rather than a ramp -- see `shapes::sheened`.
+        // The whole plate, frame and foot and all, because that is what
+        // the ramp runs across.
+        crate::shapes::sheened(
+            Rect {
+                x: left,
+                y,
+                width,
+                height: u16::try_from(WORDMARK.len()).unwrap_or(0),
+            },
+            from,
+            to,
+        );
         let last = WORDMARK.len().saturating_sub(1);
         for (at, row) in WORDMARK.iter().enumerate() {
             let row = if at == last { foot.as_str() } else { *row };

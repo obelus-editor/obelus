@@ -17,6 +17,9 @@ use ratatui::{buffer::Cell, layout::Rect, style::Color};
 #[derive(Default)]
 struct Heard {
     panes: Mutex<Vec<(Rect, Joined)>>,
+    /// The mark the light runs across, and the two colours it runs
+    /// between.
+    marks: Mutex<Vec<(Rect, Color, Color)>>,
 }
 
 impl obelus_ui::shapes::Shapes for Heard {
@@ -35,6 +38,12 @@ impl obelus_ui::shapes::Shapes for Heard {
     fn capped(&self, _keys: &str, _area: Rect, _cap: Color, _page: Color, _edge: Color) {}
 
     fn barred(&self, _bar: obelus_ui::shapes::Bar) {}
+
+    fn sheened(&self, area: Rect, from: Color, to: Color) {
+        if let Ok(mut marks) = self.marks.lock() {
+            marks.push((area, from, to));
+        }
+    }
 }
 
 fn heard() -> &'static Arc<Heard> {
@@ -123,4 +132,62 @@ fn a_compact_list_is_a_pane_from_rule_to_rule() {
         rows.contains("alpha") && rows.contains("gamma"),
         "the rows are in the pane, starting with {under:?}"
     );
+}
+
+/// The mark on the welcome screen says where it is and what the light on
+/// it runs between.
+///
+/// Both directions, the way everything on this channel is. A window with
+/// nothing said has a plate and no reason to light it -- it would draw the
+/// eight bands a terminal draws and leave the pixel it has unused. And the
+/// cells have to be that ramp whether or not anybody heard, because that
+/// is the invariant the whole channel rests on.
+///
+/// The colours are checked against the cells rather than against the theme
+/// they came from, which is what "said" has to mean here: a front end that
+/// was handed two colours the mark is not drawn in would light it to
+/// somewhere it never goes.
+///
+/// Deliberate break: drop the `shapes::sheened` in `lavish` and the first
+/// assertion goes; hand it `self.theme.foreground` for either colour and
+/// the last one does, because the letters on screen are nowhere near it.
+#[test]
+fn the_mark_says_where_it_is_and_what_the_light_runs_between() {
+    let heard = heard();
+    heard.marks.lock().expect("the marks").clear();
+
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    let cells = support::cells_of(&mut app, 64, 20);
+
+    let marks = heard.marks.lock().expect("the marks").clone();
+    assert_eq!(marks.len(), 1, "not one mark: {marks:?}");
+    let (area, from, to) = marks[0];
+
+    let (Color::Rgb(fr, fg, fb), Color::Rgb(tr, tg, tb)) = (from, to) else {
+        panic!("the light runs between two colours, not {from:?} and {to:?}");
+    };
+    // Every letter of the mark is somewhere on the ramp between them,
+    // because that is what the cells hold: a step of it per column, out
+    // and back.
+    let between = |a: u8, b: u8, at: u8| at >= a.min(b) && at <= a.max(b);
+    let mut letters = 0;
+    for y in area.top()..area.bottom() {
+        for x in area.left()..area.right() {
+            let cell = &cells[(x, y)];
+            if cell.symbol().trim().is_empty() {
+                continue;
+            }
+            let Color::Rgb(r, g, b) = cell.fg else {
+                panic!("a letter of the mark is {:?}, not a colour", cell.fg);
+            };
+            assert!(
+                between(fr, tr, r) && between(fg, tg, g) && between(fb, tb, b),
+                "the light is said to run between {from:?} and {to:?}, and {:?} at {x},{y} is on neither",
+                cell.fg
+            );
+            letters += 1;
+        }
+    }
+    assert!(letters > 100, "the mark is barely on the screen: {letters}");
 }

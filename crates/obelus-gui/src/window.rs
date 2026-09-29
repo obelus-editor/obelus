@@ -47,8 +47,8 @@ use crate::{
     blink::Blink,
     font::Fonts,
     grid::{
-        Barred, Behind, Capped, Cells, Marked, Marking, Measured, Page, Ruled, Said, Spelling,
-        Ticked, Update,
+        Barred, Behind, Capped, Cells, Marked, Marking, Measured, Page, Ruled, Said, Sheened,
+        Spelling, Ticked, Update,
     },
     keys,
     motion::{Motion, Wake},
@@ -140,8 +140,11 @@ struct Showing {
     ground: Color,
     /// Which cells are switches on the frame being shown.
     ticked: Vec<Ticked>,
+    /// The mark the light runs across, where the frame drew one.
+    sheened: Option<Sheened>,
     /// And on the one being laid out.
     ticking: Vec<Ticked>,
+    sheening: Option<Sheened>,
     /// Which columns are bars on the frame being shown.
     barred: Vec<Bar>,
     /// And those again with how the window is showing each, refilled
@@ -244,6 +247,8 @@ impl Showing {
             capping: Vec::new(),
             ground: Color::Reset,
             ticked: Vec::new(),
+            sheened: None,
+            sheening: None,
             ticking: Vec::new(),
             barred: Vec::new(),
             barring_up: Vec::new(),
@@ -660,6 +665,9 @@ impl ApplicationHandler<Waking> for Showing {
                         Update::Ticked { area, on } => {
                             self.ticking.push(Ticked { area, on });
                         }
+                        Update::Sheened { area, from, to } => {
+                            self.sheening = Some(Sheened { area, from, to });
+                        }
                         Update::Barred { bar } => self.barring_up.push(bar),
                         Update::Ruled { area } => self.ruling.push(Ruled { area }),
                         Update::Capped {
@@ -692,6 +700,19 @@ impl ApplicationHandler<Waking> for Showing {
                             self.motion
                                 .bars_drawn(&self.barred, self.pointer, Instant::now());
                             self.ruled = std::mem::take(&mut self.ruling);
+                            // Only where the page still holds it: the
+                            // welcome screen is what every list is opened
+                            // over, and a light run across a list lights
+                            // its rows -- see `Sheened::still_said`.
+                            self.sheened = self
+                                .sheening
+                                .take()
+                                .filter(|mark| mark.still_said(&self.page));
+                            // The same shape as the bars': what the frame
+                            // said is on screen until another says
+                            // otherwise, and whether the light has
+                            // anywhere to run is what decides the frames.
+                            self.motion.sheen_drawn(self.sheened.is_some());
                             self.behind = self.behinding.take();
                             self.cards = std::mem::take(&mut self.carding);
                             self.scrolled = self.scrolling.take();
@@ -881,6 +902,7 @@ impl ApplicationHandler<Waking> for Showing {
                         ticked: &self.ticked,
                         barred: &self.showing,
                         ruled: &self.ruled,
+                        sheened: self.sheened.as_ref(),
                         behind: self.behind.as_ref(),
                         cards: &self.cards,
                         band: self

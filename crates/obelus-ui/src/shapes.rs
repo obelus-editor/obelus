@@ -223,6 +223,25 @@ pub trait Shapes: Send + Sync {
     /// shade off the page with a brighter run in it -- which is the whole
     /// test for whether a thing may be said here.
     fn barred(&self, bar: Bar);
+
+    /// The mark is here, and the light on it runs between these two.
+    ///
+    /// A terminal has its answer already: it writes the ramp into the
+    /// cells' own foreground, eight bands across the columns sliding a
+    /// step a tick, and that is every sheen a grid of colours can hold.
+    /// What a window has that a grid has not is a band of light narrower
+    /// than a column and softer at its edges than a colour can be -- which
+    /// is a *shape* the region is, drawn out of the same two colours.
+    ///
+    /// The colours rather than the cells' own, and this is the one shape
+    /// where that is not a second answer: a cell's foreground here is
+    /// whichever band of the ramp happens to be over it at this instant.
+    /// What the mark rests at and what the light carries it to are the two
+    /// ends of that ramp, which are on the screen at some column or other
+    /// and nowhere in particular -- so they are read off the theme, where
+    /// the view read them, and checked against the extremes of what the
+    /// cells hold.
+    fn sheened(&self, area: Rect, from: Color, to: Color);
 }
 
 /// Who is drawing, where it is somebody who wants to be told.
@@ -285,6 +304,13 @@ pub(crate) fn scrolled(area: Rect, top: i64, bar: Option<Bar>) {
 pub(crate) fn barred(bar: Bar) {
     if let Some(shapes) = DRAWING.get() {
         shapes.barred(bar);
+    }
+}
+
+/// Tells whoever is drawing that the mark with the light on it is here.
+pub(crate) fn sheened(area: Rect, from: Color, to: Color) {
+    if let Some(shapes) = DRAWING.get() {
+        shapes.sheened(area, from, to);
     }
 }
 

@@ -14,6 +14,13 @@ struct Screen {
     // `grid::margin`. Added here, which is the one place a quad's pixels
     // become a place on the screen.
     origin: vec2<f32>,
+    // Where the light on the welcome screen's mark is, in real pixels: its
+    // middle, how far its falloff reaches either side, how much of the
+    // glow it carries, and nothing. Zero strength is no light at all,
+    // which is the mark at rest and every other screen there is.
+    sheen: vec4<f32>,
+    // And the colour it carries the mark to.
+    glow: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> screen: Screen;
@@ -41,7 +48,8 @@ struct Quad {
     // 32 and 64: the frame that has just been drawn, put back on the
     // screen in two pieces while a pane slides into it. 256: the mark in
     // a switch that is set. 512: glass over another pane's glass. 1024:
-    // what is behind a pane, blurred one way.
+    // what is behind a pane, blurred one way. 2048: a letter of the
+    // welcome screen's mark, which the light runs across.
     @location(3) flags: u32,
     // How far those corners are taken off, in pixels.
     @location(4) radius: f32,
@@ -352,5 +360,22 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
     }
     // A letter, which is coverage: the ink is the instance's colour and the
     // glyph says how much of each pixel it covers.
-    return vec4<f32>(in.colour.rgb, in.colour.a * texel.a);
+    var ink = in.colour.rgb;
+    // And one of the welcome screen's, which rests at the colour it was
+    // given and is carried to the other as the light goes by. Here rather
+    // than in the instance's colour because this is the one thing on the
+    // screen drawn finer than a cell: a colour per glyph is the eight
+    // bands a terminal already has, and what a window has instead is the
+    // pixel.
+    if ((in.flags & 2048u) != 0u) {
+        let away = abs(in.position.x - screen.sheen.x) / max(screen.sheen.y, 1.0);
+        let near = clamp(1.0 - away, 0.0, 1.0);
+        // Smooth at both ends, so the light has no edge of its own: a
+        // falloff straight from nothing to all of it is a triangle, and a
+        // triangle travelling across the mark reads as a shape over it
+        // rather than as light on it.
+        let lit = near * near * (3.0 - 2.0 * near);
+        ink = mix(ink, screen.glow.rgb, lit * screen.sheen.z);
+    }
+    return vec4<f32>(ink, in.colour.a * texel.a);
 }

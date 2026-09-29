@@ -271,6 +271,54 @@ impl Bars {
     }
 }
 
+/// How long the light takes to cross the mark on the welcome screen.
+///
+/// Slow, because that is the whole of what makes it read as light on metal
+/// rather than as something flashing: a band this narrow crossing in half
+/// the time is a wipe, and one crossing for ever is a screensaver.
+const SHEEN_PASS: Duration = Duration::from_millis(2600);
+
+/// And how long the mark rests between passes.
+///
+/// Longer than it feels, because the screen it is on is the one a reader
+/// sits in front of while they decide what to open. What is on it most of
+/// the time is a still mark in one colour; the light is the exception, and
+/// an exception that comes round every second is the rule.
+const SHEEN_REST: Duration = Duration::from_millis(2200);
+
+/// How wide the light is, as a part of the mark's own width.
+///
+/// A sixth: wide enough that its soft edges are soft rather than a line
+/// with a gradient painted on, and narrow enough that most of the mark is
+/// at rest while it goes by.
+///
+/// Here rather than beside the drawing that reads it, because it and
+/// [`SHEEN_RUN_UP`] are two halves of one shape -- how wide the light is
+/// and how far past the ends it has to start to be off the mark -- and a
+/// width changed in one place would leave the light half on the plate for
+/// the whole of the rest.
+pub(crate) const SHEEN_WIDTH: f32 = 0.16;
+
+/// How far past each end it starts and stops.
+///
+/// Its own width and a little, so the mark is whole and still at both ends
+/// of the rest: a light that stopped at the edge would sit there half on
+/// the last letter for two seconds.
+const SHEEN_RUN_UP: f32 = SHEEN_WIDTH * 1.5;
+
+/// Whichever of two waits comes first.
+///
+/// A rate beats a moment, which is the rule `Motion::wake` is written to:
+/// something in flight wants every frame, and a moment that is also due
+/// will be reached on one of them.
+fn soonest(one: Option<Wake>, other: Option<Wake>) -> Option<Wake> {
+    match (one, other) {
+        (Some(Wake::EveryFrame), _) | (_, Some(Wake::EveryFrame)) => Some(Wake::EveryFrame),
+        (Some(Wake::At(one)), Some(Wake::At(other))) => Some(Wake::At(one.min(other))),
+        (one, other) => one.or(other),
+    }
+}
+
 /// What the painter is told about a frame beyond the cells in it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Moving {
@@ -293,6 +341,14 @@ pub(crate) struct Moving {
     /// window that took the second path every frame would pay for an
     /// animation nobody is watching.
     pub(crate) pane: Option<f32>,
+    /// Where the light on the welcome screen's mark has got to, as a part
+    /// of the mark's own width, or `None` while it is resting between
+    /// passes -- and on a screen with no mark on it.
+    ///
+    /// Outside `0..1` at both ends of a pass: the light enters from off
+    /// one end and leaves off the other, so what the mark shows at the
+    /// start and the end of a pass is the same still mark the rest shows.
+    pub(crate) sheen: Option<f32>,
     /// How far from where the page says it is the caret is drawn, in
     /// cells.
     ///
@@ -595,6 +651,15 @@ pub(crate) struct Motion {
     pane: Sliding,
     band: Scrolling,
     bars: Bars,
+    /// When this window started, which is what the light's pass is
+    /// measured from.
+    ///
+    /// A clock and nothing else: where the light is, is a function of the
+    /// time and of nothing the reader or the page has done, so there is no
+    /// state to keep and a frame drawn twice draws the same light twice.
+    since: Instant,
+    /// Whether the frame drew a mark for it to run across.
+    sheening: bool,
 }
 
 impl Motion {
@@ -617,6 +682,8 @@ impl Motion {
                 started: now,
             },
             bars: Bars::default(),
+            since: now,
+            sheening: false,
         }
     }
 
@@ -707,14 +774,34 @@ impl Motion {
     /// A rate beats a moment: something in flight wants every frame, and a
     /// blink that is also due will be seen on one of them.
     pub(crate) fn wake(&self, now: Instant, caret: bool) -> Option<Wake> {
-        match self.caret.moving(now)
+        if self.caret.moving(now)
             || self.pane.moving(now)
             || self.band.moving(now)
             || (self.animates && self.bars.moving(now))
+            // The light wants a rate while it is out, and between passes
+            // it wants the moment the next one is due -- which is the
+            // other kind of waiting, and is what keeps the screen a
+            // reader is sitting in front of still for four fifths of the
+            // time it is up.
+            || self.sheen(now).is_some()
         {
-            true => Some(Wake::EveryFrame),
-            false => self.blink.wake(now, caret),
+            return Some(Wake::EveryFrame);
         }
+        soonest(
+            self.blink.wake(now, caret),
+            self.sheen_due(now).map(Wake::At),
+        )
+    }
+
+    /// When the light sets out again, while it is resting.
+    fn sheen_due(&self, now: Instant) -> Option<Instant> {
+        if !self.sheening || !self.animates {
+            return None;
+        }
+        let round = SHEEN_PASS.saturating_add(SHEEN_REST).as_secs_f32();
+        let along = now.duration_since(self.since).as_secs_f32() % round;
+        let pass = SHEEN_PASS.as_secs_f32();
+        (along >= pass).then(|| now + Duration::from_secs_f32(round - along))
     }
 
     /// The frame drew these bars.
@@ -766,7 +853,42 @@ impl Motion {
                 .band
                 .behind(now)
                 .map(|behind| (behind, self.band.since)),
+            sheen: self.sheen(now),
         }
+    }
+
+    /// The frame drew a mark for the light to run across, or it did not.
+    ///
+    /// Told rather than read off the page, the way the bars are: what says
+    /// a region is the mark is the view saying so, and the cells it wrote
+    /// there are blocks like any other.
+    pub(crate) const fn sheen_drawn(&mut self, showing: bool) {
+        self.sheening = showing;
+    }
+
+    /// Where the light has got to across the mark, if it is out.
+    ///
+    /// `None` between passes and on a screen with no mark, and `None`
+    /// altogether where the reader has turned animation off: what that
+    /// switch turns off is time passing on its own, and a light held still
+    /// halfway across would be exactly that with a frame drawn for it.
+    /// What is left is the mark at rest, in one colour, which is what it
+    /// is for most of a pass anyway.
+    fn sheen(&self, now: Instant) -> Option<f32> {
+        if !self.sheening || !self.animates {
+            return None;
+        }
+        let round = SHEEN_PASS.saturating_add(SHEEN_REST).as_secs_f32();
+        let along = now.duration_since(self.since).as_secs_f32() % round;
+        let pass = SHEEN_PASS.as_secs_f32();
+        if along >= pass {
+            return None;
+        }
+        // From off one end to off the other, so the mark is whole and
+        // still at both ends of the rest.
+        let from = -SHEEN_RUN_UP;
+        let to = 1.0 + SHEEN_RUN_UP;
+        Some(from + (to - from) * (along / pass))
     }
 }
 
@@ -1290,6 +1412,83 @@ mod tests {
         assert_eq!(motion.wake(base + CATCH_UP, true), None);
     }
 
+    /// The light crosses the mark, leaves at the far end, and stays away
+    /// for the whole of the rest.
+    ///
+    /// Off both ends, which is what the run-up is for: a light that set
+    /// out on the first letter would be half a light standing on it for
+    /// the two seconds of the rest, which is a smudge rather than a light
+    /// that has gone.
+    ///
+    /// Break: drop the `%` and it crosses once and never again -- the
+    /// screen a reader sits in front of has one pass in it and is still
+    /// for ever after. Drop the run-up and the last two assertions go:
+    /// it sets out on the mark and stops on it.
+    #[test]
+    fn the_light_crosses_the_mark_and_then_rests() {
+        let mut motion = Motion::new(None);
+        motion.sheen_drawn(true);
+        let since = motion.since;
+        let at = |after: Duration| motion.sheen(since + after);
+
+        let out = at(Duration::ZERO).expect("setting out");
+        assert!(out < 0.0, "it sets out on the mark: {out}");
+        let half = at(SHEEN_PASS / 2).expect("halfway across");
+        assert!((half - 0.5).abs() < 0.01, "not halfway across: {half}");
+        let gone = at(SHEEN_PASS - Duration::from_millis(1)).expect("leaving");
+        assert!(gone > 1.0, "it stops on the mark: {gone}");
+
+        assert_eq!(at(SHEEN_PASS), None, "no rest at all");
+        assert_eq!(at(SHEEN_PASS + SHEEN_REST / 2), None, "nor through it");
+
+        let round = SHEEN_PASS.saturating_add(SHEEN_REST);
+        let again = at(round).expect("round again");
+        assert!(again < 0.0, "the next pass starts somewhere else: {again}");
+    }
+
+    /// And the window sleeps through the rest rather than drawing it.
+    ///
+    /// Two kinds of waiting, which is what this whole file is about: the
+    /// light in flight is a rate, and the rest is a moment. Asked for
+    /// every frame throughout, the one screen a reader leaves up while
+    /// they think would be the one screen that never lets the machine
+    /// alone.
+    ///
+    /// Break: answer `Wake::EveryFrame` whenever a mark is on screen.
+    #[test]
+    fn the_window_sleeps_between_two_passes_of_the_light() {
+        let mut motion = Motion::new(None);
+        motion.sheen_drawn(true);
+        let since = motion.since;
+
+        assert_eq!(
+            motion.wake(since + SHEEN_PASS / 2, false),
+            Some(Wake::EveryFrame),
+            "the light is out and wants every frame"
+        );
+
+        let resting = since + SHEEN_PASS + SHEEN_REST / 2;
+        let round = SHEEN_PASS.saturating_add(SHEEN_REST);
+        match motion.wake(resting, false) {
+            Some(Wake::At(when)) => {
+                // The moment the next pass sets out, and not before it.
+                let due = since + round;
+                let early = due.saturating_duration_since(when);
+                let late = when.saturating_duration_since(due);
+                assert!(
+                    early < Duration::from_millis(2) && late < Duration::from_millis(2),
+                    "woken {early:?} early and {late:?} late"
+                );
+            }
+            other => panic!("the rest is a moment, not {other:?}"),
+        }
+
+        // And a screen with no mark on it wants nothing at all.
+        motion.sheen_drawn(false);
+        assert_eq!(motion.wake(resting, false), None);
+    }
+
+    /// Break: leave the check out of any one of the three doors, and a    ///
     /// Break: leave the check out of any one of the three doors, and a
     /// reader who turned animation off still gets that one -- which is a
     /// switch they watched do nothing to the thing they turned it off
@@ -1306,6 +1505,8 @@ mod tests {
         assert_eq!(motion.moving(base).pane, None, "a pane");
         assert!(!motion.band_moved(3.0, 20.0, base), "a band");
         assert_eq!(motion.moving(base).scroll, None);
+        motion.sheen_drawn(true);
+        assert_eq!(motion.moving(base).sheen, None, "the light on the mark");
         assert_eq!(motion.wake(base, true), None, "and nothing to wake for");
 
         // And what was under way when they turned it off is dropped: one
