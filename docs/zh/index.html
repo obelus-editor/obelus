@@ -96,7 +96,7 @@
       <pre><code>irm https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.ps1 -OutFile install.ps1
 .\install.ps1 -Binary both</code></pre>
 
-      <p><code>--bin ob</code> 是只装终端版，<code>--dir</code> 说放到哪儿，<code>--help</code> 列出其余的。<a href="https://github.com/sunli829/obelus/releases">Releases 页</a>上每个平台都有一份归档，另外还有 <code>.deb</code>、<code>.rpm</code>、AppImage 和 macOS 的 <code>.app</code>——Linux 桌面上该装的是这几个里的一个，因为脚本在那儿给你的只是一个二进制，而启动器还需要旁边的 desktop entry 和图标。Windows 上脚本除了放进 PATH，还会在开始菜单里建一个条目——图标就在二进制里，所以这个快捷方式就是全部，<code>-NoShortcut</code> 让它不碰开始菜单。musl 上根本没有 <code>obg</code>：窗口要靠 <code>dlopen</code> 找 Vulkan、Wayland 和 X11，静态二进制做不到，脚本会直接说出来，然后装 <code>ob</code>。</p>
+      <p><code>--bin ob</code> 是只装终端版，<code>--dir</code> 说放到哪儿，<code>--help</code> 列出其余的。<a href="https://github.com/sunli829/obelus/releases">Releases 页</a>上每个平台都有一份归档，另外还有 <code>.deb</code>、<code>.rpm</code>、AppImage 和 macOS 的 <code>.app</code>——Linux 桌面上该装的是这几个里的一个，因为脚本在那儿给你的只是一个二进制，而启动器还需要旁边的 desktop entry 和图标。Windows 上脚本除了放进 PATH，还会在开始菜单里建一个条目——图标就在二进制里，所以这个快捷方式就是全部，<code>-NoShortcut</code> 让它不碰开始菜单。<code>-Uninstall</code> 把这三样一起收回去——Windows 上这一半才是要紧的，因为 PATH 和开始菜单正是读者没法自己删掉的东西。musl 上根本没有 <code>obg</code>：窗口要靠 <code>dlopen</code> 找 Vulkan、Wayland 和 X11，静态二进制做不到，脚本会直接说出来，然后装 <code>ob</code>。</p>
 
       <h4>从源码</h4>
       <p>只需要一套 stable Rust 工具链（edition 2024）。</p>

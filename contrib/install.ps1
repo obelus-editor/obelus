@@ -8,6 +8,7 @@
 #   irm .../install.ps1 -OutFile install.ps1
 #   .\install.ps1 -Binary ob
 #   .\install.ps1 -NoShortcut
+#   .\install.ps1 -Uninstall
 #
 # It verifies what it downloaded against the release's own SHA256SUMS. A
 # script that pipes into a shell and then installs an unchecked binary has
@@ -29,6 +30,14 @@ param(
     # Where to put it.
     [string] $Directory = "$env:LOCALAPPDATA\Obelus\bin",
 
+    # Take it away again.
+    #
+    # The other half of a script that writes somebody's PATH and their
+    # Start menu: those two are the things a reader cannot simply delete,
+    # so the script that made them is what unmakes them. Nothing is
+    # fetched -- what is on the machine is the whole of what this is about.
+    [switch] $Uninstall,
+
     # Leave the Start menu alone.
     #
     # For a machine nobody sits in front of -- a build agent, an image
@@ -41,6 +50,61 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'   # or every download draws a bar over the output
 
 $repository = 'sunli829/obelus'
+
+# Where the Start menu entry goes, which both halves of this need to know.
+$link = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Obelus.lnk'
+
+if ($Uninstall) {
+    $removed = 0
+
+    foreach ($each in @('obg', 'ob')) {
+        $exe = Join-Path $Directory "$each.exe"
+        if (Test-Path -LiteralPath $exe) {
+            Remove-Item -LiteralPath $exe -Force
+            Write-Host "  removed $exe"
+            $removed++
+        }
+    }
+
+    # The shortcut, and only where it is this Obelus's. A `.lnk` of that
+    # name pointing somewhere else is somebody else's -- a second install
+    # in a directory of their own, most likely -- and a script that removed
+    # it would be taking away what it never put there.
+    if (Test-Path -LiteralPath $link) {
+        $shell = New-Object -ComObject WScript.Shell
+        $points = $shell.CreateShortcut($link).TargetPath
+        if ($points -eq (Join-Path $Directory 'obg.exe')) {
+            Remove-Item -LiteralPath $link -Force
+            Write-Host "  removed $link"
+            $removed++
+        } else {
+            Write-Host "  left $link alone: it points at $points"
+        }
+    }
+
+    # And the directory with the PATH entry that named it, where it is
+    # empty and so Obelus's alone. A reader who installed into a directory
+    # of their own keeps both, because what a script may take back is what
+    # it put there -- and `~/tools` with one thing gone out of it is not
+    # something to remove from anybody's PATH.
+    if ((Test-Path -LiteralPath $Directory) -and -not (Get-ChildItem -LiteralPath $Directory -Force)) {
+        Remove-Item -LiteralPath $Directory -Force
+        Write-Host "  removed $Directory"
+
+        $theirs = [Environment]::GetEnvironmentVariable('Path', 'User')
+        $was = @($theirs -split ';' | Where-Object { $_ })
+        $kept = @($was | Where-Object { $_ -ne $Directory })
+        if ($kept.Count -ne $was.Count) {
+            [Environment]::SetEnvironmentVariable('Path', ($kept -join ';'), 'User')
+            Write-Host "  took $Directory out of your PATH. A new terminal will have it gone."
+        }
+    }
+
+    if ($removed -eq 0) {
+        Write-Host "There is no Obelus in $Directory to remove."
+    }
+    return
+}
 
 # Windows PowerShell 5.1 is what a stock Windows opens, and `irm | iex` is
 # how this is meant to be run, so nothing here may be PowerShell 7's alone.
@@ -125,9 +189,7 @@ try {
     # open, and a Start menu entry for it is a console window on a
     # directory nobody chose.
     if (-not $NoShortcut -and $binaries -contains 'obg') {
-        $programs = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
-        New-Item -ItemType Directory -Force -Path $programs | Out-Null
-        $link = Join-Path $programs 'Obelus.lnk'
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $link) | Out-Null
 
         # WScript.Shell, which is on a stock Windows and is the only way to
         # write a `.lnk` without a module nobody has. The icon comes with

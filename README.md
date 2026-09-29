@@ -61,7 +61,9 @@ irm https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.ps1
 
 On Windows the script puts Obelus in the Start menu as well as on your
 PATH — the icon is in the binary, so the shortcut is the whole of it, and
-`-NoShortcut` leaves the menu alone. On Linux it gives you a binary and
+`-NoShortcut` leaves the menu alone. `-Uninstall` takes all three back: it
+is the half that matters there, because a PATH and a Start menu are what a
+reader cannot simply delete. On Linux it gives you a binary and
 nothing else, because a launcher there needs a desktop entry and an icon
 beside it: on a desktop install the `.deb`, the `.rpm` or the AppImage
 instead, which carry all three. And on musl there is no `obg` to install at
