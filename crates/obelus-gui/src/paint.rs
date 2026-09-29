@@ -314,17 +314,23 @@ const HELD_TURNS: u32 = 13;
 /// How far a held run's face is carried from what is under it toward the
 /// colour the cells wear.
 ///
-/// Not the whole way. What a hold has to do is be seen and not shout, and
-/// the way to do both is to put the strength in the *edge*: an edge is
-/// what an eye finds a shape by, and a face a shade lighter than the
+/// Not quite the whole way. What a hold has to do is be seen and not
+/// shout, and the way to do both is to put the strength in the *edge*:
+/// an edge is what an eye finds a shape by, and a face a shade off the
 /// square a terminal draws reads quieter while being better bounded.
 ///
-/// A whisper of it, and that is the measurement. Most of the way there
-/// was tried first and is a grey block with a line round it: the face
-/// was thirty-five levels off the page and the rim twenty-nine off the
-/// face, so the block was the thing seen and the rim was a mark on it.
-/// A third of the way puts the strength where it was always meant to be.
-const HELD: f32 = 0.34;
+/// A shade, and no more than a shade. A third of the way was tried and
+/// is the same rule read off the wrong measurement: the hold it was
+/// settled on is a *grey row* on a light page -- `#d1d0d0` on `#faf9f9`
+/// -- where a third of the way is still a step the eye finds, and the
+/// thing it has to serve as well is a *selection on a dark page*, where
+/// the whole distance is small. The dark theme's selection is `#312e81`
+/// on `#18181b`: a third of that is `#201f3e`, which against the page is
+/// a contrast of 1.13 and is nothing at all -- a reader who selected four
+/// lines could not see which four. At a sixth off it is the colour the
+/// theme chose, which is what `ob` paints those cells and so what the
+/// theme was written against, and the rim still carries the shape.
+const HELD: f32 = 0.85;
 
 /// How much further than the colour itself its rim goes, away from what
 /// is under it.
