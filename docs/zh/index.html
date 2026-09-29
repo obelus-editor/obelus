@@ -12,15 +12,22 @@
   // Before the first paint, so the page never flashes the wrong theme.
   (function () {
     var root = document.documentElement;
+    // What the system is set to, which is the answer wherever the visitor
+    // has not said otherwise. Asked first and on its own, so that it is
+    // still the answer when reading their choice throws -- which is what
+    // throws: a browser with site data turned off refuses `localStorage`,
+    // and that visitor's desktop is as likely to be dark as anybody's. One
+    // `try` around both made a fixed `light` the answer there, which is
+    // the page choosing for somebody who had told their machine.
+    var system = 'light';
     try {
-      var theme = localStorage.getItem('obelus-theme');
-      if (!theme) {
-        theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      }
-      root.setAttribute('data-theme', theme);
-    } catch (e) {
-      root.setAttribute('data-theme', 'light');
-    }
+      system = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    } catch (e) {}
+    var theme = system;
+    try {
+      theme = localStorage.getItem('obelus-theme') || system;
+    } catch (e) {}
+    root.setAttribute('data-theme', theme);
   })();
 </script>
 </head>
