@@ -189,6 +189,21 @@ fn remember_a_note_conversation(scratch: &support::Scratch, note: &str, session:
     });
 }
 
+/// The command the fake agent asks to have run, in the words the shell
+/// that runs it takes.
+///
+/// Said twice -- here and in the fake agent, beside its `cygpath` -- and
+/// it has to be: one of them is a shell script and the other is this, and
+/// what the row shows is the command line as it was sent. `cmd` knows
+/// neither `;` nor a quoted argument surviving `/C`, so that side chains
+/// with `&`, waits with `ping` and prints with `set /p`.
+fn ran_command() -> &'static str {
+    match cfg!(windows) {
+        true => "ping -n 2 127.0.0.1 >nul & <nul set /p =obelus-ran-this & exit 3",
+        false => "sleep 0.3; printf %s obelus-ran-this; exit 3",
+    }
+}
+
 /// Handles events until the application satisfies `until`, or gives up.
 ///
 /// Draws between events, because a frame is where Obelus settles what it is
@@ -5682,7 +5697,7 @@ fn a_command_is_on_the_page_in_the_words_it_was_run_in() {
     // Opened by a press on its row, which is what a reader has.
     let shut = support::render(&mut app, WIDTH, HEIGHT);
     assert!(
-        !rows(&shut).iter().any(|row| row.contains("$ sh -c")),
+        !rows(&shut).iter().any(|row| row.contains(ran_command())),
         "a command that is over is still holding the page open:\n{shut}"
     );
     let y = row_of(&shut, "Run the tests");
@@ -5695,9 +5710,7 @@ fn a_command_is_on_the_page_in_the_words_it_was_run_in() {
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     let screen = rows(&dump);
     assert!(
-        screen
-            .iter()
-            .any(|row| row.contains(r#"$ sh -c "sleep 0.3; printf %s obelus-ran-this; exit 3""#)),
+        screen.iter().any(|row| row.contains(ran_command())),
         "the command the reader never typed is not on the page:\n{dump}"
     );
     // And what it printed, under it -- a row of its own, which is what

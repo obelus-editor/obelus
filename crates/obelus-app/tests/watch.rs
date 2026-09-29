@@ -197,8 +197,22 @@ fn a_burst_of_writes_is_reported_once() {
     let mut watcher = Watcher::new(sender).expect("starting the watcher");
     watcher.watch(&path).expect("watching");
 
-    for index in 1..=10 {
-        scratch.write("a.rs", &format!("{index}\n"));
+    // One handle written ten times, not ten opened and closed. What the
+    // debouncing has to gather is the events of a *burst*, and a burst is
+    // what this has to produce: opening, writing and closing ten times
+    // took longer on a loaded runner than the window is wide, so the
+    // writes fell into eight windows of their own and the test read that
+    // as the gathering being broken.
+    {
+        use std::io::Write as _;
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .open(&path)
+            .expect("opening it once");
+        for index in 1..=10 {
+            write!(file, "{index}\n").expect("writing");
+            file.flush().expect("flushing");
+        }
     }
 
     let seen = collect(&events, Duration::from_millis(600));
@@ -328,7 +342,18 @@ fn a_file_written_continuously_is_still_reported() {
 ///
 /// Deliberate break: take the `Modify(Metadata(_))` refusal out of
 /// `obelus_watch` and this arrives.
+///
+/// Linux's, and only there, which the diagnostic said in its own words: a
+/// `chmod` on macOS came back as `Create(File)`,
+/// `Modify(Metadata(Ownership))` and `Modify(Data(Content))` at once.
+/// FSEvents reports the flags a path has *accumulated*, so the creation
+/// and the write that made the file are still on the next event about it
+/// however long the wait -- there is no telling a metadata change from a
+/// data one there, and so nothing to hold to. The refusal is still right
+/// and still worth having: it is what stops a `chmod` waking Obelus where
+/// a watcher can say that is all it was.
 #[test]
+#[cfg(target_os = "linux")]
 fn a_change_of_mode_is_not_a_change_to_the_file() {
     let scratch = Scratch::new("mode");
     let path = scratch.write("a.rs", "fn main() {}\n");
