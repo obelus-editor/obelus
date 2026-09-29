@@ -341,7 +341,7 @@ const WALK_BATCH: usize = 512;
 /// have to be recognizable as stale rather than merged into the new list.
 ///
 /// `ignored` offers the files the tree has said to ignore as well, and
-/// `hidden` the ones whose names begin with a dot. Two switches and not
+/// `hidden` the ones a system keeps out of sight. Two switches and not
 /// one, because they keep two different things out: what a project said to
 /// ignore, and what a convention says not to show. A reader after
 /// `.github/workflows/ci.yml` is not asking to see `target`.
@@ -384,7 +384,7 @@ pub fn spawn_walk(
 /// remembers in `sent` what it offered; the walk that does not obey them
 /// leaves those out and sends the rest, marked as ignored.
 ///
-/// `hidden` says whether the ones whose names begin with a dot come too,
+/// `hidden` says whether the ones a system keeps out of sight come too,
 /// and it is the reader's switch rather than this walk's own: both walks
 /// obey it, so "ignored" keeps meaning exactly "the walk that obeys the
 /// rules did not offer it" whichever way it is set.
@@ -408,6 +408,14 @@ fn walk(
         // The other way round from every switch above it: `hidden(true)`
         // is what skips them, so what the reader turned on is what this
         // turns off.
+        //
+        // What counts as hidden is `ignore`'s answer and not one written
+        // here, which is why the setting says it in its own words: a name
+        // beginning with a dot everywhere, and on Windows a file the
+        // system has marked as well. A rule of Obelus's own would be a
+        // second answer to a question the walk is already answering, and
+        // the two would differ on exactly the platform nobody tests on by
+        // hand.
         .hidden(!hidden);
 
     for entry in walk.build() {

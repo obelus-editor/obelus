@@ -747,7 +747,7 @@ pub struct Picker {
     /// is drawn from it, and a foot that had to guess would guess wrong on
     /// the first frame after the key.
     ignored: Option<bool>,
-    /// And whether it is offering the ones whose names begin with a dot.
+    /// And whether it is offering the ones a system keeps out of sight.
     ///
     /// Its own, beside [`Picker::offers_ignored`] and for the reason that
     /// one is its own: they keep two different things out, so a foot that
@@ -1107,8 +1107,8 @@ impl Picker {
         self.ignored
     }
 
-    /// Says whether this list is offering the files whose names begin with
-    /// a dot, or that the question does not arise here.
+    /// Says whether this list is offering the files a system keeps out of
+    /// sight, or that the question does not arise here.
     pub const fn offering_hidden(&mut self, offering: Option<bool>) {
         self.hidden = offering;
     }

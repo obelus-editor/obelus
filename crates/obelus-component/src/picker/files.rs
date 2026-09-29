@@ -54,7 +54,7 @@ pub struct Entry {
 /// thirty is thirty system calls for thirty arrows.
 ///
 /// `ignored` offers the files the project has said to ignore as well and
-/// `hidden` the ones whose names begin with a dot -- the same two switches
+/// `hidden` the ones a system keeps out of sight -- the same two switches
 /// the flat listing reads, so what counts as a file worth showing has one
 /// answer at both depths and in both shapes of the list.
 #[must_use]

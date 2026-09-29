@@ -121,7 +121,14 @@ pub struct Config {
     /// "where is that build log" is a question asked once and then not
     /// again for a week.
     pub ignored_files: bool,
-    /// Whether the file list offers the files whose names begin with a dot.
+    /// Whether the file list offers the files a system keeps out of sight.
+    ///
+    /// Which is not one rule: a name beginning with a dot everywhere, and
+    /// on Windows the attribute as well -- `ignore` answers both there and
+    /// only the first elsewhere. Said in the setting's own words rather
+    /// than in one platform's, because one file is read on every machine
+    /// the reader uses and a `cfg!` in copy would be two readings of one
+    /// switch.
     ///
     /// Its own switch and not part of [`Config::ignored_files`], because
     /// they keep two different things out: one is what a project said to
@@ -595,8 +602,8 @@ pub const ALL: &[Setting] = &[
     },
     Setting {
         key: "hidden_files",
-        name: "Files whose names begin with a dot",
-        about: "offer them in the file list as well -- `.github` and `.env` are files like any other, and `.git` comes with them",
+        name: "Hidden files",
+        about: "offer them in the file list as well -- a name beginning with a dot, and on Windows the attribute too; `.github` and `.env` are files like any other, and `.git` comes with them",
         group: Group::Files,
         reach: Reach::Anywhere,
         kind: Kind::Switch,

@@ -1,10 +1,17 @@
-//! The files whose names begin with a dot.
+//! The files a system keeps out of sight.
 //!
 //! Its own switch and not part of the one about what a project ignores,
 //! because they keep two different things out: one is what the project
-//! said, and the other is what a convention says not to show. A reader
+//! said, and the other is what the machine says not to show. A reader
 //! after `.github/workflows/ci.yml` is not asking to see `target`, and one
 //! after a build log is not asking to see `.env`.
+//!
+//! Which files those are is `ignore`'s answer rather than one of Obelus's:
+//! a name beginning with a dot everywhere, and on Windows a file the
+//! system has marked as well. So these tests are about the *switch* and
+//! use dotted names because that is what holds on the machine they run on
+//! -- a test that wrote the rule down would be a second answer to a
+//! question the walk is already answering.
 
 mod support;
 
@@ -89,7 +96,7 @@ fn the_two_switches_keep_two_different_things_out() {
 /// did not exist: it is a cost, and it is the reader's to weigh now.
 ///
 /// Deliberate break: give the walk a `filter_entry` that drops `.git`. The
-/// switch then says it offers the files whose names begin with a dot and
+/// switch then says it offers the files a system keeps out of sight and
 /// offers all but one of them.
 #[test]
 fn the_git_directory_comes_with_them() {

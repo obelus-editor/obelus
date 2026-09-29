@@ -435,8 +435,9 @@ impl App {
         }
         // Two switches about which files the list offers, and they keep
         // two different things out: what the project said to ignore, and
-        // what a convention says not to show. The dot is the second's own
-        // mark and what every file manager puts it on.
+        // what a system keeps out of sight. The dot is what a file
+        // manager puts the second on, and what it is called after on every
+        // machine but one.
         let setting = match key.code {
             KeyCode::Char('i') => "ignored_files",
             KeyCode::Char('.') => "hidden_files",

@@ -115,9 +115,9 @@ pub fn hints(picker: &Picker) -> Vec<Hint> {
         // Beside it and not folded into it: what a project said to ignore
         // and what a convention says not to show are two different things
         // kept out, and one switch for both would say one was set when the
-        // other was. The dot is the second's own mark.
+        // other was.
         Hint::common(alt('.'), "Hidden files")
-            .saying("Offer the files whose names begin with a dot, `.git` and all")
+            .saying("Offer the files a system keeps out of sight, `.git` and all")
             .set(showing.unwrap_or(false))
             .when(showing.is_some()),
         // Not a switch: what it does depends on the row the reader is on,
