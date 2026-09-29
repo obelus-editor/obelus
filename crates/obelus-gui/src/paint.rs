@@ -129,6 +129,9 @@ pub(crate) struct Painter {
     /// What the page is drawn on, which is what the margin round the grid
     /// is painted in -- see `grid::margin`.
     ground: Color,
+    /// How wide and how tall the grid is, in pixels: the cells and nothing
+    /// else, which is what a glyph is cut back to -- see `clipped`.
+    grid: [f32; 2],
     /// The instances of the frame being built, kept so that a screenful of
     /// rectangles is allocated once rather than once a frame.
     quads: Vec<Quad>,
@@ -607,6 +610,7 @@ impl Painter {
             drawings: HashMap::new(),
             palette: None,
             ground: Color::Reset,
+            grid: [0.0, 0.0],
             quads: Vec::new(),
             placed: Placed::default(),
             instances,
@@ -720,6 +724,10 @@ impl Painter {
         let margin = [
             crate::grid::margin(across, cell.width, page.columns()),
             crate::grid::margin(down, cell.height, page.rows()),
+        ];
+        self.grid = [
+            f32::from(page.columns()) * cell.width,
+            f32::from(page.rows()) * cell.height,
         ];
         // The whole window, in the page's own ground, under everything.
         //
@@ -1971,14 +1979,21 @@ impl Painter {
             // The grid's baseline for writing, and a mark's own for a mark
             // -- see `font::Placed::baseline`.
             let baseline = glyph.baseline.unwrap_or(cell.baseline);
-            self.quads.push(Quad {
-                rect: [
+            let Some((rect, uv)) = clipped(
+                [
                     left + x + spot.left,
                     top + baseline + y - spot.top,
                     spot.width,
                     spot.height,
                 ],
-                uv: spot.uv,
+                spot.uv,
+                self.grid,
+            ) else {
+                continue;
+            };
+            self.quads.push(Quad {
+                rect,
+                uv,
                 colour,
                 flags: match spot.colourful {
                     true => COLOURFUL,
@@ -2568,6 +2583,51 @@ fn outline(area: ratatui::layout::Rect, cell: CellSize, line: f32) -> [f32; 4] {
     ]
 }
 
+/// A glyph's rectangle cut back to the grid, and the part of its picture
+/// that is left. `None` where none of it is.
+///
+/// A glyph's raster is bigger than its cell often enough -- an accent
+/// reaches into the row above, a full block fills its own cell and a pixel
+/// or two past it -- and inside the grid that is right: a window draws the
+/// letters whole where a terminal chops each one at its cell's edge.
+///
+/// Outside the grid there is no row above. The margin is the strip no cell
+/// reaches, and what is in it is the page's own ground and nothing else --
+/// so a glyph that overflowed into it was a mark on the window's edge
+/// belonging to no cell: the change map's half block along the top of the
+/// window, and the block a bar is drawn with beside it.
+fn clipped(rect: [f32; 4], uv: [f32; 4], grid: [f32; 2]) -> Option<([f32; 4], [f32; 4])> {
+    let [left, top, width, height] = rect;
+    if width <= 0.0 || height <= 0.0 {
+        return None;
+    }
+    let (kept_left, kept_top) = (left.max(0.0), top.max(0.0));
+    let (kept_right, kept_bottom) = ((left + width).min(grid[0]), (top + height).min(grid[1]));
+    if kept_right <= kept_left || kept_bottom <= kept_top {
+        return None;
+    }
+    let [from_u, from_v, to_u, to_v] = uv;
+    // Where each edge ended up, as a part of the whole picture: the atlas
+    // is read at the same place the pixels are drawn, or the glyph is
+    // squeezed into what is left of it rather than cut.
+    let across = |at: f32| from_u + (to_u - from_u) * (at - left) / width;
+    let down = |at: f32| from_v + (to_v - from_v) * (at - top) / height;
+    Some((
+        [
+            kept_left,
+            kept_top,
+            kept_right - kept_left,
+            kept_bottom - kept_top,
+        ],
+        [
+            across(kept_left),
+            down(kept_top),
+            across(kept_right),
+            down(kept_bottom),
+        ],
+    ))
+}
+
 /// How thick a line between two things is, in pixels.
 fn thickness(cell_height: f32) -> f32 {
     (cell_height * LINE).round().max(1.0)
@@ -2944,6 +3004,59 @@ mod tests {
         assert!(
             !lettered_behind(page.look(2, 0), &barred, 2, 0),
             "nor a cell with nothing in it"
+        );
+    }
+
+    /// A glyph is cut back to the grid, and its picture with it.
+    ///
+    /// Deliberate break: hand the rectangle back whole. A full block's
+    /// raster is taller than its cell, so the one on the first row reaches
+    /// above the grid and lands in the margin -- which is the strip no cell
+    /// reaches and is painted in the page's own ground, so what came out
+    /// was a dark line along the top of the window belonging to no cell.
+    ///
+    /// Or cut the rectangle and leave the picture alone: the glyph is then
+    /// squeezed into what is left of it rather than cut, which on a block
+    /// is invisible and on a letter is a letter of the wrong shape.
+    #[test]
+    fn a_glyph_is_cut_back_to_the_grid() {
+        let grid = [100.0, 50.0];
+        let whole = [0.0, 0.0, 1.0, 1.0];
+
+        // Three pixels of ten above the grid.
+        let (rect, uv) = clipped([0.0, -3.0, 10.0, 10.0], whole, grid).expect("some of it");
+        assert!(rect[1].abs() < f32::EPSILON, "starts at the grid");
+        assert!(
+            (rect[3] - 7.0).abs() < f32::EPSILON,
+            "and is that much less"
+        );
+        assert!((uv[1] - 0.3).abs() < 0.001, "and so does its picture");
+        assert!(
+            (uv[3] - 1.0).abs() < f32::EPSILON,
+            "which ends where it did"
+        );
+
+        // Inside it, untouched.
+        let inside = [2.0, 2.0, 10.0, 10.0];
+        let (rect, uv) = clipped(inside, whole, grid).expect("all of it");
+        assert_eq!(rect, inside, "nothing to cut");
+        assert_eq!(uv, whole);
+
+        // And off the far edge, which is the same question the other way.
+        let (rect, uv) = clipped([96.0, 0.0, 10.0, 10.0], whole, grid).expect("some of it");
+        assert!(
+            (rect[2] - 4.0).abs() < f32::EPSILON,
+            "cut at the right edge"
+        );
+        assert!((uv[2] - 0.4).abs() < 0.001, "and its picture with it");
+
+        assert!(
+            clipped([-20.0, 0.0, 10.0, 10.0], whole, grid).is_none(),
+            "none of it is in the grid"
+        );
+        assert!(
+            clipped([0.0, 60.0, 10.0, 10.0], whole, grid).is_none(),
+            "nor under it"
         );
     }
 
