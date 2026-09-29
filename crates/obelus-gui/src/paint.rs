@@ -274,6 +274,9 @@ const SHEENED: u32 = 2048;
 /// three ways -- see `held` in the shader, and `Turn`.
 const HELD_PLATE: u32 = 4096;
 
+/// The soft edge outside a pane or a box.
+const SHADOW: u32 = 8192;
+
 /// Where those four turns sit in the flags, two bits each, in the order
 /// `Turn::corners` puts them.
 const HELD_TURNS: u32 = 13;
@@ -326,6 +329,23 @@ const HELD_EDGE: f32 = 0.03;
 /// a run of words reads as a badge -- a thing to press -- rather than as
 /// the ground under what the reader is holding.
 const HELD_CORNER: f32 = 0.18;
+
+/// How far a shadow reaches past the thing casting it, as a share of a
+/// row's height.
+///
+/// Wide and faint rather than tight and dark: a tight one reads as an
+/// outline drawn in grey, which the page already has a rule for. What a
+/// shadow is for is the one thing a terminal cannot say at all -- that
+/// the thing is over the page rather than part of it.
+const SHADOW_SPREAD: f32 = 0.8;
+
+/// And how dark it is where it leaves the edge.
+///
+/// A tenth, which on a light page is a shade the eye reads without
+/// looking at and on a dark one is very little. That asymmetry is not
+/// worth correcting: a shadow on something already dark *is* less of a
+/// shadow, and a theme's page is the reader's choice.
+const SHADOW_INK: f32 = 0.12;
 
 const SEAM: f32 = 0.14;
 
@@ -930,6 +950,11 @@ impl Painter {
         // After the text, over cells the view left empty: a view draws its
         // glyph only where a picture could not be drawn.
         self.marks(said.marked, cell);
+        // And after all of it, because a shadow falls on what is behind
+        // the thing casting it and everything behind these has now been
+        // drawn. Before the caret, which is the reader's own place and
+        // is never in shadow.
+        self.shadows(&said, pane.filter(|_| moving.pane.is_none()), &framed, cell);
         // Over the cells and under the caret: the word being spelled is
         // going in at the caret, so the caret belongs at the place in it
         // the input method says.
@@ -2127,6 +2152,76 @@ impl Painter {
             );
         }
         [left, top, far, low]
+    }
+
+    /// The soft edge outside a pane and outside each box with a frame
+    /// round it.
+    ///
+    /// Not while the pane is still arriving. The frame is drawn once and
+    /// put back in two pieces, the pane's own slid up from where it set
+    /// out -- so a shadow, which is outside the pane and therefore in the
+    /// other piece, would sit at the edge the pane is *going* to have
+    /// while there is nothing under it yet. It arrives with the pane
+    /// instead, which is a fifth of a second later.
+    ///
+    /// Which is the one thing on this screen a terminal has no answer to
+    /// at all. A pane's edge, it draws with a rule; a box's, with a
+    /// frame of `╭─╮`. Both say *where* the thing stops and neither says
+    /// it is over anything, because a cell is a cell and there is
+    /// nowhere for a shadow to go. So this is added rather than drawn
+    /// better -- `shapes`'s own test says a thing said there has to be
+    /// one a terminal already answers -- and it is added in the front
+    /// end, from what the front end already knows: the rectangle it drew
+    /// the glass in, and which edge the thing is joined to.
+    fn shadows(
+        &mut self,
+        said: &Said<'_>,
+        pane: Option<[f32; 4]>,
+        framed: &[&Behind],
+        cell: CellSize,
+    ) {
+        let spread = cell.height * SHADOW_SPREAD;
+        if let (Some(glass), Some(behind)) = (pane, said.behind) {
+            // A pane is joined to the page along one edge and casts from
+            // the other, which is the same half plane its glass is cut
+            // to: a list standing on the status row throws its shadow up
+            // over the file, and one hanging from the top throws it down.
+            let joined = match behind.joined {
+                Joined::Above => HANGING,
+                Joined::Below => STANDING,
+                // Never here -- a box is `card_glass`'s.
+                Joined::Nowhere => 0,
+            };
+            self.shadow(glass, 0.0, joined, spread);
+        }
+        // And a box has four edges and corners, so it casts all round.
+        for card in framed {
+            let line = thickness(cell.height);
+            self.shadow(
+                outline(card.area, cell, line),
+                cell.width * FRAME_CORNER,
+                0,
+                spread,
+            );
+        }
+    }
+
+    /// One of them: the rectangle that casts it, and how far it reaches.
+    fn shadow(&mut self, box_: [f32; 4], radius: f32, joined: u32, spread: f32) {
+        let [left, top, far, low] = box_;
+        self.quads.push(Quad {
+            rect: [
+                left - spread,
+                top - spread,
+                spread.mul_add(2.0, far - left).max(1.0),
+                spread.mul_add(2.0, low - top).max(1.0),
+            ],
+            uv: box_,
+            colour: [0.0, 0.0, 0.0, SHADOW_INK],
+            flags: SHADOW | joined,
+            radius,
+            padding: [0; 2],
+        });
     }
 
     /// What is under a box with a frame round it, and the glass inside

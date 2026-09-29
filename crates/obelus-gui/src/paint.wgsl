@@ -384,6 +384,38 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
         glass += vec3<f32>(lit * 0.5 + far * 0.22);
         return vec4<f32>(glass, 1.0);
     }
+    // The soft edge outside a pane or a box, which is the one thing a
+    // terminal has no answer to at all: that the thing is *over* the
+    // page rather than part of it. A terminal says that with a rule, and
+    // a rule is a boundary between two subjects -- a different claim.
+    //
+    // `box` is what casts it and the quad reaches a spread past it on
+    // every side, so the spread is what is left over. A pane joined to
+    // the page casts from its one free edge, which is the same half
+    // plane `outside` gives its glass; a box joined to nothing casts
+    // from all four, round its corners.
+    if ((in.flags & 8192u) != 0u) {
+        let half = (in.box.zw - in.box.xy) * 0.5;
+        let middle = in.position.xy - (in.box.xy + half);
+        var joined = 0.0;
+        if ((in.flags & 16u) != 0u) {
+            joined = 1.0;
+        } else if ((in.flags & 128u) != 0u) {
+            joined = -1.0;
+        }
+        let distance = outside(middle, half, in.radius, joined);
+        // Nothing under the thing itself: a shadow is what falls on what
+        // is behind it, and the glass is already drawn.
+        if (distance <= 0.0) {
+            discard;
+        }
+        let spread = max(in.half_size.x - half.x, 1.0);
+        let fall = 1.0 - clamp(distance / spread, 0.0, 1.0);
+        // Squared, so it leaves the edge dark and is gone before it
+        // reaches the end: a shadow that fades in a straight line reads
+        // as a band of grey with an edge of its own.
+        return vec4<f32>(in.colour.rgb, in.colour.a * fall * fall);
+    }
     // A run the reader has hold of, whose corners do not all turn the
     // same way. Before the plain rounded solid, which it also is.
     if ((in.flags & 4096u) != 0u) {
