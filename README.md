@@ -1,6 +1,6 @@
 # Obelus
 
-A code reader, in a terminal or in a window of its own. **It doesn't want
+A code reader, in a window of its own or in a terminal. **It doesn't want
 you to type.**
 
 In the AI era every line you read is a line you did not write. Reading is the
@@ -32,17 +32,21 @@ irm https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.ps1
 ```
 
 Either one takes the latest release, checks what it downloaded against the
-release's own `SHA256SUMS`, and puts `ob` on your PATH.
+release's own `SHA256SUMS`, and puts **`obg`** on your PATH — Obelus in a
+window of its own.
 
-**`obg`, the same reader in a window**, is a second binary and is asked for
-by name. It is gvim's relation to vim rather than a second program: the same
-grid and the same keys, drawn with a font it carries instead of the
-terminal's, and the chords a terminal flattens into one byte arrive as
-themselves. Everything after `-s --` goes to the script:
+**`ob`, the same reader in a terminal**, is the other binary and is asked
+for by name. The two are gvim's relation to vim rather than two programs:
+the same grid, the same views and the same keys. What the window has is the
+presses a terminal flattens into one byte — `ctrl+i` apart from `Tab`,
+`ctrl+[` apart from `Escape` — and the marks compiled in rather than guessed
+at from whichever font the terminal was given. What the terminal has is that
+it is already open, and that it works over ssh. Everything after `-s --`
+goes to the script:
 
 ```
-curl -fsSL .../contrib/install.sh | sh -s -- --bin obg    # the window
-curl -fsSL .../contrib/install.sh | sh -s -- --bin both   # both of them
+curl -fsSL .../contrib/install.sh | sh -s -- --bin ob      # the terminal
+curl -fsSL .../contrib/install.sh | sh -s -- --bin both    # both of them
 ```
 
 A pipe into `iex` has nowhere to put an argument, so on Windows the script
@@ -50,17 +54,17 @@ is fetched first:
 
 ```powershell
 irm https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.ps1 -OutFile install.ps1
-.\install.ps1 -Binary obg      # or -Binary both
+.\install.ps1 -Binary ob       # or -Binary both
 ```
 
 `--dir` says where to put it, and `--help` lists the rest.
 
-On Linux, `obg` from the script is a binary and nothing else: a launcher
-needs a desktop entry and an icon beside it, and those are in the `.deb`,
-the `.rpm` and the AppImage rather than here. On a desktop, install one of
-those instead. There is no `obg` for musl at all — the window finds Vulkan,
-Wayland and X11 by `dlopen`, which a static binary cannot do — and the
-script says so rather than leaving you a thing that will not start.
+On Linux the script gives you a binary and nothing else, and a launcher
+needs a desktop entry and an icon beside it — so on a desktop install the
+`.deb`, the `.rpm` or the AppImage instead, which carry all three. And on
+musl there is no `obg` to install: the window finds Vulkan, Wayland and X11
+by `dlopen`, which a static binary cannot do, so the script says so and
+installs `ob`.
 
 [The releases](https://github.com/sunli829/obelus/releases) carry an archive
 for every platform as well as a `.deb`, an `.rpm`, an AppImage and a macOS
@@ -69,19 +73,20 @@ for every platform as well as a `.deb`, an `.rpm`, an AppImage and a macOS
 Or from source, which needs nothing but a stable Rust:
 
 ```
-cargo install --path crates/obelus-cli    # installs as `ob`
-cargo install --path crates/obelus-gui    # and as `obg`, in a window
+cargo install --path crates/obelus-gui    # installs as `obg`, in a window
+cargo install --path crates/obelus-cli    # and as `ob`, in the terminal
 ```
 
 ```
-ob                   # the welcome screen, on this directory
-ob src/main.rs       # read a file — its repository is the project
-ob ../another-repo   # a directory: that is the project
-obg src/main.rs      # the same file, in a window instead
+obg                  # the welcome screen, on this directory
+obg src/main.rs      # read a file — its repository is the project
+obg ../another-repo  # a directory: that is the project
+ob src/main.rs       # the same file, in the terminal instead
 ```
 
-A Nerd Font and a language server are both optional: without either, reading
-still works.
+A language server is optional, and without one reading still works. A Nerd
+Font matters only in the terminal — `obg` carries the marks in the binary,
+so it never asks.
 
 ## Building
 

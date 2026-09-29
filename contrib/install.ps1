@@ -6,7 +6,7 @@
 # first:
 #
 #   irm .../install.ps1 -OutFile install.ps1
-#   .\install.ps1 -Binary both
+#   .\install.ps1 -Binary ob
 #
 # It verifies what it downloaded against the release's own SHA256SUMS. A
 # script that pipes into a shell and then installs an unchecked binary has
@@ -14,9 +14,13 @@
 
 [CmdletBinding()]
 param(
-    # Which to install. `ob` is the terminal, `obg` the window.
-    [ValidateSet('ob', 'obg', 'both')]
-    [string] $Binary = 'ob',
+    # Which to install. `obg` is the window and `ob` is the terminal.
+    #
+    # The window by default, because that is the Obelus to meet first: the
+    # presses a terminal cannot report arrive as themselves, and the marks
+    # are in the binary rather than guessed at from somebody else's font.
+    [ValidateSet('obg', 'ob', 'both')]
+    [string] $Binary = 'obg',
 
     # A release to install. The default is the latest.
     [string] $Version,

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Obelus — a code reader</title>
-<meta name="description" content="Obelus is a code reader, in a terminal or in a window of its own. It doesn't want you to type. Its principles, and how to use it.">
+<meta name="description" content="Obelus is a code reader, in a window of its own or in a terminal. It doesn't want you to type. Its principles, and how to use it.">
 <link rel="icon" href="obelus.svg">
 <link rel="alternate" hreflang="zh-Hans" href="zh/">
 <link rel="stylesheet" href="style.css">
@@ -60,7 +60,7 @@
     <div class="hero">
       <div class="mark">÷</div>
       <h1>Obelus</h1>
-      <p class="lede">A code <strong>reader</strong>, in a terminal or in a window of its own.<br>It doesn't want you to type.</p>
+      <p class="lede">A code <strong>reader</strong>, in a window of its own or in a terminal.<br>It doesn't want you to type.</p>
       <p class="sub">In the AI era every line you read is a line you did not write. An <em>obelus</em> (÷, †) is the mark a scholar put in a manuscript's margin to flag a line as doubtful — a reader's mark, made while reading.</p>
 
       <div class="buttons">
@@ -80,7 +80,7 @@
       <h2><span class="num">01</span><span>Getting started</span></h2>
 
       <h3>Install</h3>
-      <p>One script per shell, and which you want is which shell you are in. Either one takes the latest release, checks what it downloaded against the release's own <code>SHA256SUMS</code>, and puts <code>ob</code> on your PATH.</p>
+      <p>One script per shell, and which you want is which shell you are in. Either one takes the latest release, checks what it downloaded against the release's own <code>SHA256SUMS</code>, and puts <code>obg</code> on your PATH — Obelus in a window of its own.</p>
 
       <h4>Linux and macOS</h4>
       <pre><code>curl -fsSL https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.sh | sh</code></pre>
@@ -88,15 +88,15 @@
       <h4>Windows, in PowerShell</h4>
       <pre><code>irm https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.ps1 | iex</code></pre>
 
-      <h4>The window as well</h4>
-      <p><code>obg</code> is a second binary and is asked for by name. Everything after <code>-s --</code> goes to the script; a pipe into <code>iex</code> has nowhere to put an argument, so on Windows the script is fetched first instead.</p>
+      <h4>The terminal one as well</h4>
+      <p><code>ob</code> is the other binary and is asked for by name. Everything after <code>-s --</code> goes to the script; a pipe into <code>iex</code> has nowhere to put an argument, so on Windows the script is fetched first instead.</p>
 
       <pre><code>curl -fsSL https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.sh | sh -s -- --bin both</code></pre>
 
       <pre><code>irm https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.ps1 -OutFile install.ps1
 .\install.ps1 -Binary both</code></pre>
 
-      <p><code>--bin obg</code> is the window on its own, <code>--dir</code> says where to put it, and <code>--help</code> lists the rest. <a href="https://github.com/sunli829/obelus/releases">The releases</a> carry an archive for every platform as well as a <code>.deb</code>, an <code>.rpm</code>, an AppImage and a macOS <code>.app</code> — and on a Linux desktop one of those is the one to install, because <code>obg</code> from the script is a binary and nothing else, while a launcher needs a desktop entry and an icon beside it. There is no <code>obg</code> for musl at all: the window finds Vulkan, Wayland and X11 by <code>dlopen</code>, which a static binary cannot do, and the script says so rather than leaving you something that will not start.</p>
+      <p><code>--bin ob</code> is the terminal one on its own, <code>--dir</code> says where to put it, and <code>--help</code> lists the rest. <a href="https://github.com/sunli829/obelus/releases">The releases</a> carry an archive for every platform as well as a <code>.deb</code>, an <code>.rpm</code>, an AppImage and a macOS <code>.app</code> — and on a Linux desktop one of those is the one to install, because what the script gives you is a binary and nothing else, while a launcher needs a desktop entry and an icon beside it. On musl there is no <code>obg</code> at all: the window finds Vulkan, Wayland and X11 by <code>dlopen</code>, which a static binary cannot do, so the script says so and installs <code>ob</code>.</p>
 
       <h4>From source</h4>
       <p>Which needs nothing but a stable Rust toolchain (edition 2024).</p>
@@ -104,13 +104,13 @@
       <pre><code>git clone https://github.com/sunli829/obelus
 cd obelus
 
-# installs as `ob` into ~/.cargo/bin
-cargo install --path crates/obelus-cli
-
-# installs as `obg`: the same reader, in a window of its own
+# installs as `obg` into ~/.cargo/bin: Obelus in a window of its own
 cargo install --path crates/obelus-gui
 
-# or just build them: target/release/ob and target/release/obg
+# installs as `ob`: the same reader, in the terminal
+cargo install --path crates/obelus-cli
+
+# or just build them: target/release/obg and target/release/ob
 cargo build --release</code></pre>
 
       <h4>Worth having as well</h4>
@@ -121,10 +121,10 @@ cargo build --release</code></pre>
       </ul>
 
       <h3>Run it</h3>
-      <pre><code>ob                   # nothing: the welcome screen, on this directory
-ob src/main.rs       # read a file — its repository is the project
-ob ../another-repo   # a directory: that is the project
-obg src/main.rs      # the same file, in a window instead</code></pre>
+      <pre><code>obg                  # nothing: the welcome screen, on this directory
+obg src/main.rs      # read a file — its repository is the project
+obg ../another-repo  # a directory: that is the project
+ob src/main.rs       # the same file, in the terminal instead</code></pre>
 
       <h3>The first five minutes</h3>
       <ol>
@@ -160,7 +160,7 @@ obg src/main.rs      # the same file, in a window instead</code></pre>
         <li><span>Worktrees of one repository share one set of notes, and two windows never erase each other</span><a class="where" href="#many">Many windows ›</a></li>
         <li><span>One file, more than one reading — and more than one language</span><a class="where" href="#what">Reading code ›</a></li>
         <li><span>No modes: keys work the way they do in VS Code or Emacs, not the way they do in vim or helix</span><a class="where" href="#keys">Keys ›</a></li>
-        <li><span>The same reader in a terminal or in a window of its own, with the keys a terminal cannot send</span><a class="where" href="#what">Reading code ›</a></li>
+        <li><span>The same reader in a window of its own or in a terminal, with the keys a terminal cannot send</span><a class="where" href="#what">Reading code ›</a></li>
       </ul>
     </section>
     <section id="tenets">
@@ -225,7 +225,7 @@ obg src/main.rs      # the same file, in a window instead</code></pre>
         <div class="card">
           <h4>In a terminal, or in a window</h4>
           <ul>
-            <li><code>ob</code> is the terminal and <code>obg</code> is a window — gvim's relation to vim, not a second program: the same grid, the same views, the same keys</li>
+            <li><code>obg</code> is a window and <code>ob</code> is the terminal — gvim's relation to vim, not a second program: the same grid, the same views, the same keys</li>
             <li>The window is for the two things a terminal cannot give. It cannot tell <kbd>Ctrl+i</kbd> from <kbd>Tab</kbd>, <kbd>Ctrl+m</kbd> from <kbd>Enter</kbd> or <kbd>Ctrl+[</kbd> from <kbd>Esc</kbd> — one byte each — and most send nothing at all for <kbd>Ctrl+Shift+X</kbd></li>
             <li>And it draws with a font it carries rather than one it hopes you installed: the marks are compiled in, so there are no boxes and no switch to find</li>
             <li>It draws its own pixels, so the caret and the lists move rather than jump, and what an input method is spelling is on the page before it is a character</li>

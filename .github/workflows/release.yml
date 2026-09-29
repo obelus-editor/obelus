@@ -2,11 +2,13 @@
 # `.rpm`, an AppImage, a macOS bundle, and a GitHub release with all of it
 # on it.
 #
-# Two binaries, and they are shipped apart rather than together. `ob` is the
-# terminal and `obg` is the window -- gvim's relation to vim -- and a reader
-# who wants one has no use for the other's forty megabytes. Which is also
-# why the static builds carry only `ob`: a musl binary cannot `dlopen`, and
-# the window finds Vulkan, Wayland and X11 exactly that way.
+# Two binaries, and they are shipped apart rather than together. `obg` is
+# the window and `ob` is the terminal -- gvim's relation to vim -- and a
+# reader who wants one has no use for the other's forty megabytes. Which is
+# also why the static builds carry only `ob`: a musl binary cannot `dlopen`,
+# and the window finds Vulkan, Wayland and X11 exactly that way. That is the
+# one place the order matters: `contrib/install.sh` installs the window by
+# default, and on musl it says why it cannot and installs the terminal one.
 name: Release
 
 on:

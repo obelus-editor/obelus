@@ -2,7 +2,7 @@
 # Fetches a released Obelus and puts it somewhere on your PATH.
 #
 #   curl -fsSL https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.sh | sh
-#   curl -fsSL .../install.sh | sh -s -- --bin both --dir /usr/local/bin
+#   curl -fsSL .../install.sh | sh -s -- --bin ob --dir /usr/local/bin
 #
 # POSIX sh, because the one machine this has to work on is somebody else's.
 # What it needs is `uname`, `tar`, `curl` or `wget`, and something that
@@ -15,7 +15,14 @@
 set -eu
 
 repository=sunli829/obelus
-binaries=ob
+# The window, because that is the Obelus to meet first: the presses a
+# terminal cannot report arrive as themselves and the marks are in the
+# binary rather than guessed at from somebody else's font. The terminal one
+# is the same reader and is asked for by name.
+binaries=obg
+# What `--bin` said, which matters in one place: a machine that cannot have
+# the window at all -- see `musl` below.
+asked=
 tag=
 directory=${OBELUS_INSTALL_DIR:-$HOME/.local/bin}
 
@@ -26,8 +33,8 @@ usage() {
     cat <<'USAGE'
 Usage: install.sh [options]
 
-  --bin ob|obg|both   Which to install. `ob` is the terminal, `obg` the
-                      window. The default is `ob`.
+  --bin obg|ob|both   Which to install. `obg` is the window and `ob` is
+                      the terminal. The default is `obg`.
   --version vX.Y.Z    A release to install. The default is the latest.
   --dir PATH          Where to put it. The default is ~/.local/bin, or
                       $OBELUS_INSTALL_DIR where that is set.
@@ -37,7 +44,7 @@ USAGE
 
 while [ $# -gt 0 ]; do
     case $1 in
-        --bin) binaries=${2:-}; shift 2 ;;
+        --bin) asked=${2:-}; binaries=$asked; shift 2 ;;
         --version) tag=${2:-}; shift 2 ;;
         --dir) directory=${2:-}; shift 2 ;;
         --help|-h) usage; exit 0 ;;
@@ -96,13 +103,23 @@ case $system in
         target=$architecture-unknown-linux-$libc
         # The window finds Vulkan, Wayland and X11 by `dlopen`, which a
         # static musl binary cannot do, so there is no musl `obg` to fetch.
-        case " $binaries " in
-            *' obg '*)
-                if [ "$libc" = musl ]; then
-                    die 'obg is not built for musl, because a static binary cannot dlopen the drivers it needs'
-                fi
-                ;;
-        esac
+        #
+        # Asked for by name that is an error, because the reader said which
+        # one they wanted. Arrived at as the default it is not: they said
+        # nothing, and what this machine can have is the terminal one. A
+        # default that refused to install anything would be the script
+        # holding out for a binary that does not exist.
+        if [ "$libc" = musl ]; then
+            case " $binaries " in
+                *' obg '*)
+                    if [ "$asked" = obg ]; then
+                        die 'obg is not built for musl, because a static binary cannot dlopen the drivers it needs'
+                    fi
+                    say 'obg is not built for musl -- a static binary cannot dlopen the drivers a window needs -- so this is ob, the same reader in a terminal.'
+                    binaries=ob
+                    ;;
+            esac
+        fi
         ;;
     Darwin)
         # One binary for both architectures, so nothing is asked about this
