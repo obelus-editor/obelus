@@ -221,6 +221,14 @@ fn repository(path: &Path) -> Option<gix::Repository> {
 /// What survives it is what the conversion actually needs: `core.autocrlf`
 /// and `.gitattributes` are both read at this level. Measured, both of
 /// them.
+///
+/// And the reduction is not the whole of it, which is the part that had to
+/// be found out. gix takes the level it is given and then *puts it back*
+/// to full where `safe.directory` covers the path -- a line plenty of
+/// readers have in their own config as `*`, and one GitHub's runner image
+/// has. On those machines the reduction bought nothing at all, and Obelus
+/// ran the program a stranger's clone named. So the section filter says it
+/// again in the one place it decides: see `nothing_the_repository_named`.
 fn without_running_anything(path: &Path) -> Option<gix::Repository> {
     let from = if path.is_dir() { path } else { path.parent()? };
     let trust = gix::sec::Trust::Reduced;
@@ -246,6 +254,7 @@ fn without_running_anything(path: &Path) -> Option<gix::Repository> {
         // What discovery handed back is the `.git` directory itself, and
         // opening expects a worktree unless told otherwise.
         .open_path_as_is(true)
+        .filter_config_section(nothing_the_repository_named)
         .with(trust);
     gix::open_opts(git_dir, options).ok()
 }
@@ -712,6 +721,29 @@ pub fn head_text(path: &Path) -> Option<String> {
     let entry = tree.peel_to_entry_by_path(&relative).ok()??;
     let object = entry.object().ok()?;
     Some(as_checked_out(&repository, &object.data, &relative))
+}
+
+/// Whether a section of the configuration may be read from.
+///
+/// Anything but the repository's own file. gix's own answer is "a section
+/// whose file is fully trusted, or which did not come from the repository"
+/// -- and the first half of that is the half that moves: `safe.directory`
+/// puts a reduced level back to full, so the repository's own config
+/// becomes trusted and `filter.*` becomes a program Obelus runs. This
+/// answer does not move, because it does not ask about trust at all.
+///
+/// `filter.*` is the only place a repository names a program that Obelus
+/// would run, and `extract_drivers` asks this before it takes one. What
+/// this does not touch is `core.autocrlf` and `.gitattributes`: the
+/// conversion reads the resolved file directly, without the filter, which
+/// is why the margin is still honest about a project storing `\n` and
+/// checking out `\r\n`.
+///
+/// The reader's own global config is not the repository's, so a
+/// `filter.*` they wrote themselves still runs. That is the line: what
+/// Obelus refuses is a program named by the thing it was pointed at.
+fn nothing_the_repository_named(meta: &gix::config::file::Metadata) -> bool {
+    meta.source.kind() != gix::config::source::Kind::Repository
 }
 
 /// A stored blob as it would be on disk.

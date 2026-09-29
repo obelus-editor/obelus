@@ -38,7 +38,14 @@ const HEIGHT: u16 = 24;
 ///
 /// Generous: it is a shell script starting up, and a test that fails because
 /// a machine was busy is a test nobody trusts.
-const PATIENCE: Duration = Duration::from_secs(10);
+///
+/// Ten seconds was not generous enough, which the first CI run said and
+/// this machine never could. A hundred and eighteen tests in this binary
+/// run at once, most of them starting a shell script of their own, on a
+/// runner with two cores -- so the thing being waited on is not a script
+/// starting but a machine with more to do than cores to do it with. It
+/// costs nothing where nothing is wrong: it is a deadline, not a sleep.
+const PATIENCE: Duration = Duration::from_secs(60);
 
 /// Where these tests let Obelus keep things about agents.
 ///
