@@ -382,6 +382,52 @@ fn what_is_wrong_with_this_line_is_opened_under_it() {
     );
 }
 
+/// And it puts nothing in the margin, which is git's news and nothing else.
+///
+/// A complaint is said twice already -- the underline under the word, and
+/// the prose framed under the line -- so a bar out in the margin is the
+/// same news a third time, in the one cell it would have to share with
+/// marks whose colours it cannot be told apart from. Which is the rule
+/// `draw_marker` is written to and the one the block's own bar broke: a
+/// `Held::Removed` block earns that bar because the lines it stands for
+/// are not in the file and nothing else says so, and a complaint's block
+/// is prose about a line that is.
+///
+/// Deliberate break: widen the block's condition back to
+/// `block.kind != Held::Message`. Every row of the frame grows a bar in
+/// the severity's colour.
+#[test]
+fn a_complaint_puts_nothing_in_the_margin() {
+    let (_scratch, mut app, path) = editing("trouble-margin", "fn main() {\n    nmae;\n}\n");
+    app.publish_for_test(published(&path, 1, 4, 8, 1));
+    // Onto the line that has something wrong with it, which is the only
+    // line a complaint ever opens under.
+    support::press(&mut app, crossterm::event::KeyCode::Down);
+
+    let dump = support::render(&mut app, 60, 12);
+    let rows: Vec<&str> = support::text_block(&dump)
+        .lines()
+        .filter(|row| row.contains('|'))
+        .map(|row| &row[row.find('|').expect("a divider") + 1..])
+        .collect();
+    let top = rows
+        .iter()
+        .position(|row| row.contains('\u{250c}'))
+        .unwrap_or_else(|| panic!("the complaint is not framed:\n{dump}"));
+    let bottom = rows
+        .iter()
+        .position(|row| row.contains('\u{2514}'))
+        .unwrap_or_else(|| panic!("the frame has no foot:\n{dump}"));
+
+    for row in rows.iter().take(bottom + 1).skip(top) {
+        assert_eq!(
+            row.chars().next(),
+            Some(' '),
+            "a mark in the margin beside the complaint:\n{dump}"
+        );
+    }
+}
+
 /// A complaint about the file's last line still opens under it.
 ///
 /// The row after the last line is a place a block can hang, which nothing

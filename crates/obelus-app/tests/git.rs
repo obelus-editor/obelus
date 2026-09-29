@@ -279,6 +279,112 @@ fn a_real_repository_gives_the_three_markers() {
     assert!(Changes::between(&committed, &working).is_empty());
 }
 
+/// An opened deletion is tinted exactly as tall as the lines it stands for.
+///
+/// `Hunk::covers` answers one line for a hunk of no lines -- the line it
+/// sits in front of, so a reader standing there can reach it -- and that
+/// is "which line gets at this hunk", not "which lines this hunk is".
+/// Tinted from the second, the band ran a row past the block and laid
+/// `change_removed` over a line that had not changed: the colour says
+/// those lines are gone, and that one is not. It showed as a band of
+/// colour a row longer than the bar beside it.
+///
+/// Deliberate break: drop the `hunk.lines > 0` filter where `opened` is
+/// built in `editor::render`. The row under the block wears the deletion's
+/// ground again, and the band outruns the bar.
+#[test]
+fn an_opened_deletion_is_tinted_only_where_its_lines_are() {
+    use obelus_app::app::App;
+    use obelus_buffer::Buffer;
+
+    let committed: String = (0..20).map(|line| format!("line {line}\n")).collect();
+    let repository = Repository::new("tinted", &committed);
+    // Two lines gone, so the block that stands for them has two rows.
+    let working: String = (0..20)
+        .filter(|line| !(5..7).contains(line))
+        .map(|line| format!("line {line}\n"))
+        .collect();
+    repository.write(&working);
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    support::lay_out(&mut app, 34, 14);
+    support::press_alt(&mut app, 'n');
+    support::press_alt(&mut app, 'd');
+
+    // Read off the cells: a tint is a background, and the dump names a
+    // style by its colours rather than saying which is which.
+    let cells = support::cells_of(&mut app, 34, 14);
+    let page = cells[(0, 0)].bg;
+    // Past the margin, which is never tinted -- it has marks of its own to
+    // stay legible.
+    let tinted: Vec<u16> = (0..12).filter(|y| cells[(2, *y)].bg != page).collect();
+    assert_eq!(
+        tinted,
+        vec![5, 6],
+        "the tint is not the block's two rows: {:?}",
+        (0..12)
+            .map(|y| cells[(2, y)].bg)
+            .collect::<Vec<ratatui::style::Color>>()
+    );
+}
+
+/// A deletion the reader has opened says so once.
+///
+/// The mark on the seam exists because the removed lines have no row of
+/// their own, and opening the hunk is exactly the act of giving them one:
+/// the bar down the block says it from there, and the boundary mark under
+/// the block is the same fact a second time. The line below did not
+/// change, which is the whole reason a deletion is a boundary rather than
+/// a bar, so what is left there is nothing at all.
+///
+/// Deliberate break: drop the `given_rows` clause from the margin's
+/// condition in `editor::render`. The row under the block wears `\u{2594}`
+/// again, under a bar that has already said it.
+#[test]
+fn an_opened_deletion_is_marked_by_its_block_and_not_twice() {
+    use obelus_app::app::App;
+    use obelus_buffer::Buffer;
+
+    let committed: String = (0..30).map(|line| format!("line {line}\n")).collect();
+    let repository = Repository::new("opened", &committed);
+    // Three lines gone, so the block that stands for them has three rows.
+    let working: String = (0..30)
+        .filter(|line| !(5..8).contains(line))
+        .map(|line| format!("line {line}\n"))
+        .collect();
+    repository.write(&working);
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    support::lay_out(&mut app, 30, 14);
+    // On to the deletion, which is the only change in the file.
+    support::press_alt(&mut app, 'n');
+    let margin = |app: &mut App| -> String {
+        let dump = support::render(app, 30, 14);
+        support::text_block(&dump)
+            .lines()
+            .filter(|row| !row.is_empty())
+            .take(12)
+            .map(|row| row.chars().nth(3).unwrap_or(' '))
+            .collect()
+    };
+
+    // Shut, the boundary is all there is to say: the lines are not there.
+    assert_eq!(
+        margin(&mut app),
+        "     \u{2594}      ",
+        "the seam is not marked with the hunk shut"
+    );
+
+    support::press_alt(&mut app, 'd');
+    // Open, the block's own three rows say it, and the line below them is
+    // a line that did not change.
+    assert_eq!(
+        margin(&mut app),
+        "     \u{2590}\u{2590}\u{2590}    ",
+        "the seam is marked twice with the hunk open"
+    );
+}
+
 /// The margin on screen: one column at the far left, a solid bar for a line
 /// that differs and a mark hugging the seam where lines are missing.
 #[test]

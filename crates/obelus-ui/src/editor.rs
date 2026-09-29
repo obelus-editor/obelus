@@ -707,12 +707,23 @@ impl Widget for EditorView<'_> {
 
         // The hunks the reader has opened, worked out once: every row asks
         // whether it is one of their lines.
+        //
+        // Which a deletion has none of, so it is not here at all. `covers`
+        // answers one line for a hunk of no lines -- the line it sits in
+        // front of, so that a reader standing there can reach it -- and
+        // that is "which line gets at this hunk" rather than "which lines
+        // this hunk is". Tinted from the second, the band ran a row past
+        // the block and laid `change_removed` over a line that had not
+        // changed: the colour says those lines are gone, and that one is
+        // not. What an opened deletion is tinted by is the block's own
+        // fill, which is exactly as tall as the lines it stands for.
         let opened: Vec<(&obelus_git::Hunk, Color)> = self
             .opened
             .iter()
             .filter_map(|anchor| {
                 self.changes
                     .and_then(|changes| changes.hunk_at(*anchor))
+                    .filter(|hunk| hunk.lines > 0)
                     .map(|hunk| (hunk, self.theme.marker_background(hunk.marker())))
             })
             .collect();
@@ -843,30 +854,25 @@ impl Widget for EditorView<'_> {
                         // git had anything to say would be a bar that
                         // means something it does not.
                         //
-                        // Not a message. A message is said once, by the
-                        // rule under it: a bar down the side of prose the
-                        // reader cannot open, beside a boundary already
-                        // drawn, is two marks for one fact -- and in a
-                        // preview the bar was the only one of the two that
-                        // could not be acted on.
-                        if block.kind != obelus_buffer::Held::Message {
+                        // git's news and nothing else, which is the rule
+                        // `draw_marker` is written to and the one this
+                        // used to break. A message is said once, by the
+                        // rule under it -- a bar down the side of prose
+                        // the reader cannot open, beside a boundary
+                        // already drawn, is two marks for one fact, and in
+                        // a preview the bar was the only one of the two
+                        // that could not be acted on. A complaint is said
+                        // twice already, by the underline under the word
+                        // and by the prose framed under the line, so a
+                        // third mark out here is the same news a third
+                        // time -- in a cell it has to share with marks
+                        // whose colours it cannot be told apart from.
+                        if block.kind == obelus_buffer::Held::Removed {
                             draw_marker(
                                 area.x,
                                 y,
                                 Marker::Modified,
-                                match block.kind {
-                                    obelus_buffer::Held::Removed => self.theme.change_removed,
-                                    // How bad it is, in the colour the same
-                                    // trouble underlines the line in: one
-                                    // complaint, one colour, whichever of
-                                    // them the reader's eye lands on first.
-                                    obelus_buffer::Held::Wrong => {
-                                        block.severity.map_or(self.theme.gutter, |severity| {
-                                            self.theme.colour_for(Some(severity.kind()))
-                                        })
-                                    }
-                                    obelus_buffer::Held::Message => self.theme.gutter,
-                                },
+                                self.theme.change_removed,
                                 cells,
                             );
                         }
@@ -1024,9 +1030,20 @@ impl Widget for EditorView<'_> {
                 // The margin marks the line, whether or not this is the
                 // row its number is on: a wrapped line is one line, and a
                 // change to it is a change to all of it.
+                //
+                // Except the boundary a deletion left, once the reader has
+                // opened it. That mark exists because the removed lines
+                // have no row of their own, and opening the hunk is
+                // exactly the act of giving them one -- so the bar down
+                // the block above says it, and saying it again on the line
+                // below is two marks for one fact. The line itself did not
+                // change, which is the whole reason a deletion is a
+                // boundary and not a bar; `Added` and `Modified` keep
+                // theirs open or shut, because there the line *did*.
                 if margin > 0
                     && let Some(changes) = self.changes
                     && let Some(marker) = changes.marker_at(line)
+                    && !(marker == Marker::Removed && given_rows(buffer, line))
                 {
                     draw_marker(area.x, y, marker, self.theme.marker_colour(marker), cells);
                 }
@@ -1314,6 +1331,18 @@ struct Placement {
     row: WrapRow,
     /// How many cells of the line are off the left-hand edge.
     left: usize,
+}
+
+/// Whether the lines a deletion took away have rows of their own here.
+///
+/// Asked of the buffer rather than of what was drawn, and asked only of a
+/// line a deletion is in front of: a block scrolled off the top of the
+/// screen is still a block the reader opened, and a boundary mark that
+/// came back as they scrolled would be the margin changing its mind.
+fn given_rows(buffer: &Buffer, line: LineNumber) -> bool {
+    buffer
+        .block_above(line)
+        .is_some_and(|block| !block.is_empty() && block.kind == obelus_buffer::Held::Removed)
 }
 
 /// One cell of margin, saying what happened to a line.
