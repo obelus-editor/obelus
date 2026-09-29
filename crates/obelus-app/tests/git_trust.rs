@@ -63,6 +63,13 @@ fn safe_directory_does_not_let_a_repository_run_a_program() {
     let repository = directory.join("clone");
     std::fs::create_dir_all(&repository).expect("the repository");
     git(&repository, &["init", "--quiet", "--initial-branch=master"]);
+    // What this writes is what a checkout would write -- the same reason
+    // `git.rs` turns it off in the repositories it builds. Git for Windows
+    // installs `core.autocrlf=true` system-wide, and the diff base is the
+    // blob a checkout would put on disk, so `hello\n` came back `hello\r\n`
+    // and the line that says the content survived the refusal went red
+    // without the refusal having anything to do with it.
+    git(&repository, &["config", "core.autocrlf", "false"]);
     std::fs::write(repository.join("file.rs"), "hello\n").expect("the file");
     std::fs::write(repository.join(".gitattributes"), "* filter=evil\n").expect("the attributes");
     git(&repository, &["add", "--all"]);
