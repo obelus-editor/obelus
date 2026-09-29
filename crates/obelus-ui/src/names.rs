@@ -140,8 +140,24 @@ impl Widget for NamesView<'_> {
             self.draw_row(cells, room, y, row, index, here);
         }
 
-        if scrolls {
-            scrollbar(cells, list, visible.start, rows.len(), self.theme);
+        let bar = scrolls
+            .then(|| scrollbar(cells, list, visible.start, rows.len(), self.theme))
+            .flatten();
+        // And where the list has got to, for a front end that can draw it
+        // arriving rather than simply being there. The bar's column comes
+        // off whether or not there is a bar in it, unlike the rows above:
+        // what says this is the same band as the one on the frame before
+        // is the region, and a list that grew past the screen while it was
+        // open would otherwise become a different one at that moment.
+        if let Ok(top) = i64::try_from(visible.start) {
+            crate::shapes::scrolled(
+                Rect {
+                    width: list.width.saturating_sub(SCROLLBAR_WIDTH),
+                    ..list
+                },
+                top,
+                bar,
+            );
         }
         foot(cells, area, &hints, self.theme);
     }

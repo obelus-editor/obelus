@@ -47,8 +47,8 @@ use crate::{
     blink::Blink,
     font::Fonts,
     grid::{
-        Barred, Behind, Capped, Cells, Marked, Marking, Measured, Page, Parted, Ruled, Said,
-        Sheened, Spelling, Stroked, Ticked, Update,
+        Barred, Behind, Capped, Cells, Marked, Marking, Measured, Page, Parted, Rolled, Ruled,
+        Said, Sheened, Spelling, Stroked, Ticked, Update,
     },
     keys,
     motion::{Motion, Wake},
@@ -75,6 +75,44 @@ pub(crate) fn show(app: App) -> Result<()> {
     let mut showing = Showing::new(app, events.create_proxy());
     events.run_app(&mut showing).context("the window stopped")?;
     showing.outcome()
+}
+
+/// A band of rows on the frame: a list, and where it has got to.
+///
+/// What the window keeps about one between frames, which is the whole of
+/// how a scroll is known: a band that scrolled and a band whose every row
+/// changed are the same handful of differing cells, and only `top` says
+/// which happened.
+#[derive(Clone, Debug)]
+struct Rolling {
+    /// The rows it is drawn in, which is also what says it is the same
+    /// band as the one on the frame before.
+    room: Rect,
+    /// How far down its list it has got.
+    top: i64,
+    /// The page as it was when the slide it is in began, or `None` where
+    /// it is not in one.
+    ///
+    /// Per band, and shared. The rows a list has scrolled past are not on
+    /// the new page at all, and the only place they exist is the page it
+    /// scrolled off -- which is a different page for each band, because
+    /// each begins its slide at its own moment: a band that jumped too far
+    /// to draw while another was sliding took no page of its own, and its
+    /// next step would otherwise have been filled out of one from before
+    /// that jump. One clone of the page a frame however many bands hold
+    /// it, because what they hold is the same picture and none of them
+    /// writes to it.
+    before: Option<Arc<Page>>,
+    /// The bar beside it, where it has one.
+    bar: Option<Bar>,
+    /// Which row that bar's mark was on when the slide under way began,
+    /// or `None` where nothing is under way.
+    ///
+    /// The slide's other end, and the reason it is kept rather than
+    /// worked out: both ends have to be rows the bar was *drawn* at, or
+    /// the mark sets out from somewhere it was never drawn and steps back
+    /// to catch up.
+    origin: Option<u16>,
 }
 
 /// Everything the window has, and Obelus on the other side of it.
@@ -170,30 +208,15 @@ struct Showing {
     stroked: Vec<Stroked>,
     /// And on the one being laid out.
     stroking: Vec<Stroked>,
-    /// Which band of rows is a list, how far down it the band has got and
-    /// what bar says so, on the frame being shown.
-    scrolled: Option<(Rect, i64)>,
+    /// Which bands of rows are lists, how far down each has got and what
+    /// bar says so, on the frame being shown.
+    ///
+    /// As many as the screen has one of: a hover over a file is a band
+    /// and so is the file under it, and which of them moved is not which
+    /// of them the frame mentioned last.
+    scrolled: Vec<Rolling>,
     /// And on the frame being laid out.
-    scrolling: Option<(Rect, i64)>,
-    /// The bar beside the band being shown.
-    bar: Option<Bar>,
-    /// Which row its mark was on when the slide under way began.
-    ///
-    /// The slide's other end, and the reason it is kept rather than
-    /// worked out: both ends have to be rows the bar was *drawn* at, or
-    /// the mark sets out from somewhere it was never drawn and steps
-    /// back to catch up.
-    bar_origin: Option<u16>,
-    /// And the one being laid out.
-    barring: Option<Bar>,
-    /// The page as it was before the frame being shown.
-    ///
-    /// Kept only while there is a band that could move, and for one
-    /// reason: the rows a list has scrolled past are not on the new page
-    /// at all, and a band catching up has to draw them. History, which is
-    /// what it is for -- not a stand-in for anything that is still going
-    /// on.
-    before: Option<Page>,
+    scrolling: Vec<Rolling>,
     /// What is under the pane on the frame being shown, where there is
     /// one.
     behind: Option<Behind>,
@@ -272,12 +295,8 @@ impl Showing {
             stroked: Vec::new(),
             stroking: Vec::new(),
             ruling: Vec::new(),
-            scrolled: None,
-            scrolling: None,
-            bar: None,
-            barring: None,
-            bar_origin: None,
-            before: None,
+            scrolled: Vec::new(),
+            scrolling: Vec::new(),
             behind: None,
             behinding: None,
             cards: Vec::new(),
@@ -637,11 +656,16 @@ impl ApplicationHandler<Waking> for Showing {
                 let was = self.page.caret();
                 let whose_was = self.page.whose();
                 let had_a_pane = self.behind.is_some();
-                let was_at = self.scrolled;
+                let had_a_card = !self.cards.is_empty();
+                // Cloned rather than taken: a wake with no whole frame
+                // in it leaves what is on the screen alone, and a band
+                // that had been emptied here would be one the next frame
+                // has nothing to compare against -- and one the drawing
+                // stops asking about in the middle of its slide.
+                let was_at = self.scrolled.clone();
                 // Kept only where a band could move, because that is the
                 // only thing it is for.
-                let before = was_at.map(|_| self.page.clone());
-                let bar_was = self.bar.map(|bar| bar.mark);
+                let before = (!was_at.is_empty()).then(|| Arc::new(self.page.clone()));
                 let mut drew = false;
                 let mut sized = None;
                 let mut faces = None;
@@ -699,8 +723,13 @@ impl ApplicationHandler<Waking> for Showing {
                             }
                         }
                         Update::Scrolled { area, top, bar } => {
-                            self.scrolling = Some((area, top));
-                            self.barring = bar;
+                            self.scrolling.push(Rolling {
+                                room: area,
+                                top,
+                                before: None,
+                                bar,
+                                origin: None,
+                            });
                         }
                         Update::Ticked { area, on } => {
                             self.ticking.push(Ticked { area, on });
@@ -764,8 +793,7 @@ impl ApplicationHandler<Waking> for Showing {
                             self.stroked = std::mem::take(&mut self.stroking);
                             self.behind = self.behinding.take();
                             self.cards = std::mem::take(&mut self.carding);
-                            self.scrolled = self.scrolling.take();
-                            self.bar = self.barring.take();
+                            self.scrolled = std::mem::take(&mut self.scrolling);
                             drew = true;
                         }
                         cells => drew |= self.page.apply(cells),
@@ -801,6 +829,16 @@ impl ApplicationHandler<Waking> for Showing {
                     (true, false) => self.motion.pane_shut(),
                     _ => {}
                 }
+                // And a box over the page, the same way and for the same
+                // reason. Whether there is one rather than which one:
+                // a completion list redrawn on every character the reader
+                // types is the same box, and one that came up again on
+                // each of them would be a flicker under their hands.
+                match (had_a_card, self.cards.is_empty()) {
+                    (false, false) => self.motion.card_opened(Instant::now()),
+                    (true, true) => self.motion.card_shut(),
+                    _ => {}
+                }
                 // A band that moved is the same band showing a different
                 // part of its list. The same band, because a list that was
                 // replaced by another one in the same place has not
@@ -812,28 +850,44 @@ impl ApplicationHandler<Waking> for Showing {
                 // second of rows nobody is reading. It is also the one
                 // bound that makes the drawing possible: the rows it left
                 // behind exist on one page, and that page is a screenful.
-                if let (Some((room, before_top)), Some((now_room, top))) = (was_at, self.scrolled)
-                    && room == now_room
-                    && top != before_top
-                    && top.abs_diff(before_top) <= u64::from(room.height)
-                {
+                let now = Instant::now();
+                for band in &mut self.scrolled {
+                    let Some(was) = was_at.iter().find(|was| was.room == band.room) else {
+                        continue;
+                    };
+                    // What it is already counting from, where it is in the
+                    // middle of a slide.
+                    band.before.clone_from(&was.before);
+                    // Where the bar's mark set out, carried over while the
+                    // slide it belongs to runs: both ends have to be rows
+                    // the bar was *drawn* at, or the mark sets out from
+                    // somewhere it never was and steps back to catch up.
+                    band.origin = was.origin;
+                    if band.top == was.top
+                        || band.top.abs_diff(was.top) > u64::from(band.room.height)
+                    {
+                        continue;
+                    }
                     #[expect(
                         clippy::cast_precision_loss,
                         reason = "a list is rows, and a scroll is a few of them"
                     )]
-                    let rows = (top - before_top) as f32;
+                    let rows = (band.top - was.top) as f32;
                     // Only where this begins a fresh slide: one already
                     // under way keeps the page it started with, because
                     // that is the page the rows it scrolled past are on
                     // and the one the distance is counted from.
                     if self
                         .motion
-                        .band_moved(rows, f32::from(room.height), Instant::now())
+                        .band_moved(band.room, rows, f32::from(band.room.height), now)
                     {
-                        self.before = before;
-                        self.bar_origin = bar_was;
+                        band.origin = was.bar.map(|bar| bar.mark);
+                        band.before.clone_from(&before);
                     }
                 }
+                // And what is no longer on the screen is no longer kept.
+                let rooms: Vec<Rect> = self.scrolled.iter().map(|band| band.room).collect();
+                self.motion.bands_drawn(&rooms);
                 if let Some(names) = faces {
                     // Which faces text is drawn in decides how wide a cell
                     // is, so this is the same work a new size is: measure
@@ -938,6 +992,28 @@ impl ApplicationHandler<Waking> for Showing {
                     under: self.motion.bar_under(bar.area, now),
                 }));
 
+                // How each band is being shown, worked out for this
+                // frame the way the bars are: where a band has got to is
+                // a moment's answer, and a band that has caught up is not
+                // in this at all.
+                let rolled: Vec<Rolled<'_>> = self
+                    .scrolled
+                    .iter()
+                    .filter_map(|band| {
+                        let (behind, since) = self.motion.band_shown(band.room, now)?;
+                        Some(Rolled {
+                            room: band.room,
+                            before: band.before.as_deref()?,
+                            behind,
+                            since,
+                            bar: band.bar.map(|bar| {
+                                let origin = band.origin.unwrap_or(bar.mark);
+                                (bar.area, f32::from(origin) - f32::from(bar.mark))
+                            }),
+                        })
+                    })
+                    .collect();
+
                 let (Some(painter), Some(fonts)) = (self.painter.as_mut(), self.fonts.as_mut())
                 else {
                     return;
@@ -960,14 +1036,7 @@ impl ApplicationHandler<Waking> for Showing {
                         stroked: &self.stroked,
                         behind: self.behind.as_ref(),
                         cards: &self.cards,
-                        band: self
-                            .scrolled
-                            .zip(self.before.as_ref())
-                            .map(|((room, _), before)| (room, before)),
-                        bar: self.bar.map(|bar| {
-                            let origin = self.bar_origin.unwrap_or(bar.mark);
-                            (bar.area, f32::from(origin) - f32::from(bar.mark))
-                        }),
+                        bands: &rolled,
                     },
                 ) {
                     tracing::error!(?error, "the frame was not drawn");

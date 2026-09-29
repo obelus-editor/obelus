@@ -288,24 +288,25 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
         let covered = clamp((NIB - stroke) * in.half_size.x * 2.0, 0.0, 1.0);
         return vec4<f32>(in.colour.rgb, in.colour.a * covered);
     }
-    // A pane on its way in.
+    // A piece of the frame, where something on it is moving.
     //
     // The frame was drawn once into a texture of its own, and it is put
-    // back on the screen in two pieces: everything that is not the pane,
-    // where it belongs, and the pane, higher up than it will end. What is
-    // under the second piece is the page, drawn before both, which is what
-    // shows in the band the pane has not reached yet.
+    // back on the screen in pieces: the rectangles the thing that is
+    // moving is *not* in, each where it belongs, and then that thing,
+    // taken from somewhere else in the same picture. What is under it
+    // where it has not reached is whatever was drawn there before -- the
+    // page for a pane, and for a band the page it scrolled off.
+    //
+    // The rectangles are worked out on the way in -- see `tiles` -- so
+    // there is nothing to leave out here: a piece is a copy of the
+    // picture at the place it stands.
     //
     // Nothing about this reaches the drawing above. A pane that has
-    // arrived is not composed at all, and neither is a window with no pane
-    // on it: what it costs is one pass, for a fifth of a second.
+    // arrived is not composed at all, and neither is a window with
+    // nothing moving on it: what it costs is one pass, for a fifth of a
+    // second.
     if ((in.flags & 32u) != 0u) {
-        let at = in.position.xy;
-        // The pane's own room is the other piece's.
-        if (at.x >= in.box.x && at.x < in.box.z && at.y >= in.box.y && at.y < in.box.w) {
-            discard;
-        }
-        return textureSample(behind, behind_sampler, at / screen.size);
+        return textureSample(behind, behind_sampler, in.position.xy / screen.size);
     }
     if ((in.flags & 64u) != 0u) {
         let at = in.position.xy;

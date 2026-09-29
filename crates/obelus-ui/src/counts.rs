@@ -378,8 +378,21 @@ impl CountsView<'_> {
         // it is a control that does not work. The column stays reserved
         // either way, so nothing moves sideways when a list grows past the
         // screen.
-        if window.scrollable(area.height) {
-            crate::scrollbar(cells, area, window.top(), rows.len(), self.theme);
+        let bar = window
+            .scrollable(area.height)
+            .then(|| crate::scrollbar(cells, area, window.top(), rows.len(), self.theme))
+            .flatten();
+        // And where the list has got to, for a front end that can draw it
+        // arriving rather than simply being there.
+        if let Ok(top) = i64::try_from(window.top()) {
+            crate::shapes::scrolled(
+                Rect {
+                    width: area.width.saturating_sub(crate::editor::SCROLLBAR_WIDTH),
+                    ..area
+                },
+                top,
+                bar,
+            );
         }
     }
 

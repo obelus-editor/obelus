@@ -464,13 +464,28 @@ impl Widget for TodoUi<'_> {
 
         // Only where there is somewhere to scroll: a track with no thumb on
         // it is a control that does not work.
-        if window.scrollable(list.height) {
-            crate::scrollbar(
-                cells,
-                list,
-                window.top(),
-                self.notes.rows().len(),
-                self.theme,
+        let bar = window
+            .scrollable(list.height)
+            .then(|| {
+                crate::scrollbar(
+                    cells,
+                    list,
+                    window.top(),
+                    self.notes.rows().len(),
+                    self.theme,
+                )
+            })
+            .flatten();
+        // And where the list has got to, for a front end that can draw it
+        // arriving rather than simply being there.
+        if let Ok(top) = i64::try_from(window.top()) {
+            crate::shapes::scrolled(
+                Rect {
+                    width: list.width.saturating_sub(SCROLLBAR_WIDTH),
+                    ..list
+                },
+                top,
+                bar,
             );
         }
     }

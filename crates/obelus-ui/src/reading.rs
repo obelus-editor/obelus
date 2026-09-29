@@ -37,11 +37,20 @@ pub fn draw(
         return;
     }
 
-    let bar = crate::editor::SCROLLBAR_WIDTH.min(area.width);
-    let width = area.width - bar;
+    let column = crate::editor::SCROLLBAR_WIDTH.min(area.width);
+    let width = area.width - column;
     // One row of the reading per row of the screen, so this is exact.
-    if rows.len() > usize::from(area.height) {
-        scrollbar(cells, area, top, rows.len(), theme);
+    let bar = (rows.len() > usize::from(area.height))
+        .then(|| scrollbar(cells, area, top, rows.len(), theme))
+        .flatten();
+
+    // And where this reading has got to, for a front end that can draw it
+    // arriving rather than simply being there. Three readings are one
+    // piece of code: a file shown as what it is rather than as its bytes,
+    // a hover, and the documentation beside a completion -- so this is
+    // said once for all three, and none of them had it before.
+    if let Ok(top) = i64::try_from(top) {
+        crate::shapes::scrolled(Rect { width, ..area }, top, bar);
     }
 
     for (offset, row) in rows

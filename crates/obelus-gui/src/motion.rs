@@ -51,6 +51,17 @@ const GLIDE: Duration = Duration::from_millis(70);
 /// an animation must not make a key feel.
 const SLIDE: Duration = Duration::from_millis(190);
 
+/// How long a box put over the page takes to arrive.
+///
+/// A box is joined to nothing and travels nowhere, so what it does
+/// instead is come up: the card of every key, a hover, a completion list
+/// and the line that says what a call takes. Shorter than a pane's
+/// slide, because there is no distance to cover and the reader asked for
+/// this one with a key they have just pressed -- and not nothing, because
+/// a box that is simply there between two frames is a thing that appeared
+/// rather than a thing that opened.
+const FADE: Duration = Duration::from_millis(120);
+
 /// How long a band takes to catch up with where it has got to.
 ///
 /// Shorter than a pane arriving and longer than the caret's flight. What
@@ -324,14 +335,6 @@ fn soonest(one: Option<Wake>, other: Option<Wake>) -> Option<Wake> {
 pub(crate) struct Moving {
     /// Whether the caret is drawn at this moment.
     pub(crate) caret: bool,
-    /// How many rows behind where it has got to a band is drawn, and how
-    /// far the page it scrolled off is from there -- or `None` for a band
-    /// that is where it belongs.
-    ///
-    /// Both, because the rows it has not caught up to yet are on no page
-    /// but the one it scrolled off, and where in that page they are is
-    /// the difference between the two.
-    pub(crate) scroll: Option<(f32, f32)>,
     /// How far along a pane is on its way in, from nothing at all to
     /// arrived, or `None` for a pane that is simply there.
     ///
@@ -341,6 +344,9 @@ pub(crate) struct Moving {
     /// window that took the second path every frame would pay for an
     /// animation nobody is watching.
     pub(crate) pane: Option<f32>,
+    /// And how much of the box with a frame round it is there, or `None`
+    /// for one that is simply there. The same reason for the same shape.
+    pub(crate) card: Option<f32>,
     /// Where the light on the welcome screen's mark has got to, as a part
     /// of the mark's own width, or `None` while it is resting between
     /// passes -- and on a screen with no mark on it.
@@ -520,25 +526,102 @@ impl Scrolling {
     }
 }
 
-/// A pane on its way in from above.
-#[derive(Debug)]
-struct Sliding {
-    /// When it opened, or `None` where there is no pane or it has
-    /// arrived.
-    opened: Option<Instant>,
+/// The bands on the screen, and where each has got to.
+///
+/// Kept by area rather than as one, for the reason the bars are: a screen
+/// has as many bands on it as it has lists, and which of them a frame
+/// happens to mention last is not which of them moved. One slot meant a
+/// hover over a file, or a list beside a preview, could not both be
+/// tracked -- the second to say so took the slot, and the first was asked
+/// about an area that was no longer the one kept, which reads as "not the
+/// same band" and animates nothing at all.
+///
+/// An area that stops arriving is dropped, which is what keeps this the
+/// length of what is on the screen.
+#[derive(Debug, Default)]
+struct Bands {
+    seen: Vec<(Rect, Scrolling)>,
 }
 
-impl Sliding {
+impl Bands {
+    /// This band's list has got somewhere else -- see `Scrolling::moved`.
+    fn moved(&mut self, area: Rect, rows: f32, most: f32, now: Instant) -> bool {
+        let band = match self.seen.iter().position(|(seen, _)| *seen == area) {
+            Some(at) => &mut self.seen[at].1,
+            None => {
+                self.seen.push((
+                    area,
+                    Scrolling {
+                        from: None,
+                        since: 0.0,
+                        started: now,
+                    },
+                ));
+                &mut self.seen.last_mut().expect("one was just pushed").1
+            }
+        };
+        band.moved(rows, most, now)
+    }
+
+    /// How far behind this band is drawn at this moment, and how far the
+    /// page the window kept is from there.
+    fn behind(&self, area: Rect, now: Instant) -> Option<(f32, f32)> {
+        let (_, band) = self.seen.iter().find(|(seen, _)| *seen == area)?;
+        band.behind(now).map(|behind| (behind, band.since))
+    }
+
+    /// The frame drew these bands, and whatever else was kept is gone.
+    ///
+    /// Told rather than worked out, the way the bars are: a band that is
+    /// no longer on the screen is one nothing will ask about again, and a
+    /// list of them that only grew would be a window keeping every list
+    /// the reader had opened.
+    fn drawn(&mut self, rooms: &[Rect]) {
+        self.seen.retain(|(area, _)| rooms.contains(area));
+    }
+
+    /// Whether any of them is still catching up.
+    fn moving(&self, now: Instant) -> bool {
+        self.seen.iter().any(|(_, band)| band.moving(now))
+    }
+
+    /// Moves them all on, and says whether what is drawn changed.
+    ///
+    /// All of them, never stopping at the first that says yes: each has a
+    /// leg of its own to finish.
+    fn settle(&mut self, now: Instant) -> bool {
+        self.seen
+            .iter_mut()
+            .fold(false, |moved, (_, band)| band.settle(now) || moved)
+    }
+}
+
+/// Something that has just opened over the page, on its way in.
+///
+/// Two of them, and what they share is the clock rather than the
+/// movement: a pane is joined to an edge and comes from it, and a box is
+/// joined to nothing and comes up where it stands. So each carries how
+/// long it takes, and the rest -- when it began, how far along it is, and
+/// that it is over when the time is up -- is one piece of code.
+#[derive(Debug)]
+struct Arriving {
+    /// When it opened, or `None` where there is none or it has arrived.
+    opened: Option<Instant>,
+    /// How long it takes.
+    takes: Duration,
+}
+
+impl Arriving {
     /// Whether it is still on its way.
     fn moving(&self, now: Instant) -> bool {
         self.opened
-            .is_some_and(|opened| now.duration_since(opened) < SLIDE)
+            .is_some_and(|opened| now.duration_since(opened) < self.takes)
     }
 
-    /// How far along it is, or `None` for a pane that is simply there.
+    /// How far along it is, or `None` for one that is simply there.
     fn along(&self, now: Instant) -> Option<f32> {
         let opened = self.opened?;
-        let gone = now.duration_since(opened).as_secs_f32() / SLIDE.as_secs_f32();
+        let gone = now.duration_since(opened).as_secs_f32() / self.takes.as_secs_f32();
         if gone >= 1.0 {
             return None;
         }
@@ -648,8 +731,9 @@ pub(crate) struct Motion {
     animates: bool,
     blink: Blinking,
     caret: Glide,
-    pane: Sliding,
-    band: Scrolling,
+    pane: Arriving,
+    card: Arriving,
+    bands: Bands,
     bars: Bars,
     /// When the mark the light runs across last arrived, which is what
     /// its pass is measured from.
@@ -676,12 +760,15 @@ impl Motion {
                 stirred: now,
             },
             caret: Glide::resting(),
-            pane: Sliding { opened: None },
-            band: Scrolling {
-                from: None,
-                since: 0.0,
-                started: now,
+            pane: Arriving {
+                opened: None,
+                takes: SLIDE,
             },
+            card: Arriving {
+                opened: None,
+                takes: FADE,
+            },
+            bands: Bands::default(),
             bars: Bars::default(),
             since: now,
             sheening: false,
@@ -698,8 +785,8 @@ impl Motion {
         if !on {
             self.caret.from = None;
             self.pane.opened = None;
-            self.band.from = None;
-            self.band.since = 0.0;
+            self.card.opened = None;
+            self.bands.seen.clear();
         }
     }
 
@@ -736,8 +823,24 @@ impl Motion {
     /// `rows` is how far it moved: positive where the list went down,
     /// which is the band's content going up. Says whether the window has
     /// to keep the page it scrolled off -- see `Scrolling::moved`.
-    pub(crate) fn band_moved(&mut self, rows: f32, most: f32, now: Instant) -> bool {
-        self.animates && self.band.moved(rows, most, now)
+    pub(crate) fn band_moved(&mut self, area: Rect, rows: f32, most: f32, now: Instant) -> bool {
+        self.animates && self.bands.moved(area, rows, most, now)
+    }
+
+    /// How far behind where it has got to a band is drawn at this moment,
+    /// and how far the page the window kept is from there -- or `None`
+    /// for a band that is where it belongs.
+    ///
+    /// Both, because the rows it has not caught up to yet are on no page
+    /// but the one it scrolled off, and where in that page they are is
+    /// the difference between the two.
+    pub(crate) fn band_shown(&self, area: Rect, now: Instant) -> Option<(f32, f32)> {
+        self.bands.behind(area, now)
+    }
+
+    /// The frame drew these bands -- see `Bands::drawn`.
+    pub(crate) fn bands_drawn(&mut self, rooms: &[Rect]) {
+        self.bands.drawn(rooms);
     }
 
     /// A pane opened over the page.
@@ -756,6 +859,22 @@ impl Motion {
         self.pane.opened = None;
     }
 
+    /// A box with a frame round it opened over the page.
+    ///
+    /// The opening only, like a pane's: a box that is closed leaves
+    /// nothing to draw, and one still up while another opens over it has
+    /// not moved.
+    pub(crate) fn card_opened(&mut self, now: Instant) {
+        if self.animates {
+            self.card.opened = Some(now);
+        }
+    }
+
+    /// And there is no box over the page any more.
+    pub(crate) fn card_shut(&mut self) {
+        self.card.opened = None;
+    }
+
     /// Moves everything on to this moment, and says whether the screen has
     /// to be drawn again for it.
     ///
@@ -764,10 +883,11 @@ impl Motion {
     /// them would stop asking at the first that said yes.
     pub(crate) fn advance(&mut self, now: Instant, caret: bool) -> bool {
         let flew = self.caret.settle(now);
-        let caught = self.band.settle(now);
+        let caught = self.bands.settle(now);
         let slid = self.pane.settle(now);
+        let faded = self.card.settle(now);
         let blinked = self.blink.advance(now, caret);
-        flew || caught || slid || blinked
+        flew || caught || slid || faded || blinked
     }
 
     /// When the window wants the loop back, or `None` for nothing moving.
@@ -777,7 +897,8 @@ impl Motion {
     pub(crate) fn wake(&self, now: Instant, caret: bool) -> Option<Wake> {
         if self.caret.moving(now)
             || self.pane.moving(now)
-            || self.band.moving(now)
+            || self.card.moving(now)
+            || self.bands.moving(now)
             || (self.animates && self.bars.moving(now))
             // The light wants a rate while it is out, and between passes
             // it wants the moment the next one is due -- which is the
@@ -850,10 +971,7 @@ impl Motion {
             caret: self.blink.lit || self.caret.moving(now),
             drift: self.caret.drift(now),
             pane: self.pane.along(now),
-            scroll: self
-                .band
-                .behind(now)
-                .map(|behind| (behind, self.band.since)),
+            card: self.card.along(now),
             sheen: self.sheen(now),
         }
     }
@@ -1331,6 +1449,36 @@ mod tests {
         assert_eq!(motion.wake(base + SLIDE, true), None);
     }
 
+    /// A box comes up where it stands, and then is simply there.
+    ///
+    /// The other half of the same clock: a pane is joined to an edge and
+    /// travels from it, a box is joined to nothing and has nowhere to
+    /// travel from, so what it does instead is fade.
+    ///
+    /// Break: give `Arriving` one duration for both. A box then takes as
+    /// long as a pane -- which is a hover the reader is still waiting to
+    /// read a fifth of a second after they asked for it -- and this
+    /// notices because the two are asked at a moment between them.
+    #[test]
+    fn a_box_comes_up_and_then_is_simply_there() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        assert_eq!(motion.moving(base).card, None, "nothing has opened");
+        motion.card_opened(base);
+        assert_eq!(motion.moving(base).card, Some(0.0));
+        let half = motion.moving(base + FADE / 2).card.expect("coming up");
+        assert!(half > 0.0 && half < 1.0, "{half}");
+        assert_eq!(motion.moving(base + FADE).card, None, "simply there");
+        // And it is the quicker of the two, because it has no distance to
+        // cover and the reader has just pressed the key that asked for it.
+        motion.pane_opened(base);
+        assert!(motion.moving(base + FADE).pane.is_some(), "a pane is not");
+        // And one that went away is not still coming up.
+        motion.card_opened(base);
+        motion.card_shut();
+        assert_eq!(motion.moving(base).card, None);
+    }
+
     /// Break: have `pane_shut` leave the moment it opened behind, and a
     /// pane closed while it was still arriving leaves the window composing
     /// a frame out of a pane that is not on it.
@@ -1345,23 +1493,63 @@ mod tests {
         assert_eq!(motion.wake(base, true), None);
     }
 
+    /// A band of rows, which is the area a list is drawn in.
+    fn a_band(y: u16) -> Rect {
+        Rect {
+            x: 0,
+            y,
+            width: 40,
+            height: 10,
+        }
+    }
+
     /// Break: answer the distance still to come from `Scrolling::behind`
     /// without the easing, and a list crawls at one speed and stops dead
     /// instead of settling.
     #[test]
     fn a_band_catches_up_with_where_its_list_has_got_to() {
         let base = Instant::now();
+        let room = a_band(0);
         let mut motion = Motion::new(None);
-        assert_eq!(motion.moving(base).scroll, None, "nothing has moved");
-        assert!(motion.band_moved(3.0, 20.0, base), "a fresh slide");
-        assert_eq!(motion.moving(base).scroll, Some((3.0, 3.0)));
+        assert_eq!(motion.band_shown(room, base), None, "nothing has moved");
+        assert!(motion.band_moved(room, 3.0, 20.0, base), "a fresh slide");
+        assert_eq!(motion.band_shown(room, base), Some((3.0, 3.0)));
         let (behind, since) = motion
-            .moving(base + CATCH_UP / 2)
-            .scroll
+            .band_shown(room, base + CATCH_UP / 2)
             .expect("still catching up");
         assert_eq!(since, 3.0, "how far the kept page is does not change");
         assert!(behind > 0.0 && behind < 3.0, "{behind}");
-        assert_eq!(motion.moving(base + CATCH_UP).scroll, None);
+        assert_eq!(motion.band_shown(room, base + CATCH_UP), None);
+    }
+
+    /// Each band on the screen keeps its own slide.
+    ///
+    /// A screen has as many bands on it as it has lists -- a hover over a
+    /// file, a list beside a preview -- and which of them moved is not
+    /// which of them a frame mentioned last.
+    ///
+    /// Break: keep one `Scrolling` for all of them, which is what this
+    /// was. The second band's move then lands on the first band's state,
+    /// so the first is asked about and answers with somebody else's
+    /// distance -- and the one that never moved slides anyway.
+    #[test]
+    fn two_bands_each_keep_their_own_slide() {
+        let base = Instant::now();
+        let (one, other) = (a_band(0), a_band(20));
+        let mut motion = Motion::new(None);
+        assert!(motion.band_moved(one, 3.0, 20.0, base), "the first moved");
+        assert_eq!(motion.band_shown(other, base), None, "the second has not");
+        assert!(motion.band_moved(other, 7.0, 20.0, base), "and now it has");
+        assert_eq!(
+            motion.band_shown(one, base),
+            Some((3.0, 3.0)),
+            "each its own"
+        );
+        assert_eq!(motion.band_shown(other, base), Some((7.0, 7.0)));
+        // And a band that stops being drawn is forgotten.
+        motion.bands_drawn(&[other]);
+        assert_eq!(motion.band_shown(one, base), None, "gone with its list");
+        assert_eq!(motion.band_shown(other, base), Some((7.0, 7.0)), "still up");
     }
 
     /// Break: set `from` in `Scrolling::moved` to the rows alone, leaving
@@ -1371,11 +1559,12 @@ mod tests {
     fn a_band_that_moves_again_carries_on_from_where_it_is() {
         let base = Instant::now();
         let mut motion = Motion::new(None);
-        motion.band_moved(3.0, 20.0, base);
+        let room = a_band(0);
+        motion.band_moved(room, 3.0, 20.0, base);
         let midway = base + CATCH_UP / 2;
-        let (behind, _) = motion.moving(midway).scroll.expect("on its way");
-        motion.band_moved(3.0, 20.0, midway);
-        let (again, _) = motion.moving(midway).scroll.expect("on its way again");
+        let (behind, _) = motion.band_shown(room, midway).expect("on its way");
+        motion.band_moved(room, 3.0, 20.0, midway);
+        let (again, _) = motion.band_shown(room, midway).expect("on its way again");
         assert!((again - (3.0 + behind)).abs() < 0.001, "{again} {behind}");
     }
 
@@ -1387,19 +1576,26 @@ mod tests {
     fn a_band_already_sliding_keeps_the_page_it_started_from() {
         let base = Instant::now();
         let mut motion = Motion::new(None);
-        assert!(motion.band_moved(2.0, 20.0, base), "nothing was happening");
+        let room = a_band(0);
+        assert!(
+            motion.band_moved(room, 2.0, 20.0, base),
+            "nothing was happening"
+        );
         let midway = base + CATCH_UP / 2;
         assert!(
-            !motion.band_moved(2.0, 20.0, midway),
+            !motion.band_moved(room, 2.0, 20.0, midway),
             "one is already under way"
         );
-        let (_, since) = motion.moving(midway).scroll.expect("on its way");
+        let (_, since) = motion.band_shown(room, midway).expect("on its way");
         assert!(
             (since - 4.0).abs() < 0.001,
             "both moves, from one page: {since}"
         );
         // And once it has caught up, the next one starts again.
-        assert!(motion.band_moved(1.0, 20.0, midway + CATCH_UP), "caught up");
+        assert!(
+            motion.band_moved(room, 1.0, 20.0, midway + CATCH_UP),
+            "caught up"
+        );
     }
 
     /// Break: drop the `since` bound and a slide that has wandered further
@@ -1409,10 +1605,27 @@ mod tests {
     fn a_band_that_has_come_further_than_it_is_tall_is_simply_there() {
         let base = Instant::now();
         let mut motion = Motion::new(None);
-        assert!(motion.band_moved(6.0, 10.0, base));
+        let room = a_band(0);
+        assert!(motion.band_moved(room, 6.0, 10.0, base));
         let midway = base + CATCH_UP / 2;
-        assert!(!motion.band_moved(6.0, 10.0, midway), "too far to draw");
-        assert_eq!(motion.moving(midway).scroll, None, "it is simply there");
+        assert!(
+            !motion.band_moved(room, 6.0, 10.0, midway),
+            "too far to draw"
+        );
+        assert_eq!(motion.band_shown(room, midway), None, "it is simply there");
+    }
+
+    /// Break: leave the box out of `Motion::wake` and one comes up at
+    /// whatever rate the blink happens to want, which on a window with
+    /// no caret on it is never.
+    #[test]
+    fn a_box_coming_up_asks_for_every_frame() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        assert_eq!(motion.wake(base, true), None);
+        motion.card_opened(base);
+        assert_eq!(motion.wake(base, true), Some(Wake::EveryFrame));
+        assert_eq!(motion.wake(base + FADE, true), None);
     }
 
     /// Break: leave the band out of `Motion::wake` and a list slides at
@@ -1422,7 +1635,7 @@ mod tests {
         let base = Instant::now();
         let mut motion = Motion::new(None);
         assert_eq!(motion.wake(base, true), None);
-        motion.band_moved(2.0, 20.0, base);
+        motion.band_moved(a_band(0), 2.0, 20.0, base);
         assert_eq!(motion.wake(base, true), Some(Wake::EveryFrame));
         assert_eq!(motion.wake(base + CATCH_UP, true), None);
     }
@@ -1549,8 +1762,10 @@ mod tests {
         assert_eq!(motion.moving(base).drift, (0.0, 0.0), "the caret");
         motion.pane_opened(base);
         assert_eq!(motion.moving(base).pane, None, "a pane");
-        assert!(!motion.band_moved(3.0, 20.0, base), "a band");
-        assert_eq!(motion.moving(base).scroll, None);
+        motion.card_opened(base);
+        assert_eq!(motion.moving(base).card, None, "a box");
+        assert!(!motion.band_moved(a_band(0), 3.0, 20.0, base), "a band");
+        assert_eq!(motion.band_shown(a_band(0), base), None);
         motion.sheen_drawn(true, motion.since);
         assert_eq!(motion.moving(base).sheen, None, "the light on the mark");
         assert_eq!(motion.wake(base, true), None, "and nothing to wake for");
@@ -1560,11 +1775,13 @@ mod tests {
         // moment to mean anything.
         let mut motion = Motion::new(None);
         motion.caret_moved(Some(at(0, 10)), Some(at(0, 0)), base);
-        motion.band_moved(3.0, 20.0, base);
+        motion.band_moved(a_band(0), 3.0, 20.0, base);
         motion.pane_opened(base);
+        motion.card_opened(base);
         motion.animates(false);
+        assert_eq!(motion.moving(base).card, None);
         assert_eq!(motion.moving(base).drift, (0.0, 0.0));
-        assert_eq!(motion.moving(base).scroll, None);
+        assert_eq!(motion.band_shown(a_band(0), base), None);
         assert_eq!(motion.moving(base).pane, None);
     }
 

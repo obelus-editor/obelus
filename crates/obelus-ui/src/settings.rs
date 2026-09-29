@@ -224,6 +224,37 @@ pub fn rows_region(area: Rect, settings: &Settings, offering: Option<&Offering>)
 /// of entries: a key is a name, what it does and the chord it is on, all
 /// on the one row, and there is no gloss under it for a blank to keep off
 /// the next name.
+/// How many rows of the screen one entry takes: the heading it opens
+/// where it opens one, its name, the rows its description takes, and the
+/// blank that keeps the next name off it.
+///
+/// The walk below, as a number. The page is settled by *height* -- an
+/// entry is as tall as what it has to say -- so where the page has got
+/// to is how many rows are above the first entry showing rather than
+/// which entry that is, and the two are not the same number. A front end
+/// told the second slides a band one row while the cells moved four.
+fn entry_rows(row: &Row, one_row_each: bool) -> u16 {
+    let heading = row.opens.as_ref().map_or(0, Heading::rows);
+    heading + own_rows(row) + u16::from(!one_row_each)
+}
+
+/// And how many of those are the entry's own: its name, where it has one,
+/// and what it does.
+///
+/// A row with no name is its prose and nothing else: there is nothing to
+/// put on a first line.
+fn own_rows(row: &Row) -> u16 {
+    u16::try_from(row.body.len()).unwrap_or(0) + u16::from(!row.label.is_empty())
+}
+
+/// How many rows of the screen are above the first entry a page shows.
+fn rows_above(rows: &[Row], first: usize, one_row_each: bool) -> usize {
+    rows.iter()
+        .take(first)
+        .map(|row| usize::from(entry_rows(row, one_row_each)))
+        .sum()
+}
+
 fn placed(
     region: Rect,
     rows: &[Row],
@@ -246,12 +277,10 @@ fn placed(
                 break;
             }
         }
-        // A row with no name is its prose and nothing else: there is
-        // nothing to put on a first line. Counted the same way the
-        // component counts it, because the walk down the page and the
-        // window deciding what is on screen must not disagree about where
-        // a row ends.
-        let tall = u16::try_from(row.body.len()).unwrap_or(0) + u16::from(!row.label.is_empty());
+        // Counted the same way the component counts it, because the walk
+        // down the page and the window deciding what is on screen must not
+        // disagree about where a row ends.
+        let tall = own_rows(row);
         placed.push(Placed {
             at,
             area: Rect {
@@ -657,8 +686,24 @@ impl SettingsView<'_> {
         // there is screen.
         let window = self.settings.window();
         let scrolling = window.scrollable(region.height);
-        if scrolling {
-            crate::scrollbar(cells, region, window.top(), rows.len(), self.theme);
+        let bar = scrolling
+            .then(|| crate::scrollbar(cells, region, window.top(), rows.len(), self.theme))
+            .flatten();
+        // And where the list has got to, for a front end that can draw it
+        // arriving rather than simply being there -- in rows of the
+        // screen, which on this page is not the entry the window is on:
+        // see `entry_rows`. The bar above is the other question and takes
+        // the entry, because what it says is a proportion.
+        let first = window.top().min(window.focus());
+        if let Ok(top) = i64::try_from(rows_above(rows, first, self.settings.on_keys())) {
+            crate::shapes::scrolled(
+                Rect {
+                    width: region.width.saturating_sub(crate::editor::SCROLLBAR_WIDTH),
+                    ..region
+                },
+                top,
+                bar,
+            );
         }
         let room = match scrolling {
             true => region.width.saturating_sub(crate::editor::SCROLLBAR_WIDTH),
@@ -1089,8 +1134,21 @@ impl SettingsView<'_> {
         // cards.
         let rows = |taken: &[u16]| taken.iter().map(|rows| usize::from(*rows)).sum::<usize>();
         let total = rows(&heights);
-        if total > usize::from(area.height) {
-            crate::scrollbar(cells, area, rows(&heights[..first]), total, self.theme);
+        let top = rows(&heights[..first]);
+        let bar = (total > usize::from(area.height))
+            .then(|| crate::scrollbar(cells, area, top, total, self.theme))
+            .flatten();
+        // And where the page of cards has got to, in the same rows the
+        // bar is measured in.
+        if let Ok(top) = i64::try_from(top) {
+            crate::shapes::scrolled(
+                Rect {
+                    width: area.width.saturating_sub(crate::editor::SCROLLBAR_WIDTH),
+                    ..area
+                },
+                top,
+                bar,
+            );
         }
         // And the column it is in is kept back from the cards whether
         // there is a bar in it or not. Handing it back would re-wrap every
@@ -1421,5 +1479,78 @@ fn draw_control(
         (kind, value) => {
             tracing::debug!(?kind, ?value, "a control with nothing to draw");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use obelus_component::window::Window;
+    use ratatui::layout::Rect;
+
+    use super::{Aside, Heading, Row, placed, rows_above};
+
+    /// One entry: a name, a description of `about` rows, and a heading
+    /// where it opens a group.
+    fn a_setting(label: &str, about: usize, opens: Option<Heading>) -> Row {
+        Row {
+            opens,
+            label: label.to_string(),
+            matched: None,
+            detail: None,
+            aside: Aside::Nothing,
+            body: vec!["what it does".to_string(); about],
+            scope: None,
+            pinned: None,
+        }
+    }
+
+    /// Where a page settled by height has got to is how many rows are
+    /// above the entry, not which entry it is.
+    ///
+    /// Two walks that have to agree. The rows are laid out by height --
+    /// an entry is its heading, its name, what it does and a blank -- and
+    /// what the page says about where it has got to is read as a number
+    /// of *screen rows*: a front end subtracts one frame's from the next
+    /// and slides the band by the difference.
+    ///
+    /// Deliberate break: answer `first` from `rows_above`, which is the
+    /// entry the window is on and is what this said before. Both
+    /// assertions go red. Stepping the focus one entry then slid the band
+    /// one row while the cells moved four, and the gap was filled out of
+    /// the page it scrolled off three rows out of place.
+    #[test]
+    fn a_page_settled_by_height_says_where_it_is_in_rows() {
+        let group = Heading::Group(obelus_config::Group::Appearance);
+        let rows = [
+            a_setting("theme", 1, Some(group)),
+            a_setting("fonts", 2, None),
+            a_setting("animation", 1, None),
+            a_setting("text size", 1, None),
+        ];
+        // Tall enough for all of them, so that what is drawn is the whole
+        // page and every entry's row can be read off it.
+        let region = Rect {
+            x: 0,
+            y: 3,
+            width: 60,
+            height: 30,
+        };
+        let mut window = Window::default();
+        window.set_count(rows.len());
+
+        // Each entry is drawn where the number says it is, heading and
+        // all -- which is the whole of what the number means.
+        for at in placed(region, &rows, &window, false) {
+            let heading = usize::from(rows[at.at].opens.as_ref().map_or(0, Heading::rows));
+            assert_eq!(
+                usize::from(at.area.y - region.y),
+                rows_above(&rows, at.at, false) + heading,
+                "entry {}",
+                at.at
+            );
+        }
+        // And the number is not the entry, which is the mistake it is
+        // here to stop: every entry on this page is three rows or more.
+        assert_ne!(rows_above(&rows, 2, false), 2);
     }
 }

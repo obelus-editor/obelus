@@ -855,8 +855,24 @@ impl ChatView<'_> {
         // the one scrolling thing in Obelus with no answer to "how much of
         // this is there". The column is already spare -- the rows are
         // wrapped to leave it -- so nothing moves to make room.
-        if self.chat.scrollable(area.height) {
-            crate::scrollbar(cells, area, self.chat.top(), rows.len(), self.theme);
+        let bar = self
+            .chat
+            .scrollable(area.height)
+            .then(|| crate::scrollbar(cells, area, self.chat.top(), rows.len(), self.theme))
+            .flatten();
+        // And where it has got to, for a front end that can draw it
+        // arriving rather than simply being there -- the same thing every
+        // other list says, and the bar beside it moves its own share of
+        // the same distance.
+        if let Ok(top) = i64::try_from(self.chat.top()) {
+            crate::shapes::scrolled(
+                Rect {
+                    width: area.width.saturating_sub(crate::editor::SCROLLBAR_WIDTH),
+                    ..area
+                },
+                top,
+                bar,
+            );
         }
         let first = self.chat.top().min(rows.len());
         for (offset, row) in rows.iter().skip(first).enumerate() {

@@ -325,7 +325,19 @@ fn rows(cells: &mut CellBuffer, area: Rect, completion: &Completion, theme: &The
                 .add_modifier(Modifier::ITALIC),
         );
     }
-    if scrolling {
-        crate::scrollbar(cells, area, completion.top(), completion.count(), theme);
+    let bar = scrolling
+        .then(|| crate::scrollbar(cells, area, completion.top(), completion.count(), theme))
+        .flatten();
+    // And where the list has got to, for a front end that can draw it
+    // arriving rather than simply being there.
+    if let Ok(top) = i64::try_from(completion.top()) {
+        crate::shapes::scrolled(
+            Rect {
+                width: area.width.saturating_sub(crate::editor::SCROLLBAR_WIDTH),
+                ..area
+            },
+            top,
+            bar,
+        );
     }
 }

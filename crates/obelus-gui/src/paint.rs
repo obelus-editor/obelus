@@ -20,13 +20,17 @@ use obelus_ui::{
     image::{Palette, SLOT},
     shapes::{About, Joined, Side},
 };
-use ratatui::style::{Color, Modifier};
+use ratatui::{
+    layout::Rect,
+    style::{Color, Modifier},
+};
 use winit::window::Window;
 
 use crate::{
     font::{self, CellSize, Fonts, Size},
     grid::{
-        Barred, Behind, Capped, Look, Marked, Page, Parted, Ruled, Said, Spelling, Stroked, Ticked,
+        Barred, Behind, Capped, Look, Marked, Page, Parted, Rolled, Ruled, Said, Spelling, Stroked,
+        Ticked,
     },
     motion::Moving,
 };
@@ -218,6 +222,10 @@ struct Placed {
     /// The box's: the picture of what is under it, which is drawn into
     /// its own and nowhere else, and the glass that reads it.
     card: Option<(Range<usize>, usize)>,
+    /// And which quad lays that picture back over the box while the box
+    /// is still coming up, where one is: it reads the same picture the
+    /// glass does, so it is drawn with the same bindings.
+    covered: Option<usize>,
     /// How many are what the screen draws.
     drawn: usize,
     /// And with the pieces a sliding pane is put back in, which is where
@@ -1002,7 +1010,13 @@ impl Painter {
         // the thing casting it and everything behind these has now been
         // drawn. Before the caret, which is the reader's own place and
         // is never in shadow.
-        self.shadows(&said, pane.filter(|_| moving.pane.is_none()), &framed, cell);
+        self.shadows(
+            &said,
+            pane.filter(|_| moving.pane.is_none()),
+            &framed,
+            moving.card.unwrap_or(1.0),
+            cell,
+        );
         // Over the cells and under the caret: the word being spelled is
         // going in at the caret, so the caret belongs at the place in it
         // the input method says.
@@ -1011,6 +1025,18 @@ impl Painter {
         // is drawn either way, by the pass above.
         if moving.caret {
             self.caret(page, fonts, spelling, moving.drift);
+        }
+
+        // A box put over the page travels nowhere, so what it does
+        // instead is come up. The cells it was put over are already in a
+        // picture of their own -- the one its glass reads -- so laying
+        // those back over it, fading out, is the box fading in, and
+        // nothing has to be drawn a second time. Over everything of the
+        // box's, the caret in it included: a solid caret on a box that is
+        // half there is the one part of it that has already arrived.
+        if let (Some(card), Some(along)) = (card, moving.card) {
+            self.placed.covered = Some(self.quads.len());
+            self.slid(box_of(card.area, cell), 0.0, 1.0 - along);
         }
 
         // Everything the frame says has been said. What is left is
@@ -1025,9 +1051,27 @@ impl Painter {
                 Some(Joined::Below) => 1.0,
                 _ => -1.0,
             };
-            self.composing(pane, along, away * (1.0 - along) * height * TRAVEL);
-        } else if let (Some(_), Some((behind, since))) = (said.band, moving.scroll) {
-            self.catching_up(said, behind, since, fonts);
+            let shift = away * (1.0 - along) * height * TRAVEL;
+            self.covering(&[pane]);
+            self.slid(pane, shift, along);
+            // And the shadow, here rather than in the frame -- see
+            // `shadows`. It falls from the edge the pane has *reached*,
+            // which is the only edge of it that has moved: the other is
+            // the seam it is joined by, and the piece the pane is taken
+            // from stops there. And it comes up as the pane does, because
+            // a shadow at full strength under a pane that is still half
+            // there is a shadow with nothing casting it.
+            if let Some(behind) = said.behind {
+                self.shadow(
+                    reached(pane, shift),
+                    0.0,
+                    casting(behind.joined),
+                    cell.height * SHADOW_SPREAD,
+                    along,
+                );
+            }
+        } else if !said.bands.is_empty() {
+            self.catching_up(said.bands, fonts);
         }
         // Last, because none of it is drawn on the screen: the blurs are
         // passes of their own, before any of the above.
@@ -1488,103 +1532,118 @@ impl Painter {
         });
     }
 
-    /// A band of rows drawn behind where its list has got to.
+    /// The bands drawn behind where their lists have got to.
     ///
-    /// The same two quads a pane arrives on, and one thing before them.
-    /// What the band shows while it catches up is partly on the frame that
-    /// has just been drawn -- taken from it lower down, which is the band
-    /// showing what it showed a moment ago -- and partly on no frame at
-    /// all: the rows the list scrolled *past* are not on the new page, and
-    /// the only place they exist is the page it scrolled off. So that page
-    /// is drawn first, where those rows have got to, and what covers it is
-    /// the band itself wherever the new frame has something to say.
-    fn catching_up(&mut self, said: Said<'_>, behind: f32, since: f32, fonts: &mut Fonts) {
-        let Some((room, before)) = said.band else {
-            return;
-        };
+    /// The same pieces a pane arrives on, one set per band, and one thing
+    /// before them. What a band shows while it catches up is partly on
+    /// the frame that has just been drawn -- taken from it lower down,
+    /// which is the band showing what it showed a moment ago -- and
+    /// partly on no frame at all: the rows the list scrolled *past* are
+    /// not on the new page, and the only place they exist is the page it
+    /// scrolled off. So those pages are drawn first, where their rows
+    /// have got to, and what covers them is the frame everywhere the
+    /// bands are not -- which is also what cuts each page back to the
+    /// band it belongs to, since a row shifted far enough lands outside
+    /// it.
+    fn catching_up(&mut self, bands: &[Rolled<'_>], fonts: &mut Fonts) {
         let cell = fonts.cell();
-        // Where the page it scrolled off has got to, which is further back
-        // than the band by however much of the move is already done.
-        let offset = (behind - since) * cell.height;
-        for y in room.top()..room.bottom() {
-            for x in room.left()..room.right() {
-                let look = before.look(x, y);
-                let left = f32::from(x) * cell.width;
-                let top = f32::from(y).mul_add(cell.height, offset);
-                self.block(
-                    left,
-                    top,
-                    cell.width,
-                    cell.height,
-                    rgba(look.background, Ink::Background),
-                );
-                if !look.text.trim().is_empty() {
-                    let ink = rgba(look.foreground, Ink::Foreground);
-                    self.glyphs_at((left, top), look, ink, 0, fonts, Size::Cell);
+        for band in bands {
+            let room = band.room;
+            // Where the page it scrolled off has got to, which is further
+            // back than the band by however much of the move is already
+            // done.
+            let offset = (band.behind - band.since) * cell.height;
+            for y in room.top()..room.bottom() {
+                for x in room.left()..room.right() {
+                    let look = band.before.look(x, y);
+                    let left = f32::from(x) * cell.width;
+                    let top = f32::from(y).mul_add(cell.height, offset);
+                    self.block(
+                        left,
+                        top,
+                        cell.width,
+                        cell.height,
+                        rgba(look.background, Ink::Background),
+                    );
+                    if !look.text.trim().is_empty() {
+                        let ink = rgba(look.foreground, Ink::Foreground);
+                        self.glyphs_at((left, top), look, ink, 0, fonts, Size::Cell);
+                    }
                 }
             }
         }
-        self.composing(
-            [
-                f32::from(room.x) * cell.width,
-                f32::from(room.y) * cell.height,
-                f32::from(room.right()) * cell.width,
-                f32::from(room.bottom()) * cell.height,
-            ],
-            1.0,
-            behind * cell.height,
-        );
+        let rooms: Vec<[f32; 4]> = bands.iter().map(|band| box_of(band.room, cell)).collect();
+        self.covering(&rooms);
+        for (at, (band, room)) in bands.iter().zip(&rooms).enumerate() {
+            // Less the rooms of the other bands, so that a band with one
+            // inside it -- a hover over the file it is about -- does not
+            // take the inner one along on its own journey.
+            let others: Vec<[f32; 4]> = rooms
+                .iter()
+                .enumerate()
+                .filter(|&(other, _)| other != at)
+                .map(|(_, room)| *room)
+                .collect();
+            for piece in tiles(*room, &others) {
+                self.slid_piece(piece, *room, band.behind * cell.height, 1.0);
+            }
 
-        // And the bar, which is not in the band and does not stand still
-        // either: its mark belongs where the band is being *drawn*, which
-        // is its own share of the same distance behind.
-        //
-        // Taken out of the same picture and not redrawn from the page,
-        // which is what this did first and what made the column flicker:
-        // a bar inside a pane sits on glass, and the cells it is made of
-        // carry the pane's own colour -- painted back as cells, that
-        // colour goes down opaque over what the reader was seeing
-        // through. Out of the picture it is whatever it was, glass
-        // included, moved.
-        if let Some((room, to_come)) = said.bar {
-            self.slid(
-                [
-                    f32::from(room.x) * cell.width,
-                    f32::from(room.y) * cell.height,
-                    f32::from(room.right()) * cell.width,
-                    f32::from(room.bottom()) * cell.height,
-                ],
-                mark_behind(to_come, behind, since) * cell.height,
-                1.0,
-            );
+            // And the bar, which is not in the band and does not stand
+            // still either: its mark belongs where the band is being
+            // *drawn*, which is its own share of the same distance
+            // behind.
+            //
+            // Taken out of the same picture and not redrawn from the
+            // page, which is what this did first and what made the column
+            // flicker: a bar inside a pane sits on glass, and the cells it
+            // is made of carry the pane's own colour -- painted back as
+            // cells, that colour goes down opaque over what the reader was
+            // seeing through. Out of the picture it is whatever it was,
+            // glass included, moved.
+            if let Some((bar, to_come)) = band.bar {
+                self.slid(
+                    box_of(bar, cell),
+                    mark_behind(to_come, band.behind, band.since) * cell.height,
+                    1.0,
+                );
+            }
         }
     }
 
-    /// The two quads that put a frame back on the screen with the pane in
-    /// it moved.
+    /// The frame that has just been drawn, put back on the screen
+    /// everywhere the things that are moving are not.
     ///
-    /// The frame has been drawn into a picture of its own by then. One
-    /// quad is everywhere the pane is not, taken from that picture where
-    /// it stands; the other is the pane, taken from higher up in it. What
-    /// shows where the pane has not reached is the page, which was drawn
-    /// on the screen before either of them.
-    fn composing(&mut self, pane: [f32; 4], along: f32, shift: f32) {
+    /// The frame has been drawn into a picture of its own by then, and
+    /// what is moving is taken from higher up in that picture by `slid`.
+    /// This is the rest of it, as the few rectangles the rest of it is --
+    /// so what shows where a pane has not reached is whatever was drawn
+    /// there before, which for a pane is the page and for a band is the
+    /// page it scrolled off.
+    ///
+    /// As rectangles rather than as one quad that leaves a hole, because
+    /// there may be several holes: two lists catching up at once are two
+    /// rooms to keep clear, and a quad can only be told about one.
+    fn covering(&mut self, rooms: &[[f32; 4]]) {
         #[expect(
             clippy::cast_precision_loss,
             reason = "a window is thousands of pixels, not millions"
         )]
         let (right, bottom) = (self.configured.width as f32, self.configured.height as f32);
-        let [left, top, far, low] = pane;
-        let room = [left, top, far, low];
-        self.quads.push(Quad {
-            rect: whole_window([right, bottom], self.margin),
-            uv: room,
-            colour: [0.0, 0.0, 0.0, 1.0],
-            flags: FRAME,
-            radius: 0.0,
-            padding: [0; 2],
-        });
-        self.slid([left, top, far, low], shift, along);
+        let [left, top, wide, tall] = whole_window([right, bottom], self.margin);
+        for tile in tiles([left, top, left + wide, top + tall], rooms) {
+            let [left, top, far, low] = tile;
+            self.quads.push(Quad {
+                rect: [left, top, (far - left).max(1.0), (low - top).max(1.0)],
+                // Nothing reads it: a piece of the frame is the picture at
+                // the place the piece stands, and where it stands is its
+                // own rectangle.
+                uv: [0.0; 4],
+                colour: [0.0, 0.0, 0.0, 1.0],
+                flags: FRAME,
+                radius: 0.0,
+                padding: [0; 2],
+            });
+        }
     }
 
     /// One region of the frame that has just been drawn, put back
@@ -1595,10 +1654,23 @@ impl Painter {
     /// a pane that has not arrived, the frame's own copy for a bar whose
     /// mark has moved on.
     fn slid(&mut self, box_: [f32; 4], shift: f32, fade: f32) {
-        let [left, top, far, low] = box_;
+        self.slid_piece(box_, box_, shift, fade);
+    }
+
+    /// And a piece of one, which is a region with a hole in it: the piece
+    /// is what is drawn and the region is what says where the picture is
+    /// taken from and where it runs out.
+    ///
+    /// A band with another band inside it is the reason -- a hover over
+    /// the file it is about. Both catch up on their own, so the outer one
+    /// must not take the inner one with it: what it puts back is the
+    /// region less the rooms of the bands inside it, and each of those
+    /// puts back its own.
+    fn slid_piece(&mut self, piece: [f32; 4], room: [f32; 4], shift: f32, fade: f32) {
+        let [left, top, far, low] = piece;
         self.quads.push(Quad {
             rect: [left, top, (far - left).max(1.0), (low - top).max(1.0)],
-            uv: box_,
+            uv: room,
             colour: [0.0, 0.0, 0.0, fade],
             flags: SLID,
             radius: shift,
@@ -2374,12 +2446,14 @@ impl Painter {
     /// The soft edge outside a pane and outside each box with a frame
     /// round it.
     ///
-    /// Not while the pane is still arriving. The frame is drawn once and
-    /// put back in two pieces, the pane's own slid up from where it set
-    /// out -- so a shadow, which is outside the pane and therefore in the
-    /// other piece, would sit at the edge the pane is *going* to have
-    /// while there is nothing under it yet. It arrives with the pane
-    /// instead, which is a fifth of a second later.
+    /// Not the pane's while it is still arriving, which is drawn where
+    /// the frame is put back together instead. The frame is drawn once
+    /// and put back in two pieces, the pane's own slid up from where it
+    /// set out -- and a shadow is the one part of a pane that falls
+    /// *outside* the pane's own room, so it is in the other piece: drawn
+    /// here it would stand still at the edge the pane is going to have
+    /// while there is nothing under it yet. It travels with the pane
+    /// instead, from the edge the pane has reached -- see `Painter::frame`.
     ///
     /// Which is the one thing on this screen a terminal has no answer to
     /// at all. A pane's edge, it draws with a rule; a box's, with a
@@ -2395,21 +2469,12 @@ impl Painter {
         said: &Said<'_>,
         pane: Option<[f32; 4]>,
         framed: &[&Behind],
+        boxes: f32,
         cell: CellSize,
     ) {
         let spread = cell.height * SHADOW_SPREAD;
         if let (Some(glass), Some(behind)) = (pane, said.behind) {
-            // A pane is joined to the page along one edge and casts from
-            // the other, which is the same half plane its glass is cut
-            // to: a list standing on the status row throws its shadow up
-            // over the file, and one hanging from the top throws it down.
-            let joined = match behind.joined {
-                Joined::Above => HANGING,
-                Joined::Below => STANDING,
-                // Never here -- a box is `card_glass`'s.
-                Joined::Nowhere => 0,
-            };
-            self.shadow(glass, 0.0, joined, spread);
+            self.shadow(glass, 0.0, casting(behind.joined), spread, 1.0);
         }
         // And a box has four edges and corners, so it casts all round.
         for card in framed {
@@ -2419,12 +2484,15 @@ impl Painter {
                 cell.width * FRAME_CORNER,
                 0,
                 spread,
+                boxes,
             );
         }
     }
 
-    /// One of them: the rectangle that casts it, and how far it reaches.
-    fn shadow(&mut self, box_: [f32; 4], radius: f32, joined: u32, spread: f32) {
+    /// One of them: the rectangle that casts it, how far it reaches, and
+    /// how much of it there is -- which is all of it except while the
+    /// thing casting it is still arriving.
+    fn shadow(&mut self, box_: [f32; 4], radius: f32, joined: u32, spread: f32, fade: f32) {
         let [left, top, far, low] = box_;
         self.quads.push(Quad {
             rect: [
@@ -2434,7 +2502,7 @@ impl Painter {
                 spread.mul_add(2.0, low - top).max(1.0),
             ],
             uv: box_,
-            colour: [0.0, 0.0, 0.0, SHADOW_INK],
+            colour: [0.0, 0.0, 0.0, SHADOW_INK * fade],
             flags: SHADOW | joined,
             radius,
             padding: [0; 2],
@@ -2599,7 +2667,17 @@ impl Painter {
         pass.set_bind_group(0, &self.card.bindings, &[]);
         drawing(pass, glass..glass + 1);
         pass.set_bind_group(0, &self.sheet.bindings, &[]);
-        drawing(pass, glass + 1..end);
+        let Some(covered) = self.placed.covered else {
+            drawing(pass, glass + 1..end);
+            return;
+        };
+        drawing(pass, glass + 1..covered);
+        // What is under the box, over the box -- the same picture the
+        // glass reads, so the same bindings.
+        pass.set_bind_group(0, &self.card.bindings, &[]);
+        drawing(pass, covered..covered + 1);
+        pass.set_bind_group(0, &self.sheet.bindings, &[]);
+        drawing(pass, covered + 1..end);
     }
 
     /// The text.
@@ -3612,6 +3690,93 @@ fn away(from: [f32; 4], to: [f32; 4]) -> [f32; 4] {
     out
 }
 
+/// A region of the grid in pixels, which is what everything moving is
+/// measured in.
+fn box_of(room: Rect, cell: CellSize) -> [f32; 4] {
+    [
+        f32::from(room.x) * cell.width,
+        f32::from(room.y) * cell.height,
+        f32::from(room.right()) * cell.width,
+        f32::from(room.bottom()) * cell.height,
+    ]
+}
+
+/// What is left of the frame once the rooms that are moving are taken
+/// out of it.
+///
+/// Rectangles, left top right bottom, and they do not overlap: each is
+/// drawn as a copy of the picture the frame was drawn into, and a pixel
+/// copied twice is a pixel drawn twice for nothing.
+fn tiles(whole: [f32; 4], rooms: &[[f32; 4]]) -> Vec<[f32; 4]> {
+    let mut left = vec![whole];
+    for room in rooms {
+        let mut kept = Vec::with_capacity(left.len() + 3);
+        for piece in left {
+            cut(piece, *room, &mut kept);
+        }
+        left = kept;
+    }
+    left
+}
+
+/// One rectangle less another, as up to four: what is above the hole,
+/// what is below it, and the two strips beside it.
+///
+/// The strips are cut to the hole's own rows, so that they do not overlap
+/// the pieces above and below.
+fn cut(piece: [f32; 4], room: [f32; 4], into: &mut Vec<[f32; 4]>) {
+    let [left, top, far, low] = piece;
+    if room[0] >= far || room[2] <= left || room[1] >= low || room[3] <= top {
+        into.push(piece);
+        return;
+    }
+    if room[1] > top {
+        into.push([left, top, far, room[1]]);
+    }
+    if room[3] < low {
+        into.push([left, room[3], far, low]);
+    }
+    let (over, under) = (room[1].max(top), room[3].min(low));
+    if room[0] > left {
+        into.push([left, over, room[0], under]);
+    }
+    if room[2] < far {
+        into.push([room[2], over, far, under]);
+    }
+}
+
+/// How much of a pane a slide has let through, which is the room its
+/// shadow falls from.
+///
+/// A pane on its way in is taken from `shift` pixels further up or down
+/// its own picture and stops where that picture does -- so the edge it is
+/// joined by stays where it is, at the seam, and the free edge is the one
+/// that has moved. Which is the edge a shadow falls from, so this is the
+/// only part of it that the sliding changes.
+fn reached(pane: [f32; 4], shift: f32) -> [f32; 4] {
+    [
+        pane[0],
+        pane[1] + shift.max(0.0),
+        pane[2],
+        pane[3] + shift.min(0.0),
+    ]
+}
+
+/// Which half plane a pane casts its shadow into, which is the same one
+/// its glass is cut to.
+///
+/// A pane is joined to the page along one edge and casts from the other:
+/// a list standing on the status row throws its shadow up over the file,
+/// and one hanging from the top throws it down.
+fn casting(joined: Joined) -> u32 {
+    match joined {
+        Joined::Above => HANGING,
+        Joined::Below => STANDING,
+        // Never here -- a box is `card_glass`'s.
+        Joined::Nowhere => 0,
+    }
+}
+
 fn mixed(from: [f32; 4], to: [f32; 4], along: f32) -> [f32; 4] {
     let along = along.clamp(0.0, 1.0);
     let mut out = to;
@@ -3848,6 +4013,78 @@ mod tests {
         }
     }
 
+    /// The frame is put back everywhere the things that are moving are
+    /// not, exactly once.
+    ///
+    /// The pieces are what a pane's gap and a band's gap show through, so
+    /// a pixel they miss is a pixel showing whatever happened to be drawn
+    /// there before -- the page, or a row of some other band's old page
+    /// that landed outside its own room. And a pixel drawn twice is the
+    /// picture copied twice for nothing.
+    ///
+    /// Deliberate break: leave out either strip beside the hole and the
+    /// columns level with a band stop being covered -- which is where a
+    /// list's own scrollbar is, and where the code beside a compact list
+    /// is. Leave out the piece below and a band standing on the status
+    /// row takes the status row with it.
+    #[test]
+    fn the_frame_is_put_back_everywhere_nothing_is_moving() {
+        let whole = [0.0, 0.0, 100.0, 60.0];
+        let rooms = [[10.0, 10.0, 40.0, 30.0], [60.0, 0.0, 100.0, 20.0]];
+        let pieces = tiles(whole, &rooms);
+        let inside = |[left, top, far, low]: [f32; 4], x: f32, y: f32| {
+            x >= left && x < far && y >= top && y < low
+        };
+        // Every half-cell of the window, which catches an edge off by
+        // one as well as a piece missing altogether.
+        let mut over = 0_usize;
+        let mut under = 0_usize;
+        for step in 0_u16..(200 * 120) {
+            let (x, y) = (f32::from(step % 200) * 0.5, f32::from(step / 200) * 0.5);
+            let covered = pieces.iter().filter(|piece| inside(**piece, x, y)).count();
+            let moving = rooms.iter().any(|room| inside(*room, x, y));
+            match moving {
+                true => over += usize::from(covered > 0),
+                false => {
+                    over += covered.saturating_sub(1);
+                    under += usize::from(covered == 0);
+                }
+            }
+        }
+        assert_eq!(under, 0, "pixels the frame was not put back on");
+        assert_eq!(over, 0, "pixels it was put back on twice, or over a hole");
+        // And with nothing moving it is the one rectangle it always was.
+        assert_eq!(tiles(whole, &[]), vec![whole]);
+    }
+
+    /// A pane's shadow falls from the edge the pane has reached.
+    ///
+    /// The frame is drawn once and put back in two pieces, and a shadow
+    /// is the one part of a pane outside the pane's own room -- so it
+    /// belongs to the piece that slides, at the edge that has moved. The
+    /// joined edge is a seam and does not move: the picture the pane is
+    /// taken from stops there.
+    ///
+    /// Deliberate break: answer `pane` itself. The shadow then lies at
+    /// the edge the pane is *going* to have, with the page still showing
+    /// under it -- which is a band of dark across the file for a fifth of
+    /// a second, and is what a compact list looked like before this.
+    #[test]
+    fn a_pane_casts_from_the_edge_it_has_reached() {
+        let pane = [10.0, 100.0, 200.0, 300.0];
+        // Standing on the status row: it comes up from below, so it is
+        // drawn from `shift` below its top and down to its own foot.
+        let standing = reached(pane, 40.0);
+        assert!((standing[1] - 140.0).abs() < f32::EPSILON, "{standing:?}");
+        assert!((standing[3] - 300.0).abs() < f32::EPSILON, "the seam");
+        // And hanging from the top, the other way about.
+        let hanging = reached(pane, -40.0);
+        assert!((hanging[1] - 100.0).abs() < f32::EPSILON, "the seam");
+        assert!((hanging[3] - 260.0).abs() < f32::EPSILON, "{hanging:?}");
+        // Arrived, and it is simply the pane.
+        assert_eq!(reached(pane, 0.0), pane);
+    }
+
     /// A square of colour is a hole in a pane only where it is the pane's
     /// own colour, inside the pane.
     ///
@@ -3929,8 +4166,7 @@ mod tests {
             stroked: &[],
             behind: None,
             cards: &[],
-            band: None,
-            bar: None,
+            bands: &[],
         };
         assert!(
             drawn_as_a_shape(&page, &said, &[], &[], 9, 0),
@@ -4203,8 +4439,7 @@ mod tests {
             parted: &[],
             behind: None,
             cards: &[],
-            band: None,
-            bar: None,
+            bands: &[],
         };
         for row in 0..3 {
             assert!(

@@ -247,13 +247,34 @@ pub(crate) struct Said<'a> {
     /// And under each box with a frame round it, nearest the reader last:
     /// over that pane where both are up.
     pub(crate) cards: &'a [Behind],
-    /// The band of rows that is catching up, and the page as it was
-    /// before it moved -- which is the only place the rows that have
-    /// scrolled off still exist.
-    pub(crate) band: Option<(Rect, &'a Page)>,
-    /// And the bar beside it: where it is, and how many rows its mark
-    /// still has to come. Rows the bar itself was drawn at, both ends, so
-    /// there is nothing between them to round differently.
+    /// And the bands that are catching up with where their lists have
+    /// got to.
+    ///
+    /// As many as the screen has: a hover over a file and a list beside a
+    /// preview are two bands, and which of them moved is not which of
+    /// them was mentioned last.
+    pub(crate) bands: &'a [Rolled<'a>],
+}
+
+/// A band of rows on its way to where its list has got to.
+///
+/// Four facts that mean nothing apart: which rows, the page they were on
+/// before the move -- the only place the rows that have scrolled off
+/// still exist -- how far behind it is being drawn, and how far that page
+/// is from there.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Rolled<'a> {
+    /// The rows the list is in.
+    pub(crate) room: Rect,
+    /// The page as it was before the slide began.
+    pub(crate) before: &'a Page,
+    /// How many rows behind where it has got to it is drawn.
+    pub(crate) behind: f32,
+    /// And how far the kept page is from there.
+    pub(crate) since: f32,
+    /// The bar beside it: where it is, and how many rows its mark still
+    /// has to come. Rows the bar itself was drawn at, both ends, so there
+    /// is nothing between them to round differently.
     pub(crate) bar: Option<(Rect, f32)>,
 }
 
