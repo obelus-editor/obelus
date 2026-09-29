@@ -3,6 +3,7 @@
 #
 #   curl -fsSL https://raw.githubusercontent.com/obelus-editor/obelus/master/contrib/install.sh | sh
 #   curl -fsSL .../install.sh | sh -s -- --bin ob --dir /usr/local/bin
+#   curl -fsSL .../install.sh | sh -s -- --uninstall
 #
 # POSIX sh, because the one machine this has to work on is somebody else's.
 # What it needs is `uname`, `tar`, `curl` or `wget`, and something that
@@ -30,6 +31,20 @@ directory=${OBELUS_INSTALL_DIR:-$HOME/.local/bin}
 # reader who meant Obelus too, and refusable because it writes two files
 # outside `--dir`.
 omarchy=yes
+# Whether this is the taking-away rather than the putting-there.
+removing=no
+
+# The two files the omarchy half writes. They are the only things this puts
+# outside `--dir`, and so the two `--uninstall` has to know the names of --
+# which is why they are named here rather than where they are written.
+# `rendered` is where omarchy renders the theme: the link points *into*
+# that directory rather than at a copy, because the whole of it is replaced
+# when a theme is set.
+templates=$HOME/.config/omarchy/themed
+template_file=$templates/obelus.toml.tpl
+themes=$HOME/.config/obelus/themes
+link=$themes/omarchy.toml
+rendered=$HOME/.local/state/omarchy/current/theme/obelus.toml
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'obelus: %s\n' "$*" >&2; exit 1; }
@@ -44,7 +59,11 @@ Usage: install.sh [options]
   --dir PATH          Where to put it. The default is ~/.local/bin, or
                       $OBELUS_INSTALL_DIR where that is set.
   --no-omarchy        Do not install Obelus's omarchy theme template, which
-                      is otherwise installed where omarchy is found.
+                      is otherwise installed where omarchy is found. With
+                      --uninstall, leave it where it is.
+  --uninstall         Take it away again: `ob` and `obg` out of --dir, and
+                      the omarchy theme template and its link. Nothing else
+                      -- your settings are yours.
   --help              This.
 USAGE
 }
@@ -55,10 +74,102 @@ while [ $# -gt 0 ]; do
         --version) tag=${2:-}; shift 2 ;;
         --dir) directory=${2:-}; shift 2 ;;
         --no-omarchy) omarchy=no; shift ;;
+        --uninstall) removing=yes; shift ;;
         --help|-h) usage; exit 0 ;;
         *) die "$1 is not an option this understands. --help says what is." ;;
     esac
 done
+
+# Taking it away again, which fetches nothing and checks nothing: what is on
+# the machine is the whole of what this is about. So it happens before the
+# curl, the wget and the sha256 this would otherwise insist on -- a machine
+# that has lost one of those can still be a machine with an Obelus to remove.
+#
+# What it may take back is what it put there, which is the rule the Windows
+# script's half follows too. Not the settings: those are the reader's own,
+# and a script that removed them would be taking away the thing the install
+# was for. Nor `--dir`, which on this side is `~/.local/bin` and full of
+# everything else the reader keeps there -- and nor the PATH, because the
+# install said to add it rather than adding it.
+take_it_away() {
+    removed=0
+    theme_went=no
+
+    say "Taking Obelus out of $directory"
+
+    for binary in ob obg; do
+        [ -f "$directory/$binary" ] || continue
+        if rm -f "$directory/$binary"; then
+            say "  removed $directory/$binary"
+            removed=$((removed + 1))
+        else
+            say "  $directory/$binary could not be removed"
+        fi
+    done
+
+    if [ "$omarchy" = yes ]; then
+        # The link, and only where it is this Obelus's. Anything else of
+        # that name is the reader's own theme file -- which the install
+        # would not write over either -- and a dangling link is still one
+        # of ours, since that is the ordinary state of it between a theme
+        # being set and the next.
+        if [ -L "$link" ]; then
+            points=$(readlink "$link" 2> /dev/null || true)
+            if [ "$points" != "$rendered" ]; then
+                say "  left $link alone: it points at $points"
+            elif rm -f "$link"; then
+                say "  removed $link"
+                removed=$((removed + 1))
+                theme_went=yes
+            else
+                say "  $link could not be removed"
+            fi
+        elif [ -e "$link" ]; then
+            say "  left $link alone: it is a file this did not write"
+        fi
+
+        # The template, which is Obelus's own file at a name Obelus chose --
+        # the install writes over whatever wears that name for the same
+        # reason.
+        if [ -f "$template_file" ]; then
+            if rm -f "$template_file"; then
+                say "  removed $template_file"
+                removed=$((removed + 1))
+            else
+                say "  $template_file could not be removed"
+            fi
+        fi
+
+        # Said, not done. Which theme a reader is on is a line of their
+        # settings, and this script has no more business editing it on the
+        # way out than it had on the way in -- but a name with nothing
+        # behind it is worth a word, because Obelus's own answer to one is a
+        # mark on that line and nothing on the screen changing colour.
+        #
+        # Only where the link went just now. It is the link that answers
+        # to the name `omarchy`, not the template -- one left behind
+        # because it is the reader's own file is a theme that still reads.
+        # And a reader who has uninstalled already would otherwise be told
+        # about a line they were told about last time.
+        if [ "$theme_went" = yes ] && grep -q '^[[:space:]]*theme[[:space:]]*=[[:space:]]*"omarchy"' \
+            "$HOME/.config/obelus/config.toml" 2> /dev/null; then
+            say '
+~/.config/obelus/config.toml still says theme = "omarchy", which now names a
+theme that is not there. Obelus marks that line and keeps the colours it has.'
+        fi
+    fi
+
+    # Because a script that removed nothing and said nothing is one the
+    # reader cannot tell from a script that failed.
+    if [ "$removed" -eq 0 ]; then
+        say "There is nothing of Obelus's in $directory to remove."
+    fi
+}
+
+if [ "$removing" = yes ]; then
+    take_it_away
+    exit 0
+fi
 
 case $binaries in
     ob|obg) ;;
@@ -201,13 +312,6 @@ done
 # colours are not a reason to say the install did not happen. So each step
 # says what stopped it and gives up, rather than dying.
 the_omarchy_theme() {
-    templates=$HOME/.config/omarchy/themed
-    themes=$HOME/.config/obelus/themes
-    link=$themes/omarchy.toml
-    # Where omarchy renders it. The link points *into* that directory rather
-    # than at a copy, because the whole of it is replaced when a theme is set.
-    rendered=$HOME/.local/state/omarchy/current/theme/obelus.toml
-
     say '
 omarchy is here, so Obelus can be themed with the rest of the desktop:'
 
@@ -230,9 +334,9 @@ omarchy is here, so Obelus can be themed with the rest of the desktop:'
     # Written over where it is already there. The template is Obelus's own
     # file at a name Obelus chose, and an install is asking for this
     # version's mapping of it.
-    cp "$template" "$templates/obelus.toml.tpl" \
-        || { say "  $templates/obelus.toml.tpl could not be written"; return; }
-    say "  $templates/obelus.toml.tpl"
+    cp "$template" "$template_file" \
+        || { say "  $template_file could not be written"; return; }
+    say "  $template_file"
 
     # A dangling link is a link (`-L` is true where `-e` is false), and it is
     # the ordinary state of this one between a theme being set and the next.
