@@ -924,17 +924,17 @@ impl Painter {
         if let Some(card) = card {
             self.card_glass(page, card, said.behind, fonts);
         }
-        // The shapes the page still holds -- see `Barred::still_said` and
-        // the two beside it, and `Capped`'s a few lines down, which is
+        // The shapes the page still holds -- see `Ticked::still_said` and
+        // the one beside it, and `Capped`'s a few lines down, which is
         // kept apart only because the caps are wanted as borrows. Asked
         // here rather than where each is drawn, so that the cells
         // `letters` leaves alone are the cells a shape is drawn over.
-        let barred: Vec<Barred> = said
-            .barred
-            .iter()
-            .copied()
-            .filter(|showing| showing.still_said(page))
-            .collect();
+        //
+        // A bar is not among them, and answers the same question finer:
+        // where a switch and a mark are one cell and a run of them either
+        // is or is not still there, a bar is a column and the thing over
+        // it may take the middle of it -- so it is asked row by row, at
+        // the two places it matters, and `Barred::runs` is that answer.
         let ticked: Vec<Ticked> = said
             .ticked
             .iter()
@@ -948,7 +948,6 @@ impl Painter {
             .cloned()
             .collect();
         let said = Said {
-            barred: &barred,
             ticked: &ticked,
             marked: &marked,
             ..said
@@ -1851,6 +1850,16 @@ impl Painter {
                 )
             };
 
+            // Only the rows that are still the bar's. A card goes over
+            // the page before this pass, so a panel as wide as the editor
+            // has its own right-hand edge in this very column -- and the
+            // capsule was drawn over it. The same question a rule asks of
+            // each of its cells.
+            let runs = showing.runs(page);
+            if runs.is_empty() {
+                continue;
+            }
+
             // A row the mark does not cover, which is where the track's
             // colour is. There may be none -- a mark as long as its track
             // -- and then there is no track to draw either: every pixel of
@@ -1863,18 +1872,21 @@ impl Painter {
                 // what it says is how far the mark can travel, and the
                 // column it is in says that much on its own.
                 let (left, width) = capsule(BAR_TRACK);
-                self.rounded(
-                    left,
-                    f32::from(bar.area.y) * cell.height,
-                    width,
-                    f32::from(bar.area.height) * cell.height,
-                    width / 2.0,
-                    mixed(
-                        rgba(look.background, Ink::Background),
-                        rgba(look.foreground, Ink::Foreground),
-                        shown,
-                    ),
+                let ink = mixed(
+                    rgba(look.background, Ink::Background),
+                    rgba(look.foreground, Ink::Foreground),
+                    shown,
                 );
+                for (top, rows) in &runs {
+                    self.rounded(
+                        left,
+                        f32::from(*top) * cell.height,
+                        width,
+                        f32::from(*rows) * cell.height,
+                        width / 2.0,
+                        ink,
+                    );
+                }
             }
 
             // Two widths in one: how far up the scrolling has brought it,
@@ -1888,18 +1900,30 @@ impl Painter {
             let (left, width) = capsule(wide);
             let top = bar.area.y.saturating_add(bar.mark);
             let look = page.look(column, top);
-            self.rounded(
-                left,
-                f32::from(top) * cell.height,
-                width,
-                f32::from(bar.thumb) * cell.height,
-                width / 2.0,
-                mixed(
-                    rgba(look.background, Ink::Background),
-                    rgba(look.foreground, Ink::Foreground),
-                    BAR_RESTING + (1.0 - BAR_RESTING) * shown,
-                ),
+            let ink = mixed(
+                rgba(look.background, Ink::Background),
+                rgba(look.foreground, Ink::Foreground),
+                BAR_RESTING + (1.0 - BAR_RESTING) * shown,
             );
+            // And the mark only where the column is still the bar's, the
+            // same as the track: half a mark is where the reader is, and a
+            // mark drawn across whatever covered it is not.
+            let wanted = top..top.saturating_add(bar.thumb);
+            for (run, rows) in &runs {
+                let from = (*run).max(wanted.start);
+                let to = run.saturating_add(*rows).min(wanted.end);
+                if from >= to {
+                    continue;
+                }
+                self.rounded(
+                    left,
+                    f32::from(from) * cell.height,
+                    width,
+                    f32::from(to - from) * cell.height,
+                    width / 2.0,
+                    ink,
+                );
+            }
         }
     }
 
@@ -3190,7 +3214,10 @@ fn drawn_as_a_shape(
         || framed.iter().any(|card| card.ring_holds(page, column, row))
         || capped.iter().any(|cap| within(cap.area))
         || said.ticked.iter().any(|tick| within(tick.area))
-        || said.barred.iter().any(|bar| within(bar.bar.area))
+        // Asked of the cell and not of the column, the same as a rule's:
+        // a panel drawn over a scrollbar leaves cells in that column that
+        // are the panel's, and the letters there are its own.
+        || said.barred.iter().any(|bar| bar.covers(page, column, row))
         // Per cell rather than per run, and against the glyph, the same as
         // a rule: the margin is drawn to the foot of the editor's region
         // and a compact list goes over the bottom of it, so the rows under
@@ -3792,18 +3819,26 @@ mod tests {
     }
 
     /// A bar's cells are the window's to draw, so the letters leave them
-    /// alone.
+    /// alone -- and only while the cells are still the bar's.
     ///
-    /// Deliberate break: take the `barred` clause out of
-    /// `drawn_as_a_shape`. The block a terminal draws a bar with is then
-    /// put on the screen under the capsule, and the only way to be rid of
+    /// Both halves matter and each passes with the other broken. A bar
+    /// whose cells were not left alone puts the block a terminal draws it
+    /// with on the screen under the capsule, and the only way to be rid of
     /// it is to paint over the cell -- which is what this did first, and
     /// on a pane those cells are glass, so every list in Obelus got an
     /// opaque strip down its right-hand side where the reader was meant to
-    /// see through.
+    /// see through. A bar that asked only which *column* it was in claims
+    /// the cells of whatever was drawn over it: a panel as wide as the
+    /// editor has its own right-hand edge in the scrollbar's column.
+    ///
+    /// Deliberate break: take the `barred` clause out of
+    /// `drawn_as_a_shape` for the first, and put `within(bar.bar.area)`
+    /// back for the second.
     #[test]
     fn a_bar_is_not_drawn_as_letters_as_well() {
-        let page = page("");
+        // The block a terminal draws a bar with, which is what says the
+        // cell is still the bar's.
+        let page = page("         \u{2588}\u{2502}");
         let bar = Barred {
             bar: obelus_ui::shapes::Bar {
                 area: ratatui::layout::Rect {
@@ -3840,6 +3875,36 @@ mod tests {
         assert!(
             !drawn_as_a_shape(&page, &said, &[], &[], 8, 0),
             "and not the one beside it, which is the file"
+        );
+
+        // The same column, one cell along, holding a panel's own edge: the
+        // bar was said about it and the cell is not its any more.
+        let wider = Barred {
+            bar: obelus_ui::shapes::Bar {
+                area: ratatui::layout::Rect {
+                    x: 10,
+                    y: 0,
+                    width: 1,
+                    height: 1,
+                },
+                mark: 0,
+                thumb: 1,
+            },
+            shown: 1.0,
+            under: 0.0,
+        };
+        let covered = [wider];
+        let said = Said {
+            barred: &covered,
+            ..said
+        };
+        assert!(
+            !drawn_as_a_shape(&page, &said, &[], &[], 10, 0),
+            "a cell a panel took is drawn as the panel's, not left blank"
+        );
+        assert!(
+            wider.runs(&page).is_empty(),
+            "and the capsule is not drawn across it either"
         );
     }
 

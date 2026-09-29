@@ -381,26 +381,46 @@ pub(crate) struct Barred {
 }
 
 impl Barred {
-    /// Whether the page still holds the bar this was said about.
+    /// Whether this row of the column is still the bar's.
     ///
-    /// The same question `Capped::still_said` asks, for the same reason: a
-    /// view that draws and is then drawn over inside the one frame has
-    /// already said its bar, and a bar is drawn from where it was said
-    /// rather than from what the page holds there. So the file's own bar
-    /// was drawn down the side of every list opened over it -- full height,
-    /// across the list, the preview, the foot and the row that is typed in
-    /// -- where the reader could take hold of it and scroll a file they
-    /// could not see.
+    /// A cell holding anything but the block a terminal draws a bar with
+    /// is somebody else's by now -- the same question a rule asks of each
+    /// of its cells, and a cap of the ones its key sits in.
     ///
-    /// Every row of it, because that is what tells one bar from another:
-    /// the list that covered the file has a bar of its own in the same
-    /// column, drawn with the same block, and what says the file's is gone
-    /// is the rows outside the list that are not blocks any more.
-    pub(crate) fn still_said(&self, page: &Page) -> bool {
-        let area = self.bar.area;
-        // What `obelus_ui::scrollbar` draws a bar with, which is a surface
-        // rather than a line -- see the `BAR` it writes.
-        (area.top()..area.bottom()).all(|y| page.look(area.x, y).text == "\u{2588}")
+    /// Which a bar had no answer to, and it is drawn late: a card goes
+    /// over the page before the backgrounds, the letters and this, so a
+    /// panel as wide as the editor puts its own right-hand edge in the
+    /// scrollbar's column -- and the capsule was painted over it. A
+    /// terminal never had the bug, because there the panel simply writes
+    /// `\u{2502}` into the cell and the bar is gone.
+    fn holds(&self, page: &Page, y: u16) -> bool {
+        page.look(self.bar.area.x, y).text == "\u{2588}"
+    }
+
+    /// The rows of it that are still its own, as runs: where each starts
+    /// and how many rows it is.
+    ///
+    /// A column cut in half by something drawn over its middle is two
+    /// bars, for the reason a rule covered in the middle is two lines.
+    pub(crate) fn runs(&self, page: &Page) -> Vec<(u16, u16)> {
+        let mut runs: Vec<(u16, u16)> = Vec::new();
+        for y in self.bar.area.top()..self.bar.area.bottom() {
+            if !self.holds(page, y) {
+                continue;
+            }
+            match runs.last_mut() {
+                Some(run) if run.0 + run.1 == y => run.1 += 1,
+                _ => runs.push((y, 1)),
+            }
+        }
+        runs
+    }
+
+    /// Whether this cell is the bar's and still holds it.
+    pub(crate) fn covers(&self, page: &Page, x: u16, y: u16) -> bool {
+        x == self.bar.area.x
+            && (self.bar.area.top()..self.bar.area.bottom()).contains(&y)
+            && self.holds(page, y)
     }
 }
 
@@ -1575,10 +1595,16 @@ mod tests {
 
     /// And a bar is a bar only where its cells still say so.
     ///
-    /// Deliberate break: answer `true`. The file's own bar is then drawn
-    /// down the side of the list opened over it -- past the list, the
-    /// preview and the foot, widening under the pointer -- on a list of
-    /// nine rows with nothing to scroll.
+    /// Row by row, which is what a column needs and a cell does not: the
+    /// thing drawn over a bar may take the middle of it, so what is left
+    /// is runs rather than an answer about the whole. The file's own bar
+    /// under a list keeps only the rows the list wrote its own bar into,
+    /// which is where the list's bar already is.
+    ///
+    /// Deliberate break: have `holds` answer `true`. The file's own bar is
+    /// then drawn down the side of the list opened over it -- past the
+    /// list, the preview and the foot, widening under the pointer -- on a
+    /// list of nine rows with nothing to scroll.
     #[test]
     fn a_bar_is_a_bar_only_where_its_cells_still_say_so() {
         // A column the list drew two rows of and the file drew all four:
@@ -1598,11 +1624,16 @@ mod tests {
             shown: 1.0,
             under: 0.0,
         };
-        assert!(
-            showing(0, 2).still_said(&page),
+        assert_eq!(
+            showing(0, 2).runs(&page),
+            vec![(0, 2)],
             "the list's own, drawn last"
         );
-        assert!(!showing(0, 4).still_said(&page), "and the file's, under it");
+        assert_eq!(
+            showing(0, 4).runs(&page),
+            vec![(0, 2)],
+            "and the file's, which reaches past what is still its own"
+        );
     }
 
     /// A box with a frame, as the view says one: a pane joined to nothing,
