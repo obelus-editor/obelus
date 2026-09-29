@@ -112,6 +112,28 @@ fn said(seen: &Arc<Mutex<Vec<String>>>) -> String {
         .unwrap_or_else(|_| "(poisoned)".to_string())
 }
 
+/// Waits until whatever the setting up stirred is over.
+///
+/// A watcher is started on a file the test has just made, and on a
+/// platform whose events are coalesced and delivered late that creation
+/// and write arrive *after* the watch is taken -- with their flags rolled
+/// into whatever the test does next. macOS reported a `chmod` as
+/// `Create(File)`, `Modify(Metadata(Ownership))` and
+/// `Modify(Data(Content))` at once, and the two about reading saw the
+/// setup's own write land in the window they were watching.
+///
+/// So the quiet is waited for rather than assumed. Two hundred
+/// milliseconds of nothing, which on a platform that reports promptly is
+/// one pass of an empty channel.
+fn settled(events: &Receiver<Event>) {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline {
+        if collect(events, Duration::from_millis(200)).is_empty() {
+            return;
+        }
+    }
+}
+
 /// Collects every change that arrives in `window`.
 fn collect(events: &Receiver<Event>, window: Duration) -> Vec<PathBuf> {
     let deadline = Instant::now() + window;
@@ -238,6 +260,7 @@ fn reading_the_file_is_not_a_change() {
     let (sender, events) = obelus_app::event::channel();
     let mut watcher = Watcher::new(sender).expect("starting the watcher");
     watcher.watch(&path).expect("watching");
+    settled(&events);
     let (_kinds, kinds) = kinds(&path);
 
     // Exactly what a reload does.
@@ -313,6 +336,7 @@ fn a_change_of_mode_is_not_a_change_to_the_file() {
     let (sender, events) = obelus_app::event::channel();
     let mut watcher = Watcher::new(sender).expect("starting the watcher");
     watcher.watch(&path).expect("watching");
+    settled(&events);
     let (_kinds, kinds) = kinds(&path);
 
     let mut how = fs::metadata(&path).expect("its mode").permissions();
@@ -423,6 +447,7 @@ fn reading_a_file_says_nothing() {
     let (sender, events) = obelus_app::event::channel();
     let mut watcher = Watcher::new(sender).expect("starting the watcher");
     watcher.watch(&path).expect("watching");
+    settled(&events);
     let (_kinds, kinds) = kinds(&path);
 
     // Opened for reading and closed, which is what looking at a claim is.

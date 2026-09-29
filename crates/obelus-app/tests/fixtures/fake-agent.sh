@@ -332,7 +332,14 @@ while IFS= read -r line; do
             # Long enough that the wait is a wait: a command that has
             # already finished when the agent asks never reaches the half
             # of the client that holds the question open.
-            printf '{"jsonrpc":"2.0","id":920,"method":"terminal/create","params":{"sessionId":"%s","command":"sleep 0.3; printf %%s obelus-ran-this; exit 3","args":[]}}\n' "$session"
+            #
+            # Handed to `sh` by name rather than written for whichever
+            # shell Obelus reaches for. On Windows that is `cmd`, which
+            # does not know `;` -- it ran `sleep` with the rest as its
+            # arguments and said `invalid time interval '0.3;'`. Double
+            # quotes and not single: both shells group with those, and
+            # only one of them groups with the other.
+            printf '{"jsonrpc":"2.0","id":920,"method":"terminal/create","params":{"sessionId":"%s","command":"sh -c \\"sleep 0.3; printf %%s obelus-ran-this; exit 3\\"","args":[]}}\n' "$session"
             ;;
         *'"id":920'*)
             term=$(printf '%s' "$line" | sed 's/.*"terminalId":"//; s/".*//')

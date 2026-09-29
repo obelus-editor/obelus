@@ -5682,7 +5682,7 @@ fn a_command_is_on_the_page_in_the_words_it_was_run_in() {
     // Opened by a press on its row, which is what a reader has.
     let shut = support::render(&mut app, WIDTH, HEIGHT);
     assert!(
-        !rows(&shut).iter().any(|row| row.contains("$ sleep 0.3;")),
+        !rows(&shut).iter().any(|row| row.contains("$ sh -c")),
         "a command that is over is still holding the page open:\n{shut}"
     );
     let y = row_of(&shut, "Run the tests");
@@ -5697,7 +5697,7 @@ fn a_command_is_on_the_page_in_the_words_it_was_run_in() {
     assert!(
         screen
             .iter()
-            .any(|row| row.contains("$ sleep 0.3; printf %s obelus-ran-this; exit 3")),
+            .any(|row| row.contains(r#"$ sh -c "sleep 0.3; printf %s obelus-ran-this; exit 3""#)),
         "the command the reader never typed is not on the page:\n{dump}"
     );
     // And what it printed, under it -- a row of its own, which is what
