@@ -195,8 +195,11 @@ fn what_is_said_reads_as_copy() {
     support::type_text(&mut app, "src/hint.rs");
     support::press(&mut app, crossterm::event::KeyCode::Enter);
     let said = app.note().unwrap_or_default();
-    let name = support::as_shown("src/hint.rs");
-    assert!(reads_as_copy(said, Some(&name)), "a path: {said:?}");
+    // In the spelling it was typed in, not this platform's: Windows takes
+    // `/` as a separator and `Path::display` writes back what it was
+    // given, so the name in the sentence is the reader's own. `as_shown`
+    // is for the paths Obelus builds and spells itself.
+    assert!(reads_as_copy(said, Some("src/hint.rs")), "a path: {said:?}");
     assert!(
         !said.starts_with(char::is_uppercase),
         "the name was rewritten rather than led with: {said:?}"
