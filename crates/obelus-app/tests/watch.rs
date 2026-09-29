@@ -210,7 +210,7 @@ fn a_burst_of_writes_is_reported_once() {
             .open(&path)
             .expect("opening it once");
         for index in 1..=10 {
-            write!(file, "{index}\n").expect("writing");
+            writeln!(file, "{index}").expect("writing");
             file.flush().expect("flushing");
         }
     }
