@@ -550,3 +550,77 @@ fn the_row_says_it_with_nothing_open() {
         .unwrap_or_default();
     assert_eq!(row, "src is already there", "\n{dump}");
 }
+
+/// A path that leaves the project is refused.
+///
+/// Which a rename is not: taking a path rather than a name is what moving
+/// a file *is*, and the file it moves is one the reader already had. This
+/// makes one, and where Obelus makes a file is the project it was opened
+/// on -- `../../etc/hosts` typed into a question that opens blank is a
+/// slip, not a plan.
+///
+/// Deliberate break: drop the `folded` guard in `make_file`. The file is
+/// made outside the project and opened, and the only thing that ever said
+/// so was the directory on the row, a keypress earlier.
+#[test]
+fn a_path_that_leaves_the_project_is_refused() {
+    let (scratch, mut app) = reading("outside");
+    // Named after this scratch directory, which carries the process's
+    // number: a run that fails leaves the file it should not have made,
+    // and a fixed name would fail every run after it for that reason
+    // rather than for its own.
+    let name = format!(
+        "{}-escaped.rs",
+        scratch
+            .path()
+            .file_name()
+            .expect("a name")
+            .to_string_lossy()
+    );
+    let outside = scratch.path().parent().expect("a parent").join(&name);
+    assert!(!outside.exists(), "it is there before the test runs");
+
+    for typed in [format!("../{name}"), format!("src/../../{name}")] {
+        let typed = typed.as_str();
+        dispatch::dispatch(&mut app, Command::FileNew);
+        for _ in 0..80 {
+            support::press(&mut app, KeyCode::Backspace);
+        }
+        support::type_text(&mut app, typed);
+        support::press(&mut app, KeyCode::Enter);
+        assert!(
+            app.note()
+                .is_some_and(|said| said.ends_with("is outside the project")),
+            "answering {typed:?}: {:?}",
+            app.note()
+        );
+        assert!(!outside.exists(), "{typed:?} made a file outside it");
+    }
+
+    // An absolute one is the same answer: what is asked is where the file
+    // lands, not how the reader spelled it.
+    let away = std::env::temp_dir().join("obelus-outside.rs");
+    dispatch::dispatch(&mut app, Command::FileNew);
+    for _ in 0..80 {
+        support::press(&mut app, KeyCode::Backspace);
+    }
+    support::type_text(&mut app, &away.display().to_string());
+    support::press(&mut app, KeyCode::Enter);
+    assert!(
+        app.note()
+            .is_some_and(|said| said.ends_with("is outside the project")),
+        "an absolute answer: {:?}",
+        app.note()
+    );
+    assert!(!away.exists(), "an absolute answer made a file outside it");
+
+    // And a path that walks out and back in is inside it, because where it
+    // lands is what is being asked.
+    dispatch::dispatch(&mut app, Command::FileNew);
+    for _ in 0..80 {
+        support::press(&mut app, KeyCode::Backspace);
+    }
+    support::type_text(&mut app, "src/../made.rs");
+    support::press(&mut app, KeyCode::Enter);
+    assert!(scratch.join("made.rs").exists(), "{:?}", app.note());
+}

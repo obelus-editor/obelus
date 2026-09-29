@@ -1254,6 +1254,23 @@ impl App {
     /// one fact, one sentence, wherever the reader meets it.
     pub(super) fn make_file(&mut self, answer: &Path) {
         let path = self.landing(answer);
+        // Somewhere else entirely. A rename may leave the project --
+        // taking a path rather than a name is what moving a file *is*,
+        // and the file it moves is one the reader already had -- but this
+        // makes one, and where Obelus makes a file is the project it was
+        // opened on. `../../etc/hosts` typed into a question that opens
+        // blank is a slip, not a plan.
+        //
+        // Folded before it is asked, because `starts_with` is spelling
+        // and not place: `<project>/../elsewhere` begins with the
+        // project's own path and is nowhere near it.
+        if !folded(&path).starts_with(folded(&self.working_directory)) {
+            self.wrong(format!(
+                "{} is outside the project",
+                self.named(&path, answer)
+            ));
+            return;
+        }
         // A directory that is not there yet, which is what taking a path
         // rather than a name is for: a reader starting a module should not
         // have to leave to make the directory it goes in. The rename says
@@ -1653,6 +1670,35 @@ pub(super) struct Rendered {
 /// replaced by a directory leaves the buffer showing what it last held.
 /// Losing the contents would be worse than showing something a moment out of
 /// date.
+/// A path with its `.` and `..` folded away, without asking the disk.
+///
+/// Lexical, and deliberately so twice over. `canonicalize` wants the path
+/// to exist, which the one being made by definition does not; and it
+/// resolves symlinks, which would judge a path by a name the reader did
+/// not use -- the same reason `Buffer::open` keeps an absolute path rather
+/// than a canonical one.
+///
+/// Which leaves a symlink inside the project pointing out of it, and that
+/// is a file the reader put there on purpose. What this is for is the slip.
+fn folded(path: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for part in path.components() {
+        match part {
+            std::path::Component::CurDir => {}
+            // Nothing to climb above keeps the `..`: an answer is resolved
+            // against the project before this, so one that still has them
+            // is one that walked past the root.
+            std::path::Component::ParentDir => {
+                if !out.pop() {
+                    out.push(part);
+                }
+            }
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 pub(super) fn reload(buffer: &mut Buffer) -> bool {
     match buffer.reload() {
         Ok(true) => {
