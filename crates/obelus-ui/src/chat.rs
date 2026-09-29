@@ -1412,7 +1412,7 @@ impl ChatView<'_> {
                 true => format!("{}t", obelus_icons::key::ALT),
                 false => "alt+t".to_string(),
             };
-            (keys, "the note")
+            (keys, "The note")
         });
         let mode = self
             .mode()
@@ -1422,7 +1422,7 @@ impl ChatView<'_> {
                     true => format!("{}{}", obelus_icons::key::SHIFT, obelus_icons::key::TAB),
                     false => "shift+tab".to_string(),
                 };
-                (keys, "mode")
+                (keys, "Mode")
             });
         let others = self
             .conversations
@@ -1695,9 +1695,9 @@ impl ChatView<'_> {
     /// only to wait.
     fn nothing_said(&self) -> &'static str {
         match self.state {
-            Talking::Nobody => "no agent is active \u{2014} open the settings and choose one",
+            Talking::Nobody => "No agent is active \u{2014} open the settings and choose one",
             Talking::Gone => "It stopped. Ask something to start it again",
-            Talking::Starting => "starting\u{2026}",
+            Talking::Starting => "Starting\u{2026}",
             // Idle belongs here rather than with starting. Opening a
             // conversation starts nothing -- no process, no session -- so
             // idle is what every conversation is until the reader says
@@ -1716,9 +1716,9 @@ mod tests {
     #[test]
     fn a_cap_on_the_status_row_is_over_the_key_it_is_about() {
         let hints = [
-            ("alt+t".to_string(), "the note"),
+            ("alt+t".to_string(), "The note"),
             ("ctrl+g".to_string(), "Conversations"),
-            ("shift+tab".to_string(), "mode"),
+            ("shift+tab".to_string(), "Mode"),
         ];
         let said = super::joined(&hints).expect("three hints say something");
         for (along, (keys, _)) in super::where_the_keys_are(&hints).into_iter().zip(&hints) {

@@ -922,7 +922,7 @@ fn the_view_says_when_nobody_is_chosen() {
     app.open_agent();
     let text = screen(&mut app);
     assert!(
-        text.contains("no agent is active"),
+        text.contains("No agent is active"),
         "it did not say why it is empty:\n{text}"
     );
     assert_eq!(app.talking(), obelus_agent::Talking::Nobody);
@@ -2734,12 +2734,12 @@ fn what_is_happening_is_in_the_transcript_and_not_in_the_header() {
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     let shown = rows(&dump);
     assert!(
-        shown[0].contains("Fake Agent") && !shown[0].contains("thinking"),
+        shown[0].contains("Fake Agent") && !shown[0].contains("Thinking"),
         "the header is still saying what is happening:\n{dump}"
     );
     let doing = shown
         .iter()
-        .position(|row| row.contains("thinking\u{2026}"))
+        .position(|row| row.contains("Thinking\u{2026}"))
         .unwrap_or_else(|| panic!("nothing says it is working:\n{dump}"));
     assert!(
         shown[doing].contains("Esc stops it"),
@@ -2753,7 +2753,7 @@ fn what_is_happening_is_in_the_transcript_and_not_in_the_header() {
     });
     let text = screen(&mut app);
     assert!(
-        !text.contains("thinking\u{2026}"),
+        !text.contains("Thinking\u{2026}"),
         "it is still saying it is working:\n{text}"
     );
 }
@@ -2906,7 +2906,7 @@ fn the_row_that_says_it_is_working_turns_while_it_is_working() {
         let dump = support::render(app, WIDTH, HEIGHT);
         rows(&dump)
             .iter()
-            .find(|row| row.contains("thinking"))
+            .find(|row| row.contains("Thinking"))
             .and_then(|row| row.split_once('|'))
             .and_then(|(_, drawn)| drawn.trim_start().chars().next())
             .expect("the row that says it is working")
@@ -4494,7 +4494,7 @@ fn a_narrow_row_keeps_the_settings_and_the_keys() {
 
     // Where it fits, all three are there.
     let wide = row(&mut app, WIDTH);
-    assert!(wide.contains("94%") && wide.contains("mode") && wide.contains("ask first"));
+    assert!(wide.contains("94%") && wide.contains("Mode") && wide.contains("ask first"));
 
     // Where it does not, the number goes and the other two stay whole.
     let narrow = row(&mut app, 30);
@@ -4503,7 +4503,7 @@ fn a_narrow_row_keeps_the_settings_and_the_keys() {
         "the number stayed on a row that could not hold it: {narrow:?}"
     );
     assert!(
-        narrow.contains("mode"),
+        narrow.contains("Mode"),
         "the keys were pushed off the end: {narrow:?}"
     );
     assert!(
@@ -5447,7 +5447,7 @@ fn a_long_conversation_still_says_when_the_agent_is_working() {
     });
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     assert!(
-        rows(&dump).iter().any(|row| row.contains("thinking")),
+        rows(&dump).iter().any(|row| row.contains("Thinking")),
         "the agent is working and the page does not say so:\n{dump}"
     );
 }
@@ -5477,7 +5477,7 @@ fn a_conversation_taken_up_again_says_it_is_thinking() {
     });
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     assert!(
-        rows(&dump).iter().any(|row| row.contains("thinking")),
+        rows(&dump).iter().any(|row| row.contains("Thinking")),
         "the conversation does not say it is thinking:\n{dump}"
     );
 }
@@ -7705,7 +7705,7 @@ fn the_row_says_what_the_next_turn_runs_on_before_there_is_one() {
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     let row = rows(&dump).last().copied().unwrap_or_default().to_string();
     assert!(
-        row.contains("ask first") && row.contains("shift+tab  mode"),
+        row.contains("ask first") && row.contains("shift+tab  Mode"),
         "the row says nothing about what this conversation will run on:\n{row}"
     );
 
@@ -7798,7 +7798,7 @@ fn the_row_is_there_on_a_later_sitting_because_the_first_conversation_taught_it(
         .unwrap_or_default()
         .to_string();
     assert!(
-        row.contains("ask first") && row.contains("shift+tab  mode"),
+        row.contains("ask first") && row.contains("shift+tab  Mode"),
         "the row says nothing about what this conversation will run on:\n{row}"
     );
 }

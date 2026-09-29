@@ -1450,7 +1450,7 @@ fn a_failed_fetch_says_so_and_is_tried_again() {
     // Nothing has arrived yet: the page says what it is doing.
     let dump = support::render(&mut app, 70, 12);
     assert!(
-        support::text_block(&dump).contains("fetching the list of agents"),
+        support::text_block(&dump).contains("Fetching the list of agents"),
         "not the waiting page:\n{dump}"
     );
     assert_eq!(app.registry_failure(), None);
@@ -1463,7 +1463,7 @@ fn a_failed_fetch_says_so_and_is_tried_again() {
     }));
     let dump = support::render(&mut app, 70, 12);
     assert!(
-        support::text_block(&dump).contains("could not fetch"),
+        support::text_block(&dump).contains("Could not fetch"),
         "the page still says it is fetching:\n{dump}"
     );
     assert_eq!(app.registry_failure(), Some("dns error: no such host"));
@@ -1777,7 +1777,7 @@ fn an_agent_that_is_not_installed_is_not_in_use() {
     let dump = support::render(&mut app, 76, 16);
     let text = support::text_block(&dump);
     assert!(
-        text.contains("install"),
+        text.contains("Install"),
         "the card does not offer to install it:\n{dump}"
     );
     assert!(
@@ -2188,7 +2188,7 @@ fn the_settings_say_what_their_keys_do() {
     // "type" is capped as the key and "to filter" is what it does, so the
     // two are looked for apart. Escape is not here at all: it is on the
     // card, because it means the same thing in every view Obelus has.
-    for word in ["Change", "type", "to filter", "Unset", "Keys"] {
+    for word in ["Change", "type", "To filter", "Unset", "Keys"] {
         assert!(word_on(&text, word), "{word:?} is not at the foot:\n{text}");
     }
 

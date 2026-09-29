@@ -4026,7 +4026,7 @@ fn a_list_still_filling_says_so() {
     );
     assert_eq!(
         app.picker().expect("the history").nothing_to_show(),
-        Some("reading the history\u{2026}"),
+        Some("Reading the history\u{2026}"),
         "an empty list that is still filling reads as an empty history"
     );
 
@@ -4697,7 +4697,7 @@ fn the_commit_behind_a_line_can_be_asked_for_with_the_names_off() {
     dispatch::dispatch(&mut app, Command::HistoryLine);
     let dump = support::render(&mut app, 74, 14);
     assert!(
-        support::text_block(&dump).contains("still reading who wrote this"),
+        support::text_block(&dump).contains("Still reading who wrote this"),
         "the key said nothing about what it had started:\n{dump}"
     );
 

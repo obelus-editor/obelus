@@ -2855,10 +2855,10 @@ mod tests {
 
         let held = |chat: &Chat| chat.laid.borrow().is_some();
 
-        chat.doing(Some("thinking\u{2026}"));
+        chat.doing(Some("Thinking\u{2026}"));
         let _ = chat.rows(ROOM.reading);
         assert!(held(&chat), "the rows were not kept at all");
-        chat.doing(Some("thinking\u{2026}"));
+        chat.doing(Some("Thinking\u{2026}"));
         assert!(
             held(&chat),
             "the same answer about what is happening threw the rows away"
@@ -3871,10 +3871,10 @@ mod tests {
     fn what_is_happening_is_one_row_that_is_replaced() {
         let mut chat = Chat::new();
         chat.doing(Some("starting\u{2026}"));
-        chat.doing(Some("thinking\u{2026}"));
+        chat.doing(Some("Thinking\u{2026}"));
         let rows = chat.rows(ROOM.reading);
         assert_eq!(rows.len(), 1, "the states piled up: {rows:?}");
-        assert_eq!(rows[0].text(), "thinking\u{2026}");
+        assert_eq!(rows[0].text(), "Thinking\u{2026}");
         assert_eq!(rows[0].speaker, Speaker::Doing);
         assert!(
             !rows[0].acts(),
@@ -4242,7 +4242,7 @@ mod remembering {
             ),
             (
                 "doing",
-                Box::new(|chat: &mut Chat| chat.doing(Some("thinking…"))),
+                Box::new(|chat: &mut Chat| chat.doing(Some("Thinking…"))),
             ),
             (
                 "planning",

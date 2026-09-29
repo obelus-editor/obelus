@@ -513,7 +513,7 @@ impl App {
             _ if showing == Some(About::Refs) => "Nothing points at a commit here",
             // Still looking. A file's history is every commit that ever
             // touched it, and nothing found yet is not nothing to find.
-            (true, _) => "reading the history\u{2026}",
+            (true, _) => "Reading the history\u{2026}",
             // Said in the reader's terms: they pressed a key about *this*
             // file, and the answer is about this file.
             (false, Some(_)) => "No commit has touched this file",
@@ -717,7 +717,7 @@ impl App {
                 // Not a refusal: the walk is under way and the answer is
                 // coming. What is refused is a walk that finished and
                 // found nothing.
-                false => self.say("still reading who wrote this\u{2026}".to_string()),
+                false => self.say("Still reading who wrote this\u{2026}".to_string()),
             }
             return;
         };

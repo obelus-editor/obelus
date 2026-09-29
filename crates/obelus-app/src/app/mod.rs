@@ -2054,8 +2054,8 @@ impl App {
         // rather than remembered: a row that is worked out every frame
         // cannot be left saying something that stopped being true.
         let doing = match self.talking() {
-            Talking::Starting => Some("starting\u{2026}"),
-            Talking::Thinking => Some("thinking\u{2026}"),
+            Talking::Starting => Some("Starting\u{2026}"),
+            Talking::Thinking => Some("Thinking\u{2026}"),
             Talking::Nobody | Talking::Idle | Talking::Ready | Talking::Gone => None,
         };
         self.in_transcript(|chat| chat.doing(doing));

@@ -1741,7 +1741,7 @@ fn nothing_to_ask_means_a_note_and_no_menu() {
     assert!(
         text.contains("No symbol here")
             || text.contains("not installed")
-            || text.contains("no server running")
+            || text.contains("No server running")
             || text.contains("still starting")
             || text.contains("no language server"),
         "no reason anywhere:\n{dump}"
@@ -2590,14 +2590,14 @@ fn stopping_and_restarting_say_what_happened() {
     let mut toml = App::new(vec![support::open_fixture("sample.toml")]);
     support::lay_out(&mut toml, 60, 12);
     obelus_app::app::dispatch::dispatch(&mut toml, Command::LspStop);
-    assert_eq!(toml.note(), Some("no language server for toml"));
+    assert_eq!(toml.note(), Some("No language server for toml"));
     obelus_app::app::dispatch::dispatch(&mut toml, Command::LspRestart);
-    assert_eq!(toml.note(), Some("no language server for toml"));
+    assert_eq!(toml.note(), Some("No language server for toml"));
 
     // And the note is on screen, which is the only place it is of any use.
     let dump = support::render(&mut toml, 60, 12);
     assert!(
-        support::text_block(&dump).contains("no language server for toml"),
+        support::text_block(&dump).contains("No language server for toml"),
         "the note is not on the status bar:\n{dump}"
     );
 

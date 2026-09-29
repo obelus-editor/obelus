@@ -115,7 +115,7 @@ fn a_note_alone_on_the_row_is_the_row() {
     support::press(&mut app, crossterm::event::KeyCode::Enter);
     dispatch::dispatch(&mut app, Command::DocumentClose);
     assert!(
-        app.note().is_some_and(|said| said.starts_with("closed")),
+        app.note().is_some_and(|said| said.starts_with("Closed")),
         "{:?}",
         app.note()
     );
@@ -123,5 +123,82 @@ fn a_note_alone_on_the_row_is_the_row() {
         ink(&mut app),
         DARK.status_foreground,
         "alone, it is the row"
+    );
+}
+
+/// Whether a note reads as something Obelus wrote.
+///
+/// A capital, or a name kept in the spelling it has everywhere else. The
+/// second half is the rule and not an excuse: `rust-analyzer is not
+/// installed` starts lowercase and is right, because rewording it round
+/// the name would be Obelus misspelling somebody else's -- which is what
+/// the rule says to do instead of capitalising one.
+fn reads_as_copy(said: &str, name: Option<&str>) -> bool {
+    said.starts_with(char::is_uppercase) || name.is_some_and(|name| said.starts_with(name))
+}
+
+/// Everything Obelus says on the status row begins with a capital, unless
+/// a name begins it.
+///
+/// A handful of notes rather than a list of every one, and each from a
+/// different corner: what a command reports, what it refuses, what is said
+/// about a file being put down, and what leads with a path. A list of the
+/// notes that exist would be a test that asks the rule what it expects.
+///
+/// One app per case, because what is being checked is the note and not the
+/// state a previous case left behind -- a close that asks about unwritten
+/// work is a key that answered something else.
+///
+/// Deliberate break: lowercase any one of `Saved`, `Closed {}`, `Renamed
+/// to {}` or `Thinking\u{2026}`. Which is how this was found: five of them
+/// had been lowercase since they were written, against the one sentence in
+/// the guide about how Obelus writes.
+#[test]
+fn what_is_said_reads_as_copy() {
+    // What a command reports.
+    let (_a, mut app) = reading("copy-saved");
+    support::type_text(&mut app, "// ");
+    dispatch::dispatch(&mut app, Command::FileSave);
+    let said = app.note().unwrap_or_default();
+    assert!(reads_as_copy(said, None), "saving: {said:?}");
+
+    // What it refuses.
+    let (_b, mut app) = reading("copy-refused");
+    dispatch::dispatch(&mut app, Command::Undo);
+    let said = app.note().unwrap_or_default();
+    assert!(reads_as_copy(said, None), "undoing nothing: {said:?}");
+
+    // What is said about a file being put down.
+    let (_c, mut app) = reading("copy-closed");
+    dispatch::dispatch(&mut app, Command::DocumentClose);
+    let said = app.note().unwrap_or_default();
+    assert!(reads_as_copy(said, None), "closing: {said:?}");
+
+    // What a file being called something else is said as.
+    let (_d, mut app) = reading("copy-renamed");
+    dispatch::dispatch(&mut app, Command::FileRename);
+    for _ in 0..80 {
+        support::press(&mut app, crossterm::event::KeyCode::Backspace);
+    }
+    support::type_text(&mut app, "src/called.rs");
+    support::press(&mut app, crossterm::event::KeyCode::Enter);
+    let said = app.note().unwrap_or_default();
+    assert!(reads_as_copy(said, None), "renaming: {said:?}");
+
+    // And what leads with a path, which keeps its own spelling: the rule
+    // says to reword round a name rather than capitalise one.
+    let (_e, mut app) = reading("copy-named");
+    dispatch::dispatch(&mut app, Command::FileNew);
+    for _ in 0..80 {
+        support::press(&mut app, crossterm::event::KeyCode::Backspace);
+    }
+    support::type_text(&mut app, "src/hint.rs");
+    support::press(&mut app, crossterm::event::KeyCode::Enter);
+    let said = app.note().unwrap_or_default();
+    let name = support::as_shown("src/hint.rs");
+    assert!(reads_as_copy(said, Some(&name)), "a path: {said:?}");
+    assert!(
+        !said.starts_with(char::is_uppercase),
+        "the name was rewritten rather than led with: {said:?}"
     );
 }

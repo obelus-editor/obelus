@@ -951,7 +951,7 @@ impl App {
             // and then be one version behind whoever opened it next.
             self.tokens.remove(buffer.path());
             self.say(format!(
-                "closed {}",
+                "Closed {}",
                 relative(buffer.path(), &self.working_directory)
             ));
         }
@@ -1122,7 +1122,7 @@ impl App {
                 } else if path.is_dir() {
                     format!("{name} is a directory")
                 } else {
-                    format!("could not open {name}: {error}")
+                    format!("Could not open {name}: {error}")
                 });
             }
         }

@@ -300,7 +300,7 @@ impl App {
                 let detail = match about {
                     Some(about) if about != label => Some(about),
                     Some(_) => None,
-                    None => Some("nothing in particular".to_string()),
+                    None => Some("Nothing in particular".to_string()),
                 };
                 let item = PickerItem {
                     prose: false,

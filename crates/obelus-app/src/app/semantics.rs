@@ -1114,8 +1114,8 @@ impl App {
                 Some(command) if !obelus_lsp::on_path(command) => {
                     format!("{command} is not installed")
                 }
-                Some(_) => format!("no server running for {}", language.name()),
-                None => format!("no language server for {}", language.name()),
+                Some(_) => format!("No server running for {}", language.name()),
+                None => format!("No language server for {}", language.name()),
             });
         };
         // Running and not ready, which is the first second or two of every
@@ -1372,13 +1372,13 @@ impl App {
 
         match obelus_lsp::command_for(language) {
             Some(command) if self.servers.contains_key(&language) => {
-                self.say(format!("restarted {command}"));
+                self.say(format!("Restarted {command}"));
             }
             Some(command) if !obelus_lsp::on_path(command) => {
                 self.wrong(format!("{command} is not installed"));
             }
             Some(command) => self.wrong(format!("{command} would not start")),
-            None => self.wrong(format!("no language server for {}", language.name())),
+            None => self.wrong(format!("No language server for {}", language.name())),
         }
     }
 
@@ -1395,9 +1395,9 @@ impl App {
         let was_running = self.stop(language);
         self.stopped.insert(language);
         match (obelus_lsp::command_for(language), was_running) {
-            (Some(command), true) => self.say(format!("stopped {command}")),
+            (Some(command), true) => self.say(format!("Stopped {command}")),
             (Some(command), false) => self.wrong(format!("{command} was not running")),
-            (None, _) => self.wrong(format!("no language server for {}", language.name())),
+            (None, _) => self.wrong(format!("No language server for {}", language.name())),
         }
     }
 
@@ -2742,7 +2742,7 @@ fn place_rows(places: &[obelus_lsp::action::Place], root: &Path) -> Vec<PickerIt
 /// Its own program's name where there is one, because that is the thing
 /// they would install, start or look in the log of.
 pub(super) fn named(language: LanguageId) -> &'static str {
-    obelus_lsp::command_for(language).unwrap_or("the language server")
+    obelus_lsp::command_for(language).unwrap_or("The language server")
 }
 
 /// A complaint's words with a frame drawn round them.

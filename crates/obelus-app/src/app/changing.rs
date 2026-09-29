@@ -83,7 +83,7 @@ impl App {
             }
         }
 
-        let mut said = format!("changed {changed} {}", files(changed));
+        let mut said = format!("Changed {changed} {}", files(changed));
         if opened > 0 {
             said.push_str(&format!(", {opened} of them opened"));
         }

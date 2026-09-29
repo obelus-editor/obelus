@@ -1499,7 +1499,7 @@ fn a_conversation_says_how_to_get_back_to_its_note() {
 
     let screen = support::text_block(&support::render(&mut app, 76, 24)).to_string();
     assert!(
-        screen.contains("the note"),
+        screen.contains("The note"),
         "the conversation does not say how to get back:\n{screen}"
     );
 }

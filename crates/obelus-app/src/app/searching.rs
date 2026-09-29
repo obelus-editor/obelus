@@ -559,9 +559,9 @@ impl App {
         if let Some(picker) = self.picker.as_mut() {
             picker.replace(Vec::new());
             picker.while_empty(if asked {
-                "asking the language server\u{2026}"
+                "Asking the language server\u{2026}"
             } else {
-                "the language server would not answer"
+                "The language server would not answer"
             });
         }
     }

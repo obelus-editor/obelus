@@ -287,7 +287,7 @@ impl App {
             // result is nothing it can act on. What it *sends back* is a
             // `workspace/applyEdit`, and that is where the change to the
             // files actually arrives -- made by `on_asked_edit`, not here.
-            Ok(_) => format!("asked the server to {}", command.title),
+            Ok(_) => format!("Asked the server to {}", command.title),
             Err(_) => "The language server is not listening".to_string(),
         }
     }

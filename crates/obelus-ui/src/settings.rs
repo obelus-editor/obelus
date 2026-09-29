@@ -173,7 +173,7 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
             .when(focused.is_some()),
         // The one thing on this page nothing else says: a page that is
         // filtered by typing at it looks exactly like one that is not.
-        Hint::common(bare(KeyCode::Char('a')), "to filter")
+        Hint::common(bare(KeyCode::Char('a')), "To filter")
             .written("type")
             .saying("Type to narrow the list"),
         Hint::common(bare(KeyCode::Delete), "Unset")
@@ -1044,8 +1044,8 @@ impl SettingsView<'_> {
             let reason = match (self.agents.is_empty(), self.failure) {
                 // Two ways to have nothing, and the reader's next move
                 // differs: wait, or look at their network.
-                (true, Some(why)) => format!("could not fetch the list of agents: {why}"),
-                (true, None) => "fetching the list of agents\u{2026}".to_string(),
+                (true, Some(why)) => format!("Could not fetch the list of agents: {why}"),
+                (true, None) => "Fetching the list of agents\u{2026}".to_string(),
                 (false, _) => "No agent by that name".to_string(),
             };
             write(
@@ -1283,9 +1283,9 @@ impl SettingsView<'_> {
                 ("\u{25cf} active".to_string(), self.theme.change_added)
             }
             Status::Installed => ("Installed".to_string(), self.theme.gutter),
-            Status::Outdated { .. } => ("update \u{25b8}".to_string(), self.theme.change_modified),
+            Status::Outdated { .. } => ("Update \u{25b8}".to_string(), self.theme.change_modified),
             Status::Missing | Status::Failed(_) => {
-                ("install \u{25b8}".to_string(), self.theme.foreground)
+                ("Install \u{25b8}".to_string(), self.theme.foreground)
             }
             Status::Installing => (self.installing(agent), self.theme.foreground),
             Status::Unavailable(why) => ((*why).to_string(), self.theme.gutter),
@@ -1299,18 +1299,18 @@ impl SettingsView<'_> {
     /// so the card says it is running and nothing it cannot know.
     fn installing(&self, agent: &Listed) -> String {
         let Some(progress) = agent.progress else {
-            return "installing\u{2026}".to_string();
+            return "Installing\u{2026}".to_string();
         };
         match (progress.fraction(), progress.remaining()) {
             (Some(fraction), Some(left)) => format!(
-                "installing {}% \u{b7} {}s left",
+                "Installing {}% \u{b7} {}s left",
                 (fraction * 100.0).round() as u32,
                 left.as_secs().max(1)
             ),
             (Some(fraction), None) => {
-                format!("installing {}%", (fraction * 100.0).round() as u32)
+                format!("Installing {}%", (fraction * 100.0).round() as u32)
             }
-            _ => "installing\u{2026}".to_string(),
+            _ => "Installing\u{2026}".to_string(),
         }
     }
 }

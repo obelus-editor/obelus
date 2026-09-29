@@ -170,7 +170,7 @@ impl App {
             return;
         }
         self.say(format!(
-            "asking what renaming {} changes\u{2026}",
+            "Asking what renaming {} changes\u{2026}",
             relative(&from, &self.working_directory)
         ));
         self.renaming = Some(Renaming::Waiting(Waiting {
@@ -353,7 +353,7 @@ impl App {
         }
         self.followed(from, to);
         self.told_about_the_rename(from, to);
-        let mut said = format!("renamed to {}", relative(to, &self.working_directory));
+        let mut said = format!("Renamed to {}", relative(to, &self.working_directory));
         if let Some(changed) = changed {
             said.push_str(&format!("; {changed}"));
         }
