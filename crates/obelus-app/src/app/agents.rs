@@ -405,7 +405,9 @@ impl App {
         // Built before the page is borrowed: it comes out of the
         // application, and the page is about to be held mutably.
         let offering = self.agent_offering();
-        let room = (editor_area.width, editor_area.height);
+        // The region the page is drawn into, not the editor it sits in --
+        // see `App::settings_room`.
+        let room = self.settings_room(editor_area, offering.as_ref());
         if let Some(settings) = self.settings.as_mut() {
             match cards {
                 true => settings.settle_cards(&listed, room),

@@ -189,6 +189,28 @@ impl App {
     /// The page is the whole editor region while it is open and every
     /// printable character is its own, to filter with -- so what falls
     /// through here is only what it has no use for, which is the chords.
+    /// The room the settings page has, which is what a page of movement
+    /// and a window are measured against.
+    ///
+    /// Asked of the view, because that is where the arithmetic lives --
+    /// see [`obelus_ui::settings::rows_region`], which the drawing and the
+    /// pointer already go through. What went in here was the editor's own
+    /// height, two rows more than the page is ever drawn into: the tabs and
+    /// their rule come off the top and the foot takes two more off the
+    /// bottom, so the window let the focus walk two rows past the last one
+    /// on screen before it moved, and a page step overshot by the same two.
+    pub(super) fn settings_room(
+        &self,
+        area: Rect,
+        offering: Option<&obelus_component::settings::Offering>,
+    ) -> (u16, u16) {
+        let Some(settings) = self.settings.as_ref() else {
+            return (area.width, area.height);
+        };
+        let region = obelus_ui::settings::rows_region(area, settings, offering);
+        (region.width, region.height)
+    }
+
     pub(super) fn settings_key(&mut self, key: &KeyEvent) -> bool {
         if self.settings.is_none() {
             return false;
@@ -200,11 +222,11 @@ impl App {
         // Cloned for the same reason: the page needs the table to say which
         // key each command is on, and it is the application that owns it.
         let keymap = self.keymap.clone();
-        let room = (self.editor_area.width, self.editor_area.height);
         // And what the active agent offers, for the same reason again: the
         // page lists its settings and knows nothing about where they came
         // from.
         let offering = self.agent_offering();
+        let room = self.settings_room(self.editor_area, offering.as_ref());
         let Some(settings) = self.settings.as_mut() else {
             return false;
         };

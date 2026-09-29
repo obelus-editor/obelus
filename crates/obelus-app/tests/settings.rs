@@ -1219,6 +1219,48 @@ fn the_ends_and_the_pages_are_reachable() {
     assert_eq!(focus(&app), 0, "PageUp did not come back");
 }
 
+/// The row the focus is on is a row that is drawn.
+///
+/// The page is drawn into what the tabs and their rule leave off the top
+/// and the foot and its rule leave off the bottom -- four rows fewer than
+/// the editor -- and the window was settled against two of those four. So
+/// the focus could walk two rows past the last one on screen before the
+/// page moved under it, and for those two the reader was standing on a row
+/// that was nowhere.
+///
+/// The keys page, because its rows are one row each: there "the row the
+/// focus is on" and "a row of the page" are the same count, so a step is a
+/// row and the arithmetic has nowhere to hide.
+///
+/// Deliberate break: `room.1.saturating_sub(2)` back in `settle_rows`, or
+/// `settings_room` handing back the editor's own size.
+#[test]
+fn the_row_the_focus_is_on_is_a_row_that_is_drawn() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("focus-drawn");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+    support::press(&mut app, KeyCode::Tab);
+    assert!(app.settings().expect("the settings").on_keys());
+
+    // Past the foot of the first screenful and well into the second, which
+    // is where a window settled against the wrong height leaves the focus
+    // behind.
+    for step in 0..16 {
+        let dump = support::render(&mut app, 76, 14);
+        let settings = app.settings().expect("the settings");
+        let rows = settings.key_rows();
+        let focused = rows[settings.focus().min(rows.len() - 1)].name();
+        assert!(
+            support::text_block(&dump).contains(focused),
+            "step {step}: the focus is on {focused:?}, which is not on screen:\n{dump}"
+        );
+        support::press(&mut app, KeyCode::Down);
+    }
+}
+
 /// The agents page is cards, and the same keys walk them: forty of them
 /// scroll, the ends are reachable, and a page moves by the cards that fit
 /// rather than by a number of rows.
@@ -1520,15 +1562,17 @@ fn the_cards_scroll_only_at_an_edge() {
     // room the page has, which only a frame knows.
     let step = |app: &mut obelus_app::app::App, key: KeyCode| {
         support::press(app, key);
-        let dump = support::render(app, 76, 16);
+        let dump = support::render(app, 76, 19);
         (app.settings().expect("the settings").top(), dump)
     };
 
     // Every card is four rows, so three whole ones fit the thirteen this
-    // screen leaves the page -- counted by their last row, because the
-    // fourth card's name is drawn in the row left over. Asserted rather
-    // than assumed: the whole point is where the fourth step lands.
-    let dump = support::render(&mut app, 76, 16);
+    // screen leaves the page -- the tabs and their rule off the top, the
+    // foot and its rule off the bottom -- counted by their last row,
+    // because the fourth card's name is drawn in the row left over.
+    // Asserted rather than assumed: the whole point is where the fourth
+    // step lands.
+    let dump = support::render(&mut app, 76, 19);
     let whole = support::text_block(&dump)
         .matches("1.0.0 \u{b7} Somebody \u{b7} MIT")
         .count();

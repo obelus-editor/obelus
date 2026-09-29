@@ -749,7 +749,7 @@ impl Settings {
     #[must_use]
     pub fn cards_that_fit(&self, agents: &[Agent], room: (u16, u16)) -> usize {
         let width = Self::card_width(room.0);
-        let height = room.1.saturating_sub(2);
+        let height = room.1;
         let listed = self.agents(agents);
         let mut taken = 0;
         let mut fits = 0;
@@ -916,7 +916,7 @@ impl Settings {
         let page = if self.on_agents() {
             self.cards_that_fit(agents, room).max(1)
         } else {
-            usize::from(room.1.saturating_sub(2)).max(1)
+            usize::from(room.1).max(1)
         };
         // How many rows there are, before any of them is moved between:
         // the count comes from the page rather than from the last frame,
@@ -1114,8 +1114,7 @@ impl Settings {
             .iter()
             .map(|agent| self.card_rows(agent, width) + 1)
             .collect();
-        self.window
-            .settle_by_height(&heights, room.1.saturating_sub(2));
+        self.window.settle_by_height(&heights, room.1);
     }
 
     /// And the same for a page of settings, whose entries are as tall as
@@ -1130,8 +1129,7 @@ impl Settings {
                 .map(|shown| self.setting_rows(shown, description_width(room.0)))
                 .collect(),
         };
-        self.window
-            .settle_by_height(&heights, room.1.saturating_sub(2));
+        self.window.settle_by_height(&heights, room.1);
     }
 
     /// How many rows one setting takes: the heading it opens where it opens

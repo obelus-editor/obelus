@@ -214,7 +214,17 @@ pub fn rows_region(area: Rect, settings: &Settings, offering: Option<&Offering>)
 /// So which row is at a given height is a walk rather than a division, and
 /// a walk written twice is two answers about where a row is. The drawing
 /// goes down this and so does the pointer.
-fn placed(region: Rect, rows: &[Row], window: &obelus_component::window::Window) -> Vec<Placed> {
+///
+/// `one_row_each` is the keys page, which is a table rather than a column
+/// of entries: a key is a name, what it does and the chord it is on, all
+/// on the one row, and there is no gloss under it for a blank to keep off
+/// the next name.
+fn placed(
+    region: Rect,
+    rows: &[Row],
+    window: &obelus_component::window::Window,
+    one_row_each: bool,
+) -> Vec<Placed> {
     let mut placed = Vec::new();
     let mut y = region.y;
     for (at, row) in rows
@@ -245,13 +255,14 @@ fn placed(region: Rect, rows: &[Row], window: &obelus_component::window::Window)
                 ..region
             },
         });
-        // And the blank under it, whatever it says: the blank is what makes
-        // an entry an entry, and a setting whose name is the whole of it has
-        // no gloss to keep it off the next name. Conditional, it was the one
-        // shape `Settings::setting_rows` disagreed with -- the window
-        // counting a row the walk never left room for, which is a reader
-        // stepping onto an entry nobody drew.
-        y += tall + 1;
+        // And the blank under it, whatever it says, wherever the rows are
+        // entries: the blank is what makes an entry an entry, and a setting
+        // whose name is the whole of it has no gloss to keep it off the
+        // next name. Asked of the page rather than of the row -- a row with
+        // an empty gloss and a row of a table look the same from here, and
+        // `Settings::setting_rows`, which the window is settled by, counts
+        // the blank for the first and is not asked about the second.
+        y += tall + u16::from(!one_row_each);
     }
     placed
 }
@@ -277,7 +288,7 @@ impl SettingsView<'_> {
         }
         let rows = self.rows(region);
         let window = self.settings.window();
-        let found = placed(region, &rows, window)
+        let found = placed(region, &rows, window, self.settings.on_keys())
             .into_iter()
             .find(|placed| y >= placed.area.y && y < placed.area.y + placed.area.height)?;
         let room = match window.scrollable(region.height) {
@@ -353,13 +364,11 @@ impl Widget for SettingsView<'_> {
 
         let hints = hints(self.settings, self.offering.as_ref());
         crate::foot(cells, area, &hints, self.theme);
-        let under = crate::footed(area, &hints);
-
-        let region = Rect {
-            y: under.y + 2,
-            height: under.height.saturating_sub(2),
-            ..under
-        };
+        // Through the one function that answers it, which the pointer and
+        // the window both ask as well: three workings-out of what the tabs
+        // and the foot leave is three chances to draw the page into a
+        // different region from the one it was settled against.
+        let region = rows_region(area, self.settings, self.offering.as_ref());
 
         // The agents are a page of cards rather than a column of controls:
         // a reader choosing between forty programs is reading about them,
@@ -676,7 +685,7 @@ impl SettingsView<'_> {
         // row it looks like it landed on: the drawing going one way and the
         // pointing going the other down two copies of this would be two
         // answers about where a row is.
-        for at in placed(region, rows, window) {
+        for at in placed(region, rows, window, self.settings.on_keys()) {
             let (index, row) = (at.at, &rows[at.at]);
             let y = at.area.y;
             let focused = index == self.settings.focus();
@@ -1085,7 +1094,21 @@ impl SettingsView<'_> {
             if y >= area.bottom() {
                 break;
             }
-            self.card(cells, Rect { y, ..area }, agent, index == focus);
+            // What is left of the page under it, rather than the page's own
+            // height moved down to this row: a card told it had the whole
+            // of one draws off the bottom of the region, and what is under
+            // the region is the rule over the foot -- which the last card
+            // on screen wrote its third line across.
+            self.card(
+                cells,
+                Rect {
+                    y,
+                    height: area.bottom().saturating_sub(y),
+                    ..area
+                },
+                agent,
+                index == focus,
+            );
             y += heights[index];
         }
     }
