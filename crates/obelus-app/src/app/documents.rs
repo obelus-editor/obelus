@@ -898,6 +898,52 @@ impl App {
         }
     }
 
+    /// Puts a file on the reader's screen, because an agent offered to.
+    ///
+    /// The same door every other jump goes through, which is the whole of
+    /// why this is a thing an agent may do at all: the file opens, or the
+    /// reader is taken to it where it is already open, the jump is
+    /// recorded so `alt+left` comes back, and a file that will not open
+    /// leaves them where they were. What an agent does the reader can see
+    /// and take back, and this one is nothing but the seeing.
+    ///
+    /// The line is the agent's, counted from one the way the reader's own
+    /// screen numbers them and the way `todo_list` prints the line a note
+    /// points at. None of it leaves it where the file was last read.
+    ///
+    /// Says what happened, because the agent is waiting on an answer and
+    /// "I have put it in front of them" and "there is no such file" are
+    /// not the same turn.
+    pub(super) fn open_for_an_agent(&mut self, path: &str, line: Option<u32>) -> String {
+        let asked = Path::new(path);
+        // A path of its own is taken as it is. Against the project
+        // otherwise, which is what an agent has been talking in: the tools
+        // are opened on a project and every path it has seen is relative
+        // to one.
+        let full = match asked.is_absolute() {
+            true => asked.to_path_buf(),
+            false => self.working_directory.join(asked),
+        };
+        match line {
+            Some(line) => self.go_to(&full, line.saturating_sub(1), 0),
+            None => self.open(&full),
+        }
+        // Whether it landed, asked of the same thing `go_to` asks: a file
+        // that would not open has left the reader where they were, and
+        // telling the agent otherwise is telling it the reader is looking
+        // at something they are not.
+        if self
+            .current_buffer()
+            .is_none_or(|buffer| buffer.path() != full)
+        {
+            return format!("{path} would not open");
+        }
+        match line {
+            Some(line) => format!("{path} is on the reader's screen, at line {line}"),
+            None => format!("{path} is on the reader's screen"),
+        }
+    }
+
     /// Moves to whatever is in that slot, file or not.
     ///
     /// The slot has to hold something: an id whose document was closed

@@ -6,10 +6,10 @@
 //! "here are two more worth writing down". MCP is the door for that, and
 //! Obelus is the server on the other side of it.
 //!
-//! None of them asks the reader anything. Three of them change the reader's
-//! notes, and the asking before that is the agent's to do -- through
-//! `elicitation/create`, the protocol it is already speaking, which Obelus
-//! answers with the very card it used to raise itself.
+//! None of them asks the reader anything, and the asking before any of
+//! them is the agent's to do -- through `elicitation/create`, the protocol
+//! it is already speaking, which Obelus answers with the very card it used
+//! to raise itself.
 //!
 //! It was the other way round once: the tools raised that card and waited
 //! on it, on the argument that asking *is* the permission. What that bought
@@ -25,6 +25,16 @@
 //! agent's to send and the reader's to answer. A weaker promise honestly
 //! kept, against a stronger one bought by making a function wait on a
 //! person.
+//!
+//! Three of them change the reader's notes. The fourth changes nothing at
+//! all: `open_file` puts a file on their screen, and what it takes is
+//! their attention rather than anything on disk. It is the one here that
+//! keeps the strong half of the promise rather than the weak -- it goes
+//! through the door every jump in Obelus goes through, so `alt+left`
+//! brings them back -- and it is still offered rather than done, because
+//! being taken off what you were reading is a thing that happened to you.
+//! It is here because the alternative is an agent naming a file and a line
+//! and leaving the reader to go and find it.
 //!
 //! None of them takes a note away. `done` is how a list keeps what was
 //! decided against, so ticking loses nothing and an agent has no need of
@@ -68,10 +78,32 @@ use serde::Deserialize;
 /// the sort a person is at the other end of.
 #[derive(Debug)]
 pub struct Asked {
-    /// What to do to them.
-    pub doing: obelus_git::todo::Doing,
+    /// What the agent asked for.
+    pub wanted: Wanted,
     /// What Obelus did, or why it did not.
     pub answer: futures::channel::oneshot::Sender<String>,
+}
+
+/// What an agent asked Obelus to do.
+///
+/// Two kinds, and the difference is worth the enum: three of the tools
+/// write the reader's notes and one of them puts a file on their screen.
+/// The notes are a file Obelus is the only writer of; the file is the
+/// reader's own attention.
+#[derive(Debug)]
+pub enum Wanted {
+    /// A change to the notes.
+    Notes(obelus_git::todo::Doing),
+    /// A file, in front of the reader.
+    Open {
+        /// Where it is: against the project, or a path of its own.
+        path: String,
+        /// Which line to land on, counted the way a reader counts them.
+        ///
+        /// `None` leaves the file where it was last read, which for one
+        /// being opened for the first time is its first line.
+        line: Option<u32>,
+    },
 }
 
 /// Obelus, as an agent can reach it.
@@ -101,6 +133,17 @@ pub struct Obelus {
 pub struct About {
     /// The note's own name, as `todo_list` gave it.
     pub note: String,
+}
+
+/// A file to put in front of the reader.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct Shown {
+    /// Where it is, against the project this conversation is about. A
+    /// path of its own is taken as it is.
+    pub path: String,
+    /// Which line to land on, counted from one the way `todo_list`
+    /// prints them and the way the reader's own screen numbers them.
+    pub line: Option<u32>,
 }
 
 /// A note, and what it should say instead.
@@ -238,6 +281,42 @@ impl Obelus {
         )]))
     }
 
+    /// Puts a file on the reader's screen.
+    ///
+    /// The one tool that changes nothing at all. What it takes is the
+    /// reader's attention, which is why the description asks first the
+    /// same way the others do -- but the promise behind it is the strong
+    /// one rather than the weak: this goes through the same door every
+    /// jump in Obelus goes through, so `alt+left` brings them back, and
+    /// what an agent does the reader can see and take back.
+    ///
+    /// Not `read_only_hint`, which is about the *world*: a tool that
+    /// moves the reader off what they were reading has done something,
+    /// and a hint that spares the question would spare it for the one
+    /// act here that is about them rather than about a file.
+    #[tool(description = "\
+        Put a file on the reader's screen, at a line if you name one. \
+        Offer first and let them say yes -- this takes them off whatever \
+        they were reading, and `elicitation/create` is how to ask. Use it \
+        when you are talking about a place in the code: naming a file and \
+        a line asks them to go and find it, and this is the going. A file \
+        they already have open is the one they are taken to rather than a \
+        second copy of it, and `alt+left` brings them back to where they \
+        were. `path` is against the project; `line` counts from one, the \
+        way `todo_list` prints the line a note points at.")]
+    async fn open_file(
+        &self,
+        Parameters(Shown { path, line }): Parameters<Shown>,
+    ) -> Result<CallToolResult, ErrorData> {
+        tracing::info!(path, line, "an agent is opening a file for the reader");
+        if path.trim().is_empty() {
+            return Ok(CallToolResult::error(vec![ContentBlock::text(
+                "there is no path there to open",
+            )]));
+        }
+        Ok(said(self.told(Wanted::Open { path, line }).await))
+    }
+
     /// Ticks a note off.
     #[tool(description = "\
         Tick a note off, once its work is done. Ask the reader first -- \
@@ -255,7 +334,9 @@ impl Obelus {
                 "that is not a note's name; `todo_list` gives them",
             )]));
         };
-        Ok(said(self.told(todo::Doing::Finish(id)).await))
+        Ok(said(
+            self.told(Wanted::Notes(todo::Doing::Finish(id))).await,
+        ))
     }
 
     /// Writes notes down.
@@ -293,10 +374,10 @@ impl Obelus {
             .map(|note| (note.said, note.depth.unwrap_or(0)))
             .collect();
         Ok(said(
-            self.told(todo::Doing::Add {
+            self.told(Wanted::Notes(todo::Doing::Add {
                 notes,
                 under: beneath,
-            })
+            }))
             .await,
         ))
     }
@@ -330,10 +411,10 @@ impl Obelus {
             )]));
         };
         Ok(said(
-            self.told(todo::Doing::Reword {
+            self.told(Wanted::Notes(todo::Doing::Reword {
                 note: id,
                 said: words,
-            })
+            }))
             .await,
         ))
     }
@@ -344,9 +425,9 @@ impl Obelus {
     /// write. Not the sort a person is at the other end of: an agent that
     /// wants the reader asked asks them, through the protocol it is already
     /// speaking.
-    async fn told(&self, doing: todo::Doing) -> Option<String> {
+    async fn told(&self, wanted: Wanted) -> Option<String> {
         let (answer, answered) = futures::channel::oneshot::channel();
-        self.events.send(Asked { doing, answer }).ok()?;
+        self.events.send(Asked { wanted, answer }).ok()?;
         answered.await.ok()
     }
 }
@@ -376,6 +457,11 @@ impl ServerHandler for Obelus {
              worth returning to, not summaries. Rewording replaces what they \
              wrote and nothing keeps it, so that one is asked with the words \
              themselves, both what it says and what it would say.\n\n\
+             `open_file` puts a file on their screen, at a line if you name \
+             one. It changes nothing and `alt+left` brings them back, but it \
+             takes them off what they were reading, so offer it and let them \
+             say yes. It is the answer whenever you would otherwise name a \
+             file and a line and leave them to go and find it.\n\n\
              A note's name is a handle for these tools and for nothing \
              else. The reader has never seen one: their notes are drawn as \
              the words they wrote, and no name appears anywhere on their \

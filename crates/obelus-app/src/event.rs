@@ -132,8 +132,8 @@ pub enum Event {
     Agent(obelus_agent::Event),
     /// A message from a language server.
     Lsp(obelus_lsp::Message),
-    /// An agent asked Obelus to change the notes.
-    Notes(obelus_mcp::Asked),
+    /// An agent used one of the tools Obelus offers it.
+    Tools(obelus_mcp::Asked),
     /// A project, counted.
     ///
     /// Boxed because it is much the largest thing an event carries -- two
@@ -184,7 +184,7 @@ impl Event {
             Self::Git(_) => "Git",
             Self::Agent(_) => "Agent",
             Self::Lsp(_) => "Lsp",
-            Self::Notes(_) => "Notes",
+            Self::Tools(_) => "Tools",
             Self::Counted(_) => "Counted",
             Self::Watched(_) => "Watched",
             Self::Scanned(_) => "Scanned",
@@ -216,7 +216,7 @@ from_worker! {
     obelus_git::Event => Git,
     obelus_agent::Event => Agent,
     obelus_lsp::Message => Lsp,
-    obelus_mcp::Asked => Notes,
+    obelus_mcp::Asked => Tools,
     Box<obelus_search::counts::Counted> => Counted,
     obelus_watch::Changed => Watched,
 }

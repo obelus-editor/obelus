@@ -2864,8 +2864,8 @@ fn a_note_an_agent_writes_behind_the_conversation_is_not_put_back() {
     // And the agent ticks the note off, the way its tools do.
     let id = obelus_git::todo::NoteId::read("0123456W").expect("a name");
     let (answer, mut said) = futures::channel::oneshot::channel();
-    app.handle(obelus_app::event::Event::Notes(obelus_mcp::Asked {
-        doing: obelus_git::todo::Doing::Finish(id),
+    app.handle(obelus_app::event::Event::Tools(obelus_mcp::Asked {
+        wanted: obelus_mcp::Wanted::Notes(obelus_git::todo::Doing::Finish(id)),
         answer,
     }));
     assert_eq!(

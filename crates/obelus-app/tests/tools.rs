@@ -69,7 +69,13 @@ fn an_agent_is_told_what_obelus_can_do() {
         Some(&session),
         r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#,
     );
-    for tool in ["todo_list", "todo_finish", "todo_add", "todo_reword"] {
+    for tool in [
+        "todo_list",
+        "todo_finish",
+        "todo_add",
+        "todo_reword",
+        "open_file",
+    ] {
         assert!(listed.contains(tool), "{tool} was not offered:\n{listed}");
     }
     // And the schema that came out of the signature, rather than one written
@@ -78,6 +84,12 @@ fn an_agent_is_told_what_obelus_can_do() {
         listed.contains("\"note\""),
         "the schema did not carry the argument's name:\n{listed}"
     );
+    for named in ["\"path\"", "\"line\""] {
+        assert!(
+            listed.contains(named),
+            "the schema did not carry {named}:\n{listed}"
+        );
+    }
 
     // The one that only looks says so, which is what spares the reader a
     // question about a tool whose whole act is to look something up. The
@@ -501,4 +513,140 @@ fn a_note_cannot_be_reworded_into_nothing() {
         .expect("the notes");
     assert_eq!(todo.notes.len(), 1, "the note went away");
     assert_eq!(todo.notes[0].said, "the one that was there");
+}
+
+/// A file an agent offers goes on the reader's screen, at the line it named.
+///
+/// The one tool that changes nothing: what it takes is the reader's
+/// attention. It goes through the same door every other jump in Obelus goes
+/// through -- so a file already open is the one they are taken to rather
+/// than a second copy of it, which `picker` already holds to, and the jump
+/// is recorded.
+///
+/// What is this tool's own is the two conversions between what an agent
+/// says and what Obelus reads: a path against the project, and a line
+/// counted from one.
+///
+/// Deliberate break: send the line straight through instead of taking one
+/// off it and the reader lands a line past the one the agent meant, which
+/// is silent because both are lines of the same file. Open the path as
+/// given rather than against the project and nothing opens at all. Drop
+/// the check that it landed and a file that is not there is reported as
+/// being on their screen.
+#[test]
+fn a_file_an_agent_offers_is_on_the_readers_screen() {
+    use obelus_app::app::App;
+
+    let scratch = support::Scratch::new("tools-opened");
+    support::make_room_for_notes(scratch.path());
+    let file = scratch.path().join("sample.rs");
+    std::fs::write(
+        &file,
+        (1..=40)
+            .map(|n| format!("// line {n}\n"))
+            .collect::<String>(),
+    )
+    .expect("a file to open");
+    let other = scratch.path().join("other.rs");
+    std::fs::write(&other, "// somewhere else\n").expect("another file");
+
+    let (sender, events) = channel::<obelus_app::event::Event>();
+    let url = obelus_mcp::serve(scratch.path(), std::sync::Arc::new(sender)).expect("a socket");
+    // Open on the other file, so being taken to `sample.rs` is a move
+    // rather than the only thing there is.
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&other).expect("the other file"),
+    ]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+
+    let asking = std::thread::spawn({
+        let url = url.clone();
+        move || {
+            let (_, session) = ask(
+                &url,
+                None,
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"a test","version":"0"}}}"#,
+            );
+            let session = session.expect("a session of its own");
+            let (opened, _) = ask(
+                &url,
+                Some(&session),
+                r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"open_file","arguments":{"path":"sample.rs","line":20}}}"#,
+            );
+            let (missing, _) = ask(
+                &url,
+                Some(&session),
+                r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"open_file","arguments":{"path":"nothing-here.rs"}}}"#,
+            );
+            (opened, missing)
+        }
+    });
+
+    for _ in 0..2 {
+        let event = events
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("the server asked the loop for something");
+        app.handle(event);
+    }
+    let (opened, missing) = asking.join().expect("the agent's side");
+
+    assert!(
+        opened.contains("on the reader's screen"),
+        "it did not say it had: {opened}"
+    );
+    assert!(
+        missing.contains("would not open"),
+        "a file that is not there was said to be on their screen: {missing}"
+    );
+
+    // The file the agent named, found against the project, and the line
+    // it named, counted from one by the agent and from zero by the buffer.
+    let buffer = app.current_buffer().expect("a file to read");
+    assert_eq!(buffer.path(), file, "the reader is on the wrong file");
+    assert_eq!(
+        buffer.cursor().line.get(),
+        19,
+        "the caret is not on the line the agent sent them to"
+    );
+}
+
+/// What Obelus says before the reader's first words names a tool an agent
+/// really has.
+///
+/// The opening offers `open_file` in prose, and the tool's name comes out
+/// of a function signature by way of a macro -- so a rename there leaves
+/// the opening telling every agent about a tool that is not offered, which
+/// nothing on either side would notice. A writer and a reader in the same
+/// program have a test that the one reads the other.
+///
+/// The name and not the sentence. The opening is prose and is reworded by
+/// whoever is tuning what an agent does; what may not drift is the name,
+/// which is a name and is written the way it is written everywhere else.
+///
+/// Deliberate break: take the paragraph out of `always.txt` and an agent
+/// is never told it can put a file in front of the reader, which is the
+/// half of this that no tool listing can say.
+#[test]
+fn the_opening_names_the_tool_it_offers() {
+    let always = include_str!("../src/app/always.txt");
+    assert!(
+        always.contains("open_file"),
+        "the opening does not tell an agent it can open a file:\n{always}"
+    );
+
+    let (_scratch, url) = listening("tools-opening");
+    let (_, session) = ask(
+        &url,
+        None,
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"a test","version":"0"}}}"#,
+    );
+    let (listed, _) = ask(
+        &url,
+        session.as_deref(),
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#,
+    );
+    assert!(
+        listed.contains("open_file"),
+        "the opening names a tool nothing offers:\n{listed}"
+    );
 }

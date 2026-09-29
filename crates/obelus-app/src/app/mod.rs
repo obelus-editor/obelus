@@ -2470,8 +2470,11 @@ impl App {
                 done,
             }) => self.on_matches(generation, hits, done),
             Event::Agent(obelus_agent::Event::Acp(message)) => self.on_acp(message),
-            Event::Notes(obelus_mcp::Asked { doing, answer }) => {
-                let _ = answer.send(self.change_the_notes(doing));
+            Event::Tools(obelus_mcp::Asked { wanted, answer }) => {
+                let _ = answer.send(match wanted {
+                    obelus_mcp::Wanted::Notes(doing) => self.change_the_notes(doing),
+                    obelus_mcp::Wanted::Open { path, line } => self.open_for_an_agent(&path, line),
+                });
             }
             Event::Agent(obelus_agent::Event::Registry { agents, failure }) => {
                 self.on_registry(agents, failure)
