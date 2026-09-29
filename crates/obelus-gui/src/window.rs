@@ -712,7 +712,8 @@ impl ApplicationHandler<Waking> for Showing {
                             // said is on screen until another says
                             // otherwise, and whether the light has
                             // anywhere to run is what decides the frames.
-                            self.motion.sheen_drawn(self.sheened.is_some());
+                            self.motion
+                                .sheen_drawn(self.sheened.is_some(), Instant::now());
                             self.behind = self.behinding.take();
                             self.cards = std::mem::take(&mut self.carding);
                             self.scrolled = self.scrolling.take();

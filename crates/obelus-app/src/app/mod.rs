@@ -1529,7 +1529,19 @@ impl App {
         // Nothing open and no page taking its place: the welcome screen's
         // sheen. A settings page over the welcome is not a welcome screen,
         // so keeping its clock running would redraw a motionless page.
-        (self.current.is_none() && !self.layers().filling())
+        //
+        // And not where a window is drawing, because there the sheen is
+        // the window's own and runs on the window's own clock. What this
+        // ticker moves is the ramp written into the cells, which is the
+        // sheen a terminal can draw and the one thing a window does not
+        // read -- so it would be twelve pages a second pushed at a front
+        // end that draws the light itself, on the one screen a reader
+        // leaves up while they decide what to open. The cells keep the
+        // ramp they were last drawn with, which is that sheen at one
+        // moment and as true as any other frame of it.
+        (self.current.is_none()
+            && !self.layers().filling()
+            && !obelus_config::in_a_window())
             // An agent at work in the conversation being read.
             || working
             // Or in one that is not, while the list that says so is open.

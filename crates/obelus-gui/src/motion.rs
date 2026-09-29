@@ -651,12 +651,13 @@ pub(crate) struct Motion {
     pane: Sliding,
     band: Scrolling,
     bars: Bars,
-    /// When this window started, which is what the light's pass is
-    /// measured from.
+    /// When the mark the light runs across last arrived, which is what
+    /// its pass is measured from.
     ///
     /// A clock and nothing else: where the light is, is a function of the
-    /// time and of nothing the reader or the page has done, so there is no
-    /// state to keep and a frame drawn twice draws the same light twice.
+    /// time and of nothing the reader has done since, so a frame drawn
+    /// twice draws the same light twice. It is moved on the one thing that
+    /// is not a matter of time -- the mark arriving -- see `sheen_drawn`.
     since: Instant,
     /// Whether the frame drew a mark for it to run across.
     sheening: bool,
@@ -862,7 +863,21 @@ impl Motion {
     /// Told rather than read off the page, the way the bars are: what says
     /// a region is the mark is the view saying so, and the cells it wrote
     /// there are blocks like any other.
-    pub(crate) const fn sheen_drawn(&mut self, showing: bool) {
+    pub(crate) fn sheen_drawn(&mut self, showing: bool, now: Instant) {
+        // The light sets out when the mark arrives rather than from
+        // wherever the clock had got to. The welcome screen is what shows
+        // when nothing is open, so it comes back every time a reader
+        // closes their last file -- and a phase kept from the window's own
+        // start puts the light halfway across the mark more often than it
+        // puts it at the edge, which is a light appearing rather than a
+        // light arriving.
+        //
+        // On the arrival only, so what is said above still holds: a frame
+        // drawn twice says the mark is there twice and draws the same
+        // light both times.
+        if showing && !self.sheening {
+            self.since = now;
+        }
         self.sheening = showing;
     }
 
@@ -1427,7 +1442,7 @@ mod tests {
     #[test]
     fn the_light_crosses_the_mark_and_then_rests() {
         let mut motion = Motion::new(None);
-        motion.sheen_drawn(true);
+        motion.sheen_drawn(true, motion.since);
         let since = motion.since;
         let at = |after: Duration| motion.sheen(since + after);
 
@@ -1446,6 +1461,37 @@ mod tests {
         assert!(again < 0.0, "the next pass starts somewhere else: {again}");
     }
 
+    /// And the light sets out when the mark arrives, not from wherever
+    /// the clock had got to.
+    ///
+    /// The welcome screen comes back every time a reader closes their last
+    /// file, and a phase kept from the window's own start puts the light
+    /// halfway across the mark more often than it puts it at the edge --
+    /// which is a light appearing rather than a light arriving.
+    ///
+    /// Break: drop the `since` in `sheen_drawn`. The first assertion goes,
+    /// because for this moment the absolute phase is mid-pass. Or move it
+    /// on every frame rather than on the arrival, and the second one does:
+    /// the pass starts over on every frame and the light never leaves the
+    /// edge.
+    #[test]
+    fn the_light_sets_out_when_the_mark_arrives() {
+        let mut motion = Motion::new(None);
+        // Far enough along that the phase kept from the start would be
+        // halfway across a pass.
+        let arrives = motion.since + SHEEN_PASS / 2;
+        motion.sheen_drawn(true, arrives);
+        let out = motion.sheen(arrives).expect("setting out");
+        assert!(out < 0.0, "the light is already on the mark: {out}");
+
+        // And a frame that says the same thing again does not start it
+        // over: the mark has not arrived, it is simply still there.
+        let later = arrives + SHEEN_PASS / 2;
+        motion.sheen_drawn(true, later);
+        let half = motion.sheen(later).expect("halfway across");
+        assert!((half - 0.5).abs() < 0.01, "the pass started again: {half}");
+    }
+
     /// And the window sleeps through the rest rather than drawing it.
     ///
     /// Two kinds of waiting, which is what this whole file is about: the
@@ -1458,7 +1504,7 @@ mod tests {
     #[test]
     fn the_window_sleeps_between_two_passes_of_the_light() {
         let mut motion = Motion::new(None);
-        motion.sheen_drawn(true);
+        motion.sheen_drawn(true, motion.since);
         let since = motion.since;
 
         assert_eq!(
@@ -1484,7 +1530,7 @@ mod tests {
         }
 
         // And a screen with no mark on it wants nothing at all.
-        motion.sheen_drawn(false);
+        motion.sheen_drawn(false, Instant::now());
         assert_eq!(motion.wake(resting, false), None);
     }
 
@@ -1505,7 +1551,7 @@ mod tests {
         assert_eq!(motion.moving(base).pane, None, "a pane");
         assert!(!motion.band_moved(3.0, 20.0, base), "a band");
         assert_eq!(motion.moving(base).scroll, None);
-        motion.sheen_drawn(true);
+        motion.sheen_drawn(true, motion.since);
         assert_eq!(motion.moving(base).sheen, None, "the light on the mark");
         assert_eq!(motion.wake(base, true), None, "and nothing to wake for");
 
