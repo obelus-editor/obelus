@@ -21,6 +21,8 @@
 pub enum Command {
     /// Choose a file under the working directory and open it.
     FileOpen,
+    /// Make a file that is not there yet, and open it.
+    FileNew,
     /// Open one of the files that have changed since the last commit.
     FileChanged,
     /// Re-read the current file from disk and reparse what changed.
@@ -390,6 +392,11 @@ pub const ALL: &[CommandSpec] = &[
         command: Command::FileOpen,
         name: "open-file",
         title: "Open a file",
+    },
+    CommandSpec {
+        command: Command::FileNew,
+        name: "new-file",
+        title: "Make a file and open it",
     },
     CommandSpec {
         command: Command::FileChanged,
@@ -772,6 +779,7 @@ impl Command {
             | Self::FileSave
             | Self::DocumentClose
             | Self::FileRename
+            | Self::FileNew
             | Self::PreviewToggle
             | Self::ThemeSelect
             // A list over the conversation rather than instead of it: the
@@ -835,6 +843,7 @@ impl Command {
         match self {
             Self::FileOpen
             | Self::FileChanged
+            | Self::FileNew
             | Self::FileReload
             | Self::FileSave
             | Self::DocumentList
@@ -953,6 +962,12 @@ impl Command {
             // version of a file is not either: what a move moves is what
             // is at the path, and neither of those is.
             Self::FileRename => Requires::AFileOnDisk,
+            // Nothing, and deliberately not a file being open: `ob
+            // some-directory` opens on a list with no file behind it, and
+            // that is exactly the reader who is about to make the first
+            // one. The directory the question is filled in with is the
+            // only part that wants a file, and it does without.
+            Self::FileNew => Requires::Nothing,
             // What is open, including nothing: the list says so itself, and
             // said it to nobody while the key insisted on a file.
             Self::DocumentList => Requires::Nothing,

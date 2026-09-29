@@ -1128,6 +1128,200 @@ impl App {
         }
     }
 
+    /// Asks where a file that is not there yet should go.
+    ///
+    /// Filled in with the directory the reader is in, because that is
+    /// where the next file almost always goes -- the same argument the
+    /// rename's prompt makes about starting at the name being changed.
+    /// The trailing separator is part of it: a reader who takes the
+    /// suggestion types a name onto the end, and one who does not holds
+    /// backspace, which is cheaper than typing the directory out.
+    ///
+    /// Empty where nothing is open, which is the reader `ob
+    /// some-directory` leaves on a list with no file behind it -- and the
+    /// one most likely to be making the first file in a project. There is
+    /// nothing to suggest, and a guess would be Obelus inventing a place.
+    ///
+    /// Empty for a file in the project's own root as well, and by the same
+    /// arithmetic rather than by a case of its own: `join` on a path with
+    /// nothing in it adds nothing, so the root suggests nothing and every
+    /// other directory suggests itself with a separator after it. Written
+    /// with a `/` it would have been `src\lsp/` on Windows -- one row in
+    /// two conventions -- and a bare `/` at the root, which is the disk's.
+    pub fn new_file(&mut self) {
+        let here = self
+            .current_buffer()
+            .map(Buffer::path)
+            .and_then(Path::parent)
+            .map(|directory| self.as_a_directory(directory))
+            .unwrap_or_default();
+        self.ask_on_the_status_row(obelus_component::prompt::Prompt::about(
+            obelus_component::prompt::PromptKind::NewPath,
+            here,
+        ));
+    }
+
+    /// Where an answer to the new-file question points.
+    ///
+    /// One place, because two things read it: this is what `make_file`
+    /// acts on and what the question's own row says it will do. Worked out
+    /// twice, the row would promise one directory and the file land in
+    /// another -- and the reader would find out afterwards.
+    ///
+    /// Against the working directory and not against the file being read,
+    /// which is what the question is filled in with: the suggestion is
+    /// where the reader *is*, and the answer is a path like any other path
+    /// a reader says.
+    /// A directory as this row writes one: where it is, with a separator
+    /// after it so a name typed onto the end lands in it.
+    ///
+    /// Relative to the project where it is under it, which is how every
+    /// other path on that row is written, and whole where it is not --
+    /// there is no shorter way to say that one which is still true.
+    ///
+    /// Empty for the project's own root, because `join` on a path with
+    /// nothing in it adds nothing rather than a separator -- and a bare
+    /// separator is the root of the *disk*. What the two callers make of
+    /// an empty answer differs and is theirs: one has nothing to suggest,
+    /// and the other has the one thing it most needs to say.
+    fn as_a_directory(&self, directory: &Path) -> String {
+        directory
+            .strip_prefix(&self.working_directory)
+            .unwrap_or(directory)
+            .join("")
+            .display()
+            .to_string()
+    }
+
+    fn landing(&self, answer: &Path) -> PathBuf {
+        match answer.is_absolute() {
+            true => answer.to_path_buf(),
+            false => self.working_directory.join(answer),
+        }
+    }
+
+    /// The directory the new-file question would put the file in, as the
+    /// row says it.
+    ///
+    /// `None` unless that question is the one being asked, because it is
+    /// the only question on that row whose answer is a place.
+    ///
+    /// The directory is everything up to the last separator in what has
+    /// been typed, which is what the reader is looking at -- rather than
+    /// the parent of the resolved path, which is not the same thing twice
+    /// over: an answer with nothing in it resolves to the project and its
+    /// parent is the project's parent, and an answer ending in a separator
+    /// already *is* the directory.
+    ///
+    /// Written the way every other path on this row is written: relative
+    /// to the project, with the project's own root as `.` rather than as
+    /// nothing, because nothing is what the reader was shown when they
+    /// were standing in it. Somewhere outside the project keeps its whole
+    /// path -- there is no shorter way to say it that is still true.
+    pub fn making_in(&self) -> Option<String> {
+        let prompt = self.prompt.as_ref()?;
+        if prompt.kind() != obelus_component::prompt::PromptKind::NewPath {
+            return None;
+        }
+        let typed = prompt.text();
+        // `is_separator` rather than a list, because which characters
+        // those are is the platform's answer: `\` is one on Windows and an
+        // ordinary character in a file's name everywhere else.
+        let cut = typed.rfind(std::path::is_separator).map_or(0, |at| at + 1);
+        let shown = self.as_a_directory(&self.landing(Path::new(&typed[..cut])));
+        // Empty is the project's own root, and the one directory that has
+        // to be said rather than left out: nothing is what the reader was
+        // shown while they were standing in it.
+        Some(match shown.is_empty() {
+            true => Path::new(".").join("").display().to_string(),
+            false => shown,
+        })
+    }
+
+    /// Makes the file the answer names, and opens it.
+    ///
+    /// On disk at once, rather than in a buffer that is written later.
+    /// Everything past the `create_new` is the path any other file takes
+    /// -- the watcher is on it, the server has been told, git counts it
+    /// among the untracked, `ctrl+r` has something to re-read and the
+    /// status row is saying what it says about a file. A document that
+    /// existed only in memory would be a second kind of open file, and
+    /// every one of those would have to learn about it.
+    ///
+    /// `create_new` and not `create`: a file already there is refused
+    /// rather than emptied, which is the one thing here that cannot be
+    /// put back. The same refusal a rename makes, in the same words --
+    /// one fact, one sentence, wherever the reader meets it.
+    pub(super) fn make_file(&mut self, answer: &Path) {
+        let path = self.landing(answer);
+        // A directory that is not there yet, which is what taking a path
+        // rather than a name is for: a reader starting a module should not
+        // have to leave to make the directory it goes in. The rename says
+        // the same thing about moving a file into one.
+        if let Some(parent) = path.parent()
+            && let Err(error) = std::fs::create_dir_all(parent)
+        {
+            tracing::warn!(%error, path = %parent.display(), "could not make the directory");
+            let shown = self.named(parent, answer);
+            // Asked of the path rather than read off the error, the same
+            // as the file below: what happens to a reader is a path with a
+            // file somewhere along it, and that is a thing to say rather
+            // than an errno to translate. Anything else -- a permission,
+            // a read-only disk -- has no such fact behind it and gets the
+            // shape that names no reason.
+            self.note = Some(match parent.exists() && !parent.is_dir() {
+                true => format!("{shown} is not a directory"),
+                false => format!("Could not make {shown}"),
+            });
+            return;
+        }
+        let name = self.named(&path, answer);
+        match std::fs::File::create_new(&path) {
+            Ok(_) => self.open(&path),
+            Err(error) => {
+                tracing::warn!(%error, path = %path.display(), "could not make");
+                // Asked of the path and not of the error's kind: something
+                // already there is `AlreadyExists` for a file and
+                // `IsADirectory` for a directory -- `src` and `src/` are
+                // the two, and which errno an OS picks between them is not
+                // a difference the reader is being told about.
+                //
+                // No reason on the other shape. Why it would not go is an
+                // error chain, and the row this goes on is shared with the
+                // file's own name: a sentence too long for it is dropped
+                // whole, and a warning nobody sees is not a warning. The
+                // whole of it is in the log, which is where `save-file`
+                // puts its own for the same reason.
+                self.note = Some(match path.exists() {
+                    true => format!("{name} is already there"),
+                    false => format!("Could not make {name}"),
+                });
+            }
+        }
+    }
+
+    /// What to call a path in something said about it.
+    ///
+    /// Where it is, the way every other path on the status row is written.
+    /// Falling back to what the reader typed where that comes to nothing:
+    /// `.` resolves to the project and strips to an empty path, and a
+    /// sentence with a blank where the name goes is the shape `write_now`
+    /// already refuses.
+    ///
+    /// Bounded, because the rest of it is the reader's own text and the
+    /// row it goes on is shared with the file's name. Forty columns is
+    /// about as much as is left of a narrow one once a path and a position
+    /// have had theirs.
+    fn named(&self, path: &Path, answer: &Path) -> String {
+        const NAMED: usize = 40;
+        let shown = relative(path, &self.working_directory);
+        let shown = match shown.is_empty() {
+            true => answer.display().to_string(),
+            false => shown,
+        };
+        obelus_ui::truncate_from_right(&shown, NAMED)
+    }
+
     /// Every open document, as its path and whether it is unwritten.
     ///
     /// For a test about a change made to files the reader is not looking

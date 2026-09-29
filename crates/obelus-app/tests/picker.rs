@@ -1284,21 +1284,41 @@ fn the_palette_reads_the_key_table() {
         KeyCode::Char('k'),
         KeyModifiers::ALT,
     )));
-    // Tall enough to reach the palette's own row: the list is in the order
-    // of the command table, and a command added above it pushes it down.
+    // The rows as they come, first: this keymap binds one command, so
+    // every other row on screen has no key to show. `save-file` and
+    // `close-document` are the two of them that always are on screen,
+    // because the list is in the table's order and they are near the top
+    // of it.
     let dump = support::render(&mut app, 60, 20);
     let text = support::text_block(&dump);
+    for gone in [
+        KeyChord::new(KeyCode::Char('s'), KeyModifiers::CONTROL),
+        KeyChord::new(KeyCode::Char('w'), KeyModifiers::CONTROL),
+        KeyChord::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
+    ] {
+        assert!(
+            !text.contains(&gone.label()),
+            "{} is still shown for a command this keymap does not bind:\n{dump}",
+            gone.label()
+        );
+    }
 
+    // And the palette's own row, typed to rather than scrolled to. The
+    // compact list is ten rows whatever the screen's height, and this row
+    // is past them -- which is what the list beside this one means by "the
+    // ones past it are reached by typing". Found by counting, it went red
+    // the first time a command was added above it, and did.
+    support::type_text(&mut app, "run-command");
+    let dump = support::render(&mut app, 60, 20);
+    let text = support::text_block(&dump);
     let rebound = KeyChord::new(KeyCode::Char('k'), KeyModifiers::ALT).label();
-    let old = KeyChord::new(KeyCode::Char('p'), KeyModifiers::CONTROL).label();
     assert!(
         text.contains(&rebound),
         "the rebound key is not shown:\n{dump}"
     );
-    assert!(!text.contains(&old), "the old key is still shown:\n{dump}");
     assert!(
-        !text.contains(&KeyChord::new(KeyCode::Char('f'), KeyModifiers::CONTROL).label()),
-        "a command with no binding left still shows one:\n{dump}"
+        !text.contains(&KeyChord::new(KeyCode::Char('p'), KeyModifiers::CONTROL).label()),
+        "the old key is still shown:\n{dump}"
     );
 }
 

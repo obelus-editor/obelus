@@ -32,6 +32,13 @@ pub enum PromptKind {
     /// Where a file should be instead: a path rather than a name, so that
     /// the one question moves a file as well as renames it.
     Path,
+    /// Where a file that is not there yet should go.
+    ///
+    /// Its own kind rather than [`PromptKind::Path`] with another label,
+    /// because what the answer *means* is the thing that differs: one
+    /// moves a file and the other makes one, and the row the reader
+    /// answers on is the only place that says which.
+    NewPath,
 }
 
 impl PromptKind {
@@ -49,6 +56,10 @@ impl PromptKind {
             // prompt as far as a reader glancing at it is concerned, and
             // these two change very different things.
             Self::Path => "Call it: ",
+            // The same argument once more, and this pair is the closer
+            // one: both answers are a path, and only the words say
+            // whether the file at the end of it is being moved or made.
+            Self::NewPath => "New file: ",
         }
     }
 
@@ -74,7 +85,7 @@ impl PromptKind {
             // A path may hold anything a file name may, blanks included:
             // `My Notes.md` is a file, and a reader typing one is not
             // making a mistake. Only the key that answers is refused.
-            Self::Path => character != '\n' && character != '\r',
+            Self::Path | Self::NewPath => character != '\n' && character != '\r',
         }
     }
 
@@ -87,7 +98,7 @@ impl PromptKind {
         match self {
             Self::Line => |character| character.is_ascii_digit(),
             Self::Name => |character| !character.is_whitespace(),
-            Self::Path => |character| character != '\n' && character != '\r',
+            Self::Path | Self::NewPath => |character| character != '\n' && character != '\r',
         }
     }
 }

@@ -234,6 +234,13 @@ pub trait Screen {
     fn preview(&self) -> Option<Previewed<'_>>;
     /// The question being asked, if one is.
     fn prompt(&self) -> Option<&Prompt>;
+    /// The directory the question being asked would put a file in.
+    ///
+    /// `None` unless the question is the one that makes a file, which is
+    /// the only one on that row whose answer is a place. Worked out by the
+    /// application, because where a path points is the application's
+    /// question and the one that acts on it has to get the same answer.
+    fn making_in(&self) -> Option<String>;
     /// Which settings the reader's own file named.
     fn readers_named(&self) -> &[&'static str];
     /// Whether there is anything being read at all.

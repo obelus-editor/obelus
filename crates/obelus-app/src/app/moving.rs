@@ -637,6 +637,12 @@ impl App {
                 }
                 self.rename_file_to(std::path::Path::new(path));
             }
+            // Where a file that is not there yet should go. No guard
+            // against a blank one, unlike the arm above: `Field::is_empty`
+            // asks whether the line is *blank*, so enter on one of spaces
+            // is consumed and this is never reached with nothing in it. A
+            // second answer here would be an unreachable one.
+            PromptKind::NewPath => self.make_file(std::path::Path::new(text.trim())),
             PromptKind::Line => {
                 let Ok(line) = text.trim().parse::<usize>() else {
                     self.note = Some(format!("{text:?} is not a line number"));

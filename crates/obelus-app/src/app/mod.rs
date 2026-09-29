@@ -3998,6 +3998,9 @@ impl Screen for App {
     fn prompt(&self) -> Option<&Prompt> {
         App::prompt(self)
     }
+    fn making_in(&self) -> Option<String> {
+        App::making_in(self)
+    }
     fn readers_named(&self) -> &[&'static str] {
         App::readers_named(self)
     }

@@ -21,6 +21,7 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::DocumentList => app.open_document_picker(),
         Command::DocumentClose => app.close_current(),
         Command::FileRename => app.rename_file(),
+        Command::FileNew => app.new_file(),
         Command::PreviewToggle => app.toggle_preview(),
         Command::ThemeSelect => app.open_theme_picker(),
         Command::CommandPalette => app.open_command_palette(),

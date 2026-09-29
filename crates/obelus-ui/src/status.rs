@@ -14,7 +14,9 @@ use ratatui::{
     widgets::Widget,
 };
 
-use crate::{Marked, Screen, fill, relative_to, truncate_from_left, write, write_marked};
+use crate::{
+    Marked, Screen, fill, relative_to, truncate_from_left, truncate_from_right, write, write_marked,
+};
 
 /// The status region.
 pub struct StatusView<'a> {
@@ -54,6 +56,9 @@ pub struct StatusView<'a> {
     settings: Option<&'a obelus_component::settings::Settings>,
     /// And when a question is being asked, the row is the question.
     prompt: Option<&'a obelus_component::prompt::Prompt>,
+    /// The directory that question would put a file in, where it is the
+    /// question that makes one.
+    making_in: Option<String>,
     /// The notes, while they are what is being read.
     notes: Option<&'a obelus_component::todo::TodoView>,
     /// Which of them is nearest the reader, and so whose row this is.
@@ -92,6 +97,7 @@ impl<'a> StatusView<'a> {
             names: app.names(),
             settings: app.settings(),
             prompt: app.prompt(),
+            making_in: app.making_in(),
             notes: app.notes(),
             nearest: app.layers().nearest(),
             replacing: app.replacing(),
@@ -129,9 +135,19 @@ impl Widget for StatusView<'_> {
             // The whole row is the question. Nothing else on it: a file
             // name beside a half-typed line number is two things asking to
             // be read at once.
+            //
+            // Which the directory a new file would go in is not. It is
+            // part of the question rather than a second thing beside it:
+            // the answer is a path, a path is relative to something, and
+            // the row is the only place that can say what. Left unsaid, a
+            // reader standing in the project's own root is shown a blank
+            // line and a file that lands they know not where -- which is
+            // how this was noticed.
             Some(Layer::Prompt) => {
                 if let Some(prompt) = self.prompt {
-                    write(cells, area.x + 1, area.y, &prompt.line(), style);
+                    let line = prompt.line();
+                    write(cells, area.x + 1, area.y, &line, style);
+                    self.render_landing(&line, area, cells, style);
                 }
             }
             Some(Layer::Picker) => {
@@ -170,6 +186,29 @@ impl Widget for StatusView<'_> {
                     self.render_notes(notes, area, cells, style);
                 } else if let Some(buffer) = self.buffer {
                     self.render_file(buffer, area, cells, style);
+                } else if let Some(note) = self.middle {
+                    // Nothing open, so the row has nothing else to say --
+                    // and what Obelus has just said still has to reach
+                    // somebody. It was drawn only beside a file's name,
+                    // which left the one reader most likely to be told
+                    // something watching a key do nothing: `ob
+                    // some-directory` opens on the welcome screen, and
+                    // making the first file in a project is a command
+                    // offered right there.
+                    //
+                    // Left of the row and in its own ink, which is what a
+                    // conversation does with the same sentence: beside a
+                    // path it is an aside and goes in the dim one, and
+                    // alone on the row it is the row. Truncated rather
+                    // than dropped, for the same reason -- there is
+                    // nothing here it could be crowding.
+                    write(
+                        cells,
+                        area.x + 1,
+                        area.y,
+                        &truncate_from_right(note, usize::from(area.width).saturating_sub(2)),
+                        style,
+                    );
                 }
             }
         }
@@ -424,6 +463,41 @@ pub fn prompt_caret(picker: &Picker) -> u16 {
 impl StatusView<'_> {
     /// The file on the left, the cursor position on the right, and a marker
     /// between them when the file can no longer be read.
+    /// Where the file a question is asking about would go, at the row's
+    /// far end.
+    ///
+    /// In the dim ink the row's other aside is written in, because that is
+    /// what it is: what the reader is typing is the answer, and this is
+    /// what the answer means. The same ink for both would be two things
+    /// reading as one sentence.
+    ///
+    /// Dropped whole where the two do not both fit, which is the rule the
+    /// rest of this row follows: the answer is what the reader is looking
+    /// at, and half a directory is worse than none.
+    fn render_landing(&self, line: &str, area: Rect, cells: &mut CellBuffer, style: Style) {
+        let Some(landing) = self.making_in.as_deref() else {
+            return;
+        };
+        let landing_width = text_width(landing);
+        // A column of padding at the far end, as the position has, and two
+        // between the answer and this so the pair do not read as one path.
+        let start = usize::from(area.width)
+            .saturating_sub(landing_width)
+            .saturating_sub(1);
+        if start < 1usize.saturating_add(text_width(line)).saturating_add(2) {
+            return;
+        }
+        if let Ok(offset) = u16::try_from(start) {
+            write(
+                cells,
+                area.x + offset,
+                area.y,
+                landing,
+                style.fg(self.theme.gutter),
+            );
+        }
+    }
+
     fn render_file(&self, buffer: &Buffer, area: Rect, cells: &mut CellBuffer, style: Style) {
         // Sits with the path rather than with the cursor position, because it
         // is a fact about the file. In its own colour: the whole point is that

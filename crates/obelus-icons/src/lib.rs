@@ -257,6 +257,10 @@ pub fn for_command(command: obelus_command::Command) -> char {
         Command::FileOpen => '\u{f021e}',
         // A folder with a pencil on it: the files being worked on.
         Command::FileChanged => '\u{f08de}',
+        // A page with a plus on it. A *page* and not a folder, which is
+        // what the two commands either side of it carry: those choose
+        // among files that are there, and this one makes the file.
+        Command::FileNew => '\u{f0224}',
         Command::FileReload => '\u{f0450}',
         // A floppy disk, which nobody has seen for twenty years and
         // everybody still reads as save.

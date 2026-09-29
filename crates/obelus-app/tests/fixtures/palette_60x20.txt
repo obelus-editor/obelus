@@ -9,15 +9,15 @@ screen 60x20  editor 60x18  status 60x1
  6|  All  Files  Search  Code  Edit  Git  Obelus           ⇤ ⇥ 
  7|────────────────────────────────────────────────────────────
  8| open-file  Open a file                                 F1 █
- 9| open-changed-file  Open a file that has changed        F3 █
-10| save-file  Write this file back to disk            Ctrl+s █
-11| reload-file  Re-read this file from disk           Ctrl+r █
-12| switch-document  Switch to something already open      F2 █
-13| close-document  Close what is being read           Ctrl+w █
-14| rename-file  Call this file something else, or move it    █
-15| toggle-preview  Show this file rendered, or stop   Ctrl+t █
-16| choose-theme  Change the colours                          █
-17| run-command  Run a command by name                 Ctrl+p █
+ 9| new-file  Make a file and open it                         █
+10| open-changed-file  Open a file that has changed        F3 █
+11| save-file  Write this file back to disk            Ctrl+s █
+12| reload-file  Re-read this file from disk           Ctrl+r █
+13| switch-document  Switch to something already open      F2 █
+14| close-document  Close what is being read           Ctrl+w █
+15| rename-file  Call this file something else, or move it    █
+16| toggle-preview  Show this file rendered, or stop   Ctrl+t █
+17| choose-theme  Change the colours                          █
 18|────────────────────────────────────────────────────────────
 19| >                                                          
 -- style --
@@ -30,15 +30,15 @@ screen 60x20  editor 60x18  status 60x1
  6|cgggggcccccccccccccccccccccccccccccccccccccccccccccccccccccc
  7|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  8|gggggggggggghhhhhhhhhhhggggggggggggggggggggggggggggggggghhgb
- 9|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccci
-10|aaaaaaaaaaaaccccccccccccccccccccccccccccaaaaaaaaaaaaccccccai
-11|aaaaaaaaaaaaaacccccccccccccccccccccccccccaaaaaaaaaaaccccccai
-12|aaaaaaaaaaaaaaaaaaccccccccccccccccccccccccccccccccaaaaaaccai
-13|aaaaaaaaaaaaaaaaaccccccccccccccccccccccccaaaaaaaaaaaccccccai
-14|aaaaaaaaaaaaaacccccccccccccccccccccccccccccccccccccccccaaaai
-15|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccci
-16|aaaaaaaaaaaaaaaccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaai
-17|aaaaaaaaaaaaaacccccccccccccccccccccaaaaaaaaaaaaaaaaaccccccai
+ 9|aaaaaaaaaaacccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaai
+10|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccci
+11|aaaaaaaaaaaaccccccccccccccccccccccccccccaaaaaaaaaaaaccccccai
+12|aaaaaaaaaaaaaacccccccccccccccccccccccccccaaaaaaaaaaaccccccai
+13|aaaaaaaaaaaaaaaaaaccccccccccccccccccccccccccccccccaaaaaaccai
+14|aaaaaaaaaaaaaaaaaccccccccccccccccccccccccaaaaaaaaaaaccccccai
+15|aaaaaaaaaaaaaacccccccccccccccccccccccccccccccccccccccccaaaai
+16|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccci
+17|aaaaaaaaaaaaaaaccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaai
 18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 19|jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj
 -- legend --
