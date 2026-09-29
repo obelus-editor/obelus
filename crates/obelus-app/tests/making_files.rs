@@ -53,7 +53,20 @@ fn reading(name: &str) -> (support::Scratch, App) {
 /// thing holding the caret. Split on the padding between them, which is
 /// what a reader's eye does with it.
 fn row(app: &mut App) -> (String, String) {
-    let dump = support::render(app, 76, 18);
+    row_across(app, 76)
+}
+
+/// The same, on a screen wide enough for what is being looked at.
+///
+/// The row drops what will not fit, whole -- which is a rule of its own
+/// and has its own test. A test about what the row *says* has to leave it
+/// the room to say it, and how much that is depends on the machine: a
+/// temporary directory is `/tmp` here and sixty-three characters of
+/// `/var/folders/...` on macOS, which is what made this one fail there
+/// and nowhere else.
+fn row_across(app: &mut App, width: u16) -> (String, String) {
+    support::lay_out(app, width, 18);
+    let dump = support::render(app, width, 18);
     let whole = support::text_block(&dump)
         .lines()
         .rfind(|row| row.contains('|'))
@@ -370,10 +383,22 @@ fn somewhere_outside_the_project_is_said_in_full() {
         support::press(&mut app, KeyCode::Backspace);
     }
     let away = std::env::temp_dir().join("obelus-landing");
-    support::type_text(&mut app, &away.join("scratch.rs").display().to_string());
+    let typed = away.join("scratch.rs").display().to_string();
+    support::type_text(&mut app, &typed);
+    // Room for both: the row carries what the reader typed *and* the
+    // landing beside it, so it wants about twice the path. Worked out
+    // rather than picked, because how long a path this is depends on the
+    // machine -- `/tmp` here, sixty-three characters of `/var/folders/...`
+    // on macOS, which is what made this fail there and nowhere else. What
+    // a row too narrow does is drop it whole, which is a rule of its own
+    // with a test of its own.
+    let landing = away.join("").display().to_string();
+    let wide = u16::try_from(typed.chars().count() + landing.chars().count() + 16)
+        .unwrap_or(u16::MAX)
+        .max(76);
     assert_eq!(
-        landing(&mut app),
-        away.join("").display().to_string(),
+        row_across(&mut app, wide).1,
+        landing,
         "an answer outside the project"
     );
 }
