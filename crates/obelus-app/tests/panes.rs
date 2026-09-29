@@ -20,6 +20,8 @@ struct Heard {
     /// The mark the light runs across, and the two colours it runs
     /// between.
     marks: Mutex<Vec<(Rect, Color, Color)>>,
+    /// And where one thing was said to stop and the next to begin.
+    partings: Mutex<Vec<Rect>>,
 }
 
 impl obelus_ui::shapes::Shapes for Heard {
@@ -38,6 +40,12 @@ impl obelus_ui::shapes::Shapes for Heard {
     fn capped(&self, _keys: &str, _area: Rect, _cap: Color, _page: Color, _edge: Color) {}
 
     fn barred(&self, _bar: obelus_ui::shapes::Bar) {}
+
+    fn parted(&self, area: Rect, _edge: Color) {
+        if let Ok(mut partings) = self.partings.lock() {
+            partings.push(area);
+        }
+    }
 
     fn sheened(&self, area: Rect, from: Color, to: Color) {
         if let Ok(mut marks) = self.marks.lock() {
@@ -190,4 +198,87 @@ fn the_mark_says_where_it_is_and_what_the_light_runs_between() {
         }
     }
     assert!(letters > 100, "the mark is barely on the screen: {letters}");
+}
+
+/// The notes say where one stops and the next begins, and say it from the
+/// note's own indent.
+///
+/// A boundary with no row to be on: the notes are a list whose rows are
+/// already as many as the screen has, so a rule between two of them would
+/// take a third of the page to say what a line in the pixel between two
+/// rows says for nothing. Which only a window can draw -- see
+/// `obelus_ui::shapes::parted` -- and which the window cannot work out,
+/// because nothing in a cell says which row begins a note.
+///
+/// From the note's own indent rather than across the page, so a note
+/// hanging under another is parted from it where it begins: a full-width
+/// line there would cut a note from what hangs under it, which is the one
+/// relation this page is drawn to show.
+///
+/// Deliberate break: drop the `row.head` and every line of every note is
+/// parted from the one above it. Drop the `offset > 0` and the first note
+/// on screen is parted from the rule over the page, which is already a
+/// line. Take the `step` out of the `x` and a child is cut off from its
+/// parent.
+#[test]
+fn the_notes_say_where_one_stops_and_the_next_begins() {
+    let heard = heard();
+    heard.partings.lock().expect("the partings").clear();
+
+    let scratch = support::Scratch::new("panes-parted");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()),
+        // The middle one says three lines and points at a place, so most
+        // of the rows on this page are *not* a note's first: without one
+        // like it, every row is a head row and "only a note's first" is
+        // not a claim this could tell from "every row".
+        r#"
+[[todo]]
+said = "the first, which nothing is above"
+done = false
+
+[[todo]]
+said = """
+the second, which says three lines
+so that the rows between its first
+and the next note are nobody's head
+"""
+done = false
+at = "sample.rs"
+line = 2
+
+[[todo]]
+said = "under the second"
+done = false
+depth = 1
+"#,
+    )
+    .expect("the notes");
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    support::lay_out(&mut app, 76, 18);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    let dump = support::render(&mut app, 76, 18);
+
+    let said = heard.partings.lock().expect("the partings").clone();
+    // Two, for three notes: the first on screen has the page's own rule
+    // above it and needs no second line. And two rather than one per row:
+    // the middle note is four rows of screen and none of the three after
+    // its first begins anything.
+    assert_eq!(said.len(), 2, "not one line between each pair:\n{dump}");
+    assert!(said[0].y < said[1].y, "out of order: {said:?}");
+    // The one under another starts further in, and the one beside it does
+    // not: what a line says here is "a new note", and where it starts says
+    // whose it is.
+    assert!(
+        said[1].x > said[0].x,
+        "a note under another is parted across the whole page: {said:?}"
+    );
+    assert_eq!(
+        said[0].right(),
+        said[1].right(),
+        "they stop in different places: {said:?}"
+    );
 }

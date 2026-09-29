@@ -153,6 +153,14 @@ pub(crate) enum Update {
         /// Which cells it is.
         area: Rect,
     },
+    /// A row that begins something new, with no row between it and what
+    /// it is parted from.
+    Parted {
+        /// The run the line covers.
+        area: Rect,
+        /// What draws it.
+        edge: Color,
+    },
     /// The mark with the light on it, and the two colours it runs between.
     Sheened {
         /// Which cells it is.
@@ -209,6 +217,9 @@ pub(crate) struct Said<'a> {
     pub(crate) ruled: &'a [Ruled],
     /// And the mark the light runs across, where one is showing.
     pub(crate) sheened: Option<&'a Sheened>,
+    /// And which rows begin something new, with nowhere to say so but the
+    /// pixel between two rows.
+    pub(crate) parted: &'a [Parted],
     /// And what is under the pane, where there is one.
     pub(crate) behind: Option<&'a Behind>,
     /// And under each box with a frame round it, nearest the reader last:
@@ -368,6 +379,40 @@ impl Barred {
         // What `obelus_ui::scrollbar` draws a bar with, which is a surface
         // rather than a line -- see the `BAR` it writes.
         (area.top()..area.bottom()).all(|y| page.look(area.x, y).text == "\u{2588}")
+    }
+}
+
+/// A row that begins something new, in the frame being drawn.
+///
+/// A boundary with no row to be on -- see `obelus_ui::shapes::parted`. The
+/// one thing a view says that a terminal has no answer to, said because
+/// the window cannot work it out: nothing in a cell says which row begins
+/// a note.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Parted {
+    /// The run the line covers.
+    pub(crate) area: Rect,
+    /// What draws it.
+    pub(crate) edge: Color,
+}
+
+impl Parted {
+    /// Whether anything has been put over the row this was said about.
+    ///
+    /// The same question `Capped::still_said` asks, and it cannot be asked
+    /// of the cells here: a line between two rows has no cell of its own
+    /// to still hold anything. What it is asked of instead is what was put
+    /// over the page -- a pane, or a box with a frame round it -- because
+    /// a `Parted` is said by a whole-screen view and those are the two
+    /// things that cover one.
+    pub(crate) fn still_said(&self, over: &[&Behind]) -> bool {
+        !over.iter().any(|behind| {
+            let put = behind.area;
+            self.area.left() < put.right()
+                && put.left() < self.area.right()
+                && self.area.top() < put.bottom()
+                && put.top() < self.area.bottom()
+        })
     }
 }
 
@@ -595,6 +640,10 @@ impl obelus_ui::shapes::Shapes for Marking {
             ground,
             cells: cells.to_vec(),
         });
+    }
+
+    fn parted(&self, area: Rect, edge: Color) {
+        let _ = self.updates.send(Update::Parted { area, edge });
     }
 
     fn sheened(&self, area: Rect, from: Color, to: Color) {
@@ -1128,6 +1177,7 @@ impl Page {
             | Update::Ticked { area, .. }
             | Update::Ruled { area }
             | Update::Sheened { area, .. }
+            | Update::Parted { area, .. }
             | Update::Behind { area, .. }
             | Update::Scrolled { area, .. } => {
                 tracing::warn!(?area, "a cap reached the page");
@@ -1313,6 +1363,49 @@ mod tests {
             !mark(1, 0).still_said(&page),
             "but not where the line is the second of them"
         );
+    }
+
+    /// And a line between two things is drawn only where nothing has been
+    /// put over them.
+    ///
+    /// It is the one shape that cannot be asked of the cells: a line in
+    /// the pixel between two rows has no cell of its own to still hold
+    /// anything. What it is asked of is what covers the page -- and the
+    /// page it is said by is a whole-screen view, so what covers one is a
+    /// pane or a box with a frame round it.
+    ///
+    /// Deliberate break: answer `true`. The notes' own lines are then
+    /// drawn across the list a reader opened over them, at the rows the
+    /// notes happened to be on.
+    #[test]
+    fn a_line_between_two_things_is_not_drawn_under_a_pane() {
+        let parting = |y: u16| Parted {
+            area: Rect {
+                x: 0,
+                y,
+                width: 20,
+                height: 1,
+            },
+            edge: Color::Rgb(1, 2, 3),
+        };
+        let pane = Behind {
+            area: Rect {
+                x: 0,
+                y: 4,
+                width: 20,
+                height: 6,
+            },
+            joined: Joined::Above,
+            ground: Color::Rgb(9, 9, 9),
+            cells: Vec::new(),
+        };
+        let over = [&pane];
+
+        assert!(parting(2).still_said(&over), "above what was put over it");
+        assert!(!parting(4).still_said(&over), "the pane's own first row");
+        assert!(!parting(9).still_said(&over), "and its last");
+        assert!(parting(10).still_said(&over), "below it again");
+        assert!(parting(4).still_said(&[]), "with nothing over the page");
     }
 
     /// And the mark is the mark only where the page still holds it.

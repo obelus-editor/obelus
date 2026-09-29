@@ -224,6 +224,31 @@ pub trait Shapes: Send + Sync {
     /// test for whether a thing may be said here.
     fn barred(&self, bar: Bar);
 
+    /// A boundary with no row to be on: what is above this row and what
+    /// is from here down are different things.
+    ///
+    /// The one thing said here that a terminal has no answer to, and it is
+    /// said anyway because of what this module's own test says about such
+    /// a thing: it is a drawing instruction, and it belongs in the front
+    /// end that wants it. The window wants it and cannot work it out --
+    /// nothing in a cell says which row begins a note -- so the view says
+    /// where, and only a window draws it.
+    ///
+    /// What makes that safe is the same thing that makes the caret's shape
+    /// safe: a terminal loses nothing it had. [`ruled`] is the boundary a
+    /// terminal can draw, and it costs the row it is on; the notes are a
+    /// list whose rows are already as many as the screen has, and a rule
+    /// between every note would take a third of the page to say what the
+    /// indentation says. So the terminal's answer is the page as it stands
+    /// and the window's is a line in the pixel between two rows -- which
+    /// is a thing a grid of cells does not have.
+    ///
+    /// The colour, because there is no glyph here to read one off. `area`
+    /// is the run the line covers: a note's own indent to the edge, so a
+    /// note hanging under another is parted from it where it begins rather
+    /// than across the whole page.
+    fn parted(&self, area: Rect, edge: Color);
+
     /// The mark is here, and the light on it runs between these two.
     ///
     /// A terminal has its answer already: it writes the ramp into the
@@ -304,6 +329,13 @@ pub(crate) fn scrolled(area: Rect, top: i64, bar: Option<Bar>) {
 pub(crate) fn barred(bar: Bar) {
     if let Some(shapes) = DRAWING.get() {
         shapes.barred(bar);
+    }
+}
+
+/// Tells whoever is drawing that a row begins something new.
+pub(crate) fn parted(area: Rect, edge: Color) {
+    if let Some(shapes) = DRAWING.get() {
+        shapes.parted(area, edge);
     }
 }
 

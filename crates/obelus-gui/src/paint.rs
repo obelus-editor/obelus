@@ -25,7 +25,7 @@ use winit::window::Window;
 
 use crate::{
     font::{self, CellSize, Fonts, Size},
-    grid::{Barred, Behind, Capped, Look, Marked, Page, Ruled, Said, Spelling, Ticked},
+    grid::{Barred, Behind, Capped, Look, Marked, Page, Parted, Ruled, Said, Spelling, Ticked},
     motion::Moving,
 };
 
@@ -822,6 +822,12 @@ impl Painter {
             .collect();
         self.backgrounds(page, cell, &panes, &framed, &capped);
         self.rules(page, said.ruled, cell);
+        // The boundaries with no row to be on, which go where there is no
+        // cell: the pixel between one row and the one above it. Under the
+        // letters, like a rule, because a line through a letter is a line
+        // nobody put there -- and there is nothing on that pixel to be
+        // under except the ground.
+        self.partings(said.parted, &panes, cell);
         self.letters(page, fonts, said, &framed, &capped);
         // Over the text, which it covers: a cap is the shape the cells
         // behind a key are, and it writes the key on itself, smaller than
@@ -1275,6 +1281,40 @@ impl Painter {
                     rgba(page.look(x, y).foreground, Ink::Foreground),
                 );
             }
+        }
+    }
+
+    /// The lines between one thing and the next where there is no row for
+    /// one.
+    ///
+    /// Drawn at the top edge of the row that begins the new thing, which
+    /// is the boundary itself: a grid has no space there and a window has
+    /// a pixel. What a terminal does about the same fact is nothing --
+    /// see `obelus_ui::shapes::parted`, which is the one thing said on
+    /// that channel with no answer of its own in the cells.
+    ///
+    /// Only where nothing has been put over the row. A `Parted` is said by
+    /// a whole-screen view, and what covers one is a pane or a box with a
+    /// frame round it -- a line drawn on either would be the page
+    /// underneath reaching through.
+    fn partings(&mut self, parted: &[Parted], over: &[&Behind], cell: CellSize) {
+        let line = thickness(cell.height);
+        for parting in parted {
+            if !parting.still_said(over) {
+                continue;
+            }
+            let left = f32::from(parting.area.x) * cell.width;
+            let width = f32::from(parting.area.width) * cell.width;
+            // On the boundary rather than in the middle of a row, which is
+            // where `rules` puts its line: a rule *is* the row it is on
+            // and this is the seam between two.
+            self.block(
+                left,
+                f32::from(parting.area.y) * cell.height,
+                width.max(1.0),
+                line,
+                rgba(parting.edge, Ink::Foreground),
+            );
         }
     }
 
@@ -3009,6 +3049,7 @@ mod tests {
             barred: &barred,
             ruled: &[],
             sheened: None,
+            parted: &[],
             behind: None,
             cards: &[],
             band: None,

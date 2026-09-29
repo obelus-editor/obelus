@@ -47,8 +47,8 @@ use crate::{
     blink::Blink,
     font::Fonts,
     grid::{
-        Barred, Behind, Capped, Cells, Marked, Marking, Measured, Page, Ruled, Said, Sheened,
-        Spelling, Ticked, Update,
+        Barred, Behind, Capped, Cells, Marked, Marking, Measured, Page, Parted, Ruled, Said,
+        Sheened, Spelling, Ticked, Update,
     },
     keys,
     motion::{Motion, Wake},
@@ -142,9 +142,12 @@ struct Showing {
     ticked: Vec<Ticked>,
     /// The mark the light runs across, where the frame drew one.
     sheened: Option<Sheened>,
+    /// Which rows begin something new on the frame being shown.
+    parted: Vec<Parted>,
     /// And on the one being laid out.
     ticking: Vec<Ticked>,
     sheening: Option<Sheened>,
+    parting: Vec<Parted>,
     /// Which columns are bars on the frame being shown.
     barred: Vec<Bar>,
     /// And those again with how the window is showing each, refilled
@@ -249,6 +252,8 @@ impl Showing {
             ticked: Vec::new(),
             sheened: None,
             sheening: None,
+            parted: Vec::new(),
+            parting: Vec::new(),
             ticking: Vec::new(),
             barred: Vec::new(),
             barring_up: Vec::new(),
@@ -665,6 +670,9 @@ impl ApplicationHandler<Waking> for Showing {
                         Update::Ticked { area, on } => {
                             self.ticking.push(Ticked { area, on });
                         }
+                        Update::Parted { area, edge } => {
+                            self.parting.push(Parted { area, edge });
+                        }
                         Update::Sheened { area, from, to } => {
                             self.sheening = Some(Sheened { area, from, to });
                         }
@@ -704,6 +712,7 @@ impl ApplicationHandler<Waking> for Showing {
                             // welcome screen is what every list is opened
                             // over, and a light run across a list lights
                             // its rows -- see `Sheened::still_said`.
+                            self.parted = std::mem::take(&mut self.parting);
                             self.sheened = self
                                 .sheening
                                 .take()
@@ -904,6 +913,7 @@ impl ApplicationHandler<Waking> for Showing {
                         barred: &self.showing,
                         ruled: &self.ruled,
                         sheened: self.sheened.as_ref(),
+                        parted: &self.parted,
                         behind: self.behind.as_ref(),
                         cards: &self.cards,
                         band: self

@@ -72,6 +72,8 @@ impl obelus_ui::shapes::Shapes for Heard {
         }
     }
 
+    fn parted(&self, _area: Rect, _edge: Color) {}
+
     fn sheened(&self, _area: Rect, _from: Color, _to: Color) {}
 
     fn capped(&self, keys: &str, area: Rect, cap: Color, page: Color, edge: Color) {
