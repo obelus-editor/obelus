@@ -66,9 +66,12 @@ pathlib.Path('obelus.icns').write_bytes(b'icns' + struct.pack('>I', len(chunks) 
 print('obelus.ico and obelus.icns rebuilt from obelus.svg')
 PY
 
-# And the site's, which is the SVG itself and so is a copy rather than a
-# conversion. Here all the same: a copy nobody regenerates is a copy that
-# goes stale, and the two pages that point at it are the one place in the
-# project where the mark is drawn by somebody else's renderer.
-cp obelus.svg ../../docs/obelus.svg
-echo 'docs/obelus.svg copied from obelus.svg'
+# And the site's favicon, which is the mark without the plate: a tab has
+# its own background, and a dark plate in a light tab bar is a hole in it.
+# `obelus-mark.svg` rather than this one, because a favicon is read at
+# sixteen pixels and the bar in the icon above is half a pixel there --
+# the plate is what carries it at that size, so a mark without one is
+# drawn on its own grid. Copied and not converted, and copied here so
+# that nobody has to remember to.
+cp obelus-mark.svg ../../docs/obelus.svg
+echo 'docs/obelus.svg copied from obelus-mark.svg'
