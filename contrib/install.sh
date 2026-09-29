@@ -177,16 +177,51 @@ case $binaries in
     *) die "--bin takes ob, obg or both, and was given $binaries" ;;
 esac
 
+# Whether a download can be watched. A bar is drawn with carriage returns,
+# which is a picture on a terminal and a thousand lines of one in a log, a
+# pipe or somebody's CI -- so it is asked of stderr, where the bar goes,
+# rather than of stdout, which is already down a pipe into `sh`.
+if [ -t 2 ]; then
+    watched=yes
+else
+    watched=no
+fi
+
 # What fetches. Whichever is here, asked to fail on a 404 rather than to
 # write the page saying so into the file.
+#
+# Two of them, because the two kinds of download are not alike: SHA256SUMS
+# and a theme template are a moment and say nothing, and a binary is tens of
+# megabytes over somebody else's line -- long enough that a script saying
+# only `fetching obg-...tar.xz` is a script the reader cannot tell from one
+# that has hung. So `fetch_watched` is the one the archives go through, and
+# it is the same fetch with its quiet taken off.
 if command -v curl > /dev/null 2>&1; then
     fetch() { curl -fsSL "$1" -o "$2"; }
+    # The same fetch with the bar asked for and `-s` taken off -- and `-S`
+    # goes with it, because showing the error is all `-S` does and it only
+    # has anything to do while `-s` is there to be argued with.
+    if [ "$watched" = yes ]; then
+        fetch_watched() { curl -fL --progress-bar "$1" -o "$2"; }
+    else
+        fetch_watched() { fetch "$1" "$2"; }
+    fi
     # Quiet where `fetch` is not: every way this can fail has a sentence of
     # its own below, and curl's own `(22) The requested URL returned error`
     # would arrive in front of it.
     redirect() { curl -fsL -o /dev/null -w '%{url_effective}' "$1"; }
 elif command -v wget > /dev/null 2>&1; then
     fetch() { wget -qO "$2" "$1"; }
+    # `--show-progress` is wget 1.16 and later, and an older wget -- or
+    # busybox's, which is the wget on a machine small enough to have one --
+    # refuses an option it does not know and downloads nothing at all. So it
+    # is asked for rather than assumed, and a wget without it fetches
+    # quietly, which is what this did before.
+    if [ "$watched" = yes ] && wget --help 2>&1 | grep -q -- --show-progress; then
+        fetch_watched() { wget -q --show-progress -O "$2" "$1"; }
+    else
+        fetch_watched() { fetch "$1" "$2"; }
+    fi
     redirect() { wget -qO /dev/null -S "$1" 2>&1 | sed -n 's/^ *Location: *//p' | tail -1; }
 else
     die 'neither curl nor wget is installed, and one of them has to be'
@@ -285,7 +320,7 @@ for binary in $binaries; do
     archive=$work/$name.tar.xz
 
     say "  fetching $name.tar.xz"
-    fetch "https://github.com/$repository/releases/download/$tag/$name.tar.xz" "$archive" \
+    fetch_watched "https://github.com/$repository/releases/download/$tag/$name.tar.xz" "$archive" \
         || die "$tag has no $name.tar.xz"
 
     # `awk` and not `grep`, so that the name is compared and not matched:

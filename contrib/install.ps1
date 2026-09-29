@@ -114,6 +114,99 @@ if ([Net.ServicePointManager]::SecurityProtocol -notmatch 'Tls12') {
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 }
 
+# Whether a download can be watched, which is the same question install.sh
+# asks of stderr: a line redrawn over itself is a picture on a console and a
+# page of them anywhere else -- a log, a pipe, somebody's CI, and the hosts
+# that keep no cursor to send a carriage return back to.
+$watched = ($Host.Name -eq 'ConsoleHost') -and -not [Console]::IsOutputRedirected
+
+# The bar: one line redrawn over itself, and what it says depends on whether
+# the server said how long the file is. `#` and a percentage where it did,
+# because that is what curl draws for install.sh and this is the same install
+# in the other shell; megabytes alone where it did not, which is the whole of
+# what is known then. Never an estimate of how much longer -- the reader
+# plans around one of those, and nothing here knows the shape of the rest of
+# a download.
+function Write-Bar {
+    param([long] $Done, [long] $Total)
+
+    if ($Total -gt 0) {
+        $fraction = [Math]::Min(1.0, $Done / $Total)
+        $bar = ('#' * [int] ($fraction * 40)).PadRight(40, '.')
+        $line = '  {0} {1,5:0.0}%' -f $bar, ($fraction * 100)
+    } else {
+        $line = '  {0:0.0} MB' -f ($Done / 1MB)
+    }
+    # A carriage return and no newline, so the next one lands on top of this
+    # one. The width is fixed, so there is never a longer line left sticking
+    # out from under a shorter one.
+    Write-Host "`r$line" -NoNewline
+}
+
+# What fetches the archives, and there are two fetches here for the same
+# reason install.sh has two: SHA256SUMS is a moment and says nothing, and a
+# binary is tens of megabytes over somebody else's line -- long enough that a
+# script saying only `fetching obg-...zip` is a script the reader cannot tell
+# from one that has hung.
+#
+# `Invoke-WebRequest` stays the quiet one, and `$ProgressPreference` above
+# stays with it: its bar is the host's progress pane, which is drawn over the
+# output rather than under it, and on Windows PowerShell 5.1 turning it on is
+# the difference between a download and a crawl -- 5.1 redraws that pane for
+# every chunk that arrives.
+#
+# So this one reads the stream itself. `WebRequest` rather than `HttpClient`
+# because 5.1 has the first without being asked and the second only after an
+# `Add-Type`, and a stock Windows is what this has to run on.
+function Save-Watched {
+    param([string] $Uri, [string] $Path, [bool] $Say)
+
+    $request = [Net.WebRequest]::Create($Uri)
+    $request.UserAgent = 'obelus-install'
+    # How a release download answers: the URL is GitHub's and the bytes are
+    # somewhere else.
+    $request.AllowAutoRedirect = $true
+    $response = $request.GetResponse()
+    # -1 where the server does not say, and then how far along this is is not
+    # something it knows: the bytes so far are the whole of the honest answer.
+    $total = $response.ContentLength
+
+    $from = $response.GetResponseStream()
+    $to = [IO.File]::Create($Path)
+    # Written down as it arrives rather than held: the whole file in memory is
+    # tens of megabytes of it for nothing, and the hash is taken from the file
+    # afterwards either way.
+    $buffer = New-Object byte[] 81920
+    $done = 0L
+    # Every chunk would redraw the line a thousand times over a download
+    # nobody can see change that fast, which is the same 120ms an agent
+    # install reports on. Not `$said`: that name is a hashtable further down,
+    # and a function that assigns it shadows theirs for anyone reading.
+    $drawn = [Diagnostics.Stopwatch]::StartNew()
+    try {
+        while (($read = $from.Read($buffer, 0, $buffer.Length)) -gt 0) {
+            $to.Write($buffer, 0, $read)
+            $done += $read
+            if ($Say -and $drawn.ElapsedMilliseconds -ge 120) {
+                $drawn.Restart()
+                Write-Bar $done $total
+            }
+        }
+    } finally {
+        $to.Dispose()
+        $from.Dispose()
+        $response.Close()
+    }
+
+    if ($Say) {
+        # The finished bar, because the last one drawn was up to 120ms of
+        # bytes ago, and then a newline: the line it was drawn on is done
+        # with, and what is said next starts on its own.
+        Write-Bar $done $total
+        Write-Host ''
+    }
+}
+
 # Which build. The archives are named by the target triple, so this is the
 # whole of the platform detection. The environment's own answer, because it
 # is the one every version of Windows has.
@@ -165,7 +258,7 @@ try {
         $archive = Join-Path $work "$name.zip"
 
         Write-Host "  fetching $name.zip"
-        Invoke-WebRequest -Uri "https://github.com/$repository/releases/download/$Version/$name.zip" -OutFile $archive
+        Save-Watched "https://github.com/$repository/releases/download/$Version/$name.zip" $archive $watched
 
         $wanted = $said["$name.zip"]
         if (-not $wanted) { throw "SHA256SUMS says nothing about $name.zip" }
