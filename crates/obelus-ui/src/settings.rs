@@ -25,6 +25,20 @@ use crate::{
 /// be one.
 const CONTROL_WIDTH: u16 = 12;
 
+/// Where the arrow beside a value goes: after it, and never past the
+/// column's own last cell.
+///
+/// The arrow is put where the value stops, so a value as wide as the
+/// column put it in the column beside -- which is the bar's, for the whole
+/// page, and a bar with a hole in its own cells is not a bar any more: the
+/// window stopped drawing it as a shape and the blocks a terminal has for
+/// one came out as a row of squares. The fonts setting did worse without
+/// the arrow's help, being a list of names joined with commas and written
+/// out to whatever the row had.
+fn arrow_at(x: u16, after: u16) -> u16 {
+    after.saturating_add(1).min(x + CONTROL_WIDTH)
+}
+
 /// What the agent's heading says under its name.
 ///
 /// The one thing about this group that is not true of the others: Obelus's
@@ -679,6 +693,14 @@ impl SettingsView<'_> {
                     Rect {
                         y: y.saturating_sub(opens.rows()),
                         height: opens.rows(),
+                        // Short of the bar, the same as the rows under it:
+                        // the column a bar is in is the bar's for the whole
+                        // page, and a heading that filled the region blanked
+                        // the block in its own rows -- so the page's bar came
+                        // out with a gap at every group, and in the window,
+                        // where a bar is a shape and the blocks are a bar
+                        // saying where it is, it stopped being drawn as one.
+                        width: room,
                         ..region
                     },
                     opens,
@@ -853,7 +875,7 @@ impl SettingsView<'_> {
                     // list on this page does.
                     put(
                         cells,
-                        after + 1,
+                        arrow_at(aside_at, after),
                         y,
                         '\u{25b8}',
                         plain.fg(self.theme.gutter).bg(background),
@@ -1281,7 +1303,13 @@ fn draw_control(
         }
         (Kind::Count(_), Value::Count(count)) => {
             let after = write(cells, x, y, &count.to_string(), style.fg(ink));
-            put(cells, after + 1, y, '\u{25b8}', style.fg(theme.gutter));
+            put(
+                cells,
+                arrow_at(x, after),
+                y,
+                '\u{25b8}',
+                style.fg(theme.gutter),
+            );
         }
         (Kind::Names, Value::Names(names)) => {
             // Joined the way the file writes them, which is the way a
@@ -1294,16 +1322,40 @@ fn draw_control(
                 true => "The machine's own".to_string(),
                 false => names.join(", "),
             };
-            let after = write(cells, x, y, &said, style.fg(ink));
-            put(cells, after + 1, y, '\u{25b8}', style.fg(theme.gutter));
+            let after = write(
+                cells,
+                x,
+                y,
+                &truncate_from_right(&said, usize::from(CONTROL_WIDTH)),
+                style.fg(ink),
+            );
+            put(
+                cells,
+                arrow_at(x, after),
+                y,
+                '\u{25b8}',
+                style.fg(theme.gutter),
+            );
         }
         (Kind::Choice(_), Value::Choice(word)) => {
-            let after = write(cells, x, y, word, style.fg(ink));
+            let after = write(
+                cells,
+                x,
+                y,
+                &truncate_from_right(word, usize::from(CONTROL_WIDTH)),
+                style.fg(ink),
+            );
             // Pointing right, at the value: the list it opens is the
             // ordinary compact one and comes up wherever that comes up, so
             // an arrow pointing down would be pointing at whatever happens
             // to be under this row.
-            put(cells, after + 1, y, '\u{25b8}', style.fg(theme.gutter));
+            put(
+                cells,
+                arrow_at(x, after),
+                y,
+                '\u{25b8}',
+                style.fg(theme.gutter),
+            );
         }
         (kind, value) => {
             tracing::debug!(?kind, ?value, "a control with nothing to draw");

@@ -3276,3 +3276,59 @@ fn notes_that_will_not_read_are_an_error_on_the_notes_file() {
     // The third line, where the equals is missing.
     assert_eq!(problems[0].span.line.get(), 2);
 }
+
+/// Nothing on the page writes in the column its bar is in.
+///
+/// Two writers reached into it, and both are covered here because each
+/// passes with the other broken: a group's heading, which filled the whole
+/// region rather than the room left beside the bar, and a value as wide as
+/// its own column, which put the arrow that follows it in the column along.
+/// The bar came out with a gap at every group and at every long value --
+/// and in a window, where those blocks are the bar *saying where it is* and
+/// the shape is drawn from them, a bar with a hole in it stopped being a
+/// bar at all and came out as a column of squares.
+///
+/// Deliberate break: `..region` in place of `width: room` where the heading
+/// is drawn, or `after + 1` in place of `arrow_at` beside a value.
+#[test]
+fn nothing_on_the_page_writes_in_the_column_the_bar_is_in() {
+    let _taken = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("bar-column");
+    let file = settings_file(&scratch);
+    // A theme whose name is wider than the column a value is given, so the
+    // arrow beside it has nowhere of its own left to go.
+    std::fs::write(&file, "theme = \"catppuccin-mocha\"\n").expect("the settings");
+    let mut app = open(&file);
+
+    let dump = support::render(&mut app, 66, 12);
+    // What each row of the page holds, without the dump's own row numbers.
+    let rows: Vec<&str> = support::text_block(&dump)
+        .lines()
+        .filter_map(|row| row.split_once('|'))
+        .map(|(_, said)| said)
+        .collect();
+    // The page's body is between the rule under the tabs and the rule over
+    // the foot, and every row of it is the bar's -- the first and the last
+    // most of all, which is where a heading and a foot reach in and where
+    // looking only at the run between the blocks would see nothing.
+    let rule = |row: &str| !row.is_empty() && row.chars().all(|cell| cell == '\u{2500}');
+    let top = rows.iter().position(|row| rule(row)).expect("a rule");
+    let foot = rows
+        .iter()
+        .skip(top + 1)
+        .position(|row| rule(row))
+        .expect("another rule")
+        + top
+        + 1;
+    assert!(foot > top + 1, "the page has a body: {rows:?}");
+    for (at, row) in rows[top + 1..foot].iter().enumerate() {
+        assert_eq!(
+            row.chars().last(),
+            Some('\u{2588}'),
+            "row {} of the body is not the bar's: {row:?}",
+            at + top + 1
+        );
+    }
+}
