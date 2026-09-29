@@ -59,12 +59,14 @@ irm https://raw.githubusercontent.com/sunli829/obelus/master/contrib/install.ps1
 
 `--dir` says where to put it, and `--help` lists the rest.
 
-On Linux the script gives you a binary and nothing else, and a launcher
-needs a desktop entry and an icon beside it — so on a desktop install the
-`.deb`, the `.rpm` or the AppImage instead, which carry all three. And on
-musl there is no `obg` to install: the window finds Vulkan, Wayland and X11
-by `dlopen`, which a static binary cannot do, so the script says so and
-installs `ob`.
+On Windows the script puts Obelus in the Start menu as well as on your
+PATH — the icon is in the binary, so the shortcut is the whole of it, and
+`-NoShortcut` leaves the menu alone. On Linux it gives you a binary and
+nothing else, because a launcher there needs a desktop entry and an icon
+beside it: on a desktop install the `.deb`, the `.rpm` or the AppImage
+instead, which carry all three. And on musl there is no `obg` to install at
+all — the window finds Vulkan, Wayland and X11 by `dlopen`, which a static
+binary cannot do — so the script says so and installs `ob`.
 
 [The releases](https://github.com/sunli829/obelus/releases) carry an archive
 for every platform as well as a `.deb`, an `.rpm`, an AppImage and a macOS

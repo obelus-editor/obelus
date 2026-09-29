@@ -7,6 +7,7 @@
 #
 #   irm .../install.ps1 -OutFile install.ps1
 #   .\install.ps1 -Binary ob
+#   .\install.ps1 -NoShortcut
 #
 # It verifies what it downloaded against the release's own SHA256SUMS. A
 # script that pipes into a shell and then installs an unchecked binary has
@@ -26,7 +27,14 @@ param(
     [string] $Version,
 
     # Where to put it.
-    [string] $Directory = "$env:LOCALAPPDATA\Obelus\bin"
+    [string] $Directory = "$env:LOCALAPPDATA\Obelus\bin",
+
+    # Leave the Start menu alone.
+    #
+    # For a machine nobody sits in front of -- a build agent, an image
+    # being prepared -- where the binary is wanted and a menu entry for it
+    # is a file somebody else has to notice and remove.
+    [switch] $NoShortcut
 )
 
 $ErrorActionPreference = 'Stop'
@@ -105,6 +113,37 @@ try {
         Expand-Archive -Path $archive -DestinationPath $work -Force
         Copy-Item -Path (Join-Path $work "$name\$each.exe") -Destination (Join-Path $Directory "$each.exe") -Force
         Write-Host "  installed $Directory\$each.exe"
+    }
+
+    # A Start menu entry for the window, which is the whole of what a
+    # launcher is. The `.deb`, the `.rpm` and the AppImage carry a desktop
+    # entry and an icon for exactly this; Windows has no package of
+    # Obelus's to carry one, and this script is the way in -- so the
+    # shortcut is the script's.
+    #
+    # The window alone. `ob` is a program for a terminal that is already
+    # open, and a Start menu entry for it is a console window on a
+    # directory nobody chose.
+    if (-not $NoShortcut -and $binaries -contains 'obg') {
+        $programs = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
+        New-Item -ItemType Directory -Force -Path $programs | Out-Null
+        $link = Join-Path $programs 'Obelus.lnk'
+
+        # WScript.Shell, which is on a stock Windows and is the only way to
+        # write a `.lnk` without a module nobody has. The icon comes with
+        # the binary -- `obelus-gui` sets it in its own `build.rs` -- so
+        # there is no second file to install and none to leave behind.
+        $shell = New-Object -ComObject WScript.Shell
+        $shortcut = $shell.CreateShortcut($link)
+        $shortcut.TargetPath = Join-Path $Directory 'obg.exe'
+        # Started from a menu there is no directory to have been in, and
+        # Obelus opens on the one it was started in. Home is the answer a
+        # reader can make sense of; the temp directory a shell hands out is
+        # not.
+        $shortcut.WorkingDirectory = $env:USERPROFILE
+        $shortcut.Description = 'A code reader. It does not want you to type.'
+        $shortcut.Save()
+        Write-Host "  a Start menu entry: $link"
     }
 
     # The user's own PATH, not the machine's: this installs into their
