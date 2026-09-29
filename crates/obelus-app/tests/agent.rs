@@ -39,13 +39,19 @@ const HEIGHT: u16 = 24;
 /// Generous: it is a shell script starting up, and a test that fails because
 /// a machine was busy is a test nobody trusts.
 ///
-/// Ten seconds was not generous enough, which the first CI run said and
-/// this machine never could. A hundred and eighteen tests in this binary
-/// run at once, most of them starting a shell script of their own, on a
-/// runner with two cores -- so the thing being waited on is not a script
-/// starting but a machine with more to do than cores to do it with. It
-/// costs nothing where nothing is wrong: it is a deadline, not a sleep.
-const PATIENCE: Duration = Duration::from_secs(60);
+/// And what it has to clear is not how long a script takes to start. A
+/// hundred and eighteen tests in this binary run at once, most of them
+/// starting a shell script of their own, on a runner with two cores -- so
+/// a test can be starved for as long as its siblings take. Measured on
+/// the arm runner: the binary's own wall time was 63.5 seconds and the
+/// one that failed spent 60 of them waiting, which is nearly the whole
+/// run. So the deadline has to be comfortably past what the *binary*
+/// takes, not past what a shell does.
+///
+/// Ten seconds was the first try and sixty the second, each set from the
+/// wrong measurement. It costs nothing where nothing is wrong: it is a
+/// deadline, not a sleep.
+const PATIENCE: Duration = Duration::from_secs(180);
 
 /// Where these tests let Obelus keep things about agents.
 ///
