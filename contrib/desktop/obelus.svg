@@ -1,3 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
 <!-- The mark, and nothing else.
 
      An obelus is the division sign, which a scholar put in a manuscript's
@@ -16,7 +17,13 @@
 
      One file for all of it. Everything that draws this asks for a size and
      gets one: the desktop entry beside it, the AppImage, the .deb and the
-     .rpm. -->
+     .rpm. 
+     The declaration above is not decoration. This comment is long enough
+     that `<svg` lands a thousand bytes in, past the window a content
+     sniffer looks at, so without it the file is taken for `text/plain`
+     and a file manager draws the placeholder it gives anything it cannot
+     read. Measured with `file` and with the thumbnailer itself, which
+     answered `Unknown image format: text/html`. -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
   <defs>
     <linearGradient id="obelus-brass" x1="0" y1="0" x2="1" y2="1">
