@@ -2165,6 +2165,14 @@ fn writing_the_settings_keeps_what_obelus_does_not_recognise() {
 /// The settings say what their keys do, because two of them cannot be
 /// guessed: that the page is narrowed by typing at it, and that a setting
 /// the project has set can be taken out again.
+///
+/// The card is keys alone, though. Typing at a list is not a key -- it
+/// answers to every letter, which is why the foot writes it as the word
+/// `type` -- and a table of chords read down its left column has no row
+/// for one.
+///
+/// Deliberate break: let `keys_card` take every hint and the card grows a
+/// row whose key is a word nobody can press.
 #[test]
 fn the_settings_say_what_their_keys_do() {
     let _turn = SETTINGS
@@ -2192,6 +2200,10 @@ fn the_settings_say_what_their_keys_do() {
     assert!(
         text.contains("Take this setting out of the project's file"),
         "the card only has the foot's word for it:\n{dump}"
+    );
+    assert!(
+        !text.contains("Type to narrow the list"),
+        "the card of keys has a row that is not a key:\n{dump}"
     );
 
     // And escape closes the card before it leaves the page.
