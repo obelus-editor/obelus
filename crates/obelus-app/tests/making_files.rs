@@ -504,9 +504,14 @@ fn a_file_along_the_path_is_said_relatively() {
     }
     support::type_text(&mut app, "src/hint.rs/inner.rs");
     support::press(&mut app, KeyCode::Enter);
+    // In the spelling the reader typed, which is not `as_shown`'s. Windows
+    // takes `/` as a separator and `Path::display` writes back what it was
+    // given, so what the row says is the path as it was answered -- and
+    // that is the right half of the two: a path is a name, and the name
+    // here is theirs.
     assert_eq!(
         app.note(),
-        Some(format!("{} is not a directory", support::as_shown("src/hint.rs")).as_str()),
+        Some("src/hint.rs is not a directory"),
         "not the file in the way, said from the project"
     );
 }
