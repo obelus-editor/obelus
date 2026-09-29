@@ -25,6 +25,11 @@ binaries=obg
 asked=
 tag=
 directory=${OBELUS_INSTALL_DIR:-$HOME/.local/bin}
+# Whether to hand omarchy Obelus's theme template, where this is running on
+# omarchy. Done unasked because a desktop that themes every program is a
+# reader who meant Obelus too, and refusable because it writes two files
+# outside `--dir`.
+omarchy=yes
 
 say() { printf '%s\n' "$*"; }
 die() { printf 'obelus: %s\n' "$*" >&2; exit 1; }
@@ -38,6 +43,8 @@ Usage: install.sh [options]
   --version vX.Y.Z    A release to install. The default is the latest.
   --dir PATH          Where to put it. The default is ~/.local/bin, or
                       $OBELUS_INSTALL_DIR where that is set.
+  --no-omarchy        Do not install Obelus's omarchy theme template, which
+                      is otherwise installed where omarchy is found.
   --help              This.
 USAGE
 }
@@ -47,6 +54,7 @@ while [ $# -gt 0 ]; do
         --bin) asked=${2:-}; binaries=$asked; shift 2 ;;
         --version) tag=${2:-}; shift 2 ;;
         --dir) directory=${2:-}; shift 2 ;;
+        --no-omarchy) omarchy=no; shift ;;
         --help|-h) usage; exit 0 ;;
         *) die "$1 is not an option this understands. --help says what is." ;;
     esac
@@ -182,6 +190,92 @@ for binary in $binaries; do
         || die "$directory/$binary could not be written"
     say "  installed $directory/$binary"
 done
+
+# omarchy themes every program on the desktop at once -- one palette, a
+# template per program, a directory swapped into place -- and Obelus's part
+# of that is a template in the directory omarchy reads templates from and a
+# link at what it renders. The same three steps as
+# `contrib/omarchy/README.md`, which is where the rest of this is explained.
+#
+# Nothing fails the install: the binary is in by now, and a desktop's
+# colours are not a reason to say the install did not happen. So each step
+# says what stopped it and gives up, rather than dying.
+the_omarchy_theme() {
+    templates=$HOME/.config/omarchy/themed
+    themes=$HOME/.config/obelus/themes
+    link=$themes/omarchy.toml
+    # Where omarchy renders it. The link points *into* that directory rather
+    # than at a copy, because the whole of it is replaced when a theme is set.
+    rendered=$HOME/.local/state/omarchy/current/theme/obelus.toml
+
+    say '
+omarchy is here, so Obelus can be themed with the rest of the desktop:'
+
+    # Checked like everything else this downloads. A template is text rather
+    # than a binary, and the rule is about what the release says it is.
+    want=$(awk -v want=obelus.toml.tpl '$2 == want || $2 == "*" want { print $1 }' "$sums")
+    if [ -z "$want" ]; then
+        say "  $tag has no obelus.toml.tpl -- contrib/omarchy/ in the repository has it"
+        return
+    fi
+
+    template=$work/obelus.toml.tpl
+    fetch "https://github.com/$repository/releases/download/$tag/obelus.toml.tpl" "$template" \
+        || { say '  obelus.toml.tpl could not be fetched'; return; }
+    have=$(sum "$template")
+    [ "$have" = "$want" ] \
+        || { say "  obelus.toml.tpl is not what the release says it is: $have, where SHA256SUMS says $want"; return; }
+
+    mkdir -p "$templates" "$themes" || { say "  $templates could not be made"; return; }
+    # Written over where it is already there. The template is Obelus's own
+    # file at a name Obelus chose, and an install is asking for this
+    # version's mapping of it.
+    cp "$template" "$templates/obelus.toml.tpl" \
+        || { say "  $templates/obelus.toml.tpl could not be written"; return; }
+    say "  $templates/obelus.toml.tpl"
+
+    # A dangling link is a link (`-L` is true where `-e` is false), and it is
+    # the ordinary state of this one between a theme being set and the next.
+    # Anything else wearing that name is somebody's own theme file and is not
+    # this script's to replace.
+    if [ -L "$link" ] || [ ! -e "$link" ]; then
+        ln -sfn "$rendered" "$link" || { say "  $link could not be made"; return; }
+        say "  $link -> what omarchy renders"
+    else
+        say "  $link is a file this did not write, so it is left as it is"
+        return
+    fi
+
+    # Rendered once, so that the link points at something now rather than
+    # after the reader next changes theme. Setting the theme they are already
+    # on, so the screen keeps the colours it has.
+    current=$(omarchy-theme-current 2>/dev/null || true)
+    if [ -n "$current" ] && omarchy-theme-set "$current" > /dev/null 2>&1; then
+        say "  rendered for $current"
+    else
+        say '  omarchy-theme-set, on the theme you are on, renders it the first time'
+    fi
+
+    # Said rather than done, like the PATH below: which theme a reader is on
+    # is a line of their settings, and this one has no business choosing it.
+    if grep -q '^[[:space:]]*theme[[:space:]]*=[[:space:]]*"omarchy"' \
+        "$HOME/.config/obelus/config.toml" 2>/dev/null; then
+        return
+    fi
+    say '
+Then, in ~/.config/obelus/config.toml, so that every theme you set from then
+on themes Obelus as well:
+
+    theme = "omarchy"'
+}
+
+# `~/.config/omarchy` alone is a directory a reader may have kept after
+# moving off, so what is asked for is the two commands this actually uses.
+if [ "$omarchy" = yes ] \
+    && command -v omarchy-theme-current > /dev/null 2>&1 \
+    && command -v omarchy-theme-set > /dev/null 2>&1; then
+    the_omarchy_theme
+fi
 
 # Said rather than done: a script that edits somebody's shell profile is a
 # script that has decided which of their four they use.

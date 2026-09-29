@@ -311,10 +311,19 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
           path: assets
           merge-multiple: true
+
+      # The one asset that is not built: omarchy's template, which
+      # `contrib/install.sh` fetches for a reader on that desktop. Here
+      # rather than read from the repository at install time so that it is
+      # covered by the sums below -- everything that script downloads is
+      # checked against what the release says it is, and a text file is no
+      # exception.
+      - run: cp contrib/omarchy/obelus.toml.tpl assets/
 
       # One file for all of them, because that is what an installer reads:
       # a formula, a manifest and `contrib/install.sh` each want the sum of
@@ -328,7 +337,7 @@ jobs:
           # itself, so a platform dropped from the matrix is one fewer line
           # here and not a failure.
           shopt -s nullglob
-          sha256sum -- *.tar.xz *.zip *.deb *.rpm *.AppImage > SHA256SUMS
+          sha256sum -- *.tar.xz *.zip *.deb *.rpm *.AppImage *.tpl > SHA256SUMS
           cat SHA256SUMS
 
       # A draft. The tag is the decision to build; publishing is the

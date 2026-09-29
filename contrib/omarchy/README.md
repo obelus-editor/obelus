@@ -10,6 +10,13 @@ you.
 
 ## What to do
 
+Nothing, if Obelus came from `contrib/install.sh`: that script finds omarchy
+-- by the two commands it uses -- and does the first two steps below itself,
+then says the third; the template is a release asset, so it arrives checked
+against the release's own sums like everything else that script downloads.
+`--no-omarchy` is how to tell it not to. What follows is the same thing by
+hand, for an Obelus built or packaged rather than installed.
+
 Copy the template where omarchy looks for the ones you add yourself, link
 Obelus's themes directory at what it renders, and say you want it:
 
