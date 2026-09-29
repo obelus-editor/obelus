@@ -752,6 +752,19 @@ impl Painter {
         if let Some(card) = card {
             self.card_glass(page, card, said.behind, fonts);
         }
+        // The bars the page still holds -- see `Barred::still_said` -- which
+        // is asked here rather than in `bars` so that the cells `letters`
+        // leaves alone are the cells a bar is actually drawn over.
+        let barred: Vec<Barred> = said
+            .barred
+            .iter()
+            .copied()
+            .filter(|showing| showing.still_said(page))
+            .collect();
+        let said = Said {
+            barred: &barred,
+            ..said
+        };
         let panes: Vec<&Behind> = said.behind.into_iter().chain(card).collect();
         // Before the backgrounds, which paint every cell inside a frame
         // over it: the ground a selected row wears in a list with a frame

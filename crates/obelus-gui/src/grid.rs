@@ -319,6 +319,30 @@ pub(crate) struct Barred {
     pub(crate) under: f32,
 }
 
+impl Barred {
+    /// Whether the page still holds the bar this was said about.
+    ///
+    /// The same question `Capped::still_said` asks, for the same reason: a
+    /// view that draws and is then drawn over inside the one frame has
+    /// already said its bar, and a bar is drawn from where it was said
+    /// rather than from what the page holds there. So the file's own bar
+    /// was drawn down the side of every list opened over it -- full height,
+    /// across the list, the preview, the foot and the row that is typed in
+    /// -- where the reader could take hold of it and scroll a file they
+    /// could not see.
+    ///
+    /// Every row of it, because that is what tells one bar from another:
+    /// the list that covered the file has a bar of its own in the same
+    /// column, drawn with the same block, and what says the file's is gone
+    /// is the rows outside the list that are not blocks any more.
+    pub(crate) fn still_said(&self, page: &Page) -> bool {
+        let area = self.bar.area;
+        // What `obelus_ui::scrollbar` draws a bar with, which is a surface
+        // rather than a line -- see the `BAR` it writes.
+        (area.top()..area.bottom()).all(|y| page.look(area.x, y).text == "\u{2588}")
+    }
+}
+
 /// A row the view drew a line along, in the frame being drawn.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Ruled {
@@ -1098,6 +1122,38 @@ mod tests {
             }
         }
         page
+    }
+
+    /// And a bar is a bar only where its cells still say so.
+    ///
+    /// Deliberate break: answer `true`. The file's own bar is then drawn
+    /// down the side of the list opened over it -- past the list, the
+    /// preview and the foot, widening under the pointer -- on a list of
+    /// nine rows with nothing to scroll.
+    #[test]
+    fn a_bar_is_a_bar_only_where_its_cells_still_say_so() {
+        // A column the list drew two rows of and the file drew all four:
+        // the blank and the rule are the list's foot, over the file's bar.
+        let page = written(&["\u{2588}", "\u{2588}", " ", "\u{2500}"]);
+        let showing = |y: u16, height: u16| Barred {
+            bar: Bar {
+                area: Rect {
+                    x: 0,
+                    y,
+                    width: 1,
+                    height,
+                },
+                mark: 0,
+                thumb: 1,
+            },
+            shown: 1.0,
+            under: 0.0,
+        };
+        assert!(
+            showing(0, 2).still_said(&page),
+            "the list's own, drawn last"
+        );
+        assert!(!showing(0, 4).still_said(&page), "and the file's, under it");
     }
 
     /// A rule is a line only where its cells still say `─`, and a tee
