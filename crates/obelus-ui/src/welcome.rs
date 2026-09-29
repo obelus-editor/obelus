@@ -80,11 +80,27 @@ pub const AMISS_ROWS: u16 = 6;
 
 /// The gap between a key and what it opens.
 ///
-/// One, against the four between the columns: the key and the words after
-/// it are one thing said twice, and a cell of air between them is enough to
-/// keep the keys a column of their own. More than that and each row reads
-/// as two things that happen to share a line.
-const BESIDE: u16 = 1;
+/// One cell of air, against the four between the columns: the key and the
+/// words after it are one thing said twice, and a cell between them is
+/// enough to keep the keys a column of their own. More than that and each
+/// row reads as two things that happen to share a line.
+///
+/// And the cap's own blank where there is a cap, which is why this is two
+/// in a window. `cap_around` lays its shape over the cell either side of
+/// the key -- that is where a cap's blanks would have been -- so one cell
+/// there is *all* cap and no air, and the mark after it sits against the
+/// cap's edge. The foot has this written down already, beside `BETWEEN`:
+/// the gap between two items has to beat the gaps inside one.
+///
+/// A terminal draws no cap here, so one cell there is one cell. Which is
+/// the same question `drawn` asks below, for the same reason: this screen
+/// is laid out against what the front end will actually put on it.
+fn beside() -> u16 {
+    match obelus_config::in_a_window() {
+        true => 2,
+        false => 1,
+    }
+}
 
 /// The name, on a plate.
 ///
@@ -576,7 +592,7 @@ impl WelcomeView<'_> {
             self.theme.gutter,
         );
 
-        let mut x = left.saturating_add(width).saturating_add(BESIDE);
+        let mut x = left.saturating_add(width).saturating_add(beside());
         if let Some(icon) = hint.icon {
             put(cells, x, y, icon, Style::new().fg(self.theme.gutter));
             // Two, always: the terminal allocates one cell for a private use
@@ -637,7 +653,7 @@ fn keys_width(hints: &[Hint]) -> usize {
 fn cell_width(hints: &[Hint]) -> Option<u16> {
     let text = hints.iter().map(|hint| drawn(&hint.text)).max()?;
     let icon = usize::from(hints.iter().any(|hint| hint.icon.is_some())) * 2;
-    u16::try_from(keys_width(hints) + usize::from(BESIDE) + icon + text).ok()
+    u16::try_from(keys_width(hints) + usize::from(beside()) + icon + text).ok()
 }
 
 /// How wide the compact block has to be, which is one cell.
