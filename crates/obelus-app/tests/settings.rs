@@ -3019,6 +3019,8 @@ struct Told {
     sizes: std::sync::Mutex<Vec<usize>>,
     /// And every ground.
     grounds: std::sync::Mutex<Vec<ratatui::style::Color>>,
+    /// And every pair of colours a hold is drawn in.
+    holds: std::sync::Mutex<Vec<(ratatui::style::Color, ratatui::style::Color)>>,
 }
 
 impl obelus_app::app::Drawing for Told {
@@ -3028,6 +3030,10 @@ impl obelus_app::app::Drawing for Told {
 
     fn drawn_on(&self, ground: ratatui::style::Color) {
         self.grounds.lock().expect("what was said").push(ground);
+    }
+
+    fn holding(&self, held: ratatui::style::Color, row: ratatui::style::Color) {
+        self.holds.lock().expect("what was said").push((held, row));
     }
 
     /// Nothing: what this is a test of is the size, and the shape of the
@@ -3055,6 +3061,11 @@ impl Told {
     /// And the last ground, for the same reason.
     fn ground(&self) -> Option<ratatui::style::Color> {
         self.grounds.lock().expect("what was said").last().copied()
+    }
+
+    /// And the last pair a hold is drawn in.
+    fn holds(&self) -> Option<(ratatui::style::Color, ratatui::style::Color)> {
+        self.holds.lock().expect("what was said").last().copied()
     }
 }
 
@@ -3123,6 +3134,50 @@ fn what_the_page_is_drawn_on_reaches_whatever_is_drawing() {
     let dark = app.theme().background;
     assert_ne!(light, dark, "the two themes are drawn on the same colour");
     assert_eq!(told.ground(), Some(dark), "the ground it was changed to");
+}
+
+/// And so do the two colours a hold is drawn in, which a window wants
+/// because it finds the hold in the cells rather than being told where it
+/// is.
+///
+/// Which is the whole reason they go this way. A shape would be a claim
+/// about a region of one frame, and every view with a list in it would
+/// have to remember to make it -- a table of arms, and the next list
+/// added is the one that forgets. These are a fact about the theme, so
+/// they are said the way the ground is and at the same two moments, and a
+/// view is drawn like every other view because it paints the row that
+/// colour, which it must do anyway for the terminal.
+///
+/// Deliberate break: take the call out of `apply_config` and the second
+/// assertion still holds the light theme's pair; take it out of
+/// `drawn_by` and the first has nothing to compare.
+#[test]
+fn the_colours_a_hold_is_drawn_in_reach_whatever_is_drawing() {
+    let _taken = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("holding");
+    let file = settings_file(&scratch);
+    std::fs::write(&file, "theme = \"light\"\n").expect("the settings");
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.config_file_for_test(file.clone());
+    let told = std::sync::Arc::new(Told::default());
+    app.drawn_by(told.clone());
+    let light = (
+        app.theme().selection_background,
+        app.theme().selected_row_background,
+    );
+    assert_eq!(told.holds(), Some(light), "the pair it starts on");
+
+    std::fs::write(&file, "theme = \"dark\"\n").expect("the settings");
+    app.config_file_for_test(file);
+    let dark = (
+        app.theme().selection_background,
+        app.theme().selected_row_background,
+    );
+    assert_ne!(light, dark, "the two themes hold in the same colours");
+    assert_eq!(told.holds(), Some(dark), "the pair it was changed to");
 }
 
 /// A settings file that will not read is a problem marked on that file.

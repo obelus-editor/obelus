@@ -3607,6 +3607,25 @@ pub trait Drawing: std::fmt::Debug + Send + Sync {
     /// moments: a theme changes under a reader when another Obelus writes
     /// the settings.
     fn drawn_on(&self, ground: Color);
+
+    /// Which two colours mean the reader has hold of something: a run of
+    /// characters, and the row their keys are on.
+    ///
+    /// A terminal's whole answer to a hold is the colour itself, and there
+    /// is nothing else a cell can be. A window can draw the run as a shape
+    /// -- see `paint::holdings` -- and to find the run at all it has to
+    /// know which colour it is looking for.
+    ///
+    /// Not a shape, although it ends in one. A shape is a claim about a
+    /// region of the frame being drawn, and this is a fact about the
+    /// *theme*: it changes when the settings do and not when the screen
+    /// does, which is why it is said the way the page's ground is and at
+    /// the same two moments. Where the hold is, the cells already say --
+    /// which is why this is two colours and no rectangle, and why no view
+    /// has to remember to say anything. A list added next month is drawn
+    /// like every other list because it paints the row the same colour,
+    /// which it must do anyway for the terminal.
+    fn holding(&self, held: Color, row: Color);
 }
 
 /// Lays out, scrolls and draws one frame.

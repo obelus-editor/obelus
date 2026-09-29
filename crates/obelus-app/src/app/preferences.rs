@@ -834,6 +834,10 @@ impl App {
             drawing.use_fonts(&self.settled.config.fonts);
             drawing.animates(self.settled.config.animation);
             drawing.drawn_on(self.theme().background);
+            drawing.holding(
+                self.theme().selection_background,
+                self.theme().selected_row_background,
+            );
         }
         // The table the reader's own bindings leave. Built rather than
         // patched: what is in the file is a list of changes over the

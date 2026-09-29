@@ -74,6 +74,19 @@ pub(crate) enum Update {
     /// are the whole of the screen, and it is only a window that has a
     /// strip outside them to put a colour in.
     Ground(Color),
+    /// Which two colours mean the reader has hold of something: a run of
+    /// characters, and the row their keys are on.
+    ///
+    /// The same journey again, and a fact about the theme rather than
+    /// about a frame. What the window does with it is find the runs in
+    /// the cells and draw them as something better than a square -- see
+    /// `paint::holdings`.
+    Holding {
+        /// Behind the characters the reader is holding.
+        held: Color,
+        /// Behind the row their keys are on.
+        row: Color,
+    },
     /// What shape the caret is, and whose it is.
     ///
     /// Which is a fact about the frame it arrives with -- both depend on
@@ -734,6 +747,12 @@ impl obelus_app::app::Drawing for Telling {
         }
     }
 
+    fn holding(&self, held: Color, row: Color) {
+        if self.updates.send(Update::Holding { held, row }).is_ok() {
+            (self.wake)();
+        }
+    }
+
     fn animates(&self, on: bool) {
         let _ = self.updates.send(Update::Animates(on));
         (self.wake)();
@@ -1197,6 +1216,10 @@ impl Page {
             }
             Update::Ground(_) => {
                 tracing::warn!("a page's ground reached the page");
+                false
+            }
+            Update::Holding { .. } => {
+                tracing::warn!("a hold's colours reached the page");
                 false
             }
         }

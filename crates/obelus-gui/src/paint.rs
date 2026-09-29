@@ -136,6 +136,10 @@ pub(crate) struct Painter {
     /// `grid::margin`. Kept because `whole_window` is wanted below
     /// `draw`, where the margin is worked out.
     margin: [f32; 2],
+    /// Which two colours mean the reader has hold of something: a run of
+    /// characters, and the row their keys are on -- see
+    /// `Drawing::holding`.
+    holding: (Color, Color),
     /// The instances of the frame being built, kept so that a screenful of
     /// rectangles is allocated once rather than once a frame.
     quads: Vec<Quad>,
@@ -266,6 +270,14 @@ const BLUR: u32 = 1024;
 /// sheen on it.
 const SHEENED: u32 = 2048;
 
+/// A run the reader has hold of, whose four corners each turn one of
+/// three ways -- see `held` in the shader, and `Turn`.
+const HELD_PLATE: u32 = 4096;
+
+/// Where those four turns sit in the flags, two bits each, in the order
+/// `Turn::corners` puts them.
+const HELD_TURNS: u32 = 13;
+
 /// How far from a row's own ground toward its own ink a seam between two
 /// entries is drawn.
 ///
@@ -277,6 +289,44 @@ const SHEENED: u32 = 2048;
 /// are is settled by having to read words in the one against the other, so
 /// a part of the way between them is a part of something every theme
 /// keeps.
+/// How far a held run's face is carried from what is under it toward the
+/// colour the cells wear.
+///
+/// Not the whole way. What a hold has to do is be seen and not shout, and
+/// the way to do both is to put the strength in the *edge*: an edge is
+/// what an eye finds a shape by, and a face a shade lighter than the
+/// square a terminal draws reads quieter while being better bounded.
+///
+/// A whisper of it, and that is the measurement. Most of the way there
+/// was tried first and is a grey block with a line round it: the face
+/// was thirty-five levels off the page and the rim twenty-nine off the
+/// face, so the block was the thing seen and the rim was a mark on it.
+/// A third of the way puts the strength where it was always meant to be.
+const HELD: f32 = 0.34;
+
+/// How much further than the colour itself its rim goes, away from what
+/// is under it.
+///
+/// The rim is the thing being seen, so it goes a little past the colour
+/// the cells wear rather than stopping at it. A theme is entitled to a
+/// hold barely off its page -- one here is `#d1d0d0` on `#faf9f9` -- and
+/// a rim that stopped at the colour would be a step off its own face.
+const HELD_RIM: f32 = 0.25;
+
+/// How wide that rim is, as a share of a row's height.
+///
+/// A hairline. A rule's own thickness is `LINE` and this is half of it
+/// again: what is wanted is the thinnest line the screen can draw, which
+/// on a screen drawn at twice its own pixels is one of those.
+const HELD_EDGE: f32 = 0.03;
+
+/// And how round its corners are, as a share of a row's height.
+///
+/// Small. Half a row is as round as a row can be and is a pill, which on
+/// a run of words reads as a badge -- a thing to press -- rather than as
+/// the ground under what the reader is holding.
+const HELD_CORNER: f32 = 0.18;
+
 const SEAM: f32 = 0.14;
 
 /// How much of a cell a switch's box takes, across.
@@ -667,6 +717,7 @@ impl Painter {
             ground: Color::Reset,
             grid: [0.0, 0.0],
             margin: [0.0, 0.0],
+            holding: (Color::Reset, Color::Reset),
             quads: Vec::new(),
             placed: Placed::default(),
             instances,
@@ -854,6 +905,10 @@ impl Painter {
             .filter(|cap| cap.still_said(page))
             .collect();
         self.backgrounds(page, cell, &panes, &framed, &capped);
+        // Over the page and under everything written on it: a hold is a
+        // ground, and the letters it is behind are the ones the reader is
+        // holding.
+        self.holdings(page, &panes, &framed, &capped, cell);
         self.rules(page, said.ruled, cell);
         // The boundaries with no row to be on, which go where there is no
         // cell: the pixel between one row and the one above it. Under the
@@ -868,7 +923,7 @@ impl Painter {
         self.caps(page, &capped, &panes, fonts);
         // Over the letters: a switch replaces the glyph standing in for
         // it, rather than sitting beside one.
-        self.ticks(page, said.ticked, &panes, cell);
+        self.ticks(page, said.ticked, &panes, &framed, &capped, cell);
         // And so does a bar, for the same reason: what a terminal has for
         // a track is a column of full blocks, and a window has a shape.
         self.bars(page, said.barred, cell);
@@ -1105,6 +1160,15 @@ impl Painter {
                         })
                         .map(|cap| (cap.area.x, cap.area.right())),
                 );
+                // And what the reader has hold of, which `holdings` draws
+                // as a plate: painted here as well, the square the cells
+                // make would stand behind the plate's round corners in
+                // the full strength of the colour.
+                holes.extend(
+                    self.holds(page, row, capped)
+                        .into_iter()
+                        .map(|(from, to, _)| (from, to)),
+                );
                 for (start, end) in without(start, end, &mut holes) {
                     self.block(
                         f32::from(start) * width,
@@ -1118,6 +1182,192 @@ impl Painter {
         }
     }
 
+    /// The runs of one row the reader has hold of.
+    ///
+    /// A run of cells wearing one of the two colours the theme gives a
+    /// hold -- see `Drawing::holding` -- which is how the window finds
+    /// one without any view having to say so: a list drawn next month is
+    /// drawn like every other list because it paints the row that colour,
+    /// which it has to do anyway for the terminal.
+    ///
+    /// Minus the caps. A key's cap is a run a shade off the page and the
+    /// themes Obelus ships give that the same colour as a selected row --
+    /// two different promises that a theme is entitled to keep in one
+    /// colour. What tells them apart is that a cap has already been said,
+    /// so it is already drawn as its own shape.
+    fn holds(&self, page: &Page, row: u16, capped: &[&Capped]) -> Vec<(u16, u16, Color)> {
+        let (held, chosen) = self.holding;
+        let mut found = Vec::new();
+        for (start, end, colour) in runs(page, row) {
+            if colour != held && colour != chosen {
+                continue;
+            }
+            let mut caps: Vec<(u16, u16)> = capped
+                .iter()
+                .filter(|cap| cap.area.y == row)
+                .map(|cap| (cap.area.x, cap.area.right()))
+                .collect();
+            found.extend(
+                without(start, end, &mut caps)
+                    .into_iter()
+                    .map(|(from, to)| (from, to, colour)),
+            );
+        }
+        found
+    }
+
+    /// What the reader has hold of, drawn as a plate rather than a square.
+    ///
+    /// The face is carried most of the way from what is under it to the
+    /// colour the cells wear, and the colour itself is the rim round it
+    /// -- see `HELD`. `backgrounds` leaves the run unpainted for this,
+    /// the way it leaves a cap's cells unpainted, so what shows outside
+    /// the rounded corners is whatever the hold is standing on: the
+    /// page, or a pane's own glass.
+    ///
+    /// A hold that carries on into the row above or below keeps its
+    /// corners square on that side and its face runs to the edge, so a
+    /// selection several lines tall is one plate rather than a stack of
+    /// them with a seam between each pair.
+    fn holdings(
+        &mut self,
+        page: &Page,
+        panes: &[&Behind],
+        framed: &[&Behind],
+        capped: &[&Capped],
+        cell: CellSize,
+    ) {
+        let rim = (cell.height * HELD_EDGE).round().max(1.0);
+        let corner = cell.height * HELD_CORNER;
+        let rows: Vec<Vec<(u16, u16, Color)>> = (0..page.rows())
+            .map(|row| self.holds(page, row, capped))
+            .collect();
+        for (row, holds) in rows.iter().enumerate() {
+            let touching = |beside: Option<&Vec<(u16, u16, Color)>>, run: (u16, u16, Color)| {
+                beside.is_some_and(|beside| {
+                    beside
+                        .iter()
+                        .any(|&(from, to, colour)| colour == run.2 && from < run.1 && to > run.0)
+                })
+            };
+            for &(start, end, colour) in holds {
+                let above = touching(
+                    row.checked_sub(1).and_then(|row| rows.get(row)),
+                    (start, end, colour),
+                );
+                let below = touching(rows.get(row + 1), (start, end, colour));
+                #[expect(
+                    clippy::cast_precision_loss,
+                    reason = "a window is thousands of pixels, not millions"
+                )]
+                let top = row as f32 * cell.height;
+                let left = f32::from(start) * cell.width;
+                let wide = f32::from(end - start) * cell.width;
+                let ink = rgba(colour, Ink::Background);
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    reason = "a row of a grid is inside the window"
+                )]
+                let under = self.under(panes, framed, start, row as u16);
+                // The rim, further from what is under it than the colour
+                // itself: it is the thing being seen.
+                let edge = mixed(ink, away(under, ink), HELD_RIM);
+                // Which way each of the four corners turns, which is a
+                // fact about the row beside it -- see `Turn`.
+                let beside = |up: bool| {
+                    let beside = match up {
+                        true => row.checked_sub(1).and_then(|row| rows.get(row)),
+                        false => rows.get(row + 1),
+                    }?;
+                    beside
+                        .iter()
+                        .find(|&&(from, to, theirs)| theirs == colour && from < end && to > start)
+                        .copied()
+                };
+                let turns = Turn::corners(start, end, beside(true), beside(false));
+                self.plate([left, top, wide, cell.height], corner, edge, turns);
+                // The face, inside the rim where there is one. No inset
+                // where the hold carries on: an edge there is a seam
+                // across the middle of one thing.
+                let (up, down) = (if above { 0.0 } else { rim }, if below { 0.0 } else { rim });
+                let face = [
+                    left + rim,
+                    top + up,
+                    (wide - rim * 2.0).max(0.0),
+                    (cell.height - up - down).max(0.0),
+                ];
+                self.plate(
+                    face,
+                    (corner - rim).max(0.0),
+                    mixed(under, ink, HELD),
+                    turns,
+                );
+            }
+        }
+    }
+
+    /// The face a hold is drawn in at this cell, where the cell is part
+    /// of one.
+    ///
+    /// Asked by anything that would otherwise put a cell's own ground
+    /// back over a hold. The cells carry the colour at full strength and
+    /// the plate is a shade of it, so a square of the raw colour is a
+    /// hole in the plate -- which is the same thing a square of a pane's
+    /// ground is in glass, and is guarded against a line above for the
+    /// same reason.
+    fn held_face(
+        &self,
+        page: &Page,
+        at: ratatui::layout::Rect,
+        panes: &[&Behind],
+        framed: &[&Behind],
+        capped: &[&Capped],
+    ) -> Option<[f32; 4]> {
+        let (from, _, colour) = self
+            .holds(page, at.y, capped)
+            .into_iter()
+            .find(|&(from, to, _)| (from..to).contains(&at.x))?;
+        let under = self.under(panes, framed, from, at.y);
+        Some(mixed(under, rgba(colour, Ink::Background), HELD))
+    }
+
+    /// What a hold at this cell is standing on: a pane's own ground where
+    /// it is inside one, and the page's otherwise.
+    ///
+    /// Nearest the reader wins, which is the order the cards are in.
+    fn under(&self, panes: &[&Behind], framed: &[&Behind], x: u16, y: u16) -> [f32; 4] {
+        let inside = |pane: &&&Behind| {
+            let area = pane.area;
+            (area.left()..area.right()).contains(&x) && (area.top()..area.bottom()).contains(&y)
+        };
+        let ground = framed
+            .iter()
+            .rev()
+            .find(inside)
+            .or_else(|| panes.iter().rev().find(inside))
+            .map_or(self.ground, |pane| pane.ground);
+        rgba(ground, Ink::Background)
+    }
+
+    /// A block of colour with each of its four corners taken off, or not,
+    /// or bent the other way -- see `Turn`.
+    ///
+    /// The quad reaches a radius past the block on each side, because a
+    /// corner bent the other way is drawn out there: the shader takes
+    /// that much off again to find the block itself.
+    fn plate(&mut self, rect: [f32; 4], radius: f32, colour: [f32; 4], turns: u32) {
+        let [left, top, width, height] = rect;
+        let radius = radius.max(0.0).min(width.min(height) / 2.0);
+        self.quads.push(Quad {
+            rect: [left - radius, top, radius.mul_add(2.0, width), height],
+            uv: self.atlas.white,
+            colour,
+            flags: SOLID | ROUNDED | HELD_PLATE | (turns << HELD_TURNS),
+            radius,
+            padding: [0; 2],
+        });
+    }
+
     /// One block of colour, in pixels.
     /// What the page is drawn on, for the margin round the grid.
     ///
@@ -1126,6 +1376,13 @@ impl Painter {
     /// so the first one would have nowhere to land.
     pub(crate) const fn drawn_on(&mut self, ground: Color) {
         self.ground = ground;
+    }
+
+    /// Which colours mean the reader has hold of something -- see
+    /// `Drawing::holding`. Handed over every frame, like the ground, and
+    /// for the same reason.
+    pub(crate) const fn holding(&mut self, holding: (Color, Color)) {
+        self.holding = holding;
     }
 
     fn block(&mut self, left: f32, top: f32, width: f32, height: f32, colour: [f32; 4]) {
@@ -1555,23 +1812,27 @@ impl Painter {
         }
     }
 
-    fn ticks(&mut self, page: &Page, ticked: &[Ticked], panes: &[&Behind], cell: CellSize) {
+    fn ticks(
+        &mut self,
+        page: &Page,
+        ticked: &[Ticked],
+        panes: &[&Behind],
+        framed: &[&Behind],
+        capped: &[&Capped],
+        cell: CellSize,
+    ) {
         for tick in ticked {
             let left = f32::from(tick.area.x) * cell.width;
             let top = f32::from(tick.area.y) * cell.height;
             // The cell's own ink and ground, which the view wrote there:
             // what a terminal draws the glyph in is what a window draws
-            // the box in.
+            // the box in. Except on a hold, where the ground on the
+            // screen is the plate's face rather than the colour the cell
+            // wears -- see `held_face`.
             let look = page.look(tick.area.x, tick.area.y);
-            let ground = rgba(look.background, Ink::Background);
-            // The glyph the view wrote, covered: it is what a terminal
-            // draws, and here it is what is being replaced. Left out on
-            // glass, where the letters leave nothing to cover and a
-            // square of the cell's ground would be a hole in the pane.
-            if !seen_through(panes, tick.area.x, tick.area.y, look.background) {
-                self.block(left, top, cell.width, cell.height, ground);
-            }
-
+            let ground = self
+                .held_face(page, tick.area, panes, framed, capped)
+                .unwrap_or_else(|| rgba(look.background, Ink::Background));
             let side = (cell.width * BOX).round().max(3.0);
             // A shade above the middle of the cell, which is where the
             // middle of the writing is: letters sit on a baseline with
@@ -2907,6 +3168,67 @@ fn mark_behind(to_come: f32, behind: f32, since: f32) -> f32 {
 /// colour it would come out as -- and nothing here then depends on how
 /// the pipeline happens to blend, which is a thing that has to be right
 /// in the shader as well as here.
+/// Which way one corner of a held run turns.
+///
+/// A hold is one rectangle per row, and the rows are not the same width:
+/// a selection starts part way along a line and stops part way along
+/// another. What decides a corner is the row beside it -- whether that
+/// row stops short of this one, stops level with it, or carries on past
+/// it -- and the third is the one that matters, because without it every
+/// step between two rows is cut square and the hold reads as a stack of
+/// plates rather than as one shape.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Turn {
+    /// The hold's own corner: the row beside it stops short, or there is
+    /// no row beside it.
+    Corner = 0,
+    /// The row beside it carries on past this one, so the boundary bends
+    /// the other way to meet it.
+    Other = 1,
+    /// The row beside it has the same edge, so there is no corner here at
+    /// all and nothing to round.
+    None = 2,
+}
+
+impl Turn {
+    /// The four corners of a run, packed two bits each in the order the
+    /// shader reads them: top left, top right, bottom left, bottom right.
+    fn corners(
+        start: u16,
+        end: u16,
+        above: Option<(u16, u16, Color)>,
+        below: Option<(u16, u16, Color)>,
+    ) -> u32 {
+        let left = |beside: Option<(u16, u16, Color)>| match beside {
+            Some((from, _, _)) if from < start => Self::Other,
+            Some((from, _, _)) if from == start => Self::None,
+            _ => Self::Corner,
+        };
+        let right = |beside: Option<(u16, u16, Color)>| match beside {
+            Some((_, to, _)) if to > end => Self::Other,
+            Some((_, to, _)) if to == end => Self::None,
+            _ => Self::Corner,
+        };
+        [left(above), right(above), left(below), right(below)]
+            .into_iter()
+            .enumerate()
+            .fold(0, |turns, (at, turn)| turns | ((turn as u32) << (at * 2)))
+    }
+}
+
+/// One colour as far past another as that one is from it.
+///
+/// What a rim wants: the colour the cells wear, carried on in the
+/// direction it already went from the ground, so a hold barely off its
+/// page still has an edge to be found by.
+fn away(from: [f32; 4], to: [f32; 4]) -> [f32; 4] {
+    let mut out = to;
+    for channel in 0..3 {
+        out[channel] = (to[channel] * 2.0 - from[channel]).clamp(0.0, 1.0);
+    }
+    out
+}
+
 fn mixed(from: [f32; 4], to: [f32; 4], along: f32) -> [f32; 4] {
     let along = along.clamp(0.0, 1.0);
     let mut out = to;
@@ -3029,6 +3351,73 @@ mod tests {
 
     use super::*;
     use crate::grid::Update;
+
+    /// Which way a hold's corner turns is a fact about the row beside it.
+    ///
+    /// A hold is one rectangle per row and the rows are not the same
+    /// width, so the corners where they step are not the hold's own
+    /// corners: the boundary there bends the other way, round into the
+    /// row that carries on. Without that, every step is cut square and a
+    /// selection several lines tall reads as a stack of plates.
+    ///
+    /// Deliberate break: answer `Corner` in place of `Other` and the
+    /// steps come out square again -- which is what the first of these
+    /// drew, and what a reader looking at a selection notices first.
+    /// Answer `Corner` in place of `None` and a flush edge grows two
+    /// notches where there is no corner at all.
+    #[test]
+    fn a_corner_turns_the_other_way_where_the_row_beside_it_carries_on() {
+        let ink = Color::Rgb(1, 2, 3);
+        let turns = |above: Option<(u16, u16)>, below: Option<(u16, u16)>| {
+            Turn::corners(
+                10,
+                20,
+                above.map(|(from, to)| (from, to, ink)),
+                below.map(|(from, to)| (from, to, ink)),
+            )
+        };
+        // Top left, top right, bottom left, bottom right.
+        let at = |turns: u32, corner: u32| (turns >> (corner * 2)) & 3;
+
+        let alone = turns(None, None);
+        for corner in 0..4 {
+            assert_eq!(
+                at(alone, corner),
+                Turn::Corner as u32,
+                "corner {corner} of a row with nothing beside it"
+            );
+        }
+
+        // The row above has the same ends, so along the top there is no
+        // corner to round at all.
+        let flush = turns(Some((10, 20)), None);
+        assert_eq!(at(flush, 0), Turn::None as u32, "top left, level");
+        assert_eq!(at(flush, 1), Turn::None as u32, "top right, level");
+        assert_eq!(at(flush, 2), Turn::Corner as u32, "and nothing below it");
+
+        // It carries on past this row at both ends.
+        let wider = turns(Some((0, 30)), None);
+        assert_eq!(at(wider, 0), Turn::Other as u32, "top left, above is wider");
+        assert_eq!(
+            at(wider, 1),
+            Turn::Other as u32,
+            "top right, above is wider"
+        );
+
+        // And one that stops short leaves this row its own corners.
+        let narrower = turns(Some((12, 18)), None);
+        assert_eq!(at(narrower, 0), Turn::Corner as u32, "above stops short");
+        assert_eq!(at(narrower, 1), Turn::Corner as u32, "at both ends");
+
+        // The row below is asked the same question of the other two.
+        let step = turns(None, Some((0, 20)));
+        assert_eq!(
+            at(step, 2),
+            Turn::Other as u32,
+            "bottom left, below runs on"
+        );
+        assert_eq!(at(step, 3), Turn::None as u32, "bottom right, level");
+    }
 
     /// A quad that wants the whole window covers the whole window.
     ///

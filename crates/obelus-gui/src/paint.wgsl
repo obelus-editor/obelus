@@ -125,6 +125,50 @@ fn outside(point: vec2<f32>, half_size: vec2<f32>, radius: f32, joined: f32) -> 
     return length(max(corner, vec2<f32>(0.0))) + min(max(corner.x, corner.y), 0.0) - radius;
 }
 
+// How far outside a run the reader has hold of a point is.
+//
+// A hold is one rectangle per row of it, and the rows are not the same
+// width: a selection starts part way along a line and stops part way
+// along another. So each of the four corners turns one of three ways,
+// and which one is a fact about the row beside it -- 0 where the hold
+// stops and the corner is the hold's own, 2 where the row beside it has
+// the same edge and there is no corner at all, and 1 where that row
+// carries on *past* this one, which is the corner that bends the other
+// way. Without the third the steps between the rows are cut square, and
+// a selection reads as a stack of plates rather than as one shape.
+//
+// The bend the other way is a quarter circle whose middle is outside the
+// rectangle in x and inside it in y, which is where a step is: the rows
+// are a row tall and it is their ends that move.
+fn held(point: vec2<f32>, half_size: vec2<f32>, radius: f32, kinds: u32) -> f32 {
+    var kind = 0u;
+    if (point.x < 0.0) {
+        if (point.y < 0.0) { kind = kinds & 3u; } else { kind = (kinds >> 4u) & 3u; }
+    } else {
+        if (point.y < 0.0) { kind = (kinds >> 2u) & 3u; } else { kind = (kinds >> 6u) & 3u; }
+    }
+    let at = abs(point);
+    let out = at - half_size;
+    let box = length(max(out, vec2<f32>(0.0))) + min(max(out.x, out.y), 0.0);
+    // The hold carries on past this corner, so there is no corner.
+    if (kind == 2u) {
+        return box;
+    }
+    // The hold's own corner.
+    if (kind == 0u) {
+        let far = out + vec2<f32>(radius);
+        return length(max(far, vec2<f32>(0.0))) + min(max(far.x, far.y), 0.0) - radius;
+    }
+    // And the one that bends the other way, inside the square of the
+    // radius that sits just outside the rectangle in x and just inside
+    // it in y. Everywhere else this corner is no corner at all.
+    let middle = vec2<f32>(half_size.x + radius, half_size.y - radius);
+    if (at.x >= half_size.x && at.x <= middle.x && at.y >= middle.y && at.y <= half_size.y) {
+        return radius - length(at - middle);
+    }
+    return box;
+}
+
 // Which way the nearest edge of a rounded box faces, from a point inside
 // it. The gradient of the distance above, worked out rather than sampled:
 // a derivative would be the difference between two pixels, and what this
@@ -340,9 +384,34 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
         glass += vec3<f32>(lit * 0.5 + far * 0.22);
         return vec4<f32>(glass, 1.0);
     }
+    // A run the reader has hold of, whose corners do not all turn the
+    // same way. Before the plain rounded solid, which it also is.
+    if ((in.flags & 4096u) != 0u) {
+        // The quad reaches a radius past the run either side, because a
+        // corner that bends the other way is drawn out there.
+        let room = in.half_size - vec2<f32>(in.radius, 0.0);
+        let distance = held(in.middle, room, in.radius, (in.flags >> 13u) & 255u);
+        let covered = clamp(0.5 - distance, 0.0, 1.0);
+        return vec4<f32>(in.colour.rgb, in.colour.a * covered);
+    }
     // Before the plain solid, because a rounded one is a solid as well.
     if ((in.flags & 4u) != 0u) {
-        let distance = outside(in.middle, in.half_size, in.radius, 0.0);
+        // A radius per half, so that a plate which the same hold carries
+        // on past keeps its corners square on that side and round on the
+        // other. 16 and 128 mean here what they mean for glass: joined
+        // above, joined below.
+        var top_corner = in.radius;
+        var low_corner = in.radius;
+        if ((in.flags & 16u) != 0u) {
+            top_corner = 0.0;
+        }
+        if ((in.flags & 128u) != 0u) {
+            low_corner = 0.0;
+        }
+        let round = select(low_corner, top_corner, in.middle.y < 0.0);
+        let corner = abs(in.middle) - in.half_size + vec2<f32>(round);
+        let distance = length(max(corner, vec2<f32>(0.0)))
+            + min(max(corner.x, corner.y), 0.0) - round;
         // Softened over the one pixel either side of the edge. Without
         // it a corner is a staircase, which at the size a key's cap is
         // drawn is the whole of what the eye sees.

@@ -138,6 +138,10 @@ struct Showing {
     /// is drawing nothing at all before the first of those, so the default
     /// is never on the screen.
     ground: Color,
+    /// Which two colours mean the reader has hold of something: a run of
+    /// characters, and the row their keys are on. The application's, said
+    /// at the same two moments the ground is.
+    holding: (Color, Color),
     /// Which cells are switches on the frame being shown.
     ticked: Vec<Ticked>,
     /// The mark the light runs across, where the frame drew one.
@@ -249,6 +253,7 @@ impl Showing {
             capped: Vec::new(),
             capping: Vec::new(),
             ground: Color::Reset,
+            holding: (Color::Reset, Color::Reset),
             ticked: Vec::new(),
             sheened: None,
             sheening: None,
@@ -618,6 +623,7 @@ impl ApplicationHandler<Waking> for Showing {
                         Update::Animates(on) => self.motion.animates(on),
                         Update::Fonts(names) => faces = Some(names),
                         Update::Ground(ground) => self.ground = ground,
+                        Update::Holding { held, row } => self.holding = (held, row),
                         Update::Mark {
                             id,
                             focused,
@@ -901,6 +907,7 @@ impl ApplicationHandler<Waking> for Showing {
                     return;
                 };
                 painter.drawn_on(self.ground);
+                painter.holding(self.holding);
                 if let Err(error) = painter.paint(
                     &self.page,
                     fonts,
