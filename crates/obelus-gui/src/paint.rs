@@ -739,7 +739,7 @@ impl Painter {
         // pass draws and it draws the front of the buffer.
         let pane = said
             .behind
-            .map(|behind| self.glass(page, behind, said.ruled, fonts));
+            .map(|behind| self.glass(page, behind, said.ruled, said.barred, fonts));
         self.placed.sheet = self.quads.len();
         // The boxes whose frames are still there to hold them -- see
         // `Behind::framed` -- which four passes ask about. The nearest is
@@ -1591,6 +1591,7 @@ impl Painter {
         page: &Page,
         behind: &Behind,
         ruled: &[Ruled],
+        barred: &[Barred],
         fonts: &mut Fonts,
     ) -> [f32; 4] {
         let cell = fonts.cell();
@@ -1608,7 +1609,7 @@ impl Painter {
                     cell.height,
                     rgba(under.background, Ink::Background),
                 );
-                if !under.text.trim().is_empty() {
+                if lettered_behind(under, barred, x, y) {
                     let ink = rgba(under.foreground, Ink::Foreground);
                     self.glyphs_at(left, top, under, ink, fonts, Size::Cell);
                 }
@@ -2492,6 +2493,28 @@ fn drawn_as_a_shape(
         || said.barred.iter().any(|bar| within(bar.bar.area))
 }
 
+/// Whether the picture of what a pane was opened over writes this cell.
+///
+/// The same question `letters` asks of the page, asked of the picture: a
+/// bar is drawn as a shape, and drawn over the pane as well -- `bars` is
+/// asked from where the bar was said and not from what the page holds
+/// there -- so the block a terminal has for a track is a glyph nobody
+/// wanted here, under a capsule and under the tint.
+///
+/// It was not merely redundant. A full block's raster is taller than its
+/// cell, and the glass covers the pane's own rectangle exactly, so the
+/// part of the first row's block that reached above the grid came out in
+/// the margin round it -- a dark cell's-width line along the top of the
+/// window, wherever a list was opened over a file long enough to have a
+/// bar.
+fn lettered_behind(under: Look<'_>, barred: &[Barred], x: u16, y: u16) -> bool {
+    !under.text.trim().is_empty()
+        && !barred.iter().any(|showing| {
+            let area = showing.bar.area;
+            (area.left()..area.right()).contains(&x) && (area.top()..area.bottom()).contains(&y)
+        })
+}
+
 fn seen_through(panes: &[&Behind], x: u16, y: u16, colour: Color) -> bool {
     panes.iter().any(|pane| {
         let area = pane.area;
@@ -2852,6 +2875,46 @@ mod tests {
         assert!(
             !drawn_as_a_shape(&page, &said, &[], &[], 8, 0),
             "and not the one beside it, which is the file"
+        );
+    }
+
+    /// And the picture of what a pane was opened over leaves it alone too.
+    ///
+    /// Deliberate break: drop the `barred` clause from `lettered_behind`.
+    /// The block a terminal draws a track with is then written into the
+    /// picture behind the list as well -- where `letters` never put it --
+    /// and a full block's raster is taller than its cell, so the first
+    /// row's reached above the grid and came out in the margin round it: a
+    /// dark line a cell wide along the top of the window, wherever a list
+    /// was opened over a file long enough to have a bar.
+    #[test]
+    fn nor_into_the_picture_behind_a_pane() {
+        let page = page("\u{2588}a");
+        let barred = [Barred {
+            bar: obelus_ui::shapes::Bar {
+                area: ratatui::layout::Rect {
+                    x: 0,
+                    y: 0,
+                    width: 1,
+                    height: 1,
+                },
+                mark: 0,
+                thumb: 1,
+            },
+            shown: 1.0,
+            under: 0.0,
+        }];
+        assert!(
+            !lettered_behind(page.look(0, 0), &barred, 0, 0),
+            "the block the bar is drawn with"
+        );
+        assert!(
+            lettered_behind(page.look(1, 0), &barred, 1, 0),
+            "and the file's own letter beside it, which nothing else draws"
+        );
+        assert!(
+            !lettered_behind(page.look(2, 0), &barred, 2, 0),
+            "nor a cell with nothing in it"
         );
     }
 
