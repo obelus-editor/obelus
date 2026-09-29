@@ -439,6 +439,29 @@ impl Settings {
         self.keys_showing
     }
 
+    /// What typing into this page narrows, for the row before anything
+    /// has been typed.
+    ///
+    /// Per tab, because the page is three lists and the filter is about
+    /// whichever is showing. Said on the row the reader would type into,
+    /// which the foot's `type  To filter` does not: a key's word at the
+    /// foot says a key exists, and the row says what it would do here.
+    ///
+    /// `None` once something has been typed, because by then the reader
+    /// knows -- and the row has their words in it, which is what this
+    /// stands in for.
+    #[must_use]
+    pub fn what_is_filtered(&self) -> Option<&'static str> {
+        if !self.query().is_empty() {
+            return None;
+        }
+        Some(match (self.on_keys(), self.on_agents()) {
+            (true, _) => "Filter keys",
+            (_, true) => "Filter agents",
+            _ => "Filter settings",
+        })
+    }
+
     /// Whether the page showing is the keys rather than the settings.
     #[must_use]
     pub fn on_keys(&self) -> bool {

@@ -309,6 +309,7 @@ impl App {
             picker.go_to_tab(tab);
         }
         picker.lists_files();
+        picker.before_typing("Filter files");
         picker.previews();
         // This list has a key of its own, so it says so. The others have
         // none, and a foot saying "enter chooses" would be a row spent on
@@ -792,6 +793,7 @@ impl App {
         // Reachable with nothing open at all, which is how Obelus starts --
         // and was not, for as long as the command asked for a file.
         picker.when_empty("Nothing is open");
+        picker.before_typing("Filter open documents");
         picker.previews();
         // Opened on whatever is being read, conversation or file: a list
         // that started somewhere arbitrary would make the reader find where

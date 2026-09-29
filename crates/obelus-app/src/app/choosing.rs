@@ -47,6 +47,7 @@ impl App {
             .collect();
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
         picker.when_empty("No theme is built in");
+        picker.before_typing("Filter themes");
         // Open on the one that is on, so the list starts by saying which
         // theme this is rather than making the reader work it out.
         picker.prefer(self.theme_name().to_string());
@@ -93,6 +94,7 @@ impl App {
         // It holds every command, so it is only ever empty for a query that
         // matches none of them -- which the picker says itself.
         picker.when_empty("No command by that name");
+        picker.before_typing("Filter commands");
         // Tabs over one long list. Fourteen commands is already more than a
         // compact list shows at once, and the groups are what a reader is
         // choosing between when they do not already know the name.

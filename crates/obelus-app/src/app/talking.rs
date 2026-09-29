@@ -1042,6 +1042,7 @@ impl App {
             })
             .collect();
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
+        picker.before_typing("Filter values");
         picker.ask(&question);
         picker.when_empty("This one has nothing to choose from");
         // Opened on what it is already on, so the list starts by saying
@@ -1571,6 +1572,7 @@ impl App {
             })
             .collect();
         let mut slash = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
+        slash.before_typing("Filter what the agent offers");
         slash.set_query(&name);
         if slash.match_count() > 0
             && let Some(talk) = self.conversation_mut()

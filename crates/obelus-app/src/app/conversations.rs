@@ -197,6 +197,7 @@ impl App {
         self.conversing.agents = agents;
         let rows = self.conversation_rows(0);
         let mut picker = Picker::new(rows, PickerLayout::Compact { rows: COMPACT_ROWS });
+        picker.before_typing("Filter conversations");
         picker.when_empty(match unreadable {
             true => "Obelus cannot read what it wrote down about this project",
             false => "Nothing has been said about this project yet",

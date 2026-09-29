@@ -66,6 +66,21 @@ impl Scope {
             Self::Symbols => "Symbols",
         }
     }
+
+    /// What typing into a search of this radius does, for the row before
+    /// anything has been typed.
+    ///
+    /// The whole sentence and not the tab's word, because the row is read
+    /// on its own: a reader who has not looked up at the tabs is told
+    /// `Search`, and told nothing about what.
+    #[must_use]
+    pub const fn before_typing(self) -> &'static str {
+        match self {
+            Self::File => "Search this file",
+            Self::Project => "Search the project",
+            Self::Symbols => "Search the project's symbols",
+        }
+    }
 }
 
 /// How a search is looking, beside what it is looking for.

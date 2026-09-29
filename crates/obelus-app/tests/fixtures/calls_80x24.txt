@@ -23,7 +23,7 @@ screen 80x24  editor 80x22  status 80x1
 20|────────────────────────────────────────────────────────────────────────────────
 21|   Enter  Open    Alt+Enter  Go there                             Ctrl+k  Keys  
 22|────────────────────────────────────────────────────────────────────────────────
-23| >                                                                              
+23| > Filter calls                                                                 
 -- style --
  0|abbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -48,7 +48,7 @@ screen 80x24  editor 80x22  status 80x1
 20|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 21|cchhhhhhhcaaaaccchhhhhhhhhhhcaaaaaaaacccccccccccccccccccccccccccchhhhhhhhcaaaacc
 22|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-23|kkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk
+23|kkkaaaaaaaaaaaakkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk
 -- legend --
 a fg=#52525b bg=#18181b
 b fg=#e4e4e7 bg=#27272a

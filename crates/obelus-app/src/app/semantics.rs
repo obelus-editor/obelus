@@ -1329,6 +1329,7 @@ impl App {
                 let items = place_rows(&places, &self.working_directory);
                 self.quiet();
                 let mut picker = Picker::new(items, PickerLayout::FullArea);
+                picker.before_typing("Filter places");
                 picker.previews();
                 self.show_list(picker);
             }
@@ -1435,6 +1436,7 @@ impl App {
         // it is a few milliseconds once the project is indexed.
         if self.servers.contains_key(&language) && self.ask_outline(&path, language) {
             let mut picker = Picker::new(Vec::new(), PickerLayout::FullArea);
+            picker.before_typing("Filter symbols");
             picker.when_empty("Asking the language server\u{2026}");
             picker.is_outline_of(path);
             picker.previews();
@@ -1497,6 +1499,7 @@ impl App {
             .collect();
 
         let mut picker = Picker::new(items, PickerLayout::FullArea);
+        picker.before_typing("Filter symbols");
         picker.when_empty(if tags::has_tags(language) {
             "This file defines nothing"
         } else {
@@ -2001,6 +2004,7 @@ impl App {
         };
         let names: Vec<&str> = radii.iter().map(|radius| radius.label()).collect();
         let mut picker = Picker::new(Vec::new(), PickerLayout::Compact { rows: 10 });
+        picker.before_typing("Filter problems");
         picker.with_scopes(&names);
         picker.keeps_order(true);
         // A row in another file is shown in the room above the rows, which

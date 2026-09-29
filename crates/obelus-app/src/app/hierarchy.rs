@@ -611,6 +611,7 @@ impl App {
     /// Puts the list up, with the rows a tree has.
     fn open_calls(&mut self, calls: &Calls) {
         let mut picker = Picker::new(self.rows_of(calls), PickerLayout::FullArea);
+        picker.before_typing("Filter calls");
         picker.previews();
         // The children of a row belong to it: filtering that pulled one out
         // from under the row that calls it would leave a place on screen

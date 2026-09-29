@@ -164,13 +164,9 @@ impl Widget for StatusView<'_> {
             // does.
             Some(Layer::Names) => {
                 if let Some(names) = self.names {
-                    write(
-                        cells,
-                        area.x + 1,
-                        area.y,
-                        &typed(None, &names.query().said()),
-                        style,
-                    );
+                    let said = names.query().said();
+                    write(cells, area.x + 1, area.y, &typed(None, &said), style);
+                    hint(cells, area, None, names.invitation(), style, self.theme);
                 }
             }
             // The same shape a picker's prompt has, because it is the same
@@ -321,6 +317,54 @@ fn typed(question: Option<&str>, words: &str) -> String {
     }
 }
 
+/// What a row that is typed into says before anything has been.
+///
+/// After the prompt glyph, where the typing will go, and in the dim ink
+/// an aside on this row is written in -- so it reads as the row telling
+/// the reader what to do rather than as something already typed. The
+/// first character replaces it, because by then the reader knows.
+///
+/// One writer for every row that is typed into, which is the rule the
+/// glyph in front of it already follows: a list, the settings' filter and
+/// the list of names all say it the same way, and what differs is only the
+/// words each of them gives.
+///
+/// The caret is not moved by it. `typed_caret` measures what was typed,
+/// and a hint counted in would put the caret at the end of words nobody
+/// wrote.
+fn hint(
+    cells: &mut CellBuffer,
+    area: Rect,
+    question: Option<&str>,
+    hint: Option<&str>,
+    style: Style,
+    theme: &Theme,
+) {
+    // Whether there is anything to say is the caller's, and every one of
+    // them already knows: a list and a page of settings each hold the very
+    // box this stands in for. Asked again here, the two would be free to
+    // differ -- and they did, which is how a test about the first
+    // character taking it away passed with that answer broken.
+    let Some(hint) = hint else {
+        return;
+    };
+    let after = usize::from(typed_inset(question));
+    let Ok(offset) = u16::try_from(after) else {
+        return;
+    };
+    if area.x + offset >= area.right() {
+        return;
+    }
+    let room = usize::from(area.right() - area.x - offset);
+    write(
+        cells,
+        area.x + offset,
+        area.y,
+        &truncate_from_right(hint, room),
+        style.fg(theme.gutter),
+    );
+}
+
 /// Says a row that is typed into is still working on what was typed.
 ///
 /// After the words and never in front of them: what the reader is reading
@@ -343,11 +387,20 @@ pub fn still_working(
     area: Rect,
     question: Option<&str>,
     words: &str,
+    standing_in: Option<&str>,
     phase: u32,
     theme: &Theme,
 ) {
+    // After whatever is on the row where the typing goes, which with
+    // nothing typed is the words saying what typing would do: a mark drawn
+    // at the caret's own column would be drawn on top of them, and a
+    // spinner in the middle of a word reads as neither.
+    let said = match words.is_empty() {
+        true => standing_in.unwrap_or(words),
+        false => words,
+    };
     let after = 1usize
-        .saturating_add(text_width(&typed(question, words)))
+        .saturating_add(text_width(&typed(question, said)))
         .saturating_add(1);
     let Ok(offset) = u16::try_from(after) else {
         return;
@@ -395,9 +448,25 @@ pub fn prompt_row(
         None => Marked::plain(),
     };
     write_marked(cells, area, area.x + 1, area.y, &line, style, &marked);
+    hint(
+        cells,
+        area,
+        picker.question(),
+        picker.invitation(),
+        style,
+        theme,
+    );
     // And that the list has not answered for what is in it yet.
     if picker.is_filling().is_some() {
-        still_working(cells, area, picker.question(), &said, phase, theme);
+        still_working(
+            cells,
+            area,
+            picker.question(),
+            &said,
+            picker.invitation(),
+            phase,
+            theme,
+        );
     }
 }
 
@@ -740,6 +809,17 @@ impl StatusView<'_> {
             &typed(None, &said),
             style,
             &marked,
+        );
+        // Which tab's rows it narrows, because the page has three and they
+        // are three different lists. The foot says a key filters; this
+        // says what it filters, on the row the reader would type into.
+        hint(
+            cells,
+            area,
+            None,
+            settings.what_is_filtered(),
+            style,
+            self.theme,
         );
     }
 

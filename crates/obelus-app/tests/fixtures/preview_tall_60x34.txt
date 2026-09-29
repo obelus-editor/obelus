@@ -33,7 +33,7 @@ screen 60x34  editor 60x32  status 60x1
 30|────────────────────────────────────────────────────────────
 31|   Alt+i  Ignored files □    …                Ctrl+k  Keys  
 32|────────────────────────────────────────────────────────────
-33| >                                                          
+33| > Filter files                                             
 -- style --
  0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab
  1|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccb
@@ -68,7 +68,7 @@ screen 60x34  editor 60x32  status 60x1
 30|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 31|cciiiiiiiceeeeeeeeeeeeececccceccccccccccccccciiiiiiiiceeeecc
 32|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
-33|jjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj
+33|jjjeeeeeeeeeeeejjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj
 -- legend --
 a fg=#e4e4e7 bg=#27272a
 b fg=#a1a1aa bg=#18181b

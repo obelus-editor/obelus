@@ -177,6 +177,7 @@ impl App {
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
         picker.keeps_order(true);
         picker.about("What the language server offers to do here");
+        picker.before_typing("Filter what can be done");
         self.quiet();
         self.show_list(picker);
     }

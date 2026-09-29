@@ -284,7 +284,7 @@ still taken when the view opens, because the claim is not about the agent
 has to be said before another window says it.
 
 Which makes `Talking::Idle` a state a reader sits in rather than a blink,
-so it needed words of its own: `starting...` under a still mark, about a
+so it needed words of its own: `Starting...` under a still mark, about a
 conversation nothing is starting, is the one thing that row must not say.
 And "starting" has to be told from "nothing has been asked for", which used
 to be the same thing -- `Conversation::opening` is the half of that

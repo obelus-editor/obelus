@@ -11,7 +11,7 @@ screen 60x12  editor 60x10  status 60x1
  8|                                                            
  9|                                                            
 10|────────────────────────────────────────────────────────────
-11| >                                                          
+11| > Filter open documents                                    
 -- style --
  0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|bccbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbba
@@ -24,7 +24,7 @@ screen 60x12  editor 60x10  status 60x1
  8|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  9|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 10|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
-11|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+11|eeedddddddddddddddddddddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 -- legend --
 a fg=#e4e4e7 bg=#18181b
 b fg=#e4e4e7 bg=#27272a

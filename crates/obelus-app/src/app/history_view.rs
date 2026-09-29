@@ -152,6 +152,7 @@ impl App {
 
         let names: Vec<&str> = radii.iter().map(|radius| radius.label()).collect();
         let mut picker = Picker::new(Vec::new(), PickerLayout::FullArea);
+        picker.before_typing("Filter commits");
         picker.with_scopes(&names);
         // A commit's files hang under it: the query is about the commits.
         picker.nests();

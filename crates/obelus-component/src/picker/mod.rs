@@ -603,6 +603,9 @@ pub struct Picker {
     explains: bool,
     /// A question this list is the answer to, shown in front of the prompt.
     question: Option<String>,
+    /// What typing into this list does, for the row before anything has
+    /// been typed -- see [`Picker::before_typing`].
+    invitation: Option<String>,
     /// What to say when there is nothing to list.
     ///
     /// Per picker, because the reason differs: a file list with nothing in
@@ -803,6 +806,7 @@ impl Picker {
             explains: false,
             marked: false,
             question: None,
+            invitation: None,
             empty: "Nothing to choose from".to_string(),
             prefer: None,
             nests: false,
@@ -1283,6 +1287,36 @@ impl Picker {
     #[must_use]
     pub fn question(&self) -> Option<&str> {
         self.question.as_deref()
+    }
+
+    /// Says what typing into this list does, for the row before anything
+    /// has been.
+    ///
+    /// Every list in Obelus is typed into and none of them said so: the
+    /// row is a prompt glyph and nothing else, so a reader who has not
+    /// been told has no way to find out but to try. Which is the same
+    /// argument [`Picker::when_empty`] makes about a list with nothing in
+    /// it -- what the reader cannot see, the row has to say.
+    ///
+    /// Its own words per list rather than one sentence for all of them,
+    /// because the verb differs: a file list narrows what it is already
+    /// showing and a search goes and looks. One sentence would be wrong
+    /// on half of them.
+    ///
+    /// Nothing where a list is a *question* -- an agent asking to be
+    /// allowed something -- because the question is already the words in
+    /// front of the prompt, and two sets of words in one row is neither.
+    pub fn before_typing(&mut self, what: &str) {
+        self.invitation = Some(what.to_string());
+    }
+
+    /// What this list says typing into it does, while nothing has been.
+    #[must_use]
+    pub fn invitation(&self) -> Option<&str> {
+        match self.query.said().is_empty() && self.question.is_none() {
+            true => self.invitation.as_deref(),
+            false => None,
+        }
     }
 
     /// Sets what the list says when it is empty.

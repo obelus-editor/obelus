@@ -17,7 +17,7 @@ screen 60x18  editor 60x16  status 60x1
 14|────────────────────────────────────────────────────────────
 15|   Alt+i  Ignored files □    …                Ctrl+k  Keys  
 16|────────────────────────────────────────────────────────────
-17| >                                                          
+17| > Filter files                                             
 -- style --
  0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|abbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -36,7 +36,7 @@ screen 60x18  editor 60x16  status 60x1
 14|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 15|aadddddddabbbbbbbbbbbbbabaaaabaaaaaaaaaaaaaaaddddddddabbbbaa
 16|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-17|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+17|eeebbbbbbbbbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 -- legend --
 a fg=#e4e4e7 bg=#18181b
 b fg=#52525b bg=#18181b

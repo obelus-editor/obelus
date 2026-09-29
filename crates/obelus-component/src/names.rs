@@ -131,6 +131,9 @@ pub struct Names {
     /// deciding whether to choose anything is deciding against something,
     /// and a name is what that something is.
     otherwise: Option<String>,
+    /// What typing into this list does, for the row before anything has
+    /// been typed -- see [`Names::before_typing`].
+    invitation: Option<String>,
     /// What is being typed, which filters the offers and is itself an
     /// offer when it matches nothing.
     query: Field,
@@ -164,6 +167,7 @@ impl Names {
             chosen,
             offered,
             otherwise,
+            invitation: None,
             query: Field::new(),
             window: Window::default(),
             matcher: Matcher::new(nucleo_matcher::Config::DEFAULT),
@@ -202,6 +206,25 @@ impl Names {
     #[must_use]
     pub fn chosen(&self) -> &[String] {
         &self.chosen
+    }
+
+    /// Says what typing into this list does, for the row before anything
+    /// has been.
+    ///
+    /// The caller's words, like the offers themselves: this list knows
+    /// names and nothing about what they name, and the next thing that
+    /// wants it will be narrowing something else.
+    pub fn before_typing(&mut self, what: &str) {
+        self.invitation = Some(what.to_string());
+    }
+
+    /// What it says typing does, while nothing has been typed.
+    #[must_use]
+    pub fn invitation(&self) -> Option<&str> {
+        match self.query.said().is_empty() {
+            true => self.invitation.as_deref(),
+            false => None,
+        }
     }
 
     /// The box the query is typed in.

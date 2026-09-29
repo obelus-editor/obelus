@@ -306,14 +306,16 @@ impl App {
             Some(obelus_config::Value::Names(names)) => names,
             _ => Vec::new(),
         };
-        self.names = Some((
-            key,
-            obelus_component::names::Names::new(
-                chosen,
-                self.fonts_here.clone(),
-                self.monospace_here.clone(),
-            ),
-        ));
+        let mut names = obelus_component::names::Names::new(
+            chosen,
+            self.fonts_here.clone(),
+            self.monospace_here.clone(),
+        );
+        // The caller's words, because the list knows names and nothing
+        // about what they name -- and this one is the faces a window
+        // draws with.
+        names.before_typing("Filter the faces on this machine");
+        self.names = Some((key, names));
     }
 
     /// Takes a key while that list is open.
@@ -382,6 +384,7 @@ impl App {
             })
             .collect();
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
+        picker.before_typing("Filter values");
         picker.when_empty("This setting has no choices");
         // Opened on the one in force, so the list starts by saying which
         // that is.
@@ -457,6 +460,7 @@ impl App {
             )
         }));
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
+        picker.before_typing("Filter agents");
         picker.ask(&offer.name);
         picker.when_empty("This one has nothing to choose from");
         // Opened on what it is on, so the list starts by saying where the

@@ -263,6 +263,10 @@ impl App {
         if let Some(picker) = self.picker.as_mut() {
             picker.looking_how(how);
             picker.reaching_outside(outside);
+            // And what typing does, which is the one thing on this row
+            // that changes with the tab: the same keystroke looks in one
+            // file, in every file, or at a server's index.
+            picker.before_typing(scope.before_typing());
         }
         let Some(picker) = self.picker.as_ref() else {
             return;
