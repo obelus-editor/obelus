@@ -173,6 +173,20 @@ impl Repository {
             );
         };
         git(&["init", "--quiet", "--initial-branch=master"]);
+        // What the test writes is what a checkout would write. Git for
+        // Windows installs `core.autocrlf=true` system-wide, and the diff
+        // base is the blob a checkout would put on disk -- so a file this
+        // wrote with `\n` came back from git as `\r\n` and every line of
+        // every repository here was marked as changed. Twenty-seven of
+        // these went red on that one line the first time Windows got as
+        // far as running them.
+        //
+        // Turned off rather than worked around, because what these are
+        // about is the diff. That the conversion happens at all, and is
+        // the thing that makes the margin honest on a project which asks
+        // for it, is `a_project_that_asks_for_crlf_has_an_honest_margin`,
+        // which asks for it in the repository's own `.gitattributes`.
+        git(&["config", "core.autocrlf", "false"]);
         std::fs::write(directory.join("file.rs"), committed).expect("the file");
         git(&["add", "file.rs"]);
         git(&["commit", "--quiet", "-m", "committed"]);
