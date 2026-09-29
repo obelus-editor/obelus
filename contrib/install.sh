@@ -139,7 +139,14 @@ if [ -z "$tag" ]; then
     # which is one line before the sentence that says what happened.
     latest=$(redirect "https://github.com/$repository/releases/latest" || true)
     tag=${latest##*/}
-    [ -n "$tag" ] && [ "$tag" != latest ] || die 'there is no published release yet'
+    # Written as a test rather than as `A && B || C`, which reads as
+    # if-then-else and is not one: shellcheck says so, and here it is right
+    # about what the line looks like even though the two are the same.
+    # `latest` is what the last segment is when there was no redirect to
+    # follow, which is the repository having no release at all.
+    if [ -z "$tag" ] || [ "$tag" = latest ]; then
+        die 'there is no published release yet'
+    fi
 fi
 
 work=$(mktemp -d)
