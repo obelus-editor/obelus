@@ -289,9 +289,22 @@ fn a_process_that_is_killed_reports_letting_go_of_what_it_held() {
 
     // The other Obelus: it holds the claim open for writing and is then
     // killed, which is the way out that writes nothing.
+    //
+    // `exec sleep` and not `sleep`, which is the whole test. What has to
+    // be killed is the process holding the claim, and `kill` reaches only
+    // the process that was spawned -- so the shell has to *become* the
+    // thing that waits rather than fork it and stand over it. bash execs
+    // the last command of a `-c` list by itself, which is why this passed
+    // on the machine it was written on; where `/bin/sh` is dash it forked,
+    // the shell died, `sleep` went on holding the claim as an orphan, and
+    // the close that reports a claim let go never happened. Measured both
+    // ways: with the fork, `fuser` still names a holder after the kill.
     let mut theirs = std::process::Command::new("sh")
         .arg("-c")
-        .arg(format!("exec 9>{} ; echo open ; sleep 30", path.display()))
+        .arg(format!(
+            "exec 9>{} ; echo open ; exec sleep 30",
+            path.display()
+        ))
         .stdout(std::process::Stdio::piped())
         .spawn()
         .expect("the other Obelus");

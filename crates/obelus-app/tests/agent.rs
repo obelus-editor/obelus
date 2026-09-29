@@ -3372,6 +3372,12 @@ fn what_an_agent_says_is_read_as_markdown() {
         })
     });
 
+    // The mark that turns is on this screen, so the phase is pinned: a
+    // golden screen holding a frame of an animation is a golden screen
+    // about how quickly the machine got there. It said `\u{280b}` here
+    // and `\u{2819}` on a slower runner, which is the whole difference
+    // this fixture had.
+    app.phase_for_test(0);
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     let screen = rows(&dump);
     // The words are all there.
