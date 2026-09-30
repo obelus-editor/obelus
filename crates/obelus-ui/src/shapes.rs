@@ -55,6 +55,22 @@ pub enum Joined {
     /// Standing on the row below it: a list that leaves the code showing,
     /// which is what a compact one is for.
     Below,
+    /// The screen, with nothing beside it on any side.
+    ///
+    /// A full-screen dialog: the settings, the counts. It is [`Self::Above`]
+    /// in every way but one -- there is nothing under its bottom edge for a
+    /// shadow to fall on, because that edge is the screen's. Declared rather
+    /// than worked out from the rectangle, for the reason every shape here
+    /// is declared: a front end reading "does this reach the last row" is a
+    /// front end guessing at what the view meant, and it guesses wrong the
+    /// first time a view reaches the last row for some other reason.
+    ///
+    /// What it was before: a page taking the whole screen cast a shadow on
+    /// its own last row, which a reader saw as a grey band across the foot
+    /// of the counts and of the settings. A terminal never showed it --
+    /// a shadow is the one thing a terminal cannot say -- so it lived in
+    /// `obg` alone.
+    Screen,
     /// Joined to nothing: a box put over the page for a moment. Every
     /// side is an edge, so every corner is rounded, and it arrives from
     /// nowhere because it does not travel at all.

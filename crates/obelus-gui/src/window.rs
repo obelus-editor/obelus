@@ -716,7 +716,9 @@ impl ApplicationHandler<Waking> for Showing {
                             };
                             match joined {
                                 Joined::Nowhere => self.carding.push(behind),
-                                Joined::Above | Joined::Below => {
+                                // A pane, however many edges it is joined
+                                // along.
+                                Joined::Above | Joined::Below | Joined::Screen => {
                                     self.behinding = Some(behind);
                                     self.carding.clear();
                                 }

@@ -672,19 +672,68 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
 
     // And then whatever is over it, furthest from the reader first, which
     // is the order `layers` declares and the reverse of the one a key is
+    // The row a full-screen dialog is about to take, filled before it is
+    // drawn over. Nothing else fills it: the page beneath stops at the
+    // editor region and the status row is written at the end of this
+    // function, which is a thing a full-screen dialog makes Obelus skip.
+    //
+    // The row and not the rule above it. The rule is drawn at the top of
+    // this function and is already there; filling over it took the line
+    // between a page's foot and its own row away, which is the one thing
+    // this must leave exactly as it was.
+    //
+    // A terminal never noticed, because cells nobody wrote keep whatever
+    // was on them. A window is the one that has to be told -- it is the
+    // same rule `editor_canvas` is written for, one row along: what a pane
+    // is laid over has to be *there* for it to be laid over, and cells
+    // nobody wrote are not a page seen through glass, they are a hole. The
+    // hole showed as a grey band across the foot of the counts and of the
+    // settings, which is the blur behind the glass reading the nothing
+    // under it.
+    if layers.taking_the_status_row() {
+        fill(
+            cells,
+            regions.status,
+            Style::new().bg(app.theme().background),
+        );
+    }
+
     // offered in. One array holds both, so the thing drawn last is the
     // thing a key reaches.
     for layer in layers.furthest_first() {
         match layer {
+            // The settings take `area`, like the counts: a dialog does not
+            // borrow Obelus's status row. What the row under the page says
+            // is the page's own filter, so the page is handed the row and
+            // draws it -- rather than typing into a row that belongs to the
+            // file behind it, which is a row saying two things at once.
             Layer::Settings => {
                 if let Some(view) = settings::SettingsView::new(app) {
-                    shapes::behind(
-                        with_its_rules(regions.editor, regions.editor, regions.edge),
-                        shapes::Joined::Above,
-                        app.theme().background,
-                        cells,
-                    );
+                    shapes::behind(area, shapes::Joined::Screen, app.theme().background, cells);
+                    // The same three rectangles as ever -- the page, the rule
+                    // under it, the row at the foot. What changed is who
+                    // writes the last of them: the page does, because it is
+                    // the page's row. Splitting `area` some other way would
+                    // be a second answer to a question `regions` already
+                    // has, and the rule went missing the moment there was
+                    // one: the page was handed the row the rule is drawn on
+                    // and painted over it.
                     view.render(regions.editor, cells);
+                    if let Some(settings) = app.settings() {
+                        let style = Style::new()
+                            .bg(app.theme().background)
+                            .fg(app.theme().status_foreground);
+                        // The whole row first, for the reason the status row
+                        // was always filled by whoever drew it: what writes
+                        // a filter writes words and not a ground.
+                        fill(cells, regions.status, style);
+                        status::StatusView::new(app).render_filter(
+                            settings,
+                            regions.status,
+                            cells,
+                            style,
+                        );
+                    }
                 }
             }
             // The counts take `area` rather than the region: they are the
@@ -692,7 +741,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
             // `Room::Screen` says about them.
             Layer::Counts => {
                 if let Some(view) = counts::CountsView::new(app) {
-                    shapes::behind(area, shapes::Joined::Above, app.theme().background, cells);
+                    shapes::behind(area, shapes::Joined::Screen, app.theme().background, cells);
                     view.render(area, cells);
                 }
             }

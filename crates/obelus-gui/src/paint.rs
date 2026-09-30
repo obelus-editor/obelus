@@ -2428,6 +2428,8 @@ impl Painter {
                 | match behind.joined {
                     Joined::Above => HANGING,
                     Joined::Below => STANDING,
+                    // Nothing under the screen's own bottom edge.
+                    Joined::Screen => 0,
                     // Never here: a box is `card_glass`'s, and the window
                     // keeps it apart from the pane this is.
                     Joined::Nowhere => 0,
@@ -3778,6 +3780,10 @@ fn casting(joined: Joined) -> u32 {
     match joined {
         Joined::Above => HANGING,
         Joined::Below => STANDING,
+        // Nothing to cast on: the edge a full-screen pane would throw from
+        // is the screen's own, and what was there instead was a grey band
+        // across the page's last row -- its own shadow, falling on itself.
+        Joined::Screen => 0,
         // Never here -- a box is `card_glass`'s.
         Joined::Nowhere => 0,
     }

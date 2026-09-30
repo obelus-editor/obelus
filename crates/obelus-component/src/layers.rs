@@ -111,7 +111,9 @@ impl Layer {
     pub const fn room(self) -> Room {
         match self {
             Self::Counts => Room::Screen,
-            Self::Settings => Room::Region,
+            // The screen, because a dialog does not borrow Obelus's status
+            // row: the page's filter is drawn on a row of the page's own.
+            Self::Settings => Room::Screen,
             // A band, like the list it is shaped like: the page that
             // opened it is still behind it, which is where the setting
             // being changed is written.

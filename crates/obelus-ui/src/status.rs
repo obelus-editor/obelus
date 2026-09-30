@@ -783,7 +783,12 @@ impl StatusView<'_> {
     /// on the row they are typing into is a number in the corner of their
     /// eye.
     /// What has been typed to narrow the settings.
-    fn render_filter(
+    /// The settings page's filter, on whatever row it is given.
+    ///
+    /// The row is the caller's because the page owns its own last row now:
+    /// a dialog does not borrow Obelus's status row, so the one thing this
+    /// must not assume is where it is being drawn.
+    pub(crate) fn render_filter(
         &self,
         settings: &obelus_component::settings::Settings,
         area: Rect,
