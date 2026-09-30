@@ -672,15 +672,7 @@ impl App {
         let Some(index) = self.current.map(DocumentId::get) else {
             return;
         };
-        // The reader's own edit, on the document they are reading: the
-        // line it left the caret on is the line they are typing on. Only
-        // where it changed something -- a key a document refused is not
-        // a line being written.
-        if self.change_in(index, span, with, doing) {
-            self.typed_on = self
-                .current_buffer()
-                .map(|buffer| (DocumentId::new(index), buffer.cursor().line));
-        }
+        self.change_in(index, span, with, doing);
     }
 
     /// The same, to a document that is not the one being read.

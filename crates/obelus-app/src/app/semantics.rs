@@ -601,16 +601,6 @@ impl App {
         else {
             return;
         };
-        // Nothing about the line the reader is typing on -- see
-        // `typed_on`. A list's row is not the caret's line, and is shown
-        // whatever the caret was doing.
-        if chosen.is_none()
-            && self.typed_on.is_some()
-            && self.typed_on == self.current.map(|id| (id, line))
-        {
-            self.complaining = None;
-            return;
-        }
         let Some(path) = self
             .current_buffer()
             .map(|buffer| buffer.path().to_path_buf())
@@ -624,38 +614,6 @@ impl App {
             .current_buffer()
             .map_or_else(|| CharColumn::new(0), |buffer| buffer.cursor().column);
         self.complaining = what_is_wrong(here, line, column, chosen.map(|(_, column)| column));
-    }
-
-    /// Forgets the line the reader was typing on, because they saved it.
-    ///
-    /// The other thing that says a line is finished, and the louder of the
-    /// two. Leaving it was the only answer at first, which left the reader
-    /// who pressed `ctrl+s` looking at a fresh underline with the sentence
-    /// explaining it still held back -- they had said they were done with
-    /// the whole file and Obelus went on waiting for them to step off the
-    /// line. Worse for the errors that only arrive on a save, which for a
-    /// Rust reader is most of them: `cargo check` is what finds a type
-    /// error, `checkOnSave` is when it runs, so the complaint and the
-    /// reason to keep hiding it arrived in the same instant.
-    pub(super) fn let_go_of_a_line_saved(&mut self) {
-        self.typed_on = None;
-    }
-
-    /// Forgets the line the reader was typing on, once the caret is
-    /// anywhere else -- another line, another document.
-    ///
-    /// Asked of where the caret *is*, rather than switched off by the keys
-    /// that move it: there are a great many of those, and the pointer, and
-    /// a list that opens a file, and every one added later would be one
-    /// more that had to remember.
-    pub(super) fn let_go_of_a_line_left(&mut self) {
-        let Some((id, typed)) = self.typed_on else {
-            return;
-        };
-        let here = self.current_buffer().map(|buffer| buffer.cursor().line);
-        if self.current != Some(id) || here != Some(typed) {
-            self.typed_on = None;
-        }
     }
 
     /// Where each thing a server said is wrong with this document starts

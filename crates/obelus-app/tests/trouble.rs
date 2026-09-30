@@ -1710,22 +1710,23 @@ fn a_server_with_nothing_to_say_leaves_what_obelus_said() {
     );
 }
 
-/// The line being typed on says nothing about what is wrong with it until
-/// the reader leaves it.
+/// What is wrong with the line being typed on is said while it is typed.
 ///
-/// Half a line of code is wrong in every way a server can say, and the
-/// complaint is a row of the file's own space: opened and shut under the
-/// caret keystroke by keystroke, it moved everything below it with it.
-/// helix holds it back for the whole of insert mode; Obelus has no modes,
-/// so it is the line -- leaving it is what says it is finished.
+/// There was a rule here that held it back until the reader left the line,
+/// on the grounds that a complaint was rows hung under the line and the
+/// whole file below it moved as they opened and shut. The complaint became
+/// a box floated over the line instead, which moves nothing, and the reason
+/// went with it -- so the rule was two things a reader had to do before
+/// Obelus would say what it already knew, and one of them (`ctrl+s`) it did
+/// not even listen for.
 ///
-/// Broken deliberately two ways. Taking the `typed_on` check out of
-/// `show_what_is_wrong` puts the complaint under the line again the moment
-/// a character is typed on it. And leaving `let_go_of_a_line_left` out of
-/// `App::handle` leaves it shut after a down and an up with no frame
-/// between them -- the line was left, and nothing looked in between.
+/// Broken deliberately by putting the rule back -- the `typed_on` field,
+/// the line recorded on every edit, and the check in `show_what_is_wrong`.
+/// Nothing smaller does it: clearing `complaining` at the edit is a no-op,
+/// because it is worked out again from the caret on the next frame, which
+/// is why the rule needed a field to remember the line at all.
 #[test]
-fn the_line_being_typed_on_says_nothing_until_it_is_left() {
+fn what_is_wrong_is_said_on_the_line_being_typed_on() {
     let (_scratch, mut app, path) = editing("trouble-typing", "fn main() {\n    nmae;\n}\n");
     app.publish_for_test(published(&path, 1, 4, 8, 1));
     let said = |app: &mut App| {
@@ -1734,49 +1735,14 @@ fn the_line_being_typed_on_says_nothing_until_it_is_left() {
     };
 
     stand_on(&mut app, 1, 4);
-    assert!(said(&mut app), "standing on it opens it");
+    assert!(said(&mut app), "standing on it did not open it");
 
+    // Still on the line, having just typed into it: no walking away, no
+    // save, nothing the reader has to do first.
     support::type_text(&mut app, "x");
-    assert!(!said(&mut app), "the line being typed on still says it");
-
-    // Away and back, which is the reader finishing the line. Back onto the
-    // word, because the box is about the word.
-    support::press(&mut app, crossterm::event::KeyCode::Down);
-    stand_on(&mut app, 1, 4);
-    assert!(said(&mut app), "coming back to it did not open it");
-}
-
-/// Saving says the line is finished, without stepping off it.
-///
-/// The half the rule above was missing. Leaving the line was the only thing
-/// that released the complaint, and the errors a Rust reader actually waits
-/// for are the ones that only arrive on a save -- `cargo check` finds a type
-/// error and `checkOnSave` is when it runs -- so the underline and the
-/// sentence explaining it were separated by a step the reader had no reason
-/// to take. They pressed `ctrl+s`, got a fresh underline, and had to walk
-/// away and come back to find out what it said.
-///
-/// Broken deliberately by taking `let_go_of_a_line_saved` back out of
-/// `write_now`: the box stays shut after the save, exactly as it did.
-#[test]
-fn saving_says_the_line_is_finished_too() {
-    let (_scratch, mut app, path) = editing("trouble-saving", "fn main() {\n    nmae;\n}\n");
-    app.publish_for_test(published(&path, 1, 4, 8, 1));
-    let said = |app: &mut App| {
-        let dump = support::render(app, 60, 16);
-        support::text_block(&dump).contains("cannot find value")
-    };
-
-    stand_on(&mut app, 1, 4);
-    support::type_text(&mut app, "x");
-    assert!(!said(&mut app), "the line being typed on still says it");
-
-    // The caret does not move: this is the reader saving and then looking
-    // at the line they saved, which is where they already were.
-    support::press_control(&mut app, 's');
     assert!(
         said(&mut app),
-        "saving the line did not say the reader had finished it"
+        "the line being typed on kept what is wrong with it to itself"
     );
 }
 

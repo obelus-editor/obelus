@@ -1683,9 +1683,6 @@ impl App {
             Ok(()) => {
                 self.say("Saved".to_string());
                 self.saved_document(index);
-                // And the line they were typing on is a line they have
-                // finished -- see `let_go_of_a_line_saved`.
-                self.let_go_of_a_line_saved();
                 true
             }
             Err(error) => {
