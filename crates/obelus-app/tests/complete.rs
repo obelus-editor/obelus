@@ -1553,6 +1553,108 @@ mod signatures {
         );
     }
 
+    /// The mark follows the caret from one argument to the next.
+    ///
+    /// Which argument is being typed is the server's to say, and it says it
+    /// about a position -- so a caret that has moved needs the question
+    /// asked again. Nothing types when a reader steps between arguments
+    /// with an arrow or a tab, so nothing else asks, and the panel went on
+    /// marking the argument they had left: the one thing it is for.
+    ///
+    /// Asked once they have stopped, which is what `SignatureSettled` is.
+    /// Broken deliberately by taking the clock out of `settle_signature`,
+    /// and again by having `ask_signature_again` do nothing: either way the
+    /// second question never goes out.
+    #[test]
+    fn the_mark_follows_the_caret_from_one_argument_to_the_next() {
+        use obelus_syntax::LanguageId;
+
+        let (_scratch, mut app) =
+            editing("signature-moved", "fn main() {\n    copy(from, to)\n}\n");
+        let (sender, heard) = obelus_app::event::channel();
+        app.events_for_test(sender);
+        assert!(
+            app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+            "the echo would not start"
+        );
+        app.declared_for_test(
+            LanguageId::Rust,
+            json!({ "signatureHelpProvider": { "triggerCharacters": ["(", ",", "<"] } }),
+        );
+
+        // Standing on the first argument, with an answer about it.
+        support::press(&mut app, crossterm::event::KeyCode::Down);
+        support::press(&mut app, crossterm::event::KeyCode::End);
+        for _ in 0.."from, to)".chars().count() {
+            support::press(&mut app, crossterm::event::KeyCode::Left);
+        }
+        app.signature_for_test(json!({
+            "signatures": [{
+                "label": "fn copy(from: P, to: Q)",
+                "parameters": [{ "label": [8, 15] }, { "label": [17, 22] }],
+                "activeParameter": 0
+            }],
+            "activeSignature": 0
+        }));
+        let shown = app.signature().expect("the panel");
+        assert_eq!(
+            shown.shown()[0].active,
+            Some((8, 15)),
+            "the first argument is not the one marked"
+        );
+        let _ = support::heard_requests(&heard, "textDocument/signatureHelp", 1);
+
+        // The reader steps to the second argument, typing nothing.
+        for _ in 0.."from, ".chars().count() {
+            support::press(&mut app, crossterm::event::KeyCode::Right);
+        }
+        support::render(&mut app, 60, 16);
+
+        // And the clock is waited for rather than fired by hand. Handing
+        // the application its own event is what the first version of this
+        // did, and it proved only that the handler works: with the clock
+        // never started the test still passed, which is the whole of what
+        // it is about.
+        let settled = {
+            let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            loop {
+                let left = until.saturating_duration_since(std::time::Instant::now());
+                assert!(!left.is_zero(), "the caret moved and no clock was started");
+                match heard.recv_timeout(left) {
+                    Ok(event @ obelus_app::event::Event::SignatureSettled) => break event,
+                    Ok(_) => {}
+                    Err(_) => panic!("nothing more arrived, and no clock was started"),
+                }
+            }
+        };
+        app.handle(settled);
+
+        let asked = support::heard_requests(&heard, "textDocument/signatureHelp", 1);
+        assert_eq!(
+            asked.len(),
+            1,
+            "the caret moved to another argument and nothing asked again: {asked:?}"
+        );
+        // 3 is `ContentChange`: what is under the caret is not what it was.
+        assert_eq!(asked[0]["params"]["context"]["triggerKind"], json!(3));
+
+        // And the answer about where they are now moves the mark.
+        app.signature_for_test(json!({
+            "signatures": [{
+                "label": "fn copy(from: P, to: Q)",
+                "parameters": [{ "label": [8, 15] }, { "label": [17, 22] }],
+                "activeParameter": 1
+            }],
+            "activeSignature": 0
+        }));
+        let shown = app.signature().expect("the panel");
+        assert_eq!(
+            shown.shown()[0].active,
+            Some((17, 22)),
+            "the mark stayed on the argument the reader has left"
+        );
+    }
+
     /// A closing bracket ends the call, so it ends the panel.
     ///
     /// Where the server did not name it as one to ask again on: with no

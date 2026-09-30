@@ -294,6 +294,10 @@ pub struct App {
     completion: Option<Completion>,
     /// What the call the cursor is inside takes, while it is showing.
     signature: Option<obelus_component::signature::Signature>,
+    /// The caret has moved under the panel, and this is the wait for it to
+    /// stop -- with the column it is waiting on, so that moving again
+    /// starts it again rather than letting a stale one fire.
+    signature_pause: Option<(crate::event::Pause, CharColumn)>,
     /// What the server says the place under the caret is, while it is up.
     hover: Option<Hover>,
     /// What the server offered to do here, while a list of it is open.
@@ -788,6 +792,7 @@ impl App {
             asked: HashMap::new(),
             clicked: None,
             signature: None,
+            signature_pause: None,
             hover: None,
             code_actions: Vec::new(),
             uses: Vec::new(),
@@ -2442,6 +2447,7 @@ impl App {
             // The rename's own clock is inside the wait it belongs to, so
             // there is nothing to let go of here: the wait ending drops it.
             Event::ChangesSettled => self.settle_changes(),
+            Event::SignatureSettled => self.ask_signature_again(),
             // The rest asking what is under it. `settle_hover` is still
             // asked every frame, because the rest of what it does is
             // letting go of an answer the pointer has moved off -- that is

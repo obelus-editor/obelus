@@ -117,6 +117,9 @@ pub enum Event {
     /// What a server works out about a whole file -- its colours, its
     /// hints -- which is asked where the file has stopped moving.
     ChangesSettled,
+    /// The caret has stopped moving under the signature panel, so the call
+    /// it is in can be asked about again.
+    SignatureSettled,
     /// The pointer has rested long enough to be asking.
     PointerRested,
     /// A server asked what a rename changes has had long enough.
@@ -178,6 +181,7 @@ impl Event {
             Self::NotesSettled => "NotesSettled",
             Self::SyntaxSettled => "SyntaxSettled",
             Self::ChangesSettled => "ChangesSettled",
+            Self::SignatureSettled => "SignatureSettled",
             Self::PointerRested => "PointerRested",
             Self::RenameOverdue => "RenameOverdue",
             Self::Search(_) => "Search",

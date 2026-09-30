@@ -19,7 +19,7 @@
 
 use obelus_buffer::DocumentId;
 use obelus_lsp::signature::Answer;
-use obelus_text::coordinates::LineNumber;
+use obelus_text::coordinates::{CharColumn, LineNumber};
 
 /// The most signatures to draw at once.
 ///
@@ -43,23 +43,35 @@ pub struct Signature {
     buffer: DocumentId,
     /// The line the cursor was on when it was asked.
     line: LineNumber,
+    /// And the column, which is which argument the answer is about.
+    ///
+    /// Kept because the caret moving along the line is the reader stepping
+    /// between the arguments, and nothing types when they do: the mark
+    /// would otherwise stay on the argument they have left.
+    column: CharColumn,
 }
 
 impl Signature {
     /// A server's answer, ready to be drawn.
     #[must_use]
-    pub const fn new(answer: Answer, buffer: DocumentId, line: LineNumber) -> Self {
+    pub const fn new(
+        answer: Answer,
+        buffer: DocumentId,
+        line: LineNumber,
+        column: CharColumn,
+    ) -> Self {
         Self {
             answer,
             buffer,
             line,
+            column,
         }
     }
 
     /// Where it is about.
     #[must_use]
-    pub const fn at(&self) -> (DocumentId, LineNumber) {
-        (self.buffer, self.line)
+    pub const fn at(&self) -> (DocumentId, LineNumber, CharColumn) {
+        (self.buffer, self.line, self.column)
     }
 
     /// The signatures to draw, the active one first.

@@ -249,8 +249,11 @@ impl App {
         {
             return;
         }
+        let column = self
+            .current_buffer()
+            .map_or(CharColumn::new(0), |buffer| buffer.cursor().column);
         self.signature = obelus_lsp::signature::in_reply(&reply.result)
-            .map(|answer| obelus_component::signature::Signature::new(answer, id, line));
+            .map(|answer| obelus_component::signature::Signature::new(answer, id, line, column));
     }
 
     /// Keeps the panel honest, once a frame.
@@ -268,19 +271,53 @@ impl App {
             self.signature = None;
             return;
         }
-        let Some((buffer, line)) = self
+        let Some((buffer, line, column)) = self
             .signature
             .as_ref()
             .map(obelus_component::signature::Signature::at)
         else {
             return;
         };
-        if self.current != Some(buffer)
-            || self
-                .current_buffer()
-                .is_none_or(|buffer| buffer.cursor().line != line)
-        {
+        let Some(cursor) = self.current_buffer().map(Buffer::cursor) else {
             self.signature = None;
+            return;
+        };
+        if self.current != Some(buffer) || cursor.line != line {
+            self.signature = None;
+            self.signature_pause = None;
+            return;
+        }
+
+        // The caret has moved along the line the panel is about, which is
+        // the reader stepping from one argument to the next -- and nothing
+        // types when they do, so nothing else asks. What the panel marks is
+        // then the argument they have left.
+        //
+        // Asked once they have stopped, on the rhythm the standing
+        // questions use and for the same reason: a question per arrow key
+        // is a question asked while the reader is still moving. The clock
+        // is started again wherever the caret has moved on from what it is
+        // already waiting for, which is what makes this measure stopping
+        // rather than fire every three hundred milliseconds of it.
+        if cursor.column == column {
+            self.signature_pause = None;
+        } else if self
+            .signature_pause
+            .as_ref()
+            .is_none_or(|(_, waiting)| *waiting != cursor.column)
+        {
+            self.signature_pause = self
+                .come_back_in(Self::SETTLES_AFTER, crate::event::Event::SignatureSettled)
+                .map(|pause| (pause, cursor.column));
+        }
+    }
+
+    /// Asks about the call again, the caret having stopped somewhere else
+    /// in it.
+    pub(super) fn ask_signature_again(&mut self) {
+        self.signature_pause = None;
+        if self.signature.is_some() {
+            self.ask_signature(obelus_lsp::signature::Asked::Changed);
         }
     }
 
