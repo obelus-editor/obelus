@@ -616,11 +616,19 @@ pub const ATTACHED: char = '\u{fffc}';
 ///
 /// Fixed rather than worked out from what it stands for, because this
 /// function is given a character and nothing else -- not which attachment
-/// it is, nor whose box it is in. Nine is what `[Image 1]` takes, which is
-/// what the conversation draws in its place; past nine attachments in one
-/// message the drawing has to fit the number into the same room, and the
-/// order is still the order.
-pub const ATTACHED_WIDTH: usize = 9;
+/// it is, nor whose box it is in. Eleven is `[Image 1]` and the mark of a
+/// picture after it, with the blank column every Nerd Font glyph is given;
+/// past nine attachments in one message the drawing has to fit the number
+/// into the same room, and the order is still the order.
+///
+/// The same whether or not the glyphs are on, which is why this can be a
+/// number at all: the drawing spends those two columns on a glyph and a
+/// blank where there is a font for it and on nothing where there is not,
+/// so the arithmetic never has to ask. A width that changed with the
+/// switch would be a caret landing two columns out on every machine where
+/// the guess was wrong -- and whether a font has a glyph cannot be
+/// detected.
+pub const ATTACHED_WIDTH: usize = 11;
 
 /// How many characters into a string a UTF-16 offset is.
 ///

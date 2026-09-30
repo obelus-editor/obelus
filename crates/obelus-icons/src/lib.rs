@@ -113,6 +113,11 @@ pub mod key {
 
 /// The glyphs the views use for things that are not files.
 pub mod ui {
+    /// A picture the reader put in a message.
+    ///
+    /// Checked against the installed font's own charset rather than taken
+    /// from a chart, like every other codepoint here.
+    pub const PICTURE: char = '\u{f03e}';
     /// One commit, as a row of a history.
     pub const COMMIT: char = '\u{f0718}';
     /// A branch, for a name that points at a commit.

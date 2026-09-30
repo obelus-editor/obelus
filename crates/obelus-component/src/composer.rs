@@ -250,10 +250,7 @@ impl Composer {
                 Part::Words(words) => out.push_str(words),
                 Part::Picture(_) => {
                     seen += 1;
-                    match seen {
-                        which @ 1..=9 => out.push_str(&format!("[Image {which}]")),
-                        _ => out.push_str("[Image +]"),
-                    }
+                    out.push_str(&label(seen));
                 }
             }
         }
@@ -544,6 +541,24 @@ fn laid_out(text: &Text, width: u16, held: Option<Span>) -> Vec<Laid> {
     rows
 }
 
+/// What one mark is drawn as.
+///
+/// The number, then the mark of a picture and the blank column a Nerd Font
+/// glyph is always given -- or two spaces where there is no font for it,
+/// which is the same room spent on nothing. Same width either way, because
+/// [`obelus_text::ATTACHED_WIDTH`] is one number and the wrapping has
+/// already been told it.
+fn label(which: usize) -> String {
+    let numbered = match which {
+        which @ 1..=9 => format!("[Image {which}]"),
+        _ => "[Image +]".to_string(),
+    };
+    match obelus_icons::enabled() {
+        true => format!("{numbered}{} ", obelus_icons::ui::PICTURE),
+        false => format!("{numbered}  "),
+    }
+}
+
 /// A row with its marks written out, and whatever is held moved to match.
 ///
 /// The row that reaches the drawing is the row the reader sees, so the mark
@@ -575,13 +590,11 @@ fn spelt_out(
             continue;
         }
         *seen += 1;
-        match *seen {
-            which @ 1..=9 => out.push_str(&format!("[Image {which}]")),
-            _ => out.push_str("[Image +]"),
-        }
+        out.push_str(&label(*seen));
         // The mark was one character and is now nine, so anything held at
         // or after it moves by eight.
         let grown = obelus_text::ATTACHED_WIDTH - 1;
+        debug_assert_eq!(label(*seen).chars().count(), obelus_text::ATTACHED_WIDTH);
         if held.is_some() {
             if index < start {
                 start += grown;
@@ -806,7 +819,16 @@ mod tests {
         box_.attach(picture("two"), 80);
 
         let rows = box_.rows(80);
-        assert_eq!(rows, vec!["look at [Image 1] and [Image 2]".to_string()]);
+        // Written out rather than compared against a literal: what a mark
+        // is drawn as depends on the glyph switch, and what it must *not*
+        // depend on is how wide it is.
+        assert_eq!(rows, vec![format!("look at {} and {}", label(1), label(2))]);
+        assert!(rows[0].contains("[Image 1]"), "{rows:?}");
+        assert_eq!(
+            label(1).chars().count(),
+            obelus_text::ATTACHED_WIDTH,
+            "a mark is drawn a different width from the one the wrapping was told"
+        );
         assert_eq!(
             obelus_text::text_width(&box_.text()),
             rows[0].chars().count(),
