@@ -56,6 +56,32 @@ pub use link::{
 };
 use obelus_sink::Sink;
 
+/// A connection's way into the main loop, shut when the connection is let
+/// go.
+///
+/// A connection that has been stopped goes on talking for a moment --
+/// whatever it had already read, and last of all that it has gone, which
+/// it says as it closes. By then the next one has started, and nothing on
+/// an event says which connection sent it: the old one's last word was
+/// read as the new one's, and a process that had just answered was taken
+/// to have died. So what a connection sends after it has been let go is
+/// not sent, and the connection hears that nobody is listening -- which is
+/// what every producer reads as "stop".
+#[derive(Clone)]
+struct Gated<S> {
+    inner: S,
+    open: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl<S: Sink<crate::Event> + Clone> Sink<crate::Event> for Gated<S> {
+    fn send(&self, event: crate::Event) -> Result<(), obelus_sink::Gone> {
+        if !self.open.load(std::sync::atomic::Ordering::Acquire) {
+            return Err(obelus_sink::Gone);
+        }
+        self.inner.send(event)
+    }
+}
+
 /// Which request for a conversation this is, by the connection's own count.
 ///
 /// Handed out by [`Talk::open`] and [`Talk::reopen`] and carried back on
@@ -117,6 +143,9 @@ pub struct Talk {
     waiting: std::collections::VecDeque<(Asking, Option<Held>)>,
     /// The last number handed to a request for a conversation.
     askings: Asking,
+    /// Whether what this connection sends still reaches the main loop --
+    /// see `Gated`.
+    open: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// The sessions opened only to ask what the agent offers, and let go.
     ///
     /// Kept for the life of the connection, because an agent is free to
@@ -272,6 +301,11 @@ impl Talk {
         tools: Option<String>,
         events: impl Sink<crate::Event> + Clone,
     ) -> Self {
+        let open = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let events = Gated {
+            inner: events,
+            open: std::sync::Arc::clone(&open),
+        };
         Self {
             id: id.to_string(),
             asks: link::start(command, arguments, root, tools, events),
@@ -281,6 +315,7 @@ impl Talk {
             sessions: std::collections::HashMap::new(),
             waiting: std::collections::VecDeque::new(),
             askings: 0,
+            open,
             thrown: std::collections::HashSet::new(),
             turns: 0,
         }
@@ -642,7 +677,11 @@ impl Talk {
     /// Dropping the asks is the whole of it: the thread's loop over them
     /// ends, the connection closes, and the agent -- reading a pipe that
     /// has gone -- exits. Which is how a language server is stopped too.
+    ///
+    /// Shut first, so that nothing it says from here on -- its `Gone`
+    /// included -- is taken for whatever is started next.
     pub fn shutdown(&mut self) {
+        self.open.store(false, std::sync::atomic::Ordering::Release);
         self.asks.close_channel();
         self.sessions.clear();
         self.waiting.clear();
@@ -843,6 +882,7 @@ mod tests {
             sessions: std::collections::HashMap::new(),
             waiting: std::collections::VecDeque::new(),
             askings: 0,
+            open: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
             thrown: std::collections::HashSet::new(),
             turns: 0,
         }

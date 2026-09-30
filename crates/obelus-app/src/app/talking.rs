@@ -145,6 +145,12 @@ impl App {
             talk.minted = false;
             // Another agent, and what it offers is its own to say.
             talk.said_not_offered.clear();
+            // And asked again, the conversation on screen included: what
+            // it had asked this showing it asked of an agent that has
+            // gone, and the one there now has not been asked anything --
+            // so its settings and its `/` list were empty until the reader
+            // typed.
+            talk.asked_while_shown = false;
             talk.told = None;
             talk.started_on.clear();
             if had {

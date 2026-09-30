@@ -51,7 +51,18 @@ const HEIGHT: u16 = 24;
 /// Ten seconds was the first try and sixty the second, each set from the
 /// wrong measurement. It costs nothing where nothing is wrong: it is a
 /// deadline, not a sleep.
-const PATIENCE: Duration = Duration::from_secs(180);
+///
+/// Where something *is* wrong it is three minutes a test, which is most of
+/// the time spent watching a test fail on purpose -- reproducing a fault,
+/// or breaking the path a test covers to see it go red. `OBELUS_PATIENCE`
+/// is that many seconds instead, for a run on a machine that is not
+/// starved; unset, or not a number, it is the runner's three minutes.
+fn patience() -> Duration {
+    std::env::var("OBELUS_PATIENCE")
+        .ok()
+        .and_then(|seconds| seconds.trim().parse().ok())
+        .map_or(Duration::from_secs(180), Duration::from_secs)
+}
 
 /// Where these tests let Obelus keep things about agents.
 ///
@@ -217,7 +228,7 @@ fn ran_command() -> &'static str {
 /// showing -- and because a test that only handles events would not notice a
 /// view that cannot draw what arrived.
 fn pump(app: &mut App, events: &Receiver<Event>, what: &str, until: impl Fn(&App) -> bool) {
-    let deadline = Instant::now() + PATIENCE;
+    let deadline = Instant::now() + patience();
     while !until(app) {
         let left = deadline.saturating_duration_since(Instant::now());
         assert!(!left.is_zero(), "gave up waiting for {what}");
@@ -237,7 +248,7 @@ fn pump(app: &mut App, events: &Receiver<Event>, what: &str, until: impl Fn(&App
 /// shows -- a session let go -- so nothing arrives to wake it, and the
 /// request is only visible in what the agent wrote down.
 fn asked(app: &mut App, events: &Receiver<Event>, log: &Path, request: &str) {
-    let deadline = Instant::now() + PATIENCE;
+    let deadline = Instant::now() + patience();
     loop {
         if std::fs::read_to_string(log).is_ok_and(|said| said.contains(request)) {
             return;
@@ -5045,7 +5056,7 @@ fn the_list_of_open_documents_says_what_is_happening_now() {
     );
 
     // And the turn ends under the reader, with the list still up.
-    let deadline = Instant::now() + PATIENCE;
+    let deadline = Instant::now() + patience();
     while app.talking() == obelus_agent::Talking::Thinking {
         assert!(Instant::now() < deadline, "the turn never ended");
         if let Ok(event) = events.recv_timeout(Duration::from_millis(200)) {
@@ -8350,6 +8361,72 @@ fn an_agent_not_installed_is_not_said_into_the_conversation_on_every_visit() {
         said,
         0,
         "said on a visit, where it waits for a word:\n{}",
+        screen(&mut app)
+    );
+}
+
+/// Choosing the agent again after turning it off gives the conversation on
+/// screen a session on the new process, and nothing the old one says on
+/// its way out is taken for the new one's.
+///
+/// Two things went wrong here. The process that was stopped says it has
+/// gone as its connection closes, which is after the next one has started
+/// -- and a word from the connection that is not the one running was read
+/// as the one running's, so the new process was taken to have died with
+/// the old. And the conversation on screen had asked for its session this
+/// showing already, so it did not ask the new agent for one: its row and
+/// its `/` list stayed empty until the reader typed.
+///
+/// Deliberate breaks: let the old connection's words through after
+/// `Talk::shutdown`, and the new process is taken to have died with the old
+/// one before the conversation has its session; leave `asked_while_shown`
+/// alone in `let_the_conversations_go`, and nothing is asked for. Either
+/// way the wait for the session gives up.
+#[test]
+fn choosing_the_agent_again_gives_the_conversation_a_session_on_it() {
+    use obelus_command::Command;
+
+    let root = agents_root_for("chosen-again");
+    std::fs::create_dir_all(&root).expect("the root");
+    the_fixture_is_installed(&root);
+    let (mut app, events) = wired();
+    app.agents_root_for_test(root);
+    let config = obelus_config::Config {
+        agent: Some("fake".to_string()),
+        ..obelus_config::Config::default()
+    };
+    app.configure(config, Vec::new());
+    app.open_agent();
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+
+    // Off, and on again, on its card.
+    the_fixture_is_listed(&mut app);
+    obelus_app::app::dispatch::dispatch(&mut app, Command::ConfigOpen);
+    support::press(&mut app, KeyCode::BackTab);
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.config().agent, None, "not turned off");
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.config().agent.as_deref(),
+        Some("fake"),
+        "not chosen again"
+    );
+    support::press(&mut app, KeyCode::Esc);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+
+    pump(&mut app, &events, "a session on the new process", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // And it stays there: the old process's last word arrives after the
+    // new one has answered as often as before.
+    settle(&mut app, &events, Duration::from_millis(300));
+    assert_eq!(
+        app.talking(),
+        obelus_agent::Talking::Ready,
+        "the new process was taken for the old one:\n{}",
         screen(&mut app)
     );
 }

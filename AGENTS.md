@@ -22,6 +22,7 @@ cargo run -p obelus-gui -- src/app.rs # obg, in a window
 UPDATE_FIXTURES=1 cargo test    # regenerate golden cell grids
 cargo test -- --ignored         # the slow real-server tests, and the diff sweep
 OBELUS_REQUIRE_LSP=1 cargo test # a missing rust-analyzer fails rather than skips
+OBELUS_PATIENCE=10 cargo test   # an agent test that fails gives up in 10s, not 180
 ```
 
 `.rustfmt.toml` uses five nightly-only options. Stable `cargo fmt` silently
