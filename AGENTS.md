@@ -284,27 +284,42 @@ already follows when it is the setting's name again -- what the title has
 *not* said is what is left to say, so `line 20  +2` where it named the file
 and the whole of `src/app.rs:20  +2` where it did not.
 
-**Opening a conversation starts nothing; saying something does.** A view is
-somewhere to look, and looking is not talking. `f4` and the notes' `Talk`
-used to run the agent's process and mint a conversation on it before the
-reader had typed a character -- so a key pressed to see what was said
-yesterday started a node, and left behind an empty conversation the agent
-does not keep and Obelus could still write down against the note in place
-of the one the reader had been talking in. There are two moments a session
-is asked for now: the reader's first message, where `App::say_in` starts
-the process and the handle holds the words until there is somewhere to send
-them, and their choosing one from the list to take up again. The claim is
-still taken when the view opens, because the claim is not about the agent
--- it is this window saying the note's conversation is its own, and that
-has to be said before another window says it.
+**Opening a conversation opens its session; saying something makes it
+the reader's.** What an agent offers -- the settings on the conversation's
+row, and what it takes with a slash -- comes with a session and nowhere
+else, so a conversation that waited for the first message to ask for one
+had a blank row and an empty `/` list at exactly the moment a reader looks
+at them, before they decide what to say. zed opens one with the view for
+this reason. So `App::settle_the_sessions` asks, once a frame and from what
+is on screen, for a session for the conversation showing: the one a note's
+conversation was written down as, where there is one, and a fresh one
+otherwise. Once a showing -- `asked_while_shown` -- so that an agent that
+will not start is tried when the reader arrives and not on every frame they
+spend reading why.
 
-Which makes `Talking::Idle` a state a reader sits in rather than a blink,
-so it needed words of its own: `Starting...` under a still mark, about a
-conversation nothing is starting, is the one thing that row must not say.
-And "starting" has to be told from "nothing has been asked for", which used
-to be the same thing -- `Conversation::opening` is the half of that
-`asked_for` cannot carry, because a fresh conversation has no name until
-the answer brings one.
+Opening is not binding, which is what went wrong when this was tried
+before: a key pressed to see what was said yesterday left behind an empty
+conversation that Obelus could write down against the note in place of the
+one the reader had been talking in. Nothing is written into the table of
+conversations until something has been said -- `remember_the_conversations`
+skips a conversation with nothing in it -- and a session minted for a view
+the reader then left is let go, on the agent's side as well as this one's,
+by the same frame's question: a conversation not on screen, minted here,
+with nothing said in it. Minted and not merely quiet, because one taken up
+by `session/resume` comes back with an empty page and is still the
+reader's. And on the way out of Obelus, sent without waiting for the
+answer. The claim on a note is taken when its view opens, because the claim
+is not about the agent -- it is this window saying the note's conversation
+is its own, and that has to be said before another window says it.
+
+Two can be opening at once now -- the reader opened one and went straight
+to another -- and the protocol names nothing on the answer to
+`session/new`. So `Talk` numbers every request for a conversation
+(`Asking`), the answers come back in the order they were asked, and the
+number rides on `Incoming::Started`. What the reader types before an answer
+arrives is held against that number, and goes out in that conversation and
+no other: one slot held it, and the first session to arrive -- the other
+conversation's -- took it.
 
 **What a reader said about a project outlives the window they said it in.**
 The agent keeps every word and Obelus keeps the one thing it cannot --

@@ -47,15 +47,10 @@ impl App {
     /// there was a second question -- "is it showing" -- beside the
     /// conversation that answers it.
     ///
-    /// Nothing is started by opening it. A view is somewhere to look, and
-    /// looking is not talking: this used to run the agent's process and
-    /// mint a conversation on it before the reader had typed a character,
-    /// so a key pressed to see what was said yesterday started a node and
-    /// left an empty conversation behind on the agent. What starts it is
-    /// the reader saying something -- [`App::say_in`] starts the process
-    /// and asks for the session where there is none, and the handle holds
-    /// the message until one arrives -- or their choosing one to take up
-    /// again.
+    /// The session is not asked for here: the next frame asks for one for
+    /// whichever conversation is on screen -- see
+    /// [`App::settle_the_sessions`] -- because this is one of half a dozen
+    /// ways onto one.
     pub fn open_agent(&mut self) {
         // Whatever the reader had over the file is not what they asked for.
         self.make_room(Room::Region);
@@ -79,12 +74,10 @@ impl App {
 
     /// Starts the agent and opens a conversation on it, with nothing said.
     ///
-    /// What opening the view used to do. A reader reaches a running
-    /// conversation by saying something in one or by taking one up from the
-    /// list, and both of those put a row on the page -- which every test
-    /// about what happens *inside* a conversation would then have to
-    /// account for. The tests that are about the starting itself drive the
-    /// reader's own path and do not use this.
+    /// What the next frame does anyway, now rather than then: a test about
+    /// what happens inside a running conversation asks for its session
+    /// before it has drawn anything. The tests about the opening itself
+    /// draw the frame instead, and do not use this.
     pub fn open_a_session_for_test(&mut self) {
         if self.talker.is_none() {
             self.start_agent();
@@ -148,6 +141,8 @@ impl App {
             let had = talk.session.take().is_some()
                 || talk.asked_for.take().is_some()
                 || std::mem::take(&mut talk.opening);
+            talk.requested = None;
+            talk.minted = false;
             talk.told = None;
             talk.started_on.clear();
             if had {
@@ -214,10 +209,11 @@ impl App {
     /// the name is for: the list is read from the file every time it opens,
     /// and a note added above would otherwise hand the reader somebody
     /// else's conversation.
-    /// Nothing is started by opening it: see [`App::open_agent`]. The
-    /// claim is taken all the same, because the claim is not about the
-    /// agent -- it is this window saying the note's conversation is its
-    /// own, and it has to be said before another window says it.
+    /// The session is the next frame's to ask for, as it is for
+    /// [`App::open_agent`]. The claim is taken here, because the claim is
+    /// not about the agent -- it is this window saying the note's
+    /// conversation is its own, and it has to be said before another window
+    /// says it.
     pub(super) fn talk_about(&mut self, note: &obelus_git::todo::NoteId) {
         self.make_room(Room::Region);
         let wanted = Topic::Note(note.clone());
@@ -266,6 +262,112 @@ impl App {
         self.go_to_document(DocumentId::new(at));
     }
 
+    /// Asks for a session for the conversation on screen, and lets go of the
+    /// ones the reader has left without saying anything in.
+    ///
+    /// Asked from what is showing once a frame, rather than wherever a
+    /// conversation is opened or left, for the ticker's reason: there are
+    /// half a dozen ways into a conversation and more ways out of one --
+    /// another file, another conversation from the list, the notes, the
+    /// file being closed -- and a rule kept at each of them is a rule the
+    /// next way forgets.
+    ///
+    /// A conversation opens on a session so that what the agent offers is
+    /// there to see and choose from before the first word, the way it is
+    /// in any conversation that has had one: the settings on the row, and
+    /// what it takes with a slash. Which does not make the conversation the
+    /// reader's. Nothing writes it down against a note until something has
+    /// been said in it -- see `remember_the_conversations` -- and a session
+    /// minted for a view the reader then left is let go, so that a note
+    /// opened by mistake is a note with nothing under it.
+    pub(super) fn settle_the_sessions(&mut self) {
+        let showing = self.current.map(DocumentId::get);
+        self.let_go_of_what_nothing_was_said_in(showing);
+        let Some(at) = showing else {
+            return;
+        };
+        let wants = self
+            .documents
+            .get(at)
+            .and_then(Option::as_ref)
+            .and_then(Document::chat)
+            .is_some_and(|talk| {
+                talk.session.is_none()
+                    && talk.asked_for.is_none()
+                    && !talk.opening
+                    && !talk.asked_while_shown
+            });
+        if !wants || self.talking() == Talking::Nobody {
+            return;
+        }
+        let whose = Whose::One(DocumentId::new(at));
+        if let Some(talk) = self.talk_mut(whose) {
+            talk.asked_while_shown = true;
+        }
+        // Started where it is not running, and again where it has stopped:
+        // a conversation the reader has come to is one they are about to
+        // talk in, which is what starting it again has always been for.
+        if self
+            .talker
+            .as_ref()
+            .is_none_or(obelus_agent::acp::Talk::has_exited)
+        {
+            self.stop_agent();
+            self.start_agent();
+        }
+        let note = match self.talk(whose).map(|talk| &talk.topic) {
+            Some(Topic::Note(note)) => Some(note.clone()),
+            Some(Topic::Loose) | None => None,
+        };
+        let had = note.as_ref().and_then(|note| self.remembered_session(note));
+        self.ask_for_a_session(whose, had);
+    }
+
+    /// Lets go of every session opened here that nothing was said in,
+    /// except the one on screen, which `keep` names.
+    ///
+    /// Only a session minted for a conversation. One taken up again is one
+    /// the reader had, and can come back with an empty page -- an agent that
+    /// resumes rather than replays sends none of it back -- which looks
+    /// exactly like a conversation nothing was said in.
+    ///
+    /// The agent is told, and the conversation stays, with nothing on the
+    /// way: coming back to it asks for another.
+    pub(super) fn let_go_of_what_nothing_was_said_in(&mut self, keep: Option<usize>) {
+        let mut going = Vec::new();
+        for (at, document) in self.documents.iter_mut().enumerate() {
+            if Some(at) == keep {
+                continue;
+            }
+            let Some(talk) = document.as_mut().and_then(Document::chat_mut) else {
+                continue;
+            };
+            talk.asked_while_shown = false;
+            if !talk.minted || talk.chat.anything_said() {
+                continue;
+            }
+            let Some(session) = talk.session.take() else {
+                continue;
+            };
+            talk.minted = false;
+            talk.started_on.clear();
+            // A conversation about nothing in particular is claimed by its
+            // session's name, which has just gone. One about a note is
+            // claimed by the note, and the note's view is still open.
+            if talk.topic == Topic::Loose {
+                talk.claim = None;
+            }
+            going.push(session);
+        }
+        let Some(talker) = self.talker.as_mut() else {
+            return;
+        };
+        for session in going {
+            tracing::info!(session = %session.0, "letting go of a conversation nothing was said in");
+            talker.let_go(&session);
+        }
+    }
+
     /// Asks the agent for the conversation `whose` names.
     ///
     /// `had` is the one it wants taken up again, where Obelus wrote a name
@@ -309,15 +411,17 @@ impl App {
         };
         match had {
             Some(session) => {
-                talker.reopen(&session);
+                let asking = talker.reopen(&session);
                 if let Some(talk) = self.talk_mut(whose) {
                     talk.asked_for = Some(obelus_agent::acp::SessionId::new(session));
+                    talk.requested = Some(asking);
                 }
             }
             None => {
-                talker.open();
+                let asking = talker.open();
                 if let Some(talk) = self.talk_mut(whose) {
                     talk.opening = true;
+                    talk.requested = Some(asking);
                 }
             }
         }
@@ -496,9 +600,9 @@ impl App {
                 // the list of open documents asks about the same
                 // conversation.
                 if open.is_some_and(|talk| {
-                    self.talker
-                        .as_ref()
-                        .is_some_and(|talker| talker.is_thinking(talk.session.as_ref()))
+                    self.talker.as_ref().is_some_and(|talker| {
+                        talker.is_thinking(talk.session.as_ref(), talk.requested)
+                    })
                 }) {
                     return Talked::Working;
                 }
@@ -765,7 +869,8 @@ impl App {
         }
         let held = self.session_now();
         let session = held.as_ref();
-        if talker.is_thinking(session) {
+        let requested = self.conversation().and_then(|talk| talk.requested);
+        if talker.is_thinking(session, requested) {
             Talking::Thinking
         } else if talker.is_started(session) {
             Talking::Ready
@@ -775,14 +880,13 @@ impl App {
         {
             Talking::Starting
         } else {
-            // Nothing has been asked for, because opening the view asks
-            // for nothing. The same answer whether or not the process
-            // happens to be up for some other conversation: what this is
-            // about is the page in front of the reader, and nothing is on
-            // its way to it. It read as `Starting` while opening the view
-            // always asked, and a transcript saying `starting...` about a
-            // conversation nothing is starting is the one thing this row
-            // must not say.
+            // Nothing has been asked for: the frame that would ask has not
+            // been drawn yet, or the agent could not be started for it.
+            // The same answer whether or not the process happens to be up
+            // for some other conversation: what this is about is the page
+            // in front of the reader, and a transcript saying `starting...`
+            // about a conversation nothing is starting is the one thing
+            // this row must not say.
             Talking::Idle
         }
     }
@@ -1362,10 +1466,10 @@ impl App {
         // check for "is there one" would find it and say the message to a
         // channel nobody is reading.
         //
-        // Also the ordinary first message of every conversation, now that
-        // opening one starts nothing: the process may be up already,
-        // because another conversation started it, and this one still has
-        // no session.
+        // Also a conversation whose session was let go while the reader
+        // was elsewhere and that they typed into before the frame that
+        // asks for another: the process may be up already, and this one
+        // still has no session.
         if self
             .talker
             .as_ref()
@@ -1383,6 +1487,7 @@ impl App {
                 talk.session = None;
                 talk.asked_for = None;
                 talk.opening = false;
+                talk.requested = None;
             }
         }
         // Asked whether or not the process was just started, and after
@@ -1397,15 +1502,17 @@ impl App {
         let had = note.as_ref().and_then(|note| self.remembered_session(note));
         self.ask_for_a_session(whose, had);
         let session = self.talk(whose).and_then(|talk| talk.session.clone());
+        let asking = self.talk(whose).and_then(|talk| talk.requested);
         let Some(talker) = self.talker.as_mut() else {
             // `start_agent` has already said why in the transcript.
             return;
         };
         // Held until the session opens, which is the ordinary case for the
         // first thing said: the reader typed while it was starting, and the
-        // handle sends it when there is somewhere to send it -- opening and
-        // all, because the opening belongs to whatever goes first.
-        talker.say(session.as_ref(), said_of(parts), opening.as_deref());
+        // handle sends it when the answer to this conversation's request
+        // arrives -- opening and all, because the opening belongs to
+        // whatever goes first.
+        talker.say(session.as_ref(), asking, said_of(parts), opening.as_deref());
     }
 
     /// Says what the reader had waiting, now that the turn it was waiting
@@ -2645,7 +2752,9 @@ impl App {
                 .and_then(Document::chat_mut)
             {
                 talk.asked_for = None;
-                talk.opening = false;
+                // Still waiting: the fresh one is the answer to the same
+                // request, and arrives with its number.
+                talk.opening = talk.requested.is_some();
                 // A fresh session has heard none of it, whichever of the
                 // two it is: both go back to "not said yet" together, or
                 // the half that is left behind is the half never said.
@@ -2666,24 +2775,32 @@ impl App {
         // session: it is what *hands out* one. It goes to whichever
         // conversation has not got one yet, because a conversation asks for
         // a session only when it is opened and only ever needs the one.
-        if let acp::Incoming::Started { session, .. } = &incoming {
+        if let acp::Incoming::Started {
+            session, asking, ..
+        } = &incoming
+        {
             let session = session.clone();
-            // The one that asked for this name, if one did -- a conversation
-            // being taken up again knows which it wants. Only then the first
-            // that has none, which is what a freshly opened one is.
-            //
-            // Two of them starting at once is the case this is for: told
-            // apart by nothing, the second answer would go to whichever
-            // happened to be first in the list.
-            let taken_up = self.conversation_at(|talk| talk.asked_for.as_ref() == Some(&session));
-            let asked = taken_up.or_else(|| {
-                self.conversation_at(|talk| talk.session.is_none() && talk.asked_for.is_none())
-            });
+            // The one whose request this answers, by its number -- two of
+            // them starting at once is the ordinary case now that opening a
+            // conversation asks for its session, and told apart by nothing
+            // the first answer went to whichever was first in the list.
+            // Then the one that asked for this name, and only then the
+            // first that has none, for an answer nothing numbered.
+            let answered = asking
+                .and_then(|asking| self.conversation_at(|talk| talk.requested == Some(asking)));
+            let asked = answered
+                .or_else(|| self.conversation_at(|talk| talk.asked_for.as_ref() == Some(&session)))
+                .or_else(|| {
+                    self.conversation_at(|talk| talk.session.is_none() && talk.asked_for.is_none())
+                });
             // Whether this one was minted rather than taken up again, which
             // decides whether what it arrives set to is the agent's own
-            // answer or whatever that conversation was left on. Asked here
+            // answer or whatever that conversation was left on -- and
+            // whether it may be let go with nothing said in it. Asked here
             // because `asked_for` is cleared just below.
-            let minted = taken_up.is_none();
+            let minted = !asked
+                .and_then(|at| self.documents.get(at)?.as_ref()?.chat())
+                .is_some_and(|talk| talk.asked_for.as_ref() == Some(&session));
             let mine = asked.and_then(|at| {
                 self.documents
                     .get_mut(at)
@@ -2693,6 +2810,8 @@ impl App {
             if let Some(talk) = mine {
                 talk.asked_for = None;
                 talk.opening = false;
+                talk.requested = None;
+                talk.minted = minted;
                 talk.session = Some(session.clone());
             }
             // The first moment a conversation about nothing in particular

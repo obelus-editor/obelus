@@ -56,6 +56,17 @@ pub use link::{
 };
 use obelus_sink::Sink;
 
+/// Which request for a conversation this is, by the connection's own count.
+///
+/// Handed out by [`Talk::open`] and [`Talk::reopen`] and carried back on
+/// [`Incoming::Started`], so that whoever asked can tell which answer is
+/// theirs.
+pub type Asking = u64;
+
+/// A prompt typed before there was a session to send it in, and what
+/// Obelus had to say about the conversation ahead of it.
+type Held = (Vec<link::Said>, Option<String>);
+
 /// One running agent: how to ask it things, and what it has said about
 /// itself.
 ///
@@ -70,15 +81,14 @@ pub struct Talk {
     asks: mpsc::UnboundedSender<Ask>,
     /// What it calls itself, once it has said.
     info: Option<String>,
-    /// What a prompt to this agent may carry, as it said in the handshake.
     /// What a prompt to this agent may carry, once it has said.
     ///
     /// `None` until the handshake, which is not the same as "it takes
-    /// nothing": a conversation is opened before any process exists -- see
-    /// the rule about opening starting nothing -- so the ordinary order is
-    /// that the reader pastes a picture into a box belonging to an agent
-    /// nobody has asked yet. Answering that with the default would be
-    /// refusing them on ignorance rather than on anything the agent said.
+    /// nothing": a conversation's view opens before the process it starts
+    /// has said a word, so a reader can paste a picture into a box
+    /// belonging to an agent that has not answered yet. Answering that with
+    /// the default would be refusing them on ignorance rather than on
+    /// anything the agent said.
     carries: Option<link::Carries>,
     /// Whether the connection has ended, and why.
     gone: Option<Option<String>>,
@@ -91,17 +101,22 @@ pub struct Talk {
     /// the type's own doc untrue: it says "one running agent", and half of
     /// it was about one thing said to it.
     sessions: std::collections::HashMap<SessionId, Session>,
-    /// A prompt typed before there was any session to send it in.
+    /// The requests for a conversation that have not been answered yet,
+    /// oldest first, each with what was said before its answer arrived.
     ///
-    /// The ordinary case for the first thing said: opening the view starts
-    /// the process, and a reader types faster than node starts. On the
-    /// connection rather than on a session, because at that moment there is
-    /// no session for it to be on.
+    /// A queue and not one slot, because opening a conversation asks for
+    /// one and a reader can open two faster than node answers: the words
+    /// typed into the second went to whichever session arrived first, and
+    /// that was the first conversation's. The thread answers these one at
+    /// a time in the order they were made, so the answer at the front of
+    /// the queue is the one arriving -- which is what makes a count enough
+    /// to tell them apart, where the protocol names nothing.
     ///
-    /// With whatever Obelus had to say about the conversation first, because
-    /// the first thing said is what carries it and the first thing said is
-    /// what gets held.
-    held: Option<(Vec<link::Said>, Option<String>)>,
+    /// What was said waits here with whatever Obelus had to say about the
+    /// conversation first, because the first thing said is what carries it.
+    waiting: std::collections::VecDeque<(Asking, Option<Held>)>,
+    /// The last number handed to a request for a conversation.
+    askings: Asking,
     /// The sessions opened only to ask what the agent offers, and let go.
     ///
     /// Kept for the life of the connection, because an agent is free to
@@ -264,7 +279,8 @@ impl Talk {
             carries: None,
             gone: None,
             sessions: std::collections::HashMap::new(),
-            held: None,
+            waiting: std::collections::VecDeque::new(),
+            askings: 0,
             thrown: std::collections::HashSet::new(),
             turns: 0,
         }
@@ -299,13 +315,14 @@ impl Talk {
         session.is_some_and(|session| self.sessions.contains_key(session))
     }
 
-    /// Whether a turn is in flight in this one.
+    /// Whether a turn is in flight in this one, or -- before it has a
+    /// session -- in the conversation that asked for one as `asking`.
     #[must_use]
-    pub fn is_thinking(&self, session: Option<&SessionId>) -> bool {
+    pub fn is_thinking(&self, session: Option<&SessionId>, asking: Option<Asking>) -> bool {
         // A prompt with nowhere to go yet counts. The reader pressed
         // enter and their words are on the page, so something is under
-        // way from where they sit -- and the conversation it is waiting
-        // for is the one being opened, of which there is only ever one.
+        // way from where they sit -- in the conversation being opened for
+        // them, which is the one they typed into and no other.
         //
         // Which is not a corner. An agent replaying a conversation sends
         // every word of it before it answers the request that asked for
@@ -313,10 +330,14 @@ impl Talk {
         // looking at a conversation that is plainly all there types into
         // it, and until this that turn went out with nothing on screen
         // saying anything was happening.
-        self.held.is_some()
-            || self
-                .session(session)
-                .is_some_and(|open| open.turn.is_some())
+        let held = asking.is_some_and(|asking| {
+            self.waiting
+                .iter()
+                .any(|(waiting, held)| *waiting == asking && held.is_some())
+        });
+        held || self
+            .session(session)
+            .is_some_and(|open| open.turn.is_some())
     }
 
     /// Whether a conversation by this name is open on it.
@@ -336,12 +357,22 @@ impl Talk {
         self.sessions.get_mut(session?)
     }
 
-    /// Asks for another conversation on this same process.
+    /// Asks for another conversation on this same process, and says which
+    /// request this is.
     ///
     /// One agent holds a project's worth of context, and a second process
     /// to talk about a second note would pay for all of it twice.
-    pub fn open(&mut self) {
+    pub fn open(&mut self) -> Asking {
+        let asking = self.waiting_for_one();
         let _ = self.asks.unbounded_send(Ask::Open);
+        asking
+    }
+
+    /// Hands out the next number, and queues it for its answer.
+    fn waiting_for_one(&mut self) -> Asking {
+        self.askings += 1;
+        self.waiting.push_back((self.askings, None));
+        self.askings
     }
 
     /// Asks what it can be set to, on a conversation of its own.
@@ -373,10 +404,17 @@ impl Talk {
     /// An agent that will not take it up -- it has forgotten, it never
     /// could -- opens a new one instead and says so, because a reader who
     /// pressed a key has to end up somewhere they can talk.
-    pub fn reopen(&mut self, session: &str) {
+    ///
+    /// Numbered like [`Talk::open`], because it is answered the same way:
+    /// with the session it asked for, or -- where the agent will not --
+    /// word that it has gone and then a new one, which is still the answer
+    /// to this request.
+    pub fn reopen(&mut self, session: &str) -> Asking {
+        let asking = self.waiting_for_one();
         let _ = self.asks.unbounded_send(Ask::Reopen {
             session: SessionId::new(session),
         });
+        asking
     }
 
     /// Whether the agent's process has ended.
@@ -466,12 +504,17 @@ impl Talk {
 
     /// Sends a prompt, or holds it until there is a session to send it in.
     ///
+    /// `asking` is the request the conversation made for its session,
+    /// which is what a prompt with no session yet is held against: it goes
+    /// out with the answer to that request and no other.
+    ///
     /// Says whether it went: a prompt that is being held is a prompt the
     /// view shows as sent, because the reader has finished with it either
     /// way.
     pub fn say(
         &mut self,
         session: Option<&SessionId>,
+        asking: Option<Asking>,
         said: Vec<link::Said>,
         opening: Option<&str>,
     ) -> bool {
@@ -479,20 +522,32 @@ impl Talk {
             .filter(|id| self.sessions.contains_key(*id))
             .cloned()
         else {
-            // Written down because the three ways out of here look the
-            // same on screen: the reader's words are on the page whichever
-            // it was. Which one it went is the first thing anybody asks
-            // when a conversation goes quiet, and it is the one thing the
-            // reader cannot see.
+            let waiting = asking.and_then(|asking| {
+                self.waiting
+                    .iter_mut()
+                    .find(|(waiting, _)| *waiting == asking)
+            });
+            // Written down because the ways out of here look the same on
+            // screen: the reader's words are on the page whichever it was.
+            // Which one it went is the first thing anybody asks when a
+            // conversation goes quiet, and it is the one thing the reader
+            // cannot see.
+            let Some((_, held)) = waiting else {
+                tracing::warn!(
+                    asked_in = ?session.map(|id| id.0.to_string()),
+                    asking,
+                    "a prompt went nowhere: no conversation is open or being opened for it"
+                );
+                return false;
+            };
             tracing::info!(
-                asked_in = ?session.map(|id| id.0.to_string()),
-                open = self.sessions.len(),
-                "a prompt is held: there is no conversation open to send it in"
+                asking,
+                "a prompt is held: its conversation is still being opened"
             );
             // Held with its opening: the opening belongs to the first thing
             // said in a conversation, and the first thing said is exactly
             // what gets held while the session is still opening.
-            self.held = Some((said, opening.map(str::to_string)));
+            *held = Some((said, opening.map(str::to_string)));
             return false;
         };
         let named = id.0.to_string();
@@ -583,6 +638,7 @@ impl Talk {
     pub fn shutdown(&mut self) {
         self.asks.close_channel();
         self.sessions.clear();
+        self.waiting.clear();
     }
 
     /// Whether the agent is still there, for the frame that checks.
@@ -620,7 +676,7 @@ impl Talk {
                 self.carries = Some(carries);
                 None
             }
-            Incoming::Started { session, mode } => {
+            Incoming::Started { session, mode, .. } => {
                 // `or_default` rather than an insert, because this is not
                 // always the first word about a conversation: an agent is
                 // free to write its opening notification in the same breath
@@ -630,16 +686,19 @@ impl Talk {
                 let open = self.sessions.entry(session.clone()).or_default();
                 open.legacy_mode = mode;
                 open.merge();
-                // A prompt typed before there was anywhere to send it.
-                // It goes to whichever conversation opened first, which is
-                // the one the reader was looking at when they typed it --
-                // there was no other.
-                if let Some((held, opening)) = self.held.take() {
-                    self.say(Some(&session), held, opening.as_deref());
+                // Which request this answers: the oldest, because they are
+                // answered in the order they were made.
+                let answered = self.waiting.pop_front();
+                // And what was typed into that conversation before there
+                // was anywhere to send it.
+                let asking = answered.as_ref().map(|(asking, _)| *asking);
+                if let Some((held, opening)) = answered.and_then(|(_, held)| held) {
+                    self.say(Some(&session), None, held, opening.as_deref());
                 }
                 Some(Incoming::Started {
                     session,
                     mode: None,
+                    asking,
                 })
             }
             Incoming::Update {
@@ -753,6 +812,7 @@ impl Talk {
                 // matters: a conversation left thinking spins a marker for
                 // an agent that is not there.
                 self.sessions.clear();
+                self.waiting.clear();
                 self.gone = Some(why.clone());
                 Some(Incoming::Gone(why))
             }
@@ -776,7 +836,8 @@ mod tests {
             carries: None,
             gone: None,
             sessions: std::collections::HashMap::new(),
-            held: None,
+            waiting: std::collections::VecDeque::new(),
+            askings: 0,
             thrown: std::collections::HashSet::new(),
             turns: 0,
         }

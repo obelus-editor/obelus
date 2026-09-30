@@ -79,7 +79,7 @@ impl App {
     ) -> Option<(Marking, String)> {
         match (
             talk.card.is_some(),
-            talker.is_some_and(|talker| talker.is_thinking(talk.session.as_ref())),
+            talker.is_some_and(|talker| talker.is_thinking(talk.session.as_ref(), talk.requested)),
         ) {
             (true, _) => Some((Marking::Waiting, obelus_icons::ui::READER.to_string())),
             (_, true) => Some((Marking::Working, String::new())),

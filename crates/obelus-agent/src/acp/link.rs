@@ -326,6 +326,13 @@ pub enum Incoming {
         /// one that way -- read into a setting like any other, and dropped
         /// if the settings turn out to carry the mode themselves.
         mode: Option<Setting>,
+        /// Which request for a conversation this answers, by the count
+        /// `Talk::open` and `Talk::reopen` hand out.
+        ///
+        /// Nothing from here: this thread answers the requests in the
+        /// order they were made, one at a time, so which one this is can be
+        /// counted off at the other end -- see `Talk::on`.
+        asking: Option<super::Asking>,
     },
     /// The agent wants to write a file.
     Write {
@@ -1100,6 +1107,7 @@ async fn open_session(
     let _ = events.send(Event::Acp(Incoming::Started {
         session: session.clone(),
         mode,
+        asking: None,
     }));
     if let Some(options) = opened.config_options.as_ref() {
         let settings = options.iter().filter_map(setting_of).collect();
@@ -1634,6 +1642,7 @@ async fn talk(
                                     let _ = events.send(Event::Acp(Incoming::Started {
                                         session: session.clone(),
                                         mode,
+                                        asking: None,
                                     }));
                                     // And, where the words did not come
                                     // with it, that they did not.

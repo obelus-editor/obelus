@@ -1714,11 +1714,11 @@ impl ChatView<'_> {
             Talking::Nobody => "No agent is active \u{2014} open the settings and choose one",
             Talking::Gone => "It stopped. Ask something to start it again",
             Talking::Starting => "Starting\u{2026}",
-            // Idle belongs here rather than with starting. Opening a
-            // conversation starts nothing -- no process, no session -- so
-            // idle is what every conversation is until the reader says
-            // something, and "starting..." under a still mark would say
-            // something is on its way to a page nothing is coming to.
+            // Idle belongs here rather than with starting: nothing is on
+            // its way -- the frame that asks for a session has not been
+            // drawn, or no agent could be started for it -- and
+            // "starting..." under a still mark would say something is on
+            // its way to a page nothing is coming to.
             Talking::Idle | Talking::Ready | Talking::Thinking => "Ask it something",
         }
     }

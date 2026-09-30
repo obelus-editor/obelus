@@ -47,6 +47,8 @@ pub struct Conversation {
     ///
     /// `None` until then, which is a real state and not a gap: opening the
     /// view starts the process, and a reader types faster than node starts.
+    /// And `None` again once a conversation nothing was said in has been
+    /// left: its session was let go, and coming back asks for another.
     pub session: Option<acp::SessionId>,
     /// The one it asked the agent to take up again, while it waits.
     ///
@@ -65,12 +67,36 @@ pub struct Conversation {
     /// no name until the answer brings it.
     ///
     /// What it is for is telling "starting" from "nothing has been asked
-    /// for yet", which used to be the same state because opening the view
-    /// asked. It does not: a conversation with no session and nothing on
-    /// the way is a conversation the reader has not said anything in, and a
-    /// transcript reading `starting...` under a still mark says the
-    /// opposite.
+    /// for yet": a conversation opened while no agent could be started has
+    /// nothing on the way, and a transcript reading `starting...` under a
+    /// still mark says the opposite.
     pub opening: bool,
+    /// Which request for a session it is waiting on, by the connection's
+    /// count, where it is waiting on one.
+    ///
+    /// What the answer is matched against. Opening a conversation asks for
+    /// its session, so two of them can be waiting at once -- the reader
+    /// opened one and went straight to another -- and "the first that has
+    /// none" handed the first answer to whichever happened to be earlier in
+    /// the list of documents.
+    pub requested: Option<acp::Asking>,
+    /// Whether its session was opened for it here, rather than taken up
+    /// again.
+    ///
+    /// Which decides whether it may be let go when the reader leaves
+    /// without a word. A minted one was asked for because the view opened,
+    /// and nothing but the reader's saying something makes it theirs; one
+    /// taken up again is a conversation they had, and one taken up by
+    /// `session/resume` comes back with an empty page -- nothing said in
+    /// it, as far as this window can see, and not a thing to delete.
+    pub minted: bool,
+    /// Whether it has asked for a session since it last came on screen.
+    ///
+    /// Once a showing, so that an agent that will not start -- not
+    /// installed, a process that dies on the way up -- is tried when the
+    /// reader comes to the conversation and not again on every frame they
+    /// spend looking at why it did not.
+    pub asked_while_shown: bool,
     /// What the note said when Obelus last told the agent about it.
     ///
     /// What the agent has been *told*, rather than what Obelus has to say:

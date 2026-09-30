@@ -117,19 +117,86 @@ fn a_prompt_waiting_for_a_conversation_says_it_is_thinking() {
         None,
         sender,
     );
+    let asking = talk.open();
     assert!(
-        !talk.is_thinking(None),
+        !talk.is_thinking(None, Some(asking)),
         "it says something is happening before anything was said"
     );
-    // Nowhere to send it: there is no session, and there cannot be one
-    // yet -- the process has only just been started.
+    // Nowhere to send it: the session has been asked for, and there cannot
+    // be one yet -- the process has only just been started.
     assert!(
-        !talk.say(None, vec![Said::Words("hello".to_string())], None),
+        !talk.say(
+            None,
+            Some(asking),
+            vec![Said::Words("hello".to_string())],
+            None
+        ),
         "a prompt went somewhere when there was nowhere to send it"
     );
     assert!(
-        talk.is_thinking(None),
+        talk.is_thinking(None, Some(asking)),
         "a prompt waiting to be sent says nothing is happening"
+    );
+}
+
+/// What is typed into a conversation still being opened goes out in that
+/// conversation, when two are being opened at once.
+///
+/// Which is the ordinary case since opening a conversation asks for its
+/// session: the reader opens one, goes straight to another and types. One
+/// slot held the words and the first session to arrive took them, which
+/// was the first conversation's -- the reader's message sent into a
+/// conversation they had left, and the one they were typing in with
+/// nothing in it.
+///
+/// Deliberate break: hand what is held to whichever answer comes first,
+/// the way the one slot did. The turn is then in flight in `first`.
+#[test]
+fn a_prompt_held_for_the_second_of_two_goes_out_in_the_second() {
+    let (sender, events) = channel();
+    let mut talk = Talk::start(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+        Path::new("."),
+        None,
+        sender,
+    );
+    let one = talk.open();
+    let two = talk.open();
+    talk.say(
+        None,
+        Some(two),
+        vec![Said::Words("do it slowly".to_string())],
+        None,
+    );
+
+    // And each answer says which request it is.
+    let mut answers = Vec::new();
+    pump(&mut talk, &events, "both conversations", |_, incoming| {
+        if let Incoming::Started {
+            session, asking, ..
+        } = incoming
+        {
+            answers.push((session.clone(), *asking));
+        }
+        answers.len() == 2
+    });
+    let [(first, asked_first), (second, asked_second)] = answers.as_slice() else {
+        unreachable!("two answers");
+    };
+    assert_eq!(
+        (*asked_first, *asked_second),
+        (Some(one), Some(two)),
+        "the answers do not say which request they are"
+    );
+    assert!(
+        talk.is_thinking(Some(second), None),
+        "the words did not go out in the conversation they were typed in"
+    );
+    assert!(
+        !talk.is_thinking(Some(first), None),
+        "the words went out in the other conversation"
     );
 }
 
@@ -223,7 +290,12 @@ fn an_answer_comes_back_in_the_conversation_it_was_asked_in() {
     talk.open();
     let second = opened(&mut talk, &events);
 
-    talk.say(Some(&second), vec![Said::Words("/help".to_string())], None);
+    talk.say(
+        Some(&second),
+        None,
+        vec![Said::Words("/help".to_string())],
+        None,
+    );
 
     let mut whose = None;
     pump(&mut talk, &events, "An answer", |_, incoming| {
@@ -266,12 +338,18 @@ fn interrupting_one_conversation_does_not_swallow_the_others_answer() {
     // one until it is cancelled, which is what leaves something to stop.
     talk.say(
         Some(&first),
+        None,
         vec![Said::Words("do it slowly".to_string())],
         None,
     );
     // A turn that finishes on its own, so that the only thing which could
     // stop it arriving is the interruption meant for the other one.
-    talk.say(Some(&second), vec![Said::Words("/help".to_string())], None);
+    talk.say(
+        Some(&second),
+        None,
+        vec![Said::Words("/help".to_string())],
+        None,
+    );
     talk.interrupt(Some(&first));
 
     let mut answered = None;

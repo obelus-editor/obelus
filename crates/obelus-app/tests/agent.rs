@@ -96,10 +96,9 @@ fn playing(how: &[&str]) -> (App, Receiver<Event>) {
     arguments.extend(how.iter().map(|word| (*word).to_string()));
     app.talk_to("fake", Path::new("sh"), &arguments);
     app.open_agent();
-    // Opening the view starts nothing -- see `App::open_agent` -- and what
-    // these tests are about is what happens in a conversation that is
-    // running. The reader's own way to one is saying something, which would
-    // put a row on every one of these pages.
+    // Now rather than on the first frame, which is what would ask for it
+    // otherwise: what these tests are about is what happens in a
+    // conversation that is running, from the first thing they draw.
     app.open_a_session_for_test();
     (app, events)
 }
@@ -107,10 +106,9 @@ fn playing(how: &[&str]) -> (App, Receiver<Event>) {
 /// Goes from the notes to the conversation about the note under the reader,
 /// and starts it.
 ///
-/// The key opens the view and starts nothing -- see `App::open_agent` --
-/// which is what a reader's first message is for. These tests are about
-/// what happens in a conversation that is running, so they take the short
-/// way in, the same one `playing` takes for the loose conversation.
+/// The key opens the view and the next frame asks for its session; these
+/// tests are about what happens in a conversation that is running, so they
+/// ask now, the same way `playing` does for the loose conversation.
 fn talk_about_the_note(app: &mut App) {
     support::press_alt(app, 'a');
     // Only where the key was honoured: a note another Obelus has open opens
@@ -226,6 +224,31 @@ fn pump(app: &mut App, events: &Receiver<Event>, what: &str, until: impl Fn(&App
         match events.recv_timeout(left) {
             Ok(event) => app.handle(event),
             Err(_) => panic!("nothing arrived while waiting for {what}"),
+        }
+        support::lay_out(app, WIDTH, HEIGHT);
+    }
+}
+
+/// Waits for the fake agent to have been sent a request, handling whatever
+/// arrives meanwhile.
+///
+/// Not [`pump`], which waits for an event before it looks again: some of
+/// what Obelus owes an agent is a request whose answer changes nothing it
+/// shows -- a session let go -- so nothing arrives to wake it, and the
+/// request is only visible in what the agent wrote down.
+fn asked(app: &mut App, events: &Receiver<Event>, log: &Path, request: &str) {
+    let deadline = Instant::now() + PATIENCE;
+    loop {
+        if std::fs::read_to_string(log).is_ok_and(|said| said.contains(request)) {
+            return;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the agent was never asked `{request}`:\n{}",
+            std::fs::read_to_string(log).unwrap_or_default()
+        );
+        if let Ok(event) = events.recv_timeout(Duration::from_millis(20)) {
+            app.handle(event);
         }
         support::lay_out(app, WIDTH, HEIGHT);
     }
@@ -6520,10 +6543,8 @@ fn a_conversation_opened_to_ask_is_not_answered_as_one() {
     );
     app.learn_what_the_agent_offers_for_test();
 
+    asked(&mut app, &events, &log, "session/delete s-1");
     let asked = || std::fs::read_to_string(&log).unwrap_or_default();
-    pump(&mut app, &events, "the session to be let go", |_| {
-        asked().contains("session/delete s-1")
-    });
     // And a moment more, for whatever the agent wrote after the answer to
     // reach the loop and be answered, if it is going to be.
     settle(&mut app, &events, Duration::from_millis(300));
@@ -6803,27 +6824,20 @@ fn a_conversation_another_obelus_has_open_is_not_opened_again() {
     );
 }
 
-/// Opening a conversation starts nothing, and the first message starts it
-/// all.
+/// Opening a conversation opens its session, before the reader has said a
+/// word, and the first word goes in it.
 ///
-/// A view is somewhere to look, and looking is not talking. The key used to
-/// run the agent's process and mint a conversation on it before the reader
-/// had typed a character -- so pressing it to see what was said yesterday
-/// started a node and left an empty conversation behind on the agent, which
-/// the agent does not keep and Obelus could still write down in place of a
-/// real one.
+/// So that what the agent offers is there to see before anything is said:
+/// the settings on the row and what it takes with a slash both come with a
+/// session and nowhere else, and a conversation that waited for the first
+/// message to ask for one had a blank row and an empty `/` list for exactly
+/// the moment a reader looks at them -- before they decide what to say.
 ///
-/// Both halves, because each passes with the other broken: a key that
-/// starts nothing and never starts is a conversation nobody can talk in,
-/// and a key that starts everything is what this is about.
-///
-/// Broken deliberately by putting `start_agent` and `ask_for_a_session`
-/// back at the end of `App::open_agent`: the first two assertions go red.
-/// Broken the other way by taking the `ask_for_a_session` out of
-/// `App::say_in`: the message is held for a session nobody asked for and
-/// the last one goes red.
+/// Deliberate break: take `settle_the_sessions` out of `prepare`. Nothing
+/// is asked for until the reader types, and the wait for the session gives
+/// up.
 #[test]
-fn opening_a_conversation_starts_nothing_and_the_first_word_starts_it() {
+fn opening_a_conversation_opens_its_session_before_a_word_is_said() {
     let (mut app, events) = wired();
     app.talk_to(
         "fake",
@@ -6832,32 +6846,15 @@ fn opening_a_conversation_starts_nothing_and_the_first_word_starts_it() {
     );
     app.open_agent();
     assert!(app.chat().is_some(), "the view did not open");
-    // Nothing is on its way, which is a different state from starting: a
-    // transcript saying `starting...` under a still mark says something is
-    // happening where nothing is.
-    assert_eq!(
-        app.talking(),
-        obelus_agent::Talking::Idle,
-        "opening the view asked the agent for something"
-    );
-    // And it stays that way. A moment of the loop rather than an assertion
-    // taken the same instant, because what is being tested is that nothing
-    // arrives.
-    settle(&mut app, &events, Duration::from_millis(300));
-    assert_eq!(
-        app.talking(),
-        obelus_agent::Talking::Idle,
-        "something started behind the reader's back"
-    );
-    let text = screen(&mut app);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
     assert!(
-        text.contains("Ask it something"),
-        "the page says something is starting when nothing is:\n{text}"
+        !app.agent_orders().is_empty(),
+        "what it takes with a slash is not there before a word is said"
     );
 
-    // The reader says something, and that is what starts the process, opens
-    // the conversation and sends the message once there is somewhere to
-    // send it.
     support::type_text(&mut app, "/echo");
     support::press(&mut app, KeyCode::Enter);
     // The agent's own words, not the reader's: what they typed is on the
@@ -6866,6 +6863,130 @@ fn opening_a_conversation_starts_nothing_and_the_first_word_starts_it() {
     pump(&mut app, &events, "the answer", |app| {
         said_in_transcript(app, "heard you")
     });
+}
+
+/// A note's conversation opened and left without a word leaves nothing
+/// behind: nothing written down against the note, and the session let go.
+///
+/// Which is the reader opening a note's conversation and changing their
+/// mind. The session was opened for the view, not for them, and a note
+/// with a conversation under it that nobody had is a note that says there
+/// is something to come back to when there is not. And coming back asks
+/// for a new one, because the last one has gone.
+///
+/// Deliberate break: take the call to `let_go_of_what_nothing_was_said_in`
+/// out of `settle_the_sessions`. The agent is never told, and the wait for
+/// it to be gives up. Take the `anything_said` test out of `Kept`'s writer
+/// -- `remember_the_conversations` -- and the note has one written down.
+#[test]
+fn a_note_s_conversation_left_without_a_word_keeps_nothing() {
+    let scratch = support::Scratch::new("agent-note-left");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()),
+        "[[todo]]\nid = \"0123456P\"\nsaid = \"wire the counts tree up to the search\"\n\
+         done = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+    let log = scratch.path().join("asked.log");
+
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &[
+            "tests/fixtures/fake-agent.sh".to_string(),
+            format!("log={}", log.display()),
+        ],
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    support::press_alt(&mut app, 'a');
+    assert!(app.chat().is_some(), "no conversation about the note");
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+
+    // And back to the notes, having said nothing.
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    asked(&mut app, &events, &log, "session/delete s-1");
+    let id = obelus_git::todo::NoteId::read("0123456P").expect("a name");
+    let kept = obelus_agent::acp::sessions::read(scratch.path())
+        .remembered()
+        .and_then(|remembered| {
+            remembered
+                .get(&obelus_agent::chats::ChatId::Note(id), "fake")
+                .cloned()
+        });
+    assert!(
+        kept.is_none(),
+        "a conversation nothing was said in was written down against the note: {kept:?}"
+    );
+
+    // Coming back asks for another.
+    support::press_alt(&mut app, 'a');
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    pump(&mut app, &events, "a session of its own again", |app| {
+        app.chat_session_for_test().as_deref() == Some("s-2")
+    });
+}
+
+/// A conversation taken up again is not let go for being quiet.
+///
+/// An agent that resumes rather than replays sends nothing of it back, so
+/// the page is empty -- which is what a conversation nothing was said in
+/// looks like from here. It is the reader's all the same, and a delete
+/// sent for it would be the agent forgetting what they said last week.
+///
+/// Deliberate break: let go of every session nothing was said in, minted or
+/// not -- drop the `minted` test in `let_go_of_what_nothing_was_said_in` --
+/// and the log has `session/delete s-old`.
+#[test]
+fn a_conversation_taken_up_again_is_not_let_go_for_being_quiet() {
+    let scratch = support::Scratch::new("agent-note-quiet");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()),
+        "[[todo]]\nid = \"0123456Q\"\nsaid = \"wire the counts tree up to the search\"\n\
+         done = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+    remember_a_note_conversation(&scratch, "0123456Q", "s-old");
+    let log = scratch.path().join("asked.log");
+
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &[
+            "tests/fixtures/fake-agent.sh".to_string(),
+            "only-resumes".to_string(),
+            format!("log={}", log.display()),
+        ],
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    support::press_alt(&mut app, 'a');
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    pump(&mut app, &events, "the conversation taken up", |app| {
+        app.chat_session_for_test().as_deref() == Some("s-old")
+            && app.talking() == obelus_agent::Talking::Ready
+    });
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    settle(&mut app, &events, Duration::from_millis(300));
+    let asked = std::fs::read_to_string(&log).unwrap_or_default();
+    assert!(
+        asked.contains("session/resume s-old"),
+        "it was never taken up, so this proves nothing:\n{asked}"
+    );
+    assert!(
+        !asked.contains("session/delete s-old"),
+        "a conversation the reader had was let go:\n{asked}"
+    );
 }
 
 /// The list offers what this project has had, newest first, and taking one

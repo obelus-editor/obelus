@@ -1730,7 +1730,7 @@ impl App {
             .iter()
             .flatten()
             .filter_map(Document::chat)
-            .any(|talk| talker.is_thinking(talk.session.as_ref()))
+            .any(|talk| talker.is_thinking(talk.session.as_ref(), talk.requested))
     }
 
     /// Whether the last frame asked to be woken again.
@@ -2147,6 +2147,9 @@ impl App {
         // lines down -- and a watch taken at the end of the frame is a view
         // that draws its first frame from whatever was there last time.
         self.settle_the_watches();
+        // And the sessions, from the same question: which conversation is
+        // on screen.
+        self.settle_the_sessions();
         // The notes are laid out against the room they have: a terminal is
         // resized and a setting is changed while they are open, and the rows
         // they are made of depend on both.
@@ -4064,6 +4067,12 @@ where
             handle(app, ready);
         }
     }
+    // And on the way out, every session opened here that nothing was said
+    // in. Sent and not waited for: the process ends a moment after, and a
+    // reader who asked to leave is not kept waiting on an agent. What
+    // arrives in that moment is let go; what does not stays with the
+    // agent, which is where it would have been anyway.
+    app.let_go_of_what_nothing_was_said_in(None);
 
     Ok(())
 }
