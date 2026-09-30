@@ -1230,6 +1230,113 @@ fn a_real_server_works_out_what_moving_a_file_would_change() {
     client.shutdown();
 }
 
+/// A real server says what is wrong after an edit, with nothing saved.
+///
+/// The question a reader asks as "do I have to press ctrl+s for the
+/// underline". Obelus sends the whole document on every keystroke and draws
+/// the underline from whatever was published, so this is the server's half
+/// of that answer -- and it cannot be learnt from a value, because it is
+/// about a real server choosing to speak. Nothing else here asked it, and
+/// the chain it covers is the whole of `didOpen` and `didChange`: a document
+/// the server never took is a document it says nothing about.
+///
+/// A *syntax* error, because rust-analyzer has two sources and only one of
+/// them answers an unsaved edit. Measured, both at 1.0 against this project:
+/// a syntax error comes back within seconds of the `didChange`, and a type
+/// error (`let _: u32 = "not a number"`) comes back never -- that one is
+/// `cargo check`, which `checkOnSave` runs on a save. So a reader whose type
+/// errors wait for ctrl+s is watching rust-analyzer's default and not
+/// Obelus, and the underline really is immediate for what the server
+/// answers immediately.
+///
+/// The save half is deliberately not asserted here: `cargo check` over this
+/// workspace is minutes cold, which is a test that fails by taking too long
+/// on the machine least able to spare it.
+///
+/// Broken deliberately by dropping the `didChange`: the server is then left
+/// with the file as it is on disk, which parses, and this waits the full
+/// two minutes and finds nothing.
+///
+/// Dropping the `didOpen` instead does *not* break it, which was worth
+/// finding out and is why it is written down: rust-analyzer takes a
+/// `didChange` for a document it was never told was opened, and answers it.
+/// So this covers `didChange` and says nothing about `didOpen` -- if that
+/// notification ever needs a test, it needs its own.
+#[test]
+#[ignore = "waits for rust-analyzer to index this project"]
+fn a_real_server_says_what_is_wrong_without_a_save() {
+    let Some((mut client, events)) = start() else {
+        return;
+    };
+    pump(&mut client, &events, HANDSHAKE, |client, _| {
+        client.is_ready()
+    });
+
+    let path = root().join("crates/obelus-lsp/src/lib.rs");
+    let uri = obelus_lsp::client::uri_for(&path)
+        .expect("a uri")
+        .to_string();
+    let text = std::fs::read_to_string(&path).expect("the file");
+
+    let _ = client.notify(
+        "textDocument/didOpen",
+        &serde_json::json!({"textDocument": {
+            "uri": uri, "languageId": "rust", "version": 1, "text": text,
+        }}),
+    );
+
+    // Sent the way typing sends it: the whole document, the version bumped,
+    // and no `didSave` anywhere in this test.
+    let unclosed = text.replace("pub mod action;", "pub mod action;\nfn obelus_probe( {");
+    assert_ne!(
+        unclosed, text,
+        "the probe edited nothing, so it proves nothing"
+    );
+    let _ = client.notify(
+        "textDocument/didChange",
+        &serde_json::json!({
+            "textDocument": {"uri": uri, "version": 2},
+            "contentChanges": [{"text": unclosed}],
+        }),
+    );
+
+    // Pumped by hand rather than with `pump`, which lends its closure a
+    // `&Client`: taking what was published needs a `&mut`.
+    let mut said: Vec<String> = Vec::new();
+    let deadline = Instant::now() + INDEXED;
+    while said.is_empty() {
+        let Some(left) = deadline.checked_duration_since(Instant::now()) else {
+            break;
+        };
+        match events.recv_timeout(left) {
+            Ok(Message { message, .. }) => {
+                let _ = client.on_message(&message);
+                for published in client.take_published() {
+                    if published["uri"].as_str() != Some(uri.as_str()) {
+                        continue;
+                    }
+                    said.extend(
+                        published["diagnostics"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|one| one["message"].as_str())
+                            .map(str::to_string),
+                    );
+                }
+            }
+            Err(RecvTimeoutError::Timeout) => break,
+            Err(RecvTimeoutError::Disconnected) => panic!("the server ended"),
+        }
+    }
+
+    assert!(
+        !said.is_empty(),
+        "rust-analyzer said nothing about an edit it was told about and never \
+         saw saved, so nothing reaches a reader until they press ctrl+s"
+    );
+}
+
 /// What a real server puts in for a callable, which is what the panel after
 /// it rests on.
 ///
