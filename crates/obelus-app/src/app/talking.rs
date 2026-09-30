@@ -1537,9 +1537,20 @@ impl App {
         let Some(name) = name else {
             if let Some(talk) = self.conversation_mut() {
                 talk.slash = None;
+                // And the line is no longer a name, so a list shut on one
+                // has nothing left to be shut on: the next slash is a fresh
+                // question. Noticed here because here is where the list is
+                // worked out -- one asker, so there is no second answer to
+                // drift from this one.
+                talk.slash_shut = false;
             }
             return;
         };
+        // Shut by the reader, on the name they are still typing. Nothing to
+        // build and nothing to settle: what they asked for is no list.
+        if self.conversation().is_some_and(|talk| talk.slash_shut) {
+            return;
+        }
         if let Some(slash) = self.conversation_mut().and_then(|talk| talk.slash.as_mut()) {
             if slash.query() != name {
                 slash.set_query(&name);
@@ -1669,6 +1680,10 @@ impl App {
             KeyCode::Esc => {
                 if let Some(talk) = self.conversation_mut() {
                     talk.slash = None;
+                    // Written down, because closing it is not enough: the
+                    // list is worked out from the box every frame, so the
+                    // next frame would put back what this key took away.
+                    talk.slash_shut = true;
                 }
                 true
             }

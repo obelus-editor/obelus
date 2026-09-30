@@ -1239,6 +1239,72 @@ fn a_slash_is_a_command_and_anything_else_is_a_message() {
     );
 }
 
+/// Escape shuts that list, and it stays shut while the name is still being
+/// typed.
+///
+/// The list is not a thing a key opens: it is worked out from the box on
+/// every frame, so a key that only set it to `None` would be undone by the
+/// frame it was pressed for. Which is why both halves are checked here --
+/// that the frame after escape has no list, and that a list shut on a name
+/// comes back once the line is no longer one.
+///
+/// Broken deliberately, both ways: dropping `slash_shut = true` from the
+/// escape arm fails the frame after escape, and dropping the clearing in
+/// `refresh_slash` fails the list coming back at the end.
+#[test]
+fn escape_shuts_the_list_of_commands_and_leaves_the_words() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the commands", |app| {
+        !app.agent_orders().is_empty()
+    });
+
+    support::type_text(&mut app, "/c");
+    let _ = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(app.slash().is_some(), "no list while a name is typed");
+
+    support::press(&mut app, KeyCode::Esc);
+    // Escape gives up on the nearest thing, which is the list: what the
+    // reader typed is still theirs to send.
+    assert_eq!(
+        app.chat().expect("the chat").writing().text(),
+        "/c",
+        "escape took the words with the list"
+    );
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        app.slash().is_none(),
+        "the frame after escape put the list back:\n{dump}"
+    );
+    assert!(
+        !dump.contains("/compact"),
+        "the list is shut and still drawn:\n{dump}"
+    );
+
+    // And on: a list that came back with the next character is escape
+    // working for one keystroke.
+    support::type_text(&mut app, "o");
+    let _ = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        app.slash().is_none(),
+        "typing the name on brought the shut list back:\n{}",
+        screen(&mut app)
+    );
+
+    // Rubbing the slash out is what ends it -- the line is no longer a
+    // name, so the next one is asked afresh.
+    for _ in 0.."/co".len() {
+        support::press(&mut app, KeyCode::Backspace);
+    }
+    let _ = support::render(&mut app, WIDTH, HEIGHT);
+    support::type_text(&mut app, "/c");
+    let _ = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        app.slash().is_some(),
+        "the list never came back:\n{}",
+        screen(&mut app)
+    );
+}
+
 /// The conversation's status row says what the session is set to: every
 /// setting the agent offers, in its own order, as short as it can be said.
 ///

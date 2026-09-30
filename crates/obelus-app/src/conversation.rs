@@ -139,6 +139,22 @@ pub struct Conversation {
     /// not take the keys: it follows what is being typed and the box keeps
     /// them.
     pub slash: Option<Picker>,
+    /// Whether the reader has shut that list on the name they are typing.
+    ///
+    /// The list is not a state a key opens and a key closes: it is worked
+    /// out from the box on every frame, which can say "a name is being
+    /// typed" and "none is" and has nowhere to put the third thing --
+    /// *a name is being typed and the reader does not want the list*. So
+    /// escape writes it down here, and the frame that would otherwise put
+    /// the list straight back reads it.
+    ///
+    /// It lasts as long as the line is still a command's name. Cleared
+    /// where the name goes -- the slash rubbed out, a blank after it, the
+    /// message sent -- because that is the reader starting again, and a
+    /// latch that outlived it would be a list they could never get back.
+    /// Not cleared by the next character, which would be escape working
+    /// for one keystroke.
+    pub slash_shut: bool,
     /// The form the agent asked the reader to fill in, while one is open.
     pub asking: Option<Asking>,
     /// The card whatever the agent asked is answered on.
