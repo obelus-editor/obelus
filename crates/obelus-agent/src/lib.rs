@@ -242,14 +242,6 @@ pub fn home(id: &str, root: &std::path::Path) -> Option<PathBuf> {
 /// directory.
 pub const CLAIM: &str = "installing";
 
-/// How long a claim is believed before it is taken over.
-///
-/// An Obelus that was killed mid-install leaves one behind, and nothing
-/// else will ever remove it. Ten minutes is longer than any install Obelus
-/// has seen and short enough that a reader who kills one and tries again
-/// does not have to wonder what is wrong.
-const CLAIMED_FOR: std::time::Duration = std::time::Duration::from_secs(600);
-
 /// Says this process is installing an agent, unless another one is.
 ///
 /// Several Obelus processes on one machine share this directory, and an
@@ -267,25 +259,32 @@ pub fn claim(id: &str, root: &std::path::Path) -> Result<Claim, String> {
     };
     std::fs::create_dir_all(&home).map_err(|error| format!("{home:?}: {error}"))?;
     let path = home.join(CLAIM);
-    match std::fs::File::create_new(&path) {
-        Ok(_) => Ok(Claim { path }),
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            // Somebody's, or nobody's: an install that was killed leaves a
-            // claim that will never be given up, so one old enough to be
-            // that is taken over rather than waited on for ever.
-            let stale = std::fs::metadata(&path)
-                .and_then(|file| file.modified())
-                .ok()
-                .and_then(|when| when.elapsed().ok())
-                .is_some_and(|since| since > CLAIMED_FOR);
-            if !stale {
-                return Err(format!("another Obelus is installing {id}"));
-            }
-            tracing::warn!(id, "taking over an install that was left behind");
-            Ok(Claim { path })
-        }
-        Err(error) => Err(format!("{path:?}: {error}")),
+    // Opened rather than created exclusively, and held by a lock rather
+    // than by existing. The file on its own can only be believed: one left
+    // behind by an Obelus that was killed is indistinguishable from one an
+    // Obelus is holding, so it had to be given a staleness -- ten minutes,
+    // a number nobody can pick rightly. Both ways of being wrong were
+    // real. An install killed at the start locked the reader out of their
+    // own agent for ten minutes; an install that took *longer* than ten
+    // minutes -- a slow line, a large package -- was declared abandoned by
+    // the next window, which then ran a second `npm` into the same prefix,
+    // which is the one thing this exists to prevent.
+    //
+    // A lock is the kernel's and goes with the process: killed, crashed or
+    // out of power, it is given up at once and with nothing on disk to say
+    // so. Which is the argument `chats::claim` is built on, and the same
+    // `held_by_somebody_else` answers it -- one question about one thing,
+    // asked in one place.
+    let file = std::fs::File::options()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(&path)
+        .map_err(|error| format!("{path:?}: {error}"))?;
+    if chats::held_by_somebody_else(&file) {
+        return Err(format!("another Obelus is installing {id}"));
     }
+    Ok(Claim { path, file })
 }
 
 /// An install this process has claimed, which it gives up by being dropped.
@@ -296,12 +295,25 @@ pub fn claim(id: &str, root: &std::path::Path) -> Result<Claim, String> {
 #[derive(Debug)]
 pub struct Claim {
     path: PathBuf,
+    /// Held open for as long as the claim is: the lock belongs to the open
+    /// file and goes when it closes, which is also what makes a killed
+    /// Obelus give it up. The same field, for the same reason, as the one
+    /// on `chats::Claim`.
+    #[expect(
+        dead_code,
+        reason = "it is the lock itself: what it is for is staying open"
+    )]
+    file: std::fs::File,
 }
 
 impl Drop for Claim {
     fn drop(&mut self) {
+        // The lock goes with the file, which goes with this. Taking the
+        // file away as well is tidiness rather than the claim ending, and
+        // it may fail without anything being wrong -- another Obelus that
+        // took the lock between these two lines owns the name now.
         if let Err(error) = std::fs::remove_file(&self.path) {
-            tracing::warn!(%error, path = %self.path.display(), "a claim outlived its install");
+            tracing::debug!(%error, path = %self.path.display(), "a claim's file outlived it");
         }
     }
 }
@@ -548,22 +560,28 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
     }
 
-    /// A claim nobody gave up is taken over once it is old enough.
+    /// A claim somebody holds is refused however long they have held it.
     ///
-    /// An Obelus that was killed mid-install leaves one behind, and nothing
-    /// else will ever remove it: without this, one kill locks a reader out
-    /// of their own agent for good.
+    /// The old rule believed the file for ten minutes and then took it
+    /// over, which is the wrong answer in both directions: an install
+    /// killed at the start locked the agent for ten minutes, and an install
+    /// that took *longer* than ten minutes -- a slow line, a large package
+    /// -- was declared abandoned and had a second `npm` run into its own
+    /// prefix, which is the one thing the claim is for.
+    ///
+    /// A lock has no age to reach. Broken deliberately by going back to the
+    /// file's own existence, or to its modified time.
     #[test]
-    fn a_claim_left_behind_is_taken_over() {
-        let root = std::env::temp_dir().join(format!("obelus-stale-{}", std::process::id()));
+    fn a_claim_somebody_holds_is_refused_however_old() {
+        let root = std::env::temp_dir().join(format!("obelus-held-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
-        let home = super::home("some-agent", &root).expect("a directory");
-        std::fs::create_dir_all(&home).expect("the directory");
-        let path = home.join(super::CLAIM);
-        std::fs::write(&path, "").expect("a claim nobody will give up");
 
-        // Old enough to be nobody's. The file's own time is what says so,
-        // which is what a second Obelus has to go on.
+        let theirs = super::claim("some-agent", &root).expect("their claim");
+
+        // As old as a very slow install, which the ten minutes would have
+        // called abandoned.
+        let home = super::home("some-agent", &root).expect("a directory");
+        let path = home.join(super::CLAIM);
         let long_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
         let file = std::fs::File::options()
             .write(true)
@@ -573,8 +591,43 @@ mod tests {
         drop(file);
 
         assert!(
+            super::claim("some-agent", &root).is_err(),
+            "an install that took longer than the old deadline was taken over"
+        );
+
+        // And when they are done with it, it is anybody's again.
+        drop(theirs);
+        assert!(
             super::claim("some-agent", &root).is_ok(),
-            "a claim nobody will ever give up locked the agent out"
+            "a claim given up is still holding the agent"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A claim nobody gave up is not a claim.
+    ///
+    /// An Obelus that was killed mid-install leaves the file behind, and
+    /// nothing else will ever remove it -- but not the lock, which the
+    /// kernel drops on the way out of the process it is killing. So the
+    /// file left behind is claimable at once, with nothing to wait for and
+    /// no age to reach: it used to be believed for ten minutes, which is
+    /// ten minutes a reader who killed one could not install their own
+    /// agent.
+    #[test]
+    fn a_claim_left_behind_is_taken_over() {
+        let root = std::env::temp_dir().join(format!("obelus-stale-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let home = super::home("some-agent", &root).expect("a directory");
+        std::fs::create_dir_all(&home).expect("the directory");
+        let path = home.join(super::CLAIM);
+        std::fs::write(&path, "").expect("a claim nobody will give up");
+
+        // Brand new, and still nobody's: what says a claim is held is the
+        // lock, and this file has never had one. Ageing it was the old
+        // rule's only way to say the same thing.
+        assert!(
+            super::claim("some-agent", &root).is_ok(),
+            "a file nobody holds locked the agent out"
         );
         let _ = std::fs::remove_dir_all(&root);
     }

@@ -280,7 +280,7 @@ impl Drop for Claim {
 /// microseconds wide, no worse than a message that is wrong until the reader
 /// presses the key again, and the alternative was losing a claim for real.
 #[cfg(unix)]
-fn held_by_somebody_else(file: &File) -> bool {
+pub(crate) fn held_by_somebody_else(file: &File) -> bool {
     use std::os::fd::AsRawFd as _;
 
     // Safety: `flock` takes a descriptor and a flag and reads nothing
@@ -291,7 +291,7 @@ fn held_by_somebody_else(file: &File) -> bool {
 
 /// The same question, in the terms the other platform puts it in.
 #[cfg(windows)]
-fn held_by_somebody_else(file: &File) -> bool {
+pub(crate) fn held_by_somebody_else(file: &File) -> bool {
     use std::os::windows::io::AsRawHandle as _;
 
     use windows_sys::Win32::{
