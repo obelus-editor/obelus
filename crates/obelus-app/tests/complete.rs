@@ -849,6 +849,8 @@ mod against_a_real_server {
 /// What the call the cursor is inside takes, which is the question after
 /// "what could be typed": the name is chosen and the arguments are not.
 mod signatures {
+    use obelus_app::app::App;
+    use obelus_buffer::Buffer;
     use serde_json::json;
 
     use super::{editing, support, text};
@@ -1083,13 +1085,28 @@ mod signatures {
     /// not under them, until they happen to type a bracket.
     #[test]
     fn the_panel_goes_when_the_reader_leaves_the_line() {
-        let (_scratch, mut app) = editing("signature-left", "fn main() {\n    push_str(\n}\n");
-        support::press(&mut app, crossterm::event::KeyCode::Down);
+        // A file Obelus has no grammar for, which is where the line is
+        // still what says whether the reader has left: the call they are in
+        // is a question for a tree, and there is not one. The same rule as
+        // before for a text file, and no rule at all would be a panel that
+        // sat there until something else closed it.
+        let scratch = support::Scratch::new("signature-left");
+        let path = scratch.path().join("notes.txt");
+        std::fs::write(&path, "copy(\nsomewhere else\n").expect("writing the file");
+        let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 60, 16);
+        assert!(
+            app.current_buffer()
+                .is_some_and(|buffer| buffer.syntax().is_none()),
+            "the file has a grammar, so this is not the case it is about"
+        );
+
         support::press(&mut app, crossterm::event::KeyCode::End);
         app.signature_for_test(answered(0));
         assert!(app.signature().is_some(), "the panel never opened");
 
-        support::press(&mut app, crossterm::event::KeyCode::Up);
+        support::press(&mut app, crossterm::event::KeyCode::Down);
         support::render(&mut app, 60, 16);
         assert!(
             app.signature().is_none(),
@@ -1652,6 +1669,67 @@ mod signatures {
             shown.shown()[0].active,
             Some((17, 22)),
             "the mark stayed on the argument the reader has left"
+        );
+    }
+
+    /// A call written over several lines is one call.
+    ///
+    /// The panel used to be about a *line*: a newline closed it, and the
+    /// settling threw it away as soon as the caret was on another one. So a
+    /// reader breaking a long argument list over four lines -- which is how
+    /// a long argument list is written -- lost the panel at the first
+    /// comma, in the middle of the thing it was about.
+    ///
+    /// What it is about is the call, which the tree can say and a line
+    /// cannot: the brackets around the caret. Broken deliberately by going
+    /// back to the line, and by putting the newline back among the things
+    /// that close it.
+    #[test]
+    fn a_call_written_over_several_lines_keeps_the_panel() {
+        let (_scratch, mut app) =
+            editing("signature-multiline", "fn main() {\n    copy(from)\n}\n");
+        support::press(&mut app, crossterm::event::KeyCode::Down);
+        support::press(&mut app, crossterm::event::KeyCode::End);
+        support::press(&mut app, crossterm::event::KeyCode::Left);
+        app.signature_for_test(json!({
+            "signatures": [{
+                "label": "fn copy(from: P, to: Q)",
+                "parameters": [{ "label": [8, 15] }, { "label": [17, 22] }],
+                "activeParameter": 0
+            }],
+            "activeSignature": 0
+        }));
+        assert!(app.signature().is_some(), "the panel never opened");
+
+        // The reader breaks the call over two lines, still inside it. The
+        // comma is typed and the line is *pressed*: `type_text` sends a
+        // `\n` as a character, which is not the newline the editor hears
+        // from the key -- so a test that typed one never went near the arm
+        // that used to close the panel on it.
+        support::type_text(&mut app, ",");
+        support::press(&mut app, crossterm::event::KeyCode::Enter);
+        support::render(&mut app, 60, 16);
+        assert!(
+            app.signature().is_some(),
+            "a newline inside the call took the panel away"
+        );
+
+        // And walking back up to the first line is still the same call.
+        support::press(&mut app, crossterm::event::KeyCode::Up);
+        support::render(&mut app, 60, 16);
+        assert!(
+            app.signature().is_some(),
+            "moving between the call's own lines took the panel away"
+        );
+
+        // Out of the call altogether, which is where it does go.
+        support::press(&mut app, crossterm::event::KeyCode::Down);
+        support::press(&mut app, crossterm::event::KeyCode::Down);
+        support::press(&mut app, crossterm::event::KeyCode::End);
+        support::render(&mut app, 60, 16);
+        assert!(
+            app.signature().is_none(),
+            "the panel stayed after the reader left the call"
         );
     }
 

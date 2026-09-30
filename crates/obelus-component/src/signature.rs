@@ -19,7 +19,7 @@
 
 use obelus_buffer::DocumentId;
 use obelus_lsp::signature::Answer;
-use obelus_text::coordinates::{CharColumn, LineNumber};
+use obelus_text::coordinates::{ByteOffset, CharColumn, LineNumber};
 
 /// The most signatures to draw at once.
 ///
@@ -42,7 +42,19 @@ pub struct Signature {
     /// The document it was asked about.
     buffer: DocumentId,
     /// The line the cursor was on when it was asked.
+    ///
+    /// What the panel is about is the call, not the line -- see `opened`.
+    /// This is what a language Obelus cannot parse has instead, and what
+    /// the answer is checked against when it arrives.
     line: LineNumber,
+    /// Where the call's opening bracket is.
+    ///
+    /// Which call the panel is about, for the languages there is a tree
+    /// for. A call written over four lines is one call, and the reader
+    /// moving between its lines has not left it -- which a line cannot say
+    /// and this can. The opening bracket rather than the pair: typing
+    /// inside the call moves the closing one and leaves this where it is.
+    opened: Option<ByteOffset>,
     /// And the column, which is which argument the answer is about.
     ///
     /// Kept because the caret moving along the line is the reader stepping
@@ -59,12 +71,14 @@ impl Signature {
         buffer: DocumentId,
         line: LineNumber,
         column: CharColumn,
+        opened: Option<ByteOffset>,
     ) -> Self {
         Self {
             answer,
             buffer,
             line,
             column,
+            opened,
         }
     }
 
@@ -72,6 +86,12 @@ impl Signature {
     #[must_use]
     pub const fn at(&self) -> (DocumentId, LineNumber, CharColumn) {
         (self.buffer, self.line, self.column)
+    }
+
+    /// Which call it is about, where that could be asked.
+    #[must_use]
+    pub const fn opened(&self) -> Option<ByteOffset> {
+        self.opened
     }
 
     /// The signatures to draw, the active one first.

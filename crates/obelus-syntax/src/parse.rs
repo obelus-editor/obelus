@@ -211,6 +211,36 @@ impl SyntaxState {
             .is_some_and(|first| first.is_alphabetic() || first == '_')
     }
 
+    /// The brackets the place is inside, innermost first.
+    ///
+    /// Which call the reader is in, asked of the tree rather than of the
+    /// text. A scan outward would have to be told what a bracket is and
+    /// where it does not count -- one inside a string is a character, not a
+    /// bracket -- and the tree has already answered both: a string is a
+    /// node, so the brackets in it are not tokens at all, and an anonymous
+    /// token *is* its own spelling, so a child whose kind is `(` is one.
+    ///
+    /// The innermost pair comes for free: the walk starts at the place and
+    /// goes out, so the first ancestor with brackets around it is the
+    /// nearest one.
+    ///
+    /// Being *on* the opening bracket is not being inside it, and being
+    /// past the closing one is not either -- the call a reader is in is the
+    /// one whose brackets are behind and ahead of them.
+    #[must_use]
+    pub fn brackets_around(&self, at: ByteOffset) -> Option<(ByteOffset, ByteOffset)> {
+        let mut node = self
+            .tree
+            .root_node()
+            .descendant_for_byte_range(at.get(), at.get())?;
+        loop {
+            if let Some(pair) = around(node, at.get()) {
+                return Some(pair);
+            }
+            node = node.parent()?;
+        }
+    }
+
     /// Reparses after an edit, reusing the parts of the tree the edit did not
     /// reach.
     ///
@@ -435,6 +465,26 @@ fn parse(parser: &mut Parser, rope: &Rope, old: Option<&Tree>) -> Option<Tree> {
         &chunk.as_bytes()[byte - chunk_start..]
     };
     parser.parse_with_options(&mut callback, old, None)
+}
+
+/// The bracket tokens of one node that are around a place.
+///
+/// Anonymous tokens are spelled by their kind, which is what lets this ask
+/// "is this child a bracket" without going near the text.
+fn around(node: tree_sitter::Node<'_>, at: usize) -> Option<(ByteOffset, ByteOffset)> {
+    let mut walk = node.walk();
+    let mut opened: Option<usize> = None;
+    for child in node.children(&mut walk) {
+        match child.kind() {
+            "(" | "[" | "{" if child.end_byte() <= at => opened = Some(child.start_byte()),
+            ")" | "]" | "}" if child.start_byte() >= at => {
+                return opened
+                    .map(|open| (ByteOffset::new(open), ByteOffset::new(child.end_byte())));
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// The smallest edit that turns `old` into `new`.
