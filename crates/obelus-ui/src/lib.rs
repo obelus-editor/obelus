@@ -757,18 +757,8 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
                         list,
                         room_for_a_picker(app, regions.editor),
                         regions.edge,
+                        Some(regions.status),
                     );
-                    // The row at its foot, which is the list's own: what is
-                    // typed there narrows it. A compact list leaves the file
-                    // showing above it and still takes this row, because the
-                    // row is part of the dialog and not part of the file --
-                    // so the file's name and cursor go while the list is up,
-                    // which is what a dialog does to what it is over.
-                    let style = Style::new()
-                        .bg(app.theme().background)
-                        .fg(app.theme().status_foreground);
-                    fill(cells, regions.status, style);
-                    status::StatusView::new(app).render_prompt(list, regions.status, cells, style);
                 }
             }
             Layer::Names => {
@@ -824,6 +814,9 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
             list,
             room_for_the_commands(app, regions.editor),
             regions.edge,
+            // Not a layer, so it never took the row: the conversation's own
+            // row is still the conversation's while this is showing.
+            None,
         );
     }
 
@@ -949,7 +942,14 @@ fn with_its_rules(band: Rect, room: Rect, edge: Rect) -> Rect {
 /// One function for all of them, because a list opened over the code, over
 /// the settings and over a conversation is the same list: what differs is
 /// the room it is given, which is the argument.
-fn list_over(cells: &mut CellBuffer, app: &impl Screen, list: &Picker, room: Rect, edge: Rect) {
+fn list_over(
+    cells: &mut CellBuffer,
+    app: &impl Screen,
+    list: &Picker,
+    room: Rect,
+    edge: Rect,
+    own_row: Option<Rect>,
+) {
     let region = picker::region(list, room);
     // What the list actually takes, which for a compact one is a strip at
     // the foot of the region and not the region: saying the region would
@@ -959,14 +959,49 @@ fn list_over(cells: &mut CellBuffer, app: &impl Screen, list: &Picker, room: Rec
     // edges -- see `with_its_rules`.
     let (pane, joined) = match list.layout() {
         obelus_component::picker::PickerLayout::FullArea => {
-            (with_its_rules(room, room, edge), shapes::Joined::Above)
+            // Joined on every side once it has the row at its foot: the
+            // edge it would draw a line along is the screen's own, and a
+            // line there is a hair across the bottom of the window with
+            // nothing on the other side of it. A list that does not own
+            // that row still ends above one, and still has an edge.
+            let joined = match own_row {
+                Some(_) => shapes::Joined::Screen,
+                None => shapes::Joined::Above,
+            };
+            (with_its_rules(room, room, edge), joined)
         }
         obelus_component::picker::PickerLayout::Compact { .. } => {
+            // Still `Below` with the row: what it is joined to is the foot
+            // of the screen either way, and the edge it draws is the one
+            // along its top, where the file it is over carries on.
             (with_its_rules(region, room, edge), shapes::Joined::Below)
         }
     };
+    // And the row the list types into, where the list is the one that owns
+    // it: a dialog is one thing, so it arrives as one. Left out, the list
+    // slid down and its own query sat still at the foot of the screen,
+    // which reads as two things opening rather than one.
+    //
+    // Worked out here beside the pane and not by the caller, for the reason
+    // the comment above gives: two answers to where the pane is would be a
+    // backdrop that does not line up with what is over it, and the row is
+    // part of the pane now.
+    let pane = match own_row {
+        Some(row) => Rect {
+            height: row.bottom() - pane.y,
+            ..pane
+        },
+        None => pane,
+    };
     shapes::behind(pane, joined, app.theme().background, cells);
     picker::PickerView::new(list, app.theme(), app.phase()).render(region, cells);
+    if let Some(row) = own_row {
+        let style = Style::new()
+            .bg(app.theme().background)
+            .fg(app.theme().status_foreground);
+        fill(cells, row, style);
+        status::StatusView::new(app).render_prompt(list, row, cells, style);
+    }
 
     // A compact list sits on top of what is behind it, so it needs an edge:
     // the same rule the preview gets, for the same reason, which is that two

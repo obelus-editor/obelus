@@ -87,16 +87,19 @@ fn items(labels: &[&str]) -> Vec<PickerItem> {
         .collect()
 }
 
-/// A compact list's pane runs from the rule over it to the rule under it,
-/// because those are its edges: a window draws each line in the middle of
-/// its row and ends the glass there.
+/// A compact list's pane runs from the rule over it to the row it types
+/// into, because the list and that row are one dialog: it arrives as one
+/// thing, slid up from the foot of the screen, rather than as a list that
+/// moves and a query that was already there.
+///
+/// The rule over it is an edge and a window ends the glass in the middle of
+/// that row. The rule *under* it is not an edge any more -- it is inside
+/// the pane, between the list and its own row.
 ///
 /// Deliberate breaks: pass `region` rather than `with_its_rules(region,
 /// room, edge)` in `list_over`, and the pane starts a row below the line
-/// over it; answer `band.bottom()` for the bottom in `with_its_rules`,
-/// and it stops a row above the one under it. Either way a window's glass
-/// stops short of an edge a line says the list has -- the gap this was
-/// written to close, found at the top first and at the foot after.
+/// over it; hand `None` for `own_row`, and it stops at the rule with its
+/// query left behind on a row that does not travel.
 #[test]
 fn a_compact_list_is_a_pane_from_rule_to_rule() {
     let heard = heard();
@@ -122,13 +125,14 @@ fn a_compact_list_is_a_pane_from_rule_to_rule() {
     for x in pane.left()..pane.right() {
         assert_eq!(cells[(x, pane.y)].symbol(), "\u{2500}", "at {x}");
     }
-    // And its last row is the rule over the status row, which the list
-    // stands on.
-    let last = pane.bottom() - 1;
+    // Its last row is the one the list types into, and the rule is the
+    // row above that -- inside the pane, not the end of it.
+    assert_eq!(pane.bottom() - 1, 23, "the row the list types into");
+    let last = pane.bottom() - 2;
     for x in pane.left()..pane.right() {
         assert_eq!(cells[(x, last)].symbol(), "\u{2500}", "at {x} on the foot");
     }
-    assert_eq!(last, 22, "the row over the status row");
+    assert_eq!(last, 22, "the rule between the list and its own row");
     // And the list is between them, inside the same pane.
     let under: String = (pane.left()..pane.right())
         .map(|x| cells[(x, pane.y + 1)].symbol())
