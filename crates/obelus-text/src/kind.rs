@@ -6,7 +6,7 @@
 //! is here rather than with any of them because a kind belongs to none of
 //! them -- put it with the theme and a grammar cannot name what it found
 //! without the colours; put it with the grammars and the theme carries
-//! fifteen C parsers to name an enum with no dependencies at all.
+//! twenty-five C parsers to name an enum with no dependencies at all.
 
 /// What a highlighted span is.
 ///
@@ -117,10 +117,15 @@ impl SyntaxKind {
             "keyword" => Some(Self::Keyword),
             "label" => Some(Self::Label),
             // The name of a scope: a C# or Julia module, an OCaml or Agda
-            // one, a Scala or PHP namespace. It names the kind of thing its
-            // contents are, which is what a type is -- the same reading
-            // `tag` gets below, and for the same reason.
-            "module" | "namespace" => Some(Self::Type),
+            // one, a Scala or PHP namespace. `Keyword` because that is the
+            // answer `tags::kind_of` already gives the same three words on
+            // the outline, and one name drawn two colours by two tables is
+            // the thing this enum exists to prevent -- it is the vocabulary
+            // the grammar, the theme, the icon and the outline all share.
+            // Before these languages arrived no shipped query produced
+            // `@module` or `@namespace`, so the two tables had never yet had
+            // to agree.
+            "module" | "namespace" => Some(Self::Keyword),
             "number" => Some(Self::Number),
             "operator" => Some(Self::Operator),
             // A parameter is a variable, which is what the newer name

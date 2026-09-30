@@ -137,20 +137,33 @@ tree-sitter-bash = "0.25"
 tree-sitter-css = "0.25"
 tree-sitter-html = "0.23"
 tree-sitter-yaml = "0.7"
-# The rest of the parsers the tree-sitter organisation maintains itself, which
-# is the list to work down before reaching for anybody's fork: every one of
-# these crates is published from the repository under `tree-sitter/`, so the
-# grammar and the query in it were written by the same people and move
-# together. Three of the org's parsers are deliberately not here -- `jsdoc`,
-# `regex` and `embedded-template` are grammars something else is written *in*
-# rather than file types, so they arrive through `inject` or not at all.
+# More of the parsers the tree-sitter organisation maintains itself, which is
+# the list to work down before reaching for anybody's fork: every one of these
+# crates is published from a repository under `tree-sitter/`, so the grammar
+# and the query in it were written by the same people and move together.
+#
+# Not the whole of that list, and the ones left out were each left out for a
+# reason. `jsdoc`, `regex` and `embedded-template` are grammars something else
+# is written *in* rather than file types, so they arrive through `inject` or
+# not at all. `verilog` ships no query at all -- neither in its crate nor as a
+# constant -- and helix's will not compile against the published grammar, so
+# it needs a query written or vendored first. `ql` and `ql-dbscheme` are a
+# language nobody here reads. The org has more repositories than its
+# documentation page lists, so this is a list of decisions rather than a list
+# of everything.
 tree-sitter-agda = "1.3"
 tree-sitter-c-sharp = "0.23"
 tree-sitter-haskell = "0.23"
 tree-sitter-java = "0.23"
 # The one crate here that ships its highlight query as a *file* and not as a
-# constant, which is why `obelus-syntax/queries/julia/` exists.
-tree-sitter-julia = "0.23"
+# constant, which is why `obelus-syntax/queries/julia/` exists -- and the one
+# that is pinned exactly rather than by caret, because of it. Every other
+# query travels with the grammar it was written against; this one is a copy
+# sitting still while a caret range moves underneath it, and `Grammar::new`
+# panics on a query that will not compile. A renamed node in some 0.23.x
+# would be a crash on opening any `.jl` file, found by a reader rather than
+# by an update.
+tree-sitter-julia = "=0.23.1"
 tree-sitter-ocaml = "0.26"
 tree-sitter-php = "0.24"
 tree-sitter-ruby = "0.23"

@@ -287,4 +287,41 @@ mod tests {
         // silent loss of its outline.
         assert_eq!(found, 14, "a language stopped offering an outline");
     }
+
+    /// A word both tables know means the same thing in both.
+    ///
+    /// `kind_of` turns a tags query's `definition.*` into a colour and
+    /// `SyntaxKind::for_capture` turns a highlight query's capture into one,
+    /// and the two vocabularies overlap. Where they overlap they have to
+    /// agree, or the same identifier is one colour in the file and another
+    /// in the outline of that very file -- which is what `module` and
+    /// `namespace` did the moment C#, OCaml, PHP and Scala arrived and
+    /// started producing `@module` and `@namespace`, captures no query had
+    /// ever shipped before. Nothing noticed, because nothing was asking.
+    ///
+    /// Listed by hand because neither table can be walked: both are `match`
+    /// arms. So this is where somebody has to think, and the list is short
+    /// because the overlap is -- `class`, `macro`, `field` and `package` are
+    /// the outline's alone, and `for_capture` answers `None` for them.
+    ///
+    /// Broken deliberately by putting `module`/`namespace` back to
+    /// `SyntaxKind::Type` in `obelus-text`.
+    #[test]
+    fn a_word_both_tables_know_means_the_same_in_both() {
+        for word in [
+            "function",
+            "method",
+            "constant",
+            "type",
+            "module",
+            "namespace",
+            "property",
+        ] {
+            assert_eq!(
+                Some(kind_of(word)),
+                SyntaxKind::for_capture(word),
+                "`{word}` is one colour in the file and another in its outline"
+            );
+        }
+    }
 }

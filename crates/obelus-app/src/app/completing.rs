@@ -20,7 +20,7 @@ use super::*;
 /// Whether a character is part of a word Obelus would complete.
 ///
 /// What starts the asking and what ends it. Deliberately not the language's
-/// own idea of an identifier: Obelus asks servers about fourteen languages
+/// own idea of an identifier: Obelus asks servers about twenty-five languages
 /// and has no table of what each calls a word, and every one of them agrees
 /// about letters, digits and an underscore.
 #[must_use]

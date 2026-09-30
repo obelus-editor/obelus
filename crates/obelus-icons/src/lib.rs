@@ -531,6 +531,14 @@ fn by_extension(extension: &str) -> Option<char> {
         "md" | "markdown" => Some('\u{f48a}'),
         "lock" => Some('\u{f023}'),
         "sh" | "bash" | "zsh" | "fish" => Some('\u{e795}'),
+        "rb" | "rake" | "gemspec" | "podspec" | "rbi" | "ru" => Some('\u{e739}'),
+        "java" | "jav" => Some('\u{e738}'),
+        "cs" | "csx" | "cake" => Some('\u{f031b}'),
+        "php" | "php4" | "php5" | "phtml" | "ctp" => Some('\u{e73d}'),
+        "scala" | "sbt" | "sc" => Some('\u{e737}'),
+        "hs" | "hs-boot" | "hsc" => Some('\u{e777}'),
+        "jl" => Some('\u{e624}'),
+        "ml" | "mli" => Some('\u{e7a7}'),
         "txt" | "text" => Some('\u{f15c}'),
         _ => None,
     }
@@ -546,6 +554,48 @@ mod tests {
         assert_eq!(for_path(Path::new("Cargo.toml")), '\u{e615}');
         assert_ne!(for_path(Path::new("mystery.qqq")), '\u{e7a8}');
         assert_eq!(for_path(Path::new("mystery.qqq")), FILE);
+    }
+
+    /// A language Obelus highlights is a language its rows have a mark for.
+    ///
+    /// Two tables with no way to check each other: this one is extensions to
+    /// glyphs and `LanguageId::for_name` is extensions to grammars, and
+    /// nothing enumerates the extensions, so neither can be walked against
+    /// the other. They drifted the moment ten languages were added to one of
+    /// them -- a Rails project's list drew a row of anonymous file marks
+    /// beside a preview that was highlighted perfectly.
+    ///
+    /// So it is a list by hand, which is the honest shape here: a language
+    /// added to `for_name` and not to this list is a language whose mark
+    /// nobody thought about, and the list is where somebody has to think.
+    ///
+    /// Broken deliberately by deleting any one of the rows this names from
+    /// `by_extension` -- it then falls to `FILE`, which is the symptom.
+    #[test]
+    fn every_language_obelus_reads_has_a_mark_of_its_own() {
+        for path in [
+            "app.rb",
+            "Main.java",
+            "Program.cs",
+            "index.php",
+            "Build.scala",
+            "Lib.hs",
+            "plot.jl",
+            "parser.ml",
+            "parser.mli",
+            "src/app.rs",
+            "main.go",
+            "setup.py",
+            "index.ts",
+            "app.jsx",
+            "site.css",
+        ] {
+            assert_ne!(
+                for_path(Path::new(path)),
+                FILE,
+                "{path} has no mark of its own, so its row is anonymous"
+            );
+        }
     }
 
     /// A dotfile is all stem as far as `Path` is concerned, so matching only

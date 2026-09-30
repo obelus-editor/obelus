@@ -2174,6 +2174,82 @@ fn a_taller_screen_gives_the_extra_rows_to_the_preview() {
     support::check("preview_tall_60x34", &tall);
 }
 
+/// The list scrolls on the last row it drew, at every height.
+///
+/// The same claim as the test below, which is pinned at one height -- and
+/// that is why the height is the subject here. A region that draws ten rows
+/// and a window settled on sixteen is a reader pressing down six times into
+/// rows that are on the screen only in the arithmetic, and it happened in a
+/// band three rows wide: `region` took the foot off the room and then asked
+/// `preview_region`, which takes it off again, so the two disagreed about
+/// whether there was room for a preview at all. Below the band both said no
+/// and above it both said yes, so a test at any one height had an even
+/// chance of never seeing it. The one below drew at thirty-four and did not.
+///
+/// Broken deliberately by putting `room_for` back in front of the
+/// `preview_region` call in `picker::region`: heights 19 and 20 then draw
+/// ten rows each and do not move when the focus walks off the tenth.
+#[test]
+fn the_list_scrolls_on_the_last_row_it_drew_whatever_the_height() {
+    let names = |dump: &str| {
+        support::text_block(dump)
+            .lines()
+            .filter(|row| row.contains(".rs"))
+            .count()
+    };
+    let first = |dump: &str| {
+        support::text_block(dump)
+            .lines()
+            .find(|row| row.contains(".rs"))
+            .map(std::string::ToString::to_string)
+    };
+
+    for height in 18..=34u16 {
+        let mut app = app();
+        press_function(&mut app, 1);
+        let paths: Vec<std::path::PathBuf> = (1..=40)
+            .map(|number| format!("src/other{number:02}.rs").into())
+            .collect();
+        app.handle(Event::Search(obelus_search::Event::FilesFound {
+            generation: 1,
+            paths,
+            ignored: false,
+        }));
+        type_text(&mut app, "rs");
+
+        let dump = support::render(&mut app, 60, height);
+        let drawn = names(&dump);
+        // A terminal too short to list anything is not what this is about.
+        if drawn < 2 {
+            continue;
+        }
+        let top = first(&dump);
+
+        // One short of the rows on screen keeps the focus on a row that is
+        // already drawn, so the top must not move...
+        for _ in 0..drawn - 1 {
+            press(&mut app, KeyCode::Down);
+        }
+        let walked = support::render(&mut app, 60, height);
+        assert_eq!(
+            first(&walked),
+            top,
+            "at height {height} the list scrolled before the last of its \
+             {drawn} rows:\n{walked}"
+        );
+
+        // ...and the next step is off the end of them, so it must.
+        press(&mut app, KeyCode::Down);
+        let scrolled = support::render(&mut app, 60, height);
+        assert_ne!(
+            first(&scrolled),
+            top,
+            "at height {height} the list drew {drawn} rows and did not scroll \
+             when the focus left them:\n{scrolled}"
+        );
+    }
+}
+
 /// Ten rows to walk, tabs or no tabs.
 ///
 /// A list with tabs spends its first two rows on them -- the tabs and the
