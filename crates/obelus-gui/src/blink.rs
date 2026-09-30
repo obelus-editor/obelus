@@ -48,6 +48,10 @@ use std::time::Duration;
 const CYCLE: Duration = Duration::from_millis(1200);
 
 /// How long after the last key a caret stops blinking, by the same default.
+///
+/// Only a Linux desktop says anything about stopping; macOS and Windows
+/// never stop a caret, so there this is read by nothing but the tests.
+#[cfg(any(test, all(unix, not(target_os = "macos"))))]
 const SETTLES: Duration = Duration::from_secs(10);
 
 /// What a program says when asked, or nothing where it is not installed or
@@ -169,6 +173,7 @@ impl Blink {
     }
 
     /// What everyone's default is.
+    #[cfg(any(test, all(unix, not(target_os = "macos"))))]
     fn usual() -> Self {
         Self {
             every: CYCLE / 2,
@@ -180,6 +185,7 @@ impl Blink {
     ///
     /// Separate from asking so that what is read can be checked without a
     /// desktop to read it from.
+    #[cfg(any(test, all(unix, not(target_os = "macos"))))]
     fn from_settings(blinking: &str, cycle: Option<&str>, timeout: Option<&str>) -> Option<Self> {
         if blinking.trim() == "false" {
             return None;
