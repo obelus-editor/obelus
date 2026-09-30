@@ -56,8 +56,26 @@ fn list_region_rows(picker: &Picker, width: u16) -> u16 {
 /// A switch a reader has to press to find out what it was is the one thing a
 /// switch must never ask of them -- and it is drawn with the settings page's
 /// own control, so the two places say it the same way.
+///
+/// And none at all where none of them can be pressed. The file list's
+/// changed tab was the case: every key it has is about the tree, the rows
+/// there are git's answer, so its foot was a rule and a pointer to a card
+/// of keys that were all grey -- two rows of the screen saying that
+/// nothing here answers to anything. Which lets that foot come and go as
+/// the reader walks between the two tabs, where the search's keeps its
+/// height on purpose; but each of the search's tabs has a key that works,
+/// so this never takes one of those away.
 #[must_use]
 pub fn hints(picker: &Picker) -> Vec<Hint> {
+    let hints = every_hint(picker);
+    match hints.iter().any(|hint| hint.usable) {
+        true => hints,
+        false => Vec::new(),
+    }
+}
+
+/// Every key the list has, whether or not it does anything here.
+fn every_hint(picker: &Picker) -> Vec<Hint> {
     use crossterm::event::{KeyCode, KeyModifiers};
     if !picker.says_keys() {
         return Vec::new();

@@ -838,6 +838,11 @@ fn the_foot_says_which_way_the_key_is_set() {
 /// And on the changed tab it says nothing, because there the key means
 /// nothing: those rows are git's answer, and git does not report a file it
 /// was told to ignore.
+///
+/// Nor does the foot, which has nothing left to say: every key it has is
+/// the tree's. Deliberate break: answer `every_hint` from `hints` whatever
+/// it holds, and the changed tab's foot is back -- a rule, and `Keys` at
+/// the end of it pointing at a card of grey.
 #[test]
 fn the_key_is_not_offered_where_it_would_do_nothing() {
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
@@ -856,12 +861,20 @@ fn the_key_is_not_offered_where_it_would_do_nothing() {
         support::text_block(&all).contains("Ignored files"),
         "the key is not offered on the tab it works on:\n{all}"
     );
+    assert!(
+        support::text_block(&all).contains("Keys"),
+        "the tab it works on has no foot, so the one below proves nothing:\n{all}"
+    );
 
     press(&mut app, KeyCode::Tab);
     let changed = support::render(&mut app, 72, 24);
     assert!(
         !support::text_block(&changed).contains("Ignored files"),
         "the foot offers a key that would do nothing:\n{changed}"
+    );
+    assert!(
+        !support::text_block(&changed).contains("Keys"),
+        "a foot with nothing on it that can be pressed:\n{changed}"
     );
 }
 
