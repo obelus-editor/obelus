@@ -2607,7 +2607,7 @@ fn a_choice_the_agent_no_longer_offers_says_so_on_its_row() {
             .unwrap_or_else(|| panic!("{needle:?} is not on screen:\n{dump}"))
     };
     // Wrapped to the room there is, so the first of its rows.
-    let warned = at("an-agent no longer offers this, so a new conversation");
+    let warned = at("No longer offered by an-agent, so a new conversation");
     // Its own rows, all of them, below what the setting does and above the
     // next name.
     let ends = at("starts on its own");
@@ -2621,7 +2621,7 @@ fn a_choice_the_agent_no_longer_offers_says_so_on_its_row() {
     );
     // And in the colour a value that will not work is drawn in.
     let column = screen[warned]
-        .find("no longer")
+        .find("No longer")
         .map(|byte| screen[warned][..byte].chars().count())
         .expect("the words");
     let row = u16::try_from(warned).expect("a row");

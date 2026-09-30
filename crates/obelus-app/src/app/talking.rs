@@ -1159,8 +1159,10 @@ impl App {
                     "what was chosen is not offered any more"
                 );
                 asked.push(setting.id.clone());
+                // Not opening on the agent's name, for the reason the
+                // settings page's line does not: see `Shown::warning`.
                 gone.push(format!(
-                    "{name} no longer offers {value} for {}, so this conversation is on {}",
+                    "No longer offered by {name}: {value} for {}, so this conversation is on {}",
                     setting.name,
                     setting.current_name().unwrap_or(&setting.current)
                 ));

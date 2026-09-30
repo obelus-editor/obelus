@@ -352,13 +352,17 @@ impl Shown<'_> {
             // A choice the agent has stopped offering is a line in the
             // settings file that does nothing: a new conversation is left
             // on whatever the agent opens on.
+            //
+            // Not opening on the agent's name, which is a name and keeps
+            // its own spelling -- and until the registry arrives it is the
+            // id, which is lowercase -- while copy opens on a capital.
             Self::Agent {
                 offer,
                 chosen: Some(value),
                 agent,
                 ..
             } if offer.name_of(value).is_none() => Some(format!(
-                "{agent} no longer offers this, so a new conversation starts on its own"
+                "No longer offered by {agent}, so a new conversation starts on its own"
             )),
             Self::Agent { .. } => None,
         }

@@ -6510,15 +6510,17 @@ fn a_value_the_agent_no_longer_offers_is_not_sent() {
         Some("fast"),
         "a value the agent does not offer was sent anyway"
     );
-    let said = "fake no longer offers brilliant for Model, so this conversation is on Fast";
+    // Wrapped to the transcript's width, so the first of its rows and then
+    // the second.
+    let said = "No longer offered by fake: brilliant for Model, so this conversation is on";
     let times = app.chat().map_or(0, |chat| {
         chat.rows(WIDTH)
             .iter()
-            .filter(|row| row.text().contains("no longer offers"))
+            .filter(|row| row.text().contains("No longer offered by"))
             .count()
     });
     assert!(
-        said_in_transcript(&app, said),
+        said_in_transcript(&app, said) && said_in_transcript(&app, "Fast"),
         "the conversation does not say why it is not on what was chosen:\n{}",
         screen(&mut app)
     );
@@ -6535,7 +6537,7 @@ fn a_value_the_agent_no_longer_offers_is_not_sent() {
     let times = app.chat().map_or(0, |chat| {
         chat.rows(WIDTH)
             .iter()
-            .filter(|row| row.text().contains("no longer offers"))
+            .filter(|row| row.text().contains("No longer offered by"))
             .count()
     });
     assert_eq!(
