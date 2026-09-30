@@ -413,6 +413,46 @@ fn offered(said: &str) -> Vec<String> {
     names
 }
 
+/// The shapes a picture arrives in, best first.
+///
+/// Best meaning what survives being sent on: PNG is lossless and is what a
+/// screenshot tool puts down, and the others are here because a reader who
+/// copied a photograph out of a browser has whatever that browser offered.
+/// No `image/svg+xml`, which is a document rather than a picture -- an agent
+/// handed one would be handed markup it can already read as text.
+const PICTURES: &[&str] = &["image/png", "image/jpeg", "image/webp", "image/gif"];
+
+/// A picture on the clipboard, in the first shape that is offered.
+///
+/// `None` where there is none, which is the ordinary case and not worth a
+/// word anywhere: a reader pressing paste with words on the clipboard wants
+/// the words.
+///
+/// Asked as two questions rather than one, because the shapes a clipboard
+/// holds are cheap to list and a picture is not cheap to copy: a megabyte
+/// comes over a pipe, and asking for one that is not there would be a
+/// megabyte of nothing on every paste of ordinary text.
+#[must_use]
+pub fn picture() -> Option<(String, Vec<u8>)> {
+    let offered = types();
+    let wanted = PICTURES
+        .iter()
+        .find(|mime| offered.iter().any(|held| held == *mime))?;
+    let bytes = paste_as(wanted)?;
+    // A shape that is offered and comes back empty is not a picture. The
+    // clipboard can say it holds something it can no longer produce -- the
+    // program that owned it has gone -- and an empty payload sent to an
+    // agent is a question about nothing.
+    if bytes.is_empty() {
+        tracing::warn!(
+            mime = wanted,
+            "the clipboard offered a picture and gave nothing"
+        );
+        return None;
+    }
+    Some(((*wanted).to_string(), bytes))
+}
+
 /// What a `text/uri-list` names, as paths on this machine.
 ///
 /// Only `file:` URIs, because only those are paths. A list that names
@@ -605,6 +645,76 @@ mod tests {
     /// The sequence, byte for byte. A wrong one is the worst kind of bug
     /// here: the terminal ignores it, so nothing is copied and nothing is
     /// reported.
+    /// A picture is taken in the first shape that is offered, and a shape
+    /// that produces nothing is not one.
+    ///
+    /// The order matters because a browser offers several: PNG is lossless
+    /// and is what the reader would have got by saving the image, so taking
+    /// whichever the clipboard happens to list first would send an agent a
+    /// re-encoded JPEG of a screenshot.
+    ///
+    /// One owner holding a changing hand, because `OWNER` is a `OnceLock`
+    /// and the second `owned_by` in a process is a warning and nothing
+    /// else. Which also means this is the only test in this binary that may
+    /// own the clipboard -- a second one would be answered by this one's
+    /// owner, and would pass or fail for reasons of its own.
+    ///
+    /// Broken deliberately two ways. Answering with the first of `types()`
+    /// that starts with `image/` takes the JPEG, because that is the order
+    /// this hand lists them in. And dropping the empty check hands back a
+    /// picture of no bytes, which an agent is then asked to look at.
+    #[test]
+    fn a_picture_is_taken_in_the_best_shape_that_has_bytes() {
+        #[derive(Default)]
+        struct Hand(std::sync::Mutex<Vec<(String, Vec<u8>)>>);
+        impl Hand {
+            fn holding(&self, shapes: &[(&str, &[u8])]) {
+                *self.0.lock().expect("the hand") = shapes
+                    .iter()
+                    .map(|(name, bytes)| ((*name).to_string(), (*bytes).to_vec()))
+                    .collect();
+            }
+        }
+        impl Owner for &'static Hand {
+            fn offer(&self, _shapes: Vec<(String, Vec<u8>)>) -> bool {
+                true
+            }
+            fn holding(&self, mime: &str) -> Option<Vec<u8>> {
+                let held = self.0.lock().expect("the hand");
+                held.iter()
+                    .find(|(name, _)| name == mime)
+                    .map(|(_, bytes)| bytes.clone())
+            }
+            fn holds(&self) -> Vec<String> {
+                let held = self.0.lock().expect("the hand");
+                held.iter().map(|(name, _)| name.clone()).collect()
+            }
+        }
+        static HAND: std::sync::OnceLock<Hand> = std::sync::OnceLock::new();
+        let hand = HAND.get_or_init(Hand::default);
+        hand.holding(&[("text/plain", b"hello")]);
+        owned_by(Box::new(hand));
+
+        // Words alone are not a picture.
+        assert!(picture().is_none(), "text was taken for a picture");
+
+        // Listed worst first, which is what makes the order a claim.
+        hand.holding(&[
+            ("image/jpeg", &[0xff, 0xd8, 0xff]),
+            ("image/png", &[0x89, b'P', b'N', b'G']),
+        ]);
+        let (mime, bytes) = picture().expect("a picture");
+        assert_eq!(mime, "image/png", "the lossless shape was not preferred");
+        assert_eq!(bytes, vec![0x89, b'P', b'N', b'G']);
+
+        // Offered and empty, which a clipboard whose owner has gone does.
+        hand.holding(&[("image/png", &[])]);
+        assert!(
+            picture().is_none(),
+            "a shape that produced no bytes was taken for a picture"
+        );
+    }
+
     #[test]
     fn the_sequence_is_osc_52_around_base64() {
         let mut written = Vec::new();

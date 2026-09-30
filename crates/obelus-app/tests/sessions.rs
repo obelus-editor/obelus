@@ -12,6 +12,8 @@
 //! opened last" would look correct against an agent that did the same -- and
 //! the two would be wrong together.
 
+use obelus_agent::acp::link::Said;
+
 mod support;
 
 use std::{
@@ -122,7 +124,7 @@ fn a_prompt_waiting_for_a_conversation_says_it_is_thinking() {
     // Nowhere to send it: there is no session, and there cannot be one
     // yet -- the process has only just been started.
     assert!(
-        !talk.say(None, "hello", None),
+        !talk.say(None, vec![Said::Words("hello".to_string())], None),
         "a prompt went somewhere when there was nowhere to send it"
     );
     assert!(
@@ -221,7 +223,7 @@ fn an_answer_comes_back_in_the_conversation_it_was_asked_in() {
     talk.open();
     let second = opened(&mut talk, &events);
 
-    talk.say(Some(&second), "/help", None);
+    talk.say(Some(&second), vec![Said::Words("/help".to_string())], None);
 
     let mut whose = None;
     pump(&mut talk, &events, "An answer", |_, incoming| {
@@ -262,10 +264,14 @@ fn interrupting_one_conversation_does_not_swallow_the_others_answer() {
 
     // A turn that stays in flight: the agent says nothing at all about this
     // one until it is cancelled, which is what leaves something to stop.
-    talk.say(Some(&first), "do it slowly", None);
+    talk.say(
+        Some(&first),
+        vec![Said::Words("do it slowly".to_string())],
+        None,
+    );
     // A turn that finishes on its own, so that the only thing which could
     // stop it arriving is the interruption meant for the other one.
-    talk.say(Some(&second), "/help", None);
+    talk.say(Some(&second), vec![Said::Words("/help".to_string())], None);
     talk.interrupt(Some(&first));
 
     let mut answered = None;

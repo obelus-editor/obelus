@@ -83,15 +83,15 @@ use agent_client_protocol::{
             DeleteSessionRequest, ElicitationAcceptAction, ElicitationAction,
             ElicitationCapabilities, ElicitationContentValue, ElicitationFormCapabilities,
             ElicitationMode, ElicitationPropertySchema, ElicitationSchema,
-            ElicitationUrlCapabilities, FileSystemCapabilities, Implementation, InitializeRequest,
-            KillTerminalRequest, KillTerminalResponse, LoadSessionRequest, McpCapabilities,
-            McpServer, McpServerHttp, McpServerSse, MultiSelectItems, NewSessionRequest,
-            NewSessionResponse, PermissionOptionId, PromptRequest, ReadTextFileRequest,
-            ReadTextFileResponse, ReleaseTerminalRequest, ReleaseTerminalResponse,
-            RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-            ResumeSessionRequest, SelectedPermissionOutcome, SessionConfigId, SessionConfigKind,
-            SessionConfigOption, SessionConfigOptionCategory, SessionConfigOptionValue,
-            SessionConfigOptionsCapabilities, SessionConfigSelectOption,
+            ElicitationUrlCapabilities, FileSystemCapabilities, ImageContent, Implementation,
+            InitializeRequest, KillTerminalRequest, KillTerminalResponse, LoadSessionRequest,
+            McpCapabilities, McpServer, McpServerHttp, McpServerSse, MultiSelectItems,
+            NewSessionRequest, NewSessionResponse, PermissionOptionId, PromptRequest,
+            ReadTextFileRequest, ReadTextFileResponse, ReleaseTerminalRequest,
+            ReleaseTerminalResponse, RequestPermissionOutcome, RequestPermissionRequest,
+            RequestPermissionResponse, ResumeSessionRequest, SelectedPermissionOutcome,
+            SessionConfigId, SessionConfigKind, SessionConfigOption, SessionConfigOptionCategory,
+            SessionConfigOptionValue, SessionConfigOptionsCapabilities, SessionConfigSelectOption,
             SessionConfigSelectOptions, SessionId, SessionModeState, SessionNotification,
             SessionUpdate, SetSessionConfigOptionRequest, SetSessionModeRequest,
             TerminalExitStatus, TerminalId, TerminalOutputRequest, TerminalOutputResponse,
@@ -161,8 +161,15 @@ pub enum Ask {
         /// the answer, which is the same trick a language server's version
         /// is.
         turn: Turn,
-        /// What to say.
-        words: String,
+        /// What to say, in the order the reader put it together.
+        ///
+        /// A list rather than words and a bag of pictures beside them,
+        /// because where a picture sits is part of what the reader said:
+        /// "the one below" and "the one above" are about the block after
+        /// and the block before, and a prompt that gathered the pictures at
+        /// one end would make both of those wrong. So `abc`, a picture,
+        /// `def`, a picture is four blocks and stays four blocks.
+        said: Vec<Said>,
         /// What Obelus has to say about the conversation first, once.
         ///
         /// Its own block rather than stuck to the front of the words: the
@@ -259,6 +266,45 @@ pub struct Carries {
     /// Whether a file's contents may be carried in one, rather than named
     /// and left for the agent to read.
     pub embedded: bool,
+}
+
+/// One piece of what the reader said, as the protocol wants it.
+///
+/// Base64 here and nowhere earlier: this is the one place that knows the
+/// wire takes a string, and a picture that crossed three layers already
+/// encoded would be a megabyte of text being copied about for nothing.
+fn block_of(said: Said) -> ContentBlock {
+    use base64::Engine as _;
+    match said {
+        Said::Words(words) => ContentBlock::Text(TextContent::new(words)),
+        Said::Picture(picture) => ContentBlock::Image(ImageContent::new(
+            base64::engine::general_purpose::STANDARD.encode(&picture.bytes),
+            picture.mime,
+        )),
+    }
+}
+
+/// One piece of what the reader put together, in the order they put it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Said {
+    /// A run of what they typed.
+    Words(String),
+    /// A picture they put in between two of those runs.
+    Picture(Picture),
+}
+
+/// A picture on its way to an agent.
+///
+/// The bytes as they came off the clipboard, not base64: the encoding is
+/// the wire's and belongs where the block is built, which is the one place
+/// that knows the protocol wants a string. Carried this far as bytes so
+/// that nothing in between has to know either.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Picture {
+    /// What shape it is in, as the clipboard named it.
+    pub mime: String,
+    /// The picture itself.
+    pub bytes: Vec<u8>,
 }
 
 /// One thing from the agent worth acting on.
@@ -1618,7 +1664,7 @@ async fn talk(
                         Ask::Say {
                             session,
                             turn,
-                            words,
+                            said,
                             opening,
                         } => {
                             let told = events.clone();
@@ -1628,8 +1674,8 @@ async fn talk(
                                     session,
                                     opening
                                         .into_iter()
-                                        .chain(std::iter::once(words))
-                                        .map(|said| ContentBlock::Text(TextContent::new(said)))
+                                        .map(|words| ContentBlock::Text(TextContent::new(words)))
+                                        .chain(said.into_iter().map(block_of))
                                         .collect(),
                                 ))
                                 .on_receiving_result(move |asked| {

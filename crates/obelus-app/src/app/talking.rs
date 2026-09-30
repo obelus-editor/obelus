@@ -1395,7 +1395,11 @@ impl App {
         // first thing said: the reader typed while it was starting, and the
         // handle sends it when there is somewhere to send it -- opening and
         // all, because the opening belongs to whatever goes first.
-        talker.say(session.as_ref(), text, opening.as_deref());
+        talker.say(
+            session.as_ref(),
+            vec![acp::link::Said::Words(text.to_string())],
+            opening.as_deref(),
+        );
     }
 
     /// Says what the reader had waiting, now that the turn it was waiting

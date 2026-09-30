@@ -591,10 +591,36 @@ fn char_width(character: char, width: usize) -> usize {
     if character == '\t' {
         let tabs = tab_width();
         tabs - (width % tabs)
+    } else if character == ATTACHED {
+        ATTACHED_WIDTH
     } else {
         character.width().unwrap_or(0)
     }
 }
+
+/// A thing that is not text, standing in the text that is around it.
+///
+/// Unicode's own character for exactly this, which is why it rather than
+/// anything invented: a reader cannot type it, so nothing they write is
+/// ever mistaken for one, and the run it stands in can be split on it
+/// without parsing a word of what they said.
+///
+/// It is here rather than with whatever puts one in because this is where
+/// how wide a thing is drawn is answered, and one answer is the whole rule
+/// -- a character the arithmetic thinks is one cell and the drawing paints
+/// nine of is a caret that lands eight columns from where the reader
+/// pointed.
+pub const ATTACHED: char = '\u{fffc}';
+
+/// How wide one is drawn.
+///
+/// Fixed rather than worked out from what it stands for, because this
+/// function is given a character and nothing else -- not which attachment
+/// it is, nor whose box it is in. Nine is what `[Image 1]` takes, which is
+/// what the conversation draws in its place; past nine attachments in one
+/// message the drawing has to fit the number into the same room, and the
+/// order is still the order.
+pub const ATTACHED_WIDTH: usize = 9;
 
 /// How many characters into a string a UTF-16 offset is.
 ///
@@ -632,7 +658,12 @@ pub fn characters_at_utf16(contents: &str, units: usize) -> usize {
 pub fn text_width(contents: &str) -> usize {
     contents
         .chars()
-        .map(|character| character.width().unwrap_or(0))
+        .map(|character| match character {
+            // The same answer as `char_width`, because a label with one in
+            // it is measured by this and drawn by the same nine columns.
+            ATTACHED => ATTACHED_WIDTH,
+            _ => character.width().unwrap_or(0),
+        })
         .sum()
 }
 

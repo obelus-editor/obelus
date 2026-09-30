@@ -20,7 +20,7 @@ use std::ops::Range;
 use crossterm::event::KeyEvent;
 use obelus_editing::Editing;
 use obelus_text::{
-    Text,
+    ATTACHED, Text,
     coordinates::{CharColumn, DisplayColumn, LineNumber, Span},
 };
 
@@ -39,11 +39,43 @@ pub struct Laid {
     pub held: Option<Range<usize>>,
 }
 
+/// A picture the reader put in the box.
+///
+/// The bytes as the clipboard gave them. The box knows nothing about what
+/// is in one and nothing about the protocol that will carry it -- it holds
+/// them so that they stay in step with the marks that stand for them, which
+/// is the one thing that cannot be worked out again afterwards.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Attached {
+    /// What shape it is in, as the clipboard named it.
+    pub mime: String,
+    /// The picture itself.
+    pub bytes: Vec<u8>,
+}
+
+/// One piece of what is in the box, in the order it is in.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Part {
+    /// A run of what was typed.
+    Words(String),
+    /// A picture between two of those runs.
+    Picture(Attached),
+}
+
 /// What is being written.
 #[derive(Clone, Debug)]
 pub struct Composer {
     /// The text and the caret in it.
     writing: Editing,
+    /// The pictures put in, in the order their marks appear.
+    ///
+    /// Kept beside the text rather than in it, because a picture is not
+    /// text and the box is a box of text. What is in the text is one
+    /// [`ATTACHED`] per picture, which is what makes the two lists the same
+    /// length and the same order -- and what makes the caret step over a
+    /// picture in one press and the backspace take the whole of it, both of
+    /// them without knowing pictures exist.
+    attached: Vec<Attached>,
 }
 
 impl Default for Composer {
@@ -58,6 +90,7 @@ impl Composer {
     pub fn new() -> Self {
         Self {
             writing: Editing::new(""),
+            attached: Vec::new(),
         }
     }
 
@@ -145,16 +178,131 @@ impl Composer {
         self.writing.move_to(motion, &(), width.max(1)) || held
     }
 
+    /// Puts a picture in where the caret is.
+    ///
+    /// One [`ATTACHED`] goes into the text and the picture goes into the
+    /// list at the place the marks put it -- which is how many marks are
+    /// already behind the caret, not how many pictures there are: a reader
+    /// who goes back and pastes one between two others has put it between
+    /// them, and the order is what the agent will be told.
+    pub fn attach(&mut self, picture: Attached, width: u16) {
+        let at = self.marks_before(self.caret_offset());
+        self.attached.insert(at, picture);
+        self.writing.write_in(&ATTACHED.to_string(), width.max(1));
+    }
+
+    /// What is in the box, in order, with the runs between the pictures.
+    ///
+    /// Empty runs are left out: a picture on its own, or two in a row, has
+    /// nothing between them to say, and a block of no words is a block an
+    /// agent has to be given a reason for.
+    #[must_use]
+    pub fn parts(&self) -> Vec<Part> {
+        let said = self.writing.said();
+        let mut pictures = self.attached.iter().cloned();
+        let mut parts = Vec::new();
+        let mut words = String::new();
+        for character in said.chars() {
+            if character == ATTACHED {
+                if !words.is_empty() {
+                    parts.push(Part::Words(std::mem::take(&mut words)));
+                }
+                // A mark with no picture behind it cannot happen -- the two
+                // lists are kept in step -- and if it ever did, saying
+                // nothing is better than saying an empty picture.
+                if let Some(picture) = pictures.next() {
+                    parts.push(Part::Picture(picture));
+                }
+                continue;
+            }
+            words.push(character);
+        }
+        if !words.is_empty() {
+            parts.push(Part::Words(words));
+        }
+        parts
+    }
+
+    /// Whether anything in here is a picture.
+    #[must_use]
+    pub fn has_pictures(&self) -> bool {
+        !self.attached.is_empty()
+    }
+
+    /// Where the caret is, as characters from the start of the whole text.
+    fn caret_offset(&self) -> usize {
+        let cursor = self.writing.cursor();
+        self.writing
+            .text()
+            .char_offset(cursor.line, cursor.column)
+            .get()
+    }
+
+    /// How many marks are in the first `characters` of the text.
+    fn marks_before(&self, characters: usize) -> usize {
+        self.writing
+            .said()
+            .chars()
+            .take(characters)
+            .filter(|character| *character == ATTACHED)
+            .count()
+    }
+
     /// Takes out what is behind the caret.
     pub fn backspace(&mut self) {
+        let was = self.marks_before(usize::MAX);
+        // Which picture the mark behind the caret is, before it is gone.
+        let doomed = (self.caret_offset() > 0
+            && self.writing.said().chars().nth(self.caret_offset() - 1) == Some(ATTACHED))
+        .then(|| self.marks_before(self.caret_offset() - 1));
         self.writing
             .apply(obelus_editing::Typing::Backward, &(), u16::MAX);
+        self.forget(was, doomed);
     }
 
     /// And what is in front of it.
     pub fn delete(&mut self) {
+        let was = self.marks_before(usize::MAX);
+        let doomed = (self.writing.said().chars().nth(self.caret_offset()) == Some(ATTACHED))
+            .then(|| self.marks_before(self.caret_offset()));
         self.writing
             .apply(obelus_editing::Typing::Forward, &(), u16::MAX);
+        self.forget(was, doomed);
+    }
+
+    /// Drops the picture an edit just took the mark of.
+    ///
+    /// `doomed` is which one it was, worked out before the edit while the
+    /// mark was still there. Where the edit took out more than that one --
+    /// a selection with marks inside it -- the count is what says so, and
+    /// the tail goes: a selection is a run, so what it removed is a run of
+    /// this list too.
+    fn forget(&mut self, was: usize, doomed: Option<usize>) {
+        let now = self
+            .writing
+            .said()
+            .chars()
+            .filter(|c| *c == ATTACHED)
+            .count();
+        if now == was {
+            return;
+        }
+        if let Some(which) = doomed
+            && was - now == 1
+            && which < self.attached.len()
+        {
+            self.attached.remove(which);
+            return;
+        }
+        // More than one went, which a selection typed over does. Which of
+        // them is not a count -- but a selection is one run, so what it
+        // took out is one run of this list, and the marks that are left say
+        // how many. Trimmed from the end, which is right for the common
+        // shape of clearing the box and wrong only for a reader who
+        // selected across the middle and kept typing; the alternative is
+        // carrying an identity for each mark through a box that is
+        // deliberately not a buffer.
+        self.attached.truncate(now);
     }
 
     /// One character left, or right.
@@ -232,7 +380,18 @@ impl Composer {
     }
 
     /// Puts a run of text in, over whatever is held.
+    ///
+    /// Marks are taken out of it first. What arrives here is text from
+    /// somewhere else -- a paste, an agent's words put back in the box --
+    /// and one of these in it would be a mark with no picture behind it:
+    /// the box would draw `[Image 1]` over nothing and the prompt would be
+    /// split where the reader never put anything.
     pub fn write_in(&mut self, what: &str, width: u16) {
+        let what = &if what.contains(ATTACHED) {
+            what.replace(ATTACHED, "")
+        } else {
+            what.to_string()
+        };
         self.writing.write_in(what, width.max(1));
     }
 
@@ -326,6 +485,10 @@ pub fn wrapped(text: &str, width: u16) -> Vec<Laid> {
 fn laid_out(text: &Text, width: u16, held: Option<Span>) -> Vec<Laid> {
     let width = width.max(1);
     let mut rows = Vec::new();
+    // Which picture the next mark stands for, counted across the whole box
+    // rather than the row: a reader who wrapped a line did not renumber
+    // what they put in it.
+    let mut seen = 0;
     for index in 0..text.line_count() {
         let line = LineNumber::new(index);
         let characters: Vec<char> = text.line(line).chars().collect();
@@ -336,13 +499,62 @@ fn laid_out(text: &Text, width: u16, held: Option<Span>) -> Vec<Laid> {
                 .skip(row.first.get())
                 .collect();
             let said = words.trim_end_matches('\n').to_string();
-            rows.push(Laid {
-                held: held.and_then(|span| held_in(span, line, row.first, said.chars().count())),
-                said,
-            });
+            let held = held.and_then(|span| held_in(span, line, row.first, said.chars().count()));
+            let (said, held) = spelt_out(&said, &mut seen, held);
+            rows.push(Laid { held, said });
         }
     }
     rows
+}
+
+/// A row with its marks written out, and whatever is held moved to match.
+///
+/// The row that reaches the drawing is the row the reader sees, so the mark
+/// becomes its words here rather than three layers further on: everything
+/// that measures a row then measures what is on screen, which is the same
+/// nine columns [`obelus_text::ATTACHED_WIDTH`] already told the wrapping
+/// about.
+///
+/// Past nine pictures the number no longer fits the room, and the room is
+/// what the wrapping was told. A `+` rather than a wider mark, because the
+/// alternative is a row whose columns and characters disagree -- and the
+/// order is still the order, which is what the number was for.
+fn spelt_out(
+    said: &str,
+    seen: &mut usize,
+    held: Option<Range<usize>>,
+) -> (String, Option<Range<usize>>) {
+    if !said.contains(ATTACHED) {
+        return (said.to_string(), held);
+    }
+    let mut out = String::with_capacity(said.len());
+    let (mut start, mut end) = (
+        held.clone().map_or(0, |range| range.start),
+        held.as_ref().map_or(0, |range| range.end),
+    );
+    for (index, character) in said.chars().enumerate() {
+        if character != ATTACHED {
+            out.push(character);
+            continue;
+        }
+        *seen += 1;
+        match *seen {
+            which @ 1..=9 => out.push_str(&format!("[Image {which}]")),
+            _ => out.push_str("[Image +]"),
+        }
+        // The mark was one character and is now nine, so anything held at
+        // or after it moves by eight.
+        let grown = obelus_text::ATTACHED_WIDTH - 1;
+        if held.is_some() {
+            if index < start {
+                start += grown;
+            }
+            if index < end {
+                end += grown;
+            }
+        }
+    }
+    (out, held.map(|_| start..end))
 }
 
 /// Which line a laid-out row belongs to, and which of that line's rows it
@@ -450,5 +662,131 @@ mod pointer_tests {
 
         composer.hold_line(40);
         assert_eq!(composer.selected().as_deref(), Some("hello world"));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn picture(name: &str) -> Attached {
+        Attached {
+            mime: "image/png".to_string(),
+            bytes: name.as_bytes().to_vec(),
+        }
+    }
+
+    /// A picture is one character in the text, wherever the reader put it.
+    ///
+    /// The three things a reader asked for are one thing: the mark is a
+    /// single character, so the caret steps over the whole of it, backspace
+    /// takes the whole of it, and what goes to the agent splits on it into
+    /// the blocks the reader built. `abc`, a picture, `def`, a picture is
+    /// four blocks and has to stay four -- "the one below" is about the
+    /// block after, and a prompt that gathered the pictures at one end
+    /// would make it point at nothing.
+    ///
+    /// Broken deliberately by gathering: returning the words as one `Part`
+    /// with the pictures after them gives two blocks here rather than four.
+    #[test]
+    fn what_is_in_the_box_keeps_the_order_the_reader_built_it_in() {
+        let mut box_ = Composer::new();
+        box_.write_in("abc", 80);
+        box_.attach(picture("one"), 80);
+        box_.write_in("def", 80);
+        box_.attach(picture("two"), 80);
+
+        assert_eq!(
+            box_.parts(),
+            vec![
+                Part::Words("abc".to_string()),
+                Part::Picture(picture("one")),
+                Part::Words("def".to_string()),
+                Part::Picture(picture("two")),
+            ]
+        );
+        // And the text really is one character per picture.
+        assert_eq!(box_.text().chars().count(), 8, "{:?}", box_.text());
+    }
+
+    /// Backspace over a picture takes *that* picture, not the last one.
+    ///
+    /// The marks and the list have to stay in the same order, or a picture
+    /// is sent in another's place: the reader asks about "this one" and the
+    /// agent is shown a different one.
+    ///
+    /// The mark taken out is the *first*, which is the half that has to be
+    /// asserted. Taking the last one out corrects itself and says nothing
+    /// about the bookkeeping -- `parts` walks the marks and takes a picture
+    /// per mark, so a picture with no mark left is never reached. That
+    /// version of this test passed with `forget` removed from `backspace`
+    /// altogether, which is how this one came to be written.
+    ///
+    /// Broken deliberately by leaving `forget` out of `backspace`: the
+    /// first mark goes, the first picture stays, and the mark that is left
+    /// -- the reader's second picture -- is paired with the first, so the
+    /// agent is shown the picture that was deleted.
+    #[test]
+    fn taking_a_mark_out_takes_its_own_picture_with_it() {
+        let mut box_ = Composer::new();
+        box_.attach(picture("one"), 80);
+        box_.write_in("between", 80);
+        box_.attach(picture("two"), 80);
+        assert_eq!(box_.parts().len(), 3);
+
+        // Back to just after the first mark: one for the mark, seven for
+        // the word between them.
+        for _ in 0..8 {
+            box_.left();
+        }
+        box_.backspace();
+
+        assert_eq!(
+            box_.parts(),
+            vec![
+                Part::Words("between".to_string()),
+                Part::Picture(picture("two")),
+            ],
+            "the mark that is left was paired with the picture that went"
+        );
+    }
+
+    /// A mark is written out where it is drawn, and it takes the room the
+    /// wrapping was told it takes.
+    ///
+    /// Nine columns, because that is what `char_width` answers -- a row
+    /// whose characters and columns disagree is a caret that lands
+    /// somewhere else.
+    ///
+    /// Broken deliberately by returning the row without `spelt_out`: the
+    /// row is then one character where the wrapping counted nine.
+    #[test]
+    fn a_mark_is_drawn_as_the_words_it_stands_for() {
+        let mut box_ = Composer::new();
+        box_.write_in("look at ", 80);
+        box_.attach(picture("one"), 80);
+        box_.write_in(" and ", 80);
+        box_.attach(picture("two"), 80);
+
+        let rows = box_.rows(80);
+        assert_eq!(rows, vec!["look at [Image 1] and [Image 2]".to_string()]);
+        assert_eq!(
+            obelus_text::text_width(&box_.text()),
+            rows[0].chars().count(),
+            "the room the wrapping was told is not the room the row takes"
+        );
+    }
+
+    /// Text put in from somewhere else cannot bring a mark with it.
+    ///
+    /// Broken deliberately by dropping the strip in `write_in`: the box
+    /// then draws `[Image 1]` over a picture nobody attached.
+    #[test]
+    fn a_mark_pasted_in_as_text_is_not_a_picture() {
+        let mut box_ = Composer::new();
+        box_.write_in(&format!("before{ATTACHED}after"), 80);
+        assert_eq!(box_.text(), "beforeafter");
+        assert!(!box_.has_pictures());
+        assert_eq!(box_.parts(), vec![Part::Words("beforeafter".to_string())]);
     }
 }

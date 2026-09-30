@@ -3994,6 +3994,7 @@ name = "obelus-agent"
 version = "0.1.0"
 dependencies = [
  "agent-client-protocol",
+ "base64 0.23.1",
  "dirs",
  "flate2",
  "futures",

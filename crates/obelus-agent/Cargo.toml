@@ -10,6 +10,7 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+base64.workspace = true
 obelus-git.workspace = true
 obelus-logging.workspace = true
 obelus-program.workspace = true
