@@ -3096,6 +3096,11 @@ impl Told {
         self.grounds.lock().expect("what was said").last().copied()
     }
 
+    /// How many times a ground was said at all.
+    fn grounds_said(&self) -> usize {
+        self.grounds.lock().expect("what was said").len()
+    }
+
     /// And the last pair a hold is drawn in.
     fn holds(&self) -> Option<(ratatui::style::Color, ratatui::style::Color)> {
         self.holds.lock().expect("what was said").last().copied()
@@ -3143,7 +3148,7 @@ fn the_size_of_the_text_reaches_whatever_is_drawing() {
 /// this week's page, and one told only on a change has no colour at all
 /// until the reader touches a setting.
 ///
-/// Deliberate break: take the call out of `apply_config` and the second
+/// Deliberate break: take the call out of `set_theme` and the second
 /// assertion still holds the light theme's ground; take it out of
 /// `drawn_by` and the first has nothing to compare.
 #[test]
@@ -3169,6 +3174,68 @@ fn what_the_page_is_drawn_on_reaches_whatever_is_drawing() {
     assert_eq!(told.ground(), Some(dark), "the ground it was changed to");
 }
 
+/// And a theme being previewed is what the window is drawn on, and so is
+/// the one put back when the reader escapes.
+///
+/// Neither is a change to the settings -- nobody has chosen anything -- so
+/// a ground said only where the settings are applied never heard of
+/// either: the cells were in the theme under the selection and the
+/// margin and the title bar round them in the one before it.
+///
+/// Deliberate break: take the call back out of `set_theme` and put it in
+/// `apply_config`, where it was. The first assertion then holds the dark
+/// theme's ground while the page is in the light one. And take away the
+/// `moved` in `set_theme`, and the count goes up by one a frame.
+#[test]
+fn a_theme_being_previewed_is_what_the_window_is_drawn_on() {
+    let _taken = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("previewing");
+    let file = settings_file(&scratch);
+    // Dark, because it is the first of the two: moving down from it walks
+    // to light, and moving down from light walks nowhere.
+    std::fs::write(&file, "theme = \"dark\"\n").expect("the settings");
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.config_file_for_test(file);
+    let told = std::sync::Arc::new(Told::default());
+    app.drawn_by(told.clone());
+    let chosen = app.theme().background;
+
+    support::press_control(&mut app, 'p');
+    support::type_text(&mut app, "choose-theme");
+    support::press(&mut app, KeyCode::Enter);
+    // A frame on either side of the arrow: the list's window is settled
+    // by one, so before it there are no rows for the arrow to walk, and
+    // the preview is worn by one, so before it the page is in the old
+    // theme still.
+    support::render(&mut app, 60, 12);
+    support::press(&mut app, KeyCode::Down);
+    support::render(&mut app, 60, 12);
+    let previewing = app.theme().background;
+    assert_ne!(
+        previewing, chosen,
+        "the next theme is drawn on the same colour"
+    );
+    assert_eq!(told.ground(), Some(previewing), "the theme being previewed");
+    // And said once. The preview is worn again on every frame the list is
+    // open, and a window told something wakes to draw it: saying it every
+    // time is a frame asking for the next one for as long as the list is
+    // up.
+    let said = told.grounds_said();
+    support::render(&mut app, 60, 12);
+    support::render(&mut app, 60, 12);
+    assert_eq!(
+        told.grounds_said(),
+        said,
+        "a frame said the same ground again"
+    );
+
+    support::press(&mut app, KeyCode::Esc);
+    assert_eq!(told.ground(), Some(chosen), "the theme put back");
+}
+
 /// And so do the two colours a hold is drawn in, which a window wants
 /// because it finds the hold in the cells rather than being told where it
 /// is.
@@ -3181,7 +3248,7 @@ fn what_the_page_is_drawn_on_reaches_whatever_is_drawing() {
 /// view is drawn like every other view because it paints the row that
 /// colour, which it must do anyway for the terminal.
 ///
-/// Deliberate break: take the call out of `apply_config` and the second
+/// Deliberate break: take the call out of `set_theme` and the second
 /// assertion still holds the light theme's pair; take it out of
 /// `drawn_by` and the first has nothing to compare.
 #[test]

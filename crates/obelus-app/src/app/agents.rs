@@ -341,12 +341,8 @@ impl App {
         drawing.text_size(self.settled.config.font_size);
         drawing.use_fonts(&self.settled.config.fonts);
         drawing.animates(self.settled.config.animation);
-        drawing.drawn_on(self.theme().background);
-        drawing.holding(
-            self.theme().selection_background,
-            self.theme().selected_row_background,
-        );
         self.drawing = Some(drawing);
+        self.say_the_colours();
     }
 
     /// The marks, for the view to draw.

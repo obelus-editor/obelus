@@ -769,6 +769,17 @@ pub(crate) fn file_in_mut(
     documents.get_mut(id.get())?.as_mut()?.file_mut()
 }
 
+/// What a front end is told about a theme -- see `App::say_the_colours` --
+/// as one value, so that whether it has changed is one comparison of the
+/// very things that would be said.
+const fn colours_said(theme: &Theme) -> (Color, Color, Color) {
+    (
+        theme.background,
+        theme.selection_background,
+        theme.selected_row_background,
+    )
+}
+
 impl App {
     /// Starts with the shipped key table and the given documents open.
     #[must_use]
@@ -1003,9 +1014,36 @@ impl App {
     /// Takes effect on the next frame and costs nothing else: what is cached
     /// per byte is which kind of thing it is, not what colour, so there is no
     /// reparse and nothing to invalidate.
+    ///
+    /// And tells whatever is drawing, because a window paints outside the
+    /// cells in the theme's colours too. Here rather than where the settings
+    /// are applied, because this is the one door every theme goes through
+    /// and the settings are only one of them: a theme being previewed, the
+    /// one put back when the reader escapes, and a theme file somebody
+    /// edited all came in by it without a word, and the window went on
+    /// painting its margin and its title bar in the old one.
+    ///
+    /// Only when they have moved. A theme being previewed is worn again on
+    /// every frame the list is open, and a front end told something wakes
+    /// to draw it -- so telling it every time is a frame that asks for the
+    /// next one, for as long as the reader looks at the list.
     pub fn set_theme(&mut self, name: &str, theme: Theme) {
+        let moved = colours_said(&theme) != colours_said(&self.theme);
         self.theme_name = name.to_string();
         self.theme = theme;
+        if moved {
+            self.say_the_colours();
+        }
+    }
+
+    /// The two things about the theme a front end paints for itself: the
+    /// ground outside the cells, and the colours a hold is drawn in.
+    pub(crate) fn say_the_colours(&self) {
+        if let Some(drawing) = self.drawing.as_ref() {
+            let (ground, held, row) = colours_said(&self.theme);
+            drawing.drawn_on(ground);
+            drawing.holding(held, row);
+        }
     }
 
     /// The highlight kinds for what is on screen.
