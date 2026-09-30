@@ -2211,10 +2211,7 @@ pub fn keys_card(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &The
     let widest = u16::try_from(
         hints
             .iter()
-            .map(|hint| {
-                hint.said.or(hint.does).map_or(0, text_width)
-                    + hint.switched.map_or(0, |_| usize::from(TICK_WIDTH) + 1)
-            })
+            .map(|hint| hint.said.or(hint.does).map_or(0, text_width))
             .max()
             .unwrap_or(0),
     )
@@ -2277,19 +2274,15 @@ pub fn keys_card(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &The
             paper,
             theme.gutter,
         );
-        let mut x = room.x + column;
+        let x = room.x + column;
         if let Some(does) = hint.said.or(hint.does) {
-            x = write(cells, x, y, does, style);
+            write(cells, x, y, does, style);
         }
-        // After the words, because what it is set to is worth reading second:
-        // a reader coming to the card is finding out what the key *is*.
-        if let Some(on) = hint.switched {
-            let ink = match hint.usable {
-                true => theme.foreground,
-                false => theme.gutter,
-            };
-            ticked(cells, x + 1, y, on, style.fg(ink));
-        }
+        // What the key is set to is not on the card. A card is read to find
+        // out what a key *is* -- what to press for a thing -- and which way
+        // one of them happens to be switched right now is a different
+        // question, asked of the foot, where the key is offered rather than
+        // catalogued.
     }
 }
 
