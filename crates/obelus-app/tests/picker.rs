@@ -313,18 +313,19 @@ fn choosing_a_theme_changes_the_colours() {
 /// the first -- and then two escapes to leave, with nothing on screen to
 /// say which of the two a key would reach. The way out is escape, and the
 /// key works again after it.
+///
+/// Asked with the keys that would open something, which is what the rule is
+/// about. It used to be asked with `ctrl+q`, which was convenient -- one
+/// flag to read instead of two screens to compare -- and stopped being
+/// true: leaving is the one key whose reaching the table costs nothing,
+/// because it opens nothing, and it is bound in a dialog on purpose now.
+/// See `leaving_is_asked_for_from_inside_a_dialog`.
 #[test]
 fn a_key_the_picker_does_not_want_goes_nowhere() {
     let mut app = app();
     press_control(&mut app, 'p');
     let palette = support::render(&mut app, 60, 12);
-    assert!(!app.should_quit());
 
-    press_control(&mut app, 'q');
-    assert!(
-        !app.should_quit(),
-        "ctrl+q reached the key table from inside a list"
-    );
     press_function(&mut app, 1);
     let after = support::render(&mut app, 60, 12);
     assert_eq!(
@@ -334,8 +335,13 @@ fn a_key_the_picker_does_not_want_goes_nowhere() {
     );
 
     press(&mut app, KeyCode::Esc);
-    press_control(&mut app, 'q');
-    assert!(app.should_quit(), "escape did not give the key table back");
+    press_function(&mut app, 1);
+    let back = support::render(&mut app, 60, 12);
+    assert_ne!(
+        support::text_block(&palette),
+        support::text_block(&back),
+        "escape did not give the key table back"
+    );
 }
 
 /// The one key the list of open files adds does not bring the others.
@@ -343,11 +349,34 @@ fn a_key_the_picker_does_not_want_goes_nowhere() {
 fn the_document_list_takes_its_own_key_and_not_the_global_ones() {
     let mut app = app();
     press_function(&mut app, 2);
-    press_control(&mut app, 'q');
-    assert!(
-        !app.should_quit(),
+    let documents = support::render(&mut app, 60, 12);
+
+    // The palette, which every other context opens: from here it is a
+    // second list over the first, so it does not open at all.
+    press_control(&mut app, 'p');
+    let after = support::render(&mut app, 60, 12);
+    assert_eq!(
+        support::text_block(&documents),
+        support::text_block(&after),
         "the list of open files reached the global keys"
     );
+}
+
+/// Except the one that leaves, which every dialog keeps.
+///
+/// The rule above is about a key opening a second thing over the first, and
+/// that is the one thing leaving cannot do. It is also the key a reader
+/// reaches for when they want out of everything at once -- and it used to
+/// do nothing at all from in here, with `handle_key` saying in a comment
+/// that it did.
+#[test]
+fn leaving_works_from_inside_a_list() {
+    let mut app = app();
+    press_control(&mut app, 'p');
+    assert!(!app.should_quit());
+
+    press_control(&mut app, 'q');
+    assert!(app.should_quit(), "ctrl+q did nothing from inside a list");
 }
 
 /// Arrow keys move the selection, not the cursor, while a picker is open.

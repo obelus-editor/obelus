@@ -120,15 +120,31 @@ impl App {
             Answer::Saving(id, Saving::Theirs) => self.take_what_is_on_disk(id.get()),
             Answer::Writing(id, Writing::Back) => self.save_now(id.get()),
             Answer::Writing(id, Writing::LetGo) => self.close(id),
-            // Including escape, which is the same answer by a shorter route.
-            Answer::Cancel => {}
+            // Including escape, which is the same answer by a shorter
+            // route -- and the two routes are why this is a call rather
+            // than the putting back itself: escape goes through `leave`
+            // and a chosen row does not, so one of them would otherwise
+            // leave the reader on a file they never asked to see.
+            Answer::Cancel => self.go_back_from_asking(),
+        }
+    }
+
+    /// Puts the reader back where a question about leaving took them from.
+    ///
+    /// Taken rather than read, so whichever way out of the question comes
+    /// first is the one that spends it: the other ways all end in Obelus
+    /// leaving, and a value left lying about would move the reader on the
+    /// next list they escaped out of.
+    pub(super) fn go_back_from_asking(&mut self) {
+        if let Some(id) = self.taken_from.take() {
+            self.go_to_document(id);
         }
     }
 
     /// The first document with something unwritten in it.
     ///
     /// Which is the only one, where the caller has counted one.
-    fn first_unsaved(&self) -> Option<DocumentId> {
+    pub(super) fn first_unsaved(&self) -> Option<DocumentId> {
         (0..self.documents.len())
             .map(DocumentId::new)
             .find(|id| self.file(*id).is_some_and(Buffer::is_dirty))

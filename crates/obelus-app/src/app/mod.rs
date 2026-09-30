@@ -400,6 +400,13 @@ pub struct App {
     /// schemes, and the only honest preview of a theme is the screen wearing
     /// it. Cancelling has to undo that.
     theme_before: Option<(String, Theme)>,
+    /// Where the reader was before quitting took them to the file it is
+    /// asking about.
+    ///
+    /// Put back wherever the question is cancelled, by either of the two
+    /// routes out of one -- a key pressed by accident may not leave the
+    /// reader somewhere they did not ask to be.
+    taken_from: Option<DocumentId>,
     /// The thread sending ticks, while anything wants them.
     ///
     /// Held so that dropping it stops the animation. There is nothing to
@@ -863,6 +870,7 @@ impl App {
             asked_line: None,
             rendered: None,
             theme_before: None,
+            taken_from: None,
             complaining: None,
             note: None,
             walk_generation: obelus_runtime::cancel::Latest::default(),
@@ -909,6 +917,31 @@ impl App {
             .filter(|buffer| buffer.is_dirty())
             .count();
         if unsaved > 0 {
+            // Nothing over the question. It is a list itself, so a list
+            // already showing is replaced by it -- but the settings, the
+            // counts and a list being built each have a layer of their
+            // own, and the question would open over those: two things on
+            // screen and two escapes to leave, which is the thing a
+            // context is for preventing. Left the way escape leaves them,
+            // so each puts back whatever it changed.
+            for layer in self.layers().nearest_first() {
+                self.leave(layer);
+            }
+            // And the file it is about under it, where there is one of
+            // them. The prompt can name a path, but a reader deciding
+            // whether to write something should be looking at it -- and
+            // the name is what they are least likely to need, because they
+            // know what they were typing.
+            //
+            // Only for one. A count is all a question can say about
+            // several, and there is nowhere to go that is all of them.
+            if unsaved == 1
+                && let Some(id) = self.first_unsaved()
+                && self.current != Some(id)
+            {
+                self.taken_from = self.current;
+                self.go_to_document(id);
+            }
             self.ask_before_leaving(unsaved);
             return;
         }
@@ -1794,9 +1827,11 @@ impl App {
                 if self.is_asking() {
                     self.refuse_asking();
                 }
-                // A theme previewed but not chosen. Nothing else a picker
-                // shows changes the application while it is open, so
-                // nothing else has to be put back.
+                // A theme previewed but not chosen, and the file a
+                // question about leaving took the reader to. The two
+                // things a picker changes about the application while it
+                // is open, and so the two that have to be put back.
+                self.go_back_from_asking();
                 if let Some((name, before)) = self.theme_before.take() {
                     self.set_theme(&name, before);
                 }

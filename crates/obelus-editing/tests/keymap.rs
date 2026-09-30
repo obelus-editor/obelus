@@ -125,10 +125,17 @@ fn no_global_binding_is_shadowed_by_a_context_binding() {
     // A shadowed global is not a lookup bug — the specific context is meant to
     // win — but it is always a mistake in the table: the global becomes
     // unreachable in that context with nothing to say so.
+    //
+    // Unless what wins is the same command, which takes nothing away: a key
+    // named twice for one act is that key reaching further, and it is how
+    // `ctrl+q` leaves from inside a dialog — where what is bound everywhere
+    // is deliberately out of reach, and where leaving is the one act that
+    // opens nothing over what is already showing. What this is looking for
+    // is a *different* command winning in silence.
     for global in bindings.iter().filter(|b| b.context == Context::Always) {
         for specific in bindings.iter().filter(|b| b.context != Context::Always) {
             assert!(
-                global.chord != specific.chord,
+                global.chord != specific.chord || global.command == specific.command,
                 "{:?} shadows the global {:?}",
                 specific.command,
                 global.command

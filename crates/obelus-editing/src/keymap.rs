@@ -694,6 +694,22 @@ impl Keymap {
                     context: Context::Always,
                     chord: control('q'),
                 },
+                // And in a dialog, where almost nothing is bound, because
+                // the reason almost nothing is -- a global key reaching a
+                // dialog would open a second thing over it -- is the one
+                // reason this key cannot have: leaving opens nothing. It
+                // was already written down as the behaviour (`handle_key`
+                // says a layer lets `ctrl+q` fall through it) and was not
+                // the behaviour: a dialog's context never reaches what is
+                // bound everywhere, so the chord was not a command there at
+                // all and the key did nothing. `Context::Documents` falls
+                // back to this one, and a conversation to the file's, so
+                // this is the whole of what was missing.
+                Binding {
+                    command: Command::Quit,
+                    context: Context::Dialog,
+                    chord: control('q'),
+                },
                 // Alt: about the cursor. Enter on top of that is "open what
                 // I am on", so the menu of everything a server can say
                 // about the name under the caret is where the two meet.

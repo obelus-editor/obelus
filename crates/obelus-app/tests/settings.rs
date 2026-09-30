@@ -58,22 +58,43 @@ fn shown() -> usize {
 }
 
 /// The settings are a dialog: nothing of Obelus's own opens over them.
+///
+/// `ctrl+q` used to be among the keys pressed here, and it is not any more:
+/// what this rule is about is a key *opening* something over the page, and
+/// leaving opens nothing. It keeps the key on purpose now, which
+/// `leaving_closes_the_settings_and_asks` is about.
 #[test]
 fn nothing_of_obeluss_own_opens_over_the_settings() {
     let _taken = SETTINGS.lock().expect("the lock");
     let scratch = temporary("modal");
     let mut app = open(&settings_file(&scratch));
     let page = support::render(&mut app, 66, 12);
-    for key in ['o', 'e', 'p', 'q'] {
+    for key in ['o', 'e', 'p'] {
         support::press_control(&mut app, key);
     }
     assert!(app.picker().is_none(), "a list opened over the settings");
-    assert!(!app.should_quit(), "ctrl+q reached the key table");
     assert_eq!(
         support::text_block(&page),
         support::text_block(&support::render(&mut app, 66, 12)),
         "something opened over the settings"
     );
+}
+
+/// And the one key that does not open anything leaves, from in here too.
+///
+/// With nothing unwritten there is nothing to ask about, so it goes at
+/// once -- and the page it was showing is not something to put back,
+/// because Obelus is leaving.
+#[test]
+fn leaving_closes_the_settings_and_asks() {
+    let _taken = SETTINGS.lock().expect("the lock");
+    let scratch = temporary("modal-quit");
+    let mut app = open(&settings_file(&scratch));
+    support::render(&mut app, 66, 12);
+    assert!(!app.should_quit());
+
+    support::press_control(&mut app, 'q');
+    assert!(app.should_quit(), "ctrl+q did nothing from the settings");
 }
 
 /// A switch changes the setting, the running program, and the file -- in

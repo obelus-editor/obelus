@@ -1302,6 +1302,166 @@ mod saying {
         assert!(app.should_quit(), "answering did not leave");
     }
 
+    /// Leaving is asked for from inside a dialog, and asks there.
+    ///
+    /// `handle_key` has said for a long time that a layer lets `ctrl+q`
+    /// fall through it -- and it did not. A dialog's context never reaches
+    /// what is bound everywhere, which is what makes a dialog a dialog, so
+    /// the chord was not a command there at all and the key did nothing:
+    /// measured from the palette, the list of files, the settings and the
+    /// counts, and nothing happened in any of them.
+    ///
+    /// The key is bound in `Context::Dialog` now, where almost nothing is,
+    /// because the reason almost nothing is -- a global key would open a
+    /// second thing over the first -- is the one reason this key cannot
+    /// have. Broken deliberately by taking that binding out again.
+    #[test]
+    fn leaving_is_asked_for_from_inside_a_dialog() {
+        let (_scratch, mut app, _path) = reading("quit-in-dialog", "fn main() {}\n");
+        support::type_text(&mut app, "x");
+        support::press_control(&mut app, 'p');
+        support::render(&mut app, 70, 12);
+
+        support::press_control(&mut app, 'q');
+        assert!(!app.should_quit(), "it left with an unwritten document");
+        let dump = support::render(&mut app, 70, 12);
+        let said = support::said(&dump);
+        assert!(
+            said.contains("sample.rs is unsaved"),
+            "ctrl+q in a dialog did nothing at all:\n{dump}"
+        );
+        // And the question is what is showing, not a question over a
+        // palette: the list it replaced is gone.
+        assert!(
+            !said.contains("Filter commands"),
+            "the palette is still there under the question:\n{dump}"
+        );
+    }
+
+    /// And a dialog with a layer of its own is closed for it.
+    ///
+    /// The question is a list, so a list already showing is replaced by it
+    /// -- but the settings, the counts and a list being built have layers
+    /// of their own, and the question opens *over* those. Two things on
+    /// screen and two escapes to leave, which is what a context is for
+    /// preventing. Broken deliberately by taking the loop that leaves them
+    /// out of `request_quit`: the settings are then still underneath.
+    #[test]
+    fn leaving_closes_a_dialog_that_has_a_layer_of_its_own() {
+        let (_scratch, mut app, _path) = reading("quit-in-settings", "fn main() {}\n");
+        support::type_text(&mut app, "x");
+        dispatch::dispatch(&mut app, Command::ConfigOpen);
+        let dump = support::render(&mut app, 70, 12);
+        assert!(
+            support::said(&dump).contains("Filter settings"),
+            "the settings did not open:\n{dump}"
+        );
+
+        support::press_control(&mut app, 'q');
+        let dump = support::render(&mut app, 70, 12);
+        assert!(
+            support::said(&dump).contains("sample.rs is unsaved"),
+            "it did not ask:\n{dump}"
+        );
+        // Asked of what is open rather than of what is drawn. A list owns
+        // the status row it is over, so the settings' filter row goes from
+        // the screen whether or not the settings went with it -- which is
+        // what the first version of this asserted, and it passed with the
+        // settings left wide open underneath.
+        //
+        // The question is a layer itself, so what this says is that it is
+        // the only one: one thing on screen, one escape out of it.
+        let open: Vec<_> = app.layers().nearest_first().collect();
+        assert_eq!(
+            open,
+            vec![obelus_component::layers::Layer::Picker],
+            "the question is not the only thing open"
+        );
+    }
+
+    /// The one unwritten file is what the reader is looking at while they
+    /// decide about it -- and cancelling puts them back.
+    ///
+    /// The prompt can name a path, but somebody deciding whether to keep
+    /// what they typed should be looking at it. Only for one: a count is
+    /// all a question can say about several, and there is nowhere to go
+    /// that is all of them.
+    ///
+    /// Broken deliberately two ways -- not going in the first place, and
+    /// not putting them back on the way out. The second is the one worth
+    /// the test: escape goes through `leave` and a chosen `cancel` does
+    /// not, so putting it back in only one of them leaves the reader on a
+    /// file they never asked to see.
+    #[test]
+    fn leaving_shows_the_file_it_is_asking_about_and_cancelling_goes_back() {
+        let scratch = support::Scratch::new("quit-shows-it");
+        let one = scratch.path().join("one.rs");
+        let two = scratch.path().join("two.rs");
+        std::fs::write(&one, "fn one() {}\n").expect("the first file");
+        std::fs::write(&two, "fn two() {}\n").expect("the second file");
+        let mut app = App::new(vec![Buffer::open(&one).expect("opening the first")]);
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        support::lay_out(&mut app, 70, 12);
+
+        // The second is the one with something in it, and the first is the
+        // one being read.
+        app.open_buffer_for_test(Buffer::open(&two).expect("opening the second"));
+        support::lay_out(&mut app, 70, 12);
+        support::type_text(&mut app, "y");
+        // Back to the first, the way choosing it from the list of open
+        // files does.
+        app.open_for_test(&one);
+        let dump = support::render(&mut app, 70, 12);
+        assert!(
+            support::said(&dump).contains("one.rs"),
+            "the test is not standing where it thinks it is:\n{dump}"
+        );
+
+        let reading = |app: &App| {
+            app.current_buffer()
+                .map(|buffer| buffer.path().to_path_buf())
+                .expect("a file being read")
+        };
+        assert_eq!(
+            reading(&app),
+            one,
+            "the test is not standing where it thinks"
+        );
+
+        support::press_control(&mut app, 'q');
+        // Which file is being read, not what the prompt says. The prompt
+        // names the path either way -- that is what it is for -- so a dump
+        // containing `two.rs` says nothing about where the reader is, which
+        // is what the first version of this asked and why it passed with
+        // the going-there taken out.
+        assert_eq!(
+            reading(&app),
+            two,
+            "it asked about a file it did not take the reader to"
+        );
+
+        // And cancelling is not a way to be moved. Both routes out, because
+        // they are different code: a chosen row does not go through `leave`
+        // and escape does not go through `answer`.
+        support::answer(&mut app, "cancel");
+        assert!(!app.should_quit(), "cancelling left");
+        assert_eq!(
+            reading(&app),
+            one,
+            "the chosen `cancel` left the reader on the file it had taken them to"
+        );
+
+        support::press_control(&mut app, 'q');
+        assert_eq!(reading(&app), two, "the second asking did not go there");
+        support::press(&mut app, crossterm::event::KeyCode::Esc);
+        assert!(!app.should_quit(), "escaping left");
+        assert_eq!(
+            reading(&app),
+            one,
+            "escape left the reader on the file it had taken them to"
+        );
+    }
+
     /// The other way out writes everything first.
     #[test]
     fn leaving_can_write_everything_on_the_way_out() {
