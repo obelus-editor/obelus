@@ -373,7 +373,22 @@ impl Names {
             // offered: put it in. Which is the same key doing the same
             // thing -- what this row says about the list, said the other
             // way round.
-            KeyCode::Enter | KeyCode::Delete => self.toggle(),
+            KeyCode::Enter => self.toggle(),
+            // The two keys a reader reaches for to take something out, and
+            // only ever out: on an offer they do nothing, because putting a
+            // name in is not what anybody means by either. Delete was
+            // enter's twin once, and added a face where it was pressed.
+            //
+            // Backspace is also the query's, where it takes a character
+            // back, so it is this only with nothing typed: a reader
+            // correcting what they typed who had stepped up onto their own
+            // list would lose a face for a letter. Asked of the text as it
+            // is rather than whether it is blank, because a query of one
+            // space still has a space to take back. Delete needs no such
+            // guard -- the query's caret is always at its end, where
+            // delete has nothing to take.
+            KeyCode::Delete => self.take_out(),
+            KeyCode::Backspace if self.query.said().is_empty() => self.take_out(),
             _ => {
                 let said = self.query.said();
                 self.query.handle_key(key);
@@ -388,6 +403,15 @@ impl Names {
                 }
                 Outcome::Consumed
             }
+        }
+    }
+
+    /// Takes the row the reader is on out of the list, where it is one of
+    /// theirs, and does nothing where it is not.
+    fn take_out(&mut self) -> Outcome {
+        match self.rows.get(self.window.focus()).is_some_and(Row::chosen) {
+            true => self.toggle(),
+            false => Outcome::Consumed,
         }
     }
 
@@ -610,6 +634,41 @@ mod tests {
         press(&mut names, KeyCode::Up);
         assert_eq!(press(&mut names, KeyCode::Enter), Outcome::Changed);
         assert_eq!(names.chosen(), ["Iosevka"]);
+    }
+
+    /// Backspace takes one of the reader's names out, the way delete does,
+    /// and puts nothing in -- and with something typed it is the query's.
+    ///
+    /// Deliberate break: drop the guard on the query. Stepping up from the
+    /// offers onto `Iosevka` with `x` still typed, backspace then takes the
+    /// face out rather than the `x`, which is a typo costing a font. And
+    /// give delete back to `toggle`, where it was, and delete on an offer
+    /// puts `JetBrains Mono` in.
+    #[test]
+    fn backspace_takes_a_name_out_only_when_nothing_is_typed() {
+        let mut names = names();
+        // On an offer, where neither has anything to take out.
+        assert_eq!(press(&mut names, KeyCode::Backspace), Outcome::Consumed);
+        assert_eq!(press(&mut names, KeyCode::Delete), Outcome::Consumed);
+        assert_eq!(names.chosen(), ["Iosevka"]);
+
+        // Something typed, and the reader on their own list above it.
+        type_in(&mut names, "x");
+        press(&mut names, KeyCode::Up);
+        assert!(names.rows()[names.window().focus()].chosen());
+        press(&mut names, KeyCode::Backspace);
+        assert_eq!(names.chosen(), ["Iosevka"], "a letter cost a face");
+        assert_eq!(names.query.said(), "", "the letter was not taken back");
+
+        // And with nothing typed, on the same row, it is delete.
+        let focus = names
+            .rows()
+            .iter()
+            .position(Row::chosen)
+            .expect("one of the reader's");
+        names.window.set_focus(focus);
+        assert_eq!(press(&mut names, KeyCode::Backspace), Outcome::Changed);
+        assert!(names.chosen().is_empty());
     }
 
     /// The list opens on the first thing there is to add, not on the first
