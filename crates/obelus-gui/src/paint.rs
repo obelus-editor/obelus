@@ -1067,11 +1067,11 @@ impl Painter {
             // from stops there. And it comes up as the pane does, because
             // a shadow at full strength under a pane that is still half
             // there is a shadow with nothing casting it.
-            if let Some(behind) = said.behind {
+            if let Some(joined) = said.behind.and_then(|behind| casting(behind.joined)) {
                 self.shadow(
                     reached(pane, shift),
                     0.0,
-                    casting(behind.joined),
+                    joined,
                     cell.height * SHADOW_SPREAD,
                     along,
                 );
@@ -2481,8 +2481,10 @@ impl Painter {
         cell: CellSize,
     ) {
         let spread = cell.height * SHADOW_SPREAD;
-        if let (Some(glass), Some(behind)) = (pane, said.behind) {
-            self.shadow(glass, 0.0, casting(behind.joined), spread, 1.0);
+        if let (Some(glass), Some(joined)) =
+            (pane, said.behind.and_then(|behind| casting(behind.joined)))
+        {
+            self.shadow(glass, 0.0, joined, spread, 1.0);
         }
         // And a box has four edges and corners, so it casts all round.
         for card in framed {
@@ -3771,21 +3773,25 @@ fn reached(pane: [f32; 4], shift: f32) -> [f32; 4] {
 }
 
 /// Which half plane a pane casts its shadow into, which is the same one
-/// its glass is cut to.
+/// its glass is cut to -- and `None` where it casts none at all.
 ///
 /// A pane is joined to the page along one edge and casts from the other:
 /// a list standing on the status row throws its shadow up over the file,
 /// and one hanging from the top throws it down.
-fn casting(joined: Joined) -> u32 {
+///
+/// A full-screen pane has no free edge to cast from, and `0` is not the
+/// way to say so: to the shader it is a box joined to nothing, which
+/// casts on all four sides. Joined as `Above` it was a grey band across
+/// the page's last row -- its own shadow, falling on itself -- and as `0`
+/// it was a grey frame in the strip round the grid, which is there
+/// whenever the window is not a whole number of cells.
+fn casting(joined: Joined) -> Option<u32> {
     match joined {
-        Joined::Above => HANGING,
-        Joined::Below => STANDING,
-        // Nothing to cast on: the edge a full-screen pane would throw from
-        // is the screen's own, and what was there instead was a grey band
-        // across the page's last row -- its own shadow, falling on itself.
-        Joined::Screen => 0,
+        Joined::Above => Some(HANGING),
+        Joined::Below => Some(STANDING),
+        Joined::Screen => None,
         // Never here -- a box is `card_glass`'s.
-        Joined::Nowhere => 0,
+        Joined::Nowhere => Some(0),
     }
 }
 
@@ -4095,6 +4101,20 @@ mod tests {
         assert!((hanging[3] - 260.0).abs() < f32::EPSILON, "{hanging:?}");
         // Arrived, and it is simply the pane.
         assert_eq!(reached(pane, 0.0), pane);
+    }
+
+    /// A full-screen pane casts nothing, and a pane joined along one edge
+    /// casts from the other one only.
+    ///
+    /// Deliberate break: answer `Some(0)` for `Joined::Screen`, which is
+    /// what it was. The shader reads `0` as a box joined to nothing, and
+    /// the shadow falls all round the grid -- a grey frame in the strip
+    /// a window leaves over when it is not a whole number of cells.
+    #[test]
+    fn a_full_screen_pane_casts_no_shadow() {
+        assert_eq!(casting(Joined::Screen), None);
+        assert_eq!(casting(Joined::Above), Some(HANGING));
+        assert_eq!(casting(Joined::Below), Some(STANDING));
     }
 
     /// A square of colour is a hole in a pane only where it is the pane's
