@@ -55,19 +55,19 @@ const PATIENCE: Duration = Duration::from_secs(180);
 
 /// Where these tests let Obelus keep things about agents.
 ///
-/// Its own directory, because talking to an agent writes down what that
-/// agent offers -- and a test writing into the reader's real data
-/// directory is a test with a side effect on the machine it ran on.
+/// Its own directory, because a test that installs one -- or writes the
+/// record an install leaves -- into the reader's real data directory is a
+/// test with a side effect on the machine it ran on.
 fn agents_root() -> std::path::PathBuf {
     std::env::temp_dir().join(format!("obelus-agent-tests-{}", std::process::id()))
 }
 
 /// The same, for one test alone.
 ///
-/// Tests in one file share a process, and what an agent offers is written
-/// down under its own name: two tests talking to the fixture write the
-/// same file, and one of them reading it gets whichever write landed last.
-/// A test that is about that file needs one nobody else has.
+/// Tests in one file share a process, and an install's record is written
+/// under the agent's own name: two tests installing the fixture would
+/// write the same file. A test that is about that file, or about a log the
+/// fixture keeps beside it, needs one nobody else has.
 fn agents_root_for(name: &str) -> std::path::PathBuf {
     let root = std::env::temp_dir().join(format!("obelus-agent-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
@@ -6464,9 +6464,17 @@ fn a_conversation_opens_on_what_the_reader_chose() {
 /// not exist. The row on the settings page is where that is dealt with,
 /// because the reader is the only one who can.
 ///
+/// And it is said, once, in the conversation: the settings page marks the
+/// choice, but a reader in a conversation is not looking at that page, and
+/// a row showing something other than what they chose is a question with no
+/// answer on screen.
+///
 /// Broken deliberately by taking out the check that the value is among the
 /// ones offered: the agent was asked for `brilliant`, answered with the
-/// settings unchanged, and nothing anywhere said why.
+/// settings unchanged, and nothing anywhere said why. And by taking out the
+/// check against `started_on`, which is what makes each setting settled
+/// once: the agent restates every setting whenever one moves, and the
+/// sentence is said a second time.
 #[test]
 fn a_value_the_agent_no_longer_offers_is_not_sent() {
     let (mut app, events) = wired();
@@ -6501,6 +6509,40 @@ fn a_value_the_agent_no_longer_offers_is_not_sent() {
             .map(|setting| setting.current.as_str()),
         Some("fast"),
         "a value the agent does not offer was sent anyway"
+    );
+    let said = "fake no longer offers brilliant for Model, so this conversation is on Fast";
+    let times = app.chat().map_or(0, |chat| {
+        chat.rows(WIDTH)
+            .iter()
+            .filter(|row| row.text().contains("no longer offers"))
+            .count()
+    });
+    assert!(
+        said_in_transcript(&app, said),
+        "the conversation does not say why it is not on what was chosen:\n{}",
+        screen(&mut app)
+    );
+    assert_eq!(times, 1, "said more than once:\n{}", screen(&mut app));
+
+    // And not again when the agent says what it is set to afterwards,
+    // which it does with every setting at once: asked to be quick, the
+    // fixture says what its settings are, unasked, before it ends the turn.
+    support::type_text(&mut app, "do it quickly");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the turn to end", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    let times = app.chat().map_or(0, |chat| {
+        chat.rows(WIDTH)
+            .iter()
+            .filter(|row| row.text().contains("no longer offers"))
+            .count()
+    });
+    assert_eq!(
+        times,
+        1,
+        "said again when the agent restated its settings:\n{}",
+        screen(&mut app)
     );
 }
 
@@ -6541,7 +6583,7 @@ fn a_conversation_opened_to_ask_is_not_answered_as_one() {
             format!("log={}", log.display()),
         ],
     );
-    app.learn_what_the_agent_offers_for_test();
+    app.ask_what_the_agent_offers_for_test();
 
     asked(&mut app, &events, &log, "session/delete s-1");
     let asked = || std::fs::read_to_string(&log).unwrap_or_default();
@@ -6559,54 +6601,8 @@ fn a_conversation_opened_to_ask_is_not_answered_as_one() {
     );
 }
 
-/// Activating an agent asks it what it can be set to, on a conversation of
-/// its own, and leaves the reader's alone.
-///
-/// The settings page lists what an agent offers, and the protocol says it
-/// in the answer to `session/new` and nowhere else -- `initialize` carries
-/// the capabilities and the ways to sign in, and neither of those is this.
-/// So Obelus asks, the moment the reader chooses the agent, rather than
-/// leaving them to find out that a page about conversations needs a
-/// conversation first.
-///
-/// On one of its own, because the alternative is a conversation of theirs
-/// existing, being named, or being written in because a settings page
-/// wanted a list.
-///
-/// Broken deliberately twice. Not asking at all -- dropping the
-/// `talker.offers()` -- and the page waited ten seconds for a list nobody
-/// had gone for. Asking the ordinary way instead, `talker.open()`, and
-/// what came back was the one setting a session opens with, `["mode"]`:
-/// the rest arrives as an update to a conversation, which is exactly the
-/// thing a page about *starting* conversations must not need.
-#[test]
-fn activating_an_agent_asks_it_what_it_can_be_set_to() {
-    use obelus_command::Command;
-
-    let (mut app, events) = talking();
-    let root = agents_root_for("asks");
-    app.agents_root_for_test(root.clone());
-    pump(&mut app, &events, "the settings", |app| {
-        app.agent_settings().len() > 2
-    });
-    // What an install leaves: how to start it, which here is the fixture.
-    obelus_agent::remember(
-        "fake",
-        Path::new("sh"),
-        &["tests/fixtures/fake-agent.sh".to_string()],
-        "1.0.0",
-        &root,
-    )
-    .expect("the record");
-    // And what this conversation already taught Obelus, taken away again,
-    // so that activating has something to ask about.
-    let offers = obelus_agent::home("fake", &root)
-        .expect("its directory")
-        .join("options.json");
-    let _ = std::fs::remove_file(&offers);
-    let conversation = support::render(&mut app, WIDTH, HEIGHT);
-
-    // Chosen the way a reader chooses one: on the agents page, on its card.
+/// The fixture's entry in the registry, as the agents page is handed it.
+fn the_fixture_is_listed(app: &mut App) {
     app.handle(Event::Agent(obelus_agent::Event::Registry {
         agents: vec![obelus_agent::Agent {
             id: "fake".to_string(),
@@ -6624,25 +6620,66 @@ fn activating_an_agent_asks_it_what_it_can_be_set_to() {
         }],
         failure: None,
     }));
+}
+
+/// What an install leaves: how to start it, which here is the fixture.
+fn the_fixture_is_installed(root: &Path) {
+    obelus_agent::remember(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+        "1.0.0",
+        root,
+    )
+    .expect("the record");
+}
+
+/// Activating an agent asks it what it can be set to, on a conversation of
+/// its own, and leaves the reader's alone.
+///
+/// The settings page lists what an agent offers, and the protocol says it
+/// in the answer to `session/new` and nowhere else -- `initialize` carries
+/// the capabilities and the ways to sign in, and neither of those is this.
+/// So Obelus asks, the moment the reader chooses the agent, rather than
+/// leaving them to find out that a page about conversations needs a
+/// conversation first.
+///
+/// On one of its own, because the alternative is a conversation of theirs
+/// existing, being named, or being written in because a settings page
+/// wanted a list -- which the log shows: a second session, let go, and the
+/// reader's untouched.
+///
+/// Deliberate break: drop the call to `ask_what_the_agent_offers` from
+/// `activate_agent`, and nothing asks -- opening the page did not, with no
+/// agent chosen yet -- so the wait for `s-2` to be let go gives up.
+#[test]
+fn activating_an_agent_asks_it_what_it_can_be_set_to() {
+    use obelus_command::Command;
+
+    let root = agents_root_for("asks");
+    std::fs::create_dir_all(&root).expect("the root");
+    let log = root.join("asked.log");
+    let (mut app, events) = playing(&[&format!("log={}", log.display())]);
+    app.agents_root_for_test(root.clone());
+    pump(&mut app, &events, "the settings", |app| {
+        app.agent_settings().len() > 2
+    });
+    the_fixture_is_installed(&root);
+    let conversation = support::render(&mut app, WIDTH, HEIGHT);
+
+    // Chosen the way a reader chooses one: on the agents page, on its card.
+    the_fixture_is_listed(&mut app);
     obelus_app::app::dispatch::dispatch(&mut app, Command::ConfigOpen);
     support::press(&mut app, KeyCode::BackTab);
     support::press(&mut app, KeyCode::Enter);
     assert_eq!(app.config().agent.as_deref(), Some("fake"), "not activated");
 
+    // Its own conversation, opened and let go: `s-1` is the reader's.
+    asked(&mut app, &events, &log, "session/delete s-2");
     pump(&mut app, &events, "what it offers", |app| {
         app.agent_offering()
-            .is_some_and(|offering| !offering.offers.is_empty())
+            .is_some_and(|offering| offering.offers.iter().any(|offer| offer.id == "model"))
     });
-    let offering = app.agent_offering().expect("the group");
-    assert!(
-        offering.offers.iter().any(|offer| offer.id == "model"),
-        "not what the agent offers: {:?}",
-        offering
-            .offers
-            .iter()
-            .map(|offer| &offer.id)
-            .collect::<Vec<_>>()
-    );
 
     // And the reader's own conversation is where they left it: the asking
     // was done somewhere else, and nothing was said in theirs.
@@ -6651,6 +6688,107 @@ fn activating_an_agent_asks_it_what_it_can_be_set_to() {
         support::text_block(&support::render(&mut app, WIDTH, HEIGHT)),
         support::text_block(&conversation),
         "the conversation changed under the reader"
+    );
+}
+
+/// The settings page asks the agent what it can be set to every time it
+/// opens, and says it is asking until it hears.
+///
+/// Every time, because an update changes what an agent offers and a list
+/// kept from before it answers for a version that is gone. And "asking" in
+/// words while it waits, which is not the same thing as "it has not said":
+/// the second is what an agent that would not answer leaves.
+///
+/// Deliberate break: take the call to `ask_what_the_agent_offers` out of
+/// `open_settings`. The page says it has heard nothing and the wait for
+/// the list gives up.
+#[test]
+fn the_settings_page_asks_what_the_agent_offers_each_time_it_opens() {
+    use obelus_command::Command;
+
+    let root = agents_root_for("page-asks");
+    std::fs::create_dir_all(&root).expect("the root");
+    the_fixture_is_installed(&root);
+    let log = root.join("asked.log");
+    let (mut app, events) = wired();
+    app.agents_root_for_test(root);
+    let config = obelus_config::Config {
+        agent: Some("fake".to_string()),
+        ..obelus_config::Config::default()
+    };
+    app.configure(config, Vec::new());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &[
+            "tests/fixtures/fake-agent.sh".to_string(),
+            format!("log={}", log.display()),
+        ],
+    );
+
+    obelus_app::app::dispatch::dispatch(&mut app, Command::ConfigOpen);
+    let silence = app
+        .agent_offering()
+        .and_then(|offering| offering.silence)
+        .unwrap_or_default();
+    assert_eq!(silence, "Asking fake what it can be set to");
+    pump(&mut app, &events, "what it offers", |app| {
+        app.agent_offering()
+            .is_some_and(|offering| !offering.offers.is_empty())
+    });
+
+    // Again, on the next opening: what was heard is drawn meanwhile.
+    support::press(&mut app, KeyCode::Esc);
+    obelus_app::app::dispatch::dispatch(&mut app, Command::ConfigOpen);
+    assert!(
+        app.agent_offering()
+            .is_some_and(|offering| !offering.offers.is_empty()),
+        "what was heard is not drawn while the page asks again"
+    );
+    asked(&mut app, &events, &log, "session/delete s-2");
+}
+
+/// Installing an agent again throws away what the version before it
+/// offered.
+///
+/// An update is exactly what makes the list stale, so the copy kept in
+/// memory goes with it rather than going on answering for a version that
+/// is gone. Deliberate break: take the clearing out of `on_installed`, and
+/// the old list is still handed out.
+#[test]
+fn installing_an_agent_again_forgets_what_it_offered() {
+    let (mut app, _events) = wired();
+    let config = obelus_config::Config {
+        agent: Some("fake".to_string()),
+        ..obelus_config::Config::default()
+    };
+    app.configure(config, Vec::new());
+    app.agent_offers_for_test(
+        "fake",
+        vec![obelus_agent::acp::Setting {
+            id: "model".to_string(),
+            name: "Model".to_string(),
+            about: None,
+            values: Vec::new(),
+            current: String::new(),
+            kind: obelus_agent::acp::Kind::Select,
+            category: obelus_agent::acp::Category::Other,
+            legacy: false,
+        }],
+    );
+    assert!(
+        app.agent_offering()
+            .is_some_and(|offering| !offering.offers.is_empty()),
+        "nothing was heard, so this proves nothing"
+    );
+    app.handle(Event::Agent(obelus_agent::Event::Installed {
+        id: "fake".to_string(),
+        failure: None,
+    }));
+    assert!(
+        app.agent_offering()
+            .is_some_and(|offering| offering.offers.is_empty()),
+        "what the old version offered is still handed out"
     );
 }
 
@@ -7862,308 +8000,4 @@ fn an_obelus_that_is_killed_gives_its_conversation_back() {
     pump(&mut app, &events, "the claim to be given up", |app| {
         app.talked_about().first() == Some(&obelus_component::todo::Talked::Not)
     });
-}
-
-/// The conversation's row says what the next turn will run on, before there
-/// is a turn.
-///
-/// The protocol carries an agent's options in the answer to `session/new`
-/// and nowhere else, so a conversation nothing has been said in has none of
-/// them -- and opening one asks for nothing now, which left that row blank.
-/// Blank is not "there is nothing to set"; it is "nobody has asked yet",
-/// and the row is the one place a reader looks to find out what they are
-/// about to run.
-///
-/// What answers it without asking anybody: what the agent itself was on
-/// when Obelus opened a conversation to read the list off (beside its
-/// install), and what the reader has pinned over that. The row says the
-/// same thing at both moments -- what this conversation is set to -- and
-/// before there is one, that is what it will start on.
-///
-/// And the key still works. Pressing it writes the answer down and starts
-/// the conversation for it, so the row moves at once rather than a second
-/// later, and the session is opened on it when it lands.
-///
-/// Broken deliberately three ways: leaving `agent_settings` to answer with
-/// the session's alone puts the row back to blank; having
-/// `step_agent_mode` do nothing without a session makes the key look
-/// broken; and taking `wanted_on` out of
-/// `start_the_session_on_what_was_chosen` leaves the session on the agent's
-/// own value after the row had already said otherwise -- which is the
-/// worst of the three, because the screen and the agent disagree and only
-/// the screen is in front of the reader.
-#[test]
-fn the_row_says_what_the_next_turn_runs_on_before_there_is_one() {
-    let scratch = support::Scratch::new("agent-row-before-a-turn");
-    let (mut app, events) = wired();
-    app.working_directory_for_test(scratch.path().to_path_buf());
-    app.talk_to(
-        "fake",
-        Path::new("sh"),
-        &["tests/fixtures/fake-agent.sh".to_string()],
-    );
-    app.configure(
-        obelus_config::Config {
-            agent: Some("fake".to_string()),
-            ..obelus_config::Config::default()
-        },
-        Vec::new(),
-    );
-    // What Obelus learns by opening a conversation to read the list off and
-    // letting it go again, which is what choosing an agent does.
-    app.learn_what_the_agent_offers_for_test();
-    pump(&mut app, &events, "what it offers", |app| {
-        app.agent_offering()
-            .is_some_and(|offering| !offering.offers.is_empty())
-    });
-
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
-    assert_eq!(
-        app.talking(),
-        obelus_agent::Talking::Idle,
-        "opening it asked for a session after all, so this proves nothing"
-    );
-    // Past whatever Obelus said on the row about starting the agent, which
-    // lasts until the next key like every other note.
-    support::press(&mut app, KeyCode::Right);
-    let dump = support::render(&mut app, WIDTH, HEIGHT);
-    let row = rows(&dump).last().copied().unwrap_or_default().to_string();
-    assert!(
-        row.contains("ask first") && row.contains("shift+tab  Mode"),
-        "the row says nothing about what this conversation will run on:\n{row}"
-    );
-
-    // And the key moves it, which is the reader setting this conversation
-    // up -- so the conversation starts.
-    support::press(&mut app, KeyCode::BackTab);
-    let row = rows(&support::render(&mut app, WIDTH, HEIGHT))
-        .last()
-        .copied()
-        .unwrap_or_default()
-        .to_string();
-    assert!(
-        row.contains("write code"),
-        "the key that steps the mode did nothing:\n{row}"
-    );
-    pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_agent::Talking::Ready
-    });
-    pump(&mut app, &events, "the mode the reader asked for", |app| {
-        app.agent_mode()
-            .is_some_and(|mode| mode.current_name() == Some("write code"))
-    });
-}
-
-/// A second sitting has the row, because the first conversation taught it.
-///
-/// The way a reader actually arrives: an agent chosen some time ago, Obelus
-/// started fresh, and `f4` pressed. Nothing here opens a conversation of
-/// Obelus's own to ask what the agent offers -- opening a view asks for
-/// nothing, which is the point -- so the row is filled from the file beside
-/// the install, and what put the *values* in that file is the reader's own
-/// first conversation: a session nobody had said anything in yet, which is
-/// the one kind whose values are the agent's own.
-///
-/// Two deliberate breaks, which are the two halves of why the row was still
-/// empty after the first go at this. Taking the read out of
-/// `settle_what_the_next_turn_runs_on` leaves the file unread until
-/// something else opens the settings page -- a reader who goes straight to
-/// a conversation never does. And passing `false` for `minted` in the
-/// `Started` arm means nothing ever writes down what the agent starts on
-/// but choosing an agent again, so the file a previous version wrote is
-/// never upgraded.
-#[test]
-fn the_row_is_there_on_a_later_sitting_because_the_first_conversation_taught_it() {
-    let scratch = support::Scratch::new("agent-row-second-sitting");
-    let root = agents_root();
-    let agent = |scratch: &support::Scratch| {
-        let (mut app, events) = wired();
-        app.working_directory_for_test(scratch.path().to_path_buf());
-        app.agents_root_for_test(root.clone());
-        app.talk_to(
-            "fake",
-            Path::new("sh"),
-            &["tests/fixtures/fake-agent.sh".to_string()],
-        );
-        app.configure(
-            obelus_config::Config {
-                agent: Some("fake".to_string()),
-                ..obelus_config::Config::default()
-            },
-            Vec::new(),
-        );
-        (app, events)
-    };
-
-    // The first sitting: the reader opens a conversation and says
-    // something, which is the only thing they do.
-    {
-        let (mut app, events) = agent(&scratch);
-        obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
-        support::type_text(&mut app, "/echo");
-        support::press(&mut app, KeyCode::Enter);
-        pump(&mut app, &events, "the answer", |app| {
-            said_in_transcript(app, "heard you")
-        });
-    }
-
-    // The next one. Nothing is said, nothing is asked of the agent -- and
-    // the row says what this conversation will run on.
-    let (mut app, _events) = agent(&scratch);
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
-    assert_eq!(
-        app.talking(),
-        obelus_agent::Talking::Idle,
-        "opening it asked the agent for something, so this proves nothing"
-    );
-    let row = rows(&support::render(&mut app, WIDTH, HEIGHT))
-        .last()
-        .copied()
-        .unwrap_or_default()
-        .to_string();
-    assert!(
-        row.contains("ask first") && row.contains("shift+tab  Mode"),
-        "the row says nothing about what this conversation will run on:\n{row}"
-    );
-}
-
-/// A file an older Obelus wrote is brought up to date by the next
-/// conversation.
-///
-/// What it was missing is the two things that make the row: which value the
-/// agent itself opens on, and which of the settings is the *mode*. A reader
-/// who has been talking to an agent for weeks has one of those files and no
-/// reason to choose their agent again, so it has to be a conversation that
-/// puts them there -- the first one minted after the change, which is
-/// paying for nothing extra.
-///
-/// Broken deliberately by writing the offers whole when they differ instead
-/// of carrying nothing over: the old file's rows compare equal on the parts
-/// it has and the write is skipped, so it stays as it was for ever.
-#[test]
-fn a_file_an_older_obelus_wrote_is_brought_up_to_date() {
-    let scratch = support::Scratch::new("agent-old-options-file");
-    // A directory of this test's own: the shared one is written by every
-    // other test's agent, and what is being asserted here is what happened
-    // to one particular file.
-    let root = agents_root_for("old-options-file");
-    let home = root.join("fake");
-    std::fs::create_dir_all(&home).expect("the agent's directory");
-    // Exactly the shape the file had before: no `current`, no `category`.
-    std::fs::write(
-        home.join("options.json"),
-        r#"{"options":[{"id":"mode","name":"Mode","about":null,
-           "values":[{"id":"ask","name":"ask first","about":null},
-                     {"id":"code","name":"write code","about":null}],
-           "kind":"select"}]}"#,
-    )
-    .expect("the old file");
-
-    let (mut app, events) = wired();
-    app.working_directory_for_test(scratch.path().to_path_buf());
-    app.agents_root_for_test(root.clone());
-    app.talk_to(
-        "fake",
-        Path::new("sh"),
-        &["tests/fixtures/fake-agent.sh".to_string()],
-    );
-    app.configure(
-        obelus_config::Config {
-            agent: Some("fake".to_string()),
-            ..obelus_config::Config::default()
-        },
-        Vec::new(),
-    );
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
-    support::type_text(&mut app, "/echo");
-    support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "the answer", |app| {
-        said_in_transcript(app, "heard you")
-    });
-
-    let obelus_agent::options::Reading::Offers(offers) = obelus_agent::options::read("fake", &root)
-    else {
-        panic!("the file did not read back");
-    };
-    let mode = offers
-        .iter()
-        .find(|offer| offer.id == "mode")
-        .expect("the setting is still there");
-    assert_eq!(
-        mode.current.as_deref(),
-        Some("ask"),
-        "the file still does not say what the agent opens on"
-    );
-    assert_eq!(
-        mode.category,
-        obelus_agent::acp::Category::Mode,
-        "the file still does not say which of them is the mode"
-    );
-}
-
-/// Choosing the agent again repairs a file that says half of what it
-/// should.
-///
-/// The one thing a reader would try, and it did nothing: Obelus asked an
-/// agent what it offers only when it had *no* list for it, and a file
-/// written before this listed everything while saying neither what the
-/// agent opens on nor which of the settings is the mode. So the page that
-/// exists to set an agent up could not set it up.
-///
-/// Broken deliberately by asking only on an empty list again -- `told` back
-/// to `!offers.is_empty()`: the file is left as it was and the conversation
-/// this opens never happens.
-#[test]
-fn choosing_the_agent_again_repairs_a_file_that_says_half_of_it() {
-    let scratch = support::Scratch::new("agent-half-an-answer");
-    let root = agents_root_for("half-an-answer");
-    let home = root.join("fake");
-    std::fs::create_dir_all(&home).expect("the agent's directory");
-    std::fs::write(
-        home.join("options.json"),
-        r#"{"options":[{"id":"mode","name":"Mode","about":null,
-           "values":[{"id":"ask","name":"ask first","about":null},
-                     {"id":"code","name":"write code","about":null}],
-           "kind":"select"}]}"#,
-    )
-    .expect("the half-written file");
-
-    let (mut app, events) = wired();
-    app.working_directory_for_test(scratch.path().to_path_buf());
-    app.agents_root_for_test(root.clone());
-    app.talk_to(
-        "fake",
-        Path::new("sh"),
-        &["tests/fixtures/fake-agent.sh".to_string()],
-    );
-    app.configure(
-        obelus_config::Config {
-            agent: Some("fake".to_string()),
-            ..obelus_config::Config::default()
-        },
-        Vec::new(),
-    );
-    // What the settings page does when a reader chooses this one, without
-    // the page: it reads what it has and asks where that is not enough.
-    app.reread_what_the_agent_offers_for_test();
-    app.learn_what_the_agent_offers_for_test();
-    pump(&mut app, &events, "what it opens on", |app| {
-        app.agent_offering().is_some_and(|offering| {
-            offering
-                .offers
-                .iter()
-                .any(|offer| offer.id == "mode" && offer.current.is_some())
-        })
-    });
-
-    let obelus_agent::options::Reading::Offers(offers) = obelus_agent::options::read("fake", &root)
-    else {
-        panic!("the file did not read back");
-    };
-    let mode = offers
-        .iter()
-        .find(|offer| offer.id == "mode")
-        .expect("the setting is still there");
-    assert_eq!(mode.current.as_deref(), Some("ask"));
-    assert_eq!(mode.category, obelus_agent::acp::Category::Mode);
 }

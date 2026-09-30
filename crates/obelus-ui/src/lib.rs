@@ -182,8 +182,8 @@ pub trait Screen {
     ///
     /// `None` where no agent is active, which is the one case where the
     /// settings page has no group for one. Built rather than borrowed: it
-    /// comes out of the config, a file beside the install and the
-    /// registry at once.
+    /// comes out of the config, what the agent was last heard to offer and
+    /// the registry at once.
     fn agent_offering(&self) -> Option<obelus_component::settings::Offering>;
     /// How full the agent's memory of this conversation is, once it has
     /// said -- and what it has cost, where it counts that too.

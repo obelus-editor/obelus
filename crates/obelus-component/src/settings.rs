@@ -46,7 +46,7 @@
 //! beginnings to find is four, and one is one.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use obelus_agent::{Listed as Agent, Status, options::Offer};
+use obelus_agent::{Listed as Agent, Status, acp::Setting as Offer};
 use obelus_command::Command;
 use obelus_config::{Config, Group, Kind, Setting, Value, Whose};
 use obelus_editing::keymap::{KeyChord, Keymap};
@@ -229,9 +229,9 @@ impl Page {
 /// The active agent's settings, as this page needs them.
 ///
 /// Handed in the way the agents are, and for the same reason: which agent
-/// is active, what it last said it offers and what the reader has set are
-/// three things the application knows, and a view that went looking for
-/// them would be a second place they live.
+/// is active, what it said it offers and what the reader has set are three
+/// things the application knows, and a view that went looking for them
+/// would be a second place they live.
 ///
 /// Owned rather than borrowed because the application builds one out of
 /// three places at once and hands it to a page it is also holding a
@@ -240,14 +240,18 @@ impl Page {
 pub struct Offering {
     /// What to call it, which is the heading its settings sit under.
     pub name: String,
-    /// What it last said it can be set to.
+    /// What it said it can be set to, the last time this Obelus asked or
+    /// a conversation of its own heard. A session's own list, with what
+    /// that session happened to be on beside each -- which nothing here
+    /// reads: a row says what the reader chose, not what some conversation
+    /// was left on.
     pub offers: Vec<Offer>,
     /// What the reader has said each is to start on, by the agent's id for
     /// the setting. What is not in here is what Obelus says nothing about.
     pub chosen: std::collections::BTreeMap<String, String>,
     /// Why there is nothing to list, where there is nothing.
     ///
-    /// An agent Obelus has not talked to yet has told it nothing, which is
+    /// An agent that has not answered yet has told Obelus nothing, which is
     /// not the same as an agent with nothing to be set -- and a group that
     /// simply was not drawn would say the second. So the group is drawn,
     /// with this in it instead of rows.
@@ -283,6 +287,8 @@ pub enum Shown<'a> {
         /// The agent whose name this row opens the heading of, where it is
         /// the first of them.
         opens: Option<&'a str>,
+        /// Which agent it is, by the name the heading uses.
+        agent: &'a str,
     },
     /// The agent's group, with nothing in it but the reason why.
     ///
@@ -326,6 +332,35 @@ impl Shown<'_> {
             Self::Obelus { setting, .. } => setting.about,
             Self::Agent { offer, .. } => offer.about.as_deref().unwrap_or_default(),
             Self::Silent { saying, .. } => saying,
+        }
+    }
+
+    /// What is wrong with what this row is set to, where something is.
+    ///
+    /// Said under what the row does, in the colour of something that will
+    /// not work, by the one piece of code that draws every row -- so any
+    /// row that has something wrong with it says so here, and the page and
+    /// the window that decides what is on it count the same rows for it.
+    ///
+    /// In words and not only in colour: a value drawn red says that
+    /// something is wrong and not what, and a reader who cannot tell the
+    /// colours apart is told nothing at all.
+    #[must_use]
+    pub fn warning(&self) -> Option<String> {
+        match self {
+            Self::Obelus { .. } | Self::Silent { .. } => None,
+            // A choice the agent has stopped offering is a line in the
+            // settings file that does nothing: a new conversation is left
+            // on whatever the agent opens on.
+            Self::Agent {
+                offer,
+                chosen: Some(value),
+                agent,
+                ..
+            } if offer.name_of(value).is_none() => Some(format!(
+                "{agent} no longer offers this, so a new conversation starts on its own"
+            )),
+            Self::Agent { .. } => None,
         }
     }
 }
@@ -689,6 +724,7 @@ impl Settings {
                 offer,
                 chosen: offering.chosen.get(&offer.id).map(String::as_str),
                 opens: opens.take(),
+                agent: &offering.name,
             });
         }
         // The reason there are none, where there are none and the reader
@@ -1166,6 +1202,10 @@ impl Settings {
     #[must_use]
     pub fn setting_rows(&self, shown: &Shown, width: u16) -> u16 {
         let about = u16::try_from(self.wrapped(shown.about(), width).len()).unwrap_or(0);
+        let warning = shown
+            .warning()
+            .map_or(0, |warning| self.wrapped(&warning, width).len());
+        let about = about + u16::try_from(warning).unwrap_or(0);
         // A heading is its word and the blank under it: the word alone, with
         // the group's first setting hard against it, reads as a row of the
         // group rather than as its name. The agent's carries a line saying

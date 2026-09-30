@@ -754,12 +754,10 @@ impl Talk {
                 // Kept *and* passed up, like the title and unlike the rest
                 // of the folded updates: what an agent offers to be set is
                 // something Obelus acts on outside this mirror -- it is
-                // written down beside the install so the settings page has
-                // it before there is a conversation, and it is what the
-                // reader's standing choices are matched against. Folded
-                // away here, both happened only at the moment a session
-                // opened, which is before an agent has said what it
-                // offers.
+                // what the settings page lists, and what the reader's
+                // standing choices are matched against. Folded away here,
+                // both happened only at the moment a session opened, which
+                // is before an agent has said what it offers.
                 Some(Incoming::Update {
                     session,
                     update: Update::Settings(options),

@@ -2462,23 +2462,34 @@ fn offered(id: &str, name: &str, values: &[(&str, &str)]) -> obelus_agent::acp::
     }
 }
 
-/// An application whose settings name an agent, with a directory of its own
-/// for what that agent offers.
+/// An application whose settings name an agent, on the settings page, as it
+/// is once the agent has said what it offers.
 fn with_an_agent(name: &str, offers: &[obelus_agent::acp::Setting]) -> (support::Scratch, App) {
+    with_an_agent_set(name, offers, "")
+}
+
+/// The same, with more in the settings file than the agent's name.
+///
+/// Nothing is installed, so opening the page asks nobody: what the agent
+/// offers is handed over the way its answer would be.
+fn with_an_agent_set(
+    name: &str,
+    offers: &[obelus_agent::acp::Setting],
+    set: &str,
+) -> (support::Scratch, App) {
     let scratch = temporary(name);
     let file = settings_file(&scratch);
-    std::fs::write(&file, "agent = \"an-agent\"\n").expect("the settings");
-    let root = scratch.path().join("agents");
-    if !offers.is_empty() {
-        obelus_agent::options::remember("an-agent", offers, &root).expect("what it offers");
-    }
+    std::fs::write(&file, format!("agent = \"an-agent\"\n{set}")).expect("the settings");
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
-    app.agents_root_for_test(root);
+    app.agents_root_for_test(scratch.path().join("agents"));
     // Which reads it: `load_config` would go looking at the reader's own
     // real path, which is not this test's to read.
     app.config_file_for_test(file);
     support::lay_out(&mut app, 66, 12);
     dispatch::dispatch(&mut app, Command::ConfigOpen);
+    if !offers.is_empty() {
+        app.agent_offers_for_test("an-agent", offers.to_vec());
+    }
     (scratch, app)
 }
 
@@ -2530,45 +2541,137 @@ fn the_active_agents_settings_are_a_group_on_the_page() {
     );
 }
 
-/// An agent Obelus has not talked to yet says so, and one whose file will
-/// not read says something else.
+/// An agent that has not said what it can be set to says so.
 ///
-/// Three answers to one question, and the two that are not "here they are"
-/// are different sentences. A group that was simply not drawn would say the
-/// agent has nothing to be set, which is a claim about the agent, and false.
+/// Not answered is not the same as nothing to answer: a group that was
+/// simply not drawn would say the agent has nothing to be set, which is a
+/// claim about the agent, and false. The other silence -- still asking --
+/// is the agent tests', which have an agent to ask.
 ///
 /// Broken deliberately by giving `agent_offering` no `silence` and letting
 /// the group disappear: the page said nothing at all, and an agent with
 /// settings looked exactly like one without.
 #[test]
-fn an_agent_obelus_has_not_talked_to_says_so_rather_than_nothing() {
+fn an_agent_that_has_not_said_what_it_offers_says_so_rather_than_nothing() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let (scratch, mut app) = with_an_agent("agent-silence", &[]);
+    let (_scratch, mut app) = with_an_agent("agent-silence", &[]);
 
     // The group is last, so the end of the page is where it is.
     support::press(&mut app, KeyCode::End);
     let dump = support::render(&mut app, 66, 12);
     assert!(
-        support::text_block(&dump).contains("after the first"),
-        "an agent nobody has talked to says nothing:\n{dump}"
+        support::text_block(&dump).contains("Nothing has been heard"),
+        "an agent that has said nothing says nothing:\n{dump}"
+    );
+}
+
+/// A choice the agent no longer offers says so on its row, in words and in
+/// the colour of something that will not work -- and takes the rows it
+/// needs, so the next entry is not drawn over it.
+///
+/// Deliberate break: answer `None` from `Shown::warning` for an agent's row
+/// and the words are gone. Leave the warning out of `own_rows` in the
+/// drawing, and the next entry is laid out over it. Leaving it out of
+/// `Settings::setting_rows` instead is the next test's.
+#[test]
+fn a_choice_the_agent_no_longer_offers_says_so_on_its_row() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (_scratch, mut app) = with_an_agent_set(
+        "agent-gone",
+        &[
+            offered(
+                "way",
+                "Way of working",
+                &[("ask", "Ask first"), ("code", "Write code")],
+            ),
+            offered("thinking", "Way of thinking", &[("fast", "Fast")]),
+        ],
+        "[agents.an-agent]\nway = \"gone\"\n",
     );
 
-    // And a file that will not read is not that: there is something
-    // written down, and it is the reader who can do something about it.
-    let home = scratch.path().join("agents").join("an-agent");
-    std::fs::create_dir_all(&home).expect("the directory");
-    std::fs::write(home.join("options.json"), "{\"options\": [").expect("the file");
-    // Opened again, because the page reads that file when it opens rather
-    // than once a frame: what a view is asked must already be answered.
-    support::press(&mut app, KeyCode::Esc);
-    dispatch::dispatch(&mut app, Command::ConfigOpen);
-    support::press(&mut app, KeyCode::End);
-    let dump = support::render(&mut app, 66, 12);
+    // Narrowed to the two, so that both are on a page this short.
+    support::type_text(&mut app, "way of");
+    let cells = support::cells_of(&mut app, 66, 16);
+    let screen: Vec<String> = (0..16)
+        .map(|y| (0..66).map(|x| cells[(x, y)].symbol()).collect::<String>())
+        .collect();
+    let dump = screen.join("\n");
+    let at = |needle: &str| {
+        screen
+            .iter()
+            .position(|row| row.contains(needle))
+            .unwrap_or_else(|| panic!("{needle:?} is not on screen:\n{dump}"))
+    };
+    // Wrapped to the room there is, so the first of its rows.
+    let warned = at("an-agent no longer offers this, so a new conversation");
+    // Its own rows, all of them, below what the setting does and above the
+    // next name.
+    let ends = at("starts on its own");
+    let next = screen
+        .iter()
+        .position(|row| row.contains("Way of thinking") && !row.contains("What"))
+        .unwrap_or_else(|| panic!("the next setting is not on screen:\n{dump}"));
     assert!(
-        support::text_block(&dump).contains("will not read"),
-        "a broken file reads as an agent with nothing to set:\n{dump}"
+        at("What Way of working does") < warned && warned < ends && ends < next,
+        "the warning is not between what it does and the next setting:\n{dump}"
+    );
+    // And in the colour a value that will not work is drawn in.
+    let column = screen[warned]
+        .find("no longer")
+        .map(|byte| screen[warned][..byte].chars().count())
+        .expect("the words");
+    let row = u16::try_from(warned).expect("a row");
+    let column = u16::try_from(column).expect("a column");
+    assert_eq!(
+        cells[(column, row)].fg,
+        app.theme().change_removed,
+        "the warning is not in the colour of something that will not work:\n{dump}"
+    );
+}
+
+/// A warning is counted where the page decides what is on screen, and not
+/// only where it is drawn.
+///
+/// Two walks that must agree: the window settles which entries are showing
+/// by `Settings::setting_rows`, and the drawing lays them out by the rows
+/// it made. Four choices the agent no longer offers are four entries two
+/// rows taller than they look without their warnings -- so on a page this
+/// short, one of the walks counting them and the other not is the last of
+/// them pushed off the bottom while the reader is standing on it.
+///
+/// Deliberate break: leave the warning out of `Settings::setting_rows`.
+/// The window thinks the last entry fits where it does not, and its name
+/// is not on screen.
+#[test]
+fn a_warning_is_counted_where_the_page_decides_what_is_on_it() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let ways = ["one", "two", "three", "four"];
+    let offers: Vec<_> = ways
+        .iter()
+        .map(|way| offered(way, &format!("Way {way}"), &[("ask", "Ask first")]))
+        .collect();
+    let set: String = ways
+        .iter()
+        .map(|way| format!("{way} = \"gone\"\n"))
+        .collect();
+    let (_scratch, mut app) = with_an_agent_set(
+        "agent-gone-counted",
+        &offers,
+        &format!("[agents.an-agent]\n{set}"),
+    );
+
+    support::type_text(&mut app, "way ");
+    support::press(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, 66, 16);
+    assert!(
+        support::text_block(&dump).contains("Way four"),
+        "the entry the reader is on is not on screen:\n{dump}"
     );
 }
 

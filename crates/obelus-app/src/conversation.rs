@@ -168,19 +168,6 @@ pub struct Conversation {
     /// level into being that was not there when the conversation opened,
     /// and that one has not been asked for yet.
     pub started_on: std::collections::BTreeSet<String>,
-    /// What the reader asked this conversation to be on before it had a
-    /// session, by the agent's id for the setting.
-    ///
-    /// Opening a conversation asks the agent for nothing, so the row of its
-    /// settings is a picture of what the first turn will run on -- and a
-    /// key pressed on that row has nothing to send yet. What it does
-    /// instead is start the conversation and write the answer here, which
-    /// the row draws at once and the session is opened on when it arrives.
-    ///
-    /// Emptied nowhere: once it has a session these have been asked for and
-    /// the answers are the agent's, and a second conversation is a second
-    /// one of these.
-    pub wanted_on: std::collections::BTreeMap<String, String>,
 }
 
 /// A place on the web the agent wants the reader to go: to sign in

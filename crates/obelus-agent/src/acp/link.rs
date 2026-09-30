@@ -307,6 +307,14 @@ pub struct Picture {
     pub bytes: Vec<u8>,
 }
 
+/// What [`Incoming::Failed`] says it was doing when asking what the agent
+/// offers did not work.
+///
+/// Named, because the application has to tell this failure from the rest:
+/// the settings page is waiting on it, and says it is asking for as long
+/// as nothing says otherwise.
+pub const ASKING_WHAT_IT_OFFERS: &str = "Asking what it can be set to";
+
 /// One thing from the agent worth acting on.
 #[derive(Debug)]
 pub enum Incoming {
@@ -749,10 +757,17 @@ impl Setting {
     /// What the value that is on is called, for the row that says so.
     #[must_use]
     pub fn current_name(&self) -> Option<&str> {
+        self.name_of(&self.current)
+    }
+
+    /// What one of its values is called, by the agent's id for it -- or
+    /// nothing, where it does not offer that value.
+    #[must_use]
+    pub fn name_of(&self, value: &str) -> Option<&str> {
         self.values
             .iter()
-            .find(|value| value.id == self.current)
-            .map(|value| value.name.as_str())
+            .find(|offered| offered.id == value)
+            .map(|offered| offered.name.as_str())
     }
 }
 
@@ -1553,7 +1568,7 @@ async fn talk(
                                 }
                                 Err(error) => {
                                     let _ = events.send(Event::Acp(Incoming::Failed(
-                                        "Asking what it can be set to",
+                                        ASKING_WHAT_IT_OFFERS,
                                         error.to_string(),
                                     )));
                                 }

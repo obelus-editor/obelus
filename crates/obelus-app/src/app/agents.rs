@@ -75,35 +75,28 @@ pub(super) struct Agents {
     /// Where installed agents live, for a test that would rather not use
     /// the reader's own data directory. `None` is that directory.
     pub root: Option<PathBuf>,
-    /// What one agent last said it can be set to, as the file beside its
-    /// install has it -- and which agent that was.
+    /// What one agent said it can be set to, the last time this Obelus
+    /// heard -- and which agent that was.
     ///
-    /// Read when there is a reason to and kept until there is another,
-    /// rather than read where it is wanted: where it is wanted is
-    /// [`App::agent_offering`], which the settings page asks two or three
-    /// times a frame -- and a frame is drawn on every keystroke. The
-    /// questions a view asks must already be answered; a file read behind
-    /// one is work a view has caused.
+    /// Kept in memory for the life of the process and nowhere else. An
+    /// agent's list is a fact about the agent as it is now: an update
+    /// changes what it offers, and a copy on disk went on answering for a
+    /// version that was no longer there. So the settings page asks every
+    /// time it opens -- see [`App::ask_what_the_agent_offers`] -- and draws
+    /// this while the answer is on its way, which is the first opening's
+    /// wait paid once rather than on every visit. Every conversation that
+    /// says what it offers brings it up to date, and installing that agent
+    /// again throws it away.
     ///
     /// The agent's id is kept with it so that a copy left over from
     /// another agent is never handed out as this one's.
-    pub offers: Option<(String, obelus_agent::options::Reading)>,
-    /// What the conversation on screen will open on, while it has not.
+    pub offers: Option<(String, Vec<obelus_agent::acp::Setting>)>,
+    /// The agent being asked what it can be set to, while it is.
     ///
-    /// The protocol carries an agent's options in the answer to
-    /// `session/new` and nowhere else, so a conversation nothing has been
-    /// said in has none of them -- and the row that draws them went blank,
-    /// which is not "there is nothing to set" but "nobody has asked yet".
-    /// This is that question answered from the two things Obelus has
-    /// without asking: what the agent last said it offers, beside its
-    /// install, and what the reader has pinned for it.
-    ///
-    /// Worked out once a frame rather than kept, because what goes into it
-    /// is already in memory and the reader can change any of the three
-    /// while looking at it. Empty while a conversation has a session of its
-    /// own, which is the ordinary case: then the row is the session's and
-    /// this would be a second answer to the same question.
-    pub before_a_session: Vec<obelus_agent::acp::Setting>,
+    /// What the settings page says in place of a list it does not have
+    /// yet: "asking" is a different thing from "it has not said", and the
+    /// second is what a reader sees when an agent would not answer.
+    pub asking: Option<String>,
 }
 
 impl App {
@@ -191,35 +184,29 @@ impl App {
             .find(|agent| agent.id == id)
             .map_or(id, |agent| agent.name.as_str())
             .to_string();
-        // Three answers, and each is a different thing to say. Nothing
-        // written down is an agent Obelus has not talked to yet; a file
-        // that will not read is not an agent with nothing to be set, and
-        // saying so is how the reader finds out there is a file to look
-        // at.
-        //
-        // From what was read, not from the file: this is asked several
-        // times a frame.
-        let read = self
+        // What was heard, where something was; otherwise which of the two
+        // silences this is. Asking is a moment and says so. Not having
+        // heard is what an agent that would not answer leaves -- it would
+        // not start, it wants signing in to first -- and is not the same
+        // as an agent with nothing to be set.
+        let heard = self
             .agents
             .offers
             .as_ref()
-            .filter(|(whose, _)| whose == id)
-            .map(|(_, read)| read);
-        let (offers, silence) = match read {
-            Some(obelus_agent::options::Reading::Offers(offers)) if !offers.is_empty() => {
-                (offers.clone(), None)
-            }
-            Some(obelus_agent::options::Reading::Unreadable(why)) => (
+            .filter(|(whose, offers)| whose == id && !offers.is_empty())
+            .map(|(_, offers)| offers.clone());
+        let asking = self.agents.asking.as_deref() == Some(id);
+        let (offers, silence) = match heard {
+            Some(offers) => (offers, None),
+            None if asking => (
                 Vec::new(),
-                Some(format!("What it offers will not read: {why}")),
+                Some(format!("Asking {name} what it can be set to")),
             ),
-            _ => (
+            None => (
                 Vec::new(),
-                Some(
-                    "What this one can be set to appears here after the first conversation \
-                     with it."
-                        .to_string(),
-                ),
+                Some(format!(
+                    "Nothing has been heard from {name} about what it can be set to"
+                )),
             ),
         };
         Some(Offering {
@@ -230,34 +217,10 @@ impl App {
         })
     }
 
-    /// Reads what the active agent offers, for [`App::agent_offering`] to
-    /// hand out until there is a reason to read again.
-    ///
-    /// Those reasons are all of them: the settings page opening, Obelus
-    /// writing the file itself, and the active agent changing. A file
-    /// another Obelus writes while this page is open is not among them --
-    /// it is the agent's own statement about itself rather than anything
-    /// the two are editing, so the worst a stale copy can do is list what
-    /// that agent offered an hour ago.
-    /// The same, for a test that has not been through the settings page.
-    pub fn reread_what_the_agent_offers_for_test(&mut self) {
-        self.reread_what_the_agent_offers();
-    }
-
-    pub(super) fn reread_what_the_agent_offers(&mut self) {
-        let id = match self.config().agent.as_deref() {
-            None | Some("") => {
-                self.agents.offers = None;
-                return;
-            }
-            Some(id) => id.to_string(),
-        };
-        let Some(root) = self.agents_root() else {
-            self.agents.offers = None;
-            return;
-        };
-        let read = obelus_agent::options::read(&id, &root);
-        self.agents.offers = Some((id, read));
+    /// Hands the settings page a list, as though the agent had said it,
+    /// for a test with no agent to ask.
+    pub fn agent_offers_for_test(&mut self, agent: &str, offers: Vec<obelus_agent::acp::Setting>) {
+        self.agents.offers = Some((agent.to_string(), offers));
     }
 
     /// Where Obelus keeps the agents it installs.
@@ -585,10 +548,27 @@ impl App {
             }
             None => {
                 self.agents.install_failures.remove(&id);
+                // What the version before this one offered is not what this
+                // one does: an update is exactly what the list goes stale
+                // over.
+                if self
+                    .agents
+                    .offers
+                    .as_ref()
+                    .is_some_and(|(whose, _)| *whose == id)
+                {
+                    self.agents.offers = None;
+                }
                 // Installed and nothing else in use: the reader pressed the
                 // button, so this is the one they want.
                 if self.config().agent.is_none() {
                     self.activate_agent(&id);
+                } else if self.settings.is_some() && self.config().agent.as_deref() == Some(&id) {
+                    // Asked again, on the page the reader is looking at.
+                    // Of the process that is running, which an update does
+                    // not stop: until it is started again it is the old
+                    // version answering.
+                    self.ask_what_the_agent_offers();
                 }
             }
         }
@@ -660,19 +640,11 @@ impl App {
             self.let_the_conversations_go();
         }
         self.change_setting("agent", &obelus_config::Value::Choice(id.to_string()));
-        self.reread_what_the_agent_offers();
-        // And if Obelus has never been told what this one can be set to,
-        // it asks -- by opening a conversation with it, because the
-        // protocol has no other way: what an agent offers arrives with a
-        // session and `initialize` says nothing about it.
-        //
-        // In the background, not on screen: the reader is on the settings
-        // page and asked to use this agent, not to start talking to it.
-        // But it is an ordinary conversation, in the list of what is open
-        // like any other -- so if the agent wants them to sign in, the
-        // question is somewhere they can answer it, rather than asked into
-        // a session nothing can show.
-        self.learn_what_the_agent_offers();
+        // And what this one can be set to, for the page the reader chose it
+        // on -- by opening a conversation with it, because the protocol has
+        // no other way: what an agent offers arrives with a session and
+        // `initialize` says nothing about it.
+        self.ask_what_the_agent_offers();
     }
 
     /// Whether an agent is running and it is not this one.
@@ -695,6 +667,7 @@ impl App {
         self.stop_agent();
         self.let_the_conversations_go();
         self.change_setting("agent", &obelus_config::Value::Choice(String::new()));
-        self.reread_what_the_agent_offers();
+        self.agents.offers = None;
+        self.agents.asking = None;
     }
 }

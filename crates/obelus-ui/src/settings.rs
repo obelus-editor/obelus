@@ -244,7 +244,8 @@ fn entry_rows(row: &Row, one_row_each: bool) -> u16 {
 /// A row with no name is its prose and nothing else: there is nothing to
 /// put on a first line.
 fn own_rows(row: &Row) -> u16 {
-    u16::try_from(row.body.len()).unwrap_or(0) + u16::from(!row.label.is_empty())
+    u16::try_from(row.body.len() + row.warning.len()).unwrap_or(0)
+        + u16::from(!row.label.is_empty())
 }
 
 /// How many rows of the screen are above the first entry a page shows.
@@ -427,6 +428,7 @@ impl Widget for SettingsView<'_> {
                     detail: self.saying(*command),
                     aside: Aside::Words(chord.map(|chord| chord.label()).unwrap_or_default()),
                     body: Vec::new(),
+                    warning: Vec::new(),
                     pinned: None,
                     scope: None,
                 })
@@ -455,79 +457,99 @@ impl SettingsView<'_> {
         self.settings
             .rows(self.offering.as_ref())
             .iter()
-            .map(|shown| match shown {
-                Shown::Obelus { setting, opens } => Row {
-                    opens: opens.map(Heading::Group),
-                    label: setting.name.to_string(),
-                    matched: self.settings.matched(setting),
-                    detail: None,
-                    // What it does, on its own rows under the name: beside
-                    // it, the two were competing for one row -- and the one
-                    // that lost was the description, cut off with an
-                    // ellipsis on exactly the rows that had most to
-                    // explain.
-                    body: self.settings.wrapped(setting.about, width),
-                    aside: Aside::Control(setting.kind, Settings::value_of(setting, self.config)),
-                    // On the reader's page, the file that has this one
-                    // instead of them. On the project's, nothing: a setting
-                    // the project has is exactly what that page is for.
-                    pinned: (!self.settings.on_project())
-                        .then(|| {
-                            self.pinned
-                                .contains(&setting.key)
-                                .then(|| self.project.clone())
-                                .flatten()
-                        })
-                        .flatten(),
-                    // And on the project's page, which layer the value showing
-                    // comes from -- the project's own included.
-                    scope: self.settings.on_project().then(|| self.scope(setting)),
-                },
-                Shown::Agent {
-                    offer,
-                    chosen,
-                    opens,
-                } => {
-                    // Three answers, and the word on the row is a different
-                    // one in each: what they chose, what the agent is left
-                    // to decide, and a choice the agent has since stopped
-                    // offering -- which is a line in their settings file
-                    // that will do nothing.
-                    let (word, said) = match chosen {
-                        None => (AGENTS_OWN.to_string(), Said::Agents),
-                        Some(value) => match offer.name_of(value) {
-                            Some(name) => (name.to_string(), Said::Reader),
-                            None => ((*value).to_string(), Said::Gone),
-                        },
-                    };
-                    Row {
-                        opens: opens.map(|name| Heading::Agent(name.to_string())),
-                        label: offer.name.clone(),
-                        matched: self.settings.matched_in(&offer.name),
-                        detail: None,
-                        body: self
-                            .settings
-                            .wrapped(offer.about.as_deref().unwrap_or_default(), width),
-                        aside: Aside::Chosen(word, said),
-                        // Neither column is this group's: what an agent
-                        // starts on is the reader's alone, so no project can
-                        // have taken it and there is no layer to name.
-                        pinned: None,
-                        scope: None,
-                    }
-                }
-                Shown::Silent { saying, opens } => Row {
-                    opens: Some(Heading::Agent((*opens).to_string())),
-                    label: String::new(),
-                    matched: None,
-                    detail: None,
-                    body: self.settings.wrapped(saying, width),
-                    aside: Aside::Nothing,
-                    pinned: None,
-                    scope: None,
-                },
+            .map(|shown| {
+                let mut row = self.row(shown, width);
+                // Asked of the row the component hands out, whatever kind
+                // of row it is, so that anything with something wrong with
+                // it says so the same way -- and `Settings::setting_rows`
+                // counts the same rows for it.
+                row.warning = shown
+                    .warning()
+                    .map(|warning| self.settings.wrapped(&warning, width))
+                    .unwrap_or_default();
+                row
             })
             .collect()
+    }
+
+    /// One of them, without what is wrong with it.
+    fn row(&self, shown: &Shown, width: u16) -> Row {
+        match shown {
+            Shown::Obelus { setting, opens } => Row {
+                opens: opens.map(Heading::Group),
+                label: setting.name.to_string(),
+                matched: self.settings.matched(setting),
+                detail: None,
+                // What it does, on its own rows under the name: beside
+                // it, the two were competing for one row -- and the one
+                // that lost was the description, cut off with an
+                // ellipsis on exactly the rows that had most to
+                // explain.
+                body: self.settings.wrapped(setting.about, width),
+                warning: Vec::new(),
+                aside: Aside::Control(setting.kind, Settings::value_of(setting, self.config)),
+                // On the reader's page, the file that has this one
+                // instead of them. On the project's, nothing: a setting
+                // the project has is exactly what that page is for.
+                pinned: (!self.settings.on_project())
+                    .then(|| {
+                        self.pinned
+                            .contains(&setting.key)
+                            .then(|| self.project.clone())
+                            .flatten()
+                    })
+                    .flatten(),
+                // And on the project's page, which layer the value showing
+                // comes from -- the project's own included.
+                scope: self.settings.on_project().then(|| self.scope(setting)),
+            },
+            Shown::Agent {
+                offer,
+                chosen,
+                opens,
+                ..
+            } => {
+                // Three answers, and the word on the row is a different
+                // one in each: what they chose, what the agent is left
+                // to decide, and a choice the agent has since stopped
+                // offering -- which is a line in their settings file
+                // that will do nothing.
+                let (word, said) = match chosen {
+                    None => (AGENTS_OWN.to_string(), Said::Agents),
+                    Some(value) => match offer.name_of(value) {
+                        Some(name) => (name.to_string(), Said::Reader),
+                        None => ((*value).to_string(), Said::Gone),
+                    },
+                };
+                Row {
+                    opens: opens.map(|name| Heading::Agent(name.to_string())),
+                    label: offer.name.clone(),
+                    matched: self.settings.matched_in(&offer.name),
+                    detail: None,
+                    body: self
+                        .settings
+                        .wrapped(offer.about.as_deref().unwrap_or_default(), width),
+                    warning: Vec::new(),
+                    aside: Aside::Chosen(word, said),
+                    // Neither column is this group's: what an agent
+                    // starts on is the reader's alone, so no project can
+                    // have taken it and there is no layer to name.
+                    pinned: None,
+                    scope: None,
+                }
+            }
+            Shown::Silent { saying, opens } => Row {
+                opens: Some(Heading::Agent((*opens).to_string())),
+                label: String::new(),
+                matched: None,
+                detail: None,
+                body: self.settings.wrapped(saying, width),
+                warning: Vec::new(),
+                aside: Aside::Nothing,
+                pinned: None,
+                scope: None,
+            },
+        }
     }
 }
 
@@ -547,6 +569,10 @@ struct Row {
     /// What it does, under the name and indented, already broken into the
     /// rows it takes. Empty on a page whose rows are one row each.
     body: Vec<String>,
+    /// What is wrong with what it is set to, under what it does and in the
+    /// colour of something that will not work, broken into its rows --
+    /// see `Shown::warning`. Empty where nothing is.
+    warning: Vec<String>,
     /// Which layer the value showing comes from, on the project's page.
     ///
     /// `None` on the reader's, where the question is the other one: not
@@ -977,6 +1003,24 @@ impl SettingsView<'_> {
                     y + offset,
                     line,
                     plain.fg(self.theme.gutter).bg(background),
+                );
+            }
+            // And what is wrong with it, straight under what it does and
+            // in the ink a value that will not work is drawn in: the two
+            // are the one fact, said in words and in colour.
+            for (offset, line) in row.warning.iter().enumerate() {
+                let Ok(offset) = u16::try_from(offset + named + row.body.len()) else {
+                    break;
+                };
+                if y + offset >= region.bottom() {
+                    break;
+                }
+                write(
+                    cells,
+                    name_at + indent,
+                    y + offset,
+                    line,
+                    plain.fg(self.theme.change_removed).bg(background),
                 );
             }
 
@@ -1499,6 +1543,7 @@ mod tests {
             detail: None,
             aside: Aside::Nothing,
             body: vec!["what it does".to_string(); about],
+            warning: Vec::new(),
             scope: None,
             pinned: None,
         }

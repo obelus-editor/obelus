@@ -166,9 +166,9 @@ impl App {
         // takes a moment, and a reader who walks to the agents tab should
         // find a list there rather than watch one arrive.
         self.refresh_registry();
-        // And what the active agent offers, read once here rather than
-        // once a frame from behind the page's own questions.
-        self.reread_what_the_agent_offers();
+        // And what the active agent offers, asked of it now: the page draws
+        // what was last heard until the answer arrives.
+        self.ask_what_the_agent_offers();
         self.settings = Some(Settings::new());
     }
 
@@ -180,7 +180,8 @@ impl App {
     pub fn open_project_settings(&mut self) {
         self.make_room(Room::Region);
         self.refresh_registry();
-        self.reread_what_the_agent_offers();
+        // Nothing asked of the agent: what it starts on is the reader's
+        // alone, and the project's page has no group for it.
         self.settings = Some(Settings::for_project());
     }
 

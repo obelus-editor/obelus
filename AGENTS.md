@@ -367,43 +367,32 @@ switches the agent: that is a setting, and doing it from a row would drop
 the session of every conversation open, including the one the reader is
 standing in.
 
-**A row says what is true of the thing it is on, at both moments.** An
-agent's options come in the answer to `session/new` and nowhere else, so a
-conversation nothing has been said in has none of them -- and the row that
-draws them went blank the moment opening one stopped asking for a session.
-Blank is not "there is nothing to set"; it is "nobody has asked yet", on
-the one row a reader looks at to find out what they are about to run. So it
-says what the next turn *will* run on, out of the two things Obelus has
-without asking anybody: what the agent itself was on when a conversation
-was opened to read the list off, and what the reader has pinned over that.
-The same sentence at both moments -- what this conversation is set to --
-because before there is one, what it is set to is what it will start on.
+**What an agent offers is asked of it, not remembered.** Its options come
+in the answer to `session/new` and nowhere else, and they are a fact about
+the agent as it is now: an update changes the models it lists, and a copy
+kept on disk beside the install went on answering for a version that was
+no longer there. So nothing about the list is written down -- zed keeps
+none either, only what the reader chose. The conversation's row is its own
+session's, which it has from the frame it is shown on; for the second
+before that arrives the row is empty, which is true.
 
-Only a conversation nobody has said anything in may say what the agent
-starts on. The list arrives as part of some conversation and the value that
-one is on is a fact about that conversation at that moment; written down
-from a conversation the reader has been changing, it would be read next
-week as what the agent opens on. Two arrive that way and no others: the one
-`Ask::Offers` opens to read the list off and lets go again, and the reader's
-own, in the moment it is minted -- which is the one that costs nothing and
-is what actually teaches Obelus, because choosing an agent is something a
-reader did once, months ago. A conversation *taken up* again is not among
-them: it arrives on whatever it was left on, which is why `Started` asks
-whether it was minted before it writes anything down.
+The settings page is the one place that needs the list with no
+conversation to hand, so it asks: every time it opens, on a session of its
+own that `Ask::Offers` opens and lets go (`App::ask_what_the_agent_offers`),
+and says `Asking ...` in the group's place until the answer comes. What was
+heard last is kept in memory for the life of the process -- any
+conversation's session brings it up to date, installing the agent throws
+it away -- and drawn while the page asks again, so only the first opening
+waits. "Asking" and "has not said" are two sentences, because the second is
+what an agent that would not answer leaves.
 
-And the file is read where it is wanted. It was loaded when the settings
-page opened and when an agent was chosen, so a reader who chose theirs last
-month and went straight to a conversation had a blank row and a correct
-file. Once, on the frame that wants it, because the read writes the field
-whatever it finds -- an agent that has said nothing is `Reading::Nothing`,
-which is an answer and not a gap to try again.
-
-And the key on that row still works: it writes the answer down on the
-conversation (`Conversation::wanted_on`) and starts it, so the row moves at
-once rather than a second later, and the session is opened on what was
-asked for. Pressing there is the reader setting this conversation up, and a
-conversation is what that needs -- the same shape as `f11`, which starts the
-walk it was once gated on.
+What the reader chose stays in their settings file, and is checked against
+the live list when a session opens. A choice the agent no longer offers is
+not sent. It is said on the settings page, under the row, in the colour of
+something that will not work -- `Shown::warning`, which is where any row
+says what is wrong with its value, counted by the page and by the window
+alike -- and said once in the conversation's transcript, with what it is on
+instead, because a reader in a conversation is not looking at that page.
 
 **A conversation takes one prompt turn at a time, so what the reader says
 into a running one waits.** The protocol puts no turn on either end of the

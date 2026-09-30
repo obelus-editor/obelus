@@ -2277,9 +2277,6 @@ impl App {
             self.search_this_file();
         }
 
-        // What the conversation on screen will open on, for a row that has
-        // no session to draw from yet.
-        self.settle_what_the_next_turn_runs_on();
         self.settle_agents(editor_area);
         self.prepare_icons();
         self.settle_chat(editor_area);
