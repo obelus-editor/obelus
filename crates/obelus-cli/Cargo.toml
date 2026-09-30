@@ -43,7 +43,7 @@ license-file = ["../../LICENSE", "0"]
 section = "devel"
 priority = "optional"
 extended-description = """\
-Syntax highlighting for fifteen languages, folding, soft wrap, git in the \
+Syntax highlighting for twenty-five languages, folding, soft wrap, git in the \
 margin, a language server and an agent, on the page you are reading. In the \
 AI era every line you read is a line you did not write, so browsing is the \
 product and editing is incidental."""

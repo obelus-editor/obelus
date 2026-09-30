@@ -321,6 +321,12 @@ fn an_edits_points_are_byte_columns_not_character_columns() {
 /// else would report it. It is a real risk here because several of these
 /// queries are two upstream queries concatenated -- TypeScript's covers only
 /// what TypeScript adds to JavaScript.
+///
+/// Broken deliberately three ways: by emptying
+/// `obelus-syntax/queries/julia/highlights.scm`, which is the one query that
+/// is a file of Obelus's own, and by handing PHP and OCaml the wrong one of
+/// their two grammars each. The comment on the parse assertion below says
+/// what the last of those does and does not catch.
 #[test]
 fn every_language_highlights_its_own_sample() {
     // One snippet per language, each holding a comment, a string and a
@@ -364,6 +370,52 @@ fn every_language_highlights_its_own_sample() {
         ),
         (LanguageId::Html, "<!-- c -->\n<div class=\"a\">hi</div>\n"),
         (LanguageId::Yaml, "# c\nkey: \"hi\"\nlist:\n  - 1\n"),
+        (
+            LanguageId::Agda,
+            "-- c\nmodule Hello where\n\nname : String\nname = \"hi\"\n",
+        ),
+        (
+            LanguageId::CSharp,
+            "// c\nclass Greeter { string name = \"hi\"; }\n",
+        ),
+        (
+            LanguageId::Haskell,
+            "-- c\nmain :: IO ()\nmain = putStrLn \"hi\"\n",
+        ),
+        (
+            LanguageId::Java,
+            "// c\nclass Greeter { String name = \"hi\"; }\n",
+        ),
+        (
+            LanguageId::Julia,
+            "# c\nfunction greet(name)\n    return \"hi $name\"\nend\n",
+        ),
+        (LanguageId::Ocaml, "(* c *)\nlet greet name = \"hi\"\n"),
+        // An interface file declares and does not define, so it has no string
+        // in it the way the others do -- except in an `external`, which names
+        // the C symbol it binds to. Which is the sort of line a `.mli` is
+        // actually full of.
+        (
+            LanguageId::OcamlInterface,
+            "(* c *)\nval greet : string -> string\nexternal now : unit -> float = \"caml_now\"\n",
+        ),
+        // With HTML either side of the tags, which is what a `.php` file
+        // actually looks like -- and is the only reason this sample can tell
+        // the two PHP grammars apart: `LANGUAGE_PHP_ONLY` parses everything
+        // between `<?php` and `?>` exactly as well, and errors on the text
+        // around it.
+        (
+            LanguageId::Php,
+            "<p>hi</p>\n<?php\n// c\n$name = \"hi\";\n?>\n<p>bye</p>\n",
+        ),
+        (
+            LanguageId::Ruby,
+            "# c\ndef greet(name)\n  \"hi #{name}\"\nend\n",
+        ),
+        (
+            LanguageId::Scala,
+            "// c\nobject Greeter { val name = \"hi\" }\n",
+        ),
         // Markdown has no comments and no strings of its own: the *block*
         // grammar is what Obelus parses, and what it names is structure --
         // a heading, a fenced block, a list. So this one is checked by the
@@ -390,6 +442,26 @@ fn every_language_highlights_its_own_sample() {
     for (language, source) in samples {
         let text = Text::from_string(source);
         let state = SyntaxState::new(*language, &text).expect("parsing");
+        // The right grammar, and not merely one that finds a comment and a
+        // string in the wreckage. tree-sitter recovers from anything, so the
+        // three assertions below all pass with the wrong grammar of a pair --
+        // PHP has two and OCaml has two -- and an error node is the thing
+        // that does not. Every sample here is valid, so a tree with one in it
+        // is a tree built by the wrong parser.
+        //
+        // Which catches three of the four ways round: PHP either way, and
+        // `.ml` given the interface grammar, because that one rejects `let`.
+        // The fourth cannot be caught by any sample, and it is worth saying
+        // so rather than looking covered -- `tree-sitter-ocaml`'s
+        // implementation grammar accepts everything an interface file
+        // contains, `val` and `external` included, so a `.mli` handed to it
+        // parses identically. The two grammars really are the right pair for
+        // the two extensions; only one direction of getting it wrong shows.
+        assert!(
+            !state.tree().root_node().has_error(),
+            "{} did not parse its own sample, so this is the wrong grammar for it",
+            language.name()
+        );
         let kinds = kinds(&text, &state);
         let found: std::collections::HashSet<SyntaxKind> = kinds.into_iter().flatten().collect();
 
@@ -417,11 +489,18 @@ fn every_language_highlights_its_own_sample() {
                 language.name()
             );
         }
-        assert!(
-            found.contains(&SyntaxKind::String),
-            "{} did not highlight its string: {found:?}",
-            language.name()
-        );
+        // Agda is the one language here whose query names no string: upstream
+        // captures integers, names, keywords, pragmas and comments, and a
+        // `"hi"` in an Agda file is drawn plain. A fact about that query, not
+        // about Obelus -- and the two assertions either side of this still
+        // say the query works.
+        if *language != LanguageId::Agda {
+            assert!(
+                found.contains(&SyntaxKind::String),
+                "{} did not highlight its string: {found:?}",
+                language.name()
+            );
+        }
         // Something beyond the two kinds every query in the world finds. A
         // query matching only comments and strings has matched the parts that
         // look the same in every language and nothing about this one -- which

@@ -137,6 +137,24 @@ tree-sitter-bash = "0.25"
 tree-sitter-css = "0.25"
 tree-sitter-html = "0.23"
 tree-sitter-yaml = "0.7"
+# The rest of the parsers the tree-sitter organisation maintains itself, which
+# is the list to work down before reaching for anybody's fork: every one of
+# these crates is published from the repository under `tree-sitter/`, so the
+# grammar and the query in it were written by the same people and move
+# together. Three of the org's parsers are deliberately not here -- `jsdoc`,
+# `regex` and `embedded-template` are grammars something else is written *in*
+# rather than file types, so they arrive through `inject` or not at all.
+tree-sitter-agda = "1.3"
+tree-sitter-c-sharp = "0.23"
+tree-sitter-haskell = "0.23"
+tree-sitter-java = "0.23"
+# The one crate here that ships its highlight query as a *file* and not as a
+# constant, which is why `obelus-syntax/queries/julia/` exists.
+tree-sitter-julia = "0.23"
+tree-sitter-ocaml = "0.26"
+tree-sitter-php = "0.24"
+tree-sitter-ruby = "0.23"
+tree-sitter-scala = "0.26"
 # No markdown: it is two grammars, a block one and an inline one, which the
 # one-grammar-per-language registry cannot express. It needs the injection
 # machinery Obelus does not have yet.

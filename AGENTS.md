@@ -1376,7 +1376,7 @@ src/
                   the view reads it in
   reading/        what a file is when it is not code: markdown, a log
                   · a log's format is decided by its lines, not its name
-  syntax/         language registry (15 languages), parsing, highlights, tags
+  syntax/         language registry (25 languages), parsing, highlights, tags
   lsp/            transport, client, actions, positions, outline, the call
                   the cursor is inside
                   · a parameter nothing is on is not the first parameter, and

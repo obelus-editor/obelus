@@ -51,6 +51,35 @@ pub enum LanguageId {
     Html,
     /// YAML.
     Yaml,
+    /// Agda.
+    Agda,
+    /// C#.
+    CSharp,
+    /// Haskell.
+    Haskell,
+    /// Java.
+    Java,
+    /// Julia.
+    Julia,
+    /// OCaml, an implementation file.
+    Ocaml,
+    /// OCaml, an interface file.
+    ///
+    /// A grammar of its own rather than a dialect of [`Self::Ocaml`], the
+    /// same way TSX is one beside TypeScript: `.mli` says what a module
+    /// offers and `.ml` says what it does, and the two parse differently.
+    OcamlInterface,
+    /// PHP, with whatever surrounds it.
+    ///
+    /// The grammar that takes a whole `.php` file, text and tags and all,
+    /// rather than the one that takes only what is between `<?php` and
+    /// `?>`: a file is the thing a reader opens, and a PHP file is mostly
+    /// not PHP.
+    Php,
+    /// Ruby.
+    Ruby,
+    /// Scala.
+    Scala,
     /// Markdown, block structure only.
     Markdown,
     /// What is inside a markdown paragraph.
@@ -103,6 +132,16 @@ impl LanguageId {
             "css" => Some(Self::Css),
             "html" | "htm" | "xhtml" => Some(Self::Html),
             "yaml" | "yml" => Some(Self::Yaml),
+            "agda" => Some(Self::Agda),
+            "cs" | "csx" | "cake" | "c#" | "csharp" => Some(Self::CSharp),
+            "hs" | "hs-boot" | "hsc" | "haskell" => Some(Self::Haskell),
+            "java" | "jav" => Some(Self::Java),
+            "jl" | "julia" => Some(Self::Julia),
+            "ml" | "ocaml" => Some(Self::Ocaml),
+            "mli" => Some(Self::OcamlInterface),
+            "php" | "php4" | "php5" | "phtml" | "ctp" => Some(Self::Php),
+            "rb" | "rake" | "gemspec" | "podspec" | "rbi" | "ru" | "ruby" => Some(Self::Ruby),
+            "scala" | "sbt" | "sc" => Some(Self::Scala),
             "md" | "markdown" => Some(Self::Markdown),
             _ => None,
         }
@@ -146,12 +185,25 @@ impl LanguageId {
             | Self::Tsx
             | Self::Go
             | Self::C
-            | Self::Cpp => Some("//"),
-            Self::Python | Self::Bash | Self::Toml | Self::Yaml => Some("#"),
+            | Self::Cpp
+            | Self::CSharp
+            | Self::Java
+            | Self::Php
+            | Self::Scala => Some("//"),
+            Self::Python | Self::Bash | Self::Toml | Self::Yaml | Self::Julia | Self::Ruby => {
+                Some("#")
+            }
+            Self::Agda | Self::Haskell => Some("--"),
             // Only block comments, or none at all: CSS and HTML have
-            // `/* */` and `<!-- -->`, JSON has nothing, and markdown's
-            // comment is an HTML one.
-            Self::Json | Self::Css | Self::Html | Self::Markdown | Self::MarkdownInline => None,
+            // `/* */` and `<!-- -->`, OCaml has `(* *)`, JSON has nothing,
+            // and markdown's comment is an HTML one.
+            Self::Json
+            | Self::Css
+            | Self::Html
+            | Self::Ocaml
+            | Self::OcamlInterface
+            | Self::Markdown
+            | Self::MarkdownInline => None,
         }
     }
 
@@ -173,6 +225,16 @@ impl LanguageId {
             Self::Css => "css",
             Self::Html => "html",
             Self::Yaml => "yaml",
+            Self::Agda => "agda",
+            Self::CSharp => "c#",
+            Self::Haskell => "haskell",
+            Self::Java => "java",
+            Self::Julia => "julia",
+            Self::Ocaml => "ocaml",
+            Self::OcamlInterface => "ocaml-interface",
+            Self::Php => "php",
+            Self::Ruby => "ruby",
+            Self::Scala => "scala",
             Self::Markdown => "markdown",
             Self::MarkdownInline => "markdown-inline",
         }
@@ -198,6 +260,16 @@ impl LanguageId {
         Self::Css,
         Self::Html,
         Self::Yaml,
+        Self::Agda,
+        Self::CSharp,
+        Self::Haskell,
+        Self::Java,
+        Self::Julia,
+        Self::Ocaml,
+        Self::OcamlInterface,
+        Self::Php,
+        Self::Ruby,
+        Self::Scala,
         Self::Markdown,
         Self::MarkdownInline,
     ];
@@ -306,6 +378,16 @@ pub fn grammar(language: LanguageId) -> &'static Grammar {
     static YAML: OnceLock<Grammar> = OnceLock::new();
     static MARKDOWN: OnceLock<Grammar> = OnceLock::new();
     static MARKDOWN_INLINE: OnceLock<Grammar> = OnceLock::new();
+    static AGDA: OnceLock<Grammar> = OnceLock::new();
+    static C_SHARP: OnceLock<Grammar> = OnceLock::new();
+    static HASKELL: OnceLock<Grammar> = OnceLock::new();
+    static JAVA: OnceLock<Grammar> = OnceLock::new();
+    static JULIA: OnceLock<Grammar> = OnceLock::new();
+    static OCAML: OnceLock<Grammar> = OnceLock::new();
+    static OCAML_INTERFACE: OnceLock<Grammar> = OnceLock::new();
+    static PHP: OnceLock<Grammar> = OnceLock::new();
+    static RUBY: OnceLock<Grammar> = OnceLock::new();
+    static SCALA: OnceLock<Grammar> = OnceLock::new();
 
     match language {
         LanguageId::Rust => RUST.get_or_init(|| {
@@ -412,6 +494,75 @@ pub fn grammar(language: LanguageId) -> &'static Grammar {
                 tree_sitter_yaml::HIGHLIGHTS_QUERY,
             )
         }),
+        LanguageId::Agda => AGDA.get_or_init(|| {
+            Grammar::new(
+                tree_sitter_agda::LANGUAGE.into(),
+                tree_sitter_agda::HIGHLIGHTS_QUERY,
+            )
+        }),
+        LanguageId::CSharp => C_SHARP.get_or_init(|| {
+            Grammar::new(
+                tree_sitter_c_sharp::LANGUAGE.into(),
+                tree_sitter_c_sharp::HIGHLIGHTS_QUERY,
+            )
+        }),
+        LanguageId::Haskell => HASKELL.get_or_init(|| {
+            Grammar::new(
+                tree_sitter_haskell::LANGUAGE.into(),
+                tree_sitter_haskell::HIGHLIGHTS_QUERY,
+            )
+        }),
+        LanguageId::Java => JAVA.get_or_init(|| {
+            Grammar::new(
+                tree_sitter_java::LANGUAGE.into(),
+                tree_sitter_java::HIGHLIGHTS_QUERY,
+            )
+        }),
+        // The one query that is a file of Obelus's own rather than a
+        // constant out of the grammar's crate, because that crate ships it
+        // as a file. Compiled in all the same -- `include_str!` puts it in
+        // the binary, so nothing is read at runtime and a query that will
+        // not compile is still a query that will not compile on the first
+        // Julia file, the way every other one here is.
+        LanguageId::Julia => JULIA.get_or_init(|| {
+            Grammar::new(
+                tree_sitter_julia::LANGUAGE.into(),
+                include_str!("../queries/julia/highlights.scm"),
+            )
+        }),
+        // One query over both OCaml grammars: it names the nodes an
+        // implementation and an interface share and the ones only one of
+        // them has, which is why upstream ships a single file for the pair.
+        LanguageId::Ocaml => OCAML.get_or_init(|| {
+            Grammar::new(
+                tree_sitter_ocaml::LANGUAGE_OCAML.into(),
+                tree_sitter_ocaml::HIGHLIGHTS_QUERY,
+            )
+        }),
+        LanguageId::OcamlInterface => OCAML_INTERFACE.get_or_init(|| {
+            Grammar::new(
+                tree_sitter_ocaml::LANGUAGE_OCAML_INTERFACE.into(),
+                tree_sitter_ocaml::HIGHLIGHTS_QUERY,
+            )
+        }),
+        LanguageId::Php => PHP.get_or_init(|| {
+            Grammar::new(
+                tree_sitter_php::LANGUAGE_PHP.into(),
+                tree_sitter_php::HIGHLIGHTS_QUERY,
+            )
+        }),
+        LanguageId::Ruby => RUBY.get_or_init(|| {
+            Grammar::new(
+                tree_sitter_ruby::LANGUAGE.into(),
+                tree_sitter_ruby::HIGHLIGHTS_QUERY,
+            )
+        }),
+        LanguageId::Scala => SCALA.get_or_init(|| {
+            Grammar::new(
+                tree_sitter_scala::LANGUAGE.into(),
+                tree_sitter_scala::HIGHLIGHTS_QUERY,
+            )
+        }),
         // The block grammar: the structure of a document. What is inside a
         // paragraph is the other one below, reached the way every second
         // language in a file is -- through the ranges this one's injection
@@ -463,6 +614,8 @@ pub(crate) fn rope_chunks<'a>(
 mod tests {
     use super::*;
 
+    /// Broken deliberately by deleting the `.mli` arm, which then falls to
+    /// `None` -- no other arm claims that extension.
     #[test]
     fn extensions_map_to_languages() {
         assert_eq!(
@@ -508,6 +661,35 @@ mod tests {
             LanguageId::for_path(Path::new("README.md")),
             Some(LanguageId::Markdown)
         );
+        // OCaml's two grammars, told apart by the one letter that is the
+        // whole difference between a module's implementation and its
+        // interface.
+        assert_eq!(
+            LanguageId::for_path(Path::new("parser.ml")),
+            Some(LanguageId::Ocaml)
+        );
+        assert_eq!(
+            LanguageId::for_path(Path::new("parser.mli")),
+            Some(LanguageId::OcamlInterface)
+        );
+        // `.sc` is a Scala script and `.cs` is C#, which are two extensions
+        // apart from each other and from `.css` by a letter each.
+        assert_eq!(
+            LanguageId::for_path(Path::new("build.sc")),
+            Some(LanguageId::Scala)
+        );
+        assert_eq!(
+            LanguageId::for_path(Path::new("Program.cs")),
+            Some(LanguageId::CSharp)
+        );
+        assert_eq!(
+            LanguageId::for_path(Path::new("site.css")),
+            Some(LanguageId::Css)
+        );
+        assert_eq!(
+            LanguageId::for_path(Path::new("Gemfile.rb")),
+            Some(LanguageId::Ruby)
+        );
         assert_eq!(LanguageId::for_path(Path::new("Makefile")), None);
     }
 
@@ -524,6 +706,14 @@ mod tests {
     /// a whole language's queries went unrecognized the file would simply look
     /// unhighlighted, so assert that most of what the shipped queries capture
     /// is understood.
+    ///
+    /// Broken deliberately by taking any one of the names out of
+    /// `SyntaxKind::exact` -- `character`, `module`/`namespace`, or the older
+    /// keyword spellings -- and by dropping the underscore exemption below.
+    /// Each fails on the first language in [`LanguageId::ALL`] that uses the
+    /// name rather than on the one the name was added for, which is Agda
+    /// twice over: it says `namespace` and `include` where the newer queries
+    /// say `module` and `keyword.import`.
     #[test]
     fn the_theme_understands_what_the_queries_capture() {
         // The two Obelus leaves plain on purpose. They are a *style* rather
@@ -531,7 +721,10 @@ mod tests {
         // either side are already punctuation, and a colour for the words
         // between them would be a colour Obelus invented. A theme that grows
         // bold and italic is where they would be answered, not here.
-        const PLAIN: &[&str] = &["text.emphasis", "text.strong"];
+        // And `spell` is not a kind of thing at all: it marks the runs a
+        // spell-checker should look at, which is a different tool's question
+        // asked in the same file. Haskell's query and Scala's both carry it.
+        const PLAIN: &[&str] = &["text.emphasis", "text.strong", "spell"];
 
         for language in LanguageId::ALL.iter().copied() {
             let grammar = grammar(language);
@@ -542,6 +735,12 @@ mod tests {
                 .filter(|(index, _)| grammar.paint(*index as u32) == Paint::Nothing)
                 .map(|(_, name)| *name)
                 .filter(|name| !PLAIN.contains(name))
+                // A capture whose name begins with an underscore is one the
+                // query wrote for its own use -- `@_name` exists to be
+                // compared against in a `#eq?` or `#any-of?` on the next
+                // line, and painting it was never the point. Haskell's
+                // query has three.
+                .filter(|name| !name.starts_with('_'))
                 .collect();
             assert!(
                 unknown.is_empty(),

@@ -142,6 +142,24 @@ pub const fn server_for(language: LanguageId) -> Option<Server> {
         // taplo and the JSON server exist, and neither is installed often
         // enough to be worth a row that only ever fails to find them.
         LanguageId::Toml | LanguageId::Json | LanguageId::Markdown => None,
+        // A grammar and a server are two decisions, and these ten have had
+        // only the first. Every row above was written against a server
+        // somebody had actually started -- what a program spells its stdio
+        // switch, whether it wants a `start`, whether it can be run at all
+        // without a project file -- and a row guessed from a README is a row
+        // that reports the server missing on a machine where it is
+        // installed, or starts it wrong. So they highlight, and the day one
+        // of them is checked it becomes a row.
+        LanguageId::Agda
+        | LanguageId::CSharp
+        | LanguageId::Haskell
+        | LanguageId::Java
+        | LanguageId::Julia
+        | LanguageId::Ocaml
+        | LanguageId::OcamlInterface
+        | LanguageId::Php
+        | LanguageId::Ruby
+        | LanguageId::Scala => None,
         // No file is written in it: it is where the markdown grammar points
         // for what is inside a paragraph, and a server is started for a file.
         LanguageId::MarkdownInline => None,

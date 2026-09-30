@@ -3,14 +3,14 @@
 //! The floor under the outline. A language server knows more -- nesting,
 //! containers, the difference between a method and a free function that
 //! happens to look like one -- but it has to be installed, started and
-//! finished indexing, and Obelus can highlight fourteen languages while
-//! knowing how to start a server for nine of them. The tree is already in
+//! finished indexing, and Obelus can highlight twenty-five languages while
+//! knowing how to start a server for nine programs. The tree is already in
 //! the buffer, so this answer costs a query over one file and is available
 //! the moment the file is open.
 //!
 //! It comes from each grammar's own `TAGS_QUERY`, which is shipped for the
 //! languages people write code in and absent for the ones they write data
-//! in: seven of the fourteen have one. A language without one has no
+//! in: fourteen of the twenty-five have one. A language without one has no
 //! outline, which the caller has to say out loud.
 
 use obelus_text::{
@@ -221,6 +221,16 @@ fn tags_query(language: LanguageId) -> Option<&'static tree_sitter::Query> {
         // ones it shares with JavaScript.
         LanguageId::TypeScript => compiled!(TYPESCRIPT, tree_sitter_typescript::TAGS_QUERY),
         LanguageId::Tsx => compiled!(TSX, tree_sitter_typescript::TAGS_QUERY),
+        LanguageId::CSharp => compiled!(C_SHARP, tree_sitter_c_sharp::TAGS_QUERY),
+        LanguageId::Java => compiled!(JAVA, tree_sitter_java::TAGS_QUERY),
+        // Upstream's one tags query covers both OCaml grammars, the same way
+        // its highlights do.
+        LanguageId::Ocaml => compiled!(OCAML, tree_sitter_ocaml::TAGS_QUERY),
+        LanguageId::OcamlInterface => {
+            compiled!(OCAML_INTERFACE, tree_sitter_ocaml::TAGS_QUERY)
+        }
+        LanguageId::Php => compiled!(PHP, tree_sitter_php::TAGS_QUERY),
+        LanguageId::Ruby => compiled!(RUBY, tree_sitter_ruby::TAGS_QUERY),
         // Data languages, whose grammars ship no tags query. A file of them
         // has structure but no *definitions*, and an outline of every key in
         // a YAML file is the file again.
@@ -230,6 +240,15 @@ fn tags_query(language: LanguageId) -> Option<&'static tree_sitter::Query> {
         | LanguageId::Css
         | LanguageId::Html
         | LanguageId::Yaml
+        // And these four define plenty, but their grammars hand Obelus no
+        // query to find it with: Agda, Haskell and Julia ship none at all,
+        // and Scala's crate has the file without exporting it. Writing one
+        // here is what `RUST_EXTRA` above is, and the comment there says why
+        // that is a line and not a language.
+        | LanguageId::Agda
+        | LanguageId::Haskell
+        | LanguageId::Julia
+        | LanguageId::Scala
         // A markdown outline is its headings, and it would be a good one.
         // The block grammar has the nodes for it but ships no tags query, so
         // it would have to be written here -- which is a decision, not an
@@ -237,5 +256,35 @@ fn tags_query(language: LanguageId) -> Option<&'static tree_sitter::Query> {
         | LanguageId::Markdown
         // And nothing defines anything inside a paragraph.
         | LanguageId::MarkdownInline => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every tags query compiles.
+    ///
+    /// The same hazard [`LanguageId::ALL`] exists for, one query along:
+    /// `tags_query` panics on a query that will not compile, and nothing
+    /// else asks for a language's until a reader opens a file in it and
+    /// presses the key. So the outline tests cover the four languages they
+    /// name and said nothing about the rest -- six of these arms were added
+    /// at once and none of them was compiled by anything.
+    ///
+    /// Broken deliberately by putting C#'s query behind Java's grammar,
+    /// which is the mistake this shape of table invites.
+    #[test]
+    fn every_tags_query_compiles() {
+        let mut found = 0;
+        for language in LanguageId::ALL.iter().copied() {
+            if tags_query(language).is_some() {
+                found += 1;
+            }
+        }
+        // A number rather than a list, and asserted so that a language whose
+        // query is quietly dropped to `None` is a failure rather than a
+        // silent loss of its outline.
+        assert_eq!(found, 14, "a language stopped offering an outline");
     }
 }

@@ -180,7 +180,24 @@ fn query(language: LanguageId) -> Option<&'static Query> {
         | LanguageId::Cpp
         | LanguageId::Bash
         | LanguageId::Css
-        | LanguageId::Yaml => None,
+        | LanguageId::Yaml
+        // Two of the new ones do ship one and are still not taken up, which
+        // is the same decision as the rest of this list rather than an
+        // omission: Haskell's names a dozen grammars behind a quasiquoter's
+        // word, of which Obelus has two, and PHP's is the text around the
+        // tags -- and that text is a whole HTML document, which the PHP
+        // grammar hands over as one run per gap between `?>` and `<?php`.
+        // Both are worth having and neither is a line of this table.
+        | LanguageId::Agda
+        | LanguageId::CSharp
+        | LanguageId::Haskell
+        | LanguageId::Java
+        | LanguageId::Julia
+        | LanguageId::Ocaml
+        | LanguageId::OcamlInterface
+        | LanguageId::Php
+        | LanguageId::Ruby
+        | LanguageId::Scala => None,
     }
 }
 
@@ -224,10 +241,15 @@ mod tests {
 
     /// A language Obelus has no grammar for is no injection at all. The
     /// fence still reads -- the block grammar has drawn it -- and a reader
-    /// opening a Ruby file gets exactly the same thing.
+    /// opening a Lua file gets exactly the same thing.
+    ///
+    /// The fence said `ruby` until Ruby was one of the languages, which is
+    /// the hazard in a test whose subject is a language that is *missing*:
+    /// it passes for the wrong reason the moment somebody adds that one, and
+    /// it fails loudly, which is what happened here.
     #[test]
     fn a_fence_in_a_language_obelus_does_not_have_is_left_alone() {
-        let found = injections("```ruby\nputs 1\n```\n");
+        let found = injections("```lua\nprint(1)\n```\n");
         assert!(
             found.iter().all(|injection| injection.ranges.is_empty()
                 || injection.language == LanguageId::MarkdownInline),

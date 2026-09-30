@@ -85,7 +85,20 @@ impl SyntaxKind {
         match name {
             "attribute" => Some(Self::Attribute),
             "boolean" => Some(Self::Boolean),
+            // A `'a'` literal, in Haskell and Julia. A string of one
+            // character is still a string: what a reader wants is to see
+            // where the quotes are, which is what the string colour says.
+            "character" => Some(Self::String),
             "comment" => Some(Self::Comment),
+            // The older names for a keyword, which the queries written
+            // against nvim-treesitter's vocabulary use and the newer ones
+            // spell `keyword.conditional` and so reach `keyword` by the
+            // fallback: Scala's query says `conditional`, `repeat`,
+            // `exception` and `storageclass`, and Agda's and Scala's say
+            // `include` where the rest say `keyword.import`.
+            "conditional" | "exception" | "include" | "repeat" | "storageclass" => {
+                Some(Self::Keyword)
+            }
             "constant" => Some(Self::Constant),
             "constructor" => Some(Self::Constructor),
             // C and C++ call `;` and `,` delimiters where the others call
@@ -97,11 +110,23 @@ impl SyntaxKind {
             // wins, because the innermost capture does.
             "embedded" => Some(Self::Variable),
             "escape" => Some(Self::Escape),
-            "function" => Some(Self::Function),
+            // `float` and `method` are the same older vocabulary again,
+            // against `number.float` and `function.method`.
+            "float" => Some(Self::Number),
+            "function" | "method" => Some(Self::Function),
             "keyword" => Some(Self::Keyword),
             "label" => Some(Self::Label),
+            // The name of a scope: a C# or Julia module, an OCaml or Agda
+            // one, a Scala or PHP namespace. It names the kind of thing its
+            // contents are, which is what a type is -- the same reading
+            // `tag` gets below, and for the same reason.
+            "module" | "namespace" => Some(Self::Type),
             "number" => Some(Self::Number),
             "operator" => Some(Self::Operator),
+            // A parameter is a variable, which is what the newer name
+            // (`variable.parameter`) already says; Scala's query uses the
+            // older one.
+            "parameter" => Some(Self::Variable),
             "property" => Some(Self::Property),
             "punctuation" => Some(Self::Punctuation),
             "string" => Some(Self::String),
