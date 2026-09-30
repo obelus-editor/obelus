@@ -413,6 +413,7 @@ impl App {
                         end_character: end.character,
                     },
                     tab: None,
+                    section: None,
                 })
             })
             .collect();
@@ -521,6 +522,7 @@ impl App {
                 end_character: 0,
             },
             tab: None,
+            section: None,
         }));
         if done {
             // Now it is true that there is no match, and the row count says

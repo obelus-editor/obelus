@@ -2219,12 +2219,13 @@ impl App {
         // their matched characters worked out, and only the geometry knows
         // how many rows there are. The room is the room it is *drawn* in,
         // which over a conversation is everything above the box.
+        let width = self.picker_area().width;
         let rows = self
             .picker
             .as_ref()
             .map(|picker| obelus_ui::picker::rows_drawn(picker, self.picker_area()));
         if let (Some(rows), Some(picker)) = (rows, self.picker.as_mut()) {
-            picker.refresh_indices(rows);
+            picker.refresh_indices(rows, width);
         }
         // And a scoring the list wants done somewhere that is not here.
         // Taken on the frame rather than where the query changed, for the
@@ -2737,6 +2738,7 @@ impl App {
                             opens: None,
                             kind: None,
                             tab: None,
+                            section: None,
                         }
                     }));
                 }

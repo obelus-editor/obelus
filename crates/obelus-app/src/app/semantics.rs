@@ -296,6 +296,7 @@ impl App {
                     opens: None,
                     kind: None,
                     tab: None,
+                    section: None,
                 }
             })
             .collect();
@@ -1455,6 +1456,7 @@ impl App {
                         end_character,
                     },
                     tab: None,
+                    section: None,
                 }
             })
             .collect();
@@ -1562,6 +1564,7 @@ impl App {
                     end_character: symbol.end_character,
                 },
                 tab: None,
+                section: None,
             })
             .collect();
 
@@ -1757,6 +1760,7 @@ impl App {
                     end_character: symbol.end_character,
                 },
                 tab: None,
+                section: None,
             })
             .collect();
         picker.replace(items);
@@ -2278,6 +2282,7 @@ fn trouble_row(
         colours: None,
         kind: Some(trouble.severity.kind()),
         tab: None,
+        section: None,
     }
 }
 
@@ -2649,6 +2654,7 @@ fn place_rows(places: &[obelus_lsp::action::Place], root: &Path) -> Vec<PickerIt
                 opens: None,
                 kind: None,
                 tab: None,
+                section: None,
             }
         })
         .collect()

@@ -83,6 +83,7 @@ fn items(labels: &[&str]) -> Vec<PickerItem> {
             opens: None,
             kind: None,
             tab: None,
+            section: None,
         })
         .collect()
 }

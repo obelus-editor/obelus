@@ -1087,6 +1087,7 @@ impl App {
                 opens: None,
                 kind: None,
                 tab: None,
+                section: None,
             })
             .collect();
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
@@ -1589,6 +1590,7 @@ impl App {
                 opens: None,
                 kind: None,
                 tab: None,
+                section: None,
             })
             .collect();
         let mut slash = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
@@ -1616,16 +1618,14 @@ impl App {
             .and_then(|talk| talk.slash.as_ref())
             .zip(self.chat())
             .map(|(slash, chat)| {
-                obelus_ui::picker::rows_drawn(
-                    slash,
-                    obelus_ui::chat::above_writing(self.editor_area, chat, self.card()),
-                )
+                let room = obelus_ui::chat::above_writing(self.editor_area, chat, self.card());
+                (obelus_ui::picker::rows_drawn(slash, room), room.width)
             });
-        if let (Some(rows), Some(slash)) = (
+        if let (Some((rows, width)), Some(slash)) = (
             rows,
             self.conversation_mut().and_then(|talk| talk.slash.as_mut()),
         ) {
-            slash.refresh_indices(rows);
+            slash.refresh_indices(rows, width);
         }
     }
 

@@ -171,6 +171,7 @@ impl App {
                 colours: None,
                 kind: None,
                 tab: None,
+                section: None,
             })
             .collect();
         self.code_actions = offered;

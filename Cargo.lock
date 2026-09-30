@@ -4025,6 +4025,7 @@ dependencies = [
  "futures",
  "gix",
  "image",
+ "jiff",
  "lsp-types",
  "notify",
  "obelus-agent",

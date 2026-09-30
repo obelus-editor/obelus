@@ -272,7 +272,16 @@ impl Window {
             return;
         }
         let room = room.max(1);
-        self.top = self.top.min(self.focus);
+        // Never parked past the end, which is `settle`'s rule in rows: a
+        // query narrowing the list would otherwise leave its last few items
+        // at the top and a screen of nothing under them.
+        let mut filled = heights.len() - 1;
+        let mut taken = heights[filled];
+        while filled > 0 && taken.saturating_add(heights[filled - 1]) <= room {
+            filled -= 1;
+            taken = taken.saturating_add(heights[filled]);
+        }
+        self.top = self.top.min(self.focus).min(filled);
         while self.top < self.focus {
             let taken: u16 = heights[self.top..=self.focus].iter().sum();
             if taken <= room {
@@ -280,6 +289,26 @@ impl Window {
             }
             self.top += 1;
         }
+    }
+
+    /// Which items are on screen, for items that are not all one row tall.
+    ///
+    /// Whole items only: the first one always, and after it as many as fit.
+    /// Half an item at the foot is a row that says less than it seems to,
+    /// and the next step brings the whole of it on anyway.
+    #[must_use]
+    pub fn visible_by_height(&self, heights: &[u16], room: u16) -> std::ops::Range<usize> {
+        let first = self.top.min(heights.len());
+        let mut taken = 0u16;
+        let mut last = first;
+        for height in &heights[first..] {
+            taken = taken.saturating_add(*height);
+            if taken > room && last > first {
+                break;
+            }
+            last += 1;
+        }
+        first..last
     }
 
     /// Which rows are on screen.
@@ -429,6 +458,40 @@ mod tests {
         window.set_focus(0);
         window.settle_by_height(&heights, 13);
         assert_eq!(window.top(), 0);
+    }
+
+    /// Items of rows that differ going away under the window pull it back,
+    /// the way rows of one row each do: a query that leaves three items
+    /// shows all three, not the last of them and a screen of nothing.
+    ///
+    /// Broken by taking the `.min(filled)` off `settle_by_height`: the
+    /// window stayed on the last item.
+    #[test]
+    fn items_of_rows_that_differ_going_away_pull_the_window_back() {
+        let mut window = Window::new();
+        window.set_count(20);
+        window.set_focus(19);
+        window.settle_by_height(&[3u16; 20], 10);
+        assert_eq!(window.top(), 17, "the focused item is not on screen");
+
+        window.set_count(3);
+        window.set_focus(2);
+        window.settle_by_height(&[3u16; 3], 10);
+        assert_eq!(window.top(), 0, "the window was left past the end");
+        assert_eq!(window.visible_by_height(&[3u16; 3], 10), 0..3);
+    }
+
+    /// Whole items only, and the first always, however tall it is.
+    #[test]
+    fn what_is_on_screen_is_the_items_that_fit_whole() {
+        let window = Window::new();
+        assert_eq!(window.visible_by_height(&[4, 4, 4], 10), 0..2);
+        assert_eq!(
+            window.visible_by_height(&[12, 1], 10),
+            0..1,
+            "an item taller than the room was not shown"
+        );
+        assert_eq!(window.visible_by_height(&[], 10), 0..0);
     }
 
     /// A transcript is read from its end, and stays where the reader put it

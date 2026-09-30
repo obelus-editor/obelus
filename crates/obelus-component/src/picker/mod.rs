@@ -47,6 +47,7 @@
 //! answer; a missing tab is a key that does nothing.
 
 pub mod files;
+pub mod wrapped;
 
 /// How many rows of an agent's own words a list will carry.
 ///
@@ -63,6 +64,7 @@ use nucleo_matcher::{
 use obelus_buffer::{DocumentId, question::Question};
 use obelus_command::Command;
 
+use self::wrapped::{Above, Body, Columns};
 use crate::{
     field::Field,
     window::{Move, Window, Wrap},
@@ -375,6 +377,14 @@ pub struct PickerItem {
     /// An index into the picker's own tab names. `None` means every tab,
     /// which is what a picker without tabs gives all of its rows.
     pub tab: Option<usize>,
+    /// The heading of the run of rows this one belongs to, in a list whose
+    /// rows wrap ([`Picker::wraps`]).
+    ///
+    /// Drawn where the run starts among the rows that *match*, rather than
+    /// being a row of its own: a heading over a run the query has emptied
+    /// is a heading over nothing, and one that was a row would have to be
+    /// taken out by everything that counts rows.
+    pub section: Option<String>,
 }
 
 /// How much of the screen the list takes.
@@ -764,9 +774,42 @@ pub struct Picker {
     /// before them, rather than commands out of the table: nothing else
     /// binds them and there is nothing for a reader to rebind.
     opens: bool,
+    /// Whether the rows of this list wrap, and the mark in front of a
+    /// row's detail where they do.
+    ///
+    /// `Some(None)` for a list that wraps with nothing in front of its
+    /// details.
+    wraps: Option<Option<char>>,
+    /// Every row's words wrapped, at the width the list was last settled
+    /// at.
+    ///
+    /// Kept because every frame asks the whole list how tall it is -- the
+    /// bar says how much is above, and the window which rows fit -- and
+    /// wrapping every row of it three times a frame is work a keystroke
+    /// would wait on. Asked of rather than trusted: a measurement of other
+    /// rows, or at another width, is worked out again row by row.
+    measured: Option<Measured>,
+    /// How many rows of a wrapping list were on screen when it last
+    /// settled, which is how far a page moves it.
+    shown: usize,
     /// Scratch for `Utf32Str::new`, which needs somewhere to put a converted
     /// haystack.
     haystack: Vec<char>,
+}
+
+/// Every row of a wrapping list laid out, and what it was laid out for.
+#[derive(Debug)]
+struct Measured {
+    /// Which listing it was, so that a list refilled is measured again.
+    listings: u64,
+    /// How many rows there were, so that a batch appended is too.
+    count: usize,
+    /// How wide the list was.
+    width: u16,
+    /// Where the words went across it.
+    columns: Columns,
+    /// Each row's words, by the row's place in the whole list.
+    bodies: Vec<Body>,
 }
 
 impl std::fmt::Debug for Picker {
@@ -827,6 +870,9 @@ impl Picker {
             ignored: None,
             hidden: None,
             layout,
+            wraps: None,
+            measured: None,
+            shown: 0,
             matcher: Matcher::new(nucleo_matcher::Config::DEFAULT),
             haystack: Vec::new(),
         };
@@ -869,6 +915,7 @@ impl Picker {
             depth: 0,
             kind: None,
             tab: None,
+            section: None,
         };
         let items: Vec<_> = question
             .ways()
@@ -1015,6 +1062,156 @@ impl Picker {
     /// unless a list says the steadiness is worth more.
     pub const fn keeps_height(&mut self) {
         self.steady = true;
+    }
+
+    /// Says the rows of this list are sentences, read whole: see
+    /// [`wrapped`].
+    ///
+    /// `detail_mark` is what stands in front of a row's detail, saying what
+    /// the detail is -- one mark for the list, because a detail is the same
+    /// kind of thing on every row of it.
+    ///
+    /// And the list is as tall as all of it would be, up to what it asked
+    /// for, rather than as tall as what matches: rows this tall resizing the
+    /// block on every letter typed would move the row under the reader's eye
+    /// by several rows at a time.
+    pub const fn wraps(&mut self, detail_mark: Option<char>) {
+        self.wraps = Some(detail_mark);
+    }
+
+    /// Whether the rows of this list wrap.
+    #[must_use]
+    pub const fn is_wrapping(&self) -> bool {
+        self.wraps.is_some()
+    }
+
+    /// What stands in front of a row's detail, in a list whose rows wrap.
+    #[must_use]
+    pub const fn detail_mark(&self) -> Option<char> {
+        match self.wraps {
+            Some(mark) => mark,
+            None => None,
+        }
+    }
+
+    /// Where a wrapped row's words go, in a list `width` wide.
+    #[must_use]
+    pub fn columns(&self, width: u16) -> Columns {
+        match self.measured_for(width) {
+            Some(measured) => measured.columns,
+            None => Columns::of(width, wrapped::trailing_width(self.items.iter())),
+        }
+    }
+
+    /// One row's words, wrapped for a list `width` wide.
+    #[must_use]
+    pub fn body(&self, index: usize, width: u16) -> std::borrow::Cow<'_, Body> {
+        if let Some(body) = self
+            .measured_for(width)
+            .and_then(|measured| measured.bodies.get(index))
+        {
+            return std::borrow::Cow::Borrowed(body);
+        }
+        let columns = self.columns(width);
+        std::borrow::Cow::Owned(
+            self.items
+                .get(index)
+                .map(|item| Body::of(item, columns))
+                .unwrap_or_default(),
+        )
+    }
+
+    /// What goes above the row at a place among the rows that match.
+    #[must_use]
+    pub fn above(&self, at: usize) -> Above {
+        let item = |at: usize| self.matched.get(at).map(|(index, _)| &self.items[*index]);
+        item(at).map_or(
+            Above {
+                headed: false,
+                first: at == 0,
+            },
+            |this| Above::of(this, at.checked_sub(1).and_then(item)),
+        )
+    }
+
+    /// How tall each row that matches is, in a list `width` wide: what goes
+    /// above it and its words.
+    #[must_use]
+    pub fn heights(&self, width: u16) -> Vec<u16> {
+        self.matched
+            .iter()
+            .enumerate()
+            .map(|(at, (index, _))| {
+                self.above(at)
+                    .rows()
+                    .saturating_add(self.body(*index, width).rows())
+            })
+            .collect()
+    }
+
+    /// The row at a place among the rows that match, laid out for a list
+    /// `width` wide: the row, what goes above it, and its words.
+    #[must_use]
+    pub fn wrapped_row(
+        &self,
+        at: usize,
+        width: u16,
+    ) -> Option<(&PickerItem, Above, std::borrow::Cow<'_, Body>)> {
+        let (index, _) = self.matched.get(at)?;
+        Some((
+            &self.items[*index],
+            self.above(at),
+            self.body(*index, width),
+        ))
+    }
+
+    /// The measurement, where it is of these rows at this width.
+    fn measured_for(&self, width: u16) -> Option<&Measured> {
+        self.measured.as_ref().filter(|measured| {
+            measured.listings == self.listings
+                && measured.count == self.items.len()
+                && measured.width == width
+        })
+    }
+
+    /// Lays every row out at `width`, unless that has been done.
+    fn measure(&mut self, width: u16) {
+        if self.measured_for(width).is_some() {
+            return;
+        }
+        let columns = Columns::of(width, wrapped::trailing_width(self.items.iter()));
+        self.measured = Some(Measured {
+            listings: self.listings,
+            count: self.items.len(),
+            width,
+            columns,
+            bodies: self
+                .items
+                .iter()
+                .map(|item| Body::of(item, columns))
+                .collect(),
+        });
+    }
+
+    /// How tall the whole list is, wrapped, counted no further than `most`.
+    ///
+    /// Every row rather than the ones matching, so that it does not change
+    /// as the query does -- see [`Picker::wraps`]. Stops at `most` because
+    /// that is all the answer is used for, and the rows past it are rows
+    /// nobody has to wrap to say so.
+    fn wrapped_height(&self, width: u16, most: u16) -> u16 {
+        let mut taken = 0u16;
+        let mut before: Option<&PickerItem> = None;
+        for (index, item) in self.items.iter().enumerate() {
+            taken = taken
+                .saturating_add(Above::of(item, before).rows())
+                .saturating_add(self.body(index, width).rows());
+            if taken >= most {
+                return most;
+            }
+            before = Some(item);
+        }
+        taken
     }
 
     /// Says the rows of this list name something worth showing beneath it.
@@ -1429,6 +1626,9 @@ impl Picker {
 
     /// One row, to fill in what only the application can work out.
     pub fn row_mut(&mut self, index: usize) -> Option<&mut PickerItem> {
+        // Whatever is filled in may be words, and the rows were wrapped
+        // from the words.
+        self.measured = None;
         Arc::make_mut(&mut self.items).get_mut(index)
     }
 
@@ -1458,6 +1658,11 @@ impl Picker {
         let above = self.tab_rows().saturating_add(self.about_rows(width));
         match self.layout {
             PickerLayout::FullArea => available,
+            PickerLayout::Compact { rows } if self.wraps.is_some() => self
+                .wrapped_height(width, rows)
+                .clamp(1, rows)
+                .saturating_add(above)
+                .min(available),
             // All of what it asked for, for a list that said it wants to stay
             // the height it started at.
             PickerLayout::Compact { rows } if self.steady => {
@@ -1678,12 +1883,20 @@ impl Picker {
     /// Called once a frame with the height the list will have, rather than
     /// from every path that changes the query or the selection: the window
     /// depends on the geometry, and the geometry is only settled at that
-    /// point.
-    pub fn refresh_indices(&mut self, height: u16) {
+    /// point. `width` is the list's, which says how tall a row that wraps
+    /// is.
+    pub fn refresh_indices(&mut self, height: u16, width: u16) {
         // The window first: which rows are about to be drawn is the question
         // the matched characters are worked out for, and the height is only
         // known here.
-        self.window.settle(height);
+        if self.wraps.is_some() {
+            self.measure(width);
+            let heights = self.heights(width);
+            self.window.settle_by_height(&heights, height);
+            self.shown = self.window.visible_by_height(&heights, height).len();
+        } else {
+            self.window.settle(height);
+        }
 
         // Reuse the allocations: `indices` holds one vector per row, and the
         // rows are the same rows on the next keystroke.
@@ -1781,6 +1994,13 @@ impl Picker {
     pub fn handle_key(&mut self, key: &crossterm::event::KeyEvent, page: u16) -> PickerOutcome {
         use crossterm::event::{KeyCode, KeyModifiers};
 
+        // A page of rows that wrap is the rows that were on screen, which is
+        // not how many screen rows there are: moving by that would step
+        // several screenfuls at once.
+        let page = match self.wraps {
+            Some(_) => self.shown,
+            None => usize::from(page),
+        };
         let page = isize::try_from(page.max(1)).unwrap_or(isize::MAX);
         // A key carrying a modifier this branch does not name falls through,
         // the same rule the key table and the editor's motions follow.
@@ -2254,6 +2474,109 @@ mod tests {
         );
     }
 
+    /// A list whose rows wrap, of runs headed by `section`.
+    fn wrapping(rows: &[(&str, &str)]) -> Picker {
+        let items = rows
+            .iter()
+            .map(|(label, section)| PickerItem {
+                section: Some((*section).to_string()),
+                prose: true,
+                ..named(label)
+            })
+            .collect();
+        let mut picker = Picker::new(items, PickerLayout::Compact { rows: 24 });
+        picker.wraps(None);
+        picker.keeps_order(true);
+        picker
+    }
+
+    /// A list whose rows wrap is as tall as all of it, not as what the
+    /// query leaves: rows this tall resizing the block on every letter
+    /// would move the row under the reader's eye by several rows at once.
+    ///
+    /// Broken by counting the rows that match in `wrapped_height` rather
+    /// than every row: the list went from nine rows to one on a query.
+    #[test]
+    fn a_list_whose_rows_wrap_does_not_resize_as_it_is_typed_at() {
+        let mut picker = wrapping(&[
+            ("the margin lies about a file nobody has touched", "Today"),
+            ("count the lines", "Today"),
+            ("an older one", "Earlier"),
+        ]);
+        // Twenty columns: the first row is three rows of words, then a
+        // blank and one, then a blank, a heading, a blank and one -- and a
+        // heading and its blank over the first.
+        let tall = picker.visible_rows(40, 20);
+        assert_eq!(
+            tall,
+            2 + 3 + 1 + 1 + 3 + 1,
+            "the list is not as tall as its rows"
+        );
+        picker.set_query("count");
+        assert_eq!(picker.match_count(), 1, "the query matched something else");
+        assert_eq!(picker.visible_rows(40, 20), tall, "it resized on a query");
+    }
+
+    /// A heading goes over the first row of its run among the rows that
+    /// *match*, so a run the query has emptied takes its heading with it
+    /// and a run it has cut into keeps one.
+    ///
+    /// Broken by asking `Above::of` about the row before in the whole list
+    /// rather than among the rows matching: the query left "count the
+    /// lines" at the top of its run with no heading over it.
+    #[test]
+    fn a_heading_goes_with_its_run() {
+        let mut picker = wrapping(&[
+            ("the margin lies", "Today"),
+            ("count the lines", "Today"),
+            ("an older one", "Earlier"),
+        ]);
+        let headings = |picker: &Picker| -> Vec<String> {
+            (0..picker.match_count())
+                .filter(|at| picker.above(*at).headed)
+                .filter_map(|at| picker.wrapped_row(at, 40)?.0.section.clone())
+                .collect()
+        };
+        assert_eq!(headings(&picker), ["Today", "Earlier"]);
+
+        picker.set_query("older");
+        assert_eq!(
+            headings(&picker),
+            ["Earlier"],
+            "an empty run kept its heading"
+        );
+
+        picker.set_query("count");
+        assert_eq!(
+            headings(&picker),
+            ["Today"],
+            "a run cut into lost its heading"
+        );
+    }
+
+    /// A page of rows that wrap is as many rows as were on screen, not as
+    /// many screen rows: those are ten times fewer rows than a page of
+    /// screen rows would step.
+    ///
+    /// Broken by paging by `page` whatever the list is: the selection went
+    /// to the eleventh row, when four had been on screen.
+    #[test]
+    fn a_page_of_rows_that_wrap_is_the_rows_that_were_on_screen() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let names: Vec<String> = (0..20).map(|n| format!("row {n}")).collect();
+        let rows: Vec<(&str, &str)> = names.iter().map(|name| (name.as_str(), "Today")).collect();
+        let mut picker = wrapping(&rows);
+        // A heading and its blank, then a row, and a blank and a row after
+        // that: 2 + 1 + 2 + 2 + 2 is nine of ten rows, which is four rows.
+        picker.refresh_indices(10, 40);
+        picker.handle_key(&KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE), 10);
+        assert_eq!(
+            picker.selected(),
+            4,
+            "a page did not move by the rows shown"
+        );
+    }
+
     /// One row, for the tests above.
     pub(super) fn named(label: &str) -> PickerItem {
         PickerItem {
@@ -2272,6 +2595,7 @@ mod tests {
             opens: None,
             kind: None,
             tab: None,
+            section: None,
         }
     }
 
@@ -2304,6 +2628,7 @@ mod tests {
                 opens: None,
                 kind: None,
                 tab: None,
+                section: None,
             })
             .collect();
         let mut picker = Picker::new(rows, PickerLayout::Compact { rows: 10 });

@@ -188,6 +188,11 @@ base64 = "0.23.1"
 # answer `git diff` gives, or the markers in the margin are Obelus's opinion
 # rather than the repository's.
 imara-diff = "0.2"
+# Which day it is where the reader is, which the list of conversations is
+# grouped by: "yesterday" is a calendar day in a time zone, not twenty-four
+# hours ago. Already in the tree through `gix-date`, which reads commit
+# dates with it.
+jiff = "0.2"
 # Git itself, as a library. The alternative is running `git` and parsing what
 # it prints for people, which means a process per question and a program that
 # has to be installed for Obelus to be able to see a repository at all.

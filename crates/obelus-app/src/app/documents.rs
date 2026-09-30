@@ -57,6 +57,7 @@ impl App {
             opens: None,
             kind: None,
             tab: None,
+            section: None,
         }
     }
 
@@ -194,6 +195,7 @@ impl App {
             opens: None,
             kind: None,
             tab: None,
+            section: None,
         }
     }
 
@@ -225,6 +227,7 @@ impl App {
             opens: None,
             kind: None,
             tab: None,
+            section: None,
         }
     }
 
@@ -498,6 +501,7 @@ impl App {
                 opens: None,
                 kind: None,
                 tab: None,
+                section: None,
             })
             .collect()
     }
@@ -563,6 +567,7 @@ impl App {
                 colours: None,
                 kind: None,
                 tab: None,
+                section: None,
             });
             if entry.directory && open {
                 self.tree_rows_under(&full, depth.saturating_add(1), ignored, hidden, rows);
@@ -761,6 +766,7 @@ impl App {
                             _ => PickerValue::File(std::path::PathBuf::from(&name)),
                         },
                         tab: None,
+                        section: None,
                     })
                     .collect();
                 if let Some(picker) = self.picker.as_mut() {

@@ -36,6 +36,7 @@ fn items(labels: &[&str]) -> Vec<PickerItem> {
             opens: None,
             kind: None,
             tab: None,
+            section: None,
         })
         .collect()
 }
@@ -69,6 +70,7 @@ fn many(count: usize) -> Vec<PickerItem> {
             opens: None,
             kind: None,
             tab: None,
+            section: None,
         })
         .collect()
 }
@@ -2122,6 +2124,7 @@ fn a_place_preview_marks_the_symbol_it_is_about() {
             opens: None,
             kind: None,
             tab: None,
+            section: None,
         }],
         PickerLayout::FullArea,
     );
@@ -2493,6 +2496,7 @@ fn moving_the_selection_forgets_the_scrolling() {
         opens: None,
         kind: None,
         tab: None,
+        section: None,
     };
 
     let mut app = app();
@@ -2587,6 +2591,7 @@ fn a_place_in_the_middle_of_a_file_is_previewed_in_the_middle() {
             opens: None,
             kind: None,
             tab: None,
+            section: None,
         }],
         PickerLayout::FullArea,
     );
@@ -3835,6 +3840,7 @@ fn an_open_file_is_previewed_as_the_reader_has_it() {
             opens: None,
             kind: None,
             tab: None,
+            section: None,
         }],
         PickerLayout::FullArea,
     );

@@ -417,6 +417,7 @@ impl App {
                 colours: None,
                 kind: None,
                 tab: None,
+                section: None,
             });
         }
         for commit in &self.history.commits {
@@ -475,6 +476,7 @@ impl App {
                 colours: None,
                 kind: None,
                 tab: None,
+                section: None,
             });
             if let Some((_, files)) = self.history.opened.as_ref().filter(|_| open) {
                 for touched in files {
@@ -506,6 +508,7 @@ impl App {
                         colours: None,
                         kind: None,
                         tab: None,
+                        section: None,
                     });
                 }
             }

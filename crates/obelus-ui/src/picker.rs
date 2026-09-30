@@ -5,7 +5,10 @@
 //! overlay would leave one cell of a pair showing the code underneath and the
 //! other showing the list.
 
-use obelus_component::picker::{Marking, Picker, PickerItem, PickerLayout};
+use obelus_component::picker::{
+    Marking, Picker, PickerItem, PickerLayout,
+    wrapped::{BAR_COLUMNS, Body, DETAIL_INDENT, WORDS_AT},
+};
 use obelus_git::FileStatus;
 use obelus_text::text_width;
 use obelus_theme::Theme;
@@ -25,6 +28,9 @@ use crate::{
 /// spends its first two rows on them, and a reader who asked for ten rows
 /// meant ten rows to walk.
 const LIST_ROWS: u16 = 10;
+
+// The list lays its wrapped rows out around a bar it cannot see.
+const _: () = assert!(BAR_COLUMNS == SCROLLBAR_WIDTH);
 
 /// How wide the column in front of the icon is, where a row that has one
 /// puts its mark.
@@ -388,6 +394,21 @@ pub fn row_at(picker: &Picker, region: Rect, x: u16, y: u16) -> Option<(usize, b
     if x >= list.x.saturating_add(rows) {
         return None;
     }
+    if picker.is_wrapping() {
+        // Only on a row's words: a heading and the blank rows between are
+        // nothing to press, the way they are nothing to stand on.
+        let heights = picker.heights(list.width);
+        let mut top = list.y;
+        for at in picker.window().visible_by_height(&heights, list.height) {
+            let (_, above, body) = picker.wrapped_row(at, list.width)?;
+            let start = top.saturating_add(above.rows());
+            top = start.saturating_add(body.rows());
+            if y >= start && y < top {
+                return Some((at, false));
+            }
+        }
+        return None;
+    }
     let first = picker.first_visible(list.height);
     let at = first + usize::from(y - list.y);
     let item = picker.matches().nth(at)?;
@@ -498,6 +519,10 @@ impl Widget for PickerView<'_> {
             crate::nothing(cells, list, reason, self.theme);
             return;
         }
+        if self.picker.is_wrapping() {
+            self.wrapped(cells, list);
+            return;
+        }
 
         // The same bar the editor has, for the same reason: a window over
         // something longer than itself should say how much longer. The rows
@@ -547,6 +572,225 @@ impl Widget for PickerView<'_> {
 }
 
 impl PickerView<'_> {
+    /// The rows of a list whose rows wrap, and the headings over their runs.
+    ///
+    /// Laid out by the list itself -- see `obelus_component::picker::wrapped`
+    /// -- because how tall a row is has to be the same answer here, where
+    /// the list's height is worked out and where its window settles. What is
+    /// left here is where each piece goes and what colour it is.
+    fn wrapped(&self, cells: &mut CellBuffer, list: Rect) {
+        let rows = Rect {
+            width: list.width.saturating_sub(SCROLLBAR_WIDTH),
+            ..list
+        };
+        let heights = self.picker.heights(list.width);
+        let shown = self
+            .picker
+            .window()
+            .visible_by_height(&heights, list.height);
+        // In screen rows rather than in items, both of them: the bar says how
+        // much of the *list* is above, and a front end that slides the band
+        // is told how many rows it moved.
+        let total: usize = heights.iter().copied().map(usize::from).sum();
+        let above: usize = heights[..shown.start]
+            .iter()
+            .copied()
+            .map(usize::from)
+            .sum();
+        let bar = (total > usize::from(list.height))
+            .then(|| crate::scrollbar(cells, list, above, total, self.theme))
+            .flatten();
+        if let Ok(top) = i64::try_from(above) {
+            crate::shapes::scrolled(rows, top, bar);
+        }
+
+        let columns = self.picker.columns(list.width);
+        // The words stop where the trailing column's gap begins, which is
+        // what the rows were wrapped to: clipped there, a row that came out
+        // a cell wider than it was measured could not run into the time.
+        let words = Rect {
+            width: WORDS_AT.saturating_add(columns.label).min(rows.width),
+            ..rows
+        };
+        let mut y = rows.y;
+        for at in shown {
+            let Some((item, above, body)) = self.picker.wrapped_row(at, list.width) else {
+                break;
+            };
+            if !above.first {
+                y = y.saturating_add(1);
+            }
+            if above.headed
+                && let Some(heading) = &item.section
+            {
+                // The settings page's heading, in its colour and weight: the
+                // same thing, a name over a run of rows, said the same way.
+                if y < rows.bottom() {
+                    crate::write(
+                        cells,
+                        rows.x + 1,
+                        y,
+                        &crate::truncate_from_right(
+                            heading,
+                            usize::from(rows.width.saturating_sub(2)),
+                        ),
+                        Style::new()
+                            .fg(self.theme.status_foreground)
+                            .bg(self.theme.background)
+                            .add_modifier(ratatui::style::Modifier::BOLD),
+                    );
+                }
+                y = y.saturating_add(2);
+            }
+            let height = body.rows();
+            self.wrapped_body(
+                cells,
+                Rect {
+                    y,
+                    height: height.min(rows.bottom().saturating_sub(y)),
+                    ..rows
+                },
+                words,
+                item,
+                &body,
+                at,
+            );
+            y = y.saturating_add(height);
+        }
+    }
+
+    /// One wrapped row's words: its mark, its label, its detail under it,
+    /// and its trailing words on its first row.
+    fn wrapped_body(
+        &self,
+        cells: &mut CellBuffer,
+        area: Rect,
+        words: Rect,
+        item: &PickerItem,
+        body: &Body,
+        place: usize,
+    ) {
+        if area.height == 0 {
+            return;
+        }
+        let matched = self.picker.indices_at(place);
+        let background = match place == self.picker.selected() {
+            true => self.theme.selected_row_background,
+            false => self.theme.background,
+        };
+        // Dim where it cannot be chosen, and the whole of it: a dim row with
+        // a bright name in it reads as available.
+        let style = match item.enabled {
+            true => Style::new().fg(self.theme.foreground).bg(background),
+            false => Style::new().fg(self.theme.gutter).bg(background),
+        };
+        let dim = style.fg(self.theme.gutter);
+        // Every row of it, so the selection is one block and not a stripe
+        // with the rest of the row hanging off it.
+        fill(cells, area, style);
+        let words = Rect {
+            y: area.y,
+            height: area.height,
+            ..words
+        };
+
+        if let Some((marking, marker)) = item.marker.as_ref() {
+            let colour = match marking {
+                Marking::Unwritten | Marking::Waiting => self.theme.status_stale,
+                Marking::Aside | Marking::Working => self.theme.gutter,
+            };
+            let marker = match marker.is_empty() {
+                true => crate::spinning(self.phase).to_string(),
+                false => marker.clone(),
+            };
+            at(
+                cells,
+                area,
+                1,
+                area.y,
+                &marker,
+                style.fg(colour),
+                &Marked::plain(),
+            );
+        }
+
+        let mut y = area.y;
+        let last = body.label.len().saturating_sub(1);
+        for (row, range) in body.label.iter().enumerate() {
+            if y >= area.bottom() {
+                return;
+            }
+            // The whole label up to where this row stops, with what came
+            // before it skipped: the matched positions count from the front
+            // of the label, and this is how they still land where they
+            // belong.
+            let end = at(
+                cells,
+                words,
+                WORDS_AT,
+                y,
+                &item.label[..range.end],
+                style,
+                &Marked {
+                    matched: Matched::Indices(matched),
+                    mark: self.theme.picker_match_background,
+                    syntax: None,
+                    skip: item.label[..range.start].chars().count(),
+                },
+            );
+            if row == last && body.label_cut {
+                at(cells, words, end, y, "\u{2026}", style, &Marked::plain());
+            }
+            y += 1;
+        }
+
+        if let Some(detail) = item.detail.as_deref() {
+            let last = body.detail.len().saturating_sub(1);
+            for (row, range) in body.detail.iter().enumerate() {
+                if y >= area.bottom() {
+                    break;
+                }
+                if row == 0
+                    && let Some(mark) = self.picker.detail_mark()
+                {
+                    at(
+                        cells,
+                        words,
+                        WORDS_AT,
+                        y,
+                        &mark.to_string(),
+                        dim,
+                        &Marked::plain(),
+                    );
+                }
+                let end = at(
+                    cells,
+                    words,
+                    WORDS_AT + DETAIL_INDENT,
+                    y,
+                    &detail[range.clone()],
+                    dim,
+                    &Marked::plain(),
+                );
+                if row == last && body.detail_cut {
+                    at(cells, words, end, y, "\u{2026}", dim, &Marked::plain());
+                }
+                y += 1;
+            }
+        }
+
+        // On the first row, against the right-hand edge, where the column
+        // of them is read straight down.
+        if let Some(trailing) = item.trailing.as_deref() {
+            let width = u16::try_from(text_width(trailing)).unwrap_or(u16::MAX);
+            if let Some(offset) = area.width.checked_sub(width.saturating_add(1))
+                && offset >= words.width
+            {
+                at(cells, area, offset, area.y, trailing, dim, &Marked::plain());
+            }
+        }
+    }
+
     /// One row: its background, then its icon, label, detail and key.
     fn row(
         &self,

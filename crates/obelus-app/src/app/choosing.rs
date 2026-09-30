@@ -43,6 +43,7 @@ impl App {
                 opens: None,
                 kind: None,
                 tab: None,
+                section: None,
             })
             .collect();
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
@@ -81,6 +82,7 @@ impl App {
                     .iter()
                     .position(|group| *group == spec.command.group())
                     .map(|at| at + 1),
+                section: None,
                 detail: Some(spec.title.to_string()),
                 // The key it is bound to, if it is bound to one. A command
                 // with nothing here is one the palette is the only way to

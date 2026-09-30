@@ -898,6 +898,7 @@ fn a_jump_lands_in_the_middle_of_the_screen() {
             opens: None,
             kind: None,
             tab: None,
+            section: None,
         }],
         PickerLayout::FullArea,
     );
@@ -967,6 +968,7 @@ fn a_jump_back_lands_in_the_middle_too() {
             opens: None,
             kind: None,
             tab: None,
+            section: None,
         }],
         PickerLayout::FullArea,
     );

@@ -382,6 +382,7 @@ impl App {
                 opens: None,
                 kind: None,
                 tab: None,
+                section: None,
             })
             .collect();
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
@@ -444,6 +445,7 @@ impl App {
                 opens: None,
                 kind: None,
                 tab: None,
+                section: None,
             }
         };
         let mut items = vec![row(

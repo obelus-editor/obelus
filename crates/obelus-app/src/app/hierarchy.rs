@@ -667,6 +667,7 @@ impl App {
                     colours: None,
                     kind: Some(called.kind),
                     tab: None,
+                    section: None,
                 }
             })
             .collect()

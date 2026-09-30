@@ -7276,6 +7276,103 @@ fn the_list_offers_the_conversations_this_project_has_had() {
     );
 }
 
+/// The list of conversations is read whole, in runs by the day each was
+/// last spoken in.
+///
+/// A title is a sentence -- often the whole of what the reader first said
+/// -- and one row of it was a row saying there had been more. And the
+/// headings are over the rows that match, so a run the query empties
+/// takes its heading with it.
+///
+/// Broken deliberately two ways. Taking `picker.wraps` out of
+/// `open_conversation_picker` puts the title on one row, and the end of it
+/// is gone. And heading every row that has a section in `Above::of`, rather
+/// than the first of its run, puts a `Today` over each of the two.
+#[test]
+fn the_list_of_conversations_is_read_whole_in_runs_by_day() {
+    let scratch = support::Scratch::new("agent-conversation-runs");
+    let (mut app, _events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs() as i64);
+    remember_a_conversation(
+        &scratch,
+        "fake",
+        "s-long",
+        "the margin says a line changed when nothing did, and again after every save",
+        Some(now),
+    );
+    remember_a_conversation(&scratch, "fake", "s-short", "a short one", Some(now));
+    remember_a_conversation(
+        &scratch,
+        "fake",
+        "s-old",
+        "count the lines",
+        Some(now - 40 * 86_400),
+    );
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
+    let rows = |app: &mut App| -> Vec<String> {
+        support::text_block(&support::render(app, WIDTH, HEIGHT))
+            .lines()
+            // Past the row's number, which the dump puts in front of it.
+            .map(|row| {
+                row.split_once('|')
+                    .map_or(row, |(_, row)| row)
+                    .trim()
+                    .to_string()
+            })
+            .collect()
+    };
+
+    let shown = rows(&mut app);
+    let first = shown
+        .iter()
+        .position(|row| row.contains("the margin says"))
+        .unwrap_or_else(|| panic!("the long title is not there:\n{}", shown.join("\n")));
+    assert!(
+        shown[first].ends_with("just now"),
+        "the time is not on the title's first row: {:?}",
+        shown[first]
+    );
+    assert!(
+        shown[first + 1].contains("every save"),
+        "the title did not go on to a second row:\n{}",
+        shown.join("\n")
+    );
+    let headings = |shown: &[String]| -> Vec<String> {
+        shown
+            .iter()
+            .filter(|row| ["Today", "Yesterday", "This week", "Earlier"].contains(&row.as_str()))
+            .cloned()
+            .collect()
+    };
+    assert_eq!(
+        headings(&shown),
+        ["Today", "Earlier"],
+        "the runs are not headed by day:\n{}",
+        shown.join("\n")
+    );
+
+    support::type_text(&mut app, "count");
+    let shown = rows(&mut app);
+    assert_eq!(
+        headings(&shown),
+        ["Earlier"],
+        "a run the query emptied kept its heading:\n{}",
+        shown.join("\n")
+    );
+}
+
 /// A conversation another Obelus has open is in the list and cannot be
 /// taken up.
 ///
@@ -7503,6 +7600,21 @@ fn a_conversation_already_open_here_is_gone_to() {
         app.picker().expect("the list").match_count(),
         1,
         "a conversation about nothing in particular was not written down"
+    );
+    // And its row says it is the one the reader came from -- after a frame,
+    // because a frame is where what a row says about itself is asked
+    // again, and asking again must not take the mark away. Broken by
+    // answering `None` for it in `App::listed_mark`.
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        app.picker()
+            .expect("the list")
+            .matches()
+            .next()
+            .and_then(|item| item.marker.as_ref())
+            .map(|(_, mark)| mark.as_str()),
+        Some("\u{2022}"),
+        "the conversation the reader is in is not marked as theirs"
     );
     support::press(&mut app, KeyCode::Enter);
     // The list went, which is what says the row was taken. It would not

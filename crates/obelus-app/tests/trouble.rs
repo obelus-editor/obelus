@@ -1617,6 +1617,7 @@ fn only_a_list_of_problems_opens_the_words_in_its_preview() {
             opens: None,
             kind: None,
             tab: None,
+            section: None,
         }],
         obelus_component::picker::PickerLayout::FullArea,
     );

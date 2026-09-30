@@ -5,10 +5,17 @@
 //! one thing it cannot -- which conversation is which. This is the way back
 //! to one.
 //!
-//! The ordinary compact list, over the conversation the reader is in. Not a
-//! view of its own: the rows are that conversation's neighbours and the
-//! reader is choosing between them, which is what a list over something
-//! rather than instead of it is for.
+//! A compact list, over the conversation the reader is in. Not a view of
+//! its own: the rows are that conversation's neighbours and the reader is
+//! choosing between them, which is what a list over something rather than
+//! instead of it is for.
+//!
+//! **Its rows are read whole.** A conversation is a sentence -- what the
+//! agent called it, often the whole of what the reader first said, and the
+//! note it was about -- so a row wraps rather than being cut to a line, and
+//! the rows are in runs by the day they were last spoken in. Only the
+//! title is what the query is about; the note is said under it and matched
+//! by nothing, the way every list's detail is.
 //!
 //! **A conversation belongs to the agent that had it.** A session id is a
 //! name one agent minted and means nothing to another, so only the agent in
@@ -106,6 +113,52 @@ fn locked() -> (Marking, String) {
     )
 }
 
+/// The mark on the conversation the reader is in.
+///
+/// The one a history puts on the branch the reader is on, for the same
+/// reason: it is the one row in a list of places that they do not need to
+/// go to. The list is opened from inside a conversation, so without it
+/// the conversation they came from is a row like any other.
+fn here() -> (Marking, String) {
+    (Marking::Aside, "\u{2022}".to_string())
+}
+
+/// How tall the list of conversations may be.
+///
+/// More than a compact list is given, because a conversation is a sentence
+/// and the rows wrap, and because what it is drawn over is the conversation
+/// the reader is leaving -- the reason the others are kept short is that
+/// what is under them is still being read.
+const CONVERSATION_ROWS: u16 = 24;
+
+/// Which run of the list a conversation goes in, by the day something was
+/// last said in it.
+///
+/// Days where the reader is, not stretches of twenty-four hours: something
+/// said at eleven last night was said yesterday. The week is the five days
+/// before that, which is the stretch a reader still remembers as recent.
+/// One from before Obelus wrote down when goes in the last run, which is
+/// where the order has already put it.
+fn when_said(
+    last: Option<i64>,
+    today: jiff::civil::Date,
+    zone: &jiff::tz::TimeZone,
+) -> &'static str {
+    let days = last
+        .and_then(|last| jiff::Timestamp::from_second(last).ok())
+        .map(|when| when.to_zoned(zone.clone()).date())
+        .and_then(|day| today.since(day).ok())
+        .map(|since| since.get_days());
+    match days {
+        // A day ahead of this one is a clock that disagrees, and today is
+        // the least wrong thing to say about it -- `how_long_ago`'s answer.
+        Some(..=0) => "Today",
+        Some(1) => "Yesterday",
+        Some(2..=6) => "This week",
+        _ => "Earlier",
+    }
+}
+
 /// The list of conversations, while it is the list showing.
 ///
 /// Two halves of one thing: which agent each tab names, and what each row
@@ -196,7 +249,21 @@ impl App {
         // takes with its radii, and for the same reason.
         self.conversing.agents = agents;
         let rows = self.conversation_rows(0);
-        let mut picker = Picker::new(rows, PickerLayout::Compact { rows: COMPACT_ROWS });
+        let mut picker = Picker::new(
+            rows,
+            PickerLayout::Compact {
+                rows: CONVERSATION_ROWS,
+            },
+        );
+        // Read whole, because every row is a sentence -- what the agent
+        // called it and what the note says -- and one row of a sentence is
+        // a row saying there was more. The mark in front of a note's words
+        // is the note's own box.
+        picker.wraps(Some(obelus_ui::tick(false)));
+        // Newest first whatever is typed, because the runs are days: a
+        // query ranking the rows would scatter them out from under their
+        // headings. What it does is say which rows are left.
+        picker.keeps_order(true);
         picker.before_typing("Filter conversations");
         picker.when_empty(match unreadable {
             true => "Obelus cannot read what it wrote down about this project",
@@ -274,6 +341,8 @@ impl App {
             .unwrap_or_default()
             .notes;
         let now = std::time::SystemTime::now();
+        let zone = jiff::tz::TimeZone::system();
+        let today = jiff::Timestamp::now().to_zoned(zone.clone()).date();
         let mut rows: Vec<(Option<i64>, Listed, PickerItem)> = remembered
             .all()
             .filter(|(_, agent, _)| *agent == whose)
@@ -297,15 +366,16 @@ impl App {
                     .unwrap_or_else(|| "Untitled".to_string());
                 // Not said twice: a title the agent never gave is the
                 // note's own words, and the same words after them is the
-                // rule a setting's description already follows.
-                let detail = match about {
-                    Some(about) if about != label => Some(about),
-                    Some(_) => None,
-                    None => Some("Nothing in particular".to_string()),
-                };
+                // rule a setting's description already follows. And
+                // nothing at all for a conversation about no note, which
+                // is a row one line shorter rather than a line saying so.
+                let detail = about.filter(|about| *about != label);
                 let item = PickerItem {
-                    prose: false,
-                    marker: elsewhere.then(locked),
+                    // A sentence, which loses its end where it has to lose
+                    // anything: cut from the front, a title is the half of
+                    // it that does not say what it was about.
+                    prose: true,
+                    marker: self.listed_mark(open, elsewhere),
                     icon: None,
                     label,
                     detail,
@@ -321,6 +391,7 @@ impl App {
                     opens: None,
                     kind: None,
                     tab: None,
+                    section: Some(when_said(kept.last, today, &zone).to_string()),
                     // Stands for its place in the list rather than for
                     // the conversation, the way a server's offered actions
                     // do: what a row stands for is Obelus's own
@@ -404,7 +475,7 @@ impl App {
                 let open = self.conversation_open(&listed.which);
                 let elsewhere = open.is_none() && held.contains(&listed.which);
                 Said {
-                    marker: elsewhere.then(locked),
+                    marker: self.listed_mark(open, elsewhere),
                     enabled: mine && !elsewhere,
                 }
             })
@@ -422,6 +493,19 @@ impl App {
                 .map_or(Remark::Keep, |now| Remark::Now(now.clone())),
             _ => Remark::Keep,
         });
+    }
+
+    /// What the column in front of a conversation says about it: that it
+    /// is the one the reader is in, or that another Obelus has it.
+    ///
+    /// One answer for the rows as they are built and as they are asked
+    /// again, so that asking again cannot take the first mark away.
+    fn listed_mark(&self, open: Option<DocumentId>, elsewhere: bool) -> Option<(Marking, String)> {
+        match (open.is_some() && open == self.current, elsewhere) {
+            (true, _) => Some(here()),
+            (false, true) => Some(locked()),
+            (false, false) => None,
+        }
     }
 
     /// Which tab the list is showing, or the first where there is no list.

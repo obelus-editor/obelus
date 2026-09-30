@@ -37,6 +37,7 @@ crossterm.workspace = true
 futures.workspace = true
 gix.workspace = true
 image.workspace = true
+jiff.workspace = true
 lsp-types.workspace = true
 ratatui.workspace = true
 ratatui-image.workspace = true
