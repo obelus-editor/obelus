@@ -2356,27 +2356,33 @@ impl Painter {
     ) -> [f32; 4] {
         let cell = fonts.cell();
         for y in behind.area.top()..behind.area.bottom() {
-            for x in behind.area.left()..behind.area.right() {
+            let ground = self.ground_colour();
+            let (grounds, lettered) = behind_row(behind, barred, y);
+            for (start, end, colour) in grounds {
+                // What a pane was put over is the page, so a hold in it
+                // is a plate on the page's own ground.
+                self.block(
+                    f32::from(start) * cell.width,
+                    f32::from(y) * cell.height,
+                    f32::from(end - start) * cell.width,
+                    cell.height,
+                    as_held(colour, self.holding, ground)
+                        .unwrap_or_else(|| rgba(colour, Ink::Background)),
+                );
+            }
+            for x in lettered {
                 let Some(under) = behind.look(x, y) else {
                     continue;
                 };
-                let left = f32::from(x) * cell.width;
-                let top = f32::from(y) * cell.height;
-                // What a pane was put over is the page, so a hold in it
-                // is a plate on the page's own ground.
-                let ground = self.ground_colour();
-                self.block(
-                    left,
-                    top,
-                    cell.width,
-                    cell.height,
-                    as_held(under.background, self.holding, ground)
-                        .unwrap_or_else(|| rgba(under.background, Ink::Background)),
+                let ink = rgba(under.foreground, Ink::Foreground);
+                self.glyphs_at(
+                    (f32::from(x) * cell.width, f32::from(y) * cell.height),
+                    under,
+                    ink,
+                    0,
+                    fonts,
+                    Size::Cell,
                 );
-                if lettered_behind(under, barred, x, y) {
-                    let ink = rgba(under.foreground, Ink::Foreground);
-                    self.glyphs_at((left, top), under, ink, 0, fonts, Size::Cell);
-                }
             }
         }
         self.placed.behind = self.quads.len();
@@ -3289,15 +3295,74 @@ impl Atlas {
 /// behind the right half of every Chinese character -- a line of them came
 /// out striped.
 fn runs(page: &Page, row: u16) -> Vec<(u16, u16, Color)> {
+    runs_from(
+        0,
+        (0..page.columns()).map(|column| {
+            let look = page.look(column, row);
+            (look.columns(), look.background)
+        }),
+    )
+}
+
+/// One row of the picture a pane's glass reads: its grounds, then which
+/// of its columns carry a letter.
+///
+/// Two lists and in this order, because that is what they are drawn in --
+/// the same order `backgrounds` and `letters` go in on the screen, and for
+/// the same reason: a ground drawn after a glyph is a ground *over* it.
+///
+/// Which is how a page of Chinese read through the glass came out as half
+/// of every character. This was a ground and a glyph per cell, a column at
+/// a time, and a full-width character is one glyph over two columns whose
+/// second is a cell `ratatui` has reset -- so that cell's own ground was
+/// painted over the right half of the character before it. As runs the
+/// second column belongs to the character, so there is no rectangle there
+/// to do it with, and the letters come after every one of them anyway.
+fn behind_row(behind: &Behind, barred: &[Barred], y: u16) -> (Vec<(u16, u16, Color)>, Vec<u16>) {
+    let (from, to) = (behind.area.left(), behind.area.right());
+    let grounds = runs_from(
+        from,
+        (from..to).map(|x| {
+            behind.look(x, y).map_or((1, Color::Reset), |under| {
+                (under.columns(), under.background)
+            })
+        }),
+    );
+    let lettered = (from..to)
+        .filter(|&x| {
+            behind
+                .look(x, y)
+                .is_some_and(|under| lettered_behind(under, barred, x, y))
+        })
+        .collect();
+    (grounds, lettered)
+}
+
+/// The same, over a row of cells from wherever they come.
+///
+/// Two callers and one rule: the page's own row, and the row of a picture
+/// of what a pane was opened over. That picture is read through the glass,
+/// and it used to be painted a cell at a time -- so a full-width character
+/// had the reset cell beside it painted over the right half of its glyph,
+/// and a page of Chinese seen through the glass was a page of half
+/// characters. Said in one place, the second column belongs to the
+/// character in both.
+///
+/// Each cell as how many columns it takes and what it is drawn on.
+fn runs_from(start: u16, cells: impl Iterator<Item = (u16, Color)>) -> Vec<(u16, u16, Color)> {
     let mut runs: Vec<(u16, u16, Color)> = Vec::new();
     // How many columns of the character just seen are still to come.
     let mut rest = 0;
-    for column in 0..page.columns() {
+    for (along, (columns, background)) in cells.enumerate() {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a row of the grid, which is not thousands of columns"
+        )]
+        let column = start + along as u16;
         let colour = match rest {
             0 => {
-                let look = page.look(column, row);
-                rest = look.columns() - 1;
-                look.background
+                rest = columns - 1;
+                background
             }
             // The rest of a character that was seen already, so there is
             // always a run to take the colour from.
@@ -4738,6 +4803,36 @@ mod tests {
     }
 
     /// A page with one row of text on it, for asking what would be drawn.
+    /// The cells a pane was opened over, as the painter is handed them.
+    ///
+    /// The same row `page` builds, reset cells and all, in the shape the
+    /// picture behind a pane is painted from.
+    fn behind(text: &str) -> Behind {
+        let page = page(text);
+        let area = ratatui::layout::Rect {
+            x: 0,
+            y: 0,
+            width: page.columns(),
+            height: 1,
+        };
+        let cells = (0..page.columns())
+            .map(|x| {
+                let look = page.look(x, 0);
+                let mut cell = Cell::default();
+                cell.set_symbol(look.text);
+                cell.bg = look.background;
+                cell.fg = look.foreground;
+                cell
+            })
+            .collect();
+        Behind {
+            area,
+            joined: obelus_ui::shapes::Joined::Below,
+            ground: Color::Reset,
+            cells,
+        }
+    }
+
     fn page(text: &str) -> Page {
         let mut page = Page::default();
         page.resized(12, 1);
@@ -4781,6 +4876,62 @@ mod tests {
             .filter(|&(_, _, colour)| colour == Color::Rgb(1, 2, 3))
             .collect();
         assert_eq!(coloured, vec![(0, 4, Color::Rgb(1, 2, 3))]);
+    }
+
+    /// And the picture the glass reads gives it both of them too.
+    ///
+    /// The glass shows what the pane was put over, painted into a picture
+    /// of its own -- and that was a ground and a glyph per cell, a column
+    /// at a time. A full-width character is one glyph over two columns
+    /// whose second is a cell `ratatui` has reset, so that cell's ground
+    /// was painted straight over the right half of the character: a page
+    /// of Chinese read through the glass was half of every character, and
+    /// the halving arrived as the pane slid down over it.
+    ///
+    /// Deliberate break: read each cell's own column count --
+    /// `(1, under.background)`, which is the ground-per-cell this replaced
+    /// -- and a run begins at the character's second column, which is the
+    /// rectangle that did the covering. The order is not asserted here
+    /// because it is not this function's to get wrong: it hands back the
+    /// grounds and the letters as two lists, and what is left is that no
+    /// ground begins inside a character for a letter to be drawn under.
+    #[test]
+    fn so_does_the_picture_a_panes_glass_reads() {
+        let behind = behind("\u{4e2d}\u{6587}");
+        let (grounds, lettered) = behind_row(&behind, &[], 0);
+
+        // Both characters under one run of their own colour: nothing of
+        // the reset cells is left to be drawn over a glyph.
+        let coloured: Vec<_> = grounds
+            .iter()
+            .filter(|&&(_, _, colour)| colour == Color::Rgb(1, 2, 3))
+            .copied()
+            .collect();
+        assert_eq!(
+            coloured,
+            vec![(0, 4, Color::Rgb(1, 2, 3))],
+            "a ground of its own at a character's second column:\n{grounds:?}"
+        );
+
+        // And the letters are the characters themselves, not the cells
+        // beside them: a glyph drawn at a reset cell would be a character
+        // drawn twice, half a character along.
+        assert_eq!(lettered, vec![0, 2], "the wrong columns carry a letter");
+
+        // Which is the property underneath the first assertion, said
+        // about the character rather than about the colour: a ground may
+        // cover a character, and may not begin part way through one. A
+        // rectangle that begins there is a rectangle over half a glyph,
+        // whatever colour it is carrying.
+        for &(start, _, _) in &grounds {
+            for &x in &lettered {
+                let wide = behind.look(x, 0).map_or(1, |under| under.columns());
+                assert!(
+                    start <= x || start >= x + wide,
+                    "a ground begins at {start}, part way through the character at {x}"
+                );
+            }
+        }
     }
 
     /// And the rest of the row is still said in as few runs as it can be.
