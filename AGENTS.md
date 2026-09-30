@@ -17,8 +17,8 @@ cargo build
 cargo test
 cargo +nightly fmt              # NOT `cargo fmt`
 cargo clippy --all-features --all-targets
-cargo run -- src/app.rs               # ob, in this terminal
-cargo run -p obelus-gui -- src/app.rs # obg, in a window
+cargo run -- crates/obelus-app/src/app/mod.rs               # ob, here
+cargo run -p obelus-gui -- crates/obelus-app/src/app/mod.rs # obg, in a window
 UPDATE_FIXTURES=1 cargo test    # regenerate golden cell grids
 cargo test -- --ignored         # the slow real-server tests, and the diff sweep
 OBELUS_REQUIRE_LSP=1 cargo test # a missing rust-analyzer fails rather than skips
@@ -29,8 +29,12 @@ OBELUS_PATIENCE=10 cargo test   # an agent test that fails gives up in 10s, not 
 ignores them, and mixing the two makes the formatting oscillate. **Always
 `cargo +nightly fmt`.** The build itself is stable.
 
-Clippy must be silent. `src/lib.rs` denies missing documentation, so every
-public item needs a doc comment.
+Clippy must be silent. The lints are the workspace's, in the root
+`Cargo.toml` -- `missing_docs`, `unreachable_pub`, `private_interfaces` --
+because a `#![deny(..)]` in one crate root would silently stop applying to
+the other twenty-six. Every member opts in with a `[lints] workspace = true`
+of its own, which Cargo does not inherit for it, and every public item needs
+a doc comment.
 
 ## Rules that are easy to break by accident
 
@@ -42,8 +46,8 @@ name says — fix the test, and say in a comment what the deliberate break was.
 Beware of "breaks" that are equivalent rewrites, and of assertions that ask the
 rule under test what it expects.
 
-**All coordinate arithmetic lives in `text.rs`.** Five newtypes with private
-fields (`ByteOffset`, `CharOffset`, `LineNumber`, `CharColumn`,
+**All coordinate arithmetic lives in `obelus-text`.** Five newtypes with
+private fields (`ByteOffset`, `CharOffset`, `LineNumber`, `CharColumn`,
 `DisplayColumn`, plus `Utf16Column`) exist so that byte, character, display
 column and LSP column cannot be mixed up. Nowhere else adds or subtracts them.
 
@@ -55,7 +59,7 @@ writing a view, look for the piece that already does it:
     ui::write_marked   a row's text: what matched marked, what the file
                        colours coloured, clipped to the list it is in
     ui::tabs           a tab row and the arrows that walk it
-    ui::typed          the glyph and the words on a row that is typed into
+    ui::status::typed  the glyph and the words on a row that is typed into
     ui::nothing        what a list says when it has nothing in it
     ui::rule           a boundary between two things
     ui::scrollbar      how much of something longer than the screen is above
@@ -1009,10 +1013,11 @@ a file. A stray `println!` lands in the middle of a frame and stays there.
 `std::sync::mpsc` channel, one producer thread per event source (keyboard, file
 walk, watcher, each server's stdout), the main loop blocking on `recv()` and
 draining with `try_recv()`. Not a rule against `async` or against tokio --
-tokio is in the project and `acp::link` runs a current-thread runtime on a thread
-of its own, because the protocol's crate is built around it. What the rule is
-about is the loop: one owner of `&mut App`, and no `.await` between a key
-arriving and the screen it produced.
+tokio is in the project, and everything that *waits* rather than works runs
+as a task on the one runtime (`obelus-runtime`): a server's pipe, an agent's
+connection, a clock, a download. None of those needs a thread of its own, and
+each of them had one. What the rule is about is the loop: one owner of `&mut
+App`, and no `.await` between a key arriving and the screen it produced.
 
 Writing to a server's stdin needs its own thread, because a busy server stops
 draining the pipe. An answer that arrives after the world has moved on is the
@@ -1342,111 +1347,147 @@ project is three rust-analyzers.
 ## Shape
 
 ```
-src/
-  app/            state, the loop's handler, and every picker's item source,
-                  by aspect: documents, moving, searching, choosing, agents
-                  · a commit's message hangs above its file (history); a
-                    history is one view at two radii (history_view); a
-                    preview is of a subject, not of a path (previewing); a
-                    project may carry settings, and it is not the reader,
-                    and the reader's is the layer it is laid over
-                    (preferences); what Obelus says before the reader's
-                    first words is one piece that is always said and one
-                    the topic adds, and the reader's own words go into a
-                    template last (opening); a conversation belongs to the
-                    agent that had it (conversations)
-  text.rs         the Rope wrapper: the only place coordinates convert
-  buffer/         one open file: text, syntax, cursor, viewport
-                  · an edit knows where it happened; do not read over an
-                    edit (mod); a folded line has no rows, what folds comes
-                    from the indentation, a hunk opens where it is, a fold
-                    across an edit is not one across a re-read (folds);
-                    undo groups by what the reader was doing (undo)
-  keymap.rs       chords, contexts, the default table, modifiers_of
-                  · `why_not` is the one judgement of what may be bound;
-                    keys are rebound on the keys page; modifiers are judged
-                    exactly, in one place
-  icons.rs        the Nerd Font switch and every glyph behind it
-  config.rs       the settings, their file, and what each one is
-                  · what a project may set is a property of the setting; the
-                    file holds preferences, not state
-  logging.rs      two logs split by module, and where a panic goes
-  command/        the Command enum, its table, groups, and dispatch
-  component/      picker (one component, several instantiations), settings,
-                  the conversation, the box a message is written in, and the
-                  window every list shares
-                  · a query is about the rows the list is of, whether it
-                    ranks is settled per tab, a list still arriving sits
-                    still, say "still reading" where it moves nothing,
-                    which tabs a view has must be cheap (picker); a list
-                    Obelus offers is the reader's own project (picker/files);
-                    a question is a card, not a picker (card); a tool call
-                    is somewhere to go, the transcript's cursor stands only
-                    on rows that do something, a run of tool calls is one
-                    row, thinking is not folded away (chat); a setting is
-                    two rows, and a name and a gloss (settings); what a call
-                    takes is about a place, and somebody else's text is
-                    capped (signature)
-  counts.rs       how much code is here: tokei's walk, in the two orderings
-                  the view reads it in
-  reading/        what a file is when it is not code: markdown, a log
-                  · a log's format is decided by its lines, not its name
-  syntax/         language registry (25 languages), parsing, highlights, tags
-  lsp/            transport, client, actions, positions, outline, the call
-                  the cursor is inside
-                  · a parameter nothing is on is not the first parameter, and
-                    every signature the server sent is kept (signature)
-  git/            gix, reading only: head text, statuses, hunks, blame, history
-                  · the diff base is the blob a checkout would write, and
-                    reading it must not run anything (mod); a blame is about
-                    a version, and the margin knew which commit (blame);
-                    what the remote has not seen is marked (history)
-  agent/          the ACP registry, installing an agent, its marks
-                  · an agent is installed when the install says so, in
-                    writing (install); a conversation is claimed by what
-                    names it, and one Obelus at a time has it (chats)
-  acp/            the protocol, through its own crate, and the thread that
-                  joins it to the loop
-                  · why the runtime is current-thread, why the two
-                    directions are not symmetrical, the one ordering the
-                    protocol does not promise, what waiting on the reader
-                    costs the whole connection, and what an agent asking
-                    something may ask for (link); an agent that stopped is
-                    started again by talking to it (mod)
-  ui/             editor, status bar, picker, settings, chat, welcome,
-                  images, shapes, shared cell writers
-                  · what the bar measures is what is shown, the caret can be
-                    in the block, a bar is a block, a column a file might
-                    need is reserved for the whole file (editor); everything
-                    that scrolls says so (mod); a header says what a thing
-                    is, the foot says what is happening (chat); a view says
-                    what a region *is* and the front end says what that
-                    looks like, nothing may be said there that the cells do
-                    not already say in their own way, and what is said
-                    carries enough to be checked against them (shapes); the
-                    argument being marked is the one thing that may not be
-                    clipped away (signature)
-  gui/            the window: what a screenful of cells becomes when it is
-                  not a terminal -- the grid on its way over, the glyphs,
-                  the quads, and the one clock the window keeps
-                  · the page is what Obelus said and motion is only how the
-                    window is showing it, a moment and a rate are two kinds
-                    of waiting, and none of it crosses to the application
-                    (motion); a full-width character takes the cells it
-                    covers with it, because the diff will not (grid); a
-                    pane joined to the page has one edge and so no
-                    corners while a box joined to nothing has four, a
-                    line is drawn where its glyph would be and the glass
-                    starts at the line, glass is a bend
-                    and a light before it is a blur, and a region of the
-                    frame is put back somewhere else rather than drawn
-                    again (paint); a key's cap is the one place the grid is
-                    not what a cell is measured in (font); a thread that
-                    borrows somebody else's connection stops before the
-                    owner takes it back (clipboard/wayland)
-tests/            integration tests plus tests/fixtures/*.txt golden grids
-                  · why the fake agent is `sh`, and what it checks back
-                    (agent)
+crates/
+  obelus-app/       state, the loop's handler, and every picker's item
+                    source, by aspect: documents, moving, searching,
+                    choosing, agents -- plus what one conversation is
+                    (conversation), what the loop reacts to (event), and
+                    everything done before there is a screen (startup)
+                    · a commit's message hangs above its file (app/history);
+                      a history is one view at two radii (app/history_view);
+                      a preview is of a subject, not of a path
+                      (app/previewing); a project may carry settings, and it
+                      is not the reader, and the reader's is the layer it is
+                      laid over (app/preferences); what Obelus says before
+                      the reader's first words is one piece that is always
+                      said and one the topic adds, and the reader's own words
+                      go into a template last (app/opening); a conversation
+                      belongs to the agent that had it (app/conversations)
+  obelus-text/      the Rope wrapper: the only place coordinates convert
+  obelus-editing/   a text with a caret in it -- the file being read and the
+                    box a note is written in differ in what they are *about*
+                    and not in what down does
+                    · chords, contexts, the default table, modifiers_of;
+                      `why_not` is the one judgement of what may be bound;
+                      keys are rebound on the keys page; modifiers are judged
+                      exactly, in one place (keymap)
+  obelus-buffer/    one open file: text, syntax, cursor, viewport
+                    · an edit knows where it happened; do not read over an
+                      edit (lib); a folded line has no rows, what folds comes
+                      from the indentation, a hunk opens where it is, a fold
+                      across an edit is not one across a re-read (folds);
+                      undo groups by what the reader was doing (undo)
+  obelus-row/       a row of laid-out text: the currency between whoever
+                    lays something out and whoever draws it, belonging to
+                    neither
+  obelus-icons/     the Nerd Font switch and every glyph behind it
+  obelus-theme/     colours, and only fields the renderer reads
+  obelus-config/    the settings, their file, and what each one is
+                    · what a project may set is a property of the setting;
+                      the file holds preferences, not state
+  obelus-logging/   two logs split by module, and where a panic goes
+  obelus-command/   the Command enum, its table, its groups and what each
+                    one requires -- running one is obelus-app's, in
+                    src/app/dispatch.rs
+  obelus-component/ picker (one component, several instantiations), settings,
+                    the conversation, the box a message is written in, and
+                    the window every list shares
+                    · a query is about the rows the list is of, whether it
+                      ranks is settled per tab, a list still arriving sits
+                      still, say "still reading" where it moves nothing,
+                      which tabs a view has must be cheap (picker); a list
+                      Obelus offers is the reader's own project
+                      (picker/files); a question is a card, not a picker
+                      (card); a tool call is somewhere to go, the
+                      transcript's cursor stands only on rows that do
+                      something, a run of tool calls is one row, thinking is
+                      not folded away (chat); a setting is two rows, and a
+                      name and a gloss (settings); what a call takes is about
+                      a place, and somebody else's text is capped (signature)
+  obelus-reading/   what a file is when it is not code: markdown, a log
+                    · a log's format is decided by its lines, not its name
+                      (log)
+  obelus-markdown/  markdown, laid out into rows, from the tree Obelus
+                    already parses
+  obelus-search/    one question at three scopes, and how much code is here:
+                    tokei's walk, in the two orderings the view reads it in
+                    (counts)
+  obelus-syntax/    the language registry (two dozen grammars), parsing,
+                    highlights, tags
+  obelus-lsp/       transport, client, actions, positions, outline, the call
+                    the cursor is inside
+                    · a parameter nothing is on is not the first parameter,
+                      and every signature the server sent is kept (signature)
+  obelus-git/       gix, reading only: head text, statuses, hunks, blame,
+                    history -- and the notes beside a project (todo)
+                    · the diff base is the blob a checkout would write, and
+                      reading it must not run anything (lib); a blame is
+                      about a version, and the margin knew which commit
+                      (blame); what the remote has not seen is marked
+                      (history)
+  obelus-agent/     the ACP registry, installing an agent, its marks, and
+                    the protocol through its own crate with the thread that
+                    joins it to the loop (acp/)
+                    · an agent is installed when the install says so, in
+                      writing (install); a conversation is claimed by what
+                      names it, and one Obelus at a time has it (chats);
+                      why the two directions are not symmetrical, the one
+                      ordering the protocol does not promise, what waiting on
+                      the reader costs the whole connection, and what an
+                      agent asking something may ask for (acp/link); an
+                      agent that stopped is started again by talking to it
+                      (acp/mod)
+  obelus-mcp/       the tools Obelus offers an agent -- and why none of them
+                    asks the reader anything itself
+  obelus-ui/        editor, status bar, picker, settings, chat, welcome,
+                    images, shapes, shared cell writers
+                    · what the bar measures is what is shown, the caret can
+                      be in the block, a bar is a block, a column a file
+                      might need is reserved for the whole file (editor);
+                      everything that scrolls says so (lib); a header says
+                      what a thing is, the foot says what is happening
+                      (chat); a view says what a region *is* and the front
+                      end says what that looks like, nothing may be said
+                      there that the cells do not already say in their own
+                      way, and what is said carries enough to be checked
+                      against them (shapes); the argument being marked is the
+                      one thing that may not be clipped away (signature)
+  obelus-watch/     what changed on disk: a freshness mechanism and not a
+                    correctness one, so nothing that matters hangs on it
+  obelus-sink/      where a background worker's events go: a worker names
+                    only what it produces, and the application is the only
+                    thing that has heard of every worker
+  obelus-runtime/   the one runtime the waiting is done on -- a server's
+                    pipe, an agent's connection, a clock, a download -- and
+                    giving up on a walk (cancel)
+  obelus-program/   whether this machine has a program, and starting what it
+                    turned out to be, which are two questions on Windows
+  obelus-clipboard/ the clipboard through whatever the machine actually has,
+                    and opening a link
+  obelus-cli/       the `ob` binary: Obelus drawn on a terminal
+  obelus-gui/       the `obg` binary, and the window: what a screenful of
+                    cells becomes when it is not a terminal -- the grid on
+                    its way over, the glyphs, the quads, and the one clock
+                    the window keeps
+                    · the page is what Obelus said and motion is only how the
+                      window is showing it, a moment and a rate are two kinds
+                      of waiting, and none of it crosses to the application
+                      (motion); a full-width character takes the cells it
+                      covers with it, because the diff will not (grid); a
+                      pane joined to the page has one edge and so no corners
+                      while a box joined to nothing has four, a line is drawn
+                      where its glyph would be and the glass starts at the
+                      line, glass is a bend and a light before it is a blur,
+                      and a region of the frame is put back somewhere else
+                      rather than drawn again (paint); a key's cap is the one
+                      place the grid is not what a cell is measured in
+                      (font); a thread that borrows somebody else's
+                      connection stops before the owner takes it back
+                      (clipboard/wayland)
+  */tests/          integration tests, most of them `obelus-app`'s, plus
+                    obelus-app/tests/fixtures/*.txt golden grids
+                    · why the fake agent is `sh`, and what it checks back
+                      (obelus-app/tests/agent)
 ```
 
 A `·` line is the rules that live in that module's own doc rather than here,
@@ -1472,12 +1513,12 @@ which is why the fixtures never contain pixels.
 
 **The agent protocol comes from its own crate, joined to the loop on one
 thread.** `agent-client-protocol` is the reference implementation and it is
-built around `async`; `acp::link` is the join, and it is the only place in
-Obelus where a runtime exists. Its module doc has the rest: why the runtime
-is current-thread, why the two directions are not symmetrical, and the one
-ordering the protocol does not promise. `tests/agent.rs` drives a real
-process at it -- `tests/fixtures/fake-agent.sh`, which also checks Obelus
-kept the promises it made in the handshake.
+built around `async`; `acp::link` is the join, and the connection is one task
+on the shared runtime. Its module doc has the rest: why the two directions
+are not symmetrical, and the one ordering the protocol does not promise.
+`obelus-app/tests/agent.rs` drives a real process at it --
+`tests/fixtures/fake-agent.sh`, which also checks Obelus kept the promises it
+made in the handshake.
 
 **One screen animates at a time, and only while something is moving.** The
 welcome screen's sheen and the row that says an agent is working are the
@@ -1664,7 +1705,8 @@ wide, and a box, never a row. Not behind a panel, which is on the page's
 colour with a frame round it: in a window its ground is its glass.
 
 A preview's margin comes from git, so a fixture that shows one depends on
-the fixture file being *committed*: edit `tests/fixtures/long.rs` without
+the fixture file being *committed*: edit `obelus-app/tests/fixtures/long.rs`
+without
 committing and the preview grows change marks. Which is the feature working,
 and a surprising way to see it.
 
@@ -1681,7 +1723,8 @@ they hold anywhere. The suite runs wherever it is checked out.
 
 The git tests build real repositories in a temp directory, with one
 deliberate exception: `the_committed_text_comes_from_git` reads *this*
-repository's `src/lib.rs` through `git show`, because a diff of what git
+repository's `crates/obelus-app/src/lib.rs` through `git show`, because a
+diff of what git
 actually has against what is on disk is the only thing that says the two
 halves agree. It asserts nothing about whether that file is currently dirty.
 
@@ -1694,7 +1737,8 @@ green again on its own when the offending commit slid out of the window. It
 is the same rule as the fixture that carried `~/Work/obelus`, with a clock
 on it.
 
-The pairs live in `tests/fixtures/diffs/` now and the answer comes from real
+The pairs live in `obelus-app/tests/fixtures/diffs/` now and the answer comes
+from real
 `git diff --no-index`, so nothing is written down that could only agree with
 itself. Every pair in there is a diff the tidying changes -- a hand-written
 one is drawn the same way with it and without, so a corpus of those would
@@ -1722,7 +1766,7 @@ Workspace symbols and hover (the file outline is done; M1c's diagnostics are
 done too -- the underline, the margin, the count on the status row, the keys
 that walk them and the list they are in), searching a file (`ctrl+f` is left
 unbound for it), the rest of M2's git (history, blame, tree diffs, staging --
-the working tree's own diff is done: `src/git/`, the margin, the map beside
+the working tree's own diff is done: `obelus-git`, the margin, the map beside
 the scrollbar, `show-change` and the steps between hunks), the diff/semantic
 bridge (M3), symbol-level history (M4), the agent bridge (M5), and a minimal
 editing set, last. Don't start on these without being asked.
