@@ -15,6 +15,7 @@ use obelus_agent::{Talking, acp};
 use obelus_component::{
     card::{Card, CardOutcome, Choice},
     chat::{Chat, Speaker},
+    composer::Part,
 };
 
 use super::*;
@@ -1283,14 +1284,14 @@ impl App {
     /// take it back -- see
     /// [`Conversation`](crate::conversation::Conversation) for why the
     /// protocol leaves no third option.
-    pub(super) fn send_to_agent(&mut self, text: &str) {
+    pub(super) fn send_to_agent(&mut self, parts: &[Part]) {
         if self.talking() == Talking::Thinking {
             if let Some(talk) = self.conversation_mut() {
-                talk.chat.will_say(text);
+                talk.chat.will_say(parts);
             }
             return;
         }
-        self.say_in(Whose::Whoever, text, false);
+        self.say_in(Whose::Whoever, parts, false);
     }
 
     /// Says one thing in the conversation `whose` names.
@@ -1300,7 +1301,7 @@ impl App {
     /// ending says whatever was waiting behind it -- which may be a
     /// conversation they have since walked away from, because a turn goes
     /// on running while they read something else.
-    fn say_in(&mut self, whose: Whose, text: &str, on_the_page: bool) {
+    fn say_in(&mut self, whose: Whose, parts: &[Part], on_the_page: bool) {
         // What this agent does not know yet, if anything: who it is talking
         // to, and what the conversation is about. Worked out here rather
         // than kept, because a note is a file the reader can change between
@@ -1335,7 +1336,7 @@ impl App {
             // what goes out is those rows joined, and writing them again
             // would be saying the whole of it twice.
             if !on_the_page {
-                talk.chat.asked(text);
+                talk.chat.asked(parts);
             }
         }
         let opening = opening.map(|opening| opening.words);
@@ -1395,11 +1396,7 @@ impl App {
         // first thing said: the reader typed while it was starting, and the
         // handle sends it when there is somewhere to send it -- opening and
         // all, because the opening belongs to whatever goes first.
-        talker.say(
-            session.as_ref(),
-            vec![acp::link::Said::Words(text.to_string())],
-            opening.as_deref(),
-        );
+        talker.say(session.as_ref(), said_of(parts), opening.as_deref());
     }
 
     /// Says what the reader had waiting, now that the turn it was waiting
@@ -1424,7 +1421,18 @@ impl App {
             return;
         }
         talk.chat.sent();
-        self.say_in(whose, &waiting.join("\n\n"), true);
+        // One prompt, so the messages are joined the way the box's own
+        // `alt+enter` joins two paragraphs -- and the pictures keep their
+        // places between them, because the join is a run of parts and not
+        // a run of text.
+        let mut parts: Vec<Part> = Vec::new();
+        for said in waiting {
+            if !parts.is_empty() {
+                parts.push(Part::Words("\n\n".to_string()));
+            }
+            parts.extend(said);
+        }
+        self.say_in(whose, &parts, true);
     }
 
     /// Asks the agent to stop what it is doing.
@@ -1742,8 +1750,8 @@ impl App {
         };
         match talk.chat.handle_key(key, thinking, room, &settings) {
             ChatOutcome::Consumed => true,
-            ChatOutcome::Send(text) => {
-                self.send_to_agent(&text);
+            ChatOutcome::Send(parts) => {
+                self.send_to_agent(&parts);
                 true
             }
             ChatOutcome::Interrupt => {
@@ -2221,7 +2229,9 @@ impl App {
         if let Some(text) = words
             && let Some(talk) = self.conversation_mut()
         {
-            talk.chat.asked(text);
+            // A card's answer is words and never a picture, so it is one
+            // part and the page says the same as before.
+            talk.chat.asked(&[Part::Words(text.to_string())]);
         }
         if let Some(talk) = self.conversation_mut() {
             talk.card = None;
@@ -3411,6 +3421,25 @@ fn window(text: &str, line: Option<u32>, limit: Option<u32>) -> String {
         out.push('\n');
     }
     out
+}
+
+/// What the box holds, as the protocol's own blocks.
+///
+/// The one place the two vocabularies meet. The box knows pictures and
+/// nothing about the wire; the link knows blocks and nothing about a
+/// caret; and the order is carried across unchanged, because the order is
+/// the thing the reader built.
+fn said_of(parts: &[Part]) -> Vec<acp::link::Said> {
+    parts
+        .iter()
+        .map(|part| match part {
+            Part::Words(words) => acp::link::Said::Words(words.clone()),
+            Part::Picture(picture) => acp::link::Said::Picture(acp::link::Picture {
+                mime: picture.mime.clone(),
+                bytes: picture.bytes.clone(),
+            }),
+        })
+        .collect()
 }
 
 #[cfg(test)]

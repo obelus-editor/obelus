@@ -223,6 +223,43 @@ impl Composer {
         parts
     }
 
+    /// Takes everything out, in order, leaving the box empty.
+    ///
+    /// The pictures go with the words because they are the same message:
+    /// a box emptied of its text while it still held pictures would send
+    /// them with the next thing typed.
+    pub fn take_parts(&mut self) -> Vec<Part> {
+        let parts = self.parts();
+        self.attached.clear();
+        self.replace("");
+        parts
+    }
+
+    /// What a run of parts says, with each picture written out the way the
+    /// box draws it.
+    ///
+    /// For the page rather than for the agent: a message that has been sent
+    /// is a record, and the record says what the reader saw themselves
+    /// writing.
+    #[must_use]
+    pub fn spelling(parts: &[Part]) -> String {
+        let mut seen = 0;
+        let mut out = String::new();
+        for part in parts {
+            match part {
+                Part::Words(words) => out.push_str(words),
+                Part::Picture(_) => {
+                    seen += 1;
+                    match seen {
+                        which @ 1..=9 => out.push_str(&format!("[Image {which}]")),
+                        _ => out.push_str("[Image +]"),
+                    }
+                }
+            }
+        }
+        out
+    }
+
     /// Whether anything in here is a picture.
     #[must_use]
     pub fn has_pictures(&self) -> bool {

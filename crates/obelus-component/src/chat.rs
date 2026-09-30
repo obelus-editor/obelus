@@ -146,6 +146,13 @@ pub struct Said {
     /// What sort of thing a tool call is doing, which is what picks its
     /// glyph: a reader scans a turn for "did it *change* anything".
     pub kind: String,
+    /// What the reader put together, where this row is theirs.
+    ///
+    /// `text` is what the page shows and this is what goes to the agent,
+    /// written at the same moment by the same call so the two cannot come
+    /// apart. Only a reader's row has any: nothing else carries a picture,
+    /// and a row with none sends its `text`.
+    pub parts: Vec<crate::composer::Part>,
     /// The files a tool call named.
     ///
     /// Kept whole rather than as one line of text, because they are places
@@ -509,7 +516,7 @@ pub enum ChatOutcome {
     /// Something moved or was typed. Redraw.
     Consumed,
     /// Send this to the agent.
-    Send(String),
+    Send(Vec<crate::composer::Part>),
     /// Ask the agent to stop.
     Interrupt,
     /// Put these words back in the box: the reader took back something
@@ -958,8 +965,11 @@ impl Chat {
     }
 
     /// Adds a line of the reader's own.
-    pub fn asked(&mut self, text: &str) {
-        self.push(Speaker::Reader, text, None);
+    pub fn asked(&mut self, parts: &[crate::composer::Part]) {
+        self.push(Speaker::Reader, &Composer::spelling(parts), None);
+        if let Some(said) = self.said.last_mut() {
+            said.parts = parts.to_vec();
+        }
     }
 
     /// Adds one the reader has said into a turn that is still running.
@@ -967,9 +977,10 @@ impl Chat {
     /// It goes on the page where everything they say goes, and says about
     /// itself that it has not gone. What it is waiting for is the turn in
     /// front of it: [`Self::unsent`] is what leaves with that turn.
-    pub fn will_say(&mut self, text: &str) {
-        self.push(Speaker::Reader, text, None);
+    pub fn will_say(&mut self, parts: &[crate::composer::Part]) {
+        self.push(Speaker::Reader, &Composer::spelling(parts), None);
         if let Some(said) = self.said.last_mut() {
+            said.parts = parts.to_vec();
             said.unsent = true;
         }
     }
@@ -982,11 +993,11 @@ impl Chat {
     /// an agent given only the first of them answers a question it has not
     /// been asked the whole of.
     #[must_use]
-    pub fn unsent(&self) -> Vec<String> {
+    pub fn unsent(&self) -> Vec<Vec<crate::composer::Part>> {
         self.said
             .iter()
             .filter(|said| said.unsent)
-            .map(|said| said.text.clone())
+            .map(|said| said.parts.clone())
             .collect()
     }
 
@@ -1141,6 +1152,7 @@ impl Chat {
     pub fn away(&mut self, id: &str, message: &str, url: &str) {
         self.forget_the_layout();
         self.said.push(Said {
+            parts: Vec::new(),
             speaker: Speaker::Away,
             text: message.to_string(),
             tag: Some(id.to_string()),
@@ -1262,6 +1274,7 @@ impl Chat {
             .find(|said| said.tag.as_deref() == Some(call.id.as_str()));
         let Some(said) = existing else {
             self.said.push(Said {
+                parts: Vec::new(),
                 speaker: Speaker::Tool,
                 text: call.title.clone(),
                 tag: Some(call.id.clone()),
@@ -2126,7 +2139,7 @@ impl Chat {
                 if self.input.is_blank() {
                     return ChatOutcome::Consumed;
                 }
-                ChatOutcome::Send(self.input.take())
+                ChatOutcome::Send(self.input.take_parts())
             }
             // Shift and tab, which arrives as its own key and needs no
             // protocol to be asked for.
@@ -2347,6 +2360,7 @@ impl Chat {
             tag,
             state: None,
             kind: String::new(),
+            parts: Vec::new(),
             places: Vec::new(),
             change: Vec::new(),
             ran: None,
@@ -2698,6 +2712,7 @@ mod tests {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     use super::*;
+    use crate::composer::Part;
 
     /// One call that failed does not throw the run it is in open.
     ///
@@ -2718,6 +2733,44 @@ mod tests {
     /// Opening the failed call on its own is the same fault one row down.
     /// And dropping the worst state from the heading leaves a shut run
     /// saying everything went well.
+    /// A message that waits for a running turn keeps its pictures.
+    ///
+    /// What the reader says into a running turn goes on the page and leaves
+    /// with the next turn, and a picture is part of what they said. The row
+    /// carries the parts as well as the words for exactly this: the words
+    /// are what the page shows and the parts are what goes, written at the
+    /// same moment by the same call so they cannot come apart.
+    ///
+    /// Without it the page would show `[Image 1]` on a row whose message
+    /// reaches the agent with the picture gone -- a reader asking about
+    /// something the agent was never shown.
+    ///
+    /// Broken deliberately by having `unsent` answer with each row's `text`
+    /// again: the words come back and the picture does not.
+    #[test]
+    fn a_message_that_waits_keeps_its_pictures() {
+        let picture = Part::Picture(crate::composer::Attached {
+            mime: "image/png".to_string(),
+            bytes: vec![1, 2, 3],
+        });
+        let mut chat = Chat::new();
+        chat.will_say(&[
+            Part::Words("look at ".to_string()),
+            picture.clone(),
+            Part::Words(" please".to_string()),
+        ]);
+
+        assert_eq!(
+            chat.unsent(),
+            vec![vec![
+                Part::Words("look at ".to_string()),
+                picture,
+                Part::Words(" please".to_string()),
+            ]],
+            "what waits lost the picture between its words"
+        );
+    }
+
     #[test]
     fn one_call_that_failed_does_not_throw_the_run_open() {
         let mut chat = Chat::new();
@@ -3188,7 +3241,7 @@ mod tests {
     /// A conversation with two tool calls and prose between them.
     fn walked() -> Chat {
         let mut chat = Chat::new();
-        chat.asked("what is this file");
+        chat.asked(&[Part::Words("what is this file".to_string())]);
         chat.chunk(Speaker::Agent, "let me look");
         chat.tool(
             &call("t1", "Read a file", "read", vec![place("/a.rs", 3)]),
@@ -3522,7 +3575,7 @@ mod tests {
     fn control_and_the_ends_reach_the_ends_from_either_half() {
         let mut chat = Chat::new();
         for turn in 0..8 {
-            chat.asked(&format!("question {turn}"));
+            chat.asked(&[Part::Words(format!("question {turn}"))]);
             chat.chunk(Speaker::Agent, &format!("answer {turn}"));
         }
         let short = Room {
@@ -3982,7 +4035,7 @@ mod tests {
     #[test]
     fn pieces_of_one_answer_are_one_thing_said() {
         let mut chat = Chat::new();
-        chat.asked("what is this");
+        chat.asked(&[Part::Words("what is this".to_string())]);
         chat.chunk(Speaker::Agent, "it is ");
         chat.chunk(Speaker::Agent, "a rust file");
         // Thinking is not the answer, so it starts something of its own --
@@ -4118,7 +4171,7 @@ mod tests {
 
         assert_eq!(
             chat.handle_key(&key(KeyCode::Enter), false, ROOM, &[]),
-            ChatOutcome::Send("hell".to_string())
+            ChatOutcome::Send(vec![Part::Words("hell".to_string())])
         );
         // Sent, so the row is empty: a prompt still sitting there after
         // being sent is a prompt that gets sent twice.
@@ -4151,6 +4204,7 @@ mod tests {
 #[cfg(test)]
 mod remembering {
     use super::*;
+    use crate::composer::Part;
 
     /// One way of changing a conversation, for walking the list of them.
     type Way = Box<dyn Fn(&mut Chat)>;
@@ -4199,7 +4253,7 @@ mod remembering {
         let ways: Vec<(&str, Way)> = vec![
             (
                 "asked",
-                Box::new(|chat: &mut Chat| chat.asked("a question")),
+                Box::new(|chat: &mut Chat| chat.asked(&[Part::Words("a question".to_string())])),
             ),
             ("heard", Box::new(|chat: &mut Chat| chat.heard("an answer"))),
             ("note", Box::new(|chat: &mut Chat| chat.note("a note"))),

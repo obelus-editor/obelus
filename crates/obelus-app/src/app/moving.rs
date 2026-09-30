@@ -424,11 +424,48 @@ impl App {
     /// own where that cannot be read. A selection is what it replaces,
     /// because a reader who selected something and pasted meant to.
     pub fn paste(&mut self) {
+        // A picture first, and only where it has somewhere to go: the box a
+        // message is written in is the one place in Obelus that can carry
+        // one, and an agent that did not say it takes them would answer
+        // about the words around it and say nothing about the picture --
+        // which looks to a reader exactly like the picture arriving and
+        // being ignored. So the question is asked before the paste is
+        // offered rather than after it fails, and where the answer is no
+        // the words on the clipboard are pasted as they always were.
+        if self.can_take_a_picture()
+            && let Some((mime, bytes)) = obelus_clipboard::picture()
+        {
+            // The width the box wraps to, taken from the same function the
+            // view lays itself out with -- see `App::chat_key`.
+            let room = obelus_ui::chat::writing_width(self.editor_area);
+            if let Some(talk) = self.conversation_mut() {
+                talk.chat
+                    .writing_mut()
+                    .attach(obelus_component::composer::Attached { mime, bytes }, room);
+            }
+            return;
+        }
         let Some(what) = obelus_clipboard::paste() else {
             self.wrong("Nothing to paste".to_string());
             return;
         };
         self.paste_text(&what);
+    }
+
+    /// Whether a picture pasted now would have somewhere to go and somebody
+    /// to read it.
+    ///
+    /// Two questions that are one: the box has to be taking text -- a card
+    /// over it means the reader is answering something else -- and the
+    /// agent has to have said in the handshake that a prompt may carry a
+    /// picture. The second is what `Carries::image` was put there for.
+    #[must_use]
+    fn can_take_a_picture(&self) -> bool {
+        self.conversation_takes_text()
+            && self
+                .talker
+                .as_ref()
+                .is_some_and(|talker| talker.carries().image)
     }
 
     /// Puts a run of text in where the reader is.

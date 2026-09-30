@@ -581,7 +581,9 @@ fn what_the_reader_says_into_a_running_turn_waits_for_it() {
     support::press(&mut app, KeyCode::Enter);
     assert_eq!(
         app.chat().map(|chat| chat.unsent()),
-        Some(vec!["/blocks".to_string()]),
+        Some(vec![vec![obelus_component::composer::Part::Words(
+            "/blocks".to_string()
+        )]]),
         "what the reader typed was not held back"
     );
     // Still working on the first one, and still saying so -- which is the
