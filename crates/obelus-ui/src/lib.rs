@@ -307,7 +307,7 @@ pub trait Screen {
     /// The settings view, while it is open.
     fn settings(&self) -> Option<&Settings>;
     /// What the call the cursor is inside takes, while it is showing.
-    fn signature(&self) -> Option<&obelus_lsp::signature::Signature>;
+    fn signature(&self) -> Option<&obelus_component::signature::Signature>;
     /// The agent's own commands, while one is being typed.
     fn slash(&self) -> Option<&Picker>;
     /// What Obelus is doing about an agent.

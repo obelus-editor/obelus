@@ -293,7 +293,7 @@ pub struct App {
     /// where they were going.
     completion: Option<Completion>,
     /// What the call the cursor is inside takes, while it is showing.
-    signature: Option<obelus_lsp::signature::Signature>,
+    signature: Option<obelus_component::signature::Signature>,
     /// What the server says the place under the caret is, while it is up.
     hover: Option<Hover>,
     /// What the server offered to do here, while a list of it is open.
@@ -1459,7 +1459,7 @@ impl App {
     /// Not while the completion panel is up: the two would be drawn in the
     /// same place, and what could be typed next is the nearer question.
     #[must_use]
-    pub const fn signature(&self) -> Option<&obelus_lsp::signature::Signature> {
+    pub const fn signature(&self) -> Option<&obelus_component::signature::Signature> {
         match self.completion.is_some() {
             true => None,
             false => self.signature.as_ref(),
@@ -2150,14 +2150,12 @@ impl App {
         // And the answer about a place, which the pointer resting is what
         // asks for: this is where the resting is noticed.
         self.settle_hover();
-        // And what the call under the caret takes. It is the third of the
-        // panels that belong to a place in the file, and it was the one
-        // that never asked whether the file was still what the reader is
-        // looking at: the other two go when a view opens over them, and
-        // this one stayed, drawn over a screen it is not about.
-        if self.layers().any() {
-            self.signature = None;
-        }
+        // And what the call under the caret takes, which is the third of the
+        // panels that belong to a place in the file and the last of them to
+        // be asked this. It went only when a view opened over it, so a
+        // reader who arrowed off the line kept a panel about a call that was
+        // no longer under them.
+        self.settle_signature();
         if let Some(hover) = self.hover.as_mut() {
             // What it is drawn in, so that paging it moves what is on
             // screen rather than a number nothing reads.
@@ -2634,6 +2632,14 @@ impl App {
         // other key from them: what it does not want, it closes itself for
         // and lets through.
         if self.hover_key(&key) {
+            return;
+        }
+        // And what the call the cursor is inside takes, which takes escape
+        // and nothing else: the reader is typing arguments into the file
+        // under it. After the hover for the same reason the hover is after
+        // the layers -- escape belongs to whichever is nearest, and the two
+        // are never up together.
+        if self.signature_key(&key) {
             return;
         }
         // What could be typed next, while a server's answer is beside the
@@ -4087,7 +4093,7 @@ impl Screen for App {
     fn settings(&self) -> Option<&Settings> {
         App::settings(self)
     }
-    fn signature(&self) -> Option<&obelus_lsp::signature::Signature> {
+    fn signature(&self) -> Option<&obelus_component::signature::Signature> {
         App::signature(self)
     }
     fn slash(&self) -> Option<&Picker> {

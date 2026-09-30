@@ -596,6 +596,32 @@ fn char_width(character: char, width: usize) -> usize {
     }
 }
 
+/// How many characters into a string a UTF-16 offset is.
+///
+/// The fifth coordinate space again, for text that is not a document: a
+/// language server's signature label is a string it sent, and the offsets
+/// it gives into that string are counted in UTF-16 like every other
+/// position in the protocol. [`Text::column_at_utf16`] is the same walk for
+/// a line of a rope; this is here rather than at either caller because a
+/// count of code units is not a number anybody outside this module may
+/// treat as a count of characters.
+///
+/// An offset landing on the second half of a surrogate pair resolves to the
+/// character it belongs to, and one past the end to the end -- the same
+/// answers its sibling gives.
+#[must_use]
+pub fn characters_at_utf16(contents: &str, units: usize) -> usize {
+    let mut counted = 0usize;
+    for (index, character) in contents.chars().enumerate() {
+        let next = counted + character.len_utf16();
+        if units < next {
+            return index;
+        }
+        counted = next;
+    }
+    contents.chars().count()
+}
+
 /// How many cells a string occupies.
 ///
 /// Tabs are not in it: this measures a piece of text that stands on its own

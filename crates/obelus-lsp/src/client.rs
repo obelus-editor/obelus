@@ -899,6 +899,13 @@ pub fn client_capabilities() -> ClientCapabilities {
                     }),
                     active_parameter_support: Some(true),
                 }),
+                // And the question says why it was asked: which character,
+                // and whether one was already showing. A server that
+                // cannot tell the reader typing the next comma of a call
+                // from a fresh call has to choose a signature again every
+                // time, and the protocol will not send the context to a
+                // client that has not said it reads one.
+                context_support: Some(true),
                 ..Default::default()
             }),
             // Nesting, for the outline. Without this the protocol says a

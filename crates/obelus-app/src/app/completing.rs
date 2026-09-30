@@ -141,7 +141,13 @@ impl App {
     }
 
     /// Asks what the call the cursor is inside takes.
-    pub(super) fn ask_signature(&mut self) {
+    ///
+    /// The character that asked goes with the question, as the protocol's
+    /// `SignatureHelpContext` -- along with whatever is showing, because a
+    /// server that knows this is the next comma of a call the reader is
+    /// already looking at can keep them on that signature rather than
+    /// choosing one again.
+    pub(super) fn ask_signature(&mut self, asked: obelus_lsp::signature::Asked) {
         let Some(id) = self.current else { return };
         let Some(buffer) = file_in(&self.documents, id) else {
             return;
@@ -170,6 +176,10 @@ impl App {
         let params = serde_json::json!({
             "textDocument": { "uri": uri },
             "position": at,
+            "context": obelus_lsp::signature::context(
+                asked,
+                self.signature.as_ref().map(obelus_component::signature::Signature::answer),
+            ),
         });
         if let Ok(request) = client.request("textDocument/signatureHelp", &params) {
             self.remember(
@@ -185,6 +195,10 @@ impl App {
     }
 
     /// Keeps what a server said a call takes, if the reader is still in it.
+    ///
+    /// And keeps where it is about with it, which is what `settle_signature`
+    /// asks every frame afterwards: this checks the answer against the place
+    /// it arrives in, and the reader goes on moving after it has arrived.
     pub(super) fn on_signature(&mut self, id: DocumentId, line: LineNumber, reply: Reply) {
         // The line the question was asked on. A call spans one line often
         // enough, and a reader who has gone to another one is writing
@@ -197,18 +211,84 @@ impl App {
         {
             return;
         }
-        self.signature = obelus_lsp::signature::in_reply(&reply.result);
+        self.signature = obelus_lsp::signature::in_reply(&reply.result)
+            .map(|answer| obelus_component::signature::Signature::new(answer, id, line));
+    }
+
+    /// Keeps the panel honest, once a frame.
+    ///
+    /// The same shape the completion panel and the hover have: the answer is
+    /// checked against the document rather than every way the document can
+    /// move being told about the panel. It had neither, so a reader who
+    /// arrowed off the line -- or opened another file -- kept a panel about
+    /// a call that was no longer under them, until they happened to type a
+    /// bracket.
+    pub(super) fn settle_signature(&mut self) {
+        // A list or a dialog is what the screen is showing, and the panel
+        // belongs to the file underneath it.
+        if self.layers().any() {
+            self.signature = None;
+            return;
+        }
+        let Some((buffer, line)) = self
+            .signature
+            .as_ref()
+            .map(obelus_component::signature::Signature::at)
+        else {
+            return;
+        };
+        if self.current != Some(buffer)
+            || self
+                .current_buffer()
+                .is_none_or(|buffer| buffer.cursor().line != line)
+        {
+            self.signature = None;
+        }
+    }
+
+    /// The panel's one key.
+    ///
+    /// Escape gives up on the nearest thing, and while this is showing the
+    /// nearest thing is this. Everything else falls through: the reader is
+    /// typing arguments, and a key that had to be pressed twice -- once to
+    /// dismiss the panel, once to do what it says -- is a key that does
+    /// nothing.
+    pub(super) fn signature_key(&mut self, key: &KeyEvent) -> bool {
+        if self.signature().is_none() {
+            return false;
+        }
+        let Some(modifiers) = keymap::modifiers_of(key) else {
+            return false;
+        };
+        match (modifiers, key.code) {
+            (KeyModifiers::NONE, KeyCode::Esc) => {
+                self.signature = None;
+                true
+            }
+            _ => false,
+        }
     }
 
     /// Whether a character is one the server says asks about a call.
     fn triggers_signature(&self, character: char) -> bool {
+        self.serving_current().is_some_and(|capabilities| {
+            obelus_lsp::signature::triggered_by(capabilities, character)
+        })
+    }
+
+    /// Whether it is one the server says asks *again*.
+    fn retriggers_signature(&self, character: char) -> bool {
+        self.serving_current().is_some_and(|capabilities| {
+            obelus_lsp::signature::retriggered_by(capabilities, character)
+        })
+    }
+
+    /// What the server for the file being read says it can do.
+    fn serving_current(&self) -> Option<&lsp_types::ServerCapabilities> {
         self.current_buffer()
             .and_then(Buffer::language)
             .and_then(|language| self.servers.get(&language))
             .and_then(Client::capabilities)
-            .is_some_and(|capabilities| {
-                obelus_lsp::signature::triggered_by(capabilities, character)
-            })
     }
 
     /// Hands the application a signature, as a server would.
@@ -543,6 +623,32 @@ impl App {
         {
             self.offer_completion();
         }
+
+        // And a candidate that put a *call* in is a call the reader is
+        // about to fill in: choosing `copy(…)` opens one without anybody
+        // typing a bracket, so the keystroke that would have asked never
+        // happened.
+        //
+        // Asked of the text that went in, not of the character behind the
+        // caret. Those look like the same question and are not: a real
+        // server sends `copy(${1:from}, ${2:to})`, the caret lands on the
+        // first hole, and a hole with a default in it is *selected* -- so
+        // the caret is at the end of `from` and what is behind it is `m`.
+        // Read that way the rule never fired at all, and the test that
+        // said it did used a snippet with an empty hole, which is the
+        // shape that happens to put the caret against the bracket.
+        //
+        // Where the caret ends up is the server's business anyway. Obelus
+        // needs a reason to ask, and the answer is about wherever the caret
+        // is: a candidate that opened no call gets an empty one and no
+        // panel.
+        if filled
+            .text
+            .chars()
+            .any(|character| self.triggers_signature(character))
+        {
+            self.ask_signature(obelus_lsp::signature::Asked::Changed);
+        }
     }
 
     /// Makes several edits as one act, and says where the first one left
@@ -710,7 +816,20 @@ impl App {
             // in Rust. The word starts at the cursor, so what comes back
             // is everything that could follow -- unfiltered, because the
             // reader has not typed anything to filter it by yet.
-            keys::Typing::Character(character) if self.triggers_completion(character) => {
+            //
+            // Unless the server calls that character a trigger for the
+            // *call* as well, which is what `(` is: a character in both of
+            // its lists is the reader opening one, and the nearer question
+            // there is what the call takes. The unfiltered answer is worth
+            // having after `.` and `::`, where it is the members of one
+            // thing; after `(` it is everything in scope -- `self::`,
+            // `crate::`, every macro -- which is not an answer to "what
+            // could be typed next" but another way of saying an expression
+            // goes here. Both facts are the server's own, so nothing here
+            // is guessing at punctuation.
+            keys::Typing::Character(character)
+                if self.triggers_completion(character) && !self.triggers_signature(character) =>
+            {
                 // Whatever was showing was about the word before the
                 // punctuation, which has just ended.
                 self.completion = None;
@@ -728,10 +847,25 @@ impl App {
         // character a trigger for both, and `(` usually is.
         match typing {
             keys::Typing::Character(character) if self.triggers_signature(character) => {
-                self.ask_signature();
+                self.ask_signature(obelus_lsp::signature::Asked::Typed(character));
             }
-            // A call closing, or the line ending: either way what is
-            // showing is about somewhere the reader has left.
+            // A character the server asks to be *re-*asked on, which is
+            // rust-analyzer's `)`. Not an ending: the call it closes may be
+            // an argument of another one, so the panel goes and the question
+            // is asked again -- and an answer about nothing leaves it gone,
+            // which is the server saying the reader is in no call at all.
+            keys::Typing::Character(character)
+                if self.signature.is_some() && self.retriggers_signature(character) =>
+            {
+                // Asked before the panel goes, in that order: the question
+                // hands back what was showing, and a panel cleared first is
+                // a question that says nothing was.
+                self.ask_signature(obelus_lsp::signature::Asked::Typed(character));
+                self.signature = None;
+            }
+            // A call closing where the server did not name `)` as one of
+            // those, or the line ending: either way what is showing is
+            // about somewhere the reader has left.
             keys::Typing::Character(')') | keys::Typing::Newline => self.signature = None,
             _ => {}
         }

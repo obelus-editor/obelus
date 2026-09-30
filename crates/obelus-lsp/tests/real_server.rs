@@ -1229,3 +1229,96 @@ fn a_real_server_works_out_what_moving_a_file_would_change() {
     );
     client.shutdown();
 }
+
+/// What a real server puts in for a callable, which is what the panel after
+/// it rests on.
+///
+/// Obelus asks what a call takes when a candidate puts one in, and it reads
+/// that off the text that went in. The shape of that text is the server's:
+/// rust-analyzer sends `fmt(${1:f})$0` -- a bracket, a hole with a default
+/// in it, and the end stop after the closing bracket.
+///
+/// Worth a test against a real one because the shape is the whole of it and
+/// it cannot be reasoned out. The rule this backs used to read the character
+/// *behind the caret* instead, which is `m` here and not `(`: a hole with a
+/// default is selected, so the caret sits at the end of `from`. It never
+/// fired, and the test that said it did fed it `copy($1)$0` -- an empty
+/// hole, which is the one shape that puts the caret against the bracket.
+/// A stand-in server cannot say this; only this can.
+#[test]
+#[ignore = "runs a real rust-analyzer"]
+fn a_real_server_puts_a_bracket_in_for_a_callable() {
+    let Some((mut client, events)) = start() else {
+        return;
+    };
+    pump(&mut client, &events, HANDSHAKE, |client, _| {
+        client.is_ready()
+    });
+
+    let path = root().join("crates/obelus-app/src/jump.rs");
+    let source = std::fs::read_to_string(&path).expect("reading the file");
+    let uri = obelus_lsp::client::uri_for(&path).expect("a uri");
+    client
+        .notify(
+            "textDocument/didOpen",
+            &serde_json::json!({
+                "textDocument": { "uri": uri, "languageId": "rust", "version": 1, "text": source }
+            }),
+        )
+        .expect("opening the document");
+
+    // Just past a `self.`, where what comes back is the type's own methods
+    // -- which are callables, which is what this is about.
+    let at = source.find("self.").expect("a receiver") + "self.".len();
+    let line = source[..at].matches('\n').count();
+    let character = at - source[..at].rfind('\n').map_or(0, |start| start + 1);
+
+    let text = obelus_text::Text::from_string(&source);
+    let encoding = client.encoding().clone();
+    let deadline = Instant::now() + INDEXED;
+    loop {
+        assert!(Instant::now() < deadline, "never indexed");
+        let id = client
+            .request(
+                "textDocument/completion",
+                &serde_json::json!({
+                    "textDocument": { "uri": uri },
+                    "position": { "line": line, "character": character },
+                }),
+            )
+            .expect("asking");
+        let reply = pump(&mut client, &events, INDEXED, |_, reply| {
+            reply.is_some_and(|reply| reply.id == id)
+        })
+        .expect("an answer");
+        let offer = obelus_lsp::complete::offer_in(&reply.result, &text, &encoding);
+        if offer.candidates.is_empty() {
+            std::thread::sleep(Duration::from_millis(300));
+            continue;
+        }
+
+        let callable = offer
+            .candidates
+            .iter()
+            .find(|candidate| candidate.label.ends_with("(…)"))
+            .expect("a candidate that takes arguments");
+        assert!(
+            callable.snippet,
+            "a callable arrived as plain text, so nothing puts a bracket in: {:?}",
+            callable.insert
+        );
+        assert!(
+            callable.insert.contains('('),
+            "no bracket in what goes in, so there is no call to ask about: {:?}",
+            callable.insert
+        );
+        // And the hole has a default in it, which is what puts the caret
+        // somewhere other than against the bracket.
+        assert!(
+            callable.insert.contains("${1:"),
+            "no default in the first hole, which is the shape that hid this: {:?}",
+            callable.insert
+        );
+        break;
+    }
+}

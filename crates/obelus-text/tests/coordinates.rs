@@ -833,3 +833,38 @@ fn a_phantom_makes_a_line_wrap_earlier() {
         "the cells drawn in it were not counted"
     );
 }
+
+/// A UTF-16 offset into a string the protocol sent, as characters.
+///
+/// The one caller is a signature label: a server gives the offsets of the
+/// parameter it is talking about, and the protocol counts them in UTF-16
+/// like every other position it has. Broken deliberately by taking the
+/// offsets for characters -- which is `as usize`, and what this did -- and
+/// the emoji's second code unit then shifts everything after it by one, so
+/// the panel marks the wrong half of the argument it exists to mark.
+#[test]
+fn a_utf16_offset_into_a_label_is_not_a_count_of_characters() {
+    use obelus_text::characters_at_utf16;
+
+    // What a server would send for `fn wave(who: &str)` with an emoji in
+    // the doc-ish part of the label: one char, two code units.
+    let label = "fn wave(\u{1f44b}: &str, who: &str)";
+    let second = label.find("who").expect("the second parameter");
+    let characters = label[..second].chars().count();
+    let units: usize = label[..second].chars().map(char::len_utf16).sum();
+
+    assert_eq!(
+        units,
+        characters + 1,
+        "the sample has no astral character in it, so it proves nothing"
+    );
+    assert_eq!(characters_at_utf16(label, units), characters);
+
+    // Before the emoji the two agree, which is why this is invisible until
+    // it is not.
+    assert_eq!(characters_at_utf16(label, 3), 3);
+    // The second half of a surrogate pair belongs to its character.
+    assert_eq!(characters_at_utf16(label, 9), 8);
+    // And past the end is the end.
+    assert_eq!(characters_at_utf16(label, 9999), label.chars().count());
+}

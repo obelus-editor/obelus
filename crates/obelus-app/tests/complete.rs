@@ -851,7 +851,7 @@ mod against_a_real_server {
 mod signatures {
     use serde_json::json;
 
-    use super::{editing, support};
+    use super::{editing, support, text};
 
     /// One signature, in the shape rust-analyzer sends: offsets into the
     /// label rather than the parameter's own text.
@@ -916,11 +916,594 @@ mod signatures {
             "activeParameter": 1
         })))
         .expect("a signature");
-        let (from, to) = found.active.expect("an active parameter");
-        assert_eq!(&found.label[from..to], "loud=False");
+        let signature = found.signatures.first().expect("the active signature");
+        let (from, to) = signature.active.expect("an active parameter");
+        assert_eq!(&signature.label[from..to], "loud=False");
+    }
+
+    /// Several signatures, the one in use first and the rest under it.
+    ///
+    /// A name with overloads is a name the reader has to choose between,
+    /// and a panel drawing one of them says there is one. Broken
+    /// deliberately by keeping only `signatures[activeSignature]`, which is
+    /// what `in_reply` did: the two labels the server also sent are then
+    /// nowhere on screen, and so is the count of the ones that did not fit.
+    #[test]
+    fn every_signature_is_shown_with_the_one_in_use_first() {
+        let (_scratch, mut app) = editing("signature-many", "fn main() {\n    write(\n}\n");
+        support::press(&mut app, crossterm::event::KeyCode::Down);
+        support::press(&mut app, crossterm::event::KeyCode::End);
+        let overloads: Vec<serde_json::Value> = (0..7)
+            .map(|which| {
+                json!({
+                    "label": format!("fn write(n{which}: u{which}2)"),
+                    "parameters": [{ "label": [9, 15] }],
+                })
+            })
+            .collect();
+        app.signature_for_test(json!({
+            "signatures": overloads,
+            "activeSignature": 2,
+            "activeParameter": 0
+        }));
+
+        let dump = support::render(&mut app, 60, 16);
+        let rows: Vec<&str> = support::text_block(&dump).lines().collect();
+        let at = rows
+            .iter()
+            .position(|row| row.contains("fn write(n2"))
+            .expect("the signature the cursor is in");
+        assert!(
+            rows[at + 1].contains("fn write(n0"),
+            "the one in use is not first, or the others are not shown:\n{dump}"
+        );
+        // Five of seven, so two are owed a count.
+        assert!(
+            dump.contains("+2"),
+            "nothing says how many did not fit:\n{dump}"
+        );
+        assert!(
+            !dump.contains("fn write(n5"),
+            "more than the cap was drawn:\n{dump}"
+        );
+    }
+
+    /// What the argument being typed is for, under a rule.
+    ///
+    /// The parameter's own documentation where it has one: the reader is
+    /// filling in that argument, and the signature's own prose is the
+    /// answer to a question the label above has already answered. Broken
+    /// deliberately by taking the signature's first, which puts the wrong
+    /// half of the answer on the screen.
+    #[test]
+    fn the_documentation_is_the_one_the_argument_has() {
+        let (_scratch, mut app) = editing("signature-doc", "fn main() {\n    push_str(\n}\n");
+        support::press(&mut app, crossterm::event::KeyCode::Down);
+        support::press(&mut app, crossterm::event::KeyCode::End);
+        app.signature_for_test(json!({
+            "signatures": [{
+                "label": "fn push_str(&mut self, string: &str)",
+                "documentation": "About the whole function",
+                "parameters": [
+                    { "label": [12, 21] },
+                    {
+                        "label": [23, 35],
+                        "documentation": "The slice to append"
+                    }
+                ],
+                "activeParameter": 1
+            }],
+            "activeSignature": 0
+        }));
+
+        let dump = support::render(&mut app, 60, 16);
+        assert!(
+            dump.contains("The slice to append"),
+            "what the argument is for is not on screen:\n{dump}"
+        );
+        assert!(
+            !dump.contains("About the whole function"),
+            "the signature's own prose won over the argument's:\n{dump}"
+        );
+
+        // And where the argument says nothing, the signature's is what is
+        // left to say.
+        app.signature_for_test(json!({
+            "signatures": [{
+                "label": "fn push_str(&mut self, string: &str)",
+                "documentation": "About the whole function",
+                "parameters": [{ "label": [23, 35] }],
+                "activeParameter": 0
+            }],
+            "activeSignature": 0
+        }));
+        let dump = support::render(&mut app, 60, 16);
+        assert!(
+            dump.contains("About the whole function"),
+            "nothing is said about the call at all:\n{dump}"
+        );
+    }
+
+    /// A parameter nothing is on is not the first parameter.
+    ///
+    /// `null` is the protocol's way of saying "none of them" and an absent
+    /// field falls through to the whole answer's -- two things `Option<u32>`
+    /// cannot tell apart, which is why this is read off the answer as it
+    /// arrived. Broken deliberately by going back to
+    /// `signature.active_parameter.or(help.active_parameter).unwrap_or(0)`,
+    /// which marks `&mut self` on a call whose cursor is past the last
+    /// argument.
+    #[test]
+    fn a_parameter_the_server_says_is_none_marks_nothing() {
+        use obelus_lsp::signature::in_reply;
+
+        let said = |parameter: serde_json::Value| {
+            json!({
+                "signatures": [{
+                    "label": "fn push_str(&mut self, string: &str)",
+                    "parameters": [{ "label": [12, 21] }, { "label": [23, 35] }],
+                    "activeParameter": parameter
+                }],
+                "activeParameter": 0,
+                "activeSignature": 0
+            })
+        };
+
+        let none = in_reply(&Ok(said(serde_json::Value::Null))).expect("a signature");
+        assert_eq!(
+            none.signatures[0].active, None,
+            "a parameter the server said was none marked one anyway"
+        );
+
+        // And a number still means that one, so the reading of `null` has
+        // not been bought by losing the ordinary case.
+        let second = in_reply(&Ok(said(json!(1)))).expect("a signature");
+        assert_eq!(second.signatures[0].active, Some((23, 35)));
+
+        // Absent falls through to the whole answer's, which is the other
+        // half of the same rule.
+        let absent = in_reply(&Ok(json!({
+            "signatures": [{
+                "label": "fn push_str(&mut self, string: &str)",
+                "parameters": [{ "label": [12, 21] }, { "label": [23, 35] }]
+            }],
+            "activeParameter": 1,
+            "activeSignature": 0
+        })))
+        .expect("a signature");
+        assert_eq!(absent.signatures[0].active, Some((23, 35)));
+    }
+
+    /// The reader leaving the line takes the panel with them.
+    ///
+    /// Asked once a frame, the way the completion panel and the hover are
+    /// asked, rather than being told by each of the ways a cursor can move.
+    /// Broken deliberately by taking `settle_signature` out of `prepare`:
+    /// the panel then sits on a line the reader left, about a call that is
+    /// not under them, until they happen to type a bracket.
+    #[test]
+    fn the_panel_goes_when_the_reader_leaves_the_line() {
+        let (_scratch, mut app) = editing("signature-left", "fn main() {\n    push_str(\n}\n");
+        support::press(&mut app, crossterm::event::KeyCode::Down);
+        support::press(&mut app, crossterm::event::KeyCode::End);
+        app.signature_for_test(answered(0));
+        assert!(app.signature().is_some(), "the panel never opened");
+
+        support::press(&mut app, crossterm::event::KeyCode::Up);
+        support::render(&mut app, 60, 16);
+        assert!(
+            app.signature().is_none(),
+            "the panel stayed on a line the reader has left"
+        );
+    }
+
+    /// And escape gives up on it, like everything else on screen.
+    ///
+    /// Broken deliberately by taking the arm out of `signature_key`: the
+    /// key then falls through to the file, where it clears a selection
+    /// nobody made, and the panel stays.
+    #[test]
+    fn escape_closes_the_panel() {
+        let (_scratch, mut app) = editing("signature-escape", "fn main() {\n    push_str(\n}\n");
+        support::press(&mut app, crossterm::event::KeyCode::Down);
+        support::press(&mut app, crossterm::event::KeyCode::End);
+        app.signature_for_test(answered(0));
+
+        support::press(&mut app, crossterm::event::KeyCode::Esc);
+        assert!(
+            app.signature().is_none(),
+            "escape left the panel where it was"
+        );
+    }
+
+    /// A character the server asks to be re-asked on asks again.
+    ///
+    /// rust-analyzer's is `)`, and it is not an ending: the call it closes
+    /// may be an argument of another one. So the question goes out again,
+    /// saying which character asked and that one was already showing --
+    /// which is the whole of `SignatureHelpContext`, and what the server
+    /// needs to keep the reader on the signature they were looking at.
+    ///
+    /// Read off the wire, because nothing else can see it: a context built
+    /// and not attached to the request looks exactly like one that was.
+    /// Broken deliberately three ways -- dropping `"context"` from the
+    /// params, going back to `)` closing the panel, and taking
+    /// `retrigger_characters` out of the capability.
+    #[test]
+    fn a_character_the_server_asks_again_on_asks_again() {
+        use obelus_syntax::LanguageId;
+
+        let (_scratch, mut app) = editing("signature-retrigger", "fn main() {\n    f(g(\n}\n");
+        let (sender, heard) = obelus_app::event::channel();
+        app.events_for_test(sender);
+        assert!(
+            app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+            "the echo would not start"
+        );
+        app.declared_for_test(
+            LanguageId::Rust,
+            json!({
+                "signatureHelpProvider": {
+                    "triggerCharacters": ["(", ","],
+                    "retriggerCharacters": [")"]
+                }
+            }),
+        );
+        support::press(&mut app, crossterm::event::KeyCode::Down);
+        support::press(&mut app, crossterm::event::KeyCode::End);
+
+        // A trigger character, which is a fresh question.
+        support::type_text(&mut app, "(");
+        let asked = support::heard_requests(&heard, "textDocument/signatureHelp", 1);
+        assert_eq!(asked.len(), 1, "the trigger asked nobody: {asked:?}");
+        assert_eq!(
+            asked[0]["params"]["context"]["triggerCharacter"],
+            json!("(")
+        );
+        assert_eq!(asked[0]["params"]["context"]["isRetrigger"], json!(false));
+
+        // An answer, so that there is something showing for the retrigger
+        // to be a retrigger of.
+        app.signature_for_test(answered(0));
+        assert!(app.signature().is_some(), "the panel never opened");
+
+        support::type_text(&mut app, ")");
+        let again = support::heard_requests(&heard, "textDocument/signatureHelp", 1);
+        assert_eq!(again.len(), 1, "the retrigger asked nobody: {again:?}");
+        assert_eq!(again[0]["params"]["context"]["isRetrigger"], json!(true));
+        assert_eq!(
+            again[0]["params"]["context"]["activeSignatureHelp"]["signatures"][0]["label"],
+            json!("fn push_str(&mut self, string: &str)"),
+            "the answer that was showing did not go back with the question: {:?}",
+            again[0]["params"]["context"]
+        );
+    }
+
+    /// Somebody else's prose may not take the signature off the screen.
+    ///
+    /// The box is as tall as what it holds, so a server that sends a
+    /// paragraph makes a tall one -- and a tall one fits neither above the
+    /// cursor nor below it on a short terminal. Giving up there is the doc
+    /// comment winning over the thing it is about. So it is drawn on the
+    /// roomier side with as much as that side holds, losing rows from the
+    /// bottom, where the least important of them are.
+    ///
+    /// Broken deliberately by going back to `return None` where it fits
+    /// neither side: at twelve rows the panel is still there and at ten it
+    /// is gone, which is the cursor's own line deciding whether the reader
+    /// gets an answer.
+    #[test]
+    fn a_long_answer_does_not_take_the_signature_off_the_screen() {
+        // Seven rows is the floor of it: the box has one row inside, and it
+        // goes on the call the cursor is in rather than on a count of the
+        // ones there was no room for.
+        for height in [7, 8, 10, 12, 16] {
+            let (_scratch, mut app) = editing(
+                &format!("signature-tall-{height}"),
+                "fn main() {\n    write(\n}\n",
+            );
+            support::lay_out(&mut app, 50, height);
+            support::press(&mut app, crossterm::event::KeyCode::Down);
+            support::press(&mut app, crossterm::event::KeyCode::End);
+            app.signature_for_test(json!({
+                "signatures": [
+                    { "label": "fn write(first: &str, second: &str)",
+                      "documentation": "A paragraph of documentation long enough to wrap over several rows of a narrow panel, which is what makes the box tall.",
+                      "parameters": [{ "label": [9, 20] }, { "label": [22, 34] }],
+                      "activeParameter": 0 },
+                    { "label": "fn write(n: u64)" },
+                    { "label": "fn write(b: bool)" }
+                ],
+                "activeSignature": 0
+            }));
+            let dump = support::render(&mut app, 50, height);
+            assert!(
+                support::text_block(&dump).contains("fn write(first"),
+                "at {height} rows the signature is nowhere:\n{dump}"
+            );
+        }
+    }
+
+    /// And a clipped box is as tall as what actually goes in it.
+    ///
+    /// The prose wants a rule as well as a row, so a box clipped to one row
+    /// short of both loses both -- and a height that counted them anyway is
+    /// a box with a blank row at the foot. Broken deliberately by taking the
+    /// second `plan` out of `layout`, which is the height being measured
+    /// from what there was and the filling from what there was room for.
+    #[test]
+    fn a_clipped_box_has_no_blank_row_in_it() {
+        let (_scratch, mut app) = editing("signature-blank", "fn main() {\n    write(\n}\n");
+        support::lay_out(&mut app, 46, 10);
+        support::press(&mut app, crossterm::event::KeyCode::Down);
+        support::press(&mut app, crossterm::event::KeyCode::End);
+        app.signature_for_test(json!({
+            "signatures": [
+                { "label": "fn write(first: &str, second: &str)",
+                  "documentation": "A paragraph long enough to wrap over several rows of a narrow panel, which is what makes the box tall.",
+                  "parameters": [{ "label": [9, 20] }, { "label": [22, 34] }],
+                  "activeParameter": 0 },
+                { "label": "fn write(n: u64)" },
+                { "label": "fn write(b: bool)" }
+            ],
+            "activeSignature": 0
+        }));
+
+        let dump = support::render(&mut app, 46, 10);
+        let blank = support::text_block(&dump).lines().find(|row| {
+            let Some(from) = row.find('\u{2502}') else {
+                return false;
+            };
+            let Some(to) = row.rfind('\u{2502}') else {
+                return false;
+            };
+            to > from && row[from + '\u{2502}'.len_utf8()..to].trim().is_empty()
+        });
+        assert!(
+            blank.is_none(),
+            "there is a row of the box with nothing in it:\n{dump}"
+        );
+    }
+
+    /// And the count is about what was left out, not about the cap.
+    ///
+    /// A box too short for five labels draws the ones that fit, and what it
+    /// says about the rest has to be the rest -- `+2` under three of seven
+    /// is a panel saying two of them are missing when four are. Broken
+    /// deliberately by writing `signature.more()`, which counts only the
+    /// ones the cap dropped.
+    #[test]
+    fn the_count_is_about_what_was_left_out() {
+        let (_scratch, mut app) = editing("signature-count", "fn main() {\n    write(\n}\n");
+        support::lay_out(&mut app, 50, 9);
+        support::press(&mut app, crossterm::event::KeyCode::Down);
+        support::press(&mut app, crossterm::event::KeyCode::End);
+        let overloads: Vec<serde_json::Value> = (0..7)
+            .map(|which| json!({ "label": format!("fn write(n{which}: u8)") }))
+            .collect();
+        app.signature_for_test(json!({
+            "signatures": overloads,
+            "activeSignature": 0
+        }));
+
+        let dump = support::render(&mut app, 50, 9);
+        let rows = support::text_block(&dump);
+        let drawn = (0..7)
+            .filter(|which| rows.contains(&format!("fn write(n{which}: u8)")))
+            .count();
+        assert!(
+            drawn < 7,
+            "the box was not short enough for this to be about anything:\n{dump}"
+        );
+        assert!(
+            rows.contains(&format!("+{}", 7 - drawn)),
+            "{drawn} of seven are drawn, so the count should say {}:\n{dump}",
+            7 - drawn
+        );
+    }
+
+    /// The bracket that opens a call does not open a list of the scope.
+    ///
+    /// rust-analyzer puts `(` in both of its lists -- `["(", ",", "<"]` for
+    /// the call and `[":", ".", "'", "("]` for what could be typed -- so
+    /// typing one used to ask both, and the panel that won was the one the
+    /// reader did not need: `self::`, `crate::`, every macro in scope,
+    /// drawn over the call they had just opened, with the signature behind
+    /// it until they pressed escape. A character in both lists is the
+    /// reader opening a call, and the nearer question there is what the
+    /// call takes.
+    ///
+    /// Read off the wire, because what is being tested is a question that
+    /// is *not* asked and nothing on screen can show that. Broken
+    /// deliberately by dropping `&& !self.triggers_signature(character)`,
+    /// which asks for both again.
+    #[test]
+    fn the_bracket_that_opens_a_call_does_not_open_the_list() {
+        use obelus_syntax::LanguageId;
+
+        let (_scratch, mut app) = editing("signature-not-both", "fn main() {\n    copy\n}\n");
+        let (sender, heard) = obelus_app::event::channel();
+        app.events_for_test(sender);
+        assert!(
+            app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+            "the echo would not start"
+        );
+        app.declared_for_test(
+            LanguageId::Rust,
+            json!({
+                "signatureHelpProvider": { "triggerCharacters": ["(", ",", "<"] },
+                "completionProvider": { "triggerCharacters": [":", ".", "'", "("] }
+            }),
+        );
+        support::press(&mut app, crossterm::event::KeyCode::Down);
+        support::press(&mut app, crossterm::event::KeyCode::End);
+
+        support::type_text(&mut app, "(");
+
+        // Both questions go down one channel, and the completion one -- if
+        // it were asked -- would be written first, because that is the order
+        // the typing asks them in. So this drains until the call's question
+        // arrives and looks at what came before it.
+        //
+        // Asking the channel for one method and then for the other does not
+        // work, and failing to notice that is how this test first shipped
+        // vacuous: the reader of it throws away what it is not looking for,
+        // so the first call ate the completion request and the second found
+        // an empty channel whatever the code did. It passed with the rule
+        // taken out.
+        let mut before: Vec<String> = Vec::new();
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let left = until.saturating_duration_since(std::time::Instant::now());
+            assert!(
+                !left.is_zero(),
+                "the call was never asked about; before it: {before:?}"
+            );
+            match heard.recv_timeout(left) {
+                Ok(obelus_app::event::Event::Lsp(obelus_lsp::Message { message, .. })) => {
+                    let Some(method) = message.get("method").and_then(serde_json::Value::as_str)
+                    else {
+                        continue;
+                    };
+                    if method == "textDocument/signatureHelp" {
+                        break;
+                    }
+                    before.push(method.to_string());
+                }
+                Ok(_) => {}
+                Err(_) => panic!("nothing more arrived; before the call: {before:?}"),
+            }
+        }
+        assert!(
+            !before
+                .iter()
+                .any(|method| method == "textDocument/completion"),
+            "the whole scope was offered over the call: {before:?}"
+        );
+
+        // And the punctuation that is only a completion trigger still is
+        // one: this is about the two lists overlapping, not about `.`.
+        support::type_text(&mut app, "x.");
+        let offered = support::heard_requests(&heard, "textDocument/completion", 1);
+        assert_eq!(
+            offered.len(),
+            1,
+            "a dot stopped offering what could follow it: {offered:?}"
+        );
+    }
+
+    /// A candidate that lands the caret in a call asks what the call takes.
+    ///
+    /// Choosing `copy(…)` puts the reader between the brackets without
+    /// anybody typing one, so the keystroke that would have asked never
+    /// happens -- and the panel a reader most expects is the one after they
+    /// have just picked the function. Broken deliberately by taking the
+    /// `behind_cursor` block out of `accept_completion`: nothing is asked,
+    /// and the reader sits in the brackets with no answer until they type a
+    /// comma.
+    #[test]
+    fn a_candidate_that_lands_the_caret_in_a_call_asks_what_it_takes() {
+        use obelus_syntax::LanguageId;
+
+        let (_scratch, mut app) = editing("signature-accepted", "fn main() {\n    cop\n}\n");
+        let (sender, heard) = obelus_app::event::channel();
+        app.events_for_test(sender);
+        assert!(
+            app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+            "the echo would not start"
+        );
+        app.declared_for_test(
+            LanguageId::Rust,
+            json!({ "signatureHelpProvider": { "triggerCharacters": ["(", ",", "<"] } }),
+        );
+        support::press(&mut app, crossterm::event::KeyCode::Down);
+        support::press(&mut app, crossterm::event::KeyCode::End);
+
+        // The shape a real rust-analyzer sends, holes and all -- measured
+        // against one rather than invented: `copy(${1:from}, ${2:to})$0`.
+        // The difference is the whole of this test. A hole with a default
+        // in it is *selected*, so the caret lands at the end of `from`
+        // rather than against the bracket -- and the first version of this
+        // test used `copy($1)$0`, whose empty hole puts the caret exactly
+        // where the rule was then looking. It passed, and nothing worked.
+        app.complete_for_test(json!([{
+            "label": "copy(…)",
+            "kind": 3,
+            "insertText": "copy(${1:from}, ${2:to})$0",
+            "insertTextFormat": 2
+        }]));
+        support::press(&mut app, crossterm::event::KeyCode::Enter);
+        assert_eq!(
+            text(&app),
+            "fn main() {\n    copy(from, to)\n}\n",
+            "the candidate did not go in as a snippet"
+        );
+        // And the caret is *not* against the bracket, which is what makes
+        // this the case that was broken rather than the one that worked.
+        assert!(
+            app.current_buffer().is_some_and(|buffer| {
+                buffer.cursor().column.get() != "    copy(".chars().count()
+            }),
+            "the caret is against the bracket, so this is not the shape a server sends"
+        );
+
+        let asked = support::heard_requests(&heard, "textDocument/signatureHelp", 1);
+        assert_eq!(
+            asked.len(),
+            1,
+            "nothing asked what the call the caret is now inside takes: {asked:?}"
+        );
+        // 3 is `ContentChange`: the document moved under the caret. Nobody
+        // typed this bracket, and the reader did not ask either.
+        assert_eq!(asked[0]["params"]["context"]["triggerKind"], json!(3));
+    }
+
+    /// An offset the protocol counts in UTF-16 is read as one.
+    ///
+    /// `ParameterInformation.label` offsets are code units, which the spec
+    /// says in as many words -- and `as usize` reads them as characters.
+    /// The two agree on everything in the basic multilingual plane and part
+    /// company on the first astral one, and what is marked afterwards is
+    /// the wrong part of the label.
+    ///
+    /// The helper has a test of its own in `obelus-text`; this one is about
+    /// the wiring, because a conversion nothing calls is a conversion that
+    /// fixes nothing. Broken deliberately by going back to `*from as usize`
+    /// in `marked`, which marks `: &str, who` instead of the argument.
+    #[test]
+    fn an_offset_counted_in_utf16_is_read_as_one() {
+        use obelus_lsp::signature::in_reply;
+
+        let label = "fn wave(\u{1f44b}: &str, who: &str)";
+        let at = label.find("who").expect("the second parameter");
+        let units = |up_to: usize| -> usize { label[..up_to].chars().map(char::len_utf16).sum() };
+        let found = in_reply(&Ok(json!({
+            "signatures": [{
+                "label": label,
+                "parameters": [
+                    { "label": [units(8), units(label.find(',').expect("the comma"))] },
+                    { "label": [units(at), units(label.len() - 1)] }
+                ],
+                "activeParameter": 1
+            }],
+            "activeSignature": 0
+        })))
+        .expect("a signature");
+
+        let (from, to) = found.signatures[0].active.expect("the mark");
+        let characters: Vec<char> = label.chars().collect();
+        let marked: String = characters[from..to].iter().collect();
+        assert_eq!(
+            marked, "who: &str",
+            "the offsets were read as characters, so the mark landed elsewhere"
+        );
     }
 
     /// A closing bracket ends the call, so it ends the panel.
+    ///
+    /// Where the server did not name it as one to ask again on: with no
+    /// `retriggerCharacters` there is nobody to ask, and a panel about a
+    /// call the reader has closed is a panel about somewhere they have left.
     #[test]
     fn the_panel_goes_when_the_call_does() {
         let (_scratch, mut app) = editing("signature-closed", "fn main() {\n    push_str(\n}\n");

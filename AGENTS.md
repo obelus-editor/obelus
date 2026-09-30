@@ -1369,13 +1369,18 @@ src/
                     is somewhere to go, the transcript's cursor stands only
                     on rows that do something, a run of tool calls is one
                     row, thinking is not folded away (chat); a setting is
-                    two rows, and a name and a gloss (settings)
+                    two rows, and a name and a gloss (settings); what a call
+                    takes is about a place, and somebody else's text is
+                    capped (signature)
   counts.rs       how much code is here: tokei's walk, in the two orderings
                   the view reads it in
   reading/        what a file is when it is not code: markdown, a log
                   · a log's format is decided by its lines, not its name
   syntax/         language registry (15 languages), parsing, highlights, tags
-  lsp/            transport, client, actions, positions, outline
+  lsp/            transport, client, actions, positions, outline, the call
+                  the cursor is inside
+                  · a parameter nothing is on is not the first parameter, and
+                    every signature the server sent is kept (signature)
   git/            gix, reading only: head text, statuses, hunks, blame, history
                   · the diff base is the blob a checkout would write, and
                     reading it must not run anything (mod); a blame is about
@@ -1403,7 +1408,9 @@ src/
                     what a region *is* and the front end says what that
                     looks like, nothing may be said there that the cells do
                     not already say in their own way, and what is said
-                    carries enough to be checked against them (shapes)
+                    carries enough to be checked against them (shapes); the
+                    argument being marked is the one thing that may not be
+                    clipped away (signature)
   gui/            the window: what a screenful of cells becomes when it is
                   not a terminal -- the grid on its way over, the glyphs,
                   the quads, and the one clock the window keeps
