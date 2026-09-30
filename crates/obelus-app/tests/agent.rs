@@ -6481,6 +6481,63 @@ fn a_value_the_agent_no_longer_offers_is_not_sent() {
     );
 }
 
+/// The conversation opened only to ask what the agent offers is not taken
+/// for a real one, whatever the agent says about it afterwards.
+///
+/// An agent writes about a session in the same breath as the answer that
+/// names it, on either side of it. The fixture says what it can be set to
+/// just before, and what it takes with a slash just after -- and those
+/// words used to be answered as if a conversation held the session: the
+/// reader's standing choice sent to a session the agent was about to be
+/// asked to delete, and the session kept in Obelus's mirror for good.
+///
+/// Deliberate break: take the guard out of the `Update::Settings` arm in
+/// `on_acp`, and the word before the answer -- which nothing yet knows is
+/// about a session thrown away -- is answered: the log has
+/// `session/set_config_option s-1`. The other half, a word arriving after
+/// the session has been let go, this cannot make happen on demand: here
+/// the word after the answer still reaches the mirror before the answer
+/// does, and is cleared with the rest. `Talk`'s own test feeds it both
+/// orders instead.
+#[test]
+fn a_conversation_opened_to_ask_is_not_answered_as_one() {
+    let (mut app, events) = wired();
+    let root = agents_root_for("thrown");
+    std::fs::create_dir_all(&root).expect("the root");
+    app.agents_root_for_test(root.clone());
+    let log = root.join("asked.log");
+    let mut config = obelus_config::Config::default();
+    config.set_agent_default("fake", "model", "careful");
+    app.configure(config, Vec::new());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &[
+            "tests/fixtures/fake-agent.sh".to_string(),
+            "tells-settings".to_string(),
+            format!("log={}", log.display()),
+        ],
+    );
+    app.learn_what_the_agent_offers_for_test();
+
+    let asked = || std::fs::read_to_string(&log).unwrap_or_default();
+    pump(&mut app, &events, "the session to be let go", |_| {
+        asked().contains("session/delete s-1")
+    });
+    // And a moment more, for whatever the agent wrote after the answer to
+    // reach the loop and be answered, if it is going to be.
+    settle(&mut app, &events, Duration::from_millis(300));
+    assert!(
+        !asked().contains("session/set_config_option s-1"),
+        "a choice was sent to a conversation nobody holds:\n{}",
+        asked()
+    );
+    assert!(
+        !app.agent_holds_for_test("s-1"),
+        "the conversation opened to ask is still held"
+    );
+}
+
 /// Activating an agent asks it what it can be set to, on a conversation of
 /// its own, and leaves the reader's alone.
 ///

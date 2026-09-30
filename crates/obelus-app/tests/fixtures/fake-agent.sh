@@ -118,6 +118,17 @@ at_once=''
 # A client reads this and asks the one way that works, rather than asking
 # the fullest and reading the error.
 again='load'
+# Whether it says what it can be set to again, unasked, in the breath before
+# the answer that opens the session -- which agents are free to do, and
+# which is how a conversation opened only to ask came to be answered as if
+# it were real: before that answer arrives, nothing on the client's side
+# knows the session is not one.
+tells=''
+# Where it writes down every request it is sent, one line each: the method
+# and the session it names. Nothing a client asks is visible from the
+# outside otherwise, and some of what Obelus owes an agent is a request --
+# a session it no longer wants, let go -- or the absence of one.
+log=''
 for word in "$@"; do
     case "$word" in
         mode-as-option) both_ways='yes' ;;
@@ -126,6 +137,8 @@ for word in "$@"; do
         asks-at-once) at_once='yes' ;;
         only-resumes) again='resume' ;;
         forgets) again='none' ;;
+        tells-settings) tells='yes' ;;
+        log=*) log="${word#log=}" ;;
     esac
 done
 
@@ -165,6 +178,12 @@ while IFS= read -r line; do
     named="$(session_of "$line")"
     if [ -n "$named" ]; then
         session="$named"
+    fi
+    if [ -n "$log" ]; then
+        method=$(printf '%s' "$line" | sed -n 's/.*"method":"\([^"]*\)".*/\1/p')
+        if [ -n "$method" ]; then
+            printf '%s %s\n' "$method" "$named" >>"$log"
+        fi
     fi
     case "$line" in
         *'"method":"initialize"'*)
@@ -211,6 +230,11 @@ while IFS= read -r line; do
         *'"method":"session/new"'*)
             opened=$((opened + 1))
             session="s-$opened"
+            # What it can be set to, before the answer, where it was told
+            # to.
+            if [ -n "$tells" ] && [ -z "$bare" ]; then
+                printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"config_option_update","configOptions":%s}}}\n' "$(options)"
+            fi
             if [ -n "$bare" ]; then
                 printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"'"$session"'"}}\n' "$(id_of "$line")"
             else
@@ -755,6 +779,13 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","id":%s,"result":{"modes":{"currentModeId":"ask","availableModes":[{"id":"ask","name":"ask first"},{"id":"code","name":"write code"}]},"configOptions":%s}}\n' "$(id_of "$line")" "$(options)"
             ;;
         *'"method":"session/delete"'*)
+            set_turn "$session" ''
+            printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$(id_of "$line")"
+            ;;
+        # Answered too, though delete always works here: a request with no
+        # answer holds the client's loop shut behind it, and close is what
+        # a client falls back on.
+        *'"method":"session/close"'*)
             set_turn "$session" ''
             printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$(id_of "$line")"
             ;;

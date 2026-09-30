@@ -99,6 +99,15 @@ impl App {
         self.ask_for_a_session(Whose::Whoever, had);
     }
 
+    /// Whether the running agent holds a conversation by this name, for a
+    /// test about one Obelus should have let go.
+    #[must_use]
+    pub fn agent_holds_for_test(&self, session: &str) -> bool {
+        self.talker
+            .as_ref()
+            .is_some_and(|talker| talker.holds(&acp::SessionId::new(session)))
+    }
+
     /// Which conversation the one on screen is, by the agent's name for it.
     ///
     /// The one it asked for where an answer has not arrived, because those
@@ -2388,7 +2397,7 @@ impl App {
             // What an agent can be set to is about the agent: the
             // conversation it was asked on was opened for the asking and
             // let go before this arrived.
-            | acp::Incoming::Offers(_)
+            | acp::Incoming::Offers { .. }
             | acp::Incoming::Failed(..)
             | acp::Incoming::Gone(_)
             | acp::Incoming::Ask { .. }
@@ -2725,7 +2734,7 @@ impl App {
         }
         // What came back from asking on a conversation of Obelus's own.
         // It names none, because by the time it arrives there is none.
-        if let acp::Incoming::Offers(offers) = &incoming {
+        if let acp::Incoming::Offers { offers, .. } = &incoming {
             let offers = offers.clone();
             self.write_down_what_the_agent_starts_on(&offers);
             return;
@@ -2738,7 +2747,19 @@ impl App {
             update: acp::Update::Settings(_),
         } = &incoming
         {
+            // Only for a session a conversation holds. The one opened to
+            // ask what the agent offers can say so before the answer that
+            // names it arrives, and before that answer nothing knows it is
+            // not a real one -- so this asks the conversations rather
+            // than the connection. A real session that says it this early
+            // loses nothing: `Started` does both of these itself.
             let session = session.clone();
+            if self
+                .conversation_at(|talk| talk.session.as_ref() == Some(&session))
+                .is_none()
+            {
+                return;
+            }
             self.keep_what_the_agent_offers(&session, false);
             self.start_the_session_on_what_was_chosen(&session);
             return;
@@ -2930,7 +2951,7 @@ impl App {
             // conversation to name, the other because there is none.
             acp::Incoming::Ready { .. }
             | acp::Incoming::Started { .. }
-            | acp::Incoming::Offers(_) => {}
+            | acp::Incoming::Offers { .. } => {}
         }
     }
 

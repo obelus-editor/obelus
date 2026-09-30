@@ -363,11 +363,18 @@ pub enum Incoming {
     /// What the agent says it can be set to, asked on a session of its own
     /// and with nothing else in it.
     ///
-    /// No session on it, because by the time this arrives there is none:
-    /// the session was opened to ask, read, and let go, all on the far
-    /// side of this message. So this is about the *agent* -- which is what
-    /// a page about what conversations should start on is about.
-    Offers(Vec<Setting>),
+    /// About the *agent*, not a conversation -- which is what a page about
+    /// what conversations should start on is about. The session is named
+    /// all the same, and only so that it can be forgotten: the agent is
+    /// free to write about it before and after the answer that names it,
+    /// and what it writes is about a conversation nobody holds. See
+    /// `Talk::on`.
+    Offers {
+        /// The session that was opened to ask, and let go.
+        session: SessionId,
+        /// What it offers.
+        offers: Vec<Setting>,
+    },
     /// Something did not work: what Obelus was doing, and what it said.
     Failed(&'static str, String),
     /// A conversation Obelus asked to pick up again is not there any more.
@@ -1514,9 +1521,11 @@ async fn talk(
                             let asking = NewSessionRequest::new(root.to_path_buf());
                             match connection.send_request(asking).block_task().await {
                                 Ok(opened) => {
-                                    let _ = events
-                                        .send(Event::Acp(Incoming::Offers(offers_in(&opened))));
                                     let session = opened.session_id.clone();
+                                    let _ = events.send(Event::Acp(Incoming::Offers {
+                                        session: session.clone(),
+                                        offers: offers_in(&opened),
+                                    }));
                                     // Let go the way a conversation about
                                     // a deleted note is, and by the same
                                     // two names: an agent left holding a

@@ -102,6 +102,17 @@ pub struct Talk {
     /// the first thing said is what carries it and the first thing said is
     /// what gets held.
     held: Option<(Vec<link::Said>, Option<String>)>,
+    /// The sessions opened only to ask what the agent offers, and let go.
+    ///
+    /// Kept for the life of the connection, because an agent is free to
+    /// write about one after it has been let go -- the list of commands it
+    /// takes usually arrives in the breath after the answer that named it
+    /// -- and a word about a session nobody holds is a word to drop. Let
+    /// through, it made a conversation of its own in `sessions` that
+    /// nothing ever removed, and one saying what it offers was taken for a
+    /// real one's and answered with the reader's choices, to a session the
+    /// agent had already deleted.
+    thrown: std::collections::HashSet<SessionId>,
     /// How many turns have been asked for on this connection.
     ///
     /// The last number handed out, and the next one is one more. On the
@@ -254,6 +265,7 @@ impl Talk {
             gone: None,
             sessions: std::collections::HashMap::new(),
             held: None,
+            thrown: std::collections::HashSet::new(),
             turns: 0,
         }
     }
@@ -305,6 +317,12 @@ impl Talk {
             || self
                 .session(session)
                 .is_some_and(|open| open.turn.is_some())
+    }
+
+    /// Whether a conversation by this name is open on it.
+    #[must_use]
+    pub fn holds(&self, session: &SessionId) -> bool {
+        self.sessions.contains_key(session)
     }
 
     /// One conversation, by the name the agent gave it.
@@ -582,7 +600,21 @@ impl Talk {
     /// The same shape the language server's client has: what the protocol
     /// needs is dealt with here, and what a reader needs to see goes on.
     pub fn on(&mut self, incoming: Incoming) -> Option<Incoming> {
+        // Before anything else looks at it: a session thrown away is one
+        // whose every word is about nothing.
+        if let Incoming::Update { session, .. } = &incoming
+            && self.thrown.contains(session)
+        {
+            return None;
+        }
         match incoming {
+            Incoming::Offers { session, offers } => {
+                // And what it said before the answer that named it, which
+                // is already in here as a conversation of its own.
+                self.sessions.remove(&session);
+                self.thrown.insert(session.clone());
+                Some(Incoming::Offers { session, offers })
+            }
             Incoming::Ready { named, carries } => {
                 self.info = named;
                 self.carries = Some(carries);
@@ -726,5 +758,61 @@ impl Talk {
             }
             other => Some(other),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A handle with no agent behind it: what it is sent goes nowhere,
+    /// and what it is told is whatever the test says.
+    fn detached() -> Talk {
+        let (asks, _) = mpsc::unbounded();
+        Talk {
+            id: "fake".to_string(),
+            asks,
+            info: None,
+            carries: None,
+            gone: None,
+            sessions: std::collections::HashMap::new(),
+            held: None,
+            thrown: std::collections::HashSet::new(),
+            turns: 0,
+        }
+    }
+
+    /// A session opened only to ask is forgotten, whatever the agent says
+    /// about it and whenever it says it.
+    ///
+    /// Both orders, because the agent picks: what it writes in the breath
+    /// before the answer that names the session reaches here first as
+    /// often as not. Deliberate break: take the `remove` out of the
+    /// `Offers` arm and the first half fails -- the commands said early
+    /// made a conversation nothing ever let go. Take out the check at the
+    /// top of `on` and the second does, and a word about a deleted
+    /// session is passed up to be answered.
+    #[test]
+    fn a_session_opened_to_ask_is_forgotten() {
+        let mut talk = detached();
+        let thrown = SessionId::new("s-1");
+        let early = talk.on(Incoming::Update {
+            session: thrown.clone(),
+            update: Update::Orders(Vec::new()),
+        });
+        assert!(early.is_none());
+        let answered = talk.on(Incoming::Offers {
+            session: thrown.clone(),
+            offers: Vec::new(),
+        });
+        assert!(matches!(answered, Some(Incoming::Offers { .. })));
+        assert!(!talk.holds(&thrown), "what it said early is still held");
+
+        let late = talk.on(Incoming::Update {
+            session: thrown.clone(),
+            update: Update::Settings(Vec::new()),
+        });
+        assert!(late.is_none(), "a word about it was passed up");
+        assert!(!talk.holds(&thrown), "what it said late is held");
     }
 }
