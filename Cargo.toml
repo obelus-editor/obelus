@@ -155,21 +155,20 @@ tree-sitter-ocaml = "0.26"
 tree-sitter-php = "0.24"
 tree-sitter-ruby = "0.23"
 tree-sitter-scala = "0.26"
-# No markdown: it is two grammars, a block one and an inline one, which the
-# one-grammar-per-language registry cannot express. It needs the injection
-# machinery Obelus does not have yet.
+# Markdown is two grammars, a block one and an inline one, which is why it
+# is a pair of `LanguageId`s and not one: the block grammar parses the
+# structure of a document, and what is inside a paragraph is parsed from the
+# ranges its injection query hands over. It was left out while there was no
+# injection machinery to express that, and this note said so.
+tree-sitter-md = "0.5.3"
 unicode-width = "0.2"
 
 anyhow = "1"
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-tree-sitter-md = "0.5.3"
-# Markdown for a terminal: the parse and the layout, not the painting. Its
-# `FmtText` is a list of lines of styled compounds, which is exactly the
-# structure Obelus needs and none of the escape sequences it must not have --
-# Obelus writes cells, not ANSI. It is on crossterm 0.29, the same one pinned
-# above, so there is still one crossterm in the tree.
+# The clipboard's OSC 52, which is a terminal escape with the selection
+# encoded into it.
 base64 = "0.23.1"
 # Line diffs whose hunks agree with git's, because it implements the same
 # histogram algorithm. What "changed since HEAD" means has to be the same
