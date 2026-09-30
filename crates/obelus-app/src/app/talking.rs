@@ -143,6 +143,8 @@ impl App {
                 || std::mem::take(&mut talk.opening);
             talk.requested = None;
             talk.minted = false;
+            // Another agent, and what it offers is its own to say.
+            talk.said_not_offered.clear();
             talk.told = None;
             talk.started_on.clear();
             if had {
@@ -178,11 +180,7 @@ impl App {
         else {
             return;
         };
-        if self
-            .agents_root()
-            .and_then(|root| obelus_agent::installation(&id, &root))
-            .is_none()
-        {
+        if !self.the_chosen_agent_is_installed() {
             return;
         }
         if self
@@ -198,6 +196,22 @@ impl App {
         };
         talker.offers();
         self.agents.asking = Some(id);
+    }
+
+    /// Whether the agent the settings name has an install to start.
+    fn the_chosen_agent_is_installed(&self) -> bool {
+        let Some(id) = self
+            .settled
+            .config
+            .agent
+            .as_deref()
+            .filter(|id| !id.is_empty())
+        else {
+            return false;
+        };
+        self.agents_root()
+            .and_then(|root| obelus_agent::installation(id, &root))
+            .is_some()
     }
 
     /// The same, of whichever agent is running, for a test that started
@@ -314,11 +328,19 @@ impl App {
         // Started where it is not running, and again where it has stopped:
         // a conversation the reader has come to is one they are about to
         // talk in, which is what starting it again has always been for.
+        //
+        // Only one that is installed. Starting one that is not says so into
+        // the conversation, which is right when the reader has said
+        // something -- `say_in` does -- and is a line more on every visit
+        // when all they have done is look.
         if self
             .talker
             .as_ref()
             .is_none_or(obelus_agent::acp::Talk::has_exited)
         {
+            if !self.the_chosen_agent_is_installed() {
+                return;
+            }
             self.stop_agent();
             self.start_agent();
         }
@@ -375,6 +397,32 @@ impl App {
         }
     }
 
+    /// Forgets every session and every request for one, because the agent
+    /// that gave them has gone.
+    ///
+    /// Not [`App::let_the_conversations_go`], which is about another agent
+    /// and says so in each: this is the same one, started again when a
+    /// conversation is next shown or spoken in, and a conversation about a
+    /// note takes its own up again by the name written down.
+    fn forget_what_the_agent_held(&mut self) {
+        for document in &mut self.documents {
+            let Some(talk) = document.as_mut().and_then(Document::chat_mut) else {
+                continue;
+            };
+            talk.session = None;
+            talk.asked_for = None;
+            talk.opening = false;
+            talk.requested = None;
+            talk.minted = false;
+            talk.started_on.clear();
+            // Claimed by the session's name, which has gone; a note's is
+            // claimed by the note.
+            if talk.topic == Topic::Loose {
+                talk.claim = None;
+            }
+        }
+    }
+
     /// Asks the agent for the conversation `whose` names.
     ///
     /// `had` is the one it wants taken up again, where Obelus wrote a name
@@ -412,6 +460,15 @@ impl App {
             .is_some_and(|talk| talk.session.is_some() || talk.asked_for.is_some() || talk.opening);
         if settled {
             return;
+        }
+        // Asked, whichever way it was asked -- the reader's first words, a
+        // test, the frame -- so the frame does not ask again this showing.
+        // Which matters most when the agent dies under the conversation on
+        // screen: its session goes, and the frame after would start the
+        // agent again behind the reader's back, where what the page says is
+        // that it stopped and that talking starts it.
+        if let Some(talk) = self.talk_mut(whose) {
+            talk.asked_while_shown = true;
         }
         let Some(talker) = self.talker.as_mut() else {
             return;
@@ -1135,6 +1192,13 @@ impl App {
             .unwrap_or_default();
 
         let name = self.agent_called(&agent);
+        let said_already = self
+            .conversation_at(|talk| talk.session.as_ref() == Some(session))
+            .and_then(|at| self.documents.get(at))
+            .and_then(Option::as_ref)
+            .and_then(Document::chat)
+            .map(|talk| talk.said_not_offered.clone())
+            .unwrap_or_default();
         let mut asked = Vec::new();
         let mut gone = Vec::new();
         for setting in &settings {
@@ -1150,8 +1214,9 @@ impl App {
             // A value it does not offer any more is left alone rather than
             // sent and refused, and said: the settings page is where the
             // reader can do something about it, and this is where they
-            // find out there is something to do. Counted as asked, so it
-            // is said once.
+            // find out there is something to do. Counted as asked, and said
+            // once a conversation rather than once a session -- see
+            // `Conversation::said_not_offered`.
             if setting.name_of(value).is_none() {
                 tracing::debug!(
                     setting = setting.id,
@@ -1159,12 +1224,19 @@ impl App {
                     "what was chosen is not offered any more"
                 );
                 asked.push(setting.id.clone());
+                if said_already.contains(&setting.id) {
+                    continue;
+                }
                 // Not opening on the agent's name, for the reason the
                 // settings page's line does not: see `Shown::warning`.
-                gone.push(format!(
-                    "No longer offered by {name}: {value} for {}, so this conversation is on {}",
-                    setting.name,
-                    setting.current_name().unwrap_or(&setting.current)
+                gone.push((
+                    setting.id.clone(),
+                    format!(
+                        "No longer offered by {name}: {value} for {}, so this conversation is \
+                         on {}",
+                        setting.name,
+                        setting.current_name().unwrap_or(&setting.current)
+                    ),
                 ));
                 continue;
             }
@@ -1190,8 +1262,9 @@ impl App {
             .and_then(Document::chat_mut)
         {
             talk.started_on.extend(asked);
-            for line in &gone {
-                talk.chat.note(line);
+            for (id, line) in gone {
+                talk.chat.note(&line);
+                talk.said_not_offered.insert(id);
             }
         }
     }
@@ -2593,13 +2666,22 @@ impl App {
             // the first answer went to whichever was first in the list.
             // Then the one that asked for this name, and only then the
             // first that has none, for an answer nothing numbered.
-            let answered = asking
-                .and_then(|asking| self.conversation_at(|talk| talk.requested == Some(asking)));
-            let asked = answered
-                .or_else(|| self.conversation_at(|talk| talk.asked_for.as_ref() == Some(&session)))
-                .or_else(|| {
-                    self.conversation_at(|talk| talk.session.is_none() && talk.asked_for.is_none())
-                });
+            //
+            // Only an answer nothing numbered falls back that far. One whose
+            // number nobody holds is about a conversation that has gone --
+            // closed before its session came -- and the first with none was
+            // a conversation waiting on a request of its own, which it then
+            // lost.
+            let asked = match asking {
+                Some(asking) => self.conversation_at(|talk| talk.requested == Some(*asking)),
+                None => self
+                    .conversation_at(|talk| talk.asked_for.as_ref() == Some(&session))
+                    .or_else(|| {
+                        self.conversation_at(|talk| {
+                            talk.session.is_none() && talk.asked_for.is_none()
+                        })
+                    }),
+            };
             // Whether this one was minted rather than taken up again, which
             // decides whether what it arrives set to is the agent's own
             // answer or whatever that conversation was left on -- and
@@ -2661,10 +2743,11 @@ impl App {
         // What came back from asking on a conversation of Obelus's own.
         // It names none, because by the time it arrives there is none.
         if let acp::Incoming::Offers { offers, .. } = &incoming {
-            // For the agent that answered, which is the one running.
-            if let Some(talker) = self.talker.as_ref()
-                && !offers.is_empty()
-            {
+            // For the agent that answered, which is the one running. Empty
+            // included: the answer to `session/new` is the whole of what it
+            // offers, and nothing is an answer -- not the silence of an
+            // agent that would not say.
+            if let Some(talker) = self.talker.as_ref() {
                 self.agents.offers = Some((talker.id().to_string(), offers.clone()));
             }
             self.agents.asking = None;
@@ -2874,6 +2957,14 @@ impl App {
                 // stays, dead, because the view reads the state off it --
                 // and talking to it again is what starts the next one.
                 self.forget_the_question();
+                // And every conversation's session, and every request for
+                // one: the process that knew those names has gone, and the
+                // next one numbers its requests afresh. Left, a conversation
+                // looked settled -- showing it asked for nothing -- and what
+                // was typed into it went to a name nobody on the other end
+                // had given.
+                self.forget_what_the_agent_held();
+                self.agents.asking = None;
                 match why {
                     Some(why) => self.in_talk(whose, |chat| {
                         chat.note(&format!("The agent stopped: {why}"))

@@ -8003,3 +8003,353 @@ fn an_obelus_that_is_killed_gives_its_conversation_back() {
         app.talked_about().first() == Some(&obelus_component::todo::Talked::Not)
     });
 }
+
+/// The agent dying takes every conversation's session with it, so one the
+/// reader goes back to afterwards asks for another rather than talking into
+/// a name the new process never gave.
+///
+/// A process that has gone has taken its sessions with it; what a
+/// conversation was holding is a name nobody on the other end knows. Kept,
+/// it was a conversation that looked settled: showing it asked for nothing,
+/// and what the reader typed into it went to that name and nowhere.
+///
+/// Deliberate break: leave the conversations as they are in the `Gone` arm
+/// of `on_acp`. The words typed into the first conversation after the
+/// agent has been started again for the second are never answered.
+#[test]
+fn a_conversation_the_agent_died_under_asks_for_another() {
+    let scratch = support::Scratch::new("agent-died");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()),
+        "[[todo]]\nid = \"0123456R\"\nsaid = \"wire the counts tree up to the search\"\n\
+         done = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    // Chosen and installed, because starting it again is starting what the
+    // settings name, the way the install left it.
+    let root = agents_root_for("died");
+    std::fs::create_dir_all(&root).expect("the root");
+    the_fixture_is_installed(&root);
+    app.agents_root_for_test(root);
+    let config = obelus_config::Config {
+        agent: Some("fake".to_string()),
+        ..obelus_config::Config::default()
+    };
+    app.configure(config, Vec::new());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    // One conversation the reader has said something in.
+    app.open_agent();
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    support::type_text(&mut app, "/echo");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer", |app| {
+        said_in_transcript(app, "heard you")
+    });
+    let first = app.current_document_for_test().expect("the conversation");
+
+    // The agent dies.
+    support::type_text(&mut app, "/die");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the agent to go", |app| {
+        app.talking() == obelus_agent::Talking::Gone
+    });
+    // The reader goes to a note's conversation, which starts the agent
+    // again to ask for its session.
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    support::press_alt(&mut app, 'a');
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    pump(&mut app, &events, "the note's session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+
+    // And back to the first, where they say something again.
+    app.go_to_document_for_test(first);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    support::type_text(&mut app, "/echo again");
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        &events,
+        "an answer in the first conversation",
+        |app| {
+            app.chat().is_some_and(|chat| {
+                chat.rows(WIDTH)
+                    .iter()
+                    .filter(|row| row.text().contains("heard you"))
+                    .count()
+                    == 2
+            })
+        },
+    );
+}
+
+/// An answer about a request nobody is waiting on any more goes to nobody,
+/// rather than to a conversation that is waiting on a request of its own.
+///
+/// The reader opened a conversation and closed it before its session came.
+/// The answer to it named a request no conversation held, and the rule for
+/// an answer nothing numbered -- the first conversation with no session --
+/// handed it to the next conversation, which was waiting on its own: that
+/// one wore the wrong session, and its own answer went to nobody.
+///
+/// Deliberate break: fall back to the first conversation with no session
+/// whatever the answer's number, the way it did. The note's conversation
+/// ends up on `s-1`, the session asked for the one that was closed.
+#[test]
+fn an_answer_nobody_is_waiting_for_goes_to_nobody() {
+    let scratch = support::Scratch::new("agent-closed-opening");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()),
+        "[[todo]]\nid = \"0123456S\"\nsaid = \"wire the counts tree up to the search\"\n\
+         done = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    // A conversation opened -- which asks for its session -- and closed
+    // before the answer is read: nothing here takes events off the channel
+    // until the pump below.
+    app.open_agent();
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentClose);
+    // And a note's, which asks for its own.
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    support::press_alt(&mut app, 'a');
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    pump(&mut app, &events, "the note's session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    assert_eq!(
+        app.chat_session_for_test().as_deref(),
+        Some("s-2"),
+        "the note's conversation wears the session asked for another"
+    );
+}
+
+/// The settings page stops saying it is asking once the agent has gone.
+///
+/// Deliberate break: leave `agents.asking` alone in the `Gone` arm. The
+/// page says it is asking an agent that is not there to answer.
+#[test]
+fn the_settings_page_stops_asking_an_agent_that_has_gone() {
+    use obelus_command::Command;
+
+    let root = agents_root_for("asking-gone");
+    std::fs::create_dir_all(&root).expect("the root");
+    the_fixture_is_installed(&root);
+    let (mut app, _events) = wired();
+    app.agents_root_for_test(root);
+    let config = obelus_config::Config {
+        agent: Some("fake".to_string()),
+        ..obelus_config::Config::default()
+    };
+    app.configure(config, Vec::new());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, Command::ConfigOpen);
+    assert!(
+        app.agent_offering()
+            .and_then(|offering| offering.silence)
+            .is_some_and(|silence| silence.starts_with("Asking")),
+        "it never asked, so this proves nothing"
+    );
+    app.handle(Event::Agent(obelus_agent::Event::Acp(
+        obelus_agent::acp::Incoming::Gone(Some("it fell over".to_string())),
+    )));
+    let silence = app
+        .agent_offering()
+        .and_then(|offering| offering.silence)
+        .unwrap_or_default();
+    assert!(
+        !silence.starts_with("Asking"),
+        "the page is still asking an agent that has gone: {silence}"
+    );
+}
+
+/// An agent that answers that it has nothing to be set is not an agent
+/// that has not answered.
+///
+/// Deliberate break: throw away an empty answer in the `Offers` arm, the
+/// way it did. The page says it has heard nothing.
+#[test]
+fn an_agent_with_nothing_to_set_says_so() {
+    use obelus_command::Command;
+
+    let root = agents_root_for("nothing-to-set");
+    std::fs::create_dir_all(&root).expect("the root");
+    the_fixture_is_installed(&root);
+    let (mut app, events) = wired();
+    app.agents_root_for_test(root);
+    let config = obelus_config::Config {
+        agent: Some("fake".to_string()),
+        ..obelus_config::Config::default()
+    };
+    app.configure(config, Vec::new());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &[
+            "tests/fixtures/fake-agent.sh".to_string(),
+            "nothing-to-change".to_string(),
+        ],
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, Command::ConfigOpen);
+    let silence = |app: &App| {
+        app.agent_offering()
+            .and_then(|offering| offering.silence)
+            .unwrap_or_default()
+    };
+    pump(&mut app, &events, "the answer", |app| {
+        !silence(app).starts_with("Asking")
+    });
+    assert_eq!(silence(&app), "There is nothing to set for fake");
+}
+
+/// That a choice is not offered any more is said once in a conversation,
+/// however many sessions it has had.
+///
+/// A conversation nothing has been said in gets a new session each time
+/// the reader comes back to it, and what had been asked of the last one
+/// goes with it -- which is what the sentence was counted against.
+///
+/// Deliberate break: count what has been said against `started_on` again.
+/// Coming back says it a second time.
+#[test]
+fn a_choice_not_offered_is_said_once_however_many_sessions() {
+    let (mut app, events) = wired();
+    let mut config = obelus_config::Config::default();
+    config.set_agent_default("fake", "model", "brilliant");
+    app.configure(config, Vec::new());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.open_agent();
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    let said = |app: &App| {
+        app.chat().map_or(0, |chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .filter(|row| row.text().contains("No longer offered by"))
+                .count()
+        })
+    };
+    // Waited for rather than read at `Ready`: what the session is set to
+    // arrives after the answer that opens it.
+    pump(&mut app, &events, "it to be said", |app| said(app) == 1);
+
+    // Away to a file and back, with nothing said: a session of its own
+    // again.
+    app.open_buffer_for_test(support::open_fixture("sample.rs"));
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    app.open_agent();
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    pump(&mut app, &events, "a session of its own again", |app| {
+        app.chat_session_for_test().as_deref() == Some("s-2")
+            && app
+                .agent_settings()
+                .iter()
+                .any(|setting| setting.id == "model")
+    });
+    // And a moment more, for the settings to be answered if they will be.
+    settle(&mut app, &events, Duration::from_millis(300));
+    assert_eq!(said(&app), 1, "said again for the second session");
+}
+
+/// Installing the agent again does not ask the process still running the
+/// version before it.
+///
+/// The copy is thrown away because it is the old version's list; asked of
+/// the process that is still running that version, it came straight back.
+///
+/// Deliberate break: ask again in `on_installed`, the way it did. The log
+/// has a second `session/new`.
+#[test]
+fn installing_does_not_ask_the_version_before_it() {
+    use obelus_command::Command;
+
+    let root = agents_root_for("install-no-ask");
+    std::fs::create_dir_all(&root).expect("the root");
+    the_fixture_is_installed(&root);
+    let log = root.join("asked.log");
+    let (mut app, events) = wired();
+    app.agents_root_for_test(root);
+    let config = obelus_config::Config {
+        agent: Some("fake".to_string()),
+        ..obelus_config::Config::default()
+    };
+    app.configure(config, Vec::new());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &[
+            "tests/fixtures/fake-agent.sh".to_string(),
+            format!("log={}", log.display()),
+        ],
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, Command::ConfigOpen);
+    asked(&mut app, &events, &log, "session/delete s-1");
+    app.handle(Event::Agent(obelus_agent::Event::Installed {
+        id: "fake".to_string(),
+        failure: None,
+    }));
+    settle(&mut app, &events, Duration::from_millis(300));
+    let asked = std::fs::read_to_string(&log).unwrap_or_default();
+    assert_eq!(
+        asked.matches("session/new").count(),
+        1,
+        "the version before the install was asked again:\n{asked}"
+    );
+}
+
+/// Showing a conversation for an agent that is not installed does not say
+/// so into it every time.
+///
+/// Deliberate break: start the agent in `settle_the_sessions` without
+/// asking whether it is installed. Each visit adds a line.
+#[test]
+fn an_agent_not_installed_is_not_said_into_the_conversation_on_every_visit() {
+    let (mut app, _events) = wired();
+    let config = obelus_config::Config {
+        agent: Some("fake".to_string()),
+        ..obelus_config::Config::default()
+    };
+    app.configure(config, Vec::new());
+    for _ in 0..2 {
+        app.open_agent();
+        support::lay_out(&mut app, WIDTH, HEIGHT);
+        app.open_buffer_for_test(support::open_fixture("sample.rs"));
+        support::lay_out(&mut app, WIDTH, HEIGHT);
+    }
+    app.open_agent();
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    let said = app.chat().map_or(0, |chat| {
+        chat.rows(WIDTH)
+            .iter()
+            .filter(|row| row.text().contains("is not installed"))
+            .count()
+    });
+    assert_eq!(
+        said,
+        0,
+        "said on a visit, where it waits for a word:\n{}",
+        screen(&mut app)
+    );
+}

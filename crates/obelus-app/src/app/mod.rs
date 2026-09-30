@@ -1241,6 +1241,12 @@ impl App {
         self.current
     }
 
+    /// Goes back to a document the test was reading, by what
+    /// [`App::current_document_for_test`] said it was.
+    pub fn go_to_document_for_test(&mut self, id: DocumentId) {
+        self.go_to_document(id);
+    }
+
     /// How many *files* are open, for a test that wants to know whether a
     /// key that had nowhere to go left one behind anyway.
     ///

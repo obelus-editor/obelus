@@ -168,6 +168,16 @@ pub struct Conversation {
     /// level into being that was not there when the conversation opened,
     /// and that one has not been asked for yet.
     pub started_on: std::collections::BTreeSet<String>,
+    /// Which of the reader's choices it has said the agent no longer
+    /// offers, by the agent's id for the setting.
+    ///
+    /// Kept apart from `started_on` because the two last differently: a
+    /// conversation nothing has been said in has its session let go when
+    /// the reader leaves and gets another when they come back, and what was
+    /// asked of the last one goes with it -- while the sentence is about the
+    /// reader's settings, which have not moved, and said again it is the
+    /// same line down the page once for every visit.
+    pub said_not_offered: std::collections::BTreeSet<String>,
 }
 
 /// A place on the web the agent wants the reader to go: to sign in

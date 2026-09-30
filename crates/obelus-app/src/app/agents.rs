@@ -193,14 +193,20 @@ impl App {
             .agents
             .offers
             .as_ref()
-            .filter(|(whose, offers)| whose == id && !offers.is_empty())
+            .filter(|(whose, _)| whose == id)
             .map(|(_, offers)| offers.clone());
         let asking = self.agents.asking.as_deref() == Some(id);
         let (offers, silence) = match heard {
-            Some(offers) => (offers, None),
-            None if asking => (
+            Some(offers) if !offers.is_empty() => (offers, None),
+            _ if asking => (
                 Vec::new(),
                 Some(format!("Asking {name} what it can be set to")),
+            ),
+            // Answered, with nothing: which is not the same as not having
+            // answered, and is said in other words.
+            Some(_) => (
+                Vec::new(),
+                Some(format!("There is nothing to set for {name}")),
             ),
             None => (
                 Vec::new(),
@@ -561,14 +567,13 @@ impl App {
                 }
                 // Installed and nothing else in use: the reader pressed the
                 // button, so this is the one they want.
+                //
+                // Nothing is asked of the agent in use otherwise: the
+                // process running is the version before this one until it
+                // is started again, and what it offers is exactly the list
+                // just thrown away.
                 if self.config().agent.is_none() {
                     self.activate_agent(&id);
-                } else if self.settings.is_some() && self.config().agent.as_deref() == Some(&id) {
-                    // Asked again, on the page the reader is looking at.
-                    // Of the process that is running, which an update does
-                    // not stop: until it is started again it is the old
-                    // version answering.
-                    self.ask_what_the_agent_offers();
                 }
             }
         }

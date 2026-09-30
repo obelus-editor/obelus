@@ -387,13 +387,20 @@ impl Talk {
         let _ = self.asks.unbounded_send(Ask::Offers);
     }
 
-    /// Lets one go, because the note it was about has gone.
+    /// Lets one go: the note it was about has gone, or it was opened for a
+    /// view the reader left without saying anything.
     ///
     /// Told to the agent rather than only forgotten here: an agent left
     /// holding conversations nobody can reach is the same complaint that
     /// got the language server killed on the way out.
+    ///
+    /// And forgotten here for good: an agent writes about a session in the
+    /// breath after the answer that named it, and one let go a moment after
+    /// it opened hears that word after it has gone -- folded back in, it was
+    /// a conversation in the mirror for the rest of the connection.
     pub fn let_go(&mut self, session: &SessionId) {
         self.sessions.remove(session);
+        self.thrown.insert(session.clone());
         let _ = self.asks.unbounded_send(Ask::Drop {
             session: session.clone(),
         });
@@ -839,6 +846,34 @@ mod tests {
             thrown: std::collections::HashSet::new(),
             turns: 0,
         }
+    }
+
+    /// A session let go is forgotten, whatever the agent says about it
+    /// afterwards.
+    ///
+    /// An agent writes about a session in the breath after the answer that
+    /// named it, and one let go a moment after it opened -- a conversation
+    /// the reader left without a word -- hears that word after it has gone.
+    /// Folded back in, every one of those was a conversation in the mirror
+    /// for the rest of the connection.
+    ///
+    /// Deliberate break: take the `thrown` out of `let_go`, and the word
+    /// that arrives afterwards makes it a conversation that is held.
+    #[test]
+    fn a_session_let_go_is_forgotten() {
+        let mut talk = detached();
+        let gone = SessionId::new("s-1");
+        talk.on(Incoming::Started {
+            session: gone.clone(),
+            mode: None,
+            asking: None,
+        });
+        talk.let_go(&gone);
+        talk.on(Incoming::Update {
+            session: gone.clone(),
+            update: Update::Orders(Vec::new()),
+        });
+        assert!(!talk.holds(&gone), "what it said afterwards is held");
     }
 
     /// A session opened only to ask is forgotten, whatever the agent says
