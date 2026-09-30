@@ -285,21 +285,30 @@ impl<'a> PickerView<'a> {
 /// the same thing.
 #[must_use]
 pub fn region(picker: &Picker, editor: Rect) -> Rect {
-    let editor = room_for(picker, editor);
+    let room = room_for(picker, editor);
     match picker.layout() {
+        // The *editor*, not `room`, because [`preview_region`] takes the
+        // foot off itself and taking it off twice is not taking it off. Two
+        // rows fewer is enough to put the room under the threshold there and
+        // over it at the drawing, which asks with the room it was given --
+        // so the list was told it had the whole region while the preview was
+        // drawn across the bottom of it, and the rows underneath were rows
+        // the reader could not see but the window still had to be walked
+        // through. Six presses of the down key that did nothing, in the band
+        // of heights where the two answers differed.
         PickerLayout::FullArea => match preview_region(Some(picker), editor) {
             Some(_) => Rect {
-                height: list_region_rows(picker, editor.width),
-                ..editor
+                height: list_region_rows(picker, room.width),
+                ..room
             },
-            None => editor,
+            None => room,
         },
         PickerLayout::Compact { .. } => {
-            let wanted = picker.visible_rows(editor.height, editor.width);
+            let wanted = picker.visible_rows(room.height, room.width);
             Rect {
-                y: editor.y + editor.height - wanted,
+                y: room.y + room.height - wanted,
                 height: wanted,
-                ..editor
+                ..room
             }
         }
     }

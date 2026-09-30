@@ -2005,6 +2005,76 @@ fn a_full_area_list_previews_only_if_it_said_it_would() {
     );
 }
 
+/// The rows the list is settled on are the rows the reader can see.
+///
+/// `Window::settle` scrolls when the focus reaches the height it was told,
+/// so a height larger than what is drawn is a list that will not follow the
+/// focus: the reader walks off the last visible row and presses down into
+/// rows that are on the screen only in the arithmetic. It cost six presses
+/// here, and the cause was two answers to one question -- `region` asked
+/// `preview_region` about a rect it had already taken the foot off, and
+/// `preview_region` takes the foot off itself. Two rows is enough to put the
+/// room under `LEAST_PREVIEW_ROWS` on one path and over it on the other, so
+/// the list was given the whole region and the preview was drawn across the
+/// bottom of it.
+///
+/// Swept over every height rather than asserted at one, because the band
+/// where the two disagreed was three rows wide and which three depends on
+/// the tabs and on what the list says about itself: a test naming a height
+/// would have passed on the next list to be given a tab.
+///
+/// Broken deliberately by putting `room_for` back in front of the
+/// `preview_region` call in `picker::region`.
+#[test]
+fn a_list_with_a_preview_under_it_is_not_told_it_has_those_rows_too() {
+    use obelus_component::picker::{Picker, PickerLayout};
+    use obelus_ui::picker::{preview_region, region, rows_drawn, rows_region};
+    use ratatui::layout::Rect;
+
+    // With a foot and without, because the foot is what the two paths
+    // disagreed about: with no hints `footed` is the identity and asking
+    // twice costs nothing, so a list without one never showed this at all.
+    for tabs in [false, true] {
+        for foot in [false, true] {
+            let mut picker = Picker::new(items(&["a", "b", "c"]), PickerLayout::FullArea);
+            picker.previews();
+            if tabs {
+                picker.with_scopes(&["All", "Changed"]);
+            }
+            if foot {
+                picker.says_its_keys();
+            }
+
+            for height in 1..40u16 {
+                let room = Rect::new(0, 0, 80, height);
+                let Some(preview) = preview_region(Some(&picker), room) else {
+                    continue;
+                };
+                // The rule between them is the row above the preview, so
+                // the list has to end before that row: ending level with the
+                // preview would already be a list drawn under its own rule.
+                let list = region(&picker, room);
+                assert!(
+                    list.y + list.height < preview.y,
+                    "at height {height} (tabs {tabs}, foot {foot}) the list runs to row {} \
+                     and the preview starts at row {}",
+                    list.y + list.height,
+                    preview.y
+                );
+                // And the number the window is settled on is the number of
+                // those rows that are the list's own, which is what the view
+                // draws and what a page steps by.
+                assert_eq!(
+                    rows_drawn(&picker, room),
+                    rows_region(&picker, list).height,
+                    "at height {height} (tabs {tabs}, foot {foot}) the window was \
+                     settled on a height the rows do not have"
+                );
+            }
+        }
+    }
+}
+
 /// A list of references is read by looking at the symbol in each one, so the
 /// preview marks it. Saying only which line leaves the reader finding it
 /// again on every row.
