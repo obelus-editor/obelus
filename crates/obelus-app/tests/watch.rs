@@ -489,3 +489,284 @@ fn reading_a_file_says_nothing() {
         said(&kinds)
     );
 }
+
+/// A project that gains its first settings while it is open.
+///
+/// The watch is on the file the project *would* have, so that the file
+/// appearing is a change like any other -- and it cannot be taken while
+/// there is nowhere to take it, which is the ordinary case: a project with
+/// no `.obelus` of its own. So the project itself is watched for the
+/// directory turning up, and the watch on the file is taken then.
+///
+/// Broken deliberately two ways, and each leaves the setting on the screen
+/// unchanged for the rest of the session: not watching the project at all,
+/// and hearing the directory appear without taking the watch it makes
+/// possible. It is written against the real filesystem rather than by
+/// handing the application its own `Watched` event, because what is being
+/// tested is whether a watch was *taken* -- an event fed in by hand proves
+/// the handler and nothing else.
+#[test]
+fn a_project_that_gains_settings_while_it_is_open_is_heard() {
+    let scratch = Scratch::new("project-settings");
+    // Under the project rather than in it, and that is the whole of the
+    // setup: a file of the root's own is watched by *its* directory, which
+    // is the project -- so the first version of this, whose file sat in the
+    // root, heard the directory appear whatever this change did and passed
+    // with every part of it taken out.
+    let source = scratch.directory.join("src");
+    fs::create_dir_all(&source).expect("making the source directory");
+    let file = source.join("one.rs");
+    fs::write(&file, "fn one() {}\n").expect("writing the file");
+
+    let (sender, events) = std::sync::mpsc::channel();
+    let mut app = obelus_app::app::App::new(vec![
+        obelus_buffer::Buffer::open(&file).expect("opening the file"),
+    ]);
+    app.working_directory_for_test(scratch.directory.clone());
+    app.start(sender);
+
+    // The project has no settings of its own, which is where this starts.
+    let settings = scratch.directory.join(".obelus").join("config.toml");
+    assert!(!settings.exists(), "the test began with settings already");
+
+    // Somebody -- another window, a `git pull` -- gives the project its
+    // first ones. The directory and the file, which may arrive in either
+    // order and usually arrive together.
+    fs::create_dir_all(settings.parent().expect("a directory")).expect("making it");
+    // A setting whose default is *not* what the file asks for, which is
+    // the whole of what this test can see. The first version wrote
+    // `wrap = false` -- and `wrap` is false by default, so the condition
+    // below was true before anything arrived and the test returned on its
+    // first turn round the loop having checked nothing at all.
+    assert!(
+        app.config().blame_margin,
+        "the setting this watches for is already what the file will ask for"
+    );
+    fs::write(&settings, "blame_margin = false\n").expect("writing the settings");
+
+    // Whatever arrives, it has to end with the setting taken: the
+    // directory appearing, the file appearing, or both.
+    let deadline = Instant::now() + DEADLINE;
+    let mut heard = Vec::new();
+    while Instant::now() < deadline {
+        let Ok(event) = events.recv_timeout(Duration::from_millis(200)) else {
+            continue;
+        };
+        if let Event::Watched(obelus_watch::Changed { path }) = &event {
+            heard.push(path.display().to_string());
+        }
+        app.handle(event);
+        if !app.config().blame_margin {
+            assert!(
+                !heard.is_empty(),
+                "the setting was taken without anything being heard, so this \
+                 is not a test of the watching"
+            );
+            return;
+        }
+    }
+    panic!("the project's first settings were never heard; what arrived: {heard:?}");
+}
+
+/// And the file arriving after the directory, which is the other order.
+///
+/// A directory made now and written into later -- `mkdir .obelus` and then
+/// an editor saving into it -- is heard only because the watch on the
+/// directory was taken when it appeared. The test above cannot say so: the
+/// two arrive together there, so the directory's own event carries the
+/// file with it and the watch is never needed.
+///
+/// Broken deliberately by not taking that watch.
+#[test]
+fn settings_written_after_the_directory_is_made_are_heard() {
+    let scratch = Scratch::new("project-settings-later");
+    let source = scratch.directory.join("src");
+    fs::create_dir_all(&source).expect("making the source directory");
+    let file = source.join("one.rs");
+    fs::write(&file, "fn one() {}\n").expect("writing the file");
+
+    let (sender, events) = std::sync::mpsc::channel();
+    let mut app = obelus_app::app::App::new(vec![
+        obelus_buffer::Buffer::open(&file).expect("opening the file"),
+    ]);
+    app.working_directory_for_test(scratch.directory.clone());
+    app.start(sender);
+    assert!(app.config().blame_margin);
+
+    // The directory alone, and everything it produces handled before
+    // anything is written into it -- which is what makes this the other
+    // order rather than the one above.
+    let directory = scratch.directory.join(".obelus");
+    fs::create_dir_all(&directory).expect("making the directory");
+    let settled = Instant::now() + Duration::from_millis(600);
+    while Instant::now() < settled {
+        if let Ok(event) = events.recv_timeout(Duration::from_millis(100)) {
+            app.handle(event);
+        }
+    }
+    assert!(
+        app.config().blame_margin,
+        "the setting was taken before the file was written"
+    );
+
+    fs::write(directory.join("config.toml"), "blame_margin = false\n").expect("writing");
+
+    let deadline = Instant::now() + DEADLINE;
+    while Instant::now() < deadline {
+        let Ok(event) = events.recv_timeout(Duration::from_millis(200)) else {
+            continue;
+        };
+        app.handle(event);
+        if !app.config().blame_margin {
+            return;
+        }
+    }
+    panic!("settings written into a directory Obelus watched were never heard");
+}
+
+/// A directory that could not be watched is not counted as watched.
+///
+/// The count is what says a directory is already watched, and a second ask
+/// for one that is returns `Ok` without going near the watcher. Raised by
+/// an attempt that failed, it left the directory counted and unwatched --
+/// and nothing gives that count back, because what is unwatched is what a
+/// caller was told it held. The next ask was answered by the count alone.
+///
+/// Broken deliberately by counting before watching, which is what it did.
+#[test]
+fn a_directory_that_could_not_be_watched_is_not_counted() {
+    let scratch = Scratch::new("counted");
+    let (sender, events) = std::sync::mpsc::channel();
+    let mut watcher = Watcher::new(sender).expect("a watcher");
+
+    // Nothing to watch yet, so this fails.
+    let directory = scratch.directory.join("later");
+    assert!(
+        watcher.watch_directory(&directory).is_err(),
+        "a directory that is not there was watched"
+    );
+
+    // And now there is, so this must actually take the watch rather than
+    // be answered by a count the failure left behind.
+    fs::create_dir_all(&directory).expect("making it");
+    watcher
+        .watch_directory(&directory)
+        .expect("watching it once it is there");
+
+    let path = directory.join("something.txt");
+    fs::write(&path, "hello\n").expect("writing into it");
+    assert!(
+        wait_for(&events, &path),
+        "nothing arrived, so the second watch was the count and not a watch"
+    );
+}
+
+/// A watch given up once is given up.
+///
+/// The count says how many callers want a directory watched, so a caller
+/// that was never given a watch must not have been counted: an attempt that
+/// failed and counted itself anyway leaves the directory needing two
+/// `unwatch`es to be let go of, and the one the caller makes is swallowed
+/// by the count the failure left.
+///
+/// Broken deliberately by counting before watching rather than after.
+#[test]
+fn a_watch_let_go_of_once_is_let_go_of() {
+    let scratch = Scratch::new("let-go");
+    let (sender, events) = std::sync::mpsc::channel();
+    let mut watcher = Watcher::new(sender).expect("a watcher");
+
+    // One caller that got nothing, because there was nothing to watch.
+    let directory = scratch.directory.join("later");
+    assert!(watcher.watch_directory(&directory).is_err());
+
+    // And one that did.
+    fs::create_dir_all(&directory).expect("making it");
+    watcher.watch_directory(&directory).expect("watching it");
+    let heard = directory.join("first.txt");
+    fs::write(&heard, "one\n").expect("writing");
+    assert!(wait_for(&events, &heard), "the watch was never taken");
+
+    // That one gives it up, and it is given up: the attempt that failed is
+    // not a caller holding it.
+    watcher.unwatch_directory(&directory);
+    let quiet = directory.join("second.txt");
+    fs::write(&quiet, "two\n").expect("writing again");
+    assert!(
+        !wait_for(&events, &quiet),
+        "the directory is still watched, so the failed attempt was counted"
+    );
+}
+
+/// Settings a project had and then lost, and then had again.
+///
+/// The watch on the file goes with the directory it was in -- the kernel
+/// drops it when the directory is deleted, and says nothing to Obelus about
+/// having done so. What is left is the project's own watch, which is why it
+/// is taken whether or not the project has settings today: a reader who
+/// removes `.obelus` and makes it again is asking the same question as one
+/// who never had it.
+///
+/// Broken deliberately two ways, and each leaves the second lot of settings
+/// unheard: watching the project only where it has no settings yet, and
+/// letting the count answer for a watch the kernel has dropped.
+#[test]
+fn settings_a_project_loses_and_gains_again_are_heard() {
+    let scratch = Scratch::new("project-settings-again");
+    let source = scratch.directory.join("src");
+    fs::create_dir_all(&source).expect("making the source directory");
+    let file = source.join("one.rs");
+    fs::write(&file, "fn one() {}\n").expect("writing the file");
+
+    // Settings the project has from the start, which is what makes this
+    // the case the project's own watch is not taken for.
+    let directory = scratch.directory.join(".obelus");
+    fs::create_dir_all(&directory).expect("making the directory");
+    fs::write(directory.join("config.toml"), "blame_margin = false\n").expect("the settings");
+
+    let (sender, events) = std::sync::mpsc::channel();
+    let mut app = obelus_app::app::App::new(vec![
+        obelus_buffer::Buffer::open(&file).expect("opening the file"),
+    ]);
+    app.working_directory_for_test(scratch.directory.clone());
+    app.start(sender);
+    assert!(
+        !app.config().blame_margin,
+        "the project's settings were not read at all"
+    );
+
+    let settle = |app: &mut obelus_app::app::App, how_long: Duration| {
+        let until = Instant::now() + how_long;
+        while Instant::now() < until {
+            if let Ok(event) = events.recv_timeout(Duration::from_millis(100)) {
+                app.handle(event);
+            }
+        }
+    };
+
+    // Taken away, whole.
+    fs::remove_dir_all(&directory).expect("removing the directory");
+    settle(&mut app, DEADLINE / 2);
+    assert!(
+        app.config().blame_margin,
+        "settings that were deleted are still being applied"
+    );
+
+    // And put back -- the directory first, and the file into it only once
+    // everything that came of the directory has been dealt with. Written
+    // together, the directory's own event carries the file with it and the
+    // watch on the directory is never needed: the two halves of this have
+    // to be separated or the test passes with the watch never taken.
+    fs::create_dir_all(&directory).expect("making it again");
+    settle(&mut app, Duration::from_millis(600));
+    assert!(
+        app.config().blame_margin,
+        "the settings were taken before they were written"
+    );
+    fs::write(directory.join("config.toml"), "blame_margin = false\n").expect("the settings");
+    settle(&mut app, DEADLINE / 2);
+    assert!(
+        !app.config().blame_margin,
+        "settings put back after the directory was deleted were never heard"
+    );
+}

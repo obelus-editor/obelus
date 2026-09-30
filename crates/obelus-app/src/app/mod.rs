@@ -1253,6 +1253,25 @@ impl App {
         self.apply_project();
     }
 
+    /// Takes the watch on the project's own settings, where there is now
+    /// somewhere to take it.
+    ///
+    /// Asked twice: once while the watches are being set up, and again if
+    /// the directory turns up later. Idempotent, because the watcher counts
+    /// watches by directory and a second ask for one it already holds is
+    /// the count going up -- which is also what makes the project's root
+    /// and a file of the reader's that happens to live in it one watch
+    /// rather than two.
+    fn watch_the_projects_settings(&mut self) {
+        let project = obelus_config::project_path_for(&self.working_directory);
+        let Some(watcher) = self.watcher.as_mut() else {
+            return;
+        };
+        if let Err(error) = watcher.watch(&project) {
+            tracing::debug!(%error, path = %project.display(), "still nothing to watch");
+        }
+    }
+
     /// Starts watching every open file for changes on disk.
     fn start_watching(&mut self, sender: std::sync::mpsc::Sender<Event>) {
         let mut watcher = match Watcher::new(sender) {
@@ -1312,9 +1331,64 @@ impl App {
         // fuse, because it looks right until somebody creates the file --
         // the window next door writing the project's first setting, or a
         // pull bringing one.
+        // The project itself, for the directory its settings live in
+        // coming or going. Always, not only where it is missing now: a
+        // reader who deletes `.obelus` and makes it again is the same
+        // question as one who never had it, and a watch taken only in the
+        // second case left the first unheard for the rest of the session.
+        //
+        // Not recursive -- what is wanted is one directory appearing
+        // directly in the project, and a recursive watch on a repository is
+        // `target` and `.git` reported a thousand times over. Where the
+        // reader has a file of the project's root open, this is that same
+        // watch counted twice rather than a second one.
+        if let Err(error) = watcher.watch_directory(&self.working_directory) {
+            tracing::warn!(
+                %error,
+                path = %self.working_directory.display(),
+                "not watching the project for settings appearing"
+            );
+        }
         let project = obelus_config::project_path_for(&self.working_directory);
         if let Err(error) = watcher.watch(&project) {
-            tracing::warn!(%error, path = %project.display(), "not watching the project's settings");
+            // A project with no settings of its own has no directory to
+            // watch, and that is the ordinary case: a quarter of the starts
+            // in this machine's own log said so, every one of them about a
+            // project that was working perfectly. A warning on every start
+            // is how a log stops being read -- the same argument the
+            // welcome screen's list of what went wrong is built on, and the
+            // level `settle_a_watch` already uses for the same failure.
+            //
+            // A directory that *is* there and will not be watched is a real
+            // failure and keeps its warning: settings changed in another
+            // window will not arrive, and that is worth a word.
+            match project.parent().is_some_and(std::path::Path::is_dir) {
+                true => tracing::warn!(
+                    %error,
+                    path = %project.display(),
+                    "not watching the project's settings"
+                ),
+                // The directory is not there either, which is the ordinary
+                // case and not a failure worth a word. But the intent above
+                // -- hearing the file *appear* -- is the whole reason this
+                // watch is on the file the project would have, and it
+                // cannot be served by watching a directory that is not
+                // there. So the project itself is watched instead, which is
+                // where `.obelus` will turn up.
+                //
+                // Not recursive: what is wanted is one directory appearing
+                // directly in the project, and a recursive watch on a
+                // repository is `target` and `.git` reported a thousand
+                // times over. It is given up by nothing, because the
+                // directory can go again as easily as it came -- and where
+                // the reader has a file of the project's root open, this is
+                // the same watch counted twice rather than a second one.
+                false => tracing::debug!(
+                    %error,
+                    path = %project.display(),
+                    "no settings of the project's own yet"
+                ),
+            }
         }
         self.watcher = Some(watcher);
         // And wherever the colours come from, which is its own question:
@@ -2347,7 +2421,25 @@ impl App {
                 // case is a project with no settings yet, and the moment
                 // worth hearing about is the one where it gets some.
                 let project = obelus_config::project_path_for(&self.working_directory);
-                let project = path == project;
+                // Or the directory that file lives in, turning up in a
+                // project that had none: the watch on the file could not be
+                // taken while there was nowhere to take it, so this is
+                // where it is taken. Read as well as watched, and in that
+                // order -- whoever made the directory may have written the
+                // file into it before the watch was attached, and a watch
+                // says what happens next rather than what already has.
+                let appeared = path.parent() == Some(self.working_directory.as_path())
+                    && project.parent() == Some(path.as_path());
+                if appeared {
+                    self.watch_the_projects_settings();
+                }
+                // The directory appearing counts as the settings changing,
+                // and not only because the file may be in it already: that
+                // is the race this is about. Whoever made the directory
+                // writes the file into it, and the two arrive together --
+                // so by the time the watch is attached the file is there
+                // and its own event has been and gone.
+                let project = path == project || appeared;
                 if readers || project {
                     self.reread_config();
                 } else if self.is_a_theme(&path) {

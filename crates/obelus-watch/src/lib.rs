@@ -222,15 +222,34 @@ impl Watcher {
         // Counted, not just remembered: two open files in one directory are
         // one watch, and closing the first of them must not take the watch
         // away from the second.
-        let count = self.directories.entry(directory.to_path_buf()).or_default();
-        *count += 1;
-        if *count > 1 {
-            return Ok(());
-        }
-        self.spell(directory, true);
+        //
+        // Counted *after* it is watched, which is the difference between a
+        // count of the watches there are and a count of the times one was
+        // asked for. A directory that is not there cannot be watched, and
+        // raising the count for the attempt left it at one with nothing
+        // holding it: a caller that asked again -- the same directory, made
+        // in the meantime -- was told `Ok` by the count alone and wrote
+        // down a watch nobody had taken. Nothing is unwatched either, since
+        // what is given up is what a caller was told it held, so the one
+        // left behind is there for the rest of the session.
+        // Asked of the watcher every time rather than answered from the
+        // count. A directory that was watched and has since been deleted is
+        // a watch the kernel dropped on its own, and the count cannot tell
+        // that from one that is still good -- so a project whose `.obelus`
+        // was removed and made again was counted as watched and was not
+        // watched, for the rest of the session. Watching one that is
+        // already watched updates the watch and costs a syscall, which is
+        // the price of the count meaning what it says.
         self.inner
             .watch(directory, RecursiveMode::NonRecursive)
-            .with_context(|| format!("watching {}", directory.display()))
+            .with_context(|| format!("watching {}", directory.display()))?;
+        // Counted after, because what is counted is the watches there are
+        // and not the times one was asked for: an attempt that failed left
+        // the directory counted and unwatched, and nothing gives that count
+        // back -- what is unwatched is what a caller was told it held.
+        self.spell(directory, true);
+        *self.directories.entry(directory.to_path_buf()).or_default() += 1;
+        Ok(())
     }
 
     /// Gives up the watch one file needed, if nothing else needs it.
