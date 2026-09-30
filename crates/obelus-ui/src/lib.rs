@@ -758,6 +758,17 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
                         room_for_a_picker(app, regions.editor),
                         regions.edge,
                     );
+                    // The row at its foot, which is the list's own: what is
+                    // typed there narrows it. A compact list leaves the file
+                    // showing above it and still takes this row, because the
+                    // row is part of the dialog and not part of the file --
+                    // so the file's name and cursor go while the list is up,
+                    // which is what a dialog does to what it is over.
+                    let style = Style::new()
+                        .bg(app.theme().background)
+                        .fg(app.theme().status_foreground);
+                    fill(cells, regions.status, style);
+                    status::StatusView::new(app).render_prompt(list, regions.status, cells, style);
                 }
             }
             Layer::Names => {
@@ -774,6 +785,11 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
                         cells,
                     );
                     names::NamesView::new(names, app.theme()).render(region, cells);
+                    let style = Style::new()
+                        .bg(app.theme().background)
+                        .fg(app.theme().status_foreground);
+                    fill(cells, regions.status, style);
+                    status::StatusView::new(app).render_names(names, regions.status, cells, style);
                     // The edge every band gets, for the same reason a
                     // compact list gets one: two different things sharing
                     // a screen have to be told apart.

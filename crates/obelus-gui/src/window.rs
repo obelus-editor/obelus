@@ -655,7 +655,13 @@ impl ApplicationHandler<Waking> for Showing {
                 // screens the reader is never meant to see.
                 let was = self.page.caret();
                 let whose_was = self.page.whose();
-                let had_a_pane = self.behind.is_some();
+                // Which pane, not whether there is one: see the match that
+                // reads this. The edge it is joined along and not its
+                // rectangle, because a rectangle changes when the reader
+                // drags the window's own edge, and a pane replaying its
+                // arrival on every pixel of a resize is worse than one that
+                // never arrives at all.
+                let was_a_pane = self.behind.as_ref().map(|behind| behind.joined);
                 let had_a_card = !self.cards.is_empty();
                 // Cloned rather than taken: a wake with no whole frame
                 // in it leaves what is on the screen alone, and a band
@@ -826,9 +832,21 @@ impl ApplicationHandler<Waking> for Showing {
                 // what is there rather than announced: a frame with a pane
                 // on it that the one before it had none is a pane opening,
                 // and there is nowhere else that can be true.
-                match (had_a_pane, self.behind.is_some()) {
-                    (false, true) => self.motion.pane_opened(Instant::now()),
-                    (true, false) => self.motion.pane_shut(),
+                //
+                // And a pane of another shape where one already was. It
+                // asked only whether there was one, which is the same
+                // question for "a list opened over a list" and for "the
+                // palette went and the settings came" -- so a page that can
+                // only be reached through the palette could never arrive,
+                // because the palette is a pane and it was still counted as
+                // one. Obelus's own pages are all of them reached that way,
+                // which is every full-screen dialog there is.
+                match (was_a_pane, self.behind.as_ref().map(|behind| behind.joined)) {
+                    (None, Some(_)) => self.motion.pane_opened(Instant::now()),
+                    (Some(_), None) => self.motion.pane_shut(),
+                    (Some(before), Some(now)) if before != now => {
+                        self.motion.pane_opened(Instant::now());
+                    }
                     _ => {}
                 }
                 // And a box over the page, the same way and for the same

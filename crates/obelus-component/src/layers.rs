@@ -225,8 +225,22 @@ impl Layers {
     /// cursor that is nowhere on screen, it takes the row too.
     #[must_use]
     pub fn taking_the_status_row(self) -> bool {
-        self.furthest_first()
-            .any(|layer| matches!(layer.room(), Room::Screen))
+        // Every dialog, not the full-screen ones alone. A dialog draws the
+        // row at its foot itself, so that the row is its own to lay out --
+        // Obelus's status row is a file's name, a cursor's position and a
+        // server's badge, and a dialog made to look like that is a dialog
+        // that cannot be designed.
+        //
+        // [`Room::Row`] is the exception that says what the rule is about:
+        // a question on the status bar does not *take* the row, it **is**
+        // the row.
+        // The nearest of them and not any of them, because a question is
+        // asked *over* a list and the list is still showing behind it: two
+        // views want the row and the one that gets it is the one the keys
+        // are going to. Asked of all of them, a list under a question took
+        // the row away from it and the reader was asked nothing.
+        self.nearest()
+            .is_some_and(|layer| !matches!(layer.room(), Room::Row))
     }
 
     /// Whether this one is among them.

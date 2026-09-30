@@ -48,13 +48,12 @@ pub struct StatusView<'a> {
     busy: bool,
     /// Where the animation has got to, for that mark.
     phase: u32,
-    /// When a picker is open the row is its prompt instead.
-    picker: Option<&'a Picker>,
-    /// And when a list of names is open, the row is its query.
-    names: Option<&'a obelus_component::names::Names>,
-    /// And when the settings are open, the row is what narrows them.
-    settings: Option<&'a obelus_component::settings::Settings>,
-    /// And when a question is being asked, the row is the question.
+    /// When a question is being asked, the row is the question.
+    ///
+    /// The one dialog that is still kept here, because it is the one whose
+    /// room *is* this row. The others -- a picker, a list of names, the
+    /// settings -- draw the row at their own foot and are handed to the
+    /// writer that draws it, so there was nothing left to keep them for.
     prompt: Option<&'a obelus_component::prompt::Prompt>,
     /// The directory that question would put a file in, where it is the
     /// question that makes one.
@@ -96,9 +95,6 @@ impl<'a> StatusView<'a> {
             busy: app.server_busy(),
             phase: app.phase(),
             troubles: app.troubles(),
-            picker: app.picker(),
-            names: app.names(),
-            settings: app.settings(),
             prompt: app.prompt(),
             making_in: app.making_in(),
             note_is_wrong: app.note_is_wrong(),
@@ -154,33 +150,13 @@ impl Widget for StatusView<'_> {
                     self.render_landing(&line, area, cells, style);
                 }
             }
-            Some(Layer::Picker) => {
-                if let Some(picker) = self.picker {
-                    self.render_prompt(picker, area, cells, style);
-                }
-            }
-            // The same row again: a list is a list, and what is typed at
-            // this one narrows what is above it exactly as a picker's
-            // does.
-            Some(Layer::Names) => {
-                if let Some(names) = self.names {
-                    let said = names.query().said();
-                    write(cells, area.x + 1, area.y, &typed(None, &said), style);
-                    hint(cells, area, None, names.invitation(), style, self.theme);
-                }
-            }
-            // The same shape a picker's prompt has, because it is the same
-            // thing: what has been typed narrows what is above it. And
-            // nothing else on the row -- what narrowing did is on the
-            // screen above it, in the rows themselves.
-            Some(Layer::Settings) => {
-                if let Some(settings) = self.settings {
-                    self.render_filter(settings, area, cells, style);
-                }
-            }
             // Nothing over what is being read, so the row is about that.
-            // The counts are still the exception: they take the row as
-            // well as the region, which is what `Room::Screen` says.
+            //
+            // Which is every case left. A dialog draws the row at its own
+            // foot, so this is never reached with one showing -- `draw`
+            // does not call this at all then. The arms that were here drew
+            // a picker's prompt, a list-being-built's and the settings'
+            // filter, each of them a dialog's row written by Obelus.
             _ => {
                 if let Some(notes) = self.notes {
                     self.render_notes(notes, area, cells, style);
@@ -867,7 +843,31 @@ impl StatusView<'_> {
         }
     }
 
-    fn render_prompt(&self, picker: &Picker, area: Rect, cells: &mut CellBuffer, style: Style) {
+    /// The list a reader is building, on whatever row it is given.
+    ///
+    /// The same shape a picker's prompt has, because it is the same thing:
+    /// what has been typed narrows what is above it.
+    pub(crate) fn render_names(
+        &self,
+        names: &obelus_component::names::Names,
+        area: Rect,
+        cells: &mut CellBuffer,
+        style: Style,
+    ) {
+        let said = names.query().said();
+        write(cells, area.x + 1, area.y, &typed(None, &said), style);
+        hint(cells, area, None, names.invitation(), style, self.theme);
+    }
+
+    /// A list's prompt, on whatever row it is given -- see
+    /// [`Self::render_filter`] for why the row is the caller's.
+    pub(crate) fn render_prompt(
+        &self,
+        picker: &Picker,
+        area: Rect,
+        cells: &mut CellBuffer,
+        style: Style,
+    ) {
         prompt_row(picker, area, cells, style, self.theme, self.phase);
     }
 }

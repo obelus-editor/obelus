@@ -1,0 +1,45 @@
+screen 60x16  editor 60x14  status 60x1
+-- text --
+ 0|   1 ▾fn main() {                                           
+ 1|────────────────────────────────────────────────────────────
+ 2|  All  Files  Search  Code  Edit  Git  Obelus           ⇤ ⇥ 
+ 3|────────────────────────────────────────────────────────────
+ 4| No match                                                   
+ 5|                                                            
+ 6|                                                            
+ 7|                                                            
+ 8|                                                            
+ 9|                                                            
+10|                                                            
+11|                                                            
+12|                                                            
+13|                                                            
+14|────────────────────────────────────────────────────────────
+15| > count-the-code                                           
+-- style --
+ 0|aaabacddaeeeebbabaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 1|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 2|cfffffcccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 3|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 4|accccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 6|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 7|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 8|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 9|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+10|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+11|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+12|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+13|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+14|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+15|gggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg
+-- legend --
+a fg=#e4e4e7 bg=#18181b
+b fg=#a1a1aa bg=#18181b
+c fg=#52525b bg=#18181b
+d fg=#c084fc bg=#18181b
+e fg=#60a5fa bg=#18181b
+f fg=#e4e4e7 bg=#27272a
+g fg=#d4d4d8 bg=#18181b
+-- cursor --
+17,15

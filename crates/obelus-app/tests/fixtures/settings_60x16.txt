@@ -1,0 +1,46 @@
+screen 60x16  editor 60x14  status 60x1
+-- text --
+ 0|  Settings  Keys  Agents                                ⇤ ⇥ 
+ 1|────────────────────────────────────────────────────────────
+ 2| Appearance                                                █
+ 3|                                                           █
+ 4|   Theme                                      dark ▸       █
+ 5|                                                           █
+ 6|   Nerd Font glyphs                           □            █
+ 7|     In lists, on the status bar, and beside a file's      █
+ 8|     name -- a terminal without a patched font draws a     █
+ 9|     box instead                                           █
+10|                                                           █
+11|                                                           █
+12|────────────────────────────────────────────────────────────
+13|   Enter  Change    type  To filter           Ctrl+k  Keys  
+14|────────────────────────────────────────────────────────────
+15| > Filter settings                                          
+-- style --
+ 0|abbbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 2|cddddddddddcccccccccccccccccccccccccccccccccccccccccccccccce
+ 3|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
+ 4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbfbbbbbbbe
+ 5|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
+ 6|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
+ 7|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccce
+ 8|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccce
+ 9|cccccaaaaaaaaaaaccccccccccccccccccccccccccccccccccccccccccce
+10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccg
+11|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccg
+12|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+13|cchhhhhhhcaaaaaaccchhhhhhcaaaaaaaaacccccccccchhhhhhhhcaaaacc
+14|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+15|dddaaaaaaaaaaaaaaadddddddddddddddddddddddddddddddddddddddddd
+-- legend --
+a fg=#52525b bg=#18181b
+b fg=#e4e4e7 bg=#27272a
+c fg=#e4e4e7 bg=#18181b
+d fg=#d4d4d8 bg=#18181b
+e fg=#a1a1aa bg=#18181b
+f fg=#52525b bg=#27272a
+g fg=#404047 bg=#18181b
+h fg=#a1a1aa bg=#27272a
+-- cursor --
+none
