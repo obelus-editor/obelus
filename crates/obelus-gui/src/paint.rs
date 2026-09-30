@@ -2786,6 +2786,27 @@ impl Painter {
     ) {
         let (left, top) = at;
         let cell = fonts.cell();
+        // A block is the cell, or a part of it, and is drawn as that rather
+        // than asked of the face -- see `pieces`.
+        if size == Size::Cell
+            && let Some(pieces) = pieces(look.text)
+        {
+            for piece in pieces {
+                let [x, y, wide, tall] = snapped((left, top), cell, *piece);
+                self.quads.push(Quad {
+                    rect: [x, y, wide, tall],
+                    uv: self.atlas.white,
+                    colour,
+                    // Not `SOLID`, which would leave the light out: the
+                    // welcome screen's mark is made of these, and it is
+                    // carried by the same flag a letter is.
+                    flags: lit,
+                    radius: 0.0,
+                    padding: [0; 2],
+                });
+            }
+            return;
+        }
         let bold = look.modifier.contains(Modifier::BOLD);
         let italic = look.modifier.contains(Modifier::ITALIC);
         let placed = fonts.glyphs(look.text, bold, italic, size).to_vec();
@@ -3864,6 +3885,80 @@ fn channels(colour: Color, ink: Ink) -> (u8, u8, u8) {
     }
 }
 
+/// What part of its cell a block element covers, as rectangles of it:
+/// left, top, right and bottom, from nothing to the whole cell.
+///
+/// Drawn rather than asked of the face, because a face draws `█` from its
+/// own ascent to its own descent and the cell is a line height Obelus
+/// chose (`font::LINE_HEIGHT`). Where the face is the shorter -- Menlo is,
+/// by a pixel or two -- every row of blocks stands a hairline off the next,
+/// and the welcome screen's mark is striped across; where it is the taller
+/// the glyph is cut back to the cell and nobody sees the difference. Every
+/// terminal that draws these itself does it for this reason, which is why
+/// `ob` never showed it.
+///
+/// The shades are left to the face: they are a texture, not a region, and
+/// a face's own is what a reader's terminal would show.
+fn pieces(text: &str) -> Option<&'static [[f32; 4]]> {
+    const HALF: f32 = 0.5;
+    const EIGHTH: f32 = 0.125;
+    let mut chars = text.chars();
+    let (Some(glyph), None) = (chars.next(), chars.next()) else {
+        return None;
+    };
+    Some(match glyph {
+        '\u{2580}' => &[[0.0, 0.0, 1.0, HALF]],
+        // A lower one to seven eighths.
+        '\u{2581}' => &[[0.0, 1.0 - EIGHTH, 1.0, 1.0]],
+        '\u{2582}' => &[[0.0, 1.0 - 2.0 * EIGHTH, 1.0, 1.0]],
+        '\u{2583}' => &[[0.0, 1.0 - 3.0 * EIGHTH, 1.0, 1.0]],
+        '\u{2584}' => &[[0.0, HALF, 1.0, 1.0]],
+        '\u{2585}' => &[[0.0, 1.0 - 5.0 * EIGHTH, 1.0, 1.0]],
+        '\u{2586}' => &[[0.0, 1.0 - 6.0 * EIGHTH, 1.0, 1.0]],
+        '\u{2587}' => &[[0.0, 1.0 - 7.0 * EIGHTH, 1.0, 1.0]],
+        '\u{2588}' => &[[0.0, 0.0, 1.0, 1.0]],
+        // A left seven eighths down to one.
+        '\u{2589}' => &[[0.0, 0.0, 7.0 * EIGHTH, 1.0]],
+        '\u{258a}' => &[[0.0, 0.0, 6.0 * EIGHTH, 1.0]],
+        '\u{258b}' => &[[0.0, 0.0, 5.0 * EIGHTH, 1.0]],
+        '\u{258c}' => &[[0.0, 0.0, HALF, 1.0]],
+        '\u{258d}' => &[[0.0, 0.0, 3.0 * EIGHTH, 1.0]],
+        '\u{258e}' => &[[0.0, 0.0, 2.0 * EIGHTH, 1.0]],
+        '\u{258f}' => &[[0.0, 0.0, EIGHTH, 1.0]],
+        '\u{2590}' => &[[HALF, 0.0, 1.0, 1.0]],
+        '\u{2594}' => &[[0.0, 0.0, 1.0, EIGHTH]],
+        '\u{2595}' => &[[1.0 - EIGHTH, 0.0, 1.0, 1.0]],
+        // The quadrants, by which of the four they fill.
+        '\u{2596}' => &[[0.0, HALF, HALF, 1.0]],
+        '\u{2597}' => &[[HALF, HALF, 1.0, 1.0]],
+        '\u{2598}' => &[[0.0, 0.0, HALF, HALF]],
+        '\u{2599}' => &[[0.0, 0.0, HALF, 1.0], [HALF, HALF, 1.0, 1.0]],
+        '\u{259a}' => &[[0.0, 0.0, HALF, HALF], [HALF, HALF, 1.0, 1.0]],
+        '\u{259b}' => &[[0.0, 0.0, 1.0, HALF], [0.0, HALF, HALF, 1.0]],
+        '\u{259c}' => &[[0.0, 0.0, 1.0, HALF], [HALF, HALF, 1.0, 1.0]],
+        '\u{259d}' => &[[HALF, 0.0, 1.0, HALF]],
+        '\u{259e}' => &[[HALF, 0.0, 1.0, HALF], [0.0, HALF, HALF, 1.0]],
+        '\u{259f}' => &[[HALF, 0.0, 1.0, HALF], [0.0, HALF, 1.0, 1.0]],
+        _ => return None,
+    })
+}
+
+/// One of those rectangles in pixels, from the corner of its cell.
+///
+/// Each edge is rounded where it falls rather than the size being rounded
+/// on its own: a cell is not a whole number of pixels tall, so a block
+/// whose height was rounded starts where the one above it ended only by
+/// luck, and the stripe `pieces` is there to take away comes back as a
+/// pixel of overlap or of gap every few rows.
+fn snapped(at: (f32, f32), cell: crate::font::CellSize, piece: [f32; 4]) -> [f32; 4] {
+    let [from_x, from_y, to_x, to_y] = piece;
+    let left = cell.width.mul_add(from_x, at.0).round();
+    let top = cell.height.mul_add(from_y, at.1).round();
+    let right = cell.width.mul_add(to_x, at.0).round();
+    let bottom = cell.height.mul_add(to_y, at.1).round();
+    [left, top, (right - left).max(1.0), (bottom - top).max(1.0)]
+}
+
 /// The palette a terminal would have had.
 ///
 /// Obelus's themes name their colours in full, so this is reached only by a
@@ -3941,6 +4036,110 @@ mod tests {
 
     use super::*;
     use crate::grid::Update;
+
+    /// A block covers the share of its cell its name says, and only the
+    /// blocks are drawn this way.
+    ///
+    /// Deliberate break: give `\u{2583}` the three eighths from the top
+    /// rather than the bottom, or `\u{259b}` the lower right quadrant
+    /// where it wants the lower left. The first is caught by where it sits,
+    /// the second by what it covers.
+    #[test]
+    fn a_block_covers_what_its_name_says() {
+        let area = |glyph: char| -> f32 {
+            pieces(&glyph.to_string())
+                .expect("a block")
+                .iter()
+                .map(|[left, top, right, bottom]| (right - left) * (bottom - top))
+                .sum()
+        };
+        // The lower eighths grow up from the foot, the left ones shrink
+        // toward the left edge.
+        for (step, glyph) in ('\u{2581}'..='\u{2587}').enumerate() {
+            let [_, top, _, bottom] = pieces(&glyph.to_string()).expect("a block")[0];
+            assert!(
+                (bottom - 1.0).abs() < f32::EPSILON,
+                "{glyph} is not on the foot"
+            );
+            #[expect(clippy::cast_precision_loss, reason = "seven of them")]
+            let share = (step + 1) as f32 / 8.0;
+            assert!(
+                (1.0 - top - share).abs() < f32::EPSILON,
+                "{glyph} is the wrong height"
+            );
+        }
+        for (step, glyph) in ('\u{2589}'..='\u{258f}').enumerate() {
+            #[expect(clippy::cast_precision_loss, reason = "seven of them")]
+            let share = (7 - step) as f32 / 8.0;
+            assert!(
+                (area(glyph) - share).abs() < f32::EPSILON,
+                "{glyph} is the wrong width"
+            );
+        }
+        for (glyph, share) in [
+            ('\u{2596}', 0.25),
+            ('\u{2597}', 0.25),
+            ('\u{2598}', 0.25),
+            ('\u{259d}', 0.25),
+            ('\u{259a}', 0.5),
+            ('\u{259e}', 0.5),
+            ('\u{2599}', 0.75),
+            ('\u{259b}', 0.75),
+            ('\u{259c}', 0.75),
+            ('\u{259f}', 0.75),
+        ] {
+            assert!((area(glyph) - share).abs() < f32::EPSILON, "{glyph}");
+        }
+        // Which three quarters, since the area cannot say: the one with no
+        // lower right is the one with the lower left.
+        assert!(
+            pieces("\u{259b}")
+                .expect("a block")
+                .contains(&[0.0, 0.5, 0.5, 1.0]),
+            "\u{259b} has no lower left"
+        );
+        // Everything else is the face's: a shade, a letter, and two blocks
+        // in one cell, which is not a thing a cell holds.
+        assert!(pieces("\u{2592}").is_none());
+        assert!(pieces("a").is_none());
+        assert!(pieces("\u{2588}\u{2588}").is_none());
+    }
+
+    /// A column of full blocks is one unbroken bar, whatever the cell's
+    /// height, which is the whole of why they are drawn at all.
+    ///
+    /// Deliberate break: round the height on its own -- `(cell.height *
+    /// (to_y - from_y)).round()` -- rather than both edges where they fall.
+    /// A cell 16.8 pixels tall is then drawn 17 tall from a top that was
+    /// rounded somewhere else, and within a few rows one block overlaps
+    /// the next or stops short of it: the stripe again, a row in five.
+    #[test]
+    fn a_column_of_blocks_has_no_seams() {
+        let cell = crate::font::CellSize {
+            width: 8.4,
+            height: 16.8,
+            baseline: 13.0,
+        };
+        let full = pieces("\u{2588}").expect("a block")[0];
+        for row in 0..40_u16 {
+            let place = |row: u16| (0.0, f32::from(row) * cell.height);
+            let [_, top, _, tall] = snapped(place(row), cell, full);
+            let [_, next, _, _] = snapped(place(row + 1), cell, full);
+            assert!(
+                (top + tall - next).abs() < f32::EPSILON,
+                "row {row} ends at {} and the next starts at {next}",
+                top + tall
+            );
+        }
+        // And across, for the same reason: a cell is not a whole number of
+        // pixels wide either.
+        for column in 0..40_u16 {
+            let place = |column: u16| (f32::from(column) * cell.width, 0.0);
+            let [left, _, wide, _] = snapped(place(column), cell, full);
+            let [next, _, _, _] = snapped(place(column + 1), cell, full);
+            assert!((left + wide - next).abs() < f32::EPSILON, "column {column}");
+        }
+    }
 
     /// Which way a hold's corner turns is a fact about the row beside it.
     ///
