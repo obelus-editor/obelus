@@ -1746,6 +1746,40 @@ fn the_line_being_typed_on_says_nothing_until_it_is_left() {
     assert!(said(&mut app), "coming back to it did not open it");
 }
 
+/// Saving says the line is finished, without stepping off it.
+///
+/// The half the rule above was missing. Leaving the line was the only thing
+/// that released the complaint, and the errors a Rust reader actually waits
+/// for are the ones that only arrive on a save -- `cargo check` finds a type
+/// error and `checkOnSave` is when it runs -- so the underline and the
+/// sentence explaining it were separated by a step the reader had no reason
+/// to take. They pressed `ctrl+s`, got a fresh underline, and had to walk
+/// away and come back to find out what it said.
+///
+/// Broken deliberately by taking `let_go_of_a_line_saved` back out of
+/// `write_now`: the box stays shut after the save, exactly as it did.
+#[test]
+fn saving_says_the_line_is_finished_too() {
+    let (_scratch, mut app, path) = editing("trouble-saving", "fn main() {\n    nmae;\n}\n");
+    app.publish_for_test(published(&path, 1, 4, 8, 1));
+    let said = |app: &mut App| {
+        let dump = support::render(app, 60, 16);
+        support::text_block(&dump).contains("cannot find value")
+    };
+
+    stand_on(&mut app, 1, 4);
+    support::type_text(&mut app, "x");
+    assert!(!said(&mut app), "the line being typed on still says it");
+
+    // The caret does not move: this is the reader saving and then looking
+    // at the line they saved, which is where they already were.
+    support::press_control(&mut app, 's');
+    assert!(
+        said(&mut app),
+        "saving the line did not say the reader had finished it"
+    );
+}
+
 /// What a server said is wrong goes with the text it is about until the
 /// server says again, and goes altogether with text that is taken away.
 ///

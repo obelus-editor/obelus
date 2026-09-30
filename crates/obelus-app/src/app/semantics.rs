@@ -626,6 +626,21 @@ impl App {
         self.complaining = what_is_wrong(here, line, column, chosen.map(|(_, column)| column));
     }
 
+    /// Forgets the line the reader was typing on, because they saved it.
+    ///
+    /// The other thing that says a line is finished, and the louder of the
+    /// two. Leaving it was the only answer at first, which left the reader
+    /// who pressed `ctrl+s` looking at a fresh underline with the sentence
+    /// explaining it still held back -- they had said they were done with
+    /// the whole file and Obelus went on waiting for them to step off the
+    /// line. Worse for the errors that only arrive on a save, which for a
+    /// Rust reader is most of them: `cargo check` is what finds a type
+    /// error, `checkOnSave` is when it runs, so the complaint and the
+    /// reason to keep hiding it arrived in the same instant.
+    pub(super) fn let_go_of_a_line_saved(&mut self) {
+        self.typed_on = None;
+    }
+
     /// Forgets the line the reader was typing on, once the caret is
     /// anywhere else -- another line, another document.
     ///
