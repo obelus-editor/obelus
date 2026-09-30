@@ -6,18 +6,20 @@
 //! checks. What it is built around is `async`, and Obelus's main loop is a
 //! thread blocked on a channel -- so this is the join between them.
 //!
-//! One thread runs the connection. It holds the whole of Obelus's side of
+//! One task runs the connection. It holds the whole of Obelus's side of
 //! it: the handshake, every conversation opened on it, and a loop over the
 //! [`Ask`]s Obelus sends it. In the other direction everything becomes an
 //! [`Event`] on the loop's own channel, like the keyboard, the file walk and
 //! the language servers. Every message in both directions names which
 //! conversation it is about, because one agent holds several.
 //!
-//! One agent, one connection, so the runtime is a current-thread one: a
-//! work-stealing pool here would be threads nobody asked for. The channels
-//! stay `futures`' rather than tokio's -- that is what the protocol's crate
-//! speaks, and a channel is runtime-agnostic anyway; tokio is here to drive
-//! them and for nothing else.
+//! On the one runtime Obelus waits on rather than a runtime of its own. It
+//! had one of its own once, built on a thread whose whole job was to own
+//! it, because the loop had none to offer; a connection is one task with a
+//! handful in it either way, and what it wanted was somewhere to put them.
+//! The channels stay `futures`' rather than tokio's -- that is what the
+//! protocol's crate speaks, and a channel is runtime-agnostic anyway; tokio
+//! is here to drive them and for nothing else.
 //!
 //! The two directions are not symmetrical, and that is the interesting
 //! part. What Obelus *asks* is fire-and-forget: a prompt is spawned as a

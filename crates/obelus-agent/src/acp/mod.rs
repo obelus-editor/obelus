@@ -12,9 +12,9 @@
 //! quietly stopped matching.
 //!
 //! What that crate is built around is `async`, and Obelus's main loop is a
-//! thread blocked on a channel. [`link`] is the join: one thread runs a
-//! tokio runtime with the connection in it, what Obelus wants becomes an
-//! [`Ask`] sent to that thread, and everything the agent says goes into a
+//! thread blocked on a channel. [`link`] is the join: the connection runs
+//! as a task on the one runtime Obelus waits on, what Obelus wants becomes
+//! an [`Ask`] sent to it, and everything the agent says goes into a
 //! [`crate::Event`], which reaches the loop's own channel like the
 //! keyboard and the file walk do.
 //!

@@ -17,8 +17,9 @@
 //! parsed where it is read, and semantic tokens for a two-thousand-line
 //! file is four hundred kilobytes of JSON that takes twenty milliseconds to
 //! parse. On one thread that stalls every other thing waiting on this
-//! runtime -- the agent, the clock, the other servers. It is measured, not
-//! guessed: `tests/runtime.rs`.
+//! runtime -- the agent, the clock, the other servers. The size and the
+//! twenty milliseconds were measured rather than guessed; that a worker
+//! held for that long holds up none of the rest is `tests/runtime.rs`.
 //!
 //! The worker count is tokio's own, which is one per core. A parked worker
 //! waits in the same epoll every other thread waits in and costs a stack
