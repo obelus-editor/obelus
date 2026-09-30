@@ -446,6 +446,21 @@ impl App {
             return;
         }
         let Some(what) = obelus_clipboard::paste() else {
+            // A picture and nowhere for it is not nothing. Which of the
+            // three reasons it is has to be said, because they are fixed in
+            // three different places: the reader is not in a conversation,
+            // or a card is covering the box, or the agent said a prompt to
+            // it cannot carry one. "Nothing to paste" sent a reader to look
+            // at their clipboard, which is the one place the answer is not.
+            if obelus_clipboard::picture().is_some() {
+                self.wrong(match self.conversation_takes_text() {
+                    // Only reachable once the agent has said so: while
+                    // nobody has asked it, a picture is taken.
+                    true => "This agent does not take pictures".to_string(),
+                    false => "A picture goes in a message to an agent".to_string(),
+                });
+                return;
+            }
             self.wrong("Nothing to paste".to_string());
             return;
         };
@@ -461,11 +476,25 @@ impl App {
     /// picture. The second is what `Carries::image` was put there for.
     #[must_use]
     fn can_take_a_picture(&self) -> bool {
-        self.conversation_takes_text()
-            && self
-                .talker
-                .as_ref()
-                .is_some_and(|talker| talker.carries().image)
+        if !self.conversation_takes_text() {
+            return false;
+        }
+        match self
+            .talker
+            .as_ref()
+            .and_then(obelus_agent::acp::Talk::carries)
+        {
+            // It has said, so the answer is what it said.
+            Some(carries) => carries.image,
+            // Nobody has asked it anything yet, which is where a reader
+            // pasting a picture usually is: opening a conversation starts
+            // no process, so the first thing they do is put the picture in
+            // and then type the question about it. Taken, because the
+            // alternative is refusing them over a handshake that has not
+            // happened -- and by the time the prompt actually goes the
+            // agent has started and said.
+            None => true,
+        }
     }
 
     /// Puts a run of text in where the reader is.

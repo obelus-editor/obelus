@@ -71,7 +71,15 @@ pub struct Talk {
     /// What it calls itself, once it has said.
     info: Option<String>,
     /// What a prompt to this agent may carry, as it said in the handshake.
-    carries: link::Carries,
+    /// What a prompt to this agent may carry, once it has said.
+    ///
+    /// `None` until the handshake, which is not the same as "it takes
+    /// nothing": a conversation is opened before any process exists -- see
+    /// the rule about opening starting nothing -- so the ordinary order is
+    /// that the reader pastes a picture into a box belonging to an agent
+    /// nobody has asked yet. Answering that with the default would be
+    /// refusing them on ignorance rather than on anything the agent said.
+    carries: Option<link::Carries>,
     /// Whether the connection has ended, and why.
     gone: Option<Option<String>>,
     /// The conversations open on it, by the name the agent gave each.
@@ -242,7 +250,7 @@ impl Talk {
             id: id.to_string(),
             asks: link::start(command, arguments, root, tools, events),
             info: None,
-            carries: link::Carries::default(),
+            carries: None,
             gone: None,
             sessions: std::collections::HashMap::new(),
             held: None,
@@ -268,7 +276,7 @@ impl Talk {
     /// honest answer while nobody has said: a picture offered before the
     /// agent has spoken is a picture Obelus guessed it would take.
     #[must_use]
-    pub const fn carries(&self) -> link::Carries {
+    pub const fn carries(&self) -> Option<link::Carries> {
         self.carries
     }
 
@@ -577,7 +585,7 @@ impl Talk {
         match incoming {
             Incoming::Ready { named, carries } => {
                 self.info = named;
-                self.carries = carries;
+                self.carries = Some(carries);
                 None
             }
             Incoming::Started { session, mode } => {
