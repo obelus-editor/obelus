@@ -1499,6 +1499,60 @@ mod signatures {
         );
     }
 
+    /// The reader can ask, standing in a call somebody else wrote.
+    ///
+    /// Every other way in is a character: one the server named, or the
+    /// bracket a candidate put the caret inside. A reader who arrows into a
+    /// call that is already written types nothing, and used to have nowhere
+    /// to ask from -- so `show-signature` is the way in, and the question it
+    /// sends says the reader asked for it rather than naming a character
+    /// nobody typed.
+    ///
+    /// Gated on there being a file rather than on there being an answer,
+    /// like the completion command beside it: "it is still starting" is
+    /// something a reader can act on, and a row that is dim for want of a
+    /// server is a row that cannot say so.
+    ///
+    /// Broken deliberately by sending `triggerKind` 2 with no character,
+    /// which is a context that says a character the reader never typed
+    /// asked the question.
+    #[test]
+    fn the_reader_can_ask_what_a_call_they_are_standing_in_takes() {
+        use obelus_app::app::dispatch;
+        use obelus_command::Command;
+        use obelus_syntax::LanguageId;
+
+        let (_scratch, mut app) =
+            editing("signature-invoked", "fn main() {\n    copy(from, to)\n}\n");
+        let (sender, heard) = obelus_app::event::channel();
+        app.events_for_test(sender);
+        assert!(
+            app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+            "the echo would not start"
+        );
+        app.declared_for_test(
+            LanguageId::Rust,
+            json!({ "signatureHelpProvider": { "triggerCharacters": ["(", ",", "<"] } }),
+        );
+
+        // Standing inside the call, having typed nothing.
+        support::press(&mut app, crossterm::event::KeyCode::Down);
+        support::press(&mut app, crossterm::event::KeyCode::End);
+        support::press(&mut app, crossterm::event::KeyCode::Left);
+        dispatch::dispatch(&mut app, Command::SymbolSignature);
+
+        let asked = support::heard_requests(&heard, "textDocument/signatureHelp", 1);
+        assert_eq!(asked.len(), 1, "the key asked nobody: {asked:?}");
+        // 1 is `Invoked`: the reader asked, and no character did.
+        assert_eq!(asked[0]["params"]["context"]["triggerKind"], json!(1));
+        assert_eq!(
+            asked[0]["params"]["context"]["triggerCharacter"],
+            serde_json::Value::Null,
+            "a character nobody typed is named as having asked: {:?}",
+            asked[0]["params"]["context"]
+        );
+    }
+
     /// A closing bracket ends the call, so it ends the panel.
     ///
     /// Where the server did not name it as one to ask again on: with no

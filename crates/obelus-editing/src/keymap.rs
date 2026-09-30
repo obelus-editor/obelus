@@ -830,6 +830,17 @@ impl Keymap {
                     context: Context::Normal,
                     chord: KeyChord::new(KeyCode::Char('h'), KeyModifiers::ALT),
                 },
+                // `alt+s` for signature: what the call the cursor is
+                // inside takes, on the letter of the word like the rest of
+                // this family. The way in for a reader who is *reading* a
+                // call rather than writing one -- every other way asks
+                // because a character was typed, and moving the caret into
+                // a call that is already written types nothing.
+                Binding {
+                    command: Command::SymbolSignature,
+                    context: Context::Normal,
+                    chord: KeyChord::new(KeyCode::Char('s'), KeyModifiers::ALT),
+                },
                 // `alt+e` for error: what the server says is wrong with
                 // this file, on the letter like the rest of this family.
                 Binding {

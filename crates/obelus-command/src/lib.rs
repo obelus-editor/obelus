@@ -47,6 +47,8 @@ pub enum Command {
     SymbolComplete,
     /// What the language server says the place under the caret is.
     SymbolHover,
+    /// What the call the cursor is inside takes.
+    SymbolSignature,
     /// What the language server offers to do about where the reader is.
     ///
     /// Not a `Symbol` command, though it sits among them: every one of
@@ -480,6 +482,11 @@ pub const ALL: &[CommandSpec] = &[
         title: "What this is",
     },
     CommandSpec {
+        command: Command::SymbolSignature,
+        name: "show-signature",
+        title: "What this call takes",
+    },
+    CommandSpec {
         command: Command::CodeActions,
         name: "do-something-here",
         title: "What can be done here",
@@ -790,6 +797,7 @@ impl Command {
             | Self::SymbolMenu
             | Self::SymbolComplete
             | Self::SymbolHover
+            | Self::SymbolSignature
             | Self::CodeActions
             | Self::SymbolRename
             | Self::SymbolTroubles
@@ -869,6 +877,7 @@ impl Command {
             | Self::CodeActions
             | Self::SymbolRename
             | Self::SymbolHover
+            | Self::SymbolSignature
             | Self::SymbolComplete
             | Self::SymbolTroubles
             | Self::SymbolTroublePrevious
@@ -943,6 +952,7 @@ impl Command {
             // themselves or by installing something.
             Self::SymbolComplete
             | Self::SymbolHover
+            | Self::SymbolSignature
             | Self::SymbolRename
             | Self::CodeActions => Requires::AFileOpen,
             // Not a running server: a file with nothing wrong with it is

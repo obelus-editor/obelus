@@ -87,6 +87,44 @@ impl App {
         self.offer_completion();
     }
 
+    /// Asks what the call the cursor is inside takes, because a key said
+    /// so.
+    ///
+    /// The way in for a reader who is *reading* a call rather than writing
+    /// one: every other way asks because a character was typed, and moving
+    /// the caret into a call somebody else wrote types nothing. Gated on
+    /// there being a file and not on there being an answer -- what the
+    /// server says about this file is exactly what a reader pressing it
+    /// wants to be told, and "it is still starting" is an answer they can
+    /// act on.
+    ///
+    /// The difference from [`App::ask_signature`] is the whole of why there
+    /// are two, as it is for the completion beside it: a key that does
+    /// nothing says why, and a character that finds no call says nothing.
+    pub fn ask_signature_here(&mut self) {
+        let Some(language) = self.current_buffer().and_then(Buffer::language) else {
+            self.wrong("No language server for this file".to_string());
+            return;
+        };
+        if let Some(why) = self.why_not_asking(language) {
+            self.wrong(why);
+            return;
+        }
+        if !self
+            .servers
+            .get(&language)
+            .and_then(Client::capabilities)
+            .is_some_and(obelus_lsp::signature::supported)
+        {
+            self.wrong(format!(
+                "{} does not say what a call takes",
+                server_named(language)
+            ));
+            return;
+        }
+        self.ask_signature(obelus_lsp::signature::Asked::Invoked);
+    }
+
     /// The same question, asked because a letter was typed.
     pub(super) fn offer_completion(&mut self) {
         let Some(id) = self.current else { return };

@@ -289,6 +289,12 @@ pub fn for_command(command: obelus_command::Command) -> char {
         Command::SymbolRename => '\u{f0455}',
         // `md-tooltip`: what a thing is, said beside it.
         Command::SymbolHover => '\u{f0523}',
+        // `md-function`: the same picture the outline draws for a
+        // function, because it is the same subject -- a function and what
+        // goes into it. It is not a repeat in any one list: the outline's
+        // glyphs and the palette's are two sets, and `search-symbols` has
+        // the variant of this one.
+        Command::SymbolSignature => '\u{f0295}',
         // `md-alert_circle_outline`: what is wrong with the file.
         Command::SymbolTroubles => '\u{f05d6}',
         // `md-arrow_up` and `md-arrow_down`: plain arrows, where the

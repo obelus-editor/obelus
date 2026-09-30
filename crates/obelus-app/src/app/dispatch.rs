@@ -29,6 +29,7 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::SymbolComplete => app.ask_completion(),
         Command::SymbolOutline => app.open_outline(),
         Command::SymbolHover => app.ask_hover(),
+        Command::SymbolSignature => app.ask_signature_here(),
         Command::CodeActions => app.ask_code_actions(),
         Command::SymbolRename => app.rename_symbol(),
         Command::SymbolTroubles => app.open_troubles(),

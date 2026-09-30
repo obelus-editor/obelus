@@ -112,14 +112,17 @@ fn listed(characters: Option<&Vec<String>>, character: char) -> bool {
 
 /// Why the question is being asked.
 ///
-/// The protocol's trigger kinds, named. They are not the same thing to a
-/// server: a character it asked to hear about is a call being written, and
-/// the document changing under the caret is a client re-asking because what
-/// is under the caret is not what it was.
+/// The protocol's three trigger kinds, named. They are not the same thing
+/// to a server: a character it asked to hear about is a call being written,
+/// a command is somebody standing in one that is already there, and the
+/// document changing under the caret is a client re-asking because what is
+/// under the caret is not what it was.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Asked {
     /// One of the server's own trigger characters was typed.
     Typed(char),
+    /// The reader asked for it.
+    Invoked,
     /// The document moved under the caret -- a candidate that put a call in.
     Changed,
 }
@@ -137,6 +140,10 @@ pub fn context(asked: Asked, showing: Option<&Answer>) -> Value {
         Asked::Typed(trigger) => serde_json::json!({
             "triggerKind": 2,
             "triggerCharacter": trigger.to_string(),
+            "isRetrigger": showing.is_some(),
+        }),
+        Asked::Invoked => serde_json::json!({
+            "triggerKind": 1,
             "isRetrigger": showing.is_some(),
         }),
         Asked::Changed => serde_json::json!({
