@@ -240,6 +240,13 @@ impl App {
         self.agents.root.clone().or_else(obelus_agent::root)
     }
 
+    /// What the install of this agent wrote down when it finished, which is
+    /// the only thing that says it is installed.
+    #[must_use]
+    pub(super) fn installed(&self, id: &str) -> Option<obelus_agent::Installation> {
+        obelus_agent::installation(id, &self.agents_root()?)
+    }
+
     /// Keeps installed agents somewhere else, for a test.
     pub fn agents_root_for_test(&mut self, root: PathBuf) {
         self.agents.root = Some(root);
@@ -565,15 +572,32 @@ impl App {
                 {
                     self.agents.offers = None;
                 }
+                // A conversation shown while there was nothing to start asks
+                // again: it had asked once this showing, of an agent that
+                // could not be started, and there is one to start now.
+                for document in &mut self.documents {
+                    if let Some(talk) = document.as_mut().and_then(Document::chat_mut) {
+                        talk.asked_while_shown = false;
+                    }
+                }
                 // Installed and nothing else in use: the reader pressed the
                 // button, so this is the one they want.
-                //
-                // Nothing is asked of the agent in use otherwise: the
-                // process running is the version before this one until it
-                // is started again, and what it offers is exactly the list
-                // just thrown away.
                 if self.config().agent.is_none() {
                     self.activate_agent(&id);
+                } else if self.settings.is_some()
+                    && self.config().agent.as_deref() == Some(&id)
+                    && self
+                        .talker
+                        .as_ref()
+                        .is_none_or(obelus_agent::acp::Talk::has_exited)
+                {
+                    // And the page asks the version just installed -- but
+                    // only where nothing is running. A process that is
+                    // running is the version before this one until it is
+                    // started again, and what it offers is exactly the
+                    // list just thrown away; with none, what starts now is
+                    // this one.
+                    self.ask_what_the_agent_offers();
                 }
             }
         }
@@ -626,11 +650,7 @@ impl App {
     /// reader can only get out of by noticing that turning it off and on
     /// again is what fixes it.
     pub(super) fn activate_agent(&mut self, id: &str) {
-        if self
-            .agents_root()
-            .and_then(|root| obelus_agent::installation(id, &root))
-            .is_none()
-        {
+        if self.installed(id).is_none() {
             tracing::warn!(id, "not using an agent that is not installed");
             self.wrong(format!("{id} is not installed"));
             return;

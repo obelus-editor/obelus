@@ -56,29 +56,38 @@ pub use link::{
 };
 use obelus_sink::Sink;
 
-/// A connection's way into the main loop, shut when the connection is let
-/// go.
+/// Which connection to an agent something came from, by a count kept for
+/// the life of the process.
 ///
-/// A connection that has been stopped goes on talking for a moment --
-/// whatever it had already read, and last of all that it has gone, which
-/// it says as it closes. By then the next one has started, and nothing on
-/// an event says which connection sent it: the old one's last word was
-/// read as the new one's, and a process that had just answered was taken
-/// to have died. So what a connection sends after it has been let go is
-/// not sent, and the connection hears that nobody is listening -- which is
-/// what every producer reads as "stop".
+/// Nothing the protocol sends says, and it has to be said: a connection
+/// that has been stopped goes on talking for a moment -- what it had
+/// already read, and last of all that it has gone -- and what it had said
+/// before it was stopped is still in the loop's queue when the next one
+/// starts. Taken for the next one's, its last word had a process that had
+/// just answered taken to have died, and its answer to an old request was
+/// matched to the new one's first.
+pub type Connection = u64;
+
+/// The last connection handed a number.
+static CONNECTIONS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// A connection's way into the main loop, which says whose words these are
+/// -- see [`Connection`].
 #[derive(Clone)]
-struct Gated<S> {
+struct Tagged<S> {
     inner: S,
-    open: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    from: Connection,
 }
 
-impl<S: Sink<crate::Event> + Clone> Sink<crate::Event> for Gated<S> {
+impl<S: Sink<crate::Event> + Clone> Sink<crate::Event> for Tagged<S> {
     fn send(&self, event: crate::Event) -> Result<(), obelus_sink::Gone> {
-        if !self.open.load(std::sync::atomic::Ordering::Acquire) {
-            return Err(obelus_sink::Gone);
+        match event {
+            crate::Event::Acp(incoming) => self.inner.send(crate::Event::Heard {
+                from: self.from,
+                incoming,
+            }),
+            other => self.inner.send(other),
         }
-        self.inner.send(event)
     }
 }
 
@@ -143,9 +152,16 @@ pub struct Talk {
     waiting: std::collections::VecDeque<(Asking, Option<Held>)>,
     /// The last number handed to a request for a conversation.
     askings: Asking,
-    /// Whether what this connection sends still reaches the main loop --
-    /// see `Gated`.
-    open: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Which connection this is -- see [`Connection`].
+    connection: Connection,
+    /// The sessions of `thrown` that were opened to ask what the agent
+    /// offers, whose word about that is still wanted after they have gone.
+    ///
+    /// An agent may say what it can be set to in the answer that opens a
+    /// session or in an update a moment after it, and the second arrives
+    /// once the session has been let go. Dropped with the rest, that answer
+    /// read as "nothing", which is a claim about the agent and false.
+    asked: std::collections::HashSet<SessionId>,
     /// The sessions opened only to ask what the agent offers, and let go.
     ///
     /// Kept for the life of the connection, because an agent is free to
@@ -301,10 +317,10 @@ impl Talk {
         tools: Option<String>,
         events: impl Sink<crate::Event> + Clone,
     ) -> Self {
-        let open = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
-        let events = Gated {
+        let connection = CONNECTIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        let events = Tagged {
             inner: events,
-            open: std::sync::Arc::clone(&open),
+            from: connection,
         };
         Self {
             id: id.to_string(),
@@ -315,10 +331,18 @@ impl Talk {
             sessions: std::collections::HashMap::new(),
             waiting: std::collections::VecDeque::new(),
             askings: 0,
-            open,
+            connection,
+            asked: std::collections::HashSet::new(),
             thrown: std::collections::HashSet::new(),
             turns: 0,
         }
+    }
+
+    /// Which connection this is, for telling its words from another's --
+    /// see [`Connection`].
+    #[must_use]
+    pub const fn connection(&self) -> Connection {
+        self.connection
     }
 
     /// Which agent this is, by the registry's id.
@@ -677,11 +701,7 @@ impl Talk {
     /// Dropping the asks is the whole of it: the thread's loop over them
     /// ends, the connection closes, and the agent -- reading a pipe that
     /// has gone -- exits. Which is how a language server is stopped too.
-    ///
-    /// Shut first, so that nothing it says from here on -- its `Gone`
-    /// included -- is taken for whatever is started next.
     pub fn shutdown(&mut self) {
-        self.open.store(false, std::sync::atomic::Ordering::Release);
         self.asks.close_channel();
         self.sessions.clear();
         self.waiting.clear();
@@ -703,18 +723,33 @@ impl Talk {
     /// needs is dealt with here, and what a reader needs to see goes on.
     pub fn on(&mut self, incoming: Incoming) -> Option<Incoming> {
         // Before anything else looks at it: a session thrown away is one
-        // whose every word is about nothing.
-        if let Incoming::Update { session, .. } = &incoming
+        // whose every word is about nothing -- whatever kind of word it is,
+        // because the answer to a turn that was running when a note went
+        // is as much about it as an update. Except what one opened to ask
+        // says it can be set to, which is the answer it was opened for.
+        if let Some(session) = about(&incoming)
             && self.thrown.contains(session)
         {
-            return None;
+            return match incoming {
+                Incoming::Update {
+                    session,
+                    update: Update::Settings(offers),
+                } if self.asked.contains(&session) => Some(Incoming::Offers { session, offers }),
+                _ => None,
+            };
         }
         match incoming {
             Incoming::Offers { session, offers } => {
                 // And what it said before the answer that named it, which
-                // is already in here as a conversation of its own.
-                self.sessions.remove(&session);
+                // is already in here as a conversation of its own -- and is
+                // the answer, where the one that named it was empty.
+                let early = self.sessions.remove(&session);
                 self.thrown.insert(session.clone());
+                self.asked.insert(session.clone());
+                let offers = match (offers.is_empty(), early) {
+                    (true, Some(early)) => early.settings,
+                    (_, _) => offers,
+                };
                 Some(Incoming::Offers { session, offers })
             }
             Incoming::Ready { named, carries } => {
@@ -865,6 +900,22 @@ impl Talk {
     }
 }
 
+/// The session a word from the agent is about, where it names one.
+fn about(incoming: &Incoming) -> Option<&SessionId> {
+    match incoming {
+        Incoming::Started { session, .. }
+        | Incoming::Update { session, .. }
+        | Incoming::Ended { session, .. }
+        | Incoming::Lost { session, .. }
+        | Incoming::Permission { session, .. }
+        | Incoming::Remembered { session, .. } => Some(session),
+        // Its own session is what it is the answer about, and forgetting
+        // that session is the answer's own business.
+        Incoming::Offers { .. } => None,
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -882,7 +933,8 @@ mod tests {
             sessions: std::collections::HashMap::new(),
             waiting: std::collections::VecDeque::new(),
             askings: 0,
-            open: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            connection: 0,
+            asked: std::collections::HashSet::new(),
             thrown: std::collections::HashSet::new(),
             turns: 0,
         }
@@ -916,6 +968,30 @@ mod tests {
         assert!(!talk.holds(&gone), "what it said afterwards is held");
     }
 
+    /// A session let go stays let go whatever kind of word arrives about
+    /// it, not only an update.
+    ///
+    /// Deliberate break: ask only an `Update` whether its session was
+    /// thrown away, the way it did. The answer to a turn that was running
+    /// when the note went makes the session a conversation that is held.
+    #[test]
+    fn every_word_about_a_session_let_go_is_dropped() {
+        let mut talk = detached();
+        let gone = SessionId::new("s-1");
+        talk.on(Incoming::Started {
+            session: gone.clone(),
+            mode: None,
+            asking: None,
+        });
+        talk.let_go(&gone);
+        talk.on(Incoming::Ended {
+            session: gone.clone(),
+            turn: 1,
+            why: "end_turn".to_string(),
+        });
+        assert!(!talk.holds(&gone), "the turn's answer made it held again");
+    }
+
     /// A session opened only to ask is forgotten, whatever the agent says
     /// about it and whenever it says it.
     ///
@@ -926,6 +1002,10 @@ mod tests {
     /// made a conversation nothing ever let go. Take out the check at the
     /// top of `on` and the second does, and a word about a deleted
     /// session is passed up to be answered.
+    ///
+    /// Except the one word it was opened for: what it can be set to, said
+    /// after the answer that named it, is that answer -- see `asked`. Take
+    /// it back out of the check, and the settings said late are dropped.
     #[test]
     fn a_session_opened_to_ask_is_forgotten() {
         let mut talk = detached();
@@ -944,9 +1024,19 @@ mod tests {
 
         let late = talk.on(Incoming::Update {
             session: thrown.clone(),
-            update: Update::Settings(Vec::new()),
+            update: Update::Orders(Vec::new()),
         });
         assert!(late.is_none(), "a word about it was passed up");
         assert!(!talk.holds(&thrown), "what it said late is held");
+
+        let offered = talk.on(Incoming::Update {
+            session: thrown.clone(),
+            update: Update::Settings(Vec::new()),
+        });
+        assert!(
+            matches!(offered, Some(Incoming::Offers { .. })),
+            "what it said it can be set to, late, was not its answer"
+        );
+        assert!(!talk.holds(&thrown), "what it offered late is held");
     }
 }

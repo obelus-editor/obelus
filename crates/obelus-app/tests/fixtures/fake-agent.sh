@@ -124,6 +124,11 @@ again='load'
 # it were real: before that answer arrives, nothing on the client's side
 # knows the session is not one.
 tells=''
+# Whether what it can be set to comes after the answer that opens the
+# session rather than in it: an answer with nothing but the session's name,
+# and then an update with every setting, which is the other way agents do
+# it.
+later=''
 # Where it writes down every request it is sent, one line each: the method
 # and the session it names. Nothing a client asks is visible from the
 # outside otherwise, and some of what Obelus owes an agent is a request --
@@ -138,6 +143,7 @@ for word in "$@"; do
         only-resumes) again='resume' ;;
         forgets) again='none' ;;
         tells-settings) tells='yes' ;;
+        options-later) later='yes' ;;
         log=*) log="${word#log=}" ;;
     esac
 done
@@ -235,7 +241,10 @@ while IFS= read -r line; do
             if [ -n "$tells" ] && [ -z "$bare" ]; then
                 printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"config_option_update","configOptions":%s}}}\n' "$(options)"
             fi
-            if [ -n "$bare" ]; then
+            if [ -n "$later" ]; then
+                printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"'"$session"'"}}\n' "$(id_of "$line")"
+                printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"config_option_update","configOptions":%s}}}\n' "$(options)"
+            elif [ -n "$bare" ]; then
                 printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"'"$session"'"}}\n' "$(id_of "$line")"
             else
                 printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"'"$session"'","modes":{"currentModeId":"ask","availableModes":[{"id":"ask","name":"ask first"},{"id":"code","name":"write code"}]},"configOptions":%s}}\n' "$(id_of "$line")" "$(options)"

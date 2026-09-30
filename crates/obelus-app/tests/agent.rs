@@ -8377,11 +8377,12 @@ fn an_agent_not_installed_is_not_said_into_the_conversation_on_every_visit() {
 /// showing already, so it did not ask the new agent for one: its row and
 /// its `/` list stayed empty until the reader typed.
 ///
-/// Deliberate breaks: let the old connection's words through after
-/// `Talk::shutdown`, and the new process is taken to have died with the old
-/// one before the conversation has its session; leave `asked_while_shown`
-/// alone in `let_the_conversations_go`, and nothing is asked for. Either
-/// way the wait for the session gives up.
+/// Deliberate breaks: hand the running agent every word whichever
+/// connection it came from, in the `Heard` arm of the loop, and the new
+/// process is taken to have died with the old one before the conversation
+/// has its session; leave `asked_while_shown` alone in
+/// `let_the_conversations_go`, and nothing is asked for. Either way the
+/// wait for the session gives up.
 #[test]
 fn choosing_the_agent_again_gives_the_conversation_a_session_on_it() {
     use obelus_command::Command;
@@ -8429,4 +8430,283 @@ fn choosing_the_agent_again_gives_the_conversation_a_session_on_it() {
         "the new process was taken for the old one:\n{}",
         screen(&mut app)
     );
+}
+
+/// An agent chosen again gets a session of its own for the conversation on
+/// screen, whatever the one before it had already said.
+///
+/// Not only what the stopped connection says after it has been stopped:
+/// what it said before, and nobody has read yet, is in the loop's queue
+/// when the next connection starts -- and the answer to a request the old
+/// one was answering was taken as the answer to the new one's first, so
+/// the conversation wore a session on a process that had gone.
+///
+/// Deliberate break: hand every word to the running agent whichever
+/// connection it came from, as `on_acp` did. The conversation's session is
+/// the old process's `s-1`.
+#[test]
+fn a_word_the_last_agent_had_already_said_is_not_the_next_ones() {
+    use obelus_command::Command;
+
+    let root = agents_root_for("queued");
+    std::fs::create_dir_all(&root).expect("the root");
+    the_fixture_is_installed(&root);
+    let (mut app, events) = wired();
+    app.agents_root_for_test(root);
+    let config = obelus_config::Config {
+        agent: Some("fake".to_string()),
+        ..obelus_config::Config::default()
+    };
+    app.configure(config, Vec::new());
+    // A conversation asks the first process for a session, and the answer
+    // is left in the queue: nothing here reads it until the pump below.
+    app.open_agent();
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    std::thread::sleep(Duration::from_millis(500));
+
+    // Off and on again, before any of it has been read.
+    the_fixture_is_listed(&mut app);
+    obelus_app::app::dispatch::dispatch(&mut app, Command::ConfigOpen);
+    support::press(&mut app, KeyCode::BackTab);
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Esc);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+
+    // The new process opens `s-1` to say what it offers and `s-2` for the
+    // conversation.
+    pump(&mut app, &events, "the conversation's session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    settle(&mut app, &events, Duration::from_millis(300));
+    assert_eq!(
+        app.chat_session_for_test().as_deref(),
+        Some("s-2"),
+        "the conversation wears a session on the process that was stopped"
+    );
+}
+
+/// A session nobody is waiting for any more is let go, on the agent's side
+/// as well.
+///
+/// Deliberate break: leave an answer nobody holds where it lands. The
+/// agent is never told, and the wait for the log to say so gives up.
+#[test]
+fn a_session_nobody_is_waiting_for_is_let_go() {
+    let scratch = support::Scratch::new("agent-orphan");
+    let log = scratch.path().join("asked.log");
+    let (mut app, events) = wired();
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &[
+            "tests/fixtures/fake-agent.sh".to_string(),
+            format!("log={}", log.display()),
+        ],
+    );
+    // Opened, which asks, and closed before the answer is read.
+    app.open_agent();
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentClose);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    asked(&mut app, &events, &log, "session/delete s-1");
+}
+
+/// A conversation that goes on after the agent died under it tells the new
+/// session what it has told none: who it is talking to.
+///
+/// A conversation about nothing in particular takes nothing up again -- it
+/// has no note to find its old session by -- so the session it gets after
+/// the agent is started again is a new one, and a new one has been told
+/// nothing. It was sent the reader's words and nothing else, because the
+/// conversation still counted itself as having said its piece.
+///
+/// Deliberate break: leave `introduced` alone in
+/// `forget_what_the_agent_held`. The second message arrives as one block.
+#[test]
+fn a_conversation_after_the_agent_died_introduces_itself_again() {
+    let root = agents_root_for("reintroduced");
+    std::fs::create_dir_all(&root).expect("the root");
+    the_fixture_is_installed(&root);
+    let (mut app, events) = wired();
+    app.agents_root_for_test(root);
+    let config = obelus_config::Config {
+        agent: Some("fake".to_string()),
+        ..obelus_config::Config::default()
+    };
+    app.configure(config, Vec::new());
+    app.open_agent();
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    let blocks = |app: &App, how_many: &str| {
+        app.chat().map_or(0, |chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .filter(|row| row.text().contains(&format!("blocks={how_many}")))
+                .count()
+        })
+    };
+    support::type_text(&mut app, "/blocks");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the first answer", |app| {
+        blocks(app, "2") == 1
+    });
+
+    support::type_text(&mut app, "/die");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the agent to go", |app| {
+        app.talking() == obelus_agent::Talking::Gone
+    });
+    support::type_text(&mut app, "/blocks again");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the second answer", |app| {
+        blocks(app, "2") + blocks(app, "1") == 2
+    });
+    assert_eq!(
+        blocks(&app, "2"),
+        2,
+        "the new session was not told who it is talking to:\n{}",
+        screen(&mut app)
+    );
+}
+
+/// What an agent says it can be set to after the answer that opened the
+/// session to ask is heard, and not taken for "nothing".
+///
+/// Deliberate break: drop what the session opened to ask says after its
+/// answer, the way `Talk::on` did. The list never has the model in it.
+#[test]
+fn what_an_agent_offers_after_its_answer_is_heard() {
+    use obelus_command::Command;
+
+    let root = agents_root_for("offers-later");
+    std::fs::create_dir_all(&root).expect("the root");
+    the_fixture_is_installed(&root);
+    let (mut app, events) = wired();
+    app.agents_root_for_test(root);
+    let config = obelus_config::Config {
+        agent: Some("fake".to_string()),
+        ..obelus_config::Config::default()
+    };
+    app.configure(config, Vec::new());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &[
+            "tests/fixtures/fake-agent.sh".to_string(),
+            "options-later".to_string(),
+        ],
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, Command::ConfigOpen);
+    pump(&mut app, &events, "the model among what it offers", |app| {
+        app.agent_offering()
+            .is_some_and(|offering| offering.offers.iter().any(|offer| offer.id == "model"))
+    });
+}
+
+/// Installing the agent in use while nothing is running asks what the new
+/// version offers.
+///
+/// Nothing running means nothing that could answer for the version before,
+/// so starting it now starts the new one -- and the page, which has just
+/// thrown its list away, says it has heard nothing otherwise.
+///
+/// Deliberate break: ask nothing in `on_installed`. The wait for the list
+/// gives up.
+#[test]
+fn installing_the_agent_in_use_asks_the_new_version() {
+    use obelus_command::Command;
+
+    let root = agents_root_for("installed-asks");
+    std::fs::create_dir_all(&root).expect("the root");
+    let (mut app, events) = wired();
+    app.agents_root_for_test(root.clone());
+    let config = obelus_config::Config {
+        agent: Some("fake".to_string()),
+        ..obelus_config::Config::default()
+    };
+    app.configure(config, Vec::new());
+    obelus_app::app::dispatch::dispatch(&mut app, Command::ConfigOpen);
+    the_fixture_is_installed(&root);
+    app.handle(Event::Agent(obelus_agent::Event::Installed {
+        id: "fake".to_string(),
+        failure: None,
+    }));
+    pump(&mut app, &events, "what the new version offers", |app| {
+        app.agent_offering()
+            .is_some_and(|offering| !offering.offers.is_empty())
+    });
+}
+
+/// A second choice the agent no longer offers is said as well, when the
+/// first has been said already.
+///
+/// Deliberate break: remember what has been said by the setting alone.
+/// The reader's new choice, gone too, is never mentioned.
+#[test]
+fn a_second_choice_not_offered_is_said_too() {
+    let (mut app, events) = wired();
+    let mut config = obelus_config::Config::default();
+    config.set_agent_default("fake", "model", "brilliant");
+    app.configure(config, Vec::new());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.open_agent();
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    let said = |app: &App| {
+        app.chat().map_or(0, |chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .filter(|row| row.text().contains("No longer offered by"))
+                .count()
+        })
+    };
+    pump(&mut app, &events, "the first to be said", |app| {
+        said(app) == 1
+    });
+
+    // Another choice, which the agent does not offer either, and a session
+    // of its own again to open on it.
+    let mut config = obelus_config::Config::default();
+    config.set_agent_default("fake", "model", "superb");
+    app.configure(config, Vec::new());
+    app.open_buffer_for_test(support::open_fixture("sample.rs"));
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    app.open_agent();
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    pump(&mut app, &events, "the second to be said", |app| {
+        said(app) == 2
+    });
+}
+
+/// A conversation shown while its agent was not installed asks for a
+/// session once it is.
+///
+/// Deliberate break: leave `asked_while_shown` as it was when the install
+/// finishes. Nothing is asked until the reader types, and the wait gives
+/// up.
+#[test]
+fn a_conversation_asks_for_its_session_once_the_agent_is_installed() {
+    let root = agents_root_for("installed-late");
+    std::fs::create_dir_all(&root).expect("the root");
+    let (mut app, events) = wired();
+    app.agents_root_for_test(root.clone());
+    let config = obelus_config::Config {
+        agent: Some("fake".to_string()),
+        ..obelus_config::Config::default()
+    };
+    app.configure(config, Vec::new());
+    app.open_agent();
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    the_fixture_is_installed(&root);
+    app.handle(Event::Agent(obelus_agent::Event::Installed {
+        id: "fake".to_string(),
+        failure: None,
+    }));
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
 }

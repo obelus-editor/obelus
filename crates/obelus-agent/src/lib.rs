@@ -74,6 +74,18 @@ pub enum Event {
     /// of it carries a channel to answer through -- an agent asking
     /// permission has stopped and is waiting for a keystroke.
     Acp(crate::acp::Incoming),
+    /// The same, on its way into the main loop, with the connection it came
+    /// from -- see [`acp::Connection`].
+    ///
+    /// What a connection sends is `Acp`; what arrives is this, because a
+    /// word from a connection that has been stopped is not the running
+    /// one's, and nothing in the word says so.
+    Heard {
+        /// Which connection said it.
+        from: crate::acp::Connection,
+        /// What it said.
+        incoming: crate::acp::Incoming,
+    },
 }
 
 /// What Obelus is doing about an agent.

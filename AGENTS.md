@@ -322,6 +322,16 @@ arrives is held against that number, and goes out in that conversation and
 no other: one slot held it, and the first session to arrive -- the other
 conversation's -- took it.
 
+And every word says which connection it came from (`acp::Connection`),
+because nothing the protocol sends does. A connection that has been stopped
+goes on talking for a moment -- what it had said and nobody had read yet,
+and last of all that it has gone -- and all of it used to be read as the
+running one's: turning the agent off and on again had the new process
+taken for dead, and an old answer matched to the new one's first request.
+What a connection sends is tagged on its way into the loop
+(`Event::Heard`), and the loop hands the running connection its own words
+only.
+
 **What a reader said about a project outlives the window they said it in.**
 The agent keeps every word and Obelus keeps the one thing it cannot --
 which conversation is which -- so `f4` inside a conversation is a list of

@@ -206,18 +206,12 @@ impl App {
 
     /// Whether the agent the settings name has an install to start.
     fn the_chosen_agent_is_installed(&self) -> bool {
-        let Some(id) = self
-            .settled
+        self.settled
             .config
             .agent
             .as_deref()
             .filter(|id| !id.is_empty())
-        else {
-            return false;
-        };
-        self.agents_root()
-            .and_then(|root| obelus_agent::installation(id, &root))
-            .is_some()
+            .is_some_and(|id| self.installed(id).is_some())
     }
 
     /// The same, of whichever agent is running, for a test that started
@@ -422,9 +416,15 @@ impl App {
             talk.minted = false;
             talk.started_on.clear();
             // Claimed by the session's name, which has gone; a note's is
-            // claimed by the note.
+            // claimed by the note. And a new one is what a conversation
+            // about nothing in particular gets next -- it has no note to
+            // find the old one by -- and a new one has been told nothing,
+            // so what was told goes too, or its first message goes out
+            // without saying who it is talking to.
             if talk.topic == Topic::Loose {
                 talk.claim = None;
+                talk.told = None;
+                talk.introduced = false;
             }
         }
     }
@@ -1230,13 +1230,14 @@ impl App {
                     "what was chosen is not offered any more"
                 );
                 asked.push(setting.id.clone());
-                if said_already.contains(&setting.id) {
+                let said = (setting.id.clone(), value.clone());
+                if said_already.contains(&said) {
                     continue;
                 }
                 // Not opening on the agent's name, for the reason the
                 // settings page's line does not: see `Shown::warning`.
                 gone.push((
-                    setting.id.clone(),
+                    said,
                     format!(
                         "No longer offered by {name}: {value} for {}, so this conversation is \
                          on {}",
@@ -1361,20 +1362,14 @@ impl App {
             .as_ref()
             .is_none_or(obelus_agent::acp::Talk::has_exited)
         {
+            // The session went with the process that held it, and every
+            // conversation was told so when it went -- see
+            // `forget_what_the_agent_held` -- so this one asks for its own
+            // again below: the one written down against its note where
+            // there is one, which is how a conversation survives the agent
+            // dying under it.
             self.stop_agent();
             self.start_agent();
-            // The session went with the process that held it, so this
-            // conversation asks for its own again -- the one written down
-            // against its note where there is one, which is how a
-            // conversation survives the agent dying under it. Left as it
-            // was, it names a conversation the new process never heard
-            // of; and nothing opens one behind its back any more.
-            if let Some(talk) = self.talk_mut(whose) {
-                talk.session = None;
-                talk.asked_for = None;
-                talk.opening = false;
-                talk.requested = None;
-            }
         }
         // Asked whether or not the process was just started, and after
         // that block rather than inside it: a conversation with no session
@@ -2679,7 +2674,19 @@ impl App {
             // a conversation waiting on a request of its own, which it then
             // lost.
             let asked = match asking {
-                Some(asking) => self.conversation_at(|talk| talk.requested == Some(*asking)),
+                Some(asking) => {
+                    let Some(at) = self.conversation_at(|talk| talk.requested == Some(*asking))
+                    else {
+                        // Asked for by a conversation that has gone, and
+                        // nobody's now: let go on the agent's side as well,
+                        // the way one the reader left without a word is.
+                        if let Some(talker) = self.talker.as_mut() {
+                            talker.let_go(&session);
+                        }
+                        return;
+                    };
+                    Some(at)
+                }
                 None => self
                     .conversation_at(|talk| talk.asked_for.as_ref() == Some(&session))
                     .or_else(|| {

@@ -65,7 +65,9 @@ fn pump(
     loop {
         let left = deadline.saturating_duration_since(Instant::now());
         assert!(!left.is_zero(), "gave up waiting for {what}");
-        let Ok(Event::Agent(obelus_agent::Event::Acp(incoming))) = events.recv_timeout(left) else {
+        let Ok(Event::Agent(obelus_agent::Event::Heard { incoming, .. })) =
+            events.recv_timeout(left)
+        else {
             continue;
         };
         let seen = talk.on(incoming);
@@ -243,7 +245,9 @@ fn a_conversation_is_opened_only_when_one_is_asked_for() {
             true => Duration::from_millis(500),
             false => left,
         };
-        let Ok(Event::Agent(obelus_agent::Event::Acp(incoming))) = events.recv_timeout(wait) else {
+        let Ok(Event::Agent(obelus_agent::Event::Heard { incoming, .. })) =
+            events.recv_timeout(wait)
+        else {
             if shaken {
                 break;
             }

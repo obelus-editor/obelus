@@ -2618,6 +2618,24 @@ impl App {
                 done,
             }) => self.on_matches(generation, hits, done),
             Event::Agent(obelus_agent::Event::Acp(message)) => self.on_acp(message),
+            // Only the running connection's. A word from one that has been
+            // stopped -- what it had said before and nobody had read yet,
+            // and that it has gone -- is about a process that is not the
+            // one running, and read as the running one's it matched an old
+            // answer to a new request and had a live agent taken for dead.
+            Event::Agent(obelus_agent::Event::Heard { from, incoming }) => {
+                match self
+                    .talker
+                    .as_ref()
+                    .map(obelus_agent::acp::Talk::connection)
+                {
+                    Some(running) if running == from => self.on_acp(incoming),
+                    _ => tracing::debug!(
+                        from,
+                        "a word from a connection that is not the one running"
+                    ),
+                }
+            }
             Event::Tools(obelus_mcp::Asked { wanted, answer }) => {
                 let _ = answer.send(match wanted {
                     obelus_mcp::Wanted::Notes(doing) => self.change_the_notes(doing),
