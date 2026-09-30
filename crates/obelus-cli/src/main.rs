@@ -53,7 +53,7 @@ fn main() -> Result<()> {
     // asking means writing an escape sequence to the terminal and reading
     // what it writes back. A terminal that answers can draw an agent's own
     // mark on the agents page; one that does not gets a glyph.
-    let images = obelus_ui::image::Images::detect();
+    let images = obelus_ui::image::Images::detect(obelus_app::event::remote());
 
     // `ratatui::try_init` enters the alternate screen, turns on raw mode, and
     // chains a panic hook that undoes both before the previous hook runs.

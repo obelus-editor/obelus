@@ -158,6 +158,33 @@ impl Images {
         }
     }
 
+    /// How long the terminal is given to answer, and how long over a
+    /// network.
+    ///
+    /// The crate's own deadline is two seconds, and a terminal that does
+    /// not answer costs every one of them *before the first frame* --
+    /// which is a reader starting Obelus and watching their shell sit
+    /// there. tmux is where that happens: the query is wrapped in its
+    /// passthrough, which it forwards only where the reader has turned
+    /// `allow-passthrough` on, and what is behind it has to be something
+    /// that answers. Which of those is missing is not a thing Obelus can
+    /// ask -- what it knows is that the answer is not coming, and that
+    /// waiting two seconds for it is the whole of the cost.
+    ///
+    /// Two hundred milliseconds, from measurement rather than from taste:
+    /// 257 starts in this machine's own log, 255 of them answered, the
+    /// median in 0.21ms and the slowest in 12ms. The two that did not were
+    /// tmux, twice, at the full two seconds.
+    ///
+    /// Over a network the answer is a round trip, which none of those
+    /// measurements contain, so that case keeps what it has always had.
+    /// The reader there is already paying round trips for everything else,
+    /// and losing this race silently is the one thing a deadline here can
+    /// do wrong.
+    const ANSWERS_IN: std::time::Duration = std::time::Duration::from_millis(200);
+    /// The same, for a terminal at the other end of a network.
+    const ANSWERS_REMOTELY_IN: std::time::Duration = std::time::Duration::from_secs(2);
+
     /// Asks the terminal what it can do.
     ///
     /// Must be called before the alternate screen is entered, and never
@@ -166,9 +193,20 @@ impl Images {
     ///
     /// Half-blocks -- what `ratatui-image` guesses when nothing answers --
     /// count as "cannot": see the module's own note.
+    ///
+    /// `remote` is the caller's, because whether this session is being read
+    /// over a network is a question Obelus already answers in one place and
+    /// a picture protocol is not where a second answer to it belongs.
     #[must_use]
-    pub fn detect() -> Self {
-        match Picker::from_query_stdio() {
+    pub fn detect(remote: bool) -> Self {
+        let options = ratatui_image::picker::cap_parser::QueryStdioOptions {
+            timeout: match remote {
+                true => Self::ANSWERS_REMOTELY_IN,
+                false => Self::ANSWERS_IN,
+            },
+            ..Default::default()
+        };
+        match Picker::from_query_stdio_with_options(options) {
             Ok(picker) if picker.protocol_type() != ProtocolType::Halfblocks => {
                 tracing::info!(protocol = ?picker.protocol_type(), "the terminal can show pictures");
                 Self {
