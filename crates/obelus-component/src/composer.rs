@@ -550,12 +550,18 @@ fn laid_out(text: &Text, width: u16, held: Option<Span>) -> Vec<Laid> {
 /// already been told it.
 fn label(which: usize) -> String {
     let numbered = match which {
-        which @ 1..=9 => format!("[Image {which}]"),
-        _ => "[Image +]".to_string(),
+        which @ 1..=9 => format!("Image {which}"),
+        _ => "Image +".to_string(),
     };
     match obelus_icons::enabled() {
-        true => format!("{numbered}{} ", obelus_icons::ui::PICTURE),
-        false => format!("{numbered}  "),
+        // Inside the brackets, where it says what the thing is before the
+        // thing is named -- and with the blank column after it that every
+        // glyph here is given.
+        true => format!("[{} {numbered}]", obelus_icons::ui::PICTURE),
+        // The same room, spent on nothing. Padded at both ends rather than
+        // one, because two spaces after the bracket read as a mistake and
+        // one at each end reads as a mark.
+        false => format!("[ {numbered} ]"),
     }
 }
 
@@ -823,7 +829,10 @@ mod tests {
         // is drawn as depends on the glyph switch, and what it must *not*
         // depend on is how wide it is.
         assert_eq!(rows, vec![format!("look at {} and {}", label(1), label(2))]);
-        assert!(rows[0].contains("[Image 1]"), "{rows:?}");
+        // The number is what both renderings have in common, and it is
+        // what a reader is reading: which picture this is.
+        assert!(rows[0].contains("Image 1"), "{rows:?}");
+        assert!(rows[0].contains("Image 2"), "{rows:?}");
         assert_eq!(
             label(1).chars().count(),
             obelus_text::ATTACHED_WIDTH,
