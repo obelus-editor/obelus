@@ -1019,6 +1019,28 @@ pub(crate) fn rule(cells: &mut CellBuffer, area: Rect, theme: &Theme) {
     shapes::ruled(Rect { height: 1, ..area });
 }
 
+/// The line between the two halves of one panel.
+///
+/// Not [`rule`], which is a boundary between two subjects on the page: this
+/// one is the box's own, so it meets the border it crosses -- `├` and `┤`
+/// rather than a line that overwrites the sides and leaves two boxes
+/// touching. The completion panel's list and its documentation are divided
+/// by it, and so are a signature's labels and what the call says about
+/// itself; both are one thing with two parts.
+pub(crate) fn divider(cells: &mut CellBuffer, area: Rect, y: u16, theme: &Theme) {
+    let edge = Style::new().fg(theme.gutter).bg(theme.background);
+    put(cells, area.x, y, '\u{251c}', edge);
+    for x in area.x + 1..area.right().saturating_sub(1) {
+        put(cells, x, y, '\u{2500}', edge);
+    }
+    put(cells, area.right().saturating_sub(1), y, '\u{2524}', edge);
+    shapes::ruled(Rect {
+        y,
+        height: 1,
+        ..area
+    });
+}
+
 /// A bar down the right-hand edge of a region: where its window sits.
 ///
 /// Shared by the editor and the lists, because it is the same question in
