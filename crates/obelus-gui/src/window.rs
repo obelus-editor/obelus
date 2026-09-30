@@ -176,6 +176,11 @@ struct Showing {
     /// is drawing nothing at all before the first of those, so the default
     /// is never on the screen.
     ground: Color,
+    /// How many pixels at the top of the window are the title bar's --
+    /// see `title::height`. Measured with the columns and rows, because it
+    /// changes when they do: a resize, a screen of another density, and
+    /// full screen, which takes the bar away.
+    titled: f32,
     /// Which two colours mean the reader has hold of something: a run of
     /// characters, and the row their keys are on. The application's, said
     /// at the same two moments the ground is.
@@ -281,6 +286,7 @@ impl Showing {
             capped: Vec::new(),
             capping: Vec::new(),
             ground: Color::Reset,
+            titled: 0.0,
             holding: (Color::Reset, Color::Reset),
             ticked: Vec::new(),
             sheened: None,
@@ -387,11 +393,12 @@ impl Showing {
         };
         let size = window.inner_size();
         let cell = fonts.cell();
+        self.titled = crate::title::height(window);
         #[expect(
             clippy::cast_precision_loss,
             reason = "a window is thousands of pixels, not millions"
         )]
-        let (width, height) = (size.width as f32, size.height as f32);
+        let (width, height) = (size.width as f32, size.height as f32 - self.titled);
         #[expect(
             clippy::cast_possible_truncation,
             clippy::cast_sign_loss,
@@ -469,10 +476,12 @@ impl Showing {
             reason = "a window is thousands of pixels, not millions"
         )]
         let (across, down) = (size.width as f32, size.height as f32);
-        [
-            crate::grid::margin(across, cell.width, self.page.columns()),
-            crate::grid::margin(down, cell.height, self.page.rows()),
-        ]
+        crate::grid::origin(
+            [across, down],
+            self.titled,
+            [cell.width, cell.height],
+            [self.page.columns(), self.page.rows()],
+        )
     }
 
     /// Which cell a place in the window is in.
@@ -534,11 +543,11 @@ impl ApplicationHandler<Waking> for Showing {
         let Some(mut app) = self.starting.take() else {
             return;
         };
-        let attributes = marked(named(
+        let attributes = crate::title::asked_for(marked(named(
             Window::default_attributes()
                 .with_title("Obelus")
                 .with_inner_size(LogicalSize::new(1100.0, 720.0)),
-        ));
+        )));
         let window = match events.create_window(attributes) {
             Ok(window) => Arc::new(window),
             Err(error) => {
@@ -681,7 +690,16 @@ impl ApplicationHandler<Waking> for Showing {
                         Update::TextSize(points) => sized = Some(points),
                         Update::Animates(on) => self.motion.animates(on),
                         Update::Fonts(names) => faces = Some(names),
-                        Update::Ground(ground) => self.ground = ground,
+                        Update::Ground(ground) => {
+                            // Said again after every change to the
+                            // settings, and nearly always the same.
+                            if ground != self.ground
+                                && let Some(window) = self.window.as_ref()
+                            {
+                                crate::title::follow(window, ground);
+                            }
+                            self.ground = ground;
+                        }
                         Update::Holding { held, row } => self.holding = (held, row),
                         Update::Mark {
                             id,
@@ -1039,6 +1057,7 @@ impl ApplicationHandler<Waking> for Showing {
                     return;
                 };
                 painter.drawn_on(self.ground);
+                painter.titled(self.titled);
                 painter.holding(self.holding);
                 if let Err(error) = painter.paint(
                     &self.page,

@@ -142,6 +142,9 @@ pub(crate) struct Painter {
     /// `grid::margin`. Kept because `whole_window` is wanted below
     /// `draw`, where the margin is worked out.
     margin: [f32; 2],
+    /// How many pixels at the top of the window belong to the title bar
+    /// -- see `title::height`.
+    titled: f32,
     /// Which two colours mean the reader has hold of something: a run of
     /// characters, and the row their keys are on -- see
     /// `Drawing::holding`.
@@ -792,6 +795,7 @@ impl Painter {
             ground: Color::Reset,
             grid: [0.0, 0.0],
             margin: [0.0, 0.0],
+            titled: 0.0,
             holding: (Color::Reset, Color::Reset),
             quads: Vec::new(),
             placed: Placed::default(),
@@ -903,10 +907,12 @@ impl Painter {
             reason = "a window is thousands of pixels, not millions"
         )]
         let (across, down) = (self.configured.width as f32, self.configured.height as f32);
-        let margin = [
-            crate::grid::margin(across, cell.width, page.columns()),
-            crate::grid::margin(down, cell.height, page.rows()),
-        ];
+        let margin = crate::grid::origin(
+            [across, down],
+            self.titled,
+            [cell.width, cell.height],
+            [page.columns(), page.rows()],
+        );
         self.grid = [
             f32::from(page.columns()) * cell.width,
             f32::from(page.rows()) * cell.height,
@@ -1525,6 +1531,13 @@ impl Painter {
     /// for the same reason.
     pub(crate) const fn holding(&mut self, holding: (Color, Color)) {
         self.holding = holding;
+    }
+
+    /// How much of the top of the window is the title bar's. Handed over
+    /// every frame, like the ground: the window measures it when it
+    /// changes size, and a second copy kept here would be one to forget.
+    pub(crate) const fn titled(&mut self, titled: f32) {
+        self.titled = titled;
     }
 
     fn block(&mut self, left: f32, top: f32, width: f32, height: f32, colour: [f32; 4]) {
@@ -3805,7 +3818,24 @@ fn mixed(from: [f32; 4], to: [f32; 4], along: f32) -> [f32; 4] {
 }
 
 fn rgba(colour: Color, ink: Ink) -> [f32; 4] {
-    let (r, g, b) = match colour {
+    let (r, g, b) = channels(colour, ink);
+    [
+        f32::from(r) / 255.0,
+        f32::from(g) / 255.0,
+        f32::from(b) / 255.0,
+        1.0,
+    ]
+}
+
+/// What the page is drawn on, as the three bytes it is: the colour the
+/// ground under everything is painted in, for the platform's title bar to
+/// be painted in too -- see `title.rs`.
+pub(crate) fn ground_of(colour: Color) -> (u8, u8, u8) {
+    channels(colour, Ink::Background)
+}
+
+fn channels(colour: Color, ink: Ink) -> (u8, u8, u8) {
+    match colour {
         Color::Rgb(r, g, b) => (r, g, b),
         Color::Indexed(index) => indexed(index),
         // What the reader's own terminal would have chosen, which here is
@@ -3831,13 +3861,7 @@ fn rgba(colour: Color, ink: Ink) -> [f32; 4] {
         Color::LightMagenta => indexed(13),
         Color::LightCyan => indexed(14),
         Color::White => indexed(15),
-    };
-    [
-        f32::from(r) / 255.0,
-        f32::from(g) / 255.0,
-        f32::from(b) / 255.0,
-        1.0,
-    ]
+    }
 }
 
 /// The palette a terminal would have had.

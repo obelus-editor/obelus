@@ -23,6 +23,7 @@ mod keys;
 mod monospace;
 mod motion;
 mod paint;
+mod title;
 mod window;
 
 use std::path::PathBuf;

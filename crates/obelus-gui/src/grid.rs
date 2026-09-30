@@ -651,6 +651,20 @@ pub(crate) fn margin(window: f32, cell: f32, count: u16) -> f32 {
     ((window - f32::from(count) * cell) / 2.0).max(0.0).floor()
 }
 
+/// Where the grid's first cell is in the window, across and down.
+///
+/// Below the title bar, where the window has one of its own -- see
+/// `title::height` -- and middled in what is left. One answer, asked by
+/// the pointer and the caret as well as the painter: a grid drawn one
+/// place and pointed at in another is a click on the row above the one
+/// under the pointer.
+pub(crate) fn origin(window: [f32; 2], titled: f32, cell: [f32; 2], count: [u16; 2]) -> [f32; 2] {
+    [
+        margin(window[0], cell[0], count[0]),
+        titled + margin(window[1] - titled, cell[1], count[1]),
+    ]
+}
+
 /// Where a cap is in the frame being drawn, and what it is drawn in.
 #[derive(Clone, Debug)]
 pub(crate) struct Capped {
@@ -1885,5 +1899,25 @@ mod tests {
         assert_eq!(super::margin(379.0, 36.0, 10), 9.0);
         assert_eq!(super::margin(360.0, 36.0, 10), 0.0, "nothing is left over");
         assert_eq!(super::margin(100.0, 36.0, 10), 0.0, "the page is too big");
+    }
+
+    /// The grid starts under the title bar and is middled in what is left
+    /// below it, not in the whole window.
+    ///
+    /// Deliberate break: middle it in `window[1]` and add the title bar
+    /// after. The grid then starts half a title bar too far down, and its
+    /// last row runs off the foot of the window by as much.
+    #[test]
+    fn the_grid_is_middled_under_the_title_bar() {
+        // Twenty rows of 36 in a window 56 pixels taller: 48 of title bar
+        // and 8 left over, which is 4 above the grid and 4 below it.
+        let window = [400.0, 20.0 * 36.0 + 56.0];
+        let [across, down] = super::origin(window, 48.0, [20.0, 36.0], [20, 20]);
+        assert_eq!(across, 0.0);
+        assert_eq!(down, 52.0);
+        assert_eq!(window[1] - (down + 20.0 * 36.0), 4.0, "the strip below");
+        // And with no title bar it is only the margin.
+        let window = [400.0, 20.0 * 36.0 + 8.0];
+        assert_eq!(super::origin(window, 0.0, [20.0, 36.0], [20, 20])[1], 4.0);
     }
 }

@@ -389,6 +389,9 @@ windows-sys = { version = "0.61.2", features = [
     "Win32_System_Memory",
     "Win32_System_Ole",
     "Win32_UI_Shell",
+    # And the window's title bar, drawn in the page's colour: see
+    # `obelus-gui`'s `title.rs`.
+    "Win32_Graphics_Dwm",
 ] }
 
 # The icon, into the executable's own resources. A build-dependency, and
@@ -398,10 +401,16 @@ windows-sys = { version = "0.61.2", features = [
 # read a program's icon from.
 winresource = "0.1.31"
 
-# macOS's pasteboard, for the same reason. Only the clipboard names these,
-# and only on that platform.
+# macOS's pasteboard, for the same reason, and the window's title bar: how
+# tall the strip is that the system draws its title in -- see
+# `obelus-gui`'s `title.rs`. Only on that platform.
 objc2 = "0.6"
-objc2-app-kit = { version = "0.3", features = ["NSPasteboard"] }
+objc2-app-kit = { version = "0.3", features = [
+    "NSPasteboard",
+    "NSResponder",
+    "NSView",
+    "NSWindow",
+] }
 objc2-foundation = { version = "0.3", features = [
     "NSArray",
     "NSData",

@@ -57,9 +57,15 @@ winit.workspace = true
 wayland-client.workspace = true
 x11rb.workspace = true
 
-# Only there, and only for `GetCaretBlinkTime`: how fast a caret blinks is
-# the one thing of the three platforms that has an API rather than a
-# setting to read. See `blink.rs`.
+# How tall the title bar is, which only AppKit can say. See `title.rs`.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2.workspace = true
+objc2-app-kit.workspace = true
+
+# For `GetCaretBlinkTime`: how fast a caret blinks is the one thing of the
+# three platforms that has an API rather than a setting to read -- see
+# `blink.rs`. And for the title bar's colour, which is DWM's -- see
+# `title.rs`.
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true
 
