@@ -45,6 +45,13 @@ use std::time::Duration;
 /// GNOME's own default, which is also within a fifth of KDE's and of
 /// Windows'. A number that had to be picked, picked where everyone else
 /// picked it.
+///
+/// Read on the platforms that have to work it out, which is every one
+/// but Windows: there the system is asked for the rate outright and
+/// nobody needs a default. `SETTLES` below says the same thing one
+/// platform narrower -- this one is wanted on macOS as well, which is a
+/// unix.
+#[cfg(any(test, unix))]
 const CYCLE: Duration = Duration::from_millis(1200);
 
 /// How long after the last key a caret stops blinking, by the same default.
