@@ -85,6 +85,52 @@ pub struct WentWrong {
     pub at: Option<(std::path::PathBuf, LineNumber)>,
 }
 
+/// What the welcome screen offers while Obelus is asking which project.
+///
+/// Here rather than with the application for the reason everything else in
+/// this file is: it exists so that a screen can be drawn, and what the
+/// application keeps about projects is a different shape with a different
+/// job.
+///
+/// The words are settled before they get here -- a path shortened with
+/// `~`, a time said the way the conversations say one -- because those are
+/// facts about the reader's machine and their clock. What is *not* settled
+/// is how much of either fits, which is the drawing's and depends on a
+/// width this does not know.
+#[derive(Clone, Debug, Default)]
+pub struct Choosing {
+    /// The projects, newest first, after the filter has had them. Without
+    /// the row that opens one that is not in the list: that row is the
+    /// view's own and is always there.
+    pub known: Vec<Opened>,
+    /// Which row the reader is on, counting the opening row as nought.
+    pub at: usize,
+    /// What is in the box at the foot.
+    pub typed: String,
+    /// How many characters of it are in front of the caret.
+    pub caret: usize,
+    /// Whether that box is a path being named rather than a filter over
+    /// the rows.
+    ///
+    /// Two boxes and two meanings, which is why this is a flag and not a
+    /// guess from whether the text has a separator in it.
+    pub naming: bool,
+    /// What could finish the path, where one is being named.
+    pub candidates: Vec<String>,
+    /// Which of those the reader has walked onto, where they have.
+    pub candidate_at: Option<usize>,
+}
+
+/// One project the reader has had open, as a row.
+#[derive(Clone, Debug)]
+pub struct Opened {
+    /// Where it is, with `~` for the reader's own directory.
+    pub path: String,
+    /// When it was last opened, in words. Empty for a row that does not
+    /// say.
+    pub when: String,
+}
+
 /// What a preview is, for the view that draws it.
 ///
 /// A borrow of the whole of it rather than a tuple: it is the same list of
@@ -253,6 +299,9 @@ pub trait Screen {
     /// what this screen is for is the way in, and what went wrong goes
     /// under it rather than in front of it.
     fn went_wrong(&self) -> Vec<WentWrong>;
+    /// What the welcome screen is asking, while it is asking which
+    /// project. `None` on every start that was told one.
+    fn choosing(&self) -> Option<Choosing>;
     /// Which of those rows the reader is on.
     fn went_wrong_at(&self) -> usize;
     /// The version of a newer Obelus, where one is out and the reader
@@ -340,6 +389,7 @@ pub mod editor;
 pub mod hover;
 pub mod image;
 pub mod names;
+pub mod naming;
 pub mod picker;
 pub mod reading;
 pub mod settings;
@@ -511,6 +561,31 @@ pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
         })
     };
 
+    // Being asked which project, which is not a layer -- it is the
+    // welcome screen, and the welcome screen is the page. Before the
+    // layers for that reason rather than for an order among them.
+    if let Some(choosing) = app.choosing() {
+        let question = match choosing.naming {
+            true => "Open",
+            false => "Filter",
+        };
+        // A path box is opened in order to type, so it has a caret from
+        // the first frame -- the rule a picker follows. The filter is not:
+        // the rows are what the reader came for and the filter is what
+        // they reach for second, so an empty one has no caret, which is
+        // the settings' answer and for the settings' reason. What says
+        // where the keys are going is the row the reader is on, and two
+        // marks for one fact is one too many.
+        if !choosing.naming && choosing.typed.is_empty() {
+            return None;
+        }
+        return on_the_status_row(status::typed_caret(
+            Some(question),
+            &choosing.typed,
+            choosing.caret,
+        ));
+    }
+
     // Whatever is nearest, which is where the keys are going. Asked once
     // rather than walked as a chain of its own: a caret drawn in one view
     // while the typing reaches another is a screen that lies about what a
@@ -670,6 +745,18 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     // leaves it alone, and this is what they would be over.
     if app.reading_nothing() && !layers.filling() {
         welcome::WelcomeView::new(app).render(regions.editor, cells);
+        // Over it, because it is a panel and not part of the page: what
+        // could finish the path being typed, beside the box it would go
+        // in.
+        if let Some(choosing) = app.choosing() {
+            naming::draw(
+                cells,
+                regions.editor,
+                regions.status,
+                &choosing,
+                app.theme(),
+            );
+        }
     }
 
     // And then whatever is over it, furthest from the reader first, which

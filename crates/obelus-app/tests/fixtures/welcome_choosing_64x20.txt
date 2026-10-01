@@ -1,0 +1,59 @@
+screen 64x20  editor 64x18  status 64x1
+-- text --
+ 0|                                                                
+ 1|                                                                
+ 2|                                                                
+ 3|      ╔═════════════════════════════════════════════════╗       
+ 4|      ║ ▄█████▄ ██████▄ ███████ ██      ██   ██ ▄█████▄ ║       
+ 5|      ║ ██   ██ ██   ██ ██      ██      ██   ██ ██      ║       
+ 6|      ║ ██   ██ ██████  ██████  ██      ██   ██ ▀█████▄ ║       
+ 7|      ║ ██   ██ ██   ██ ██      ██      ██   ██      ██ ║       
+ 8|      ║ ▀█████▀ ██████▀ ███████ ███████ ▀█████▀ ▀█████▀ ║       
+ 9|      ╚════════════════════ v0.9.0 ═════════════════════╝       
+10|                                                                
+11|        Open a project…                                         
+12|        /tmp/obelus/work/obelus                                 
+13|        …s/work/something/rather/deeply/nested/indeed           
+14|                                                                
+15|                                                                
+16|                                                                
+17|                                                                
+18|────────────────────────────────────────────────────────────────
+19| Filter  > Narrow the list                                      
+-- style --
+ 0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 2|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 3|aaaaaabbbbbbbccccccdddddddeeeeeeffffffggggggghhhhhhiiiiiiaaaaaaa
+ 4|aaaaaababbbbbccacccddddaddeeeeeaffaaaaaaggaaahhahhhiiiiaiaaaaaaa
+ 5|aaaaaababbaaaccaccaaaddaddaaaaaaffaaaaaaggaaahhahhaaaaaaiaaaaaaa
+ 6|aaaaaababbaaaccacccdddaaddeeeeaaffaaaaaaggaaahhahhhiiiiaiaaaaaaa
+ 7|aaaaaababbaaaccaccaaaddaddaaaaaaffaaaaaaggaaahhaaaaaaiiaiaaaaaaa
+ 8|aaaaaababbbbbccacccddddaddeeeeeaffffffgaggggghhahhhiiiiaiaaaaaaa
+ 9|aaaaaabbbbbbbccccccdddddddeaeeeeffafffggggggghhhhhhiiiiiiaaaaaaa
+10|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+11|aaaaaajjkkkkkkkkkkkkkkkjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjaaaaaaa
+12|aaaaaaaalllllllllllllllllllllllaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+13|aaaaaaaalllllllllllllllllllllllllllllllllllllllllllllaaaaaaaaaaa
+14|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+15|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+16|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+17|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+18|mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm
+19|lllllllllllmmmmmmmmmmmmmmmllllllllllllllllllllllllllllllllllllll
+-- legend --
+a fg=#e4e4e7 bg=#18181b
+b fg=#c084fc bg=#18181b
+c fg=#b488fb bg=#18181b
+d fg=#a88cfb bg=#18181b
+e fg=#9c90fb bg=#18181b
+f fg=#9094fb bg=#18181b
+g fg=#8498fa bg=#18181b
+h fg=#789cfa bg=#18181b
+i fg=#6ca0fa bg=#18181b
+j fg=#e4e4e7 bg=#27272a
+k fg=#60a5fa bg=#27272a
+l fg=#d4d4d8 bg=#18181b
+m fg=#52525b bg=#18181b
+-- cursor --
+none

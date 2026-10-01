@@ -78,6 +78,14 @@ pub struct StatusView<'a> {
     /// at once and only one of them is taking the keys: a question asked
     /// on the status row opens *over* a list rather than closing it, so
     /// the list is not always the nearest thing any more.
+    /// What the welcome screen is asking, where it is asking which
+    /// project.
+    ///
+    /// The row is that question's then. Here rather than drawn at a
+    /// dialog's own foot because the chooser is not a dialog over
+    /// anything -- it is the welcome screen, which is the page, and this
+    /// is the page's row.
+    choosing: Option<crate::Choosing>,
     nearest: Option<Layer>,
     /// Whether what is typed goes over what is under the cursor.
     ///
@@ -116,6 +124,7 @@ impl<'a> StatusView<'a> {
             making_in: app.making_in(),
             note_is_wrong: app.note_is_wrong(),
             notes: app.notes(),
+            choosing: app.choosing(),
             nearest: app.layers().nearest(),
             replacing: app.replacing(),
             theme: app.theme(),
@@ -149,6 +158,14 @@ impl Widget for StatusView<'_> {
         // whose order stands for an assumption -- the chain used to put
         // the list first because nothing could open over it, and a
         // question on the status row can.
+        // Before anything about a file, because there is none and cannot
+        // be one: until this is answered there is no project for a file
+        // to be in.
+        if let Some(choosing) = &self.choosing {
+            self.render_choosing(choosing, area, cells, style);
+            return;
+        }
+
         match self.nearest {
             // The whole row is the question. Nothing else on it: a file
             // name beside a half-typed line number is two things asking to
@@ -901,6 +918,45 @@ impl StatusView<'_> {
     /// And one number, where a file puts the cursor's place: how many are
     /// still to come back to. It is the only thing about this document that
     /// changes, and it is the answer to whether it is worth switching to.
+    /// The box at the foot of the welcome screen, which is one of two.
+    ///
+    /// One piece draws both, and the word in front is what says which:
+    /// `Filter` narrows the projects above it, `Open` is a path being
+    /// named. Two words rather than two rows, because they are the same
+    /// row at two moments -- and never two meanings at once, which is why
+    /// nothing of what was typed into one is carried into the other.
+    fn render_choosing(
+        &self,
+        choosing: &crate::Choosing,
+        area: Rect,
+        cells: &mut CellBuffer,
+        style: Style,
+    ) {
+        let question = match choosing.naming {
+            true => "Open",
+            false => "Filter",
+        };
+        let line = typed(Some(question), &choosing.typed);
+        write(cells, area.x + 1, area.y, &line, style);
+        // What the box says before anything is in it. The filter says
+        // what it would narrow; the path box says what shape of answer it
+        // wants, because a reader who has never typed one here has no way
+        // to know a file is as good as a directory.
+        if choosing.typed.is_empty() {
+            let hint = match choosing.naming {
+                true => "A directory, or a file in one",
+                false => "Narrow the list",
+            };
+            write(
+                cells,
+                area.x + typed_inset(Some(question)),
+                area.y,
+                hint,
+                style.fg(self.theme.gutter),
+            );
+        }
+    }
+
     fn render_notes(
         &self,
         notes: &obelus_component::todo::TodoView,

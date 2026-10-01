@@ -2553,3 +2553,78 @@ fn a_screen_too_short_for_what_went_wrong_still_gets_the_keys() {
         "the block was drawn into a screen with no room for it:\n{dump}"
     );
 }
+
+/// A start with nothing to go on asks which project, and offers the ones
+/// this reader has had open.
+///
+/// The rows are the test's own rather than the machine's: reading the real
+/// list would make this grid depend on which projects whoever ran it has
+/// opened, which is the trap the welcome screen's own fixture fell into
+/// with the working directory.
+///
+/// Deliberate break: have `WelcomeView::render` draw the keys rather than
+/// branching on `choosing`, and the grid comes back with `F1 Open a file`
+/// on it -- a key that cannot do anything until this is answered.
+#[test]
+fn a_start_with_no_project_asks_which_one() {
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.ask_about_these_projects_for_test(vec![
+        obelus_component::chooser::Known {
+            path: std::path::PathBuf::from("/tmp/obelus/work/obelus"),
+            last: None,
+        },
+        obelus_component::chooser::Known {
+            path: std::path::PathBuf::from(
+                "/tmp/obelus/work/something/rather/deeply/nested/indeed",
+            ),
+            last: None,
+        },
+    ]);
+    support::check("welcome_choosing_64x20", &support::render(&mut app, 64, 20));
+}
+
+/// Naming a path puts a panel of what could finish it over the list.
+///
+/// Its own panel and not the one a language server's completions go in:
+/// those carry a kind, a detail and a paragraph, and a path carries none
+/// of them. What the two share is the edge.
+///
+/// The names and the directory are the test's own: a real one typed here
+/// would put this run's process number on the screen.
+///
+/// Deliberate break: answer `Some(0)` rather than `None` for
+/// `candidate_at` when nothing has been walked onto, and the first row
+/// comes back wearing the mark that says the keys are there -- while
+/// enter would still open what is in the box.
+#[test]
+fn naming_a_path_offers_what_could_finish_it() {
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.ask_about_these_projects_for_test(vec![obelus_component::chooser::Known {
+        path: std::path::PathBuf::from("/tmp/obelus/alpha"),
+        last: None,
+    }]);
+    support::press(&mut app, crossterm::event::KeyCode::Enter);
+    for character in "/tmp/obelus/".chars() {
+        support::press(&mut app, crossterm::event::KeyCode::Char(character));
+    }
+    app.offer_these_candidates_for_test(
+        std::path::Path::new("/tmp/obelus/"),
+        vec![
+            obelus_component::chooser::Candidate {
+                path: std::path::PathBuf::from("/tmp/obelus/alpha"),
+                directory: true,
+            },
+            obelus_component::chooser::Candidate {
+                path: std::path::PathBuf::from("/tmp/obelus/beta"),
+                directory: true,
+            },
+            obelus_component::chooser::Candidate {
+                path: std::path::PathBuf::from("/tmp/obelus/notes.md"),
+                directory: false,
+            },
+        ],
+    );
+    support::check("welcome_naming_64x20", &support::render(&mut app, 64, 20));
+}

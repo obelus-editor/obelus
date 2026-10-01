@@ -4302,6 +4302,9 @@ impl Screen for App {
     fn went_wrong(&self) -> Vec<obelus_ui::WentWrong> {
         self.what_went_wrong()
     }
+    fn choosing(&self) -> Option<obelus_ui::Choosing> {
+        self.what_is_being_chosen()
+    }
 
     fn went_wrong_at(&self) -> usize {
         App::went_wrong_at(self)
