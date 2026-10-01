@@ -75,6 +75,7 @@ fn an_agent_is_told_what_obelus_can_do() {
         "todo_add",
         "todo_reword",
         "open_file",
+        "read_workflow",
     ] {
         assert!(listed.contains(tool), "{tool} was not offered:\n{listed}");
     }
@@ -91,7 +92,7 @@ fn an_agent_is_told_what_obelus_can_do() {
         );
     }
 
-    // The one that only looks says so, which is what spares the reader a
+    // The two that only look say so, which is what spares the reader a
     // question about a tool whose whole act is to look something up. The
     // three that write the notes say nothing of the sort, and a
     // `readOnlyHint` on any of them would be Obelus telling an agent
@@ -99,17 +100,19 @@ fn an_agent_is_told_what_obelus_can_do() {
     // Cut at the names rather than at the word, because a tool's
     // description may name another tool -- `todo_finish` names `todo_list`
     // in its own, which is where looking for the word found it.
-    let reading = listed
-        .split("\"name\":\"")
-        .find(|tool| tool.starts_with("todo_list\""))
-        .unwrap_or_default();
-    assert!(
-        reading.contains("\"readOnlyHint\":true"),
-        "the tool that only reads did not say so:\n{listed}"
-    );
+    for only_reads in ["todo_list", "read_workflow"] {
+        let reading = listed
+            .split("\"name\":\"")
+            .find(|tool| tool.starts_with(&format!("{only_reads}\"")))
+            .unwrap_or_default();
+        assert!(
+            reading.contains("\"readOnlyHint\":true"),
+            "{only_reads} only reads and did not say so:\n{listed}"
+        );
+    }
     assert_eq!(
         listed.matches("\"readOnlyHint\":true").count(),
-        1,
+        2,
         "a tool that writes the notes says it only reads:\n{listed}"
     );
 }

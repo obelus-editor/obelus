@@ -2,7 +2,8 @@
 //!
 //! Two pieces, and the difference between them is the whole of this module.
 //! The first is said in every conversation and never changes: who the agent
-//! is talking to, and how to put a question to them. The second is whatever
+//! is talking to, and how to put a question to them -- and, where the
+//! project has chosen one, that it has a workflow. The second is whatever
 //! the conversation is *about*, which is [`Topic`] -- so the way to add an
 //! opening for a new kind of conversation is to add a variant there, and
 //! the match below stops compiling until somebody decides what it says.
@@ -26,6 +27,55 @@ use crate::conversation::Topic;
 
 /// Who the agent is talking to, in every conversation.
 const ALWAYS: &str = include_str!("always.txt");
+
+/// That the project has a workflow, and where to read it.
+///
+/// A line rather than the workflow, because most conversations change
+/// nothing and the workflow is several paragraphs: the agent reads it when
+/// it is about to change something, which is how a skill is loaded too. And
+/// it is told to read it again at the end, because a long conversation is
+/// summarised by the agent and the steps that come last are the ones a
+/// summary drops.
+const WORKFLOW: &str = include_str!("workflow.txt");
+
+/// Every workflow, by the name the setting gives it.
+///
+/// One file each, holding both of the things a workflow says, so that the
+/// two are written side by side: what the list it is chosen from says
+/// about it, then a line of `----`, then what `read_workflow` hands an
+/// agent. A file with nothing under the line, or no line, asks nothing of
+/// the agent -- which is what `none` is, and why it is a file like the
+/// others rather than a case in the code.
+///
+/// The names are written twice, here and in `obelus-config`, which reads
+/// the setting and cannot see these files: the test below is what keeps
+/// the two lists the same list.
+const WORKFLOWS: &[(&str, &str)] = &[
+    ("none", include_str!("workflows/none.txt")),
+    (
+        "feature-branch",
+        include_str!("workflows/feature-branch.txt"),
+    ),
+];
+
+/// A workflow's file, as what the list says and what the agent is handed.
+fn read_workflow(file: &'static str) -> (&'static str, Option<&'static str>) {
+    match file.split_once("\n----\n") {
+        Some((about, asked)) => (
+            about.trim(),
+            Some(asked.trim()).filter(|asked| !asked.is_empty()),
+        ),
+        None => (file.trim(), None),
+    }
+}
+
+/// Every workflow's name, and what the list it is chosen from says about
+/// it.
+pub(super) fn workflows() -> impl Iterator<Item = (&'static str, &'static str)> {
+    WORKFLOWS
+        .iter()
+        .map(|(name, file)| (*name, read_workflow(file).0))
+}
 
 /// What a conversation about a note says it is about.
 const NOTE: &str = include_str!("note.txt");
@@ -80,6 +130,9 @@ impl App {
         let mut pieces = Vec::new();
         if !introduced {
             pieces.push(ALWAYS.trim().to_string());
+            if self.workflow().is_some() {
+                pieces.push(WORKFLOW.trim().to_string());
+            }
         }
         let about = self.about_the_topic(topic, told);
         if let Some((words, _, _)) = &about {
@@ -98,6 +151,30 @@ impl App {
             now: about.map(|(_, _, now)| now),
             introduced: true,
         })
+    }
+
+    /// The workflow this project has chosen, if it has chosen one.
+    ///
+    /// A word Obelus does not know is no workflow, which is what it was
+    /// before the reader wrote it: an agent told to follow nothing in
+    /// particular goes about a change its own way.
+    fn workflow(&self) -> Option<&'static str> {
+        let (_, file) = WORKFLOWS
+            .iter()
+            .find(|(name, _)| *name == self.config().workflow)?;
+        read_workflow(file).1
+    }
+
+    /// What `read_workflow` answers.
+    ///
+    /// Asked of the settings as they are now rather than as they were when
+    /// the conversation began, so a reader who changes the workflow
+    /// half-way is heard the next time the agent reads it.
+    pub(super) fn workflow_for_an_agent(&self) -> String {
+        self.workflow().map_or_else(
+            || "this project has no workflow, so change it the way you would anyway".to_string(),
+            str::to_string,
+        )
     }
 
     /// What the conversation being about something adds, if anything.
@@ -223,5 +300,39 @@ mod tests {
         let note = NoteId::read("0123456A").expect("a name");
         let filled = super::filled("{said} -- {name}", &note, "", "mind the {name} here");
         assert_eq!(filled, "mind the {name} here -- 0123456A");
+    }
+
+    /// The workflows here are the ones the setting accepts, and each says
+    /// what it does.
+    ///
+    /// Two lists of one set of names, because the setting is read where
+    /// these files cannot be seen. Broken deliberately by adding a name to
+    /// the setting's list with no file beside it, and by taking the line
+    /// above `----` out of `feature-branch.txt`.
+    #[test]
+    fn every_workflow_the_setting_accepts_is_written_here() {
+        let accepted = match obelus_config::Setting::named("workflow").map(|setting| setting.kind) {
+            Some(obelus_config::Kind::Choice(words)) => words,
+            other => panic!("the workflow setting is not a choice: {other:?}"),
+        };
+        let written: Vec<&str> = super::workflows().map(|(name, _)| name).collect();
+        assert_eq!(accepted, written.as_slice());
+        for (name, file) in super::WORKFLOWS {
+            let (about, _) = super::read_workflow(file);
+            assert!(
+                !about.is_empty() && !about.contains("----"),
+                "{name} does not say what it does: {about:?}"
+            );
+        }
+        assert!(
+            super::read_workflow(super::WORKFLOWS[0].1).1.is_none(),
+            "none asks something of the agent"
+        );
+        assert!(
+            super::read_workflow(super::WORKFLOWS[1].1)
+                .1
+                .is_some_and(|asked| asked.contains("git worktree add")),
+            "feature-branch hands the agent nothing"
+        );
     }
 }

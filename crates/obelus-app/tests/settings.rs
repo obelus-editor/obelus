@@ -357,7 +357,7 @@ fn every_setting_is_on_one_page_under_a_heading() {
     // offer how big the text is, because its font is its own.
     assert_eq!(rows(&app).len(), shown());
     assert_eq!(rows(&app)[0], "Theme");
-    assert_eq!(rows(&app).last().map(String::as_str), Some("Hidden files"));
+    assert_eq!(rows(&app).last().map(String::as_str), Some("Workflow"));
 
     // A heading on the first of each group and on nothing else, so the
     // focus never has a row to step over.
@@ -3684,6 +3684,100 @@ fn what_a_project_may_not_set_is_marked_on_the_projects_file() {
     assert_eq!(problems[0].message, "A project may not set agent");
     // The second line of the project's file, where `agent` is written.
     assert_eq!(problems[0].span.line.get(), 1);
+}
+
+/// The list a workflow is chosen from says what each one does, whole: a
+/// name like `feature-branch` says nothing to a reader who does not know
+/// the term, and the list is where the choosing is done.
+///
+/// Asked of the last words as well as the first, because the list keeps a
+/// detail to two rows unless it is told otherwise, and those are Obelus's
+/// own words cut off half-way.
+///
+/// Broken deliberately four ways: the choices with no detail, which
+/// leaves neither on screen; the list not wrapping, which leaves one row of
+/// each; the list without `details_whole`, which loses the last words; and
+/// the list at the ordinary height, which leaves `feature-branch` off it.
+#[test]
+fn each_workflow_says_what_it_does_where_it_is_chosen() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("workflows");
+    let mut app = open(&settings_file(&scratch));
+    support::type_text(&mut app, "workflow");
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_some(), "the workflows did not open");
+    // Sixty columns, where the two together are taller than an ordinary
+    // compact list: it draws a choice whole or not at all, so the second
+    // would be a blank.
+    let dump = support::render(&mut app, 60, 36);
+    // The rows joined, because at this width a sentence breaks wherever
+    // the wrapping puts it.
+    let text = support::text_block(&dump)
+        .lines()
+        .filter_map(|row| row.split_once('|').map(|(_, cells)| cells.trim()))
+        .collect::<Vec<_>>()
+        .join(" ");
+    for said in [
+        "Obelus asks nothing of the agent",
+        "straight in the checkout you are reading.",
+        "The agent works on a branch",
+        "taken away only when you say so.",
+    ] {
+        assert!(text.contains(said), "{said:?} is not on the list:\n{dump}");
+    }
+}
+
+/// A workflow nothing answers to is marked on the line that names it.
+///
+/// On a project's file, because that is where a workflow is most often
+/// chosen. The word was taken as no workflow at all, so the line read as
+/// obeyed while the agent was told nothing -- which from the outside is a
+/// setting that silently does not work.
+///
+/// Deliberate break: `apply` taking any word, as it did, which leaves no
+/// problem at all.
+#[test]
+fn a_workflow_nothing_answers_to_is_marked() {
+    let _taken = SETTINGS.lock().expect("the lock");
+    let scratch = project("no-workflow", "workflow = \"feature_branch\"\n");
+    let theirs = scratch.path().join(".obelus").join("config.toml");
+
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&theirs).expect("opening the project's settings"),
+    ]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    let mine = temporary("no-workflow-mine");
+    app.config_file_for_test(settings_file(&mine));
+    support::lay_out(&mut app, 72, 24);
+
+    let problems: Vec<_> = app.problems().collect();
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert_eq!(problems[0].message, "No workflow is called feature_branch");
+    assert_eq!(problems[0].span.line.get(), 0);
+    assert_eq!(app.config().workflow, "none", "the word was taken anyway");
+}
+
+/// And it is said on the welcome screen, because a reader who has just
+/// started Obelus has opened no settings file to see the mark on.
+///
+/// Broken deliberately the same way as the one above: `apply` taking any
+/// word leaves the welcome screen with nothing to say.
+#[test]
+fn a_workflow_nothing_answers_to_is_said_on_the_welcome_screen() {
+    let _taken = SETTINGS.lock().expect("the lock");
+    let scratch = project("no-workflow-welcome", "workflow = \"feature_branch\"\n");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    let mine = temporary("no-workflow-welcome-mine");
+    app.config_file_for_test(settings_file(&mine));
+    support::lay_out(&mut app, 100, 30);
+    let dump = support::render(&mut app, 100, 30);
+    assert!(
+        support::text_block(&dump).contains("No workflow is called feature_branch"),
+        "the welcome screen does not say so:\n{dump}"
+    );
 }
 
 /// A line of the key table that bound nothing is a warning on that line.

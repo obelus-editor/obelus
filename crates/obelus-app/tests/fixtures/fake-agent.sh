@@ -559,6 +559,16 @@ while IFS= read -r line; do
                 *"The note this conversation is about has been rewritten"*)
                     first="${first:+$first+}rewritten" ;;
             esac
+            case "$line" in
+                *"This project has a workflow for changing its files"*)
+                    first="${first:+$first+}workflow" ;;
+            esac
+            # The workflow itself, which is the tool's to hand over and
+            # not the opening's: a line from the middle of it.
+            case "$line" in
+                *'git worktree add -b'*)
+                    first="${first:+$first+}steps" ;;
+            esac
             : "${first:=reader}"
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"blocks='"$blocks"' first='"$first"'"}}}}\n'
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
