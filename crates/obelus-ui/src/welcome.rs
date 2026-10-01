@@ -170,11 +170,35 @@ const CYCLE: u32 = RAMP_STEPS as u32 * 2;
 /// answered -- "is the fix in the thing I am looking at" -- is a question
 /// somebody asks about a build they are chasing, not one the way in has to
 /// carry, and the log says it on the first line of every run.
-fn label() -> String {
-    concat!(" v", env!("CARGO_PKG_VERSION"), " ").to_string()
+fn label() -> &'static str {
+    concat!("v", env!("CARGO_PKG_VERSION"))
 }
 
-/// The plate's foot with that set into it.
+/// And a newer one beside it, where there is one.
+///
+/// Beside the version rather than on a row of its own, for the reason the
+/// version is in the edge: it is a fact about the version.
+fn news(newer: &str) -> String {
+    format!("v{newer} is out")
+}
+
+/// The version and the news, as one run of text, and which characters of
+/// it are the news.
+fn said(newer: Option<&str>) -> (String, std::ops::Range<usize>) {
+    let version = label();
+    match newer {
+        Some(newer) => {
+            let news = news(newer);
+            let from = version.chars().count() + " \u{b7} ".chars().count();
+            let to = from + news.chars().count();
+            (format!("{version} \u{b7} {news}"), from..to)
+        }
+        None => (version.to_string(), 0..0),
+    }
+}
+
+/// The plate's foot with that set into it, and which columns of it are the
+/// news.
 ///
 /// Composed here rather than written into [`WORDMARK`], because it is not
 /// Obelus's to spell: the version comes from the manifest, and a copy in a
@@ -182,23 +206,33 @@ fn label() -> String {
 ///
 /// An edge with no room for it says nothing: what the plate is for is the
 /// way in, and a frame broken open to fit a word into it is worse than a
-/// frame that does not say one.
-fn foot() -> String {
+/// frame that does not say one. With no room for the news it says the
+/// version alone, which is what it said before there was any.
+fn foot(newer: Option<&str>) -> (String, std::ops::Range<usize>) {
     let Some(edge) = WORDMARK.last() else {
-        return String::new();
+        return (String::new(), 0..0);
     };
     let width = edge.chars().count();
-    let set = Some(label()).filter(|said| width >= said.chars().count() + 4);
-    let Some(set) = set else {
-        return (*edge).to_string();
+    let fits = |(said, news): (String, std::ops::Range<usize>)| {
+        let set = format!(" {said} ");
+        (width >= set.chars().count() + 4).then_some((set, news))
+    };
+    let set = newer
+        .and_then(|newer| fits(said(Some(newer))))
+        .or_else(|| fits(said(None)));
+    let Some((set, news)) = set else {
+        return ((*edge).to_string(), 0..0);
     };
     let taken = set.chars().count();
     let at = (width - taken) / 2;
-    edge.chars()
+    let foot = edge
+        .chars()
         .take(at)
         .chain(set.chars())
         .chain(edge.chars().skip(at + taken))
-        .collect()
+        .collect();
+    // One for the blank the run is set in.
+    (foot, at + 1 + news.start..at + 1 + news.end)
 }
 
 /// Whether the screen has room for what went wrong under the keys.
@@ -222,6 +256,8 @@ pub struct WelcomeView<'a> {
     /// Which of them the reader is on, and which are on screen.
     at: usize,
     showing: std::ops::Range<usize>,
+    /// The version of a newer Obelus, where one is out.
+    newer: Option<&'a str>,
     theme: &'a Theme,
     /// How far the ramp has travelled, in ticks.
     ///
@@ -240,6 +276,7 @@ impl<'a> WelcomeView<'a> {
             went_wrong: app.went_wrong(),
             at: app.went_wrong_at(),
             showing: app.went_wrong_showing(AMISS_ROWS),
+            newer: app.newer_release(),
             theme: app.theme(),
             phase: app.phase(),
         }
@@ -314,7 +351,7 @@ impl WelcomeView<'_> {
         // thing that has stopped.
         let from = self.theme.syntax.keyword;
         let to = self.theme.syntax.function;
-        let foot = foot();
+        let (foot, news) = foot(self.newer);
         // And the same two colours said as a shape, for a front end that
         // can draw a light rather than a ramp -- see `shapes::sheened`.
         // The whole plate, frame and foot and all, because that is what
@@ -336,13 +373,15 @@ impl WelcomeView<'_> {
             for character in row.chars() {
                 if character != ' ' {
                     let step = u32::from(column * RAMP_STEPS / width.max(1));
-                    put(
-                        cells,
-                        left + column,
-                        y,
-                        character,
-                        Style::new().fg(sheen(from, to, step, self.phase)),
-                    );
+                    // The news in plain ink, still while the mark moves
+                    // round it: it is not part of the mark, and a reader
+                    // who has come to the plate to read it should not have
+                    // to read it through a sheen.
+                    let ink = match at == last && news.contains(&usize::from(column)) {
+                        true => self.theme.foreground,
+                        false => sheen(from, to, step, self.phase),
+                    };
+                    put(cells, left + column, y, character, Style::new().fg(ink));
                 }
                 column = column.saturating_add(1);
             }
@@ -527,18 +566,35 @@ impl WelcomeView<'_> {
         // The version at the other end of the same row, which is where the
         // plate carries it when there is room for a plate. Nothing where it
         // does not fit: this layout is what a screen too small for the
-        // plate gets, and the name is the part of it worth the room.
+        // plate gets, and the name is the part of it worth the room. The
+        // news goes first where there is not room for both, for the same
+        // reason the plate's edge drops it first.
         let room = usize::from(width).saturating_sub("Obelus".width() + 1);
-        if let Some(said) = Some(label().trim().to_string()).filter(|said| said.width() <= room)
+        let fits = |(said, news): (String, std::ops::Range<usize>)| {
+            (said.width() <= room).then_some((said, news))
+        };
+        if let Some((said, news)) = self
+            .newer
+            .and_then(|newer| fits(said(Some(newer))))
+            .or_else(|| fits(said(None)))
             && let Ok(offset) = u16::try_from(usize::from(width).saturating_sub(said.width()))
         {
-            write(
-                cells,
-                left + offset,
-                y,
-                &said,
-                Style::new().fg(self.theme.gutter),
-            );
+            for (at, character) in said.chars().enumerate() {
+                let ink = match news.contains(&at) {
+                    true => self.theme.foreground,
+                    false => self.theme.gutter,
+                };
+                let Ok(at) = u16::try_from(at) else {
+                    continue;
+                };
+                put(
+                    cells,
+                    left + offset + at,
+                    y,
+                    character,
+                    Style::new().fg(ink),
+                );
+            }
         }
         y += 2;
 

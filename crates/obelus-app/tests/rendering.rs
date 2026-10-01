@@ -178,6 +178,65 @@ fn the_welcome_screen_says_which_version_this_is() {
     );
 }
 
+/// A newer Obelus is said beside the version, in the plate's edge -- and
+/// only a newer one, and only while the reader wants to be told.
+///
+/// Broken deliberately three ways, one assertion each: `foot` setting the
+/// version alone whatever it is handed; `on_released` keeping the tag
+/// without asking whether it is newer; and `newer_release` leaving out
+/// the switch.
+#[test]
+fn the_welcome_screen_says_a_newer_version_is_out() {
+    use obelus_app::event::Event;
+
+    let edge = |app: &mut App| {
+        let dump = support::render(app, 64, 20);
+        support::text_block(&dump)
+            .lines()
+            .find(|row| row.contains('\u{255a}'))
+            .unwrap_or_default()
+            .to_string()
+    };
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+
+    app.handle(Event::Released("v99.0.0".to_string()));
+    let said = edge(&mut app);
+    assert!(
+        said.contains(concat!(
+            "\u{2550} v",
+            env!("CARGO_PKG_VERSION"),
+            " \u{b7} v99.0.0 is out \u{2550}"
+        )),
+        "the plate's edge does not say a newer one is out: {said:?}"
+    );
+
+    // An older one is not news: a build ahead of the last release has not
+    // been left behind by it.
+    app.handle(Event::Released("v0.0.1".to_string()));
+    let said = edge(&mut app);
+    assert!(
+        !said.contains("is out"),
+        "an older version was offered as news: {said:?}"
+    );
+
+    // And a reader who has turned it off is not told, even with the answer
+    // in hand.
+    app.handle(Event::Released("v99.0.0".to_string()));
+    app.configure(
+        obelus_config::Config {
+            new_versions: false,
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    let said = edge(&mut app);
+    assert!(
+        !said.contains("is out"),
+        "the switch is off and the news is still on the plate: {said:?}"
+    );
+}
+
 /// A screen with no room for the wordmark still gets the keys.
 #[test]
 fn a_narrow_screen_gets_the_keys_without_the_wordmark() {

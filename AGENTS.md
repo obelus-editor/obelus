@@ -524,6 +524,8 @@ crates/
                       no conversation off the screen (app/noting); a key that
                       names another whole view swaps rather than stacks, and a
                       view that bound the key beats the swap (app/switching); a
+                      newer Obelus is asked about once a day, not once a start
+                      (app/releases); a
                       conversation takes one prompt turn at a time, what is
                       waiting waits where the reader's words live, and it goes
                       as one prompt (conversation); nothing but the animation

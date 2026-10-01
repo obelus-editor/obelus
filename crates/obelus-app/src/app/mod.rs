@@ -36,6 +36,7 @@ mod moving;
 mod naming;
 mod preferences;
 mod previewing;
+mod releases;
 mod renaming;
 mod renaming_files;
 mod saying;
@@ -705,6 +706,8 @@ pub struct App {
     /// that answers which rows are showing -- this list is six rows deep
     /// on the welcome screen and can be longer than that.
     went_wrong_window: obelus_component::window::Window,
+    /// Whether a newer Obelus is out, and whether this session asked.
+    releases: releases::Releases,
     /// The file watcher, once started.
     ///
     /// Held because dropping it stops the watch. `None` means auto-reload is
@@ -894,6 +897,7 @@ impl App {
             events: None,
             amiss: Vec::new(),
             went_wrong_window: obelus_component::window::Window::default(),
+            releases: releases::Releases::default(),
             watcher: None,
             theme_watched: Vec::new(),
             highlights: Highlights::default(),
@@ -1220,6 +1224,7 @@ impl App {
         for index in 0..self.documents.len() {
             self.serve(index);
         }
+        self.ask_about_releases();
         // Last, and here rather than at the command line: the rows come
         // from a walk that sends on this channel, so a list opened before
         // there was one would be a list nothing ever fills.
@@ -2677,6 +2682,7 @@ impl App {
                     obelus_mcp::Wanted::Open { path, line } => self.open_for_an_agent(&path, line),
                 });
             }
+            Event::Released(tag) => self.on_released(&tag),
             Event::Agent(obelus_agent::Event::Registry { agents, failure }) => {
                 self.on_registry(agents, failure)
             }
@@ -4254,6 +4260,10 @@ impl Screen for App {
 
     fn went_wrong_at(&self) -> usize {
         App::went_wrong_at(self)
+    }
+
+    fn newer_release(&self) -> Option<&str> {
+        App::newer_release(self)
     }
 
     fn went_wrong_showing(&self, rows: u16) -> std::ops::Range<usize> {

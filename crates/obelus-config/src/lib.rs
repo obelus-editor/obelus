@@ -168,6 +168,14 @@ pub struct Config {
     /// wants it slow enough never to appear by accident, and one reading
     /// somebody else's wants it as fast as their hand stops.
     pub hover_delay: usize,
+    /// Whether Obelus asks, once a day, whether a newer version is out.
+    ///
+    /// The one thing Obelus asks the network for that the reader did not
+    /// press a key for, which is why it is a switch: a reader who would
+    /// rather their reader did not talk to anybody unasked can have that,
+    /// and then nothing is sent at all -- not a request whose answer is
+    /// thrown away.
+    pub new_versions: bool,
     /// Which agent Obelus talks to, by the registry's own name for it.
     ///
     /// One, or none. Two would mean every question having to say which
@@ -242,6 +250,9 @@ impl Default for Config {
             // stopped does not wonder whether Obelus noticed. The figure
             // every editor with a mouse uses.
             hover_delay: 400,
+            // On, because a reader who installed Obelus from a release has
+            // no other way to hear of the next one.
+            new_versions: true,
             // None until the reader installs one: Obelus does not choose an
             // agent for anybody.
             agent: None,
@@ -617,6 +628,18 @@ pub const ALL: &[Setting] = &[
         drawn: Drawn::Anywhere,
     },
     Setting {
+        key: "new_versions",
+        name: "New versions",
+        about: "Ask GitHub once a day whether a newer Obelus is out, and say so on the welcome screen",
+        group: Group::Appearance,
+        // The reader's alone: a project that could turn it on would be a
+        // downloaded file deciding that Obelus talks to the network for a
+        // reader who said it should not.
+        reach: Reach::ReaderOnly,
+        kind: Kind::Switch,
+        drawn: Drawn::Anywhere,
+    },
+    Setting {
         key: "ignored_files",
         name: "Ignored files",
         about: "Offer them in the file list as well -- what `.gitignore` keeps out is build output most days and the file you are looking for on the others",
@@ -659,6 +682,7 @@ impl Config {
             "diagnostics" => Some(Value::Switch(self.diagnostics)),
             "ignored_files" => Some(Value::Switch(self.ignored_files)),
             "hidden_files" => Some(Value::Switch(self.hidden_files)),
+            "new_versions" => Some(Value::Switch(self.new_versions)),
             "agent" => Some(Value::Choice(self.agent.clone().unwrap_or_default())),
             _ => None,
         }
@@ -684,6 +708,7 @@ impl Config {
             ("diagnostics", Value::Switch(on)) => self.diagnostics = *on,
             ("ignored_files", Value::Switch(on)) => self.ignored_files = *on,
             ("hidden_files", Value::Switch(on)) => self.hidden_files = *on,
+            ("new_versions", Value::Switch(on)) => self.new_versions = *on,
             // An empty word is nobody, which is how a reader stops talking
             // to an agent without a second setting meaning "off".
             ("agent", Value::Choice(word)) => {
@@ -1146,6 +1171,11 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
     {
         config.hidden_files = on;
     }
+    if let Some(on) = table.get("new_versions").and_then(toml::Value::as_bool)
+        && allowed("new_versions")
+    {
+        config.new_versions = on;
+    }
     if let Some(word) = table.get("agent").and_then(toml::Value::as_str)
         && allowed("agent")
     {
@@ -1366,6 +1396,11 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
         "hidden_files",
         config.hidden_files != default.hidden_files,
         toml_edit::value(config.hidden_files),
+    );
+    put(
+        "new_versions",
+        config.new_versions != default.new_versions,
+        toml_edit::value(config.new_versions),
     );
     put(
         "agent",
@@ -1707,6 +1742,7 @@ mod tests {
             diagnostics: true,
             ignored_files: true,
             hidden_files: true,
+            new_versions: false,
             agent: Some("claude-acp".to_string()),
             // A key moved and a key taken away: both are decisions, and
             // both have to survive the file or the reader makes them again
