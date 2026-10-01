@@ -156,6 +156,70 @@ fn a_tables_borders_line_up() {
     assert_eq!(bars, crossings, "{row:?} against {rule:?}");
 }
 
+/// A cell too long for its column goes on underneath, inside its borders.
+///
+/// Broken deliberately by putting back the old cut -- each cell drawn on one
+/// row as its first `width` characters -- which loses the end of the
+/// sentence, and draws the Chinese cell twice as wide as its column, because
+/// a character counted is not a cell counted. Broken again by keeping only
+/// the first wrapped row, which fits and says half; and by laying every
+/// wrapped row's source at the start of its cell.
+#[test]
+fn a_cell_too_long_for_its_column_wraps_inside_it() {
+    let english = "this is a rather long sentence that will not fit in the column at all";
+    let chinese = "这是一段很长的中文说明文字用来测试宽字符是否会溢出边框";
+    let source = format!("| 名称 | 说明 |\n|---|---|\n| foo | {english} |\n| 中文 | {chinese} |\n");
+    let rows = render(&source, 40);
+    let drawn: Vec<String> = rows
+        .iter()
+        .map(text)
+        .filter(|row| row.starts_with(['\u{2502}', '\u{250c}', '\u{251c}', '\u{2514}']))
+        .collect();
+
+    let wide = obelus_text::text_width(&drawn[0]);
+    assert!(wide <= 40, "the table is wider than its room: {drawn:#?}");
+    for row in &drawn {
+        assert_eq!(
+            obelus_text::text_width(row),
+            wide,
+            "a row pokes out of the table: {row:?} in {drawn:#?}"
+        );
+    }
+
+    // What each cell says, row by row, with the furniture taken off.
+    let second: Vec<(String, String)> = drawn
+        .iter()
+        .filter(|row| row.starts_with('\u{2502}'))
+        .map(|row| {
+            let cells: Vec<&str> = row.split('\u{2502}').collect();
+            (cells[1].trim().to_string(), cells[2].trim().to_string())
+        })
+        .collect();
+    let under = |first: &str, join: &str| -> String {
+        let at = second
+            .iter()
+            .position(|(name, _)| name == first)
+            .unwrap_or_else(|| panic!("no row for {first}: {second:#?}"));
+        let mut said = vec![second[at].1.clone()];
+        said.extend(
+            second[at + 1..]
+                .iter()
+                .take_while(|(name, _)| name.is_empty())
+                .map(|(_, line)| line.clone()),
+        );
+        said.join(join)
+    };
+    assert_eq!(under("foo", " "), english, "{drawn:#?}");
+    assert_eq!(under("中文", ""), chinese, "{drawn:#?}");
+
+    // And every piece of a wrapped cell still says where it came from.
+    for span in rows.iter().flat_map(|row| &row.spans) {
+        if let Some(from) = span.from.clone() {
+            assert_eq!(&source[from], span.text, "{span:?}");
+        }
+    }
+}
+
 /// A single newline inside a paragraph is a *soft* break: the text either
 /// side of it is one paragraph, to be laid out to the window. The renderer
 /// underneath is line-oriented -- one source line, one row -- so without

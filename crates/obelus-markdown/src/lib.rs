@@ -448,28 +448,47 @@ impl Laying<'_> {
 
         self.rows.push(rule(Rule::Top));
         for (index, row) in rows.iter().enumerate() {
-            let mut spans = vec![mark("\u{2502}")];
-            for (at, width) in widths.iter().enumerate() {
-                let cell = row.get(at);
-                let said = cell.map(|cell| cell.text.trim()).unwrap_or_default();
-                let said: String = said.chars().take(*width).collect();
-                let align = aligns.get(at).copied().unwrap_or(Align::Left);
-                let (before, after) = padding(*width, text_width(&said), align);
-                spans.push(room_for(before));
-                if let Some(cell) = cell {
-                    let at = offset_in(&cell.text, cell.text.trim());
-                    spans.push(Span::from_source(
-                        said.clone(),
-                        Ink::Plain,
-                        source_span(cell, at, said.len()),
-                    ));
-                } else {
-                    spans.push(Span::new(said.clone(), Ink::Plain));
+            // Every cell wrapped to its column, and the row as tall as its
+            // tallest: a cell that does not fit goes on underneath, the way
+            // a paragraph does, rather than losing its end at the border.
+            let wrapped: Vec<Vec<(String, usize)>> = widths
+                .iter()
+                .enumerate()
+                .map(|(at, width)| {
+                    let said = row.get(at).map(|cell| cell.text.trim()).unwrap_or_default();
+                    obelus_text::wrapped_from(said, u16::try_from(*width).unwrap_or(u16::MAX))
+                        .into_iter()
+                        .map(|(line, from)| (line, from.start))
+                        .collect()
+                })
+                .collect();
+            let tall = wrapped.iter().map(Vec::len).max().unwrap_or(0).max(1);
+            for line in 0..tall {
+                let mut spans = vec![mark("\u{2502}")];
+                for (at, width) in widths.iter().enumerate() {
+                    let cell = row.get(at);
+                    let (said, from) = wrapped[at].get(line).cloned().unwrap_or_default();
+                    let align = aligns.get(at).copied().unwrap_or(Align::Left);
+                    let (before, after) = padding(*width, text_width(&said), align);
+                    spans.push(room_for(before));
+                    if let Some(cell) = cell
+                        && !said.is_empty()
+                    {
+                        let at = offset_in(&cell.text, cell.text.trim()) + from;
+                        let length = said.len();
+                        spans.push(Span::from_source(
+                            said,
+                            Ink::Plain,
+                            source_span(cell, at, length),
+                        ));
+                    } else {
+                        spans.push(Span::new(said, Ink::Plain));
+                    }
+                    spans.push(room_for(after));
+                    spans.push(mark("\u{2502}"));
                 }
-                spans.push(room_for(after));
-                spans.push(mark("\u{2502}"));
+                self.row(prefix, spans);
             }
-            self.row(prefix, spans);
             if index == 0 {
                 self.rows.push(rule(Rule::Middle));
             }
