@@ -154,6 +154,13 @@ impl App {
         let buffer = self.current_buffer();
         match command.requires() {
             Requires::Nothing => true,
+            // Whether the question has been answered, which is a thing
+            // known without doing any work -- and not whether the answer
+            // turned out to hold anything, which is what the two history
+            // and change conditions below go and find out. There is no
+            // project exactly while the welcome screen is still asking
+            // for one.
+            Requires::AProject => self.chooser.is_none(),
             Requires::AFileOpen => buffer.is_some(),
             Requires::AFileOnDisk => buffer.is_some_and(|buffer| buffer.content().is_file()),
             // A file, or a box a reader is typing into. The same places a

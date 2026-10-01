@@ -347,6 +347,22 @@ pub enum Requires {
     AServerLog,
     /// The language has to have something to start a line comment with.
     ALineComment,
+    /// There has to be a project to do it in.
+    ///
+    /// Which is not every start: a reader who picks Obelus out of a
+    /// desktop menu gives it no argument and a directory git has never
+    /// heard of, so until they have chosen one there is no project for a
+    /// file list to walk, no repository to ask what changed, and nowhere
+    /// to file a note or a conversation. Those commands used to run and
+    /// take the home directory for the answer.
+    ///
+    /// Known without doing any work -- it is whether the question has
+    /// been answered, not what the answer found -- which is what a
+    /// requirement has to be. `open-changed-file` and
+    /// `show-project-history` were already dim on such a start, but by
+    /// walking a repository that was not there and finding nothing: the
+    /// right answer for the wrong reason, and a walk per keypress for it.
+    AProject,
 }
 
 /// A command's name and description, for the palette to list and match on.
@@ -944,7 +960,6 @@ impl Command {
             Self::SymbolTroubleNext => Requires::ATroubleAfter,
             // A note is made *about* a line, so there has to be one.
             Self::TodoAdd => Requires::AFileOpen,
-            Self::TodoOpen => Requires::Nothing,
             // Save is offered whether or not there is anything to write.
             // A reader who presses it on a file they have not touched has
             // asked a reasonable question, and the answer is that it is
@@ -954,15 +969,6 @@ impl Command {
             // version of a file is not either: what a move moves is what
             // is at the path, and neither of those is.
             Self::FileRename => Requires::AFileOnDisk,
-            // Nothing, and deliberately not a file being open: `ob
-            // some-directory` opens on a list with no file behind it, and
-            // that is exactly the reader who is about to make the first
-            // one. The directory the question is filled in with is the
-            // only part that wants a file, and it does without.
-            Self::FileNew => Requires::Nothing,
-            // What is open, including nothing: the list says so itself, and
-            // said it to nobody while the key insisted on a file.
-            Self::DocumentList => Requires::Nothing,
             // A server is per file, and the menu is about what is under the
             // cursor. Both said `Nothing` and then said "no file open" into
             // a note nobody was going to read, which is the thing `offers`
@@ -973,9 +979,7 @@ impl Command {
             // a conversation, and the key says so by doing nothing.
             // A file to reload, a line to go to. Neither means anything in
             // a conversation, and the key says so by doing nothing.
-            Self::FileReload | Self::GoLine => {
-                Requires::AFileOpen
-            }
+            Self::FileReload | Self::GoLine => Requires::AFileOpen,
             // An outline comes from the syntax tree when no server will
             // answer, so what it needs is a language Obelus can parse.
             Self::SymbolOutline => Requires::AKnownLanguage,
@@ -1015,7 +1019,6 @@ impl Command {
             // other tabs are a left or a right away. What each key requires
             // is what the tab it lands on can answer.
             Self::SearchFile => Requires::AFileOpen,
-            Self::SearchProject => Requires::Nothing,
             Self::SearchSymbols => Requires::ARunningServer,
             // Both ways, and it needs only a file: turning the names off
             // is exactly what a reader with no repository does not need to
@@ -1062,22 +1065,39 @@ impl Command {
             // how a stopped or dead server is started. `open-file`,
             // `choose-theme`, `log.open` and the palette itself work with
             // nothing open at all.
-            Self::FileOpen
-            | Self::ThemeSelect
+            Self::ThemeSelect
             | Self::CommandPalette
-            | Self::ConversationNew
-            // Whether or not anything has been said here before: the list
-            // always holds the row that starts a new one.
-            | Self::ConversationSelect
             | Self::ConfigOpen
-            | Self::ConfigProject
             | Self::ConfigFile
             | Self::LogOpen
-            // The project is always there to be counted, and one with
-            // nothing in it is an answer as well: what it says is that
-            // there is nothing here.
-            | Self::CountLines
             | Self::Quit => Requires::Nothing,
+            // A project, and nothing more. Each of these is about one --
+            // a list of its files, a search across it, how much code is
+            // in it, its own settings, the notes beside it, the
+            // conversations filed under it -- and each of them took the
+            // directory the process happened to begin in when there was
+            // none. Whether or not anything has been said in this project
+            // before: the list of conversations always holds the row that
+            // starts a new one, and a project with nothing counted in it
+            // is an answer too.
+            //
+            // A project and deliberately not a file, for two of them.
+            // `ob some-directory` opens on a list with no file behind it,
+            // and that reader is exactly the one about to make the first
+            // one -- the directory `new-file` fills its question in with
+            // is the only part that wants a file, and it does without.
+            // And what `switch-document` lists is what is open including
+            // nothing, which the list says itself; it said it to nobody
+            // while the key insisted on a file.
+            Self::FileOpen
+            | Self::FileNew
+            | Self::DocumentList
+            | Self::SearchProject
+            | Self::CountLines
+            | Self::ConversationNew
+            | Self::ConversationSelect
+            | Self::TodoOpen
+            | Self::ConfigProject => Requires::AProject,
             // A file of its own that only exists once a server has said
             // something, which on a file in a language Obelus has no
             // server for is never. Obelus's own log is not this: it is
