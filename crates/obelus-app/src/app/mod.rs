@@ -1763,6 +1763,11 @@ impl App {
                 .picker
                 .as_ref()
                 .is_some_and(obelus_component::picker::Picker::is_matching)
+            // And an install, while the page of agents is open: a card
+            // whose package manager says nothing until it is done has only
+            // its mark to say the install is still going.
+            || (self.settings().is_some_and(Settings::on_agents)
+                && !self.agents.installing.is_empty())
     }
 
     /// Whether an agent is at work in any conversation at all.

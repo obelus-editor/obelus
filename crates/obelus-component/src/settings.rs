@@ -1042,7 +1042,9 @@ impl Settings {
                         Status::Installed => SettingsOutcome::Activate(listed.agent.id.clone()),
                         // Nothing to press while it is running, and nothing
                         // to press on one Obelus cannot install.
-                        Status::Installing | Status::Unavailable(_) => SettingsOutcome::Consumed,
+                        Status::Installing { .. } | Status::Unavailable(_) => {
+                            SettingsOutcome::Consumed
+                        }
                     },
                     None => SettingsOutcome::Consumed,
                 }
