@@ -58,11 +58,11 @@ pub fn hints(notes: &Notes) -> Vec<Hint> {
     // say so. This is a document, and a document's keys are either worth a
     // row here or not worth saying at all.
     //
-    // Nothing about typing, the arrows or `shift+enter`: this is a page
+    // Nothing about typing, the arrows or the line break: this is a page
     // being written, and what a page being written does with a letter is
     // not news. `enter` is here for the opposite reason -- it is what a
-    // text box does *not* do with it, because `shift+enter` is the line
-    // break and `enter` starts another note.
+    // text box does *not* do with it, because `shift+enter` and `alt+enter`
+    // are the line break and `enter` starts another note.
     //
     // Nothing about copy, cut and paste either, which were on the card
     // because "can I paste in here?" is a question a dialog has to answer.
@@ -72,7 +72,7 @@ pub fn hints(notes: &Notes) -> Vec<Hint> {
         Hint::common(alt(KeyCode::Char(' ')), "Done")
             .saying("Done, or not")
             .when(on.is_some() && !elsewhere),
-        Hint::common(alt(KeyCode::Enter), "Go there")
+        Hint::common(alt(KeyCode::Char('o')), "Go there")
             .saying("Go to what it is about")
             .when(notes.can_go()),
         // Not where another Obelus has that conversation open: a

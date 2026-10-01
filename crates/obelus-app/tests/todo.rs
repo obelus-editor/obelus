@@ -133,7 +133,8 @@ fn there_is_no_mode_to_get_into() {
 }
 
 /// Enter starts another note where the caret is, and `shift+enter` is a line
-/// inside one.
+/// inside one -- as is `alt+enter`, which is the one that arrives where
+/// `shift+enter` does not, inside tmux among others.
 #[test]
 fn enter_starts_another_note_and_shift_enter_a_line() {
     let scratch = tree("another", THREE);
@@ -146,6 +147,8 @@ fn enter_starts_another_note_and_shift_enter_a_line() {
         KeyModifiers::SHIFT,
     )));
     support::type_text(&mut app, "and more of it");
+    app.handle(alt(KeyCode::Enter));
+    support::type_text(&mut app, "and the rest");
 
     let dump = support::render(&mut app, 76, 18);
     let rows: Vec<&str> = support::text_block(&dump).lines().collect();
@@ -158,12 +161,13 @@ fn enter_starts_another_note_and_shift_enter_a_line() {
     // -- one row further down, because a note has a blank above it.
     assert_eq!(at("a fresh one"), at("wire the counts") + 2);
     assert_eq!(at("and more of it"), at("a fresh one") + 1);
+    assert_eq!(at("and the rest"), at("and more of it") + 1);
 
     press(&mut app, KeyCode::Esc);
     let written =
         std::fs::read_to_string(obelus_git::todo::path(scratch.path())).expect("the notes");
     assert!(
-        written.contains("a fresh one\nand more of it"),
+        written.contains("a fresh one\nand more of it\nand the rest"),
         "the two lines are not one note: {written}"
     );
 }
@@ -556,15 +560,15 @@ fn alt_backspace_takes_a_note_away() {
     );
 }
 
-/// `alt+enter` goes where a note points, and the view gets out of the way.
+/// `alt+o` goes where a note points, and the view gets out of the way.
 #[test]
-fn alt_enter_goes_to_what_a_note_is_about() {
+fn alt_o_goes_to_what_a_note_is_about() {
     let scratch = tree("go", THREE);
     std::fs::write(scratch.path().join("sample.rs"), "one\ntwo\nthree\n").expect("the file");
 
     let mut app = open(&scratch, 76, 18);
     press(&mut app, KeyCode::Down);
-    app.handle(alt(KeyCode::Enter));
+    app.handle(alt(KeyCode::Char('o')));
 
     assert!(app.notes().is_none(), "the view stayed over the file");
     let buffer = app.current_buffer().expect("nothing was opened");
@@ -578,10 +582,10 @@ fn alt_enter_goes_to_what_a_note_is_about() {
 
 /// A note about the project has nowhere to go, and nothing is the answer.
 #[test]
-fn alt_enter_on_a_note_about_nothing_goes_nowhere() {
+fn alt_o_on_a_note_about_nothing_goes_nowhere() {
     let scratch = tree("nowhere", THREE);
     let mut app = open(&scratch, 76, 18);
-    app.handle(alt(KeyCode::Enter));
+    app.handle(alt(KeyCode::Char('o')));
     assert!(app.notes().is_some(), "it went somewhere");
 }
 
@@ -3048,8 +3052,8 @@ fn leaving_the_notes_and_coming_back_leaves_the_caret_in_them() {
     let mut app = open(&scratch, 76, 18);
     press(&mut app, KeyCode::Down);
     let in_a_note = caret(&mut app);
-    app.handle(alt(KeyCode::Enter));
-    assert!(app.notes().is_none(), "alt+enter did not go to the file");
+    app.handle(alt(KeyCode::Char('o')));
+    assert!(app.notes().is_none(), "alt+o did not go to the file");
     dispatch::dispatch(&mut app, Command::TodoOpen);
     assert!(app.notes().is_some(), "the notes did not come back");
     assert_eq!(
