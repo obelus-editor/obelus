@@ -272,7 +272,11 @@ fn enter_puts_the_chosen_row_in_the_box() {
         // What is *inside* it, and not what was beside it: a list kept
         // across the separator would still be the directory above,
         // narrowed by letters belonging to a name somewhere else.
-        Some("inner/"),
+        //
+        // Spelled with this platform's own separator, because that is
+        // what Obelus writes onto the end of a directory's name -- it
+        // reads both and writes one.
+        Some(format!("inner{}", std::path::MAIN_SEPARATOR).as_str()),
         "the list is not the chosen directory's"
     );
 }
@@ -389,8 +393,10 @@ fn a_path_typed_with_forward_slashes_is_still_a_path() {
     assert_eq!(
         list.selected_item().map(|item| item.label.as_str()),
         // The one thing in there, so it is both the only match and the
-        // chosen one.
-        Some("inside/"),
+        // chosen one -- spelled with the separator Obelus writes, which
+        // is not the one that was typed. Reading `/` and writing `\` on
+        // Windows is the whole point of the test above it.
+        Some(format!("inside{}", std::path::MAIN_SEPARATOR).as_str()),
         "what the directory holds was not offered"
     );
 }
