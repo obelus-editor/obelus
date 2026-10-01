@@ -14,12 +14,14 @@
 //! thing, and here there is nothing nearer -- until the reader is naming a
 //! path, where there is.
 //!
-//! **The first row opens a project that is not in the list**, which is the
-//! same decision the list of conversations made: its first row starts a
-//! new one, so the list is never empty and a reader with nothing
-//! remembered still has somewhere to press. A row that is a verb among
-//! rows that are nouns, and it is the first because it is the only one
-//! that is always there.
+//! **The last row opens a project that is not in the list**, so the list
+//! is never empty and a reader with nothing remembered still has
+//! somewhere to press. A verb among rows that are nouns, and set apart
+//! from them below rather than above: the commonest answer to "which
+//! project" is the one the reader was in last, so that is the row they
+//! start on and enter alone takes them back to it. It was the first row
+//! once, the way the conversations' list has it, and every start from a
+//! launcher cost a key to get past it.
 //!
 //! **Two boxes, never two meanings.** The filter is about the rows
 //! underneath it -- projects this reader has had open -- and the path box
@@ -129,7 +131,8 @@ pub struct Chooser {
     /// that row is not one of the projects and a filter that could hide it
     /// would be a screen with no way off it.
     filter: Field,
-    /// Which row the reader is on, counting the opening row as nought.
+    /// Which row the reader is on: the projects the filter leaves from
+    /// nought, and the opening row after the last of them.
     at: usize,
     window: Window,
     doing: Doing,
@@ -196,10 +199,20 @@ impl Chooser {
         self.rows().len() + 1
     }
 
-    /// Which row the reader is on, where nought is the opening row.
+    /// Which row the reader is on: the projects from nought, and then the
+    /// opening row.
     #[must_use]
     pub const fn at(&self) -> usize {
         self.at
+    }
+
+    /// Whether the reader is on the row that opens a project not in the
+    /// list.
+    ///
+    /// Asked rather than compared against nought or a count wherever it
+    /// matters: which index that row has moved once already.
+    fn on_the_opening_row(&self) -> bool {
+        self.at >= self.rows().len()
     }
 
     /// Takes a key, and says what the application has to do about it.
@@ -226,7 +239,7 @@ impl Chooser {
         match key.code {
             // The one row that is always there, and the only way to a
             // project this reader has not opened before.
-            KeyCode::Enter if self.at == 0 => {
+            KeyCode::Enter if self.on_the_opening_row() => {
                 self.doing = Doing::Naming(Box::new(Naming {
                     // Empty, and deliberately not what the filter holds:
                     // a word that narrowed a list of places is not the
@@ -236,7 +249,7 @@ impl Chooser {
                 }));
                 self.wants()
             }
-            KeyCode::Enter => match self.rows().get(self.at - 1) {
+            KeyCode::Enter => match self.rows().get(self.at) {
                 Some((known, _)) => Outcome::Chose(known.path.clone()),
                 // A row that went while the key was travelling. Nothing,
                 // rather than a guess at which row was meant.
@@ -256,7 +269,9 @@ impl Chooser {
                 if self.filter.handle_key(&key) {
                     // The rows underneath have moved, so standing on the
                     // fifth of them is standing on a different project.
-                    // Back to the row that is always the same one.
+                    // Back to the top, which is the newest that matched --
+                    // or, where nothing did, the opening row, which is
+                    // then the only one.
                     self.at = 0;
                     return Outcome::Taken;
                 }
@@ -279,7 +294,8 @@ impl Chooser {
             // *it* has already had its turn at this key.
             KeyCode::Esc => {
                 self.doing = Doing::Choosing;
-                self.at = 0;
+                // Back on the row the box was opened from.
+                self.at = self.rows().len();
                 Outcome::Taken
             }
             // What is in the box. A candidate is never chosen here --

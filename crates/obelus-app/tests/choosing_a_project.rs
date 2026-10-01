@@ -37,6 +37,15 @@ fn asking() -> App {
     app
 }
 
+/// Goes to the row that opens a project not in the list, and opens it.
+///
+/// `End`, because that row is the last: under the projects, which the
+/// reader starts on.
+fn open_another(app: &mut App) {
+    press(app, KeyCode::End);
+    press(app, KeyCode::Enter);
+}
+
 /// Nothing that is about a project can be done until there is one.
 ///
 /// Each of these took the directory the process happened to begin in,
@@ -99,23 +108,58 @@ fn leaving_is_still_offered() {
     }
 }
 
-/// The first row is always there, and it is not one of the projects.
+/// The reader starts on the newest project, so enter alone takes them
+/// back to where they were last.
 ///
-/// Which is what makes the screen answerable on a machine with nothing
-/// remembered: the list is never empty.
+/// The commonest answer to "which project". The row that opens one not in
+/// the list used to be first, and every start from a launcher cost a key
+/// to get past it.
 ///
-/// Broken deliberately by starting `at` at 1 in `Chooser::new`: the reader
-/// opens standing on a project rather than on the way to any of them.
+/// Broken deliberately by starting `at` at `known.len()` in
+/// `Chooser::new`: the reader opens on the row under the projects.
 #[test]
-fn it_opens_on_the_row_that_opens_a_project() {
+fn it_opens_on_the_newest_project() {
     let app = asking();
     let choosing = app.choosing().expect("being asked");
 
-    assert_eq!(choosing.at, 0, "it does not open on the first row");
     assert_eq!(choosing.known.len(), 2, "the projects are not offered");
+    assert_eq!(choosing.at, 0, "it does not open on the first project");
+    assert_eq!(
+        choosing.known[0].path, "/tmp/obelus/alpha",
+        "the first project is not the newest"
+    );
 }
 
-/// The filter narrows the projects and never the row above them.
+/// And enter on it opens it.
+///
+/// Broken deliberately by putting `KeyCode::Enter if self.at == 0` back
+/// in `Chooser::choosing`, which is what the opening row used to answer
+/// to: enter turns the foot into a path box instead.
+#[test]
+fn enter_opens_the_newest_project() {
+    let scratch = support::Scratch::new("choosing-newest");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.ask_about_these_projects_for_test(vec![
+        Known {
+            path: scratch.path().to_path_buf(),
+            shown: scratch.path().display().to_string(),
+            last: Some(2_000),
+        },
+        known("/tmp/obelus/beta", Some(1_000)),
+    ]);
+
+    press(&mut app, KeyCode::Enter);
+
+    assert!(app.choosing().is_none(), "it is still asking");
+    assert_eq!(
+        app.working_directory(),
+        scratch.path(),
+        "enter did not open the project the reader started on"
+    );
+}
+
+/// The filter narrows the projects and never the row under them.
 ///
 /// A filter that could take that row away would be a screen with no way
 /// off it: type four letters that match nothing and there is nothing left
@@ -124,7 +168,8 @@ fn it_opens_on_the_row_that_opens_a_project() {
 /// way.
 ///
 /// Broken deliberately by making the opening row conditional on the
-/// filter -- `KeyCode::Enter if self.at == 0 && self.filter.is_empty()`,
+/// filter -- `KeyCode::Enter if self.on_the_opening_row() &&
+/// self.filter.is_empty()`,
 /// which reads like tidiness -- and enter on the only row left does
 /// nothing at all.
 #[test]
@@ -145,7 +190,7 @@ fn the_filter_cannot_hide_the_way_out() {
     );
 }
 
-/// Typing puts the reader back on the row that is always the same one.
+/// Typing puts the reader back at the top of what is left.
 ///
 /// The rows underneath have moved, so standing on the fifth of them is
 /// standing on a different project than it was a keystroke ago -- and
@@ -195,7 +240,7 @@ fn escape_clears_the_filter_and_never_leaves() {
     );
 }
 
-/// The first row turns the foot into a path box, and it starts empty.
+/// The opening row turns the foot into a path box, and it starts empty.
 ///
 /// Two boxes and two meanings: what was typed to narrow a list of places
 /// a reader has been is not the beginning of a path, and carrying it over
@@ -208,7 +253,7 @@ fn escape_clears_the_filter_and_never_leaves() {
 fn naming_a_path_starts_from_nothing() {
     let mut app = asking();
     press(&mut app, KeyCode::Char('a'));
-    press(&mut app, KeyCode::Enter);
+    open_another(&mut app);
 
     let choosing = app.choosing().expect("asking");
     assert!(choosing.naming, "the foot is not a path box");
@@ -220,12 +265,17 @@ fn naming_a_path_starts_from_nothing() {
 /// Escape gives up on the nearest thing, and the nearest thing is the box
 /// rather than the screen.
 ///
-/// Broken deliberately by answering `Ignored` for escape in
-/// `Chooser::naming`: the reader is stuck in the path box.
+/// And back on the row the box was opened from, rather than on a project
+/// the reader had moved away from.
+///
+/// Broken deliberately twice: answering `Ignored` for escape in
+/// `Chooser::naming`, and the reader is stuck in the path box; and
+/// setting `self.at = 0` there, and they come back out on the newest
+/// project.
 #[test]
 fn escape_comes_back_out_of_the_path_box() {
     let mut app = asking();
-    press(&mut app, KeyCode::Enter);
+    open_another(&mut app);
     assert!(app.choosing().expect("asking").naming, "not naming");
 
     press(&mut app, KeyCode::Esc);
@@ -233,6 +283,10 @@ fn escape_comes_back_out_of_the_path_box() {
     let choosing = app.choosing().expect("asking");
     assert!(!choosing.naming, "escape did not leave the path box");
     assert_eq!(choosing.known.len(), 2, "the projects did not come back");
+    assert_eq!(
+        choosing.at, 2,
+        "the reader is not back on the row the box was opened from"
+    );
 }
 
 /// What a directory holds is offered, the first of them chosen, and
@@ -254,7 +308,7 @@ fn enter_puts_the_chosen_row_in_the_box() {
     let scratch = support::Scratch::new("choosing-enter");
     std::fs::create_dir_all(scratch.path().join("alpha").join("inner")).expect("directories");
     let mut app = asking();
-    press(&mut app, KeyCode::Enter);
+    open_another(&mut app);
     for character in format!("{}/", scratch.path().display()).chars() {
         press(&mut app, KeyCode::Char(character));
     }
@@ -307,7 +361,7 @@ fn escape_shuts_the_list_and_then_enter_opens_what_is_typed() {
     let scratch = support::Scratch::new("choosing-escape-list");
     std::fs::create_dir_all(scratch.path().join("alpha")).expect("a directory");
     let mut app = asking();
-    press(&mut app, KeyCode::Enter);
+    open_another(&mut app);
     for character in format!("{}/", scratch.path().display()).chars() {
         press(&mut app, KeyCode::Char(character));
     }
@@ -345,7 +399,7 @@ fn escape_shuts_the_list_and_then_enter_opens_what_is_typed() {
 fn choosing_a_project_settles_it() {
     let scratch = support::Scratch::new("choosing-settles");
     let mut app = asking();
-    press(&mut app, KeyCode::Enter);
+    open_another(&mut app);
     for character in scratch.path().display().to_string().chars() {
         press(&mut app, KeyCode::Char(character));
     }
@@ -388,7 +442,7 @@ fn a_path_typed_with_forward_slashes_is_still_a_path() {
     let typed = format!("{}/", scratch.path().display()).replace('\\', "/");
 
     let mut app = asking();
-    press(&mut app, KeyCode::Enter);
+    open_another(&mut app);
     for character in typed.chars() {
         press(&mut app, KeyCode::Char(character));
     }
@@ -422,7 +476,7 @@ fn a_list_that_was_shut_comes_back_on_the_next_letter() {
     let scratch = support::Scratch::new("choosing-reopen");
     std::fs::create_dir_all(scratch.path().join("alpha")).expect("a directory");
     let mut app = asking();
-    press(&mut app, KeyCode::Enter);
+    open_another(&mut app);
     for character in format!("{}/", scratch.path().display()).chars() {
         press(&mut app, KeyCode::Char(character));
     }
@@ -452,7 +506,7 @@ fn a_list_that_matched_nothing_comes_back_when_the_letter_goes() {
     let scratch = support::Scratch::new("choosing-backspace");
     std::fs::create_dir_all(scratch.path().join("alpha")).expect("a directory");
     let mut app = asking();
-    press(&mut app, KeyCode::Enter);
+    open_another(&mut app);
     for character in format!("{}/", scratch.path().display()).chars() {
         press(&mut app, KeyCode::Char(character));
     }
@@ -487,7 +541,7 @@ fn rubbing_the_box_out_closes_the_list() {
     let scratch = support::Scratch::new("choosing-emptied");
     std::fs::create_dir_all(scratch.path().join("alpha")).expect("a directory");
     let mut app = asking();
-    press(&mut app, KeyCode::Enter);
+    open_another(&mut app);
     let typed = format!("{}/", scratch.path().display());
     for character in typed.chars() {
         press(&mut app, KeyCode::Char(character));
@@ -523,7 +577,7 @@ fn rubbing_back_past_a_separator_moves_the_list_up() {
     let scratch = support::Scratch::new("choosing-back-up");
     std::fs::create_dir_all(scratch.path().join("alpha").join("inner")).expect("directories");
     let mut app = asking();
-    press(&mut app, KeyCode::Enter);
+    open_another(&mut app);
     for character in format!("{}/alpha/", scratch.path().display()).chars() {
         press(&mut app, KeyCode::Char(character));
     }
@@ -566,7 +620,7 @@ fn a_path_that_is_not_there_is_refused() {
     let scratch = support::Scratch::new("choosing-unreal");
     let mut app = asking();
     let before = app.working_directory().to_path_buf();
-    press(&mut app, KeyCode::Enter);
+    open_another(&mut app);
     for character in format!("{}/nothing-here", scratch.path().display()).chars() {
         press(&mut app, KeyCode::Char(character));
     }
@@ -613,7 +667,6 @@ fn a_remembered_project_that_has_gone_is_dropped() {
     )]);
     assert_eq!(app.choosing().expect("asking").known.len(), 1, "no row");
 
-    press(&mut app, KeyCode::Down);
     press(&mut app, KeyCode::Enter);
 
     assert!(app.choosing().is_some(), "it opened something that is gone");
@@ -695,7 +748,7 @@ fn a_path_that_goes_nowhere_says_so_once_nothing_is_left_to_suggest() {
     let scratch = support::Scratch::new("choosing-nowhere");
     std::fs::create_dir_all(scratch.path().join("alpha")).expect("a directory");
     let mut app = asking();
-    press(&mut app, KeyCode::Enter);
+    open_another(&mut app);
     for character in format!("{}/", scratch.path().display()).chars() {
         press(&mut app, KeyCode::Char(character));
     }
@@ -738,7 +791,7 @@ fn choosing_from_the_list_leaves_the_row_telling_the_truth() {
     let scratch = support::Scratch::new("choosing-stale-ink");
     std::fs::create_dir_all(scratch.path().join("alpha")).expect("a directory");
     let mut app = asking();
-    press(&mut app, KeyCode::Enter);
+    open_another(&mut app);
     // Half the name: not a directory, and the list is offering the
     // whole of it. The two have to disagree here or the stale answer
     // and the true one are the same and nothing is being tested -- a
@@ -789,7 +842,7 @@ fn nothing_about_the_project_is_started_until_there_is_one() {
         "an agent is being offered tools for a project nobody has named"
     );
 
-    press(&mut app, KeyCode::Enter);
+    open_another(&mut app);
     for character in scratch.path().display().to_string().chars() {
         press(&mut app, KeyCode::Char(character));
     }

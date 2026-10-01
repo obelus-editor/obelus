@@ -2564,7 +2564,9 @@ fn a_screen_too_short_for_what_went_wrong_still_gets_the_keys() {
 ///
 /// Deliberate break: have `WelcomeView::render` draw the keys rather than
 /// branching on `choosing`, and the grid comes back with `F1 Open a file`
-/// on it -- a key that cannot do anything until this is answered.
+/// on it -- a key that cannot do anything until this is answered. And by
+/// having `name_of` never find a separator: the rows go back to whole
+/// paths in one ink, with the name at the ragged end of each.
 #[test]
 fn a_start_with_no_project_asks_which_one() {
     let mut app = App::new(Vec::new());
@@ -2616,6 +2618,8 @@ fn naming_a_path_offers_what_could_finish_it() {
         shown: "/tmp/obelus/alpha".to_string(),
         last: None,
     }]);
+    // The opening row, which is under the projects.
+    support::press(&mut app, crossterm::event::KeyCode::End);
     support::press(&mut app, crossterm::event::KeyCode::Enter);
     for character in format!("{}/", scratch.path().display()).chars() {
         support::press(&mut app, crossterm::event::KeyCode::Char(character));
