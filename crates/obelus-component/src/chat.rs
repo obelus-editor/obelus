@@ -717,6 +717,13 @@ pub struct Chat {
     plan_open: bool,
     /// What is being written.
     input: Composer,
+    /// What the box offers to say while nothing is in it, if anything.
+    ///
+    /// Not in the box, because it is not the reader's until they take it:
+    /// enter on it sends nothing, as it does on any empty box, and only the
+    /// right arrow -- the key that would otherwise do nothing there -- puts
+    /// it in as words they can send or change.
+    suggested: Option<&'static str>,
     /// Which rows of the transcript are on screen.
     ///
     /// The same window every list in Obelus has, in its following form: it
@@ -885,6 +892,7 @@ impl Chat {
             plan: Vec::new(),
             plan_open: false,
             input: Composer::new(),
+            suggested: None,
             window: Window::following(),
             focus: Focus::Writing,
             held: None,
@@ -939,6 +947,22 @@ impl Chat {
     /// reader is writing.
     pub fn paste(&mut self, what: &str, width: u16) {
         self.input.write_in(what, width);
+    }
+
+    /// Says what the box offers while it is empty, or that it offers
+    /// nothing.
+    pub const fn suggest(&mut self, what: Option<&'static str>) {
+        self.suggested = what;
+    }
+
+    /// What the box offers, while nothing at all has been put in it.
+    ///
+    /// Nothing at all rather than nothing but blanks: a space the reader
+    /// typed is the start of something of theirs, and grey words beside it
+    /// would be Obelus finishing their sentence.
+    #[must_use]
+    pub fn suggestion(&self) -> Option<&'static str> {
+        self.suggested.filter(|_| self.input.text().is_empty())
     }
 
     /// What is being written, for the view to draw.
@@ -2191,7 +2215,10 @@ impl Chat {
                 ChatOutcome::Consumed
             }
             KeyCode::Right if bare => {
-                self.input.right();
+                match self.suggestion() {
+                    Some(said) => self.input.replace(said),
+                    None => self.input.right(),
+                }
                 ChatOutcome::Consumed
             }
             // The box owns the arrows while its caret has somewhere to go

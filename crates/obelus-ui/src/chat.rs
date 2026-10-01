@@ -1114,6 +1114,12 @@ impl ChatView<'_> {
             }
             let x = area.x + MARGIN + INDENT;
             write(cells, x, y, &row.said, plain);
+            // Behind the caret rather than in front of it, in the gutter's
+            // ink like the keys at the foot: it is not what was written,
+            // and the caret sitting at its start says where typing goes.
+            if let Some(said) = self.chat.suggestion() {
+                write(cells, x, y, said, plain.fg(self.theme.gutter));
+            }
             // And what the reader has hold of, over the top -- the colour
             // the file uses for the same fact, because it is the same
             // fact. Counted in characters of the row, which is what the
@@ -1443,7 +1449,18 @@ impl ChatView<'_> {
                 };
                 (keys, "Mode")
             });
-        [back, mode].into_iter().flatten().collect()
+        // The arrow, while there is something for it to put in the box:
+        // nothing on the box says that grey words can be taken, and they
+        // are taken by a key that does nothing on an empty box anywhere
+        // else.
+        let suggested = self.chat.suggestion().map(|_| {
+            let keys = obelus_editing::keymap::KeyChord::new(
+                crossterm::event::KeyCode::Right,
+                crossterm::event::KeyModifiers::NONE,
+            );
+            (keys.label(), "Fill it in")
+        });
+        [suggested, back, mode].into_iter().flatten().collect()
     }
 
     /// How much of the status row the settings have.

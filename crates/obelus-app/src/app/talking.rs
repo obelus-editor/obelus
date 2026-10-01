@@ -2451,6 +2451,26 @@ impl App {
         if let Some(talk) = self.conversation_mut() {
             talk.chat.settle_focus(settings);
         }
+        // And what the box offers, by the opening's own test of whether the
+        // next message carries the note -- so a note rewritten since offers
+        // it again, and one already told does not. From the kept copy of
+        // the notes, because this is asked every frame.
+        let suggested = self.conversation().and_then(|talk| {
+            let Topic::Note(id) = &talk.topic else {
+                return None;
+            };
+            let note = self
+                .notes_kept
+                .as_ref()?
+                .notes
+                .iter()
+                .find(|note| note.id == *id)?;
+            let now = super::opening::what_the_note_says(note);
+            (talk.told.as_deref() != Some(now.as_str())).then_some(super::opening::LOOK)
+        });
+        if let Some(talk) = self.conversation_mut() {
+            talk.chat.suggest(suggested);
+        }
     }
 
     /// Which conversation on the agent the reader is in, if they are in one.
