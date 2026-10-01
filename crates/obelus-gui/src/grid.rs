@@ -763,9 +763,26 @@ impl Capped {
     /// The key sits one cell in from the cap's own left edge, which is
     /// where the blank inside a cap is, wherever the cap came from.
     pub(crate) fn still_said(&self, page: &Page) -> bool {
+        self.said_by(|x, y| page.look(x, y).text)
+    }
+
+    /// Whether what a pane was put over says what this cap was said about.
+    ///
+    /// The other half of the same question. A cap drawn over by a list is
+    /// not on the page, but it is in the picture of what the list was put
+    /// over -- and the glass shows that picture, so the cap is the
+    /// picture's to draw. Asked only of [`Self::still_said`]'s caps, the
+    /// welcome screen under a list was its keys in plain ink: the cells
+    /// were seen through the glass and the shape round them was not.
+    pub(crate) fn still_behind(&self, behind: &Behind) -> bool {
+        behind.area.intersection(self.area) == self.area
+            && self.said_by(|x, y| behind.look(x, y).map_or("", |look| look.text))
+    }
+
+    fn said_by<'a>(&self, text: impl Fn(u16, u16) -> &'a str) -> bool {
         let mut said = String::new();
         for at in 1..self.area.width.saturating_sub(1) {
-            said.push_str(page.look(self.area.x.saturating_add(at), self.area.y).text);
+            said.push_str(text(self.area.x.saturating_add(at), self.area.y));
         }
         said.trim_end() == self.keys
     }
@@ -1800,6 +1817,60 @@ mod tests {
         // What a view drawn over inside the same frame leaves behind.
         write(&mut page, "    ");
         assert!(!cap.still_said(&page));
+    }
+
+    /// And a cap drawn over by a pane is still in the picture of what the
+    /// pane was put over, which is what the glass shows.
+    ///
+    /// Deliberate break: answer `false` from `Capped::still_behind`, and
+    /// the welcome screen under a list is its keys in plain ink with no cap
+    /// round any of them -- the thing a reader saw.
+    #[test]
+    fn a_cap_under_a_pane_is_the_pictures_to_draw() {
+        let picture = |said: &str, area: Rect| Behind {
+            area,
+            joined: Joined::Below,
+            ground: Color::Reset,
+            cells: said
+                .chars()
+                .map(|character| {
+                    let mut cell = Cell::default();
+                    cell.set_symbol(&character.to_string());
+                    cell
+                })
+                .collect(),
+        };
+        let cap = Capped {
+            keys: "f1".to_string(),
+            area: Rect {
+                x: 2,
+                y: 1,
+                width: 4,
+                height: 1,
+            },
+            cap: Color::Reset,
+            page: Color::Reset,
+            edge: Color::Reset,
+        };
+        let row = Rect {
+            x: 0,
+            y: 1,
+            width: 8,
+            height: 1,
+        };
+        assert!(cap.still_behind(&picture("   f1   ", row)));
+        assert!(!cap.still_behind(&picture("   f2   ", row)), "another key");
+        // A cap partly in the picture is partly through the glass and
+        // partly on the page, which is neither's to draw -- even where the
+        // key itself is all inside and only the cap's blank is not.
+        //
+        // Deliberate break: drop the `intersection` from `still_behind`,
+        // and this one is drawn.
+        let short = Rect { width: 5, ..row };
+        assert!(
+            !cap.still_behind(&picture("   f1", short)),
+            "its blank outside"
+        );
     }
 
     /// A full-width character takes the cells it covers with it.

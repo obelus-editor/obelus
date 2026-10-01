@@ -940,7 +940,7 @@ impl Painter {
         // pass draws and it draws the front of the buffer.
         let pane = said
             .behind
-            .map(|behind| self.glass(page, behind, said.ruled, said.barred, fonts));
+            .map(|behind| self.glass(page, behind, said.ruled, said.barred, said.capped, fonts));
         self.placed.sheet = self.quads.len();
         // The boxes whose frames are still there to hold them -- see
         // `Behind::framed` -- which four passes ask about. The nearest is
@@ -2336,62 +2336,75 @@ impl Painter {
     /// under it is a lip. Which is the whole of the trick a keyboard's own
     /// keys use.
     fn caps(&mut self, page: &Page, capped: &[&Capped], panes: &[&Behind], fonts: &mut Fonts) {
-        let cell = fonts.cell();
         for cap in capped {
-            let left = f32::from(cap.area.x) * cell.width;
-            let top = f32::from(cap.area.y) * cell.height;
-            let width = f32::from(cap.area.width) * cell.width;
-            let side = (cell.width * SIDE).round();
-            // Never thinner than a pixel: a lip that rounds away is a cap
-            // that lies flat, and the inset is what keeps a cap off the
-            // rows either side of it.
-            let inset = (cell.height * INSET).round().max(1.0);
-            let lip = (cell.height * LIP).round().max(1.0);
-            let height = (cell.height - inset * 2.0).max(1.0);
-            let radius = (height * ROUNDING).min(cell.width);
             // What the cells said, put back: the corners this is about to
             // round away are painted in the cap's own ground, and a cap
             // drawn over them would have square shoulders. Unless what is
             // behind the cap is glass, which is already there and is the
             // right thing to show round a corner.
-            if !seen_through(panes, cap.area.x, cap.area.y, cap.page) {
-                self.block(
-                    left,
-                    top,
-                    width,
-                    cell.height,
-                    rgba(cap.page, Ink::Background),
-                );
-            }
-            // Held off the cells either side, which the ground above is
-            // not: what was put back is every cell the cap was said
-            // about, and what is drawn on it stops short of them.
-            let drawn = (width - side * 2.0).max(1.0);
-            self.rounded(
-                left + side,
-                top + inset,
-                drawn,
-                height,
-                radius,
-                rgba(cap.edge, Ink::Foreground),
-            );
-            let face = (height - 1.0 - lip).max(1.0);
-            self.rounded(
-                left + side + 1.0,
-                top + inset + 1.0,
-                (drawn - 2.0).max(1.0),
-                face,
-                (radius - 1.0).max(0.0),
-                rgba(cap.cap, Ink::Background),
-            );
-            self.legend(
-                cap,
-                page,
-                left + width / 2.0,
-                top + inset + 1.0 + face / 2.0,
-                fonts,
+            let put_back = !seen_through(panes, cap.area.x, cap.area.y, cap.page);
+            self.cap(cap, |x, y| Some(page.look(x, y)), put_back, fonts);
+        }
+    }
+
+    /// One cap, out of whichever cells it was said about: the page's, or
+    /// the picture of what a pane was put over.
+    fn cap<'a>(
+        &mut self,
+        cap: &Capped,
+        look: impl Fn(u16, u16) -> Option<Look<'a>>,
+        put_back: bool,
+        fonts: &mut Fonts,
+    ) {
+        let cell = fonts.cell();
+        let left = f32::from(cap.area.x) * cell.width;
+        let top = f32::from(cap.area.y) * cell.height;
+        let width = f32::from(cap.area.width) * cell.width;
+        let side = (cell.width * SIDE).round();
+        // Never thinner than a pixel: a lip that rounds away is a cap
+        // that lies flat, and the inset is what keeps a cap off the
+        // rows either side of it.
+        let inset = (cell.height * INSET).round().max(1.0);
+        let lip = (cell.height * LIP).round().max(1.0);
+        let height = (cell.height - inset * 2.0).max(1.0);
+        let radius = (height * ROUNDING).min(cell.width);
+        if put_back {
+            self.block(
+                left,
+                top,
+                width,
+                cell.height,
+                rgba(cap.page, Ink::Background),
             );
         }
+        // Held off the cells either side, which the ground above is
+        // not: what was put back is every cell the cap was said
+        // about, and what is drawn on it stops short of them.
+        let drawn = (width - side * 2.0).max(1.0);
+        self.rounded(
+            left + side,
+            top + inset,
+            drawn,
+            height,
+            radius,
+            rgba(cap.edge, Ink::Foreground),
+        );
+        let face = (height - 1.0 - lip).max(1.0);
+        self.rounded(
+            left + side + 1.0,
+            top + inset + 1.0,
+            (drawn - 2.0).max(1.0),
+            face,
+            (radius - 1.0).max(0.0),
+            rgba(cap.cap, Ink::Background),
+        );
+        self.legend(
+            cap,
+            look,
+            left + width / 2.0,
+            top + inset + 1.0 + face / 2.0,
+            fonts,
+        );
     }
 
     /// The key itself, written on the face of its cap.
@@ -2411,7 +2424,14 @@ impl Painter {
     /// The ink comes from the cells, which is where the theme said it --
     /// the cap knows the three colours it is drawn in and not the one the
     /// key is written in.
-    fn legend(&mut self, cap: &Capped, page: &Page, middle: f32, height: f32, fonts: &mut Fonts) {
+    fn legend<'a>(
+        &mut self,
+        cap: &Capped,
+        look: impl Fn(u16, u16) -> Option<Look<'a>>,
+        middle: f32,
+        height: f32,
+        fonts: &mut Fonts,
+    ) {
         let cell = fonts.cell();
         let pitch = cell.width * font::SMALLER;
         let columns = obelus_text::text_width(&cap.keys).max(1);
@@ -2426,7 +2446,9 @@ impl Painter {
             if column >= columns {
                 break;
             }
-            let look = page.look(cap.area.x.saturating_add(at), cap.area.y);
+            let Some(look) = look(cap.area.x.saturating_add(at), cap.area.y) else {
+                continue;
+            };
             // The right half of a wide character, which its neighbour
             // blanked -- see `Page::covered`.
             if look.text.is_empty() {
@@ -2464,6 +2486,7 @@ impl Painter {
         behind: &Behind,
         ruled: &[Ruled],
         barred: &[Barred],
+        capped: &[Capped],
         fonts: &mut Fonts,
     ) -> [f32; 4] {
         let cell = fonts.cell();
@@ -2496,6 +2519,13 @@ impl Painter {
                     Size::Cell,
                 );
             }
+        }
+        // And the caps the picture still holds, which the page no longer
+        // does: a cap is the shape its cells are, and these cells are seen
+        // through the glass -- see `Capped::still_behind`. Put back on
+        // their own ground always, since nothing is behind the picture.
+        for cap in capped.iter().filter(|cap| cap.still_behind(behind)) {
+            self.cap(cap, |x, y| behind.look(x, y), true, fonts);
         }
         self.placed.behind = self.quads.len();
 
