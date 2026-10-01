@@ -282,6 +282,9 @@ pub(crate) struct Said<'a> {
 pub(crate) struct Rolled<'a> {
     /// The rows the list is in.
     pub(crate) room: Rect,
+    /// Whether the pane is over it rather than the list being the pane's
+    /// own.
+    pub(crate) under: bool,
     /// The page as it was before the slide began.
     pub(crate) before: &'a Page,
     /// How many rows behind where it has got to it is drawn.

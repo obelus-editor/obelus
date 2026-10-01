@@ -1608,7 +1608,8 @@ impl Painter {
     /// scrolls on under a list is the transcript moving, not the list, and
     /// a band that took the cells over it along took the foot of the list
     /// with it -- every line an agent wrote behind a list was the list
-    /// coming up again. A band inside the pane is the list's own, and moves.
+    /// coming up again. A band the pane's own view drew is the list, and
+    /// moves.
     fn catching_up(&mut self, bands: &[Rolled<'_>], pane: Option<[f32; 4]>, fonts: &mut Fonts) {
         let cell = fonts.cell();
         for band in bands {
@@ -1637,7 +1638,11 @@ impl Painter {
             }
         }
         let rooms: Vec<[f32; 4]> = bands.iter().map(|band| box_of(band.room, cell)).collect();
-        let moving: Vec<[f32; 4]> = rooms.iter().flat_map(|room| sliding(*room, pane)).collect();
+        let moving: Vec<[f32; 4]> = bands
+            .iter()
+            .zip(&rooms)
+            .flat_map(|(band, room)| sliding(*room, pane, band.under))
+            .collect();
         self.covering(&moving);
         for (at, (band, room)) in bands.iter().zip(&rooms).enumerate() {
             // Less the rooms of the other bands, so that a band with one
@@ -1649,7 +1654,7 @@ impl Painter {
                 .filter(|&(other, _)| other != at)
                 .map(|(_, room)| *room)
                 .collect();
-            for part in sliding(*room, pane) {
+            for part in sliding(*room, pane, band.under) {
                 for piece in tiles(part, &others) {
                     self.slid_piece(piece, *room, band.behind * cell.height, 1.0);
                 }
@@ -1701,7 +1706,7 @@ impl Painter {
         let pane = box_of(behind.area, cell);
         let under: Vec<(&Rolled<'_>, [f32; 4])> = bands
             .iter()
-            .filter_map(|band| Some((band, beneath(box_of(band.room, cell), pane)?)))
+            .filter_map(|band| Some((band, beneath(box_of(band.room, cell), pane, band.under)?)))
             .collect();
         if under.is_empty() {
             return;
@@ -3962,25 +3967,28 @@ fn box_of(room: Rect, cell: CellSize) -> [f32; 4] {
 }
 
 /// What of a band's room moves while it catches up, given the pane over
-/// the page.
+/// the page and whether the band is `under` it.
 ///
-/// All of it for a band inside the pane, which is the list's own. Only
-/// what the pane leaves showing for one the pane is over: what is drawn
-/// there is the pane, and it is not what scrolled.
-fn sliding(room: [f32; 4], pane: Option<[f32; 4]>) -> Vec<[f32; 4]> {
-    let inside = |pane: &[f32; 4]| {
-        room[0] >= pane[0] && room[1] >= pane[1] && room[2] <= pane[2] && room[3] <= pane[3]
-    };
-    tiles(room, pane.filter(|pane| !inside(pane)).as_slice())
+/// All of it for a band the pane's own view drew, which is the list. Only
+/// what the pane leaves showing for one the pane was put over: what is
+/// drawn there is the pane, and it is not what scrolled.
+///
+/// Asked and not worked out from where the two are. It was once whether
+/// the band was inside the pane, which a full-screen dialog answers yes
+/// for everything -- so a transcript scrolling on under the settings or
+/// a full list slid the whole dialog with it, a shudder on every line an
+/// agent wrote.
+fn sliding(room: [f32; 4], pane: Option<[f32; 4]>, under: bool) -> Vec<[f32; 4]> {
+    tiles(room, pane.filter(|_| under).as_slice())
 }
 
 /// The part of a band's room a pane is over, where the band is under the
-/// pane rather than inside it.
+/// pane rather than the pane's own.
 ///
 /// The other half of `sliding`: what that leaves out on the screen is
 /// what slides behind the glass instead.
-fn beneath(room: [f32; 4], pane: [f32; 4]) -> Option<[f32; 4]> {
-    if sliding(room, Some(pane)) == [room] {
+fn beneath(room: [f32; 4], pane: [f32; 4], under: bool) -> Option<[f32; 4]> {
+    if sliding(room, Some(pane), under) == [room] {
         return None;
     }
     Some([
@@ -4544,27 +4552,38 @@ mod tests {
         assert_eq!(tiles(whole, &[]), vec![whole]);
     }
 
-    /// A band a pane is over moves only where the pane is not, and a band
-    /// inside the pane moves whole.
+    /// A band a pane is over moves only where the pane is not, and the
+    /// pane's own band moves whole.
     ///
     /// The first is a transcript scrolling on under a list: slid whole, it
     /// took the foot of the list with it, and every line an agent wrote
     /// behind a list was the list arriving again. The second is the list's
-    /// own rows, which are what the reader is scrolling.
+    /// own rows, which are what the reader is scrolling. And a full-screen
+    /// dialog, which the transcript is entirely inside: it slid whole, and
+    /// the settings shuddered on every line.
     ///
     /// Deliberate breaks: `tiles(room, &[])` in `sliding` and nothing is
     /// kept still under the pane; `pane.as_slice()` without the filter
-    /// and the list's own band stops moving at all.
+    /// and the list's own band stops moving at all; the old test, whether
+    /// the band is inside the pane, in place of `under`, and the
+    /// transcript under the full-screen pane slides whole again.
     #[test]
     fn a_band_under_a_pane_moves_only_where_the_pane_is_not() {
         let pane = [0.0, 60.0, 100.0, 100.0];
         let transcript = [0.0, 0.0, 100.0, 90.0];
-        let moving = sliding(transcript, Some(pane));
+        let moving = sliding(transcript, Some(pane), true);
         assert_eq!(moving, vec![[0.0, 0.0, 100.0, 60.0]], "{moving:?}");
         let list = [0.0, 70.0, 98.0, 90.0];
-        assert_eq!(sliding(list, Some(pane)), vec![list]);
+        assert_eq!(sliding(list, Some(pane), false), vec![list]);
         // And with no pane, a band is all of it.
-        assert_eq!(sliding(transcript, None), vec![transcript]);
+        assert_eq!(sliding(transcript, None, true), vec![transcript]);
+        // A full-screen dialog: the transcript is inside it, and still
+        // nothing of it moves on the screen, while the dialog's own list,
+        // inside it as well, moves whole.
+        let screen = [0.0, 0.0, 100.0, 100.0];
+        let moving = sliding(transcript, Some(screen), true);
+        assert!(moving.is_empty(), "{moving:?}");
+        assert_eq!(sliding(list, Some(screen), false), vec![list]);
     }
 
     /// What slides behind the glass is the part of a band the pane is
@@ -4579,12 +4598,26 @@ mod tests {
     fn what_slides_behind_the_glass_is_what_the_pane_is_over() {
         let pane = [0.0, 60.0, 100.0, 100.0];
         assert_eq!(
-            beneath([0.0, 0.0, 100.0, 90.0], pane),
+            beneath([0.0, 0.0, 100.0, 90.0], pane, true),
             Some([0.0, 60.0, 100.0, 90.0]),
             "a transcript the list is over"
         );
-        assert_eq!(beneath([0.0, 70.0, 98.0, 90.0], pane), None, "the list");
-        assert_eq!(beneath([0.0, 0.0, 100.0, 50.0], pane), None, "above it");
+        assert_eq!(
+            beneath([0.0, 70.0, 98.0, 90.0], pane, false),
+            None,
+            "the list"
+        );
+        assert_eq!(
+            beneath([0.0, 0.0, 100.0, 50.0], pane, true),
+            None,
+            "above it"
+        );
+        // And all of a transcript under a full-screen dialog.
+        assert_eq!(
+            beneath([0.0, 0.0, 100.0, 90.0], [0.0, 0.0, 100.0, 100.0], true),
+            Some([0.0, 0.0, 100.0, 90.0]),
+            "a transcript the settings are over"
+        );
     }
 
     /// A pane's shadow falls from the edge the pane has reached.

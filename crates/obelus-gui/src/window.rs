@@ -135,6 +135,14 @@ struct Rolling {
     /// the mark sets out from somewhere it was never drawn and steps back
     /// to catch up.
     origin: Option<u16>,
+    /// Whether a pane was put over it, which is whether it was said before
+    /// the pane's backdrop: a view draws the page, then says what is
+    /// behind the pane, then draws the pane and its own rows.
+    ///
+    /// Said rather than worked out from where the two are, because a
+    /// full-screen dialog is over everything, so a transcript under one is
+    /// as inside it as the dialog's own list.
+    under: bool,
 }
 
 /// Everything the window has, and Obelus on the other side of it.
@@ -767,6 +775,9 @@ impl ApplicationHandler<Waking> for Showing {
                                 Joined::Above | Joined::Below | Joined::Screen => {
                                     self.behinding = Some(behind);
                                     self.carding.clear();
+                                    for band in &mut self.scrolling {
+                                        band.under = true;
+                                    }
                                 }
                             }
                         }
@@ -777,6 +788,7 @@ impl ApplicationHandler<Waking> for Showing {
                                 before: None,
                                 bar,
                                 origin: None,
+                                under: false,
                             });
                         }
                         Update::Ticked { area, on } => {
@@ -1063,6 +1075,7 @@ impl ApplicationHandler<Waking> for Showing {
                         let (behind, since) = self.motion.band_shown(band.room, now)?;
                         Some(Rolled {
                             room: band.room,
+                            under: band.under,
                             before: band.before.as_deref()?,
                             behind,
                             since,

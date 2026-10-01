@@ -6,7 +6,10 @@
 
 mod support;
 
-use std::sync::{Arc, Mutex, OnceLock};
+use std::{
+    sync::{Arc, Mutex, OnceLock},
+    thread::ThreadId,
+};
 
 use obelus_app::app::App;
 use obelus_component::picker::{PickerItem, PickerLayout, PickerValue};
@@ -22,6 +25,25 @@ struct Heard {
     marks: Mutex<Vec<(Rect, Color, Color)>>,
     /// And where one thing was said to stop and the next to begin.
     partings: Mutex<Vec<Rect>>,
+    /// Every band and every pane, in the order they were said, with the
+    /// thread that said them: the order is the claim, and the tests in
+    /// this binary run side by side into the one recorder.
+    order: Mutex<Vec<(ThreadId, Told)>>,
+}
+
+/// A band or a pane, as it was said.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Told {
+    Band(Rect),
+    Pane(Rect, Joined),
+}
+
+impl Heard {
+    fn told(&self, told: Told) {
+        if let Ok(mut order) = self.order.lock() {
+            order.push((std::thread::current().id(), told));
+        }
+    }
 }
 
 impl obelus_ui::shapes::Shapes for Heard {
@@ -29,9 +51,12 @@ impl obelus_ui::shapes::Shapes for Heard {
         if let Ok(mut panes) = self.panes.lock() {
             panes.push((area, joined));
         }
+        self.told(Told::Pane(area, joined));
     }
 
-    fn scrolled(&self, _area: Rect, _top: i64, _bar: Option<obelus_ui::shapes::Bar>) {}
+    fn scrolled(&self, area: Rect, _top: i64, _bar: Option<obelus_ui::shapes::Bar>) {
+        self.told(Told::Band(area));
+    }
 
     fn ticked(&self, _area: Rect, _on: bool) {}
 
@@ -146,6 +171,170 @@ fn a_compact_list_is_a_pane_from_rule_to_rule() {
         rows.contains("alpha") && rows.contains("gamma"),
         "the rows are in the pane, starting with {under:?}"
     );
+}
+
+/// What one test's frame said, in order: only this thread's, and only
+/// what came after `since` of them.
+fn told_since(since: usize) -> Vec<Told> {
+    let me = std::thread::current().id();
+    heard()
+        .order
+        .lock()
+        .expect("nothing poisoned it")
+        .iter()
+        .filter(|(whose, _)| *whose == me)
+        .skip(since)
+        .map(|(_, told)| *told)
+        .collect()
+}
+
+/// How much this thread has said so far, so that a frame drawn while
+/// setting a test up is not taken for the one under test.
+fn told_so_far() -> usize {
+    told_since(0).len()
+}
+
+/// The last pane a frame said, with the bands said before it and the
+/// bands said after it.
+fn either_side_of_the_pane(told: &[Told]) -> (Rect, Joined, Vec<Rect>, Vec<Rect>) {
+    let at = told
+        .iter()
+        .rposition(|told| matches!(told, Told::Pane(..)))
+        .unwrap_or_else(|| panic!("a pane: {told:?}"));
+    let Told::Pane(pane, joined) = told[at] else {
+        unreachable!("found as a pane")
+    };
+    let bands = |told: &[Told]| -> Vec<Rect> {
+        told.iter()
+            .filter_map(|told| match told {
+                Told::Band(area) => Some(*area),
+                Told::Pane(..) => None,
+            })
+            .collect()
+    };
+    (pane, joined, bands(&told[..at]), bands(&told[at + 1..]))
+}
+
+/// Whether any of these bands has a row with `word` in it.
+fn shows(bands: &[Rect], cells: &ratatui::buffer::Buffer, word: &str) -> bool {
+    bands.iter().any(|band| {
+        (band.top()..band.bottom()).any(|y| {
+            let row: String = (band.left()..band.right())
+                .map(|x| cells[(x, y)].symbol())
+                .collect();
+            row.contains(word)
+        })
+    })
+}
+
+/// What a frame with a dialog over a file said: the file's band before the
+/// pane and the dialog's own after it, with `word` in the dialog's.
+///
+/// `inside` for a dialog that covers the file whole, which is the case the
+/// order is the only way to tell: the file's band is inside the pane as
+/// much as the dialog's is.
+fn the_file_is_said_before_the_pane(app: &mut App, word: &str, inside: bool) -> (Rect, Joined) {
+    let since = told_so_far();
+    let cells = support::cells_of(app, 60, 24);
+    let told = told_since(since);
+    let (pane, joined, under, own) = either_side_of_the_pane(&told);
+    assert!(
+        under
+            .iter()
+            .any(|band| { band.height > 3 && (!inside || pane.intersection(*band) == *band) }),
+        "the file under the dialog, before its pane {pane:?}: {told:?}"
+    );
+    assert!(
+        shows(&own, &cells, word),
+        "the dialog's own rows, with {word:?} in them, after its pane {pane:?}: {told:?}"
+    );
+    (pane, joined)
+}
+
+/// A band under a pane is said before the pane, and the pane's own bands
+/// after it -- for every dialog there is.
+///
+/// Which is how a window tells a file scrolling on under a dialog from the
+/// dialog's list scrolling: by where they are, it cannot, once the dialog
+/// is a full one -- the file's band is inside the pane as much as the
+/// list's is. So a window that asked where they were slid the whole dialog
+/// with the conversation behind it, a shudder on every line an agent
+/// wrote, and asks the order instead (`obelus_gui::window`).
+///
+/// Deliberate breaks, one per dialog, each moving its `shapes::behind`
+/// below what draws it: in `list_over`, below the `PickerView`; for the
+/// settings, below `view.render`; for the counts, the same; for the names,
+/// below `NamesView`. Each puts the dialog's own band before its pane, as
+/// though the pane were over it.
+#[test]
+fn a_band_under_a_pane_is_said_before_it() {
+    let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    app.statuses_for_test(std::collections::HashMap::new());
+    app.open_picker_for_test(items(&["alpha", "beta", "gamma"]), PickerLayout::FullArea);
+    the_file_is_said_before_the_pane(&mut app, "alpha", true);
+}
+
+/// The settings, which take the whole screen.
+#[test]
+fn a_band_under_the_settings_is_said_before_them() {
+    let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    app.statuses_for_test(std::collections::HashMap::new());
+    // A file that is not there, which reads as the defaults: the settings
+    // page is about a file, and this one is nobody's.
+    app.config_file_for_test(
+        std::env::temp_dir()
+            .join(format!("obelus-panes-{}", std::process::id()))
+            .join("config.toml"),
+    );
+    support::lay_out(&mut app, 60, 24);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConfigOpen);
+    let (_, joined) = the_file_is_said_before_the_pane(&mut app, "Theme", true);
+    assert_eq!(joined, Joined::Screen, "the settings are the whole screen");
+}
+
+/// The counts, which take the whole screen as well.
+#[test]
+fn a_band_under_the_counts_is_said_before_them() {
+    let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    app.statuses_for_test(std::collections::HashMap::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    support::lay_out(&mut app, 60, 24);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::CountLines);
+    let tally = |code| obelus_search::counts::Tally {
+        code,
+        comments: 0,
+        blanks: 0,
+    };
+    let rust = |files| obelus_search::counts::Language {
+        name: "Rust",
+        files,
+        extension: Some("rs"),
+        tally: tally(files * 100),
+        children: Vec::new(),
+    };
+    app.handle(obelus_app::event::Event::Counted(Box::new(
+        obelus_search::counts::Counted {
+            languages: vec![rust(40)],
+            files: Vec::new(),
+            total: tally(4000),
+        },
+    )));
+    let (_, joined) = the_file_is_said_before_the_pane(&mut app, "Rust", true);
+    assert_eq!(joined, Joined::Screen, "the counts are the whole screen");
+}
+
+/// The names, which stand on the foot of the screen like a compact list.
+#[test]
+fn a_band_under_the_names_is_said_before_them() {
+    let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    app.statuses_for_test(std::collections::HashMap::new());
+    support::lay_out(&mut app, 60, 24);
+    app.handle(obelus_app::event::Event::Fonts {
+        here: vec!["Iosevka".to_string()],
+        otherwise: None,
+    });
+    app.open_names("fonts");
+    the_file_is_said_before_the_pane(&mut app, "Iosevka", false);
 }
 
 /// The mark on the welcome screen says where it is and what the light on
