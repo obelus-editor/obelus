@@ -447,6 +447,10 @@ fn said(what: Option<String>) -> CallToolResult {
 impl ServerHandler for Obelus {
     fn get_info(&self) -> InitializeResult {
         let mut info = InitializeResult::default();
+        // Nothing about `open_file`. When to offer it is said in the
+        // opening every conversation begins with, and how in the tool's own
+        // description, so a paragraph here was the same thing told a third
+        // time -- and a story told twice drifts.
         info.instructions = Some(
             "Obelus, the reader this conversation is happening inside. It \
              keeps this project's notes.\n\n\
@@ -457,11 +461,6 @@ impl ServerHandler for Obelus {
              worth returning to, not summaries. Rewording replaces what they \
              wrote and nothing keeps it, so that one is asked with the words \
              themselves, both what it says and what it would say.\n\n\
-             `open_file` puts a file on their screen, at a line if you name \
-             one. It changes nothing and `alt+left` brings them back, but it \
-             takes them off what they were reading, so offer it and let them \
-             say yes. It is the answer whenever you would otherwise name a \
-             file and a line and leave them to go and find it.\n\n\
              A note's name is a handle for these tools and for nothing \
              else. The reader has never seen one: their notes are drawn as \
              the words they wrote, and no name appears anywhere on their \
