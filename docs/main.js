@@ -14,13 +14,24 @@
     button.textContent = button.getAttribute('data-' + next);
   }
 
+  // A theme swap must not tween. Every colour on the page would move
+  // independently over the transition and the page would visibly smear, so
+  // transitions are off for the swap and back on the frame after it.
+  function swap(theme) {
+    root.classList.add('swapping');
+    root.setAttribute('data-theme', theme);
+    show(theme);
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { root.classList.remove('swapping'); });
+    });
+  }
+
   show(root.getAttribute('data-theme'));
 
   if (button) {
     button.addEventListener('click', function () {
       var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-      root.setAttribute('data-theme', next);
-      show(next);
+      swap(next);
       try { localStorage.setItem('obelus-theme', next); } catch (e) {}
     });
   }
@@ -29,9 +40,7 @@
   try {
     matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function (event) {
       if (localStorage.getItem('obelus-theme')) return;
-      var theme = event.matches ? 'dark' : 'light';
-      root.setAttribute('data-theme', theme);
-      show(theme);
+      swap(event.matches ? 'dark' : 'light');
     });
   } catch (e) {}
 
