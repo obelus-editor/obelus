@@ -574,6 +574,43 @@ mod tests {
         );
     }
 
+    /// A command that waits a moment and then leaves a mark, written for
+    /// whichever shell this machine runs commands in -- and how long a
+    /// test may wait before looking for it.
+    ///
+    /// Two spellings, because no one line means the same thing to a
+    /// POSIX shell and to `cmd`: `;` does not separate commands there,
+    /// and `sleep` is not a program it has.
+    ///
+    /// **The mark is a directory and not a redirect into a file.** `cmd`
+    /// creates a redirect's file while it is setting the command up --
+    /// before the command runs at all, and before a kill can stop it --
+    /// so `: > mark` had `cmd` making the very mark these tests were
+    /// about to look for. They failed about half the time, on whether
+    /// the kill landed before `cmd` got that far, which is a race about
+    /// nothing: neither test was asking what its name says. A directory
+    /// is made by a program, and killing the shell is what stops the
+    /// program from being reached.
+    ///
+    /// The wait has to outlast the pause, or a kill that did not work
+    /// would leave nothing to find and the test would pass for the
+    /// wrong reason.
+    fn a_mark_left_in_a_moment(mark: &std::path::Path) -> (String, std::time::Duration) {
+        match shell().1 {
+            // `cmd` has nothing that pauses for less than a second, so
+            // both numbers are bigger here and the test is slower for
+            // it. `&` is what separates two commands there.
+            "/C" => (
+                format!("ping -n 2 127.0.0.1 > nul & mkdir \"{}\"", mark.display()),
+                std::time::Duration::from_millis(2_500),
+            ),
+            _ => (
+                format!("sleep 0.4; mkdir \"{}\"", mark.display()),
+                std::time::Duration::from_millis(900),
+            ),
+        }
+    }
+
     /// Nothing is left running when the runs go.
     ///
     /// A command a reader never typed, still going after Obelus is gone,
@@ -589,18 +626,12 @@ mod tests {
         // running" is a question the test can ask the machine rather than
         // the thing that was just dropped.
         let mark = std::env::temp_dir().join(format!("obelus-run-{}", std::process::id()));
-        let _ = std::fs::remove_file(&mark);
-        runs.start(
-            &format!("sleep 0.4; : > {}", mark.display()),
-            &[],
-            &[],
-            None,
-            std::path::Path::new("."),
-            None,
-        )
-        .expect("the shell");
+        let _ = std::fs::remove_dir_all(&mark);
+        let (line, wait) = a_mark_left_in_a_moment(&mark);
+        runs.start(&line, &[], &[], None, std::path::Path::new("."), None)
+            .expect("the shell");
         drop(runs);
-        std::thread::sleep(std::time::Duration::from_millis(900));
+        std::thread::sleep(wait);
         assert!(!mark.exists(), "a command outlived the runs it belonged to");
     }
 
@@ -617,22 +648,16 @@ mod tests {
     fn a_command_that_is_stopped_says_so() {
         let mut runs = Runs::default();
         let mark = std::env::temp_dir().join(format!("obelus-stop-{}", std::process::id()));
-        let _ = std::fs::remove_file(&mark);
+        let _ = std::fs::remove_dir_all(&mark);
+        let (line, wait) = a_mark_left_in_a_moment(&mark);
         let id = runs
-            .start(
-                &format!("sleep 0.4; : > {}", mark.display()),
-                &[],
-                &[],
-                None,
-                std::path::Path::new("."),
-                None,
-            )
+            .start(&line, &[], &[], None, std::path::Path::new("."), None)
             .expect("the shell");
         assert!(runs.anything_running());
         runs.stop(&id);
         assert_eq!(runs.ended(&id).and_then(|it| it.signal), Some("KILL"));
         assert!(!runs.anything_running());
-        std::thread::sleep(std::time::Duration::from_millis(900));
+        std::thread::sleep(wait);
         assert!(!mark.exists(), "a command that was stopped ran on");
 
         // And letting go of it forgets it, which is what the agent's
