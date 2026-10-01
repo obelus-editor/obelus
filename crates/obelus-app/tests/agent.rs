@@ -3935,6 +3935,95 @@ fn notes_that_will_not_read_do_not_forget_the_conversations() {
     );
 }
 
+/// A note taken away in another window leaves the conversation standing.
+///
+/// The notes are one file for the whole tree and a second Obelus on it is an
+/// ordinary thing to have running, so what arrives here is somebody else's
+/// write. Reconciling the open conversations against it shut the one the
+/// reader was standing in: `close` put them on the nearest open document,
+/// which is the notes page that conversation was opened from, and let go of
+/// the session on the way -- so the view jumped and there was nothing to go
+/// back to. A note cleared of its words is enough to do it, because a note
+/// that says nothing is not written to the file at all.
+///
+/// The same rule a file deleted in another window follows -- the document
+/// keeps what it has, says what it can, and closing it is the reader's.
+///
+/// Broken deliberately by putting the sweep back on the reread: the
+/// conversation is gone from the screen and the second turn has nowhere to
+/// go.
+#[test]
+fn a_note_taken_away_elsewhere_leaves_the_conversation_standing() {
+    let scratch = support::Scratch::new("agent-note-taken-away");
+    support::make_room_for_notes(scratch.path());
+    let note = "0123456P";
+    let notes = obelus_git::todo::path(scratch.path());
+    std::fs::write(
+        &notes,
+        format!("[[todo]]\nid = \"{note}\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n"),
+    )
+    .expect("the notes");
+
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    talk_about_the_note(&mut app);
+    pump(&mut app, &events, "a session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/echo first");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    assert!(
+        said_in_transcript(&app, "first"),
+        "nothing was said, so there is no conversation to lose"
+    );
+    assert_eq!(
+        app.what_this_conversation_is_about().as_deref(),
+        Some("a note"),
+        "the conversation is not about the note, so this proves nothing"
+    );
+
+    // The other window clears that note's words, which takes the note out of
+    // the file: `Todo::to_toml` does not write one that says nothing.
+    std::fs::write(&notes, "").expect("the emptied notes");
+    app.handle(Event::Watched(obelus_watch::Changed {
+        path: notes.clone(),
+    }));
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+
+    // Heard, rather than ignored: the header has stopped naming the note,
+    // which is the one thing the view can honestly say about it.
+    assert!(
+        app.what_this_conversation_is_about().is_none(),
+        "the write was never heard, so standing still proves nothing:\n{dump}"
+    );
+    assert!(
+        said_in_transcript(&app, "first"),
+        "the conversation was shut by another window's write:\n{dump}"
+    );
+
+    // And the session is still the reader's, which is what a second turn
+    // asks: one that was let go has nothing to answer it.
+    support::type_text(&mut app, "/echo second");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the second answer", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    assert!(
+        said_in_transcript(&app, "second"),
+        "the conversation could not be talked in after the note went:\n{}",
+        support::render(&mut app, WIDTH, HEIGHT)
+    );
+}
+
 /// Agents sweep their conversations up, so a name Obelus wrote down last
 /// week may mean nothing today. The reply to that is a new session -- which
 /// the protocol side already did -- and the conversation it belongs to has
@@ -7039,6 +7128,355 @@ fn a_conversation_another_obelus_has_open_is_not_opened_again() {
         app.chat().is_some(),
         "the conversation could not be opened after it was given up"
     );
+}
+
+/// A note another Obelus is talking about is read here, not changed.
+///
+/// The claim is what says somebody is standing in that conversation, and
+/// taking the note away is the one change that destroys one. The words, the
+/// box and the depth go with it: the lock says the row is not this window's,
+/// and a rule that held for one key and not the next is not a rule a reader
+/// could learn.
+///
+/// The caret stays in it. It is the only mark of where the reader is
+/// standing -- this page has no selected-row colour, a box is marked by the
+/// caret sitting in it -- so taking it away would leave them unable to tell
+/// which note they were on. What says the next key will do nothing is the
+/// foot, where the keys that would change it stop being offered: the reader
+/// is told before they press, which is the rule the palette follows.
+///
+/// Broken deliberately one key at a time -- the guard in `take_note_away`,
+/// in `can_shift`, in `move_over`, in `alt+space`'s arm, or in the box's own
+/// arm -- and this goes red on whichever one was let through. The note below
+/// is what says the page did not simply go read-only.
+#[test]
+fn a_note_another_obelus_is_talking_about_is_not_changed_here() {
+    let scratch = support::Scratch::new("agent-note-elsewhere-keys");
+    support::make_room_for_notes(scratch.path());
+    // The locked one second, so that every key it refuses had somewhere to
+    // go: a note at the top of the list cannot be stepped under the one
+    // above it or moved past it whoever holds it, and a test standing there
+    // would pass with the lock taken out.
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()),
+        "[[todo]]\nid = \"0123456V\"\nsaid = \"mine\"\ndone = false\ndepth = 0\n\
+         \n[[todo]]\nid = \"0123456T\"\nsaid = \"theirs\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+    let theirs = obelus_git::todo::NoteId::read("0123456T").expect("a name");
+    let mine = obelus_git::todo::NoteId::read("0123456V").expect("a name");
+
+    let held = obelus_agent::chats::claim(
+        scratch.path(),
+        &obelus_agent::chats::ChatId::Note(theirs.clone()),
+    )
+    .expect("their claim");
+
+    let (mut app, _events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    let dump = support::render(&mut app, WIDTH, 18);
+    assert_eq!(
+        app.talked_about().get(1),
+        Some(&obelus_component::todo::Talked::Elsewhere),
+        "the second note is not the locked one, so this proves nothing:\n{dump}"
+    );
+    // The page opens on the first note, so the reader walks down to theirs.
+    support::press(&mut app, KeyCode::Down);
+    let dump = support::render(&mut app, WIDTH, 18);
+    assert!(
+        obelus_ui::todo::caret(app.editor_area_for_test(), app.notes().expect("the notes"))
+            .is_some(),
+        "the caret left the note, so nothing says where the reader is:\n{dump}"
+    );
+
+    // A letter does not go in, and nothing comes out. Read off the whole
+    // page rather than the note: what is typed lives in the box until the
+    // caret leaves, so the page is the only thing that says what the key
+    // did -- and comparing the whole of it catches a character landing
+    // wherever the caret happens to be, which on a page that opens at the
+    // start of a note is in front of its words rather than after them.
+    let was = support::render(&mut app, WIDTH, 18);
+    let before = support::text_block(&was).to_string();
+    support::type_text(&mut app, "zz");
+    support::press(&mut app, KeyCode::Delete);
+    let now = support::render(&mut app, WIDTH, 18);
+    let after = support::text_block(&now).to_string();
+    assert_eq!(
+        before, after,
+        "a key changed a note another Obelus is talking about"
+    );
+
+    // Ticked off, moved, stepped under the one above, taken away: each of
+    // these reaches the page's copy the moment it happens, so the copy is
+    // what says they did not.
+    //
+    // One at a time, and asked after each. The two moves undo one another
+    // if they are pressed together, so a key let through would put the note
+    // back before anything looked -- and a failure reported against the
+    // wrong key is a failure that sends the next reader to the wrong guard.
+    let order = |app: &App| -> Vec<obelus_git::todo::NoteId> {
+        app.notes()
+            .expect("the notes")
+            .todo()
+            .notes
+            .iter()
+            .map(|note| note.id.clone())
+            .collect()
+    };
+    let as_written = vec![mine.clone(), theirs.clone()];
+
+    support::press_alt(&mut app, ' ');
+    assert!(
+        !app.notes().expect("the notes").todo().notes[1].done,
+        "a note another Obelus is talking about was ticked off"
+    );
+    support::press(&mut app, KeyCode::Tab);
+    assert_eq!(
+        app.notes().expect("the notes").todo().notes[1].depth,
+        0,
+        "a note another Obelus is talking about was stepped in under the one above"
+    );
+    support::press_alt_key(&mut app, KeyCode::Backspace);
+    assert_eq!(
+        order(&app),
+        as_written,
+        "a note another Obelus is talking about was taken away"
+    );
+    support::press_alt_key(&mut app, KeyCode::Up);
+    assert_eq!(
+        order(&app),
+        as_written,
+        "a note another Obelus is talking about was moved up"
+    );
+    support::press_alt_key(&mut app, KeyCode::Down);
+    assert_eq!(
+        order(&app),
+        as_written,
+        "a note another Obelus is talking about was moved down"
+    );
+    // The cut is the same act again -- the selection out of its words, or
+    // the whole of it -- and a paste arrives by a door of its own, which is
+    // the terminal's own rather than the key's.
+    support::press_control(&mut app, 'x');
+    assert_eq!(
+        order(&app),
+        as_written,
+        "a note another Obelus is talking about was cut away"
+    );
+    // With something held, which is the other half of that key: nothing
+    // held takes the whole note and is refused where the key that drops one
+    // is, and this is the half that reaches into its words.
+    support::press_control(&mut app, 'a');
+    support::press_control(&mut app, 'x');
+    let cut = support::render(&mut app, WIDTH, 18);
+    assert!(
+        support::text_block(&cut).contains("theirs"),
+        "a cut took the words out of somebody else's note:\n{cut}"
+    );
+    app.handle(Event::Paste("pasted".to_string()));
+    let pasted = support::render(&mut app, WIDTH, 18);
+    assert!(
+        !support::text_block(&pasted).contains("pasted"),
+        "a paste went into a note another Obelus is talking about:\n{pasted}"
+    );
+
+    // And the foot does not offer the keys it will not honour, while still
+    // offering the ones that work on a note anybody may read.
+    let dump = support::render(&mut app, WIDTH, 18);
+    for word in ["Done", "Drop", "Move", "Under"] {
+        assert!(
+            !dump.contains(word),
+            "the foot offers {word}, which does nothing on this note:\n{dump}"
+        );
+    }
+    assert!(
+        dump.contains("Another"),
+        "the foot stopped offering a key that still works:\n{dump}"
+    );
+
+    // The note above is the reader's own, and the same key works on it --
+    // which is what says the lock was refused and not the page.
+    //
+    // Twice, because the selection taken above is still held and the first
+    // press is what lets go of it: a key that both dropped the selection
+    // and left the box would do two things at once.
+    support::press(&mut app, KeyCode::Up);
+    support::press(&mut app, KeyCode::Up);
+    support::press_alt(&mut app, ' ');
+    assert!(
+        app.notes()
+            .expect("the notes")
+            .todo()
+            .notes
+            .iter()
+            .any(|note| note.id == mine && note.done),
+        "the reader's own note would not take the key either"
+    );
+    drop(held);
+}
+
+/// A locked note holds back the keys of what it hangs under, and not the
+/// other way round.
+///
+/// Taking a note away takes its children, so a note somebody else is
+/// talking about would go with a parent nobody has claimed -- the lock
+/// running *upwards*. Downwards there is nothing to run: a child is another
+/// note with its own name and its own claim, and changing it leaves the
+/// locked one's words, its box and its depth exactly as they were.
+///
+/// Refused whole, because each note of a run goes to the file under its own
+/// name: half of it applied leaves the list a child whose parent has gone.
+///
+/// Broken deliberately by asking `selected_is_elsewhere` in `can_drop`
+/// instead of `run_is_elsewhere`: the parent goes and the locked child is
+/// left behind, hanging under nothing.
+#[test]
+fn a_locked_note_holds_back_the_keys_of_what_it_hangs_under() {
+    let scratch = support::Scratch::new("agent-note-elsewhere-run");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()),
+        "[[todo]]\nid = \"0123456W\"\nsaid = \"the parent\"\ndone = false\ndepth = 0\n\
+         \n[[todo]]\nid = \"0123456X\"\nsaid = \"theirs\"\ndone = false\ndepth = 1\n",
+    )
+    .expect("the notes");
+    let parent = obelus_git::todo::NoteId::read("0123456W").expect("a name");
+    let child = obelus_git::todo::NoteId::read("0123456X").expect("a name");
+
+    let held = obelus_agent::chats::claim(
+        scratch.path(),
+        &obelus_agent::chats::ChatId::Note(child.clone()),
+    )
+    .expect("their claim");
+
+    let (mut app, _events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    let dump = support::render(&mut app, WIDTH, 18);
+    assert_eq!(
+        app.talked_about().get(1),
+        Some(&obelus_component::todo::Talked::Elsewhere),
+        "the child is not the locked one, so this proves nothing:\n{dump}"
+    );
+
+    // The caret opens on the parent, which nobody has claimed.
+    support::press_alt_key(&mut app, KeyCode::Backspace);
+    let left: Vec<obelus_git::todo::NoteId> = app
+        .notes()
+        .expect("the notes")
+        .todo()
+        .notes
+        .iter()
+        .map(|note| note.id.clone())
+        .collect();
+    assert_eq!(
+        left,
+        vec![parent.clone(), child.clone()],
+        "a note another Obelus is talking about went with its parent"
+    );
+    let dump = support::render(&mut app, WIDTH, 18);
+    assert!(
+        !dump.contains("Drop"),
+        "the foot offers a key that would take somebody else's note away:\n{dump}"
+    );
+    // Moving the run is not changing it: every note in it keeps its words,
+    // its depth and its name, so that key is still the reader's.
+    assert!(
+        dump.contains("Move"),
+        "the foot held back a key that changes nothing about the locked note:\n{dump}"
+    );
+    drop(held);
+}
+
+/// And an agent's tool is refused that note too, in words.
+///
+/// One judgement: an agent must not do what the reader standing in front of
+/// it cannot. Said rather than silently dropped, because the tools answer an
+/// agent in words and the agent says why in the transcript -- which is where
+/// a reader who asked for it is looking.
+///
+/// A note hung *under* the locked one is still written down, for the reason
+/// `alt+up` is still allowed to carry a locked child past a neighbour: it
+/// changes that note's words, its box and its depth not at all.
+///
+/// Broken deliberately by letting the tool through: the note comes back
+/// ticked off.
+#[test]
+fn an_agents_tool_is_refused_a_note_another_obelus_is_talking_about() {
+    let scratch = support::Scratch::new("agent-note-elsewhere-tool");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()),
+        "[[todo]]\nid = \"0123456Y\"\nsaid = \"theirs\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+    let theirs = obelus_git::todo::NoteId::read("0123456Y").expect("a name");
+
+    let held = obelus_agent::chats::claim(
+        scratch.path(),
+        &obelus_agent::chats::ChatId::Note(theirs.clone()),
+    )
+    .expect("their claim");
+
+    let (mut app, _events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    let dump = support::render(&mut app, WIDTH, 18);
+    assert_eq!(
+        app.talked_about().first(),
+        Some(&obelus_component::todo::Talked::Elsewhere),
+        "the note is not locked, so this proves nothing:\n{dump}"
+    );
+
+    let said = what_the_tool_said(&mut app, obelus_git::todo::Doing::Finish(theirs.clone()));
+    assert!(
+        said.contains("another Obelus"),
+        "the tool was not told why it was refused: {said:?}"
+    );
+    let reworded = what_the_tool_said(
+        &mut app,
+        obelus_git::todo::Doing::Reword {
+            note: theirs.clone(),
+            said: "the agent's words".to_string(),
+        },
+    );
+    assert!(
+        reworded.contains("another Obelus"),
+        "rewording was not refused: {reworded:?}"
+    );
+    let now = obelus_git::todo::read(scratch.path())
+        .notes()
+        .expect("the notes");
+    assert_eq!(now.notes[0].said, "theirs", "the agent reworded it anyway");
+    assert!(!now.notes[0].done, "the agent ticked it off anyway");
+
+    // A note of its own is still the agent's to write down.
+    let added = what_the_tool_said(
+        &mut app,
+        obelus_git::todo::Doing::Add {
+            notes: vec![("a new one".to_string(), 0)],
+            under: Some(theirs.clone()),
+        },
+    );
+    assert!(
+        added.contains("written down"),
+        "a note hung under a locked one was refused: {added:?}"
+    );
+    drop(held);
+}
+
+/// What one of the agent's tools answered, through the door it comes in by.
+fn what_the_tool_said(app: &mut App, doing: obelus_git::todo::Doing) -> String {
+    let (answer, mut said) = futures::channel::oneshot::channel();
+    app.handle(Event::Tools(obelus_mcp::Asked {
+        wanted: obelus_mcp::Wanted::Notes(doing),
+        answer,
+    }));
+    said.try_recv()
+        .ok()
+        .flatten()
+        .expect("the tool answered nothing")
 }
 
 /// Opening a conversation opens its session, before the reader has said a

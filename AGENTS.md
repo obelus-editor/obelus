@@ -1324,6 +1324,49 @@ built a moment ago and another Obelus may have walked in since. Where it
 has, the list stays open and the row goes dim under the reader, which is
 the answer; nothing happening at all is a key that looks broken.
 
+*And a note somebody else is talking about is read here, not changed.* The
+claim says a reader is standing in that conversation, and taking the note
+away is what destroys one -- a note that says nothing is not written to the
+file at all, so clearing its words does it as surely as the key that drops
+it. So every key that would change such a note does nothing: its words, its
+box, its depth, its place. The caret still goes in it, because on that page
+the caret is the only mark of where the reader is standing -- there is no
+selected-row colour under it -- so what says the next key will do nothing is
+the foot, where those keys stop being offered beside `Talk`. One judgement,
+so the tools an agent is given are refused the same note, in words it can
+repeat: an agent must not do what the reader in front of it cannot, and the
+transcript is where a reader who asked for it is looking.
+
+The lock runs *upwards*. Taking a note away takes what hangs under it, so a
+locked child would go with a parent nobody has claimed -- a run with one
+locked note in it is a key that does nothing, rather than half of it
+applied, because each note of the run reaches the file under its own name.
+Downwards there is nothing to run: a child is another note with its own name
+and its own claim, and the keys that only *move* a run past its neighbour
+are nobody's to refuse -- every note in it keeps its words, its depth and
+its name, so a locked note carried along has not been changed.
+
+Read off the claims Obelus last looked at, and not asked of the disk.
+Looking means opening a claim for writing, which is the very event a watcher
+reports, so a key that asked would wake every Obelus on the project -- and a
+letter held down on a locked note would wake them at the rate the keyboard
+repeats. A stale lock therefore costs what it already cost the drawing, and
+the way out is the key the lock is about: `alt+a` asks for the claim
+outright, and a lock nobody holds gives way to it.
+
+*And a note that has gone takes no conversation off the screen.* A
+conversation hanging under a note is not shut when the note goes, which it
+was: the file moving is usually another window's write, and closing the
+document that write happened to be about took the reader out of the
+conversation they were standing in -- `close` puts them on the nearest open
+document, which is the notes page it was opened from -- and let go of its
+session on the way, so there was nothing to go back to. The same rule a file
+deleted in another window follows: the document keeps what it has and says
+what it can -- the header stops naming the note, and the key back to it goes
+with it -- and whether to close it is the reader's. What is swept against
+the names the file has is the *table* of conversations, which happens
+wherever that is written.
+
 *And what is claimed is the conversation, not the note.* `ChatId` is which
 one: a note where there is one, and the agent's own name for it where there
 is not. It has to be the note for a note's conversation -- the notes page

@@ -3153,7 +3153,7 @@ fn a_list_of_notes_taller_than_the_screen_scrolls_under_the_caret() {
     let area = app.editor_area_for_test();
     let rows = obelus_ui::todo::list_region(
         area,
-        &obelus_ui::todo::hints(app.notes().expect("the notes"), false),
+        &obelus_ui::todo::hints(app.notes().expect("the notes")),
     )
     .height;
     assert!(
@@ -3176,7 +3176,7 @@ fn a_list_of_notes_taller_than_the_screen_scrolls_under_the_caret() {
         "the row the keys are on is not one of the rows drawn:\n{down}"
     );
     assert!(
-        obelus_ui::todo::caret(area, app.notes().expect("the notes"), false).is_some(),
+        obelus_ui::todo::caret(area, app.notes().expect("the notes")).is_some(),
         "the reader is typing into a note with no caret on the page:\n{down}"
     );
 

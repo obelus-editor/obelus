@@ -42,7 +42,11 @@ pub fn list_region(area: Rect, hints: &[Hint]) -> Rect {
 /// selected, so the row is what can be pressed right now rather than a
 /// standing notice.
 #[must_use]
-pub fn hints(notes: &Notes, elsewhere: bool) -> Vec<Hint> {
+pub fn hints(notes: &Notes) -> Vec<Hint> {
+    // Which keys would change the note the caret is in, and so which the
+    // foot may offer: a note another Obelus has the conversation of can be
+    // read and copied out of and not changed.
+    let elsewhere = notes.selected_is_elsewhere();
     use crossterm::event::{KeyCode, KeyModifiers};
     let chord = obelus_editing::keymap::KeyChord::new;
     let bare = |code| chord(code, KeyModifiers::NONE);
@@ -67,14 +71,17 @@ pub fn hints(notes: &Notes, elsewhere: bool) -> Vec<Hint> {
         Hint::common(bare(KeyCode::Enter), "Another").saying("Start another note"),
         Hint::common(alt(KeyCode::Char(' ')), "Done")
             .saying("Done, or not")
-            .when(on.is_some()),
+            .when(on.is_some() && !elsewhere),
         Hint::common(alt(KeyCode::Enter), "Go there")
             .saying("Go to what it is about")
             .when(notes.can_go()),
         // Not where another Obelus has that conversation open: a
         // conversation is not a thing two of them may have at once, so the
         // key does nothing there and a foot offering it would be the page
-        // promising something it will not do.
+        // promising something it will not do. Which is why every key above
+        // and below that would *change* such a note is held back too: the
+        // caret still sits in it, so the foot is the only thing that can
+        // say what the next key will do.
         Hint::common(alt(KeyCode::Char('a')), "Talk")
             .saying("Talk to an agent about this one")
             .when(on.is_some() && !elsewhere),
@@ -83,11 +90,11 @@ pub fn hints(notes: &Notes, elsewhere: bool) -> Vec<Hint> {
         // letter.
         Hint::common(alt(KeyCode::Backspace), "Drop")
             .saying("Take the whole note away")
-            .when(on.is_some()),
+            .when(on.is_some() && notes.can_drop()),
         Hint::common(alt(KeyCode::Up), "Move")
             .saying("Move it up or down")
             .or(alt(KeyCode::Down))
-            .when(notes.rows().len() > 1),
+            .when(notes.rows().len() > 1 && !elsewhere),
         // One key each, because they are offered separately: a note at the
         // top can only go in, and one as deep as it may go can only come
         // out. A single row for both would be on whenever either was, and
@@ -122,10 +129,10 @@ pub fn text_width_in(area: Rect) -> u16 {
 /// the settings keep theirs through their own card because theirs is on
 /// the status row, which no card covers.
 #[must_use]
-pub fn caret(area: Rect, notes: &Notes, elsewhere: bool) -> Option<ratatui::layout::Position> {
+pub fn caret(area: Rect, notes: &Notes) -> Option<ratatui::layout::Position> {
     let composer = notes.writing()?;
     let at = notes.writing_at()?;
-    let hints = hints(notes, elsewhere);
+    let hints = hints(notes);
     let list = list_region(area, &hints);
     let window = notes.window();
     let row = at.checked_sub(window.top())?;
@@ -153,10 +160,10 @@ pub fn caret(area: Rect, notes: &Notes, elsewhere: bool) -> Option<ratatui::layo
 /// note's row, the foot, outside the page. A click there is not a click in
 /// the box, and the box is the only thing here with a caret in it.
 #[must_use]
-pub fn place_at(area: Rect, notes: &Notes, elsewhere: bool, x: u16, y: u16) -> Option<(u16, u16)> {
+pub fn place_at(area: Rect, notes: &Notes, x: u16, y: u16) -> Option<(u16, u16)> {
     let composer = notes.writing()?;
     let at = notes.writing_at()?;
-    let hints = hints(notes, elsewhere);
+    let hints = hints(notes);
     let list = list_region(area, &hints);
     if y < list.y || y >= list.bottom() || x < list.x + MARGIN || x >= list.right() {
         return None;
@@ -201,14 +208,8 @@ pub enum Column {
 ///
 /// `None` for a point outside the list, or past the last row.
 #[must_use]
-pub fn row_at(
-    area: Rect,
-    notes: &Notes,
-    elsewhere: bool,
-    x: u16,
-    y: u16,
-) -> Option<(usize, Column)> {
-    let list = list_region(area, &hints(notes, elsewhere));
+pub fn row_at(area: Rect, notes: &Notes, x: u16, y: u16) -> Option<(usize, Column)> {
+    let list = list_region(area, &hints(notes));
     if y < list.y || y >= list.bottom() || x < list.x || x >= list.right() {
         return None;
     }
@@ -369,9 +370,6 @@ pub struct TodoUi<'a> {
     theme: &'a Theme,
     /// Which notes have a conversation, in the notes' own order.
     talked: Vec<Talked>,
-    /// Whether the note the reader is on has its conversation open in
-    /// another Obelus, which is the one key the foot holds back.
-    elsewhere: bool,
     /// How far the ticker has got, for the mark that turns.
     ///
     /// The only thing here that changes without the reader doing
@@ -390,7 +388,6 @@ impl<'a> TodoUi<'a> {
             notes: app.notes()?,
             theme: app.theme(),
             talked: app.talked_about(),
-            elsewhere: app.the_note_is_elsewhere(),
             phase: app.phase(),
         })
     }
@@ -405,7 +402,7 @@ impl Widget for TodoUi<'_> {
                 .fg(self.theme.foreground)
                 .bg(self.theme.background),
         );
-        let hints = hints(self.notes, self.elsewhere);
+        let hints = hints(self.notes);
         foot_without_a_card(cells, area, &hints, self.theme);
 
         let list = list_region(area, &hints);

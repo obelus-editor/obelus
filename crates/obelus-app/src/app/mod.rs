@@ -2160,8 +2160,14 @@ impl App {
         // resized and a setting is changed while they are open, and the rows
         // they are made of depend on both.
         let laid = self.notes_laid_out();
+        // And which of them another Obelus has the conversation of, which
+        // decides what the keys will change and so which of them the foot
+        // offers. Beside the room for the same reason: both are the page's
+        // answer to something outside it that moves while it is open.
+        let elsewhere = self.which_notes_are_elsewhere();
         if let Some(notes) = self.notes_mut() {
             notes.lay_out(laid.0, laid.1);
+            notes.these_are_elsewhere(elsewhere);
         }
         // And the window against the rows that room leaves, which is the
         // other half of the same question: the width says what the rows
@@ -2171,13 +2177,8 @@ impl App {
         // really drawn in -- the foot under it is part of what decides how
         // many rows there are, and it grows and shrinks with what the note
         // under the caret can do.
-        let elsewhere = self.the_note_is_elsewhere();
         let seen = self.notes().map(|notes| {
-            obelus_ui::todo::list_region(
-                self.editor_area,
-                &obelus_ui::todo::hints(notes, elsewhere),
-            )
-            .height
+            obelus_ui::todo::list_region(self.editor_area, &obelus_ui::todo::hints(notes)).height
         });
         if let (Some(seen), Some(notes)) = (seen, self.notes_mut()) {
             notes.settle_window(seen);
@@ -2981,10 +2982,9 @@ impl App {
         if kind == Pointer::Pressed && self.press_in_a_note(x, y) {
             return;
         }
-        let elsewhere = self.the_note_is_elsewhere();
         let Some(at) = self
             .notes()
-            .and_then(|notes| obelus_ui::todo::place_at(area, notes, elsewhere, x, y))
+            .and_then(|notes| obelus_ui::todo::place_at(area, notes, x, y))
         else {
             return;
         };
@@ -3280,10 +3280,9 @@ impl App {
         use obelus_ui::todo::Column;
 
         let area = self.editor_area;
-        let elsewhere = self.the_note_is_elsewhere();
         let Some((row, column)) = self
             .notes()
-            .and_then(|notes| obelus_ui::todo::row_at(area, notes, elsewhere, x, y))
+            .and_then(|notes| obelus_ui::todo::row_at(area, notes, x, y))
         else {
             return false;
         };
@@ -4307,9 +4306,6 @@ impl Screen for App {
     }
     fn troubles(&self) -> &[obelus_lsp::trouble::Trouble] {
         App::troubles(self)
-    }
-    fn the_note_is_elsewhere(&self) -> bool {
-        App::the_note_is_elsewhere(self)
     }
     fn what_this_conversation_is_about(&self) -> Option<String> {
         App::what_this_conversation_is_about(self)

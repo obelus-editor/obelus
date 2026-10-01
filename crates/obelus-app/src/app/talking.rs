@@ -565,6 +565,61 @@ impl App {
             .map_or((None, false), |kept| (kept.told.clone(), kept.introduced))
     }
 
+    /// Whether another Obelus has this note's conversation open.
+    ///
+    /// The one answer, because four things ask it and they must not
+    /// disagree: the lock drawn beside the note, the keys that will not
+    /// change it, and the refusal an agent's tool is given. A row drawing a
+    /// lock and taking a letter all the same is the same shape as the card
+    /// whose `submit` row stopped saying the keys were on it.
+    #[must_use]
+    pub(super) fn the_conversation_is_elsewhere(&self, note: &obelus_git::todo::NoteId) -> bool {
+        // This Obelus's own claim is a lock like anybody's, so the
+        // conversations it is holding are what tell the two apart.
+        let mine = self
+            .documents
+            .iter()
+            .flatten()
+            .filter_map(Document::chat)
+            .any(|talk| matches!(&talk.topic, Topic::Note(id) if id == note));
+        !mine
+            && self
+                .held_now()
+                .contains(&obelus_agent::chats::ChatId::Note(note.clone()))
+    }
+
+    /// Every note of this project whose conversation another Obelus has.
+    ///
+    /// What the page is told before it takes a key, so that the keys which
+    /// would change one can refuse. By name, like everything else this page
+    /// keeps about notes: the file is another window's to change, and a set
+    /// of positions belongs to whichever order the notes were in when it
+    /// was made.
+    ///
+    /// Asked of the claims this Obelus last looked at rather than of the
+    /// disk. Looking means opening a claim for writing, which is the very
+    /// event a watcher reports -- so a key that asked would wake every
+    /// Obelus on the project, and a letter held down on a locked note would
+    /// wake them at the rate the keyboard repeats. What a stale lock costs
+    /// is what it already cost the drawing, and the way out is the key the
+    /// lock is about: `alt+a` asks for the claim outright, and a lock
+    /// nobody holds gives way to it.
+    #[must_use]
+    pub(super) fn which_notes_are_elsewhere(
+        &self,
+    ) -> std::collections::HashSet<obelus_git::todo::NoteId> {
+        let Some(notes) = self.notes() else {
+            return std::collections::HashSet::new();
+        };
+        notes
+            .todo()
+            .notes
+            .iter()
+            .filter(|note| self.the_conversation_is_elsewhere(&note.id))
+            .map(|note| note.id.clone())
+            .collect()
+    }
+
     /// Whether each note has a conversation about it, in the order the
     /// notes are in -- which is what a row of the notes names.
     ///
@@ -579,33 +634,6 @@ impl App {
     /// switched away from is not one they can reach, and saying there is
     /// one would send them to a note that opens an empty page.
     ///
-    /// Whether the note the reader is standing on has its conversation
-    /// open in another Obelus.
-    ///
-    /// What the foot asks, so that the key it offers is a key that works.
-    /// Asked of the one note rather than read off [`Self::talked_about`],
-    /// which walks the whole directory and is wanted by the view on the
-    /// same frame: two callers asking one question two ways is how the
-    /// answer gets expensive.
-    #[must_use]
-    pub fn the_note_is_elsewhere(&self) -> bool {
-        let Some(note) = self.notes().and_then(|notes| notes.selected_note()) else {
-            return false;
-        };
-        // This Obelus's own claim is a lock like anybody's, so the
-        // conversations it is holding are what tell the two apart.
-        let mine = self
-            .documents
-            .iter()
-            .flatten()
-            .filter_map(Document::chat)
-            .any(|talk| matches!(&talk.topic, Topic::Note(id) if *id == note.id));
-        !mine
-            && self
-                .held_now()
-                .contains(&obelus_agent::chats::ChatId::Note(note.id.clone()))
-    }
-
     /// Two questions of two different kinds, and only one of them is asked
     /// of the disk here.
     ///
@@ -634,11 +662,6 @@ impl App {
         };
         let kept = self.sessions();
         let agent = self.settled.config.agent.clone().unwrap_or_default();
-        // Every note somebody has open, this Obelus included -- a lock is
-        // about the open file and not about the process, so Obelus finds
-        // its own claims in the way. Which of them are its own it knows
-        // from the conversations it is holding, just below.
-        let elsewhere = self.held_now();
         notes
             .todo()
             .notes
@@ -656,9 +679,7 @@ impl App {
                 // conversation it is in and this is the one case where it
                 // is in no position to give one: what the agent is doing
                 // in there is being told to the Obelus that asked.
-                if open.is_none()
-                    && elsewhere.contains(&obelus_agent::chats::ChatId::Note(note.id.clone()))
-                {
+                if self.the_conversation_is_elsewhere(&note.id) {
                     return Talked::Elsewhere;
                 }
                 if open.is_some_and(|talk| talk.card.is_some()) {

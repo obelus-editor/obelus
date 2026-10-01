@@ -234,6 +234,22 @@ pub struct TodoView {
     /// reader did to what is in front of them, not something they wrote
     /// down -- and `todo.toml` is a file two Obeluses share.
     shut: HashSet<NoteId>,
+    /// The notes whose conversation another Obelus has open.
+    ///
+    /// Told to the page rather than worked out by it: a claim is a lock on
+    /// a file in a directory the application owns, and this view knows
+    /// about notes. Set from the frame and again before a key, the way the
+    /// room a note is laid out in is.
+    ///
+    /// What it decides is what may be *changed*. The caret still goes in a
+    /// note another window has -- it is the only mark of where the reader
+    /// is standing, and a list with notes in it and no caret anywhere is a
+    /// list no key can reach -- so the row can be read, selected in and
+    /// copied out of, and the keys that would change it do nothing. What
+    /// says which is which is the foot, where those keys stop being
+    /// offered: the reader is told before they press, which is the rule the
+    /// palette follows.
+    elsewhere: HashSet<NoteId>,
     /// The notes this page started that are not in the file yet.
     ///
     /// What tells "put this note in" from "change the one that is there",
@@ -602,6 +618,59 @@ impl TodoView {
         self.laid = (room, wrap);
         self.rebuild();
         self.follow_caret();
+    }
+
+    /// Says which notes another Obelus has the conversation of.
+    ///
+    /// Asked the same way [`Self::lay_out`] is -- from the frame, and again
+    /// before a key -- because a claim is taken and given up in another
+    /// window while this page is open.
+    pub fn these_are_elsewhere(&mut self, which: HashSet<NoteId>) {
+        self.elsewhere = which;
+    }
+
+    /// Whether the note the caret is in is one of them.
+    ///
+    /// What the foot reads, so that the keys it offers are keys that work,
+    /// and what the keys themselves read, so the two cannot disagree.
+    #[must_use]
+    pub fn selected_is_elsewhere(&self) -> bool {
+        self.selected_note()
+            .is_some_and(|note| self.elsewhere.contains(&note.id))
+    }
+
+    /// Whether this note, or anything hanging under it, is somebody
+    /// else's.
+    ///
+    /// For the two keys that take a whole run with them. Taking a note away
+    /// takes its children, and a locked child would go with a parent nobody
+    /// has claimed -- which is the lock running *upwards*: a note somebody
+    /// is talking about holds back the keys of every note it hangs under,
+    /// not the keys of the notes hanging under it. Stepping a run in or out
+    /// is the same shape, because [`Change::Shift`] moves what hangs under
+    /// the note as well, and a depth is a field of the note it is on.
+    ///
+    /// Refused whole rather than note by note: each note of the run goes to
+    /// the file under its own name, so a run with one locked note in it
+    /// would otherwise half-apply and leave the list a child whose parent
+    /// has gone.
+    ///
+    /// Not asked by the keys that only *move* a run past its neighbour:
+    /// [`Change::Move`] leaves every note's words, its box, its depth and
+    /// its name exactly as they were, so a locked note carried along by its
+    /// parent has not been changed.
+    #[must_use]
+    fn run_is_elsewhere(&self, at: usize) -> bool {
+        if self.elsewhere.is_empty() {
+            return false;
+        }
+        let span = 1 + self.todo.under(at);
+        self.todo
+            .notes
+            .get(at..at + span)
+            .unwrap_or_default()
+            .iter()
+            .any(|note| self.elsewhere.contains(&note.id))
     }
 
     /// Puts the window where the row the caret is in is on screen.
@@ -992,6 +1061,12 @@ impl TodoView {
     /// A note of its own where there is none to be in: a reader who pastes
     /// into an empty page meant to start one.
     pub fn paste(&mut self, what: &str) {
+        // The same refusal `ctrl+v` gets, said here as well because a
+        // terminal's own paste arrives through this door and not through
+        // the key.
+        if self.selected_is_elsewhere() {
+            return;
+        }
         if self.writing.is_none() {
             self.write_new(None);
         }
@@ -1013,6 +1088,12 @@ impl TodoView {
         let Some(at) = self.selected() else {
             return false;
         };
+        // The same question the foot asks: a conversation another window
+        // is standing in goes with the note it is about, and the run takes
+        // what hangs under it.
+        if !self.can_drop() {
+            return false;
+        }
         self.writing = None;
         // By name, and one name at a time, because a run may hold a note the
         // file has never had: the one the reader has just started. Each note
@@ -1056,7 +1137,17 @@ impl TodoView {
     #[must_use]
     pub fn can_shift(&self, outwards: bool) -> bool {
         self.selected()
-            .is_some_and(|at| self.todo.can_shift(at, outwards))
+            .is_some_and(|at| !self.run_is_elsewhere(at) && self.todo.can_shift(at, outwards))
+    }
+
+    /// Whether the selected note is this window's to take away.
+    ///
+    /// Itself or anything under it being somebody else's is enough: the key
+    /// takes the whole run, so a locked note in it is a key that must do
+    /// nothing rather than half of what it says.
+    #[must_use]
+    pub fn can_drop(&self) -> bool {
+        self.selected().is_some_and(|at| !self.run_is_elsewhere(at))
     }
 
     /// Takes the selected note, and everything under it, a level in or out.
@@ -1068,7 +1159,9 @@ impl TodoView {
         let Some(at) = self.selected() else {
             return false;
         };
-        if !self.todo.can_shift(at, out) {
+        // The same question the foot asks, so a key the foot offered cannot
+        // refuse and one it held back cannot fire.
+        if !self.can_shift(out) {
             return false;
         }
         let Some(id) = self.todo.notes.get(at).map(|note| note.id.clone()) else {
@@ -1101,6 +1194,12 @@ impl TodoView {
         let Some(at) = self.selected() else {
             return false;
         };
+        // This note alone: what rides along keeps its words, its depth and
+        // its name, so a locked child carried past a neighbour by its
+        // parent has not been changed.
+        if self.selected_is_elsewhere() {
+            return false;
+        }
         let neighbour = match up {
             true => self.todo.before_it(at),
             false => self.todo.after_it(at),
@@ -1337,6 +1436,7 @@ impl TodoView {
             // Done, or not. On `alt` because space is a space here.
             KeyCode::Char(' ') if alt => match self
                 .selected()
+                .filter(|_| !self.selected_is_elsewhere())
                 .and_then(|at| self.todo.notes.get(at))
                 .map(|note| (note.id.clone(), !note.done))
             {
@@ -1401,7 +1501,9 @@ impl TodoView {
             // something for backspace to take, and taking the note out
             // from under them instead is the key doing the larger thing
             // when the smaller one was available.
-            KeyCode::Backspace | KeyCode::Delete if bare && self.says_nothing() => {
+            KeyCode::Backspace | KeyCode::Delete
+                if bare && self.says_nothing() && !self.selected_is_elsewhere() =>
+            {
                 let back = key.code == KeyCode::Backspace;
                 let Some(at) = self.selected() else {
                     return TodoOutcome::Consumed;
@@ -1481,6 +1583,11 @@ impl TodoView {
                 }
             }
             KeyCode::Char('x') if control => {
+                // Both halves of it change the note: the selection taken
+                // out of its words, or the whole of it taken away.
+                if self.selected_is_elsewhere() {
+                    return TodoOutcome::Consumed;
+                }
                 let room = self.caret_width();
                 // What the note said before the cut, for the arm below: a
                 // cut that took nothing has to know what the whole of it
@@ -1511,7 +1618,10 @@ impl TodoView {
                     false => TodoOutcome::Consumed,
                 }
             }
-            KeyCode::Char('v') if control => TodoOutcome::Paste,
+            KeyCode::Char('v') if control => match self.selected_is_elsewhere() {
+                true => TodoOutcome::Consumed,
+                false => TodoOutcome::Paste,
+            },
             KeyCode::Char('a') if control => {
                 let room = self.caret_width();
                 let Some((_, composer)) = self.writing.as_mut() else {
@@ -1527,6 +1637,14 @@ impl TodoView {
             // those are: it is the same box a message to an agent is written
             // in, and which keys a box answers to is one rule.
             _ => {
+                // Moving about in it, selecting and copying out of it all
+                // still work -- what the lock is about is changing the
+                // note. The two are told apart by the same pair of
+                // functions the box itself asks: a key with a motion in it
+                // is the caret's, and one with typing in it is the text's.
+                if self.selected_is_elsewhere() && obelus_editing::typing_for(key).is_some() {
+                    return TodoOutcome::Consumed;
+                }
                 let took = self
                     .writing
                     .as_mut()

@@ -408,19 +408,31 @@ impl App {
     ///
     /// The page wherever it is open, not only where the reader is standing:
     /// an agent writes notes while the reader is talking to it, which is to
-    /// say while the conversation is the document on screen. And every
-    /// conversation whose note has gone, let go of -- from here rather than
-    /// from the key that deletes one, because a note can go several ways and
-    /// a rule that only fired for one of them is a rule that mostly does
-    /// not.
+    /// say while the conversation is the document on screen.
+    ///
+    /// And the page only. A conversation hanging under a note that has gone
+    /// is not shut here, which it was: the file moving is usually another
+    /// window's write, and closing the document that write happened to be
+    /// about took the reader out of the conversation they were standing in
+    /// -- `close` puts them on the nearest open document, which is the
+    /// notes page the conversation was opened from -- and let go of its
+    /// session on the way, so there was nothing to go back to. A note
+    /// cleared of its words is enough to do it, because a note that says
+    /// nothing is not written to the file at all.
+    ///
+    /// The same rule a file deleted in another window follows: the document
+    /// keeps what it has and says what it can -- the header stops naming
+    /// the note, and the key back to it goes with it -- and whether to
+    /// close it is the reader's. What is swept against the names the file
+    /// has is the *table* of conversations, which is
+    /// `obelus_agent::acp::sessions::change`'s own business and happens
+    /// wherever that is written.
     fn the_notes_are_now(
         &mut self,
         todo: Todo,
         where_now: Vec<Option<LineNumber>>,
         unwritten: &[obelus_git::todo::NoteId],
     ) {
-        let left: Vec<obelus_git::todo::NoteId> =
-            todo.notes.iter().map(|note| note.id.clone()).collect();
         if let Some(notes) = self
             .notes_document()
             .and_then(|at| self.documents.get_mut(at.get()))
@@ -429,7 +441,6 @@ impl App {
         {
             notes.reread(todo, where_now, unwritten);
         }
-        self.let_go_of_notes_that_are_gone(&left);
     }
 
     /// Writes one down about the line being read.
@@ -515,6 +526,26 @@ impl App {
     /// use for a code and every use for "there is no note by that name any
     /// more".
     pub(super) fn change_the_notes(&mut self, doing: obelus_git::todo::Doing) -> String {
+        // A note another Obelus has the conversation of is not this one's
+        // to change, and the tool is told rather than quietly obeyed: the
+        // agent says why in the transcript, which is where a reader who
+        // asked for this is looking. The same refusal the keys make, so an
+        // agent cannot do what the reader standing in front of it cannot.
+        //
+        // Nothing for `Doing::Add`, which hangs a new note under a locked
+        // one and changes that one's words, its box and its depth not at
+        // all -- the same reason `alt+up` is allowed to carry a locked
+        // child past a neighbour.
+        let about = match &doing {
+            obelus_git::todo::Doing::Finish(id) => Some(id),
+            obelus_git::todo::Doing::Reword { note, .. } => Some(note),
+            obelus_git::todo::Doing::Add { .. } => None,
+        };
+        if about.is_some_and(|id| self.the_conversation_is_elsewhere(id)) {
+            return "another Obelus has the conversation about that note open, \
+                    so it is not this one's to change"
+                .to_string();
+        }
         let done = obelus_git::todo::change(&self.working_directory, |todo| match doing {
             obelus_git::todo::Doing::Add { notes, under } => {
                 let written: Vec<(String, u16)> = notes
@@ -628,43 +659,6 @@ impl App {
         }
     }
 
-    /// Lets go of every conversation whose note is no longer in the file.
-    ///
-    /// Reconciled against what was just written rather than acted on when a
-    /// key deletes one: a note can go several ways -- the key, another
-    /// Obelus, the reader's own editor -- and a rule that only fired for one
-    /// of them is a rule that mostly does not.
-    ///
-    /// The conversation itself is closed too. A document about a note that
-    /// no longer exists is a document nothing can name, and its row in the
-    /// list would be a row with nothing behind it.
-    fn let_go_of_notes_that_are_gone(&mut self, left: &[obelus_git::todo::NoteId]) {
-        let orphaned: Vec<(
-            obelus_buffer::DocumentId,
-            Option<obelus_agent::acp::SessionId>,
-        )> = self
-            .documents
-            .iter()
-            .enumerate()
-            .filter_map(|(index, document)| {
-                let talk = document.as_ref()?.chat()?;
-                let crate::conversation::Topic::Note(note) = &talk.topic else {
-                    return None;
-                };
-                (!left.contains(note))
-                    .then(|| (obelus_buffer::DocumentId::new(index), talk.session.clone()))
-            })
-            .collect();
-        for (id, session) in orphaned {
-            if let Some(session) = session.as_ref()
-                && let Some(talker) = self.talker.as_mut()
-            {
-                talker.let_go(session);
-            }
-            self.close(id);
-        }
-    }
-
     /// How wide a note's own text is, and whether it wraps there.
     pub(super) fn notes_laid_out(&self) -> (u16, bool) {
         let room = obelus_ui::todo::text_width_in(self.editor_area);
@@ -678,15 +672,19 @@ impl App {
         // from the region it is drawn in, and the region belongs to the
         // application rather than to the notes.
         let area = self.editor_area;
-        // Before the notes are borrowed to take the key: the foot holds a
-        // key back where another Obelus has that conversation, and the
-        // rows the list gets are what is left under the foot.
-        let elsewhere = self.the_note_is_elsewhere();
+        // Before the notes are borrowed to take the key: which notes
+        // another Obelus has the conversation of decides what this key may
+        // change and which keys the foot offers, and the rows the list gets
+        // are what is left under the foot. Said here as well as from the
+        // frame, because a key acts before the next frame -- the page is
+        // opened by one key and typed into by the next.
+        let elsewhere = self.which_notes_are_elsewhere();
         let Some(notes) = self.notes_mut() else {
             return false;
         };
         notes.lay_out(laid.0, laid.1);
-        let hints = obelus_ui::todo::hints(notes, elsewhere);
+        notes.these_are_elsewhere(elsewhere);
+        let hints = obelus_ui::todo::hints(notes);
         let list = obelus_ui::todo::list_region(area, &hints);
         let outcome = notes.handle_key(key, list.height);
         // Typing, which is the one change that is not one act: every other
