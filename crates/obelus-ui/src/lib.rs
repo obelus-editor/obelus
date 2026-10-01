@@ -255,6 +255,9 @@ pub trait Screen {
     fn went_wrong(&self) -> Vec<WentWrong>;
     /// Which of those rows the reader is on.
     fn went_wrong_at(&self) -> usize;
+    /// The version of a newer Obelus, where one is out and the reader
+    /// wants to be told.
+    fn newer_release(&self) -> Option<&str>;
     /// And which of them are on screen, out of `rows` that fit.
     fn went_wrong_showing(&self, rows: u16) -> std::ops::Range<usize>;
     /// The open picker, for the renderer.

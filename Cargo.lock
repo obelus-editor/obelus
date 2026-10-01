@@ -4022,6 +4022,7 @@ version = "0.9.0"
 dependencies = [
  "anyhow",
  "crossterm",
+ "dirs",
  "futures",
  "gix",
  "image",
@@ -4052,7 +4053,9 @@ dependencies = [
  "obelus-watch",
  "ratatui",
  "ratatui-image",
+ "reqwest",
  "resvg",
+ "semver",
  "serde_json",
  "tokio",
  "toml 1.1.5+spec-1.1.0",

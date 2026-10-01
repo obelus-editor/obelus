@@ -219,6 +219,11 @@ which = "8"
 # `reqwest` and `tower-http`, so this states a dependency Obelus was
 # compiling anyway.
 url = "2"
+# Whether a release is newer than the running Obelus. Its ordering is the
+# one Cargo writes a version in, pre-releases included -- `0.10.0-rc.1` is
+# before `0.10.0` -- which three numbers compared by hand get wrong. In the
+# tree already, by way of the build scripts.
+semver = "1"
 # The file's format. Hand-rolling a parser for something that looks like toml
 # invites the question "why doesn't a section work", and the answer to
 # "is this valid" is not Obelus's to own.

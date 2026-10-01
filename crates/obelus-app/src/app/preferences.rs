@@ -901,6 +901,9 @@ impl App {
         // already drawn away, and turned on it asks for what was never
         // asked for.
         self.hints_switched();
+        // A switch turned on is a question asked now. Nothing before the
+        // loop has a channel, so on the way up this waits for `start`.
+        self.ask_about_releases();
     }
 
     /// Reads the configuration file and applies it.

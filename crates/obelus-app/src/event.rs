@@ -154,6 +154,8 @@ pub enum Event {
     /// which on the loop is a keystroke the reader watches arrive. So it
     /// goes where every other long answer goes: a worker, and back here.
     Scanned(Box<obelus_component::picker::Scanned>),
+    /// What the newest release of Obelus is called, as its tag says it.
+    Released(String),
 }
 
 impl Event {
@@ -194,6 +196,7 @@ impl Event {
             Self::Counted(_) => "Counted",
             Self::Watched(_) => "Watched",
             Self::Scanned(_) => "Scanned",
+            Self::Released(_) => "Released",
         }
     }
 }
