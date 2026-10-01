@@ -43,7 +43,7 @@ use ratatui::{
 };
 use unicode_width::{UnicodeWidthChar as _, UnicodeWidthStr};
 
-use crate::{Screen, put, write};
+use crate::{Screen, fill, put, write};
 
 /// The commands worth naming, with the words this screen says them in.
 ///
@@ -82,6 +82,19 @@ const ROW_HEIGHT: u16 = 2;
 
 /// How wide the block of what went wrong is allowed to be.
 ///
+/// What the first row says.
+///
+/// A verb, because the row is an action among rows that are places. The
+/// ellipsis is what a desktop means by "this opens somewhere to say more",
+/// and here what it opens is the box at the foot.
+const OPEN_ANOTHER: &str = "Open a project…";
+
+/// The least space between a path and the time beside it.
+///
+/// Two columns, so that the end of one and the start of the other are
+/// never read as one word on a row where both reach their room.
+const WHEN_GAP: u16 = 2;
+
 /// Wider than the plate, which the keys are centred on: those are two
 /// short words under a cap, and these are a sentence with a file and a
 /// line after it. Capped, because a line of prose run across a wide
@@ -259,6 +272,10 @@ pub struct WelcomeView<'a> {
     /// The version of a newer Obelus, where one is out.
     newer: Option<&'a str>,
     theme: &'a Theme,
+    /// What is being asked, where Obelus has no project yet. The keys
+    /// are not drawn then: none of them can do anything until this is
+    /// answered, and a screen offering them would be offering nothing.
+    choosing: Option<crate::Choosing>,
     /// How far the ramp has travelled, in ticks.
     ///
     /// Zero unless something is ticking, and nothing ticks once a file is
@@ -277,6 +294,7 @@ impl<'a> WelcomeView<'a> {
             at: app.went_wrong_at(),
             showing: app.went_wrong_showing(AMISS_ROWS),
             newer: app.newer_release(),
+            choosing: app.choosing(),
             theme: app.theme(),
             phase: app.phase(),
         }
@@ -293,6 +311,13 @@ struct Hint {
 
 impl Widget for WelcomeView<'_> {
     fn render(self, area: Rect, cells: &mut CellBuffer) {
+        // Nothing else, where there is no project: every key the welcome
+        // screen offers is about one, and the question has to be answered
+        // before any of them means anything.
+        if self.choosing.is_some() {
+            self.asking(area, cells);
+            return;
+        }
         let hints = self.hints();
 
         // The plate, a blank, and the keys. Nothing else: what the reader
@@ -342,8 +367,34 @@ impl WelcomeView<'_> {
         amiss: Amiss,
     ) {
         let left = area.x + (area.width - width) / 2;
-        let mut y = area.y + (area.height - height) / 2;
+        let y = area.y + (area.height - height) / 2;
 
+        // A ramp across the letters, in the theme's own accent hues rather
+        // than in colours invented here, so it belongs to whichever theme is
+        // on. The frame and the version in its foot are in it too: they are
+        // part of the mark, and one still thing in a moving one reads as a
+        // thing that has stopped.
+        let mut y = self.plate(cells, left, y, width);
+
+        y += 1;
+        self.grid(cells, left, y, width, hints);
+
+        // Under the keys, where the caller said there was room for it.
+        if amiss == Amiss::Shown && self.amiss_height() > 0 {
+            let keys = (u16::try_from(hints.len().div_ceil(COLUMNS)).unwrap_or(1) * ROW_HEIGHT)
+                .saturating_sub(1);
+            self.amiss(cells, area, y + keys + 1);
+        }
+    }
+
+    /// The wordmark, with the version set into its foot.
+    ///
+    /// Its own piece because two things sit under it now -- the keys on an
+    /// ordinary start, the projects on one with nothing to go on -- and a
+    /// mark drawn twice is a mark that drifts.
+    ///
+    /// Answers the row after it.
+    fn plate(&self, cells: &mut CellBuffer, left: u16, top: u16, width: u16) -> u16 {
         // A ramp across the letters, in the theme's own accent hues rather
         // than in colours invented here, so it belongs to whichever theme is
         // on. The frame and the version in its foot are in it too: they are
@@ -352,6 +403,7 @@ impl WelcomeView<'_> {
         let from = self.theme.syntax.keyword;
         let to = self.theme.syntax.function;
         let (foot, news) = foot(self.newer);
+        let mut y = top;
         // And the same two colours said as a shape, for a front end that
         // can draw a light rather than a ramp -- see `shapes::sheened`.
         // The whole plate, frame and foot and all, because that is what
@@ -387,15 +439,163 @@ impl WelcomeView<'_> {
             }
             y += 1;
         }
+        y
+    }
 
-        y += 1;
-        self.grid(cells, left, y, width, hints);
+    /// The plate, and under it the projects this reader has had open.
+    ///
+    /// The first row opens one that is not in the list and is always
+    /// there, so the list is never empty: a reader on a machine Obelus
+    /// has never run on has exactly one row, and it is the one that gets
+    /// them in.
+    ///
+    /// **The time is given its room before the path gets any.** A row
+    /// works out what it says about itself first and the words get what
+    /// is left -- so a path long enough to reach the right-hand edge
+    /// cannot take the tail with it. And what is cut off a path is its
+    /// *head*: `~/Work/very/deep/thing` says which project it is at the
+    /// end, and a path cut the other way is a column of identical
+    /// beginnings.
+    fn asking(&self, area: Rect, cells: &mut CellBuffer) {
+        let Some(choosing) = &self.choosing else {
+            return;
+        };
+        let width = width_of(WORDMARK[0]);
+        let plate = u16::try_from(WORDMARK.len()).unwrap_or(0);
+        // Every row there is, and then as many as the region can hold.
+        let wanted = u16::try_from(choosing.known.len().saturating_add(1)).unwrap_or(u16::MAX);
+        if width > area.width || plate + 2 > area.height {
+            // No room for the mark, so the rows are the whole of it: what
+            // this screen is for is getting in, and the wordmark is the
+            // part that can go.
+            self.rows(cells, choosing, area);
+            return;
+        }
+        let rows = wanted.min(area.height - plate - 1);
+        let height = plate + 1 + rows;
+        let left = area.x + (area.width - width) / 2;
+        let y = area.y + (area.height.saturating_sub(height)) / 2;
+        let y = self.plate(cells, left, y, width) + 1;
+        self.rows(
+            cells,
+            choosing,
+            Rect {
+                x: left,
+                y,
+                width,
+                height: rows,
+            },
+        );
+    }
 
-        // Under the keys, where the caller said there was room for it.
-        if amiss == Amiss::Shown && self.amiss_height() > 0 {
-            let keys = (u16::try_from(hints.len().div_ceil(COLUMNS)).unwrap_or(1) * ROW_HEIGHT)
-                .saturating_sub(1);
-            self.amiss(cells, area, y + keys + 1);
+    /// The rows themselves.
+    fn rows(
+        &self,
+        cells: &mut CellBuffer,
+        choosing: &crate::Choosing,
+        // Where the rows go, as one thing: four numbers passed beside
+        // each other are four numbers that can be passed in the wrong
+        // order.
+        list: Rect,
+    ) {
+        let (left, top, width, room) = (list.x, list.y, list.width, list.height);
+        // Which of them are on screen. The reader's own row is always
+        // among them, and the one that opens a project stays at the top
+        // of the list rather than scrolling away: it is not one of the
+        // projects, it is the way to one that is not here.
+        let total = choosing.known.len() + 1;
+        let first = match (room as usize) < total {
+            false => 0,
+            // Keep the row the reader is on in view, and keep the opening
+            // row in view with it while it can be.
+            true => choosing
+                .at
+                .saturating_sub(room.saturating_sub(1) as usize)
+                .min(total - room as usize),
+        };
+        for offset in 0..room {
+            let at = first + offset as usize;
+            if at >= total {
+                break;
+            }
+            let y = top + offset;
+            let on = at == choosing.at;
+            // One mark for "the keys are here", and it says nothing else:
+            // the same colour behind the row the reader is on that every
+            // list, page and card in Obelus puts there.
+            let style = match on {
+                true => Style::new().bg(self.theme.selected_row_background),
+                false => Style::new(),
+            };
+            if on {
+                fill(
+                    cells,
+                    Rect {
+                        x: left,
+                        y,
+                        width,
+                        height: 1,
+                    },
+                    style,
+                );
+            }
+            match at {
+                0 => {
+                    write(
+                        cells,
+                        left + 2,
+                        y,
+                        OPEN_ANOTHER,
+                        style.fg(self.theme.syntax.function),
+                    );
+                }
+                _ => {
+                    let Some(opened) = choosing.known.get(at - 1) else {
+                        continue;
+                    };
+                    self.row(cells, left, y, width, opened, style);
+                }
+            }
+        }
+    }
+
+    /// One project's row: when it was open, and as much of where as fits.
+    fn row(
+        &self,
+        cells: &mut CellBuffer,
+        left: u16,
+        y: u16,
+        width: u16,
+        opened: &crate::Opened,
+        style: Style,
+    ) {
+        let when = u16::try_from(obelus_text::text_width(&opened.when)).unwrap_or(0);
+        // Its room first: two columns in from each edge, and a gap wide
+        // enough that a path and a time are never read as one string.
+        let room = width
+            .saturating_sub(4)
+            .saturating_sub(when)
+            .saturating_sub(WHEN_GAP);
+        write(
+            cells,
+            left + 2,
+            y,
+            // From the left, which is the other way round from most
+            // things Obelus cuts: a path says which thing it is at its
+            // tail, and a column of paths cut the ordinary way is a
+            // column of identical beginnings with the one word that tells
+            // them apart gone.
+            &crate::truncate_from_left(&opened.path, room as usize),
+            style.fg(self.theme.status_foreground),
+        );
+        if when > 0 {
+            write(
+                cells,
+                left + width.saturating_sub(2).saturating_sub(when),
+                y,
+                &opened.when,
+                style.fg(self.theme.gutter),
+            );
         }
     }
 

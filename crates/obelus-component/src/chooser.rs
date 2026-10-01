@@ -57,6 +57,21 @@ pub struct Known {
     pub last: Option<i64>,
 }
 
+/// One thing a directory holds, as something a path could be finished
+/// with.
+///
+/// Whether it is a directory comes with it rather than being asked of the
+/// disk where it is drawn: the panel is laid out on every frame and a
+/// `is_dir` per candidate per frame is twenty file reads a keystroke, for
+/// an answer that was already known when the directory was read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Candidate {
+    /// The whole path, which is what choosing it opens.
+    pub path: PathBuf,
+    /// Whether it holds other things.
+    pub directory: bool,
+}
+
 /// What the chooser wants the application to do about a key.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Outcome {
@@ -103,7 +118,7 @@ struct Naming {
     /// does not change it does not ask for them again.
     read: Option<PathBuf>,
     /// What that directory holds, in the order it was handed over.
-    candidates: Vec<PathBuf>,
+    candidates: Vec<Candidate>,
     /// Which of them are on screen, and which the reader is on.
     ///
     /// Nothing is on by default: the caret is in the box, and a candidate
@@ -189,7 +204,7 @@ impl Chooser {
 
     /// What could finish the path being typed, where one is.
     #[must_use]
-    pub fn candidates(&self) -> &[PathBuf] {
+    pub fn candidates(&self) -> &[Candidate] {
         match &self.doing {
             Doing::Choosing => &[],
             Doing::Naming(naming) => &naming.candidates,
@@ -211,7 +226,7 @@ impl Chooser {
     /// normal case rather than the exceptional one: the answer describes a
     /// box that may have moved, and a list of candidates for a directory
     /// nobody is typing in is worse than none.
-    pub fn offer(&mut self, directory: &Path, entries: Vec<PathBuf>) {
+    pub fn offer(&mut self, directory: &Path, entries: Vec<Candidate>) {
         let Doing::Naming(naming) = &mut self.doing else {
             return;
         };
@@ -330,7 +345,7 @@ impl Chooser {
                 // answer until they walk into the list, which is what
                 // makes a path nobody offered still openable.
                 let chosen = match naming.at.and_then(|at| naming.candidates.get(at)) {
-                    Some(candidate) => candidate.clone(),
+                    Some(candidate) => candidate.path.clone(),
                     None => PathBuf::from(expanded(&naming.typed.said())),
                 };
                 Outcome::Chose(chosen)
@@ -383,7 +398,11 @@ impl Chooser {
             return Outcome::Ignored;
         };
         let said = expanded(&naming.typed.said());
-        let directory = match said.rfind(std::path::MAIN_SEPARATOR) {
+        // Either separator, because Windows takes both: a reader who
+        // types `C:/Users` and a reader who types `C:\\Users` have named
+        // the same directory, and looking only for the one this platform
+        // writes leaves the other with no candidates at all.
+        let directory = match said.rfind(std::path::is_separator) {
             // The separator itself stays, so that a box holding `/` asks
             // about the root rather than about the empty string.
             Some(at) => PathBuf::from(&said[..=at]),
@@ -416,7 +435,8 @@ fn expanded(said: &str) -> String {
     let Some(rest) = said.strip_prefix('~') else {
         return said.to_string();
     };
-    if !rest.is_empty() && !rest.starts_with(std::path::MAIN_SEPARATOR) {
+    // Either separator, for the reason `wants` gives.
+    if !rest.is_empty() && !rest.starts_with(std::path::is_separator) {
         return said.to_string();
     }
     let Some(home) = std::env::home_dir() else {
@@ -431,10 +451,10 @@ fn expanded(said: &str) -> String {
 /// in it would otherwise be cut in the middle of one, and what goes in the
 /// box has to be a string.
 #[must_use]
-fn common_prefix(candidates: &[PathBuf]) -> Option<String> {
+fn common_prefix(candidates: &[Candidate]) -> Option<String> {
     let mut all = candidates
         .iter()
-        .map(|path| path.to_string_lossy().into_owned());
+        .map(|candidate| candidate.path.to_string_lossy().into_owned());
     let first = all.next()?;
     let mut shared: Vec<char> = first.chars().collect();
     for each in all {

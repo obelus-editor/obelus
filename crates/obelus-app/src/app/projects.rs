@@ -290,6 +290,33 @@ impl super::App {
         self.chooser = Some(obelus_component::chooser::Chooser::new(known));
     }
 
+    /// Asks, with these projects, whatever is on this machine.
+    ///
+    /// Pressing nothing runs no `npm` here, but reading the real list
+    /// would make a test's screen depend on which projects whoever ran it
+    /// has opened -- the same trap the welcome screen's own fixture fell
+    /// into with the working directory.
+    pub fn ask_about_these_projects_for_test(
+        &mut self,
+        known: Vec<obelus_component::chooser::Known>,
+    ) {
+        self.chooser = Some(obelus_component::chooser::Chooser::new(known));
+    }
+
+    /// Hands the path box candidates without a disk being read.
+    ///
+    /// A test that typed a real directory would put a path with this
+    /// run's process number in it on the screen, which is a grid that
+    /// cannot be a fixture -- the same trap the welcome screen's own
+    /// fixture fell into with the working directory.
+    pub fn offer_these_candidates_for_test(
+        &mut self,
+        directory: &Path,
+        entries: Vec<obelus_component::chooser::Candidate>,
+    ) {
+        self.offer_candidates(directory, entries);
+    }
+
     /// A key, while the reader is being asked which project.
     ///
     /// Answers whether it was taken. What is not taken falls to the
@@ -337,17 +364,32 @@ impl super::App {
             self.offer_candidates(directory, Vec::new());
             return;
         };
-        let mut found: Vec<(bool, PathBuf)> = entries
+        // Whether each is a directory is settled here, where the disk is
+        // being asked anyway, and carried with it: the panel is laid out
+        // on every frame, and asking again there would be a `stat` per
+        // candidate per keystroke for an answer already in hand.
+        let mut found: Vec<obelus_component::chooser::Candidate> = entries
             .flatten()
-            .map(|entry| (entry.path().is_dir(), entry.path()))
+            .map(|entry| obelus_component::chooser::Candidate {
+                directory: entry.path().is_dir(),
+                path: entry.path(),
+            })
             .collect();
-        found.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
-        let found = found.into_iter().map(|(_, path)| path).collect();
+        found.sort_by(|left, right| {
+            right
+                .directory
+                .cmp(&left.directory)
+                .then_with(|| left.path.cmp(&right.path))
+        });
         self.offer_candidates(directory, found);
     }
 
     /// Hands what was found to the box that asked for it.
-    fn offer_candidates(&mut self, directory: &Path, entries: Vec<PathBuf>) {
+    fn offer_candidates(
+        &mut self,
+        directory: &Path,
+        entries: Vec<obelus_component::chooser::Candidate>,
+    ) {
         if let Some(chooser) = &mut self.chooser {
             chooser.offer(directory, entries);
         }
@@ -382,6 +424,84 @@ impl super::App {
         if opening.list {
             self.open_file_picker();
         }
+    }
+}
+
+impl super::App {
+    /// What the welcome screen is asking, where it is asking.
+    ///
+    /// The words are settled here and the room for them is not: a path is
+    /// shortened with `~` because which directory is the reader's own is
+    /// a fact about this machine, and how long ago is said in the words
+    /// `obelus_git::how_long_ago` already says it in, so a row on this
+    /// screen and a row of the history do not disagree about what two
+    /// hours ago is called. What is cut to fit is the drawing's, and it
+    /// needs a width this does not have.
+    pub(super) fn what_is_being_chosen(&self) -> Option<obelus_ui::Choosing> {
+        let chooser = self.chooser.as_ref()?;
+        let now = std::time::SystemTime::now();
+        Some(obelus_ui::Choosing {
+            known: chooser
+                .rows()
+                .into_iter()
+                .map(|known| obelus_ui::Opened {
+                    path: shortened(&known.path),
+                    when: known
+                        .last
+                        .map(|last| obelus_git::how_long_ago(last, now))
+                        .unwrap_or_default(),
+                })
+                .collect(),
+            at: chooser.at(),
+            typed: chooser.typing().said(),
+            caret: chooser.typing().caret().get(),
+            naming: chooser.is_naming(),
+            // The name alone: the directory they are all in is already
+            // in the box above them, and repeating it down twenty rows
+            // spends the width on the one part of each row that is the
+            // same. A directory keeps its separator, which is how a
+            // reader tells one from a file without a column of glyphs.
+            candidates: chooser
+                .candidates()
+                .iter()
+                .map(|candidate| {
+                    let name = candidate.path.file_name().map_or_else(
+                        || candidate.path.to_string_lossy().into_owned(),
+                        |name| name.to_string_lossy().into_owned(),
+                    );
+                    match candidate.directory {
+                        true => format!("{name}{}", std::path::MAIN_SEPARATOR),
+                        false => name,
+                    }
+                })
+                .collect(),
+            candidate_at: chooser.candidate_at(),
+        })
+    }
+}
+
+/// A path with the reader's own directory written as `~`.
+///
+/// Every row on this screen is under it on an ordinary machine, so
+/// spelling it out is twelve columns of the same word on every row --
+/// taken from the part of the path that says which project this is. The
+/// box the reader types into takes `~` back the other way, which is the
+/// pair that makes the two agree.
+#[must_use]
+fn shortened(path: &Path) -> String {
+    let said = path.to_string_lossy();
+    let Some(home) = std::env::home_dir() else {
+        return said.into_owned();
+    };
+    let home = home.to_string_lossy();
+    // Only a whole leading component, so `/home/sunlight` is not written
+    // as `~light` for a reader whose directory is `/home/sun`.
+    match said.strip_prefix(home.as_ref()) {
+        Some("") => "~".to_string(),
+        // Either separator: a path on Windows may hold `/` and still be
+        // the reader's own directory with something under it.
+        Some(rest) if rest.starts_with(std::path::is_separator) => format!("~{rest}"),
+        _ => said.into_owned(),
     }
 }
 

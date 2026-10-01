@@ -328,6 +328,12 @@ Which makes a condition worth a walk: `AChangedFile` asks git what has
 changed in the project, once when the palette opens and once per press of the
 key. This repository answers in two milliseconds.
 
+And `AProject` is the one that is known without any walk at all: a start
+from a desktop menu names no project and begins in the home directory, so
+until the welcome screen is answered there is none -- which `open-changed-file`
+and `show-project-history` used to discover by walking a repository that was
+not there.
+
 **A command does something; a preference is a setting.** A switch that
 should outlive the session is a setting and nothing else -- the only key to
 it is the one that opens the settings. A command may *change* a setting, as
@@ -519,7 +525,10 @@ crates/
                       newest first, a conversation belongs to the agent that
                       had it and to the checkout it was had in, and a watch
                       is settled from what is open
-                      (app/conversations); what an agent offers is asked of it,
+                      (app/conversations); where Obelus has been is
+                      remembered however the project was named, and only a
+                      worktree, and what a start with nothing to go on asks
+                      (app/projects); what an agent offers is asked of it,
                       not remembered (app/agents); a note that has gone takes
                       no conversation off the screen (app/noting); a key that
                       names another whole view swaps rather than stacks, and a
@@ -591,7 +600,9 @@ crates/
                       place, and somebody else's text is capped (signature);
                       wherever enter means something else a line is
                       `shift+enter` and `alt+enter` (composer); a list the
-                      reader builds is not a picker (names)
+                      reader builds is not a picker (names); a screen that
+                      cannot be left, two boxes that never share their
+                      text, and why no numbers (chooser)
   obelus-reading/   what a file is when it is not code: markdown, a log
                     · a log's format is decided by its lines, not its name;
                       what Obelus writes, Obelus has to be able to read (log)
@@ -655,7 +666,8 @@ crates/
                       what a region *is* and the front end says what that looks
                       like, nothing may be said there that the cells do not
                       already say in their own way, and what is said carries
-                      enough to be checked against them (shapes); the argument
+                      enough to be checked against them (shapes); a path is
+                      not a completion, and a name is not a path (naming); the argument
                       being marked is the one thing that may not be clipped
                       away (signature); every layer is asked the same question
                       (settings)
