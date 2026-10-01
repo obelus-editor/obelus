@@ -148,18 +148,7 @@ impl App {
             .notes
             .into_iter()
             .find(|other| other.id == *note)?;
-        // What can change, in the note's own data and none of Obelus's
-        // words: rewording the templates is not the note being rewritten
-        // and must not read as it.
-        let now = match &about.at {
-            Some(at) => format!(
-                "{}\n{}:{}",
-                about.said,
-                at.path.display(),
-                at.line.get() + 1
-            ),
-            None => about.said.clone(),
-        };
+        let now = what_the_note_says(&about);
         if told == Some(now.as_str()) {
             return None;
         }
@@ -173,6 +162,34 @@ impl App {
         Some((filled(template, &about.id, &at, &about.said), said, now))
     }
 }
+
+/// What can change about a note, in the note's own data and none of
+/// Obelus's words: rewording the templates is not the note being rewritten
+/// and must not read as it.
+///
+/// What is written down as told, and so what the next message is compared
+/// against -- by the opening, and by the box deciding whether to offer
+/// [`LOOK`].
+pub(super) fn what_the_note_says(about: &obelus_git::todo::Note) -> String {
+    match &about.at {
+        Some(at) => format!(
+            "{}\n{}:{}",
+            about.said,
+            at.path.display(),
+            at.line.get() + 1
+        ),
+        None => about.said.clone(),
+    }
+}
+
+/// What the box offers to say in a conversation about a note, while the
+/// next message would carry the note.
+///
+/// The note is the question and the agent is about to be told it, so what
+/// the reader has left to say is usually only that they would like an
+/// answer -- and typing that every time is the cost of opening a
+/// conversation from a note at all.
+pub(super) const LOOK: &str = "Look into this";
 
 /// Fills a template in: Obelus's own values first, the reader's words last.
 ///

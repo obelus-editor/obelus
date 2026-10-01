@@ -3569,6 +3569,85 @@ fn a_conversation_about_a_note_says_so_in_its_first_message() {
     });
 }
 
+/// A conversation opened on a note offers the reader something to say.
+///
+/// The note is the question, and the agent is about to be told it, so what
+/// is left to say is usually only "go on" -- which a reader had to type
+/// every time before the empty box would send anything. The words are grey
+/// in the box and are not theirs until the right arrow puts them in: enter
+/// on the grey words sends nothing, as on any empty box, so nothing goes in
+/// the reader's name that they did not take. And once the agent has been
+/// told the note they are gone, because what was being answered has been
+/// asked.
+///
+/// Broken deliberately three ways. Taking the right arrow's arm out leaves
+/// the box empty after the key. Sending the suggestion on a bare enter
+/// sends a message before the right arrow. And offering it whatever the
+/// agent has been told leaves it in the box after the first message.
+#[test]
+fn a_conversation_about_a_note_offers_something_to_say() {
+    let scratch = support::Scratch::new("agent-note-suggestion");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()),
+        "[[todo]]\nid = \"0123456K\"\nsaid = \"wire the counts tree up to the search\"\n\
+         done = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    talk_about_the_note(&mut app);
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Look into this") && text.contains("Fill it in"),
+        "the empty box offered nothing:\n{text}"
+    );
+
+    // Not the reader's yet: enter on it is enter on an empty box.
+    support::press(&mut app, KeyCode::Enter);
+    let _ = screen(&mut app);
+    assert!(
+        app.chat().is_some_and(|chat| !chat.anything_said()),
+        "enter sent the grey words before the reader took them"
+    );
+
+    support::press(&mut app, KeyCode::Right);
+    assert_eq!(
+        app.chat().map(|chat| chat.writing().text()).as_deref(),
+        Some("Look into this"),
+        "the right arrow did not put the words in the box"
+    );
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text().contains("a rust file"))
+        })
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Told the agent what this conversation is about"),
+        "the words went without the note:\n{text}"
+    );
+    // Told, so there is nothing left to offer.
+    assert!(
+        app.chat().is_some_and(|chat| chat.suggestion().is_none()) && !text.contains("Fill it in"),
+        "the box still offered the words after the note was told:\n{text}"
+    );
+}
+
 /// A question that arrives while the reader is elsewhere waits for them.
 ///
 /// Not dropped, which is what happened: everything about a conversation was
@@ -6494,7 +6573,8 @@ fn a_conversation_taken_up_again_is_told_where_the_tools_are() {
 /// told is what the note says now" sends the whole paragraph with every
 /// message, to an agent that has it. And not writing down what was told as
 /// it goes tells it the note has been rewritten again and again, once per
-/// message, for one rewrite.
+/// message, for one rewrite. Offering the box's words whatever the agent
+/// has been told leaves them in a conversation that knows its note.
 #[test]
 fn an_agent_is_told_what_the_note_says_only_when_it_does_not_know_it() {
     let (scratch, mut app, events) = remembering("agent-resume-opening", "0123456S", "s-old", &[]);
@@ -6507,6 +6587,13 @@ fn an_agent_is_told_what_the_note_says_only_when_it_does_not_know_it() {
                 .any(|row| row.text().contains("where we were"))
         })
     });
+    // Nothing offered in the box either: what it would offer to say is a
+    // reply to being told the note, and this agent has been.
+    let text = screen(&mut app);
+    assert!(
+        app.chat().is_some_and(|chat| chat.suggestion().is_none()) && !text.contains("Fill it in"),
+        "a conversation that knows its note was offered words for it:\n{text}"
+    );
     support::type_text(&mut app, "/blocks");
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "what it got", |app| {
