@@ -983,15 +983,33 @@ impl StatusView<'_> {
             false => "Filter",
         };
         let line = typed(Some(question), &choosing.typed);
-        // A path that is not there is drawn in the ink that says so, and
-        // nothing is written anywhere about it: enter refuses, and the
-        // reader was told before they pressed. Whether a row can be used
-        // is said in the ink and never by taking a mark away.
-        let ink = match choosing.naming && !choosing.typed.is_empty() && !choosing.there {
+        // A path that goes nowhere, said in the ink and then in words.
+        //
+        // Both only where there is nothing left to suggest: `/tmp/o` is
+        // not there either, and marking it while the list below offers
+        // `obelus/` would be a complaint about typing. Nothing to
+        // suggest *and* nothing at the path is a reader who has gone
+        // wrong, and that is the moment to say so.
+        let nowhere =
+            choosing.naming && !choosing.typed.is_empty() && !choosing.there && !choosing.offering;
+        let ink = match nowhere {
             true => style.fg(self.theme.syntax.warning),
             false => style,
         };
-        write(cells, area.x + 1, area.y, &line, ink);
+        let after = write(cells, area.x + 1, area.y, &line, ink);
+        if nowhere {
+            // After the path rather than instead of it: what the reader
+            // typed is what they are about to fix, and a row that
+            // replaced it with a complaint would take away the thing
+            // they need to look at. Dropped whole where it does not fit,
+            // the way every sentence on this row is -- a warning cut in
+            // half is worse than the ink alone, which is still there.
+            let said = " — nothing is here";
+            let room = area.right().saturating_sub(after);
+            if u16::try_from(text_width(said)).unwrap_or(u16::MAX) <= room {
+                write(cells, after, area.y, said, style.fg(self.theme.gutter));
+            }
+        }
         // What the box says before anything is in it. The filter says
         // what it would narrow; the path box says what shape of answer it
         // wants, because a reader who has never typed one here has no way

@@ -675,3 +675,130 @@ fn the_filter_marks_what_it_matched_on_the_row_as_shown() {
         "what matched is not marked, or is marked in the wrong place"
     );
 }
+
+/// A path that goes nowhere says so, and only once there is nothing left
+/// to suggest.
+///
+/// Both halves matter. Silence on enter is a key that looks broken --
+/// the reader has pressed it and been told nothing. But saying it from
+/// the first letter would be a complaint about typing: `/tmp/o` is not
+/// there either, and the list below is offering `obelus/` at the time.
+/// So the row speaks where there is nothing to suggest *and* nothing at
+/// the path, which is a reader who has actually gone wrong.
+///
+/// Broken deliberately twice: dropping `!choosing.offering` from the
+/// condition, so the row complains while a name is half typed; and
+/// having `App::note_what_the_box_names` answer `true` always, so it
+/// never complains at all.
+#[test]
+fn a_path_that_goes_nowhere_says_so_once_nothing_is_left_to_suggest() {
+    let scratch = support::Scratch::new("choosing-nowhere");
+    std::fs::create_dir_all(scratch.path().join("alpha")).expect("a directory");
+    let mut app = asking();
+    press(&mut app, KeyCode::Enter);
+    for character in format!("{}/", scratch.path().display()).chars() {
+        press(&mut app, KeyCode::Char(character));
+    }
+
+    // Half a name, with the list offering the whole of it: nothing to
+    // complain about yet.
+    press(&mut app, KeyCode::Char('a'));
+    let choosing = app.choosing().expect("asking");
+    assert!(!choosing.there, "`alph` is not a directory");
+    assert!(
+        choosing.offering,
+        "the list stopped offering what is being typed"
+    );
+
+    // And a name that is not going anywhere.
+    for character in "bsent".chars() {
+        press(&mut app, KeyCode::Char(character));
+    }
+    let choosing = app.choosing().expect("asking");
+    assert!(!choosing.there, "`absent` is somehow a directory");
+    assert!(
+        !choosing.offering,
+        "something is still being offered for a name that matches nothing"
+    );
+}
+
+/// Choosing from the list leaves the row saying the right thing about
+/// what it put there.
+///
+/// The key that fills the box from the list left by a different door
+/// from the keys that type into it, and only one of those doors worked
+/// out whether what is in the box is there. So a candidate accepted into
+/// the box carried whatever the ink had said about the half-typed name
+/// before it.
+///
+/// Broken deliberately by taking the `note_what_the_box_names` call out
+/// of the branch that handles the list's keys.
+#[test]
+fn choosing_from_the_list_leaves_the_row_telling_the_truth() {
+    let scratch = support::Scratch::new("choosing-stale-ink");
+    std::fs::create_dir_all(scratch.path().join("alpha")).expect("a directory");
+    let mut app = asking();
+    press(&mut app, KeyCode::Enter);
+    // Half the name: not a directory, and the list is offering the
+    // whole of it. The two have to disagree here or the stale answer
+    // and the true one are the same and nothing is being tested -- a
+    // box holding the directory itself is there either way, which is
+    // how this first went green.
+    for character in format!("{}/alph", scratch.path().display()).chars() {
+        press(&mut app, KeyCode::Char(character));
+    }
+    let choosing = app.choosing().expect("asking");
+    assert!(!choosing.there, "`alph` is a directory");
+    assert!(choosing.offering, "the list is not offering `alpha`");
+
+    press(&mut app, KeyCode::Enter);
+
+    assert!(
+        app.choosing().expect("asking").there,
+        "the box holds a directory the list just put there, and the row still says it is not"
+    );
+}
+
+/// Nothing about the project is started until there is one.
+///
+/// `App::start` runs after the arguments have been read, so on a start
+/// with nothing to go on everything rooted at the project was rooted at
+/// the directory the process began in -- the home directory, from a
+/// desktop launcher -- and nothing moved it when the reader answered.
+/// An agent was offered tools for the wrong project, and git's `HEAD`
+/// and `index` went unwatched, so `forget_what_git_said` never fired
+/// and the branch on the status row and the marks in the margin were
+/// whatever they had been for the rest of the session.
+///
+/// The tools are what this watches, because an address is a thing a
+/// test can read and a watch is not. They are the same gate: one `if`
+/// in `App::start` and one pair of calls in `settle_on`.
+///
+/// Broken deliberately by taking the `self.chooser.is_none()` guard out
+/// of `App::start`: the tools are offered for the home directory before
+/// anybody has named a project.
+#[test]
+fn nothing_about_the_project_is_started_until_there_is_one() {
+    let scratch = support::Scratch::new("choosing-starting");
+    let mut app = asking();
+    let (sender, _events) = std::sync::mpsc::channel();
+    app.start(sender);
+
+    assert!(
+        app.tools_url().is_none(),
+        "an agent is being offered tools for a project nobody has named"
+    );
+
+    press(&mut app, KeyCode::Enter);
+    for character in scratch.path().display().to_string().chars() {
+        press(&mut app, KeyCode::Char(character));
+    }
+    press(&mut app, KeyCode::Esc);
+    press(&mut app, KeyCode::Enter);
+    assert!(app.choosing().is_none(), "it is still asking");
+
+    assert!(
+        app.tools_url().is_some(),
+        "the project was chosen and nothing about it was started"
+    );
+}
