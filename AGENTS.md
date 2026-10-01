@@ -1299,6 +1299,28 @@ The notes moved out of the project's own `.obelus` for this: they were never
 shared with the next person anyway, since `.obelus` is a directory readers
 gitignore.
 
+What is keyed by the project is what the worktrees are *meant* to share, and
+not everything git says. Which branch is checked out is the tree's own:
+a linked worktree has a `HEAD` of its own while sharing `common_dir`, so
+asking `obelus_git::project` for it would answer one branch for all of them
+and be wrong for all but one. `head_of_the_tree` takes the working
+directory, which is where Obelus was put. The test for which key a question
+wants is whether two worktrees should agree about the answer -- the notes
+yes, the branch no.
+
+And it is read where Obelus is *told* which directory that is -- `work_in`,
+which the startup and `working_directory_for_test` both go through -- rather
+than where the field is declared. Three moments, as ever: there, when the
+watcher says `HEAD` moved, and when Obelus changed it, which is never. What
+that seam also buys is the golden fixtures: they render on `App::new`'s own
+answer to where it is, which when the suite runs is inside *this*
+repository, so a branch read at construction would write this checkout's
+branch into `sample_40x8.txt` and go red in a worktree on another one. It is
+the `~/Work/obelus` mistake with a branch in place of a path, and the
+fixtures say nothing there because nothing told Obelus where it was. The
+branch has tests of its own, on repositories built in a temp directory with
+a branch name no checkout would have.
+
 *A conversation is not a thing two of them may have open at once.* The agent
 takes one prompt turn at a time and the queue that keeps Obelus to one lives
 in a process, so a second process prompting the same conversation walks

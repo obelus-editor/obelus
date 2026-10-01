@@ -485,6 +485,51 @@ pub fn head_commit(root: &Path) -> Option<gix::ObjectId> {
     Some(repository(root)?.head_id().ok()?.detach())
 }
 
+/// What `HEAD` is, where a reader is being told which branch they are on.
+///
+/// Three answers and not two, which is why this is an enum inside an
+/// option: there being no repository and there being one with no branch
+/// checked out are different things to say, and a reader told nothing in
+/// both cases cannot tell them apart. `head_ref` answers `None` for a
+/// detached `HEAD`, so folding that into "no repository" is exactly the
+/// mistake available here.
+///
+/// The commit is not one of the answers. A short id already means
+/// something else where this is drawn -- that the buffer is some commit's
+/// version of its file -- and two short ids on one row meaning two things
+/// is a row a reader has to guess at. The history is one key away.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Head {
+    /// The branch it is on, by the name the reader wrote.
+    Branch(String),
+    /// A commit, rather than a branch.
+    Detached,
+}
+
+/// Which branch the tree at this path has checked out.
+///
+/// The tree's and not the project's: a linked worktree has a `HEAD` of its
+/// own while sharing `common_dir` with the repository it came from, so
+/// asking by [`project`] would answer the same branch for all of them and
+/// be wrong for all but one. What is keyed by the project is what the
+/// worktrees are meant to share -- the notes, and which conversation is
+/// about which -- and the branch is not that.
+///
+/// Through `head_ref`, which is the same question [`history::refs_of`]
+/// asks to mark which of the names it lists is the current one: one place
+/// that knows how to ask what `HEAD` is.
+#[must_use]
+pub fn head_of_the_tree(within: &Path) -> Option<Head> {
+    let repository = repository(within)?;
+    let Ok(head) = repository.head_ref() else {
+        return Some(Head::Detached);
+    };
+    Some(match head {
+        Some(head) => Head::Branch(head.name().shorten().to_string()),
+        None => Head::Detached,
+    })
+}
+
 /// Everything git says has changed in a tree, by path.
 pub fn statuses(root: &Path) -> HashMap<PathBuf, Standing> {
     let mut statuses = HashMap::new();

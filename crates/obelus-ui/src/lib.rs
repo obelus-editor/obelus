@@ -325,6 +325,8 @@ pub trait Screen {
     fn what_this_conversation_is_about(&self) -> Option<String>;
     /// Where Obelus was started, and the root every path is shown relative to.
     fn working_directory(&self) -> &Path;
+    /// Which branch that tree has checked out, where it is a repository.
+    fn head(&self) -> Option<&obelus_git::Head>;
 }
 
 pub mod card;

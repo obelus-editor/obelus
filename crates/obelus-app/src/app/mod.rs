@@ -739,6 +739,19 @@ pub struct App {
     /// `note_where_the_view_has_got_to`.
     travelled: i64,
     working_directory: PathBuf,
+    /// Which branch the tree Obelus was put on has checked out.
+    ///
+    /// Kept rather than asked for, and read at the three moments anything
+    /// about the world is read here: when Obelus is told which directory it
+    /// is working in, when the watcher says `HEAD` moved, and when Obelus
+    /// is the one who changed it -- which is never, git being read-only.
+    /// Asking per frame would be `gix::discover` walking up the tree on
+    /// every keystroke, which is a file read wearing a costume.
+    ///
+    /// `None` outside a repository, and the status row then says nothing
+    /// and spends no column: a row that said something there would be
+    /// saying it about a question that does not arise.
+    head: Option<obelus_git::Head>,
     /// Whether to open on the file list.
     ///
     /// A directory on the command line is a reader saying which project
@@ -888,6 +901,14 @@ impl App {
             // whole session even if something else changes the process's
             // directory.
             working_directory: std::env::current_dir().unwrap_or_default(),
+            // Not read here. Which branch the tree is on is a fact about
+            // the directory Obelus was *told* to work in, so it is read
+            // where it is told -- `App::work_in`, which both the startup
+            // and `working_directory_for_test` go through. The same
+            // argument `apply_project` makes from there: a test that moved
+            // one without the other would be testing an application no
+            // reader can have.
+            head: None,
             list_at_start: false,
             should_quit: false,
         }
@@ -1066,6 +1087,16 @@ impl App {
     /// reader's at the end, so this only has to have happened by then.
     pub fn work_in(&mut self, root: PathBuf) {
         self.working_directory = root;
+        // Now, rather than on the first frame: the row draws the branch
+        // and a watch says what happens next rather than what already
+        // has.
+        self.head = obelus_git::head_of_the_tree(&self.working_directory);
+    }
+
+    /// Which branch the tree Obelus was put on has checked out.
+    #[must_use]
+    pub fn head(&self) -> Option<&obelus_git::Head> {
+        self.head.as_ref()
     }
 
     /// Says to open on the file list rather than on a file.
@@ -4309,6 +4340,9 @@ impl Screen for App {
     }
     fn what_this_conversation_is_about(&self) -> Option<String> {
         App::what_this_conversation_is_about(self)
+    }
+    fn head(&self) -> Option<&obelus_git::Head> {
+        App::head(self)
     }
     fn working_directory(&self) -> &Path {
         App::working_directory(self)

@@ -81,6 +81,14 @@ pub struct StatusView<'a> {
     theme: &'a Theme,
     troubles: &'a [obelus_lsp::trouble::Trouble],
     working_directory: &'a Path,
+    /// Which branch the tree is on, where it is a repository.
+    ///
+    /// Left of the file, because it is the widest fact on the row: the
+    /// path is shown relative to this tree, so what the path is *of* comes
+    /// before it. Nothing at all outside a repository, and no column spent
+    /// -- a row saying something there would be answering a question that
+    /// does not arise.
+    head: Option<&'a obelus_git::Head>,
 }
 
 impl<'a> StatusView<'a> {
@@ -103,6 +111,7 @@ impl<'a> StatusView<'a> {
             replacing: app.replacing(),
             theme: app.theme(),
             working_directory: app.working_directory(),
+            head: app.head(),
         }
     }
 }
@@ -188,6 +197,40 @@ impl Widget for StatusView<'_> {
                 }
             }
         }
+    }
+}
+
+/// How few columns of the path are still worth drawing.
+///
+/// What the branch may not take: a path cut below this is a row that has
+/// said which branch and not which file, and the file is what the reader is
+/// looking at.
+const PATH_AT_LEAST: usize = 8;
+
+/// The branch the tree is on, as the left of the file row says it.
+///
+/// Empty outside a repository, so the row spends no column on a question
+/// that does not arise. A trailing pair of blanks is the gap before the
+/// path, and the glyph's own blank is the one the non-`Mono` variants bleed
+/// into.
+///
+/// A branch keeps its own spelling, because it is a name the reader wrote.
+/// `Detached` is not a name but Obelus saying something, so it is written
+/// as copy -- and it is said rather than left blank because a tree with no
+/// branch checked out and no tree at all are two different things, and a
+/// row silent about both tells a reader neither.
+#[must_use]
+fn branch_badge(head: Option<&obelus_git::Head>) -> String {
+    let Some(head) = head else {
+        return String::new();
+    };
+    let said = match head {
+        obelus_git::Head::Branch(name) => name.as_str(),
+        obelus_git::Head::Detached => "Detached",
+    };
+    match obelus_icons::enabled() {
+        true => format!("{}  {said}  ", obelus_icons::ui::BRANCH),
+        false => format!("{said}  "),
     }
 }
 
@@ -663,6 +706,15 @@ impl StatusView<'_> {
         };
         let right_width = text_width(&right);
 
+        // Which branch the tree is on, in front of the path: the path is
+        // shown relative to that tree, so what it is a path *of* comes
+        // first. Dropped whole rather than truncated where the row cannot
+        // hold both -- the rule the rest of this row follows, and the right
+        // way round, because the path is what the reader is looking at and
+        // half a branch name is worse than none.
+        let branch = branch_badge(self.head);
+        let branch_width = text_width(&branch);
+
         // One column of padding at each end, at least one between the two
         // halves, and room for the marker, which is never the part that gets
         // dropped.
@@ -685,18 +737,44 @@ impl StatusView<'_> {
                 .to_string(),
         };
         let available = usize::from(area.width).saturating_sub(reserved);
+        // What the branch leaves, where there is anything left worth
+        // leaving. A path cut to nothing is a row with a branch on it and
+        // no file, which is the wrong half to keep.
+        let (branch, available) = match available.saturating_sub(branch_width) {
+            left if left >= PATH_AT_LEAST => (branch.as_str(), left),
+            _ => ("", available),
+        };
+        let branch_width = text_width(branch);
         let path = truncate_from_left(&path, available);
 
         let right_start = usize::from(area.width)
             .saturating_sub(right_width)
             .saturating_sub(1);
 
-        write(cells, area.x + 1, area.y, &path, style);
+        if !branch.is_empty() {
+            write(
+                cells,
+                area.x + 1,
+                area.y,
+                branch,
+                // The dim ink the row's other asides are written in. The
+                // path's own would make the two read as one sentence --
+                // `master  src/app/mod.rs` as a path with a first
+                // component -- and the branch is a thing a reader looks at
+                // deliberately rather than one that should catch the eye.
+                style.fg(self.theme.gutter),
+            );
+        }
+        if let Ok(offset) = u16::try_from(1usize.saturating_add(branch_width)) {
+            write(cells, area.x + offset, area.y, &path, style);
+        }
 
         // Only if it fits before the cursor position. On a screen too narrow
         // for both, the position wins: it is there every frame, and half a
         // word of warning is worse than none.
-        let after_path = 1usize.saturating_add(text_width(&path));
+        let after_path = 1usize
+            .saturating_add(branch_width)
+            .saturating_add(text_width(&path));
         if let Ok(offset) = u16::try_from(after_path)
             && !marker.is_empty()
             && after_path + marker_width <= right_start

@@ -244,6 +244,13 @@ impl App {
     /// goes on showing it until the reader types something.
     pub(super) fn forget_what_git_said(&mut self) {
         tracing::info!("the repository moved, so what it said about it is dropped");
+        // Which branch is checked out, because a checkout is one of the
+        // ways it moved. Read here rather than behind a second judgement
+        // of what counts as having moved: `state_moved` is true for the
+        // index as well, and `git add` changes no branch -- but reading a
+        // ref costs nothing, and what the history guards against on that
+        // event is throwing away a *walk*.
+        self.head = obelus_git::head_of_the_tree(&self.working_directory);
         self.changes = None;
         self.committed = None;
         self.blames.clear();

@@ -5574,3 +5574,216 @@ fn a_diff_obelus_draws_puts_the_file_back() {
         );
     }
 }
+
+/// The status row says which branch the tree is on, in front of the file.
+///
+/// The path is shown relative to that tree, so what the path is a path *of*
+/// comes before it. In the dim ink the row's other asides are written in:
+/// the path's own would make the two read as one sentence -- a branch name
+/// with a file after it is exactly the shape of a path with a first
+/// component.
+///
+/// A branch name nothing else on the row could be is what makes this worth
+/// anything: on `master` it would pass against the checkout the test is
+/// running in whichever repository it had asked.
+///
+/// Broken deliberately by not writing the branch, and by writing it in the
+/// path's own ink.
+#[test]
+fn the_status_row_says_which_branch_the_tree_is_on() {
+    use obelus_app::app::App;
+    use obelus_buffer::Buffer;
+
+    let repository = Repository::new("branch-said", "one\n");
+    repository.run(&["switch", "--quiet", "--create", "zephyr"]);
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let dump = support::render(&mut app, 60, 8);
+    let text = support::text_block(&dump);
+
+    assert!(
+        text.contains("zephyr"),
+        "the row does not say which branch:\n{dump}"
+    );
+    // In front of the file, which is the whole of where it goes.
+    let row = text
+        .lines()
+        .find(|row| row.contains("zephyr"))
+        .expect("the row");
+    let branch = row.find("zephyr").expect("the branch");
+    let file = row.find("file.rs").expect("the file");
+    assert!(
+        branch < file,
+        "the branch is not in front of the file:\n{dump}"
+    );
+
+    // And not in the ink the path is in. `z` is on that row once.
+    let branch_ink = support::colour_under(&dump, 'z');
+    let path_ink = support::colour_under(&dump, '.');
+    assert_ne!(
+        branch_ink, path_ink,
+        "the branch is in the path's own ink, so the two read as one sentence:\n{dump}"
+    );
+}
+
+/// Outside a repository it says nothing, and spends no column saying it.
+///
+/// A row that said something there would be answering a question that does
+/// not arise -- and the column would move the file name for every reader
+/// who is not in a repository at all.
+///
+/// Broken deliberately by answering `Some(Head::Detached)` where there is
+/// no repository, or by padding the empty badge: the file name shifts.
+#[test]
+fn a_tree_that_is_not_a_repository_says_no_branch() {
+    use obelus_app::app::App;
+    use obelus_buffer::Buffer;
+
+    let directory = std::env::temp_dir().join(format!("obelus-branch-none-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&directory);
+    std::fs::create_dir_all(&directory).expect("a directory");
+    let path = directory.join("file.rs");
+    std::fs::write(&path, "one\n").expect("the file");
+
+    let mut app = App::new(vec![Buffer::open(&path).expect("opening it")]);
+    app.working_directory_for_test(directory.clone());
+    let dump = support::render(&mut app, 60, 8);
+    let row = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("file.rs"))
+        .expect("the row")
+        .split_once('|')
+        .map_or(String::new(), |(_, cells)| cells.to_string());
+
+    // One column of padding and then the file, which is where the file
+    // starts on a row with nothing in front of it.
+    assert_eq!(
+        row.find("file.rs"),
+        Some(1),
+        "something is in front of the file outside a repository:\n{dump}"
+    );
+    let _ = std::fs::remove_dir_all(&directory);
+}
+
+/// A checkout in another window moves it.
+///
+/// The row is an answer about a moment, and the moment passes: a reader
+/// switches branch in a shell while Obelus is open. The watcher already
+/// reports what git writes -- `HEAD` and `index` are watched for the
+/// margin's sake -- so this is read again from there rather than asked for
+/// every frame, which would be `gix::discover` walking up the tree on every
+/// keystroke.
+///
+/// Broken deliberately by reading the branch only where Obelus is told
+/// which directory it is in: the row goes on naming the branch that was
+/// checked out when it started.
+#[test]
+fn a_checkout_elsewhere_moves_the_branch_on_the_row() {
+    use obelus_app::app::App;
+    use obelus_buffer::Buffer;
+
+    let repository = Repository::new("branch-moved", "one\n");
+    repository.run(&["switch", "--quiet", "--create", "zephyr"]);
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let dump = support::render(&mut app, 60, 8);
+    assert!(
+        support::text_block(&dump).contains("zephyr"),
+        "the row does not say the branch it started on:\n{dump}"
+    );
+
+    // Somebody else switches branch, and git writes `HEAD`.
+    repository.run(&["switch", "--quiet", "--create", "quince"]);
+    app.handle(Event::Watched(obelus_watch::Changed {
+        path: repository.directory().join(".git").join("HEAD"),
+    }));
+    let dump = support::render(&mut app, 60, 8);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("quince"),
+        "the row did not hear the checkout:\n{dump}"
+    );
+    assert!(
+        !text.contains("zephyr"),
+        "the row still names the branch that was left:\n{dump}"
+    );
+}
+
+/// A tree with no branch checked out says so, rather than nothing.
+///
+/// `head_ref` answers `None` for a detached `HEAD`, so folding that into
+/// "there is no repository" is the mistake available here -- and it leaves
+/// the two looking identical on the row, which are two very different
+/// things to be told.
+///
+/// Said in a word rather than as the commit's short id: the same row
+/// already puts a short id beside the file to say the buffer is some
+/// commit's version of it, and two short ids on one row meaning two things
+/// is a row a reader has to guess at.
+///
+/// Broken deliberately by answering `None` where `head_ref` does: the row
+/// goes quiet and reads exactly like a tree git has never heard of.
+#[test]
+fn a_detached_head_says_there_is_no_branch() {
+    use obelus_app::app::App;
+    use obelus_buffer::Buffer;
+
+    let repository = Repository::new("branch-detached", "one\n");
+    repository.run(&["checkout", "--quiet", "--detach"]);
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let dump = support::render(&mut app, 60, 8);
+    let text = support::text_block(&dump);
+
+    assert!(
+        text.contains("Detached"),
+        "a tree with no branch checked out says nothing at all:\n{dump}"
+    );
+    assert!(
+        !text.contains("master"),
+        "the row names a branch that is not checked out:\n{dump}"
+    );
+}
+
+/// On a row too narrow for both, the branch goes and the path keeps its
+/// room.
+///
+/// The rule the rest of this row follows, the right way round: the path is
+/// what the reader is looking at, and half a branch name is worse than
+/// none. Dropped whole rather than truncated, like the directory a question
+/// about a new file names.
+///
+/// Broken deliberately by reserving the branch unconditionally: the path is
+/// cut further to pay for it.
+#[test]
+fn a_narrow_row_drops_the_branch_before_the_path() {
+    use obelus_app::app::App;
+    use obelus_buffer::Buffer;
+
+    let repository = Repository::new("branch-narrow", "one\n");
+    repository.run(&["switch", "--quiet", "--create", "zephyr"]);
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+
+    let wide = support::render(&mut app, 60, 8);
+    assert!(
+        support::text_block(&wide).contains("zephyr"),
+        "the branch is not on the wide row, so this proves nothing:\n{wide}"
+    );
+
+    let narrow = support::render(&mut app, 20, 8);
+    let text = support::text_block(&narrow);
+    assert!(
+        !text.contains("zephyr"),
+        "the branch was kept on a row with no room for it:\n{narrow}"
+    );
+    // And the path got those columns back rather than being cut for them.
+    assert!(
+        text.contains("file.rs"),
+        "the path was cut to pay for a branch that is not even drawn:\n{narrow}"
+    );
+}
