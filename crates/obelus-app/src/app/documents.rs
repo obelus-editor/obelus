@@ -869,6 +869,13 @@ impl App {
         // means "close this" everywhere beats a second key that only
         // works in one place.
         if let Some(id) = self.selected_document() {
+            // Among the rows showing, not the list's own: the same query
+            // lets the same rows through, less the one closed.
+            let at = self.picker.as_ref().and_then(|picker| {
+                picker
+                    .matches()
+                    .position(|item| matches!(item.value, PickerValue::Document(row) if row == id))
+            });
             self.close(id);
             // Rebuilt rather than patched, keeping whatever was typed: a
             // patched list would have to agree with the buffers about which
@@ -881,6 +888,14 @@ impl App {
             self.open_document_picker();
             if let Some(picker) = self.picker.as_mut() {
                 picker.set_query(&query);
+                // Where the closed row was, which is the row after it, or
+                // the one before where it was the last. Not where a list
+                // opens, on what is being read: that is usually the first
+                // row, and closing three in a row walked back up to it
+                // between each.
+                if let Some(at) = at {
+                    picker.select_row(at);
+                }
             }
             return;
         }

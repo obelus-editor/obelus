@@ -417,6 +417,49 @@ fn a_conversation_can_be_switched_to_from_the_list() {
     assert!(app.chat().is_some(), "it is not the conversation");
 }
 
+/// Closing a row of the list leaves the selection where that row was.
+///
+/// The list is rebuilt after a close, and a rebuilt list opens on whatever
+/// is being read -- the first row, for a reader who opened one file and
+/// then went looking -- so closing three in a row walked back up to the top
+/// between each. Broken by dropping the `select_row` after the rebuild: the
+/// selection lands on `nested.rs`, the file being read, and the first
+/// assertion fails.
+#[test]
+fn closing_a_row_keeps_the_selection_where_it_was() {
+    let mut app = reading();
+    for name in ["long.rs", "many_lines.rs", "nested.rs"] {
+        app.open_for_test(&std::path::Path::new("tests/fixtures").join(name));
+    }
+    dispatch::dispatch(&mut app, Command::DocumentList);
+    let selected = |app: &App| {
+        app.picker()
+            .and_then(|picker| picker.selected_item())
+            .map(|item| item.label.clone())
+            .unwrap_or_default()
+    };
+    // From the top, where the reader is when they are reading the first.
+    support::press_control_key(&mut app, KeyCode::Home);
+    press(&mut app, KeyCode::Down);
+    assert!(selected(&app).ends_with("long.rs"), "{}", selected(&app));
+
+    support::press_control(&mut app, 'w');
+    assert!(
+        selected(&app).ends_with("many_lines.rs"),
+        "closing a row did not leave the selection on the row after it, but on {}",
+        selected(&app)
+    );
+
+    // And the last row has no row after it, so the one before.
+    support::press_control_key(&mut app, KeyCode::End);
+    support::press_control(&mut app, 'w');
+    assert!(
+        selected(&app).ends_with("many_lines.rs"),
+        "closing the last row did not leave the selection on the one before, but on {}",
+        selected(&app)
+    );
+}
+
 /// Whatever is over the conversation owns the status row.
 ///
 /// The conversation draws its own while it is what the reader is looking
