@@ -950,7 +950,7 @@ pub struct Ignored {
 }
 
 /// What was wrong with a line that did nothing.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Why {
     /// Obelus has no setting by that name: one that has gone, a name that
     /// has changed, a word spelled wrong.
@@ -960,6 +960,9 @@ pub enum Why {
     /// What an agent is set to has to be a table of that agent's own
     /// settings, and this is not one.
     NotATable,
+    /// The setting takes one of a list of words, and what was written is
+    /// none of them.
+    NoSuchChoice(String),
 }
 
 /// The same, from a path the caller names.
@@ -1105,6 +1108,7 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
     // Collected beside rather than into `applied`, because the closure
     // below has it borrowed for as long as the settings are being read.
     let mut not_a_table: Vec<String> = Vec::new();
+    let mut not_a_workflow: Option<String> = None;
     let mut allowed = |key: &'static str| {
         if reach_of(key) == Reach::Anywhere || whose == Whose::Reader {
             applied.set.push(key);
@@ -1211,10 +1215,20 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
     {
         config.new_versions = on;
     }
-    if let Some(word) = table.get("workflow").and_then(toml::Value::as_str)
-        && allowed("workflow")
-    {
-        config.workflow = word.to_string();
+    if let Some(word) = table.get("workflow").and_then(toml::Value::as_str) {
+        // Checked here rather than where it is used, because a word nothing
+        // answers to was taken as no workflow at all -- the line read as
+        // obeyed and the agent was told nothing. And before `allowed`,
+        // which counts the line as set: one that did nothing is not the
+        // file's answer. The themes are not checked this way: a theme may
+        // be a file of the reader's, which only the application can look
+        // for.
+        if !WORKFLOWS.contains(&word) {
+            tracing::warn!(word, "no workflow by this name, so the line does nothing");
+            not_a_workflow = Some(word.to_string());
+        } else if allowed("workflow") {
+            config.workflow = word.to_string();
+        }
     }
     if let Some(word) = table.get("agent").and_then(toml::Value::as_str)
         && allowed("agent")
@@ -1278,6 +1292,13 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
         applied.ignored.push(Ignored {
             key: format!("agents.{agent}"),
             why: Why::NotATable,
+            at: None,
+        });
+    }
+    if let Some(word) = not_a_workflow {
+        applied.ignored.push(Ignored {
+            key: "workflow".to_string(),
+            why: Why::NoSuchChoice(word),
             at: None,
         });
     }
@@ -1778,6 +1799,29 @@ mod tests {
         let applied = apply(&mut config, &table, Whose::Project);
         assert_eq!(config.workflow, "feature-branch");
         assert!(applied.ignored.is_empty(), "{:?}", applied.ignored);
+    }
+
+    /// A workflow nothing answers to does nothing, says so, and is not
+    /// counted among what the file set -- a project's page would otherwise
+    /// show the reader's value as the project's.
+    ///
+    /// Broken deliberately by asking `allowed` before the word is checked:
+    /// `workflow` is counted as set.
+    #[test]
+    fn a_workflow_nothing_answers_to_does_nothing() {
+        let mut config = Config::default();
+        let table: toml::Table = "workflow = \"feature_branch\"".parse().expect("toml");
+        let applied = apply(&mut config, &table, Whose::Project);
+        assert_eq!(config.workflow, "none");
+        assert!(!applied.set.contains(&"workflow"), "{:?}", applied.set);
+        assert_eq!(
+            applied.ignored,
+            vec![super::Ignored {
+                key: "workflow".to_string(),
+                why: super::Why::NoSuchChoice("feature_branch".to_string()),
+                at: None,
+            }]
+        );
     }
 
     /// Written and read back is the same config: the file is the only place

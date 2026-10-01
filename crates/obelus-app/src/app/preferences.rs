@@ -1094,7 +1094,7 @@ impl App {
     /// it took.
     fn lines_that_did_nothing(&mut self, path: &Path, ignored: &[obelus_config::Ignored]) {
         for one in ignored {
-            let said = match one.why {
+            let said = match &one.why {
                 // Never starting with the name, which is the rule every
                 // sentence with one in it follows: `Nothing is bound to
                 // open-file`, not `open-file has no key`.
@@ -1106,6 +1106,9 @@ impl App {
                 }
                 obelus_config::Why::NotATable => {
                     format!("What {} is set to is not a table of its settings", one.key)
+                }
+                obelus_config::Why::NoSuchChoice(word) => {
+                    format!("No {} is called {word}", one.key)
                 }
             };
             self.obelus_says(path, one.at, obelus_lsp::trouble::Severity::Warning, &said);

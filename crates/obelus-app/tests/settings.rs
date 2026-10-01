@@ -3686,6 +3686,36 @@ fn what_a_project_may_not_set_is_marked_on_the_projects_file() {
     assert_eq!(problems[0].span.line.get(), 1);
 }
 
+/// A workflow nothing answers to is marked on the line that names it.
+///
+/// On a project's file, because that is where a workflow is most often
+/// chosen. The word was taken as no workflow at all, so the line read as
+/// obeyed while the agent was told nothing -- which from the outside is a
+/// setting that silently does not work.
+///
+/// Deliberate break: `apply` taking any word, as it did, which leaves no
+/// problem at all.
+#[test]
+fn a_workflow_nothing_answers_to_is_marked() {
+    let _taken = SETTINGS.lock().expect("the lock");
+    let scratch = project("no-workflow", "workflow = \"feature_branch\"\n");
+    let theirs = scratch.path().join(".obelus").join("config.toml");
+
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&theirs).expect("opening the project's settings"),
+    ]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    let mine = temporary("no-workflow-mine");
+    app.config_file_for_test(settings_file(&mine));
+    support::lay_out(&mut app, 72, 24);
+
+    let problems: Vec<_> = app.problems().collect();
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert_eq!(problems[0].message, "No workflow is called feature_branch");
+    assert_eq!(problems[0].span.line.get(), 0);
+    assert_eq!(app.config().workflow, "none", "the word was taken anyway");
+}
+
 /// A line of the key table that bound nothing is a warning on that line.
 ///
 /// The three ways it can happen, each with a different thing left to say:
