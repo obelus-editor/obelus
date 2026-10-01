@@ -405,8 +405,9 @@ fn opens(open: bool) -> String {
 /// What says the row holds more than it had room to draw.
 const MORE: &str = "\u{2026}";
 
-/// What one setting says on the row, and whether it is in force.
-fn said(setting: &acp::Setting) -> (String, bool) {
+/// What one setting says on the row, and the tick in front of it if it is
+/// a switch.
+fn said(setting: &acp::Setting) -> (String, Option<bool>) {
     match setting.kind {
         // The value, which names itself.
         acp::Kind::Select => (
@@ -414,11 +415,17 @@ fn said(setting: &acp::Setting) -> (String, bool) {
                 .current_name()
                 .unwrap_or(&setting.current)
                 .to_string(),
-            true,
+            None,
         ),
-        // The name, because "on" is not a thing to be told.
-        acp::Kind::Switch => (setting.name.clone(), setting.current == "on"),
+        // The name, because "on" is not a thing to be told -- the box in
+        // front of it is.
+        acp::Kind::Switch => (setting.name.clone(), Some(setting.current == "on")),
     }
+}
+
+/// How many cells one setting takes on the row, its tick and all.
+fn said_width((word, tick): &(String, Option<bool>)) -> usize {
+    text_width(word) + tick.map_or(0, |_| usize::from(crate::TICK_WIDTH))
 }
 
 /// The conversation, over the whole editor region.
@@ -1260,8 +1267,8 @@ impl ChatView<'_> {
     /// names itself -- `gpt-5` is plainly a model and `careful` is plainly a
     /// way of working -- so the name would be a label on something already
     /// labelled. A switch is the other way round: `on` says nothing, and the
-    /// thing it is about is its name, so that is what is written and being
-    /// off is said by writing it dim.
+    /// thing it is about is its name, so that is what is written, behind
+    /// the box every switch in Obelus is drawn as.
     fn settings(&self, cells: &mut CellBuffer, area: Rect, room: usize, plain: Style) {
         if self.settings.is_empty() {
             // Only once there is a session: before that the row would be
@@ -1297,7 +1304,7 @@ impl ChatView<'_> {
         }
         let (placed, cut) = Self::settings_placed(&words, first, column, room);
         for (index, x, _) in placed {
-            let (word, on) = &words[index];
+            let (word, tick) = &words[index];
             let separated = index > first || first > 0;
             if separated {
                 write(
@@ -1317,13 +1324,24 @@ impl ChatView<'_> {
                 true => self.theme.selected_row_background,
                 false => self.theme.background,
             };
-            let ink = match on {
-                true => self.theme.gutter_current,
+            let ink = match tick {
                 // A switch that is off: there, and plainly not in force --
-                // the colour a row nobody can choose is drawn in.
-                false => self.theme.gutter,
+                // the colour a row nobody can choose is drawn in, under a
+                // box that already says which.
+                Some(false) => self.theme.gutter,
+                Some(true) | None => self.theme.gutter_current,
             };
-            write(cells, column, area.y, word, plain.fg(ink).bg(ground));
+            let style = plain.fg(ink).bg(ground);
+            let column = match tick {
+                Some(on) => {
+                    // The blank the glyph spills into is the setting's
+                    // too, so the focused one's ground runs unbroken.
+                    write(cells, column, area.y, "  ", style);
+                    crate::ticked(cells, column, area.y, *on, style)
+                }
+                None => column,
+            };
+            write(cells, column, area.y, word, style);
         }
         // No room for the next one: the row says so rather than stopping
         // silently, because a reader who cannot see a setting cannot know
@@ -1333,22 +1351,22 @@ impl ChatView<'_> {
         }
     }
 
-    /// The settings as words, with whether each is on.
+    /// The settings as words, with the tick in front of each switch.
     ///
     /// The focused one carries the arrow Obelus puts on everything with a
     /// list behind it, so it is wider than the others by exactly that --
     /// which is why the words are made before anything measures them.
-    fn setting_words(&self) -> Vec<(String, bool)> {
+    fn setting_words(&self) -> Vec<(String, Option<bool>)> {
         let chosen = self.chosen_setting();
         self.settings
             .iter()
             .enumerate()
             .map(|(index, setting)| {
-                let (mut word, on) = said(setting);
+                let (mut word, tick) = said(setting);
                 if Some(index) == chosen && setting.kind == acp::Kind::Select {
                     word.push_str(&opens(false));
                 }
-                (word, on)
+                (word, tick)
             })
             .collect()
     }
@@ -1366,13 +1384,13 @@ impl ChatView<'_> {
     /// As near the beginning as having the focused one on screen allows. A
     /// row is a window on a list like any other, and the one thing a window
     /// must not do is hide what the keys are moving.
-    fn first_setting(&self, words: &[(String, bool)], room: usize) -> usize {
+    fn first_setting(&self, words: &[(String, Option<bool>)], room: usize) -> usize {
         let Some(chosen) = self.chosen_setting() else {
             return 0;
         };
         let mut taken = 0;
         for index in (0..=chosen).rev() {
-            taken += text_width(&words[index].0) + SEPARATOR_WIDTH;
+            taken += said_width(&words[index]) + SEPARATOR_WIDTH;
             if taken > room {
                 return index + 1;
             }
@@ -1481,7 +1499,7 @@ impl ChatView<'_> {
     /// it, which is why the walk hands back where the word starts rather
     /// than where its room does.
     pub(crate) fn settings_placed(
-        words: &[(String, bool)],
+        words: &[(String, Option<bool>)],
         first: usize,
         from: u16,
         room: usize,
@@ -1492,10 +1510,10 @@ impl ChatView<'_> {
             true => room.saturating_sub(text_width(MORE)),
             false => room,
         };
-        for (index, (word, _)) in words.iter().enumerate().skip(first) {
+        for (index, word) in words.iter().enumerate().skip(first) {
             let separated = index > first || first > 0;
             let separator = usize::from(separated) * SEPARATOR_WIDTH;
-            let wide = text_width(word);
+            let wide = said_width(word);
             if wide + separator > left {
                 return (placed, Some(column));
             }

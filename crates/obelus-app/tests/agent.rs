@@ -1423,8 +1423,9 @@ fn escape_shuts_the_list_of_commands_and_leaves_the_words() {
 /// is plainly a model and `ask first` is plainly a way of working -- so a
 /// name in front of it would be a label on something already labelled. A
 /// switch is the other way round, because "on" says nothing and the thing it
-/// is about is its name, so the name is written and being off is said by
-/// writing it dim.
+/// is about is its name, so the name is written behind a box, the one every
+/// switch in Obelus is drawn as, and being off is said by an empty box and
+/// dim ink.
 #[test]
 fn the_status_row_says_what_the_session_is_set_to() {
     let (mut app, events) = talking();
@@ -1434,9 +1435,12 @@ fn the_status_row_says_what_the_session_is_set_to() {
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     let screen = rows(&dump);
     let status = screen[screen.len() - 1].to_string();
+    // Broken by having `said` give a switch no tick: the name alone fails
+    // this.
     assert!(
-        status.contains("ask first \u{b7} Fast \u{b7} Allow everything"),
-        "not every setting, in the agent's order:\n{dump}"
+        status.contains("ask first \u{b7} Fast \u{b7} \u{25a1} Allow everything"),
+        "not every setting, in the agent's order, with the switch in a box \
+         that is empty while it is off:\n{dump}"
     );
     // The names of the selects are not on it: the row would be twice as
     // long and say the same thing.
@@ -1453,7 +1457,11 @@ fn the_status_row_says_what_the_session_is_set_to() {
         .map(str::to_string)
         .collect::<Vec<_>>();
     let ink = |needle: &str| {
-        let at = status.find(needle).expect("the words");
+        // In cells rather than bytes: the box in front of the switch is
+        // one cell and three bytes.
+        let at = status[..status.find(needle).expect("the words")]
+            .chars()
+            .count();
         // Three characters of row number and the bar before the cells.
         styles[styles.len() - 1].chars().nth(at).expect("a cell")
     };
