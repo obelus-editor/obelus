@@ -373,8 +373,8 @@ fn interrupting_one_conversation_does_not_swallow_the_others_answer() {
     // reads it: `endturn` was `{:?}` lowercased, and every arm written
     // against the protocol's own `end_turn` was unreachable.
     assert_eq!(
-        answered.as_deref(),
-        Some("end_turn"),
+        answered,
+        Some(Ok("end_turn".to_string())),
         "the second conversation's turn did not finish on its own"
     );
 }

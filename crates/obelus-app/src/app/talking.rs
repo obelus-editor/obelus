@@ -2893,14 +2893,17 @@ impl App {
                 // Only the ends that are not the ordinary one: a turn that
                 // finished has its answer above it, and "end turn" under
                 // every answer is noise.
-                match reason.as_str() {
-                    "end_turn" => {}
-                    "cancelled" => self.in_talk(whose, |chat| chat.note("Stopped")),
-                    "refusal" => self.in_talk(whose, |chat| chat.note("It declined to answer")),
-                    "max_tokens" => {
+                match reason.as_deref() {
+                    Ok("end_turn") => {}
+                    Ok("cancelled") => self.in_talk(whose, |chat| chat.note("Stopped")),
+                    Ok("refusal") => {
+                        self.in_talk(whose, |chat| chat.note("It declined to answer"));
+                    }
+                    Ok("max_tokens") => {
                         self.in_talk(whose, |chat| chat.note("It ran out of room to answer in"));
                     }
-                    other => self.in_talk(whose, |chat| chat.note(other)),
+                    Ok(other) => self.in_talk(whose, |chat| chat.note(other)),
+                    Err(why) => self.in_talk(whose, |chat| chat.note(&format!("The agent: {why}"))),
                 }
                 // And then whatever the reader said while it was running.
                 // After the line above and not before it, so that the

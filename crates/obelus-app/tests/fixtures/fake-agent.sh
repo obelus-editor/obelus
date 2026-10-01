@@ -21,6 +21,9 @@
 #   session/set_config_option
 #                         -> taken, and every setting again with the new value
 #   session/prompt "/..." -> says which command it ran, and ends the turn
+#   session/prompt "/broken"
+#                         -> an error instead of a stop reason, the way an
+#                            agent nobody has signed in to answers
 #   session/prompt        -> it thinks, says something, reads a file through
 #                            Obelus, tries to write one (which Obelus
 #                            refuses), uses a tool, and asks permission; the
@@ -666,6 +669,9 @@ while IFS= read -r line; do
             esac
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
+        *'"method":"session/prompt"'*'"text":"/broken'*)
+            printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"nobody has signed in"}}\n' "$(id_of "$line")"
             ;;
         *'"method":"session/prompt"'*'"text":"/'*)
             # A command: the text starts with a slash, and everything after

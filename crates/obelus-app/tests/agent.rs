@@ -1844,6 +1844,70 @@ fn a_mode_the_agent_refuses_goes_back() {
     );
 }
 
+/// A failure that is not a turn's leaves the turns running.
+///
+/// What fails outside a prompt -- a mode, a setting, a question Obelus
+/// cannot put -- arrives naming no conversation, and it used to stop every
+/// conversation's turn on the grounds that it could not tell which one it
+/// was about. None of them had stopped: the agent went on working in each,
+/// and the row that says so had gone.
+///
+/// Broken deliberately by clearing every turn in `Talk::on`'s `Failed` arm
+/// again: the conversation goes to rest under a turn still running.
+#[test]
+fn a_failure_that_is_not_a_turns_leaves_the_turn_running() {
+    let (mut app, events) = playing(&["refuse-mode"]);
+    pump(&mut app, &events, "the mode", |app| {
+        app.agent_mode().is_some()
+    });
+    support::type_text(&mut app, "take it slowly");
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.talking(), obelus_agent::Talking::Thinking);
+
+    support::press_shift(&mut app, KeyCode::BackTab);
+    assert_eq!(
+        app.agent_mode().and_then(|mode| mode.current_name()),
+        Some("write code"),
+        "the mode was not asked for, so nothing can be refused"
+    );
+    pump(&mut app, &events, "the refusal", |app| {
+        app.agent_mode().and_then(|mode| mode.current_name()) == Some("ask first")
+    });
+    assert_eq!(
+        app.talking(),
+        obelus_agent::Talking::Thinking,
+        "a mode the agent would not take stopped a turn it is still working on"
+    );
+}
+
+/// A prompt the agent cannot take ends that turn, and says so there.
+///
+/// It was a `Failed`, which names no conversation: the words went to
+/// whichever conversation was on screen, and the turn ended only because a
+/// failure ended every turn -- which was the other half of this being
+/// wrong.
+///
+/// Broken deliberately by sending the prompt's error as a `Failed` again:
+/// nothing ends the turn, and the wait for it gives up.
+#[test]
+fn a_prompt_the_agent_cannot_take_ends_its_turn() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/broken");
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.talking(), obelus_agent::Talking::Thinking);
+    pump(&mut app, &events, "the turn to end", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("nobody has signed in"),
+        "the conversation does not say why its turn ended:\n{text}"
+    );
+}
+
 /// A command named like one of the session's settings is still the agent's
 /// command, and still goes to the agent.
 ///

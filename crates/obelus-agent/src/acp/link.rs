@@ -374,8 +374,14 @@ pub enum Incoming {
         /// is no longer the one running is an answer about something nobody
         /// is waiting for, and it used to end the turn that had replaced it.
         turn: Turn,
-        /// And why it stopped.
-        why: String,
+        /// And why it stopped: the agent's stop reason as the wire spells
+        /// it, or what went wrong where the turn never got an answer.
+        ///
+        /// A failure is the turn's own end and not a [`Self::Failed`],
+        /// which names no conversation: read as one, it stopped every
+        /// conversation's turn while the agent went on working in the
+        /// others, and nothing on screen said so.
+        why: Result<String, String>,
     },
     /// What the agent says it can be set to, asked on a session of its own
     /// and with nothing else in it.
@@ -1759,15 +1765,12 @@ async fn talk(
                                     // handle, which is the side that counts
                                     // them -- this one keeps nothing that
                                     // could go stale.
-                                    let _ = told.send(Event::Acp(match asked {
-                                        Ok(answer) => Incoming::Ended {
-                                            session: whose,
-                                            turn,
-                                            why: said_as(&answer.stop_reason),
-                                        },
-                                        Err(error) => {
-                                            Incoming::Failed("The agent", error.to_string())
-                                        }
+                                    let _ = told.send(Event::Acp(Incoming::Ended {
+                                        session: whose,
+                                        turn,
+                                        why: asked
+                                            .map(|answer| said_as(&answer.stop_reason))
+                                            .map_err(|error| error.to_string()),
                                     }));
                                     std::future::ready(Ok(()))
                                 })?;
@@ -1787,7 +1790,7 @@ async fn talk(
                             let _ = events.send(Event::Acp(Incoming::Ended {
                                 session,
                                 turn,
-                                why: "cancelled".to_string(),
+                                why: Ok("cancelled".to_string()),
                             }));
                         }
                         Ask::Set {

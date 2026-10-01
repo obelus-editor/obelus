@@ -866,19 +866,15 @@ impl Talk {
                 Some(Incoming::Ended { session, turn, why })
             }
             Incoming::Failed(what, why) => {
-                // Which conversation it was is not on the message, so every
-                // one of them stops thinking -- one that is not would
-                // otherwise spin for ever.
-                //
-                // Nothing puts that back. It read "a turn that is still
-                // running says so again on its next update", which was
-                // never true: `say` is the only place this is ever set, and
-                // no update touches it. A turn that outlives a `Failed`
-                // about something else is a turn Obelus has stopped saying
-                // is running, and the honest reason to accept that is that
-                // it cannot tell which turn the failure was about.
+                // No turn ends here. A turn that fails ends as itself, in
+                // `Ended`, because the prompt's answer knows whose it was;
+                // what is left to fail is a setting, a mode, a question
+                // Obelus could not put -- none of which stopped the agent.
+                // This used to stop every conversation's turn on the grounds
+                // that it could not tell which one a failure was about, and
+                // every one of them went on working with nothing on screen
+                // saying so.
                 for open in self.sessions.values_mut() {
-                    open.turn = None;
                     // A mode Obelus showed as on that the agent would not
                     // take.
                     open.unguess();
@@ -989,7 +985,7 @@ mod tests {
         talk.on(Incoming::Ended {
             session: gone.clone(),
             turn: 1,
-            why: "end_turn".to_string(),
+            why: Ok("end_turn".to_string()),
         });
         assert!(!talk.holds(&gone), "the turn's answer made it held again");
     }
