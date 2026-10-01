@@ -1,114 +1,312 @@
 /* Obelus — the site.
-   One stylesheet, no build step, no fonts off the network.
+   One stylesheet, no build step.
 
-   Drawn the way Obelus draws itself, because the page is about a program
-   and a page in somebody else's style is a page about something else. The
-   colours are Obelus's own `dark` and `light`, the values in
-   `obelus-theme`'s `builtin.rs` and nothing invented here -- which is also
-   what makes the screenshots sit in the page rather than on it. The
-   furniture is Obelus's too: a line between two things rather than a card,
-   a round frame round what is put over the page, a key in a cap with a lip
-   under it, the row the reader is on marked by the ground behind it, and
-   no band of colour across a row. What is monospaced is what Obelus would
-   draw; the prose is set in the reader's own sans, because a page of it is
-   longer than anything Obelus puts on a screen. */
+   Drawn to omarchy's web rules (`huacnlee/omarchy-style`, references/
+   web-design.md), which are deliberately not omarchy's shell rules: the
+   shell is dense, foreground-tinted and fill-averse, and the website is a
+   themed surface with its own type pairing, its own button recipe and a
+   solid accent fill. So this page no longer draws itself the way Obelus
+   draws itself -- the round frames, the key caps with a lip under them and
+   the shade behind a raised thing are gone. What is kept from there is the
+   palette, which is Obelus's own `dark` and `light`, the values in
+   `obelus-theme`'s `builtin.rs`: a page in another program's colours would
+   leave the screenshots sitting on it rather than in it.
+
+   What that style asks for, in the order the reference asks it:
+
+     · two layers of colour -- `--t-*` is the theme and nothing else
+       changes between themes, and the components name a semantic token and
+       never a hex value
+     · monospace is the voice of the page, and the sans-serif exists so the
+       headings do not shout in a typewriter face. Not the other way round
+     · every radius is zero, and it is zero centrally, so nothing opts out
+       by accident
+     · elevation is a hairline ring rather than a shadow (a light theme is
+       the exception, and may add a soft one under the ring)
+     · a link in prose is the body's colour with a border-coloured
+       underline, and only the underline changes on hover -- the geometry
+       is reserved at rest, so nothing moves under the pointer
+     · 150ms ease-out, on colour, border, shadow and transform, and no
+       page-level animation beyond that
+     · focus is always visible and always the accent, 2px offset by 2px
+
+   Two of its rules are omarchy's own brand and are not transplantable: the
+   pixel lattice the homepage measures itself in is their 81x19 wordmark
+   bitmap, and the five-band ramp is their brand gradient. Obelus's mark is
+   a division sign, and the ramp it wears is the welcome screen's own -- the
+   theme's keyword colour running to its function colour. It is still, not
+   moving, because of the animation budget above. */
+
+/* ── the theme ──────────────────────────────────────────────────────── */
 
 :root {
   color-scheme: light;
 
   /* `LIGHT` */
-  --page:           #fafafa;
-  --ink:            #18181b;
-  --gutter:         #a1a1aa;
-  --gutter-current: #52525b;
-  --status:         #27272a;
-  --raised:         #e4e4e7;
-  --selected:       #e4e4e7;
-  --selection:      #e0e7ff;
-  --function:       #1d4ed8;
-  --keyword:        #7e22ce;
-  --string:         #3f6212;
-  --modified:       #b48206;
+  --t-bg:            #fafafa;
+  --t-bg-deep:       #f4f4f5;
+  --t-surface:       #f4f4f5;
+  --t-surface-2:     #e4e4e7;
 
-  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-          "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
-  --mono: "JetBrainsMono Nerd Font", "JetBrains Mono", "FiraCode Nerd Font",
-          "Hack Nerd Font", "MesloLGS NF", ui-monospace, "SF Mono", Menlo,
-          Consolas, "Liberation Mono", "Noto Sans Mono CJK SC", monospace;
+  --t-border-subtle: #e4e4e7;
+  --t-border-strong: #a1a1aa;
 
-  --measure: 36rem;
-  --gutter-width: clamp(1.1rem, 4vw, 2.5rem);
-  /* How round a frame is: `╭` is half a cell. */
-  --round: 7px;
+  --t-text:          #18181b;
+  --t-text-secondary:#3f3f46;
+  --t-text-muted:    #71717a;
+
+  --t-brand:         #1d4ed8;
+  --t-brand-ink:     #fafafa;
+  --t-mark:          #7e22ce;
+
+  --t-selection:     #e0e7ff;
+
+  /* A ring, not a shadow. The light theme is the one that may add a soft
+     drop under it. */
+  --t-ring:          0 0 0 1px oklch(0 0 0 / .09), 0 1px 2px oklch(0 0 0 / .05);
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
 
   /* `DARK` */
-  --page:           #18181b;
-  --ink:            #e4e4e7;
-  --gutter:         #52525b;
-  --gutter-current: #a1a1aa;
-  --status:         #d4d4d8;
-  --raised:         #27272a;
-  --selected:       #27272a;
-  --selection:      #312e81;
-  --function:       #60a5fa;
-  --keyword:        #c084fc;
-  --string:         #a3e635;
-  --modified:       #eab308;
+  --t-bg:            #18181b;
+  --t-bg-deep:       #0f0f11;
+  --t-surface:       #1f1f23;
+  --t-surface-2:     #27272a;
+
+  --t-border-subtle: #27272a;
+  --t-border-strong: #52525b;
+
+  --t-text:          #e4e4e7;
+  --t-text-secondary:#a1a1aa;
+  --t-text-muted:    #8b8b93;
+
+  --t-brand:         #60a5fa;
+  --t-brand-ink:     #0f0f11;
+  --t-mark:          #c084fc;
+
+  --t-selection:     #312e81;
+
+  --t-ring:          0 0 0 1px oklch(1 0 0 / .07);
+}
+
+:root {
+  /* Monospace is the page's voice; the sans is for headings only. The Nerd
+     Font names sit behind the web font rather than in front of it: they are
+     there for a glyph JetBrains Mono does not carry, not for the Latin. */
+  --font-mono: "JetBrains Mono", "JetBrainsMono Nerd Font", "FiraCode Nerd Font",
+               "Hack Nerd Font", ui-monospace, "SF Mono", Menlo, Consolas,
+               "Noto Sans Mono CJK SC", "Sarasa Mono SC", monospace;
+  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+               "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+
+  /* The measures the reference gives: the bar, the content column, and the
+     prose measure, which is applied per block so a structural layout keeps
+     the full width. */
+  --nav-h: 3.5rem;
+  --column: 69rem;
+  --measure: 48rem;
+  --gutter-width: 1rem;
+
+  /* Square is enforced here, once. */
+  --round: 0px;
+
+  /* nav 100, dropdown 200, modal 300, tooltip 400, and nothing arbitrary
+     anywhere else. */
+  --z-nav: 100;
+}
+
+@media (min-width: 40rem) {
+  :root { --gutter-width: 1.5rem; }
 }
 
 *, *::before, *::after { box-sizing: border-box; }
 
-html { scroll-behavior: smooth; scroll-padding-top: 5.5rem; }
+/* A theme swap must not tween: every colour would move independently and
+   the page would smear. `main.js` puts this on the root for one frame. */
+:root.swapping, :root.swapping *, :root.swapping *::before, :root.swapping *::after {
+  transition: none !important;
+}
+
+html { scroll-behavior: smooth; }
+[id] { scroll-margin-top: calc(var(--nav-h) + 1rem); }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 
 body {
   margin: 0;
-  background: var(--page);
-  color: var(--ink);
-  font-family: var(--sans);
-  font-size: 16px;
-  line-height: 1.72;
+  background: var(--t-bg);
+  color: var(--t-text-secondary);
+  font-family: var(--font-mono);
+  font-size: 15px;
+  line-height: 1.65;
+  font-synthesis: none;
   -webkit-font-smoothing: antialiased;
 }
 
-/* Chinese sets its own measure: denser glyphs want a little more air. */
-html[lang="zh-Hans"] body { line-height: 1.85; }
+/* Chinese sets its own measure: denser glyphs want a little more air, and
+   the mono fallback for them is wider again. */
+html[lang="zh-Hans"] body { line-height: 1.8; }
 
-::selection { background: var(--selection); }
+::selection { background: var(--t-selection); color: var(--t-text); }
+
+/* 8px, the thumb in the accent -- and a neutral one in a code block, which
+   is the reference's own exception. */
+* { scrollbar-width: thin; scrollbar-color: var(--t-brand) transparent; }
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--t-brand); }
+*::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--t-brand) 80%, #fff); }
+pre { scrollbar-color: var(--t-border-strong) transparent; }
+pre::-webkit-scrollbar-thumb { background: var(--t-border-strong); }
+
+/* Always visible, always the accent, and inset where a scroll container
+   would clip it. */
+:focus-visible { outline: 2px solid var(--t-brand); outline-offset: 2px; }
+.table-wrap :focus-visible, pre :focus-visible { outline-offset: -2px; }
 
 img { max-width: 100%; }
 [hidden] { display: none !important; }
 
-a { color: var(--function); text-decoration: none; }
-a:hover { text-decoration: underline; text-underline-offset: 3px; }
+/* An image takes an inset outline rather than a border: it never changes
+   the layout box. */
+.shot img { outline: 1px solid oklch(0.5 0 0 / .18); outline-offset: -1px; }
 
-code, kbd, pre, .mono { font-family: var(--mono); }
+/* ── type ───────────────────────────────────────────────────────────── */
 
-code {
-  font-size: 0.86em;
-  background: var(--raised);
-  border-radius: 3px;
-  padding: 0.08em 0.34em;
-  word-break: break-word;
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-sans);
+  color: var(--t-text);
+  text-wrap: balance;
 }
 
-/* What is put over the page: a round frame in the gutter's ink, on the
-   page's own colour -- a hover, the completion list, the card of every key. */
-pre {
-  margin: 1.4rem 0;
-  padding: 0.9rem 1.1rem;
-  background: var(--page);
-  border: 1px solid var(--gutter);
+p { max-width: var(--measure); margin: 0 0 1rem; }
+p + p { margin-top: 0; }
+
+strong { color: var(--t-text); font-weight: 600; }
+em { color: var(--t-text); }
+
+.quiet { color: var(--t-text-muted); }
+.small { font-size: 0.88em; }
+.mono { font-family: var(--font-mono); }
+
+/* ── links ──────────────────────────────────────────────────────────── */
+
+/* The body's colour with a border-coloured underline, and only the
+   underline changes. Reserved at rest, so hovering moves nothing. */
+a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--t-border-strong);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-skip-ink: auto;
+  transition: color 150ms ease-out, text-decoration-color 150ms ease-out;
+  touch-action: manipulation;
+}
+a:hover { text-decoration-color: var(--t-brand); }
+
+/* The furniture is not prose: a control carries its own chrome and takes
+   no underline. */
+.top a, .contents a, .button, .switch, .beats .where, .wordmark {
+  text-decoration: none;
+}
+
+/* ── the bar ────────────────────────────────────────────────────────── */
+
+.top {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-nav);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: calc(var(--nav-h) + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) var(--gutter-width) 0;
+  background: var(--t-bg);
+  border-bottom: 1px solid var(--t-border-subtle);
+}
+
+.top .wordmark {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  color: var(--t-text);
+  font-weight: 500;
+}
+.top .wordmark .obelus { font-size: 1.15rem; }
+
+/* The subtitle under a wordmark is the brand's display device: uppercase,
+   wide tracking, the accent. The left padding is the tracking back again,
+   so the trailing letter-space does not push the line off its centre. */
+.top .wordmark .tag {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  padding-left: 0.18em;
+  text-transform: uppercase;
+  color: var(--t-brand);
+}
+@media (max-width: 720px) { .top .wordmark .tag { display: none; } }
+
+.top .spacer { flex: 1; }
+
+/* ── controls ───────────────────────────────────────────────────────── */
+
+/* The website button, at the reference's four heights. `.switch` is the
+   extra-small one and `.button` the default; `.primary` is the solid fill.
+   The fill is opaque on purpose. */
+.button, .switch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-weight: 500;
+  color: var(--t-text);
+  background: transparent;
+  border: 1px solid transparent;
   border-radius: var(--round);
-  overflow-x: auto;
-  font-size: 0.83rem;
-  line-height: 1.66;
+  cursor: pointer;
+  white-space: nowrap;
+  touch-action: manipulation;
+  transition: background-color 150ms ease-out, border-color 150ms ease-out,
+              color 150ms ease-out, transform 150ms ease-out;
 }
-pre code { background: none; padding: 0; font-size: inherit; }
+.button:active, .switch:active { transform: scale(0.96); }
+.button[disabled], .switch[disabled] { opacity: 0.5; pointer-events: none; }
+
+/* xs: 32 tall, 10 of padding, 12px text. No chrome until it is hovered,
+   which is what a bar wants. */
+.switch {
+  height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.switch:hover { background: var(--t-surface-2); }
+
+/* default: 40 tall, 16 of padding, 14px text. Outline unless it is the
+   page's primary action. */
+.button {
+  height: 40px;
+  padding: 0 16px;
+  font-size: 14px;
+  background: var(--t-surface);
+  border-color: var(--t-border-strong);
+}
+.button:hover { background: var(--t-surface-2); }
+
+.button.primary {
+  color: var(--t-brand-ink);
+  background: var(--t-brand);
+  border-color: var(--t-brand);
+}
+.button.primary:hover {
+  background: color-mix(in srgb, var(--t-brand) 86%, #fff);
+  border-color: color-mix(in srgb, var(--t-brand) 86%, #fff);
+}
+
+.buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 2.4rem; }
 
 /* A command is there to be run, so it is there to be taken away. The button
    is a sibling of the <pre> rather than inside it: a <pre> scrolls, and
@@ -117,125 +315,51 @@ pre code { background: none; padding: 0; font-size: inherit; }
    line is wider than the box on most screens -- over the text, the button
    covers the end of the very command it is offering. */
 .block { position: relative; }
-.block > .copy { position: absolute; top: -1.1rem; right: 0.7rem; }
-.copy.done { color: var(--function); border-color: var(--function); }
-
-/* A key in a cap: a shade off the page, an outline, and a lip under it --
-   the shape a window draws the keys at the foot of a view in. One cap holds
-   a whole chord, which is how Obelus writes one. */
-kbd {
-  display: inline-block;
-  font-size: 0.76em;
-  line-height: 1.45;
-  padding: 0.08em 0.45em;
-  white-space: nowrap;
-  color: var(--ink);
-  background: var(--raised);
-  border: 1px solid var(--gutter);
-  border-bottom-width: 2px;
-  border-radius: 4px;
-  vertical-align: 0.06em;
-  margin: 0 0.05em;
+.block > .copy {
+  position: absolute;
+  top: -16px;
+  right: 10px;
+  background: var(--t-bg);
+  border-color: var(--t-border-strong);
 }
-td kbd { margin-bottom: 0.15em; }
+.copy.done { color: var(--t-brand); border-color: var(--t-brand); }
 
-/* The wordmark's sheen, which is the welcome screen's: a ramp from the
-   theme's keyword colour to its function colour, moving across the letters
-   -- and still for anybody who has asked the system for less motion. */
-.sheen, .hero .mark, .hero h1, .top .wordmark .obelus {
-  background: linear-gradient(90deg, var(--keyword), var(--function), var(--keyword));
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: sheen 9s linear infinite;
-}
-@keyframes sheen { to { background-position: -200% 0; } }
-@media (prefers-reduced-motion: reduce) {
-  .sheen, .hero .mark, .hero h1, .top .wordmark .obelus { animation: none; }
-}
-
-/* ── header: the status row, at the top ────────────────────────────── */
-
-.top {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  padding: 0.6rem var(--gutter-width);
-  background: var(--page);
-  border-bottom: 1px solid var(--gutter);
-  font-family: var(--mono);
-}
-
-.top .wordmark {
-  display: flex;
-  align-items: baseline;
-  gap: 0.55rem;
-  font-size: 0.92rem;
-  color: var(--status);
-}
-.top .wordmark:hover { text-decoration: none; }
-.top .wordmark .obelus { font-size: 1.1rem; }
-.top .wordmark .tag { font-size: 0.74rem; color: var(--gutter-current); }
-@media (max-width: 720px) { .top .wordmark .tag { display: none; } }
-
-.top .spacer { flex: 1; }
-
-/* The switches up there are keys, so they wear a cap. */
-.switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-family: var(--mono);
-  font-size: 0.74rem;
-  line-height: 1.4;
-  padding: 0.2rem 0.55rem;
-  color: var(--ink);
-  background: var(--raised);
-  border: 1px solid var(--gutter);
-  border-bottom-width: 2px;
-  border-radius: 4px;
-  cursor: pointer;
-}
-.switch:hover { text-decoration: none; border-color: var(--gutter-current); }
-.switch:focus-visible { outline: 1px solid var(--function); outline-offset: 2px; }
-
-/* ── page frame ─────────────────────────────────────────────────────── */
+/* ── the frame ──────────────────────────────────────────────────────── */
 
 .frame {
   display: grid;
   grid-template-columns: 13rem minmax(0, 1fr);
   gap: clamp(1.5rem, 5vw, 4rem);
-  max-width: 62rem;
+  max-width: var(--column);
   margin: 0 auto;
   padding: 0 var(--gutter-width) 6rem;
 }
 
-/* The contents are a list, and a list marks the row the reader is on with
-   the ground behind it -- nothing else. */
 .contents {
   position: sticky;
-  top: 4.6rem;
+  top: calc(var(--nav-h) + 1rem);
   align-self: start;
-  max-height: calc(100vh - 6.5rem);
+  max-height: calc(100vh - var(--nav-h) - 3rem);
   overflow-y: auto;
   padding-top: 3.2rem;
-  font-family: var(--mono);
-  font-size: 0.8rem;
+  font-size: 13px;
 }
 .contents ol { list-style: none; margin: 0; padding: 0; }
 .contents li { margin: 0; }
 .contents a {
   display: block;
-  padding: 0.24rem 0.6rem;
-  color: var(--gutter-current);
-  border-radius: 3px;
+  padding: 0.25rem 0.6rem;
+  color: var(--t-text-muted);
+  border-left: 2px solid transparent;
+  transition: color 150ms ease-out, background-color 150ms ease-out,
+              border-color 150ms ease-out;
 }
-.contents a:hover { color: var(--ink); background: var(--selected); text-decoration: none; }
-.contents a.here { color: var(--ink); background: var(--selected); }
+.contents a:hover { color: var(--t-text); background: var(--t-surface); }
+.contents a.here {
+  color: var(--t-text);
+  background: var(--t-surface);
+  border-left-color: var(--t-brand);
+}
 
 @media (max-width: 860px) {
   .frame { grid-template-columns: minmax(0, 1fr); }
@@ -245,243 +369,269 @@ td kbd { margin-bottom: 0.15em; }
     padding: 1.2rem 0 0;
     margin-bottom: -1rem;
     overflow-x: auto;
+    scrollbar-width: none;
   }
+  .contents::-webkit-scrollbar { display: none; }
   .contents ol { display: flex; gap: 0.2rem; }
-  .contents a { white-space: nowrap; }
+  .contents a { white-space: nowrap; border-left: 0; border-bottom: 2px solid transparent; }
+  .contents a.here { border-bottom-color: var(--t-brand); }
 }
 
 main { min-width: 0; }
 
-/* ── hero: the welcome screen ───────────────────────────────────────── */
+/* ── the hero ───────────────────────────────────────────────────────── */
 
 .hero { padding: 3.6rem 0 1rem; }
 
+/* The mark and the name wear the welcome screen's ramp. Brand artwork, and
+   the only place a gradient belongs. */
+.hero .mark, .hero h1 {
+  background: linear-gradient(135deg, var(--t-mark), var(--t-brand));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
 .hero .mark {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: 3.4rem;
   line-height: 1;
-  margin-bottom: 1rem;
+  margin-bottom: 0.8rem;
   display: inline-block;
 }
 
 .hero h1 {
-  font-family: var(--mono);
   font-weight: 600;
-  font-size: clamp(2.1rem, 6vw, 2.9rem);
-  letter-spacing: -0.01em;
-  margin: 0 0 0.6rem;
+  font-size: clamp(2.2rem, 6vw, 3rem);
+  letter-spacing: -0.02em;
+  margin: 0 0 0.8rem;
   display: table;
 }
 
 .hero .lede {
-  font-size: clamp(1.1rem, 2.6vw, 1.3rem);
+  font-size: clamp(1rem, 2.4vw, 1.15rem);
   line-height: 1.6;
-  color: var(--ink);
-  max-width: var(--measure);
+  color: var(--t-text);
   margin: 0 0 1rem;
 }
-.hero .sub { color: var(--gutter-current); max-width: var(--measure); margin: 0 0 1.8rem; }
-
-/* Buttons are keys as well: the same cap, larger. */
-.buttons { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-bottom: 2.4rem; }
-.button {
-  font-family: var(--mono);
-  font-size: 0.84rem;
-  padding: 0.42rem 0.95rem;
-  border-radius: 5px;
-  color: var(--ink);
-  background: var(--raised);
-  border: 1px solid var(--gutter);
-  border-bottom-width: 2px;
-}
-.button:hover { text-decoration: none; border-color: var(--gutter-current); }
-.button.primary { color: var(--function); border-color: var(--function); }
+.hero .sub { color: var(--t-text-muted); margin: 0 0 1.8rem; }
 
 /* One screen, photographed. Two of them, because the page has a theme
    switch and a dark screenshot on a light page is a hole in it. */
 .shot { margin: 0 0 0.9rem; }
-.shot img {
-  display: block;
-  width: 100%;
-  height: auto;
-  border: 1px solid var(--gutter);
-  border-radius: var(--round);
-}
+.shot img { display: block; width: 100%; height: auto; }
 :root[data-theme="dark"] .shot .light,
 :root[data-theme="light"] .shot .dark { display: none; }
-.shot .caption { margin: 0.55rem 0 0; }
+.shot .caption { margin: 0.6rem 0 0; }
 
-.caption { font-size: 0.78rem; color: var(--gutter-current); margin: 0 0 1rem; }
+.caption {
+  font-size: 13px;
+  color: var(--t-text-muted);
+  margin: 0 0 1rem;
+  max-width: var(--measure);
+}
 
 /* ── sections ───────────────────────────────────────────────────────── */
 
 section { padding-top: 3.2rem; }
 
-/* A heading is a line of the screen: its number in the gutter's ink, the
-   way a line's number is, and a rule under it. */
 section > h2 {
-  font-family: var(--mono);
-  font-size: 0.95rem;
+  font-size: 1.5rem;
   font-weight: 600;
-  color: var(--status);
-  margin: 0 0 0.5rem;
-  padding-bottom: 0.6rem;
-  border-bottom: 1px solid var(--gutter);
+  letter-spacing: -0.02em;
+  margin: 0 0 0.8rem;
+  padding-bottom: 0.7rem;
+  border-bottom: 1px solid var(--t-border-subtle);
 }
-section > h2 .num { color: var(--gutter); margin-right: 0.8rem; font-weight: 400; }
+@media (min-width: 40rem) { section > h2 { font-size: 1.75rem; } }
+
+/* The number stays in the mono face: it is a line number, and the gutter's
+   ink is where a line number is drawn. */
+section > h2 .num {
+  font-family: var(--font-mono);
+  font-size: 0.72em;
+  font-weight: 400;
+  color: var(--t-text-muted);
+  margin-right: 0.8rem;
+}
 
 h3 {
-  font-family: var(--mono);
-  font-size: 1.08rem;
+  font-size: 1.25rem;
   font-weight: 600;
-  line-height: 1.45;
+  letter-spacing: -0.01em;
+  line-height: 1.4;
   margin: 2.2rem 0 0.6rem;
 }
 h4 {
-  font-family: var(--mono);
-  font-size: 0.92rem;
+  font-size: 1.05rem;
   font-weight: 600;
+  letter-spacing: -0.01em;
   margin: 1.8rem 0 0.4rem;
 }
 
-p { max-width: var(--measure); margin: 0 0 1rem; }
 section > p, section > ul, section > ol { max-width: var(--measure); }
 
-.quiet { color: var(--gutter-current); }
-.small { font-size: 0.88rem; }
+/* ── prose ──────────────────────────────────────────────────────────── */
 
-ul, ol { padding-left: 1.2rem; }
+ul { list-style: square; }
+ul, ol { padding-left: 1.4rem; }
 li { margin-bottom: 0.4rem; }
+li::marker { color: var(--t-text-muted); }
 li > p { margin-bottom: 0.5rem; }
 
-/* A mark in the margin beside what it is about: the half-cell bar the
-   margin draws beside a line. */
+hr { border: 0; border-top: 1px solid var(--t-border-subtle); margin: 2em 0; }
+
 blockquote {
   margin: 1.6rem 0;
   padding: 0.1rem 0 0.1rem 1rem;
-  border-left: 3px solid var(--modified);
-  color: var(--gutter-current);
+  border-left: 2px solid var(--t-brand);
+  color: var(--t-text-muted);
   max-width: var(--measure);
 }
 blockquote p:last-child { margin-bottom: 0; }
 
-/* The principles, numbered the way the gutter numbers lines. No rule
-   between them: a list is rows, and what marks one is the ground behind
-   the one the reader is on. */
-.tenets { list-style: none; padding: 0; margin: 1.4rem 0 0; max-width: 40rem; }
+/* Inline code and a key sit on the secondary surface, with no radius. The
+   key is no longer a cap with a lip under it: that is the shell's shape,
+   and this page is not the shell. */
+code, kbd {
+  font-family: var(--font-mono);
+  background: var(--t-surface-2);
+  padding: 0.15em 0.4em;
+  border-radius: var(--round);
+}
+code { font-size: 0.86em; word-break: break-word; }
+kbd {
+  font-size: 0.82em;
+  color: var(--t-text);
+  white-space: nowrap;
+}
+
+/* A code block sits on the deepest ground, with the ring for its edge. */
+pre {
+  margin: 1.4rem 0;
+  padding: 1em 1.25em;
+  background: var(--t-bg-deep);
+  box-shadow: var(--t-ring);
+  border-radius: var(--round);
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--t-text);
+}
+pre code { background: none; padding: 0; font-size: inherit; }
+
+/* ── the principles ─────────────────────────────────────────────────── */
+
+.tenets { list-style: none; padding: 0; margin: 1.4rem 0 0; max-width: var(--measure); }
 .tenets > li {
   display: grid;
-  grid-template-columns: 2.2rem minmax(0, 1fr);
+  grid-template-columns: 2.4rem minmax(0, 1fr);
   gap: 0.2rem 0.8rem;
-  padding: 0.8rem 0.6rem;
+  padding: 0.8rem 0.7rem;
   margin: 0;
-  border-radius: 3px;
+  border-left: 2px solid transparent;
+  transition: background-color 150ms ease-out, border-color 150ms ease-out;
 }
-.tenets > li:hover { background: var(--selected); }
+.tenets > li:hover { background: var(--t-surface); border-left-color: var(--t-brand); }
 .tenets .no {
-  font-family: var(--mono);
-  font-size: 0.8rem;
-  color: var(--gutter);
+  font-size: 13px;
+  color: var(--t-text-muted);
   text-align: right;
-  padding-top: 0.2rem;
+  padding-top: 0.15rem;
 }
-.tenets > li:hover .no { color: var(--gutter-current); }
-.tenets .claim { font-weight: 600; margin: 0 0 0.25rem; max-width: none; }
-.tenets .why { color: var(--gutter-current); font-size: 0.94rem; margin: 0; max-width: none; }
+.tenets .claim { color: var(--t-text); font-weight: 600; margin: 0 0 0.3rem; max-width: none; }
+.tenets .why { color: var(--t-text-muted); margin: 0; max-width: none; }
 
 /* The highlights: a row each, and where it is explained on the right. */
-.beats { list-style: none; padding: 0; margin: 1.4rem 0 0; max-width: 40rem; }
+.beats { list-style: none; padding: 0; margin: 1.4rem 0 0; max-width: var(--measure); }
 .beats li {
   display: flex;
   gap: 1.2rem;
   align-items: baseline;
   justify-content: space-between;
-  padding: 0.5rem 0.6rem;
+  padding: 0.5rem 0.7rem;
   margin: 0;
-  border-radius: 3px;
+  border-left: 2px solid transparent;
+  transition: background-color 150ms ease-out, border-color 150ms ease-out;
 }
-.beats li:hover { background: var(--selected); }
+.beats li:hover { background: var(--t-surface); border-left-color: var(--t-brand); }
 .beats .where {
   flex: none;
-  font-family: var(--mono);
-  font-size: 0.76rem;
-  color: var(--gutter-current);
+  font-size: 12px;
+  color: var(--t-text-muted);
   white-space: nowrap;
+  transition: color 150ms ease-out;
 }
-.beats .where:hover { color: var(--function); text-decoration: none; }
+.beats .where:hover { color: var(--t-brand); }
 @media (max-width: 560px) {
   .beats li { flex-direction: column; gap: 0.25rem; }
 }
 
-/* Cards are panels: a round frame on the page's own colour. */
+/* ── cards, tables, asides ──────────────────────────────────────────── */
+
 .cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-  gap: 0.9rem;
+  gap: 1rem;
   margin: 1.6rem 0;
 }
 .card {
-  background: var(--page);
-  border: 1px solid var(--gutter);
-  border-radius: var(--round);
-  padding: 0.95rem 1.1rem;
+  background: var(--t-surface);
+  box-shadow: var(--t-ring);
+  padding: 1rem 1.15rem;
+  transition: background-color 150ms ease-out;
 }
-.card h4 { margin: 0 0 0.4rem; }
-.card p { margin: 0; font-size: 0.92rem; color: var(--gutter-current); max-width: none; }
-.card ul { margin: 0.4rem 0 0; padding-left: 1.05rem; font-size: 0.9rem; color: var(--gutter-current); }
-.card li { margin-bottom: 0.2rem; }
+.card:hover { background: var(--t-surface-2); }
+.card h4 { margin: 0 0 0.5rem; font-size: 1rem; }
+.card p { margin: 0; font-size: 0.93em; color: var(--t-text-muted); max-width: none; }
+.card ul { margin: 0.4rem 0 0; padding-left: 1.1rem; font-size: 0.93em; color: var(--t-text-muted); }
+.card li { margin-bottom: 0.25rem; }
 
 /* Tables are lists: a rule under the heading and none between rows, and
    the row the pointer is on marked the way a list's selection is. */
 .table-wrap { overflow-x: auto; margin: 1.4rem 0; }
-table {
-  border-collapse: collapse;
-  width: 100%;
-  font-size: 0.9rem;
-}
+table { border-collapse: collapse; width: 100%; font-size: 0.93em; }
 th, td {
   text-align: left;
-  padding: 0.42rem 0.8rem 0.42rem 0.5rem;
+  padding: 0.45rem 0.8rem 0.45rem 0.5rem;
   vertical-align: top;
 }
 th {
-  font-family: var(--mono);
-  font-size: 0.76rem;
-  color: var(--gutter-current);
+  font-size: 12px;
+  color: var(--t-text-muted);
   font-weight: 600;
   white-space: nowrap;
-  border-bottom: 1px solid var(--gutter);
+  border-bottom: 1px solid var(--t-border-strong);
 }
 td:first-child { white-space: nowrap; }
-td code { font-size: 0.82em; white-space: nowrap; }
+td code { font-size: 0.86em; white-space: nowrap; }
 td code + code { margin-left: 0.25em; }
-tbody tr:hover { background: var(--selected); }
+tbody tr { transition: background-color 150ms ease-out; }
+tbody tr:hover { background: var(--t-surface); }
 
-/* A note beside the text is a panel, like everything put over the page. */
 .aside {
   margin: 1.6rem 0;
-  padding: 0.85rem 1.1rem;
-  border: 1px solid var(--gutter);
-  border-radius: var(--round);
-  font-size: 0.9rem;
+  padding: 0.9rem 1.15rem;
+  background: var(--t-surface);
+  box-shadow: var(--t-ring);
+  font-size: 0.93em;
   max-width: var(--measure);
 }
 .aside p { margin: 0; max-width: none; }
 .aside p + p { margin-top: 0.6rem; }
-.aside strong { color: var(--function); }
+.aside strong { color: var(--t-brand); }
 
-/* ── footer: the status row ─────────────────────────────────────────── */
+/* ── the foot ───────────────────────────────────────────────────────── */
 
 footer {
   display: flex;
   flex-wrap: wrap;
   justify-content: space-between;
   gap: 0.4rem 1.5rem;
-  border-top: 1px solid var(--gutter);
+  border-top: 1px solid var(--t-border-subtle);
   margin-top: 4rem;
-  padding: 0.8rem var(--gutter-width) 2.5rem;
-  font-family: var(--mono);
-  font-size: 0.78rem;
-  color: var(--gutter-current);
+  padding: 1rem var(--gutter-width) 2.5rem;
+  font-size: 12px;
+  color: var(--t-text-muted);
 }
 footer p { max-width: none; margin: 0; }
