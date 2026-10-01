@@ -240,6 +240,11 @@ struct Placed {
     moved: usize,
     /// The first quad of each blur's pair: the first pane's and the box's.
     blurs: [Option<usize>; 2],
+    /// Where a band under the first pane is catching up: the rows of it
+    /// above the pane, which the slide brings in under it, and the quads
+    /// that put what is behind the pane back together with the band slid.
+    /// See `Painter::sliding_under`.
+    under: Option<(Range<usize>, Range<usize>)>,
 }
 
 /// One rectangle, as the shader reads it.
@@ -1087,7 +1092,11 @@ impl Painter {
                 );
             }
         } else if !said.bands.is_empty() {
-            self.catching_up(said.bands, fonts);
+            // The pane's cells rather than its glass, which starts half
+            // way down the rule over it: the half row above the line,
+            // slid, would be filled from inside the list.
+            let over = said.behind.map(|behind| box_of(behind.area, cell));
+            self.catching_up(said.bands, over, fonts);
         }
         // Last, because none of it is drawn on the screen: the blurs are
         // passes of their own, before any of the above.
@@ -1099,6 +1108,11 @@ impl Painter {
                 self.blurs_over([left, top, left + wide, top + tall])
             }),
         ];
+        if moving.pane.is_none()
+            && let Some(behind) = said.behind
+        {
+            self.sliding_under(page, behind, said.bands, fonts);
+        }
 
         // Where the light is, in the pixels a fragment knows itself by:
         // the mark's own left edge plus how far along it the clock has
@@ -1184,13 +1198,34 @@ impl Painter {
         // front of the buffer, which is exactly those cells -- and only
         // where there is a pane at all, so a window with nothing over the
         // page does none of this.
-        if placed.behind > 0 {
-            let mut pass = self.pass(&mut encoder, "obelus behind", &self.sheet.backdrop);
-            // Not the pane's own bindings: those have the texture this
-            // pass is drawing into bound for reading, which is the one
-            // thing a pass may not have.
-            pass.set_bind_group(0, &self.plain_bindings, &[]);
-            drawing(&mut pass, 0..placed.behind);
+        match placed.under.clone() {
+            // A band scrolling under the pane: what is behind it is drawn
+            // where it stands into the frame's picture, which nothing has
+            // drawn into yet, and put back into the backdrop with the band
+            // taken from where it has got to -- the same two steps the
+            // screen is put back in, so what the glass shows moves with
+            // what is round it.
+            Some((above, put_back)) => {
+                {
+                    let mut pass =
+                        self.pass(&mut encoder, "obelus behind, standing", &self.picture);
+                    pass.set_bind_group(0, &self.plain_bindings, &[]);
+                    drawing(&mut pass, 0..placed.behind);
+                    drawing(&mut pass, above);
+                }
+                let mut pass = self.pass(&mut encoder, "obelus behind", &self.sheet.backdrop);
+                pass.set_bind_group(0, &self.showing_bindings, &[]);
+                drawing(&mut pass, put_back);
+            }
+            None if placed.behind > 0 => {
+                let mut pass = self.pass(&mut encoder, "obelus behind", &self.sheet.backdrop);
+                // Not the pane's own bindings: those have the texture this
+                // pass is drawing into bound for reading, which is the one
+                // thing a pass may not have.
+                pass.set_bind_group(0, &self.plain_bindings, &[]);
+                drawing(&mut pass, 0..placed.behind);
+            }
+            None => {}
         }
         if let Some(first) = placed.blurs[0] {
             self.blurring(&mut encoder, first, &self.sheet);
@@ -1568,7 +1603,13 @@ impl Painter {
     /// bands are not -- which is also what cuts each page back to the
     /// band it belongs to, since a row shifted far enough lands outside
     /// it.
-    fn catching_up(&mut self, bands: &[Rolled<'_>], fonts: &mut Fonts) {
+    ///
+    /// And less the pane over a band, where one is: a transcript that
+    /// scrolls on under a list is the transcript moving, not the list, and
+    /// a band that took the cells over it along took the foot of the list
+    /// with it -- every line an agent wrote behind a list was the list
+    /// coming up again. A band inside the pane is the list's own, and moves.
+    fn catching_up(&mut self, bands: &[Rolled<'_>], pane: Option<[f32; 4]>, fonts: &mut Fonts) {
         let cell = fonts.cell();
         for band in bands {
             let room = band.room;
@@ -1596,7 +1637,8 @@ impl Painter {
             }
         }
         let rooms: Vec<[f32; 4]> = bands.iter().map(|band| box_of(band.room, cell)).collect();
-        self.covering(&rooms);
+        let moving: Vec<[f32; 4]> = rooms.iter().flat_map(|room| sliding(*room, pane)).collect();
+        self.covering(&moving);
         for (at, (band, room)) in bands.iter().zip(&rooms).enumerate() {
             // Less the rooms of the other bands, so that a band with one
             // inside it -- a hover over the file it is about -- does not
@@ -1607,8 +1649,10 @@ impl Painter {
                 .filter(|&(other, _)| other != at)
                 .map(|(_, room)| *room)
                 .collect();
-            for piece in tiles(*room, &others) {
-                self.slid_piece(piece, *room, band.behind * cell.height, 1.0);
+            for part in sliding(*room, pane) {
+                for piece in tiles(part, &others) {
+                    self.slid_piece(piece, *room, band.behind * cell.height, 1.0);
+                }
             }
 
             // And the bar, which is not in the band and does not stand
@@ -1631,6 +1675,70 @@ impl Painter {
                 );
             }
         }
+    }
+
+    /// What is behind the first pane, with the bands under it slid the
+    /// way `catching_up` slides them on the screen.
+    ///
+    /// The screen keeps the pane still and slides the band round it, and
+    /// the glass is a picture of what is behind -- so without this the
+    /// band came up to the pane's edge and stopped, and what showed through
+    /// the glass jumped to where the band was going.
+    ///
+    /// The rows of the band above the pane are drawn as well, because a
+    /// slide fills the top of the pane from above it. Where it would be
+    /// filled from outside the band -- what scrolled past, which is on the
+    /// page it scrolled off and is not behind anything -- the band is left
+    /// where it is, which through the frost is the same rows.
+    fn sliding_under(
+        &mut self,
+        page: &Page,
+        behind: &Behind,
+        bands: &[Rolled<'_>],
+        fonts: &mut Fonts,
+    ) {
+        let cell = fonts.cell();
+        let pane = box_of(behind.area, cell);
+        let under: Vec<(&Rolled<'_>, [f32; 4])> = bands
+            .iter()
+            .filter_map(|band| Some((band, beneath(box_of(band.room, cell), pane)?)))
+            .collect();
+        if under.is_empty() {
+            return;
+        }
+        let start = self.quads.len();
+        for (band, _) in &under {
+            let room = band.room;
+            for y in room.top()..behind.area.top().min(room.bottom()) {
+                for x in room.left()..room.right() {
+                    let look = page.look(x, y);
+                    let (left, top) = (f32::from(x) * cell.width, f32::from(y) * cell.height);
+                    self.block(
+                        left,
+                        top,
+                        cell.width,
+                        cell.height,
+                        rgba(look.background, Ink::Background),
+                    );
+                    if !look.text.trim().is_empty() {
+                        let ink = rgba(look.foreground, Ink::Foreground);
+                        self.glyphs_at((left, top), look, ink, 0, fonts, Size::Cell);
+                    }
+                }
+            }
+        }
+        let above = start..self.quads.len();
+        let start = self.quads.len();
+        self.covering(&[]);
+        for (band, piece) in &under {
+            self.slid_piece(
+                *piece,
+                box_of(band.room, cell),
+                band.behind * cell.height,
+                1.0,
+            );
+        }
+        self.placed.under = Some((above, start..self.quads.len()));
     }
 
     /// The frame that has just been drawn, put back on the screen
@@ -3823,6 +3931,36 @@ fn box_of(room: Rect, cell: CellSize) -> [f32; 4] {
     ]
 }
 
+/// What of a band's room moves while it catches up, given the pane over
+/// the page.
+///
+/// All of it for a band inside the pane, which is the list's own. Only
+/// what the pane leaves showing for one the pane is over: what is drawn
+/// there is the pane, and it is not what scrolled.
+fn sliding(room: [f32; 4], pane: Option<[f32; 4]>) -> Vec<[f32; 4]> {
+    let inside = |pane: &[f32; 4]| {
+        room[0] >= pane[0] && room[1] >= pane[1] && room[2] <= pane[2] && room[3] <= pane[3]
+    };
+    tiles(room, pane.filter(|pane| !inside(pane)).as_slice())
+}
+
+/// The part of a band's room a pane is over, where the band is under the
+/// pane rather than inside it.
+///
+/// The other half of `sliding`: what that leaves out on the screen is
+/// what slides behind the glass instead.
+fn beneath(room: [f32; 4], pane: [f32; 4]) -> Option<[f32; 4]> {
+    if sliding(room, Some(pane)) == [room] {
+        return None;
+    }
+    Some([
+        room[0].max(pane[0]),
+        room[1].max(pane[1]),
+        room[2].min(pane[2]),
+        room[3].min(pane[3]),
+    ])
+}
+
 /// What is left of the frame once the rooms that are moving are taken
 /// out of it.
 ///
@@ -4374,6 +4512,49 @@ mod tests {
         assert_eq!(over, 0, "pixels it was put back on twice, or over a hole");
         // And with nothing moving it is the one rectangle it always was.
         assert_eq!(tiles(whole, &[]), vec![whole]);
+    }
+
+    /// A band a pane is over moves only where the pane is not, and a band
+    /// inside the pane moves whole.
+    ///
+    /// The first is a transcript scrolling on under a list: slid whole, it
+    /// took the foot of the list with it, and every line an agent wrote
+    /// behind a list was the list arriving again. The second is the list's
+    /// own rows, which are what the reader is scrolling.
+    ///
+    /// Deliberate breaks: `tiles(room, &[])` in `sliding` and nothing is
+    /// kept still under the pane; `pane.as_slice()` without the filter
+    /// and the list's own band stops moving at all.
+    #[test]
+    fn a_band_under_a_pane_moves_only_where_the_pane_is_not() {
+        let pane = [0.0, 60.0, 100.0, 100.0];
+        let transcript = [0.0, 0.0, 100.0, 90.0];
+        let moving = sliding(transcript, Some(pane));
+        assert_eq!(moving, vec![[0.0, 0.0, 100.0, 60.0]], "{moving:?}");
+        let list = [0.0, 70.0, 98.0, 90.0];
+        assert_eq!(sliding(list, Some(pane)), vec![list]);
+        // And with no pane, a band is all of it.
+        assert_eq!(sliding(transcript, None), vec![transcript]);
+    }
+
+    /// What slides behind the glass is the part of a band the pane is
+    /// over, and only for a band the pane is over: the list's own rows are
+    /// the pane, and a band beside it has nothing behind it.
+    ///
+    /// Deliberate breaks: `None` for every band and what is behind the
+    /// glass stands still while the band round it slides; the intersection
+    /// for every band and the list's own rows are slid into the backdrop
+    /// under themselves.
+    #[test]
+    fn what_slides_behind_the_glass_is_what_the_pane_is_over() {
+        let pane = [0.0, 60.0, 100.0, 100.0];
+        assert_eq!(
+            beneath([0.0, 0.0, 100.0, 90.0], pane),
+            Some([0.0, 60.0, 100.0, 90.0]),
+            "a transcript the list is over"
+        );
+        assert_eq!(beneath([0.0, 70.0, 98.0, 90.0], pane), None, "the list");
+        assert_eq!(beneath([0.0, 0.0, 100.0, 50.0], pane), None, "above it");
     }
 
     /// A pane's shadow falls from the edge the pane has reached.
