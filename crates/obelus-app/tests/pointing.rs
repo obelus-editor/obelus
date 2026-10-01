@@ -81,7 +81,7 @@ fn dragging_in_a_note_selects_in_it() {
 #[test]
 fn dragging_in_a_message_selects_in_it() {
     let (_scratch, mut app) = open("pointing-message");
-    dispatch::dispatch(&mut app, Command::AgentOpen);
+    dispatch::dispatch(&mut app, Command::ConversationNew);
     support::type_text(&mut app, "hello world");
     let (y, at) = support::place_of(&mut app, "hello world");
 
@@ -136,7 +136,7 @@ fn clicking_twice_holds_a_word_and_three_times_the_line() {
 #[test]
 fn a_click_in_a_scrolled_box_lands_where_it_points() {
     let (_scratch, mut app) = open("pointing-scrolled");
-    dispatch::dispatch(&mut app, Command::AgentOpen);
+    dispatch::dispatch(&mut app, Command::ConversationNew);
     // More lines than the band has rows, so the box is scrolled and the
     // first line is off the top of it.
     for line in 0..8 {

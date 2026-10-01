@@ -199,11 +199,12 @@ typing on.
 
 **Nothing is polled.** What to do about one of these is either to ask a
 cheaper question or to be told, and there is no third answer. **Ask a
-cheaper question**: whether there is *anything* to take up is the size of a
-file (285ns) rather than what is in it, because Obelus writes that file
-whole and writes it empty when it has nothing to say -- which leaves the
-gate a shade generous, so the list it opens says what it actually found.
-**Or keep it and hear the change**: which note has a conversation is a
+cheaper question**, or none at all: whether there was *anything* to take
+up was the size of a file (285ns) rather than what is in it, because
+Obelus writes that file whole and writes it empty when it has nothing to
+say. It went when the list began opening on a project with nothing in it
+-- it always has a new conversation to offer -- and the key stopped being
+drawn on the conversation's row, so nothing is left to ask. **Or keep it and hear the change**: which note has a conversation is a
 table somebody *writes*, and a write is something a watcher hears, so it is
 read when the page opens, when the watcher says so, and when Obelus writes
 it -- and `sessions::change` hands back what it wrote, so that last one
@@ -338,11 +339,21 @@ only.
 
 **What a reader said about a project outlives the window they said it in.**
 The agent keeps every word and Obelus keeps the one thing it cannot --
-which conversation is which -- so `f4` inside a conversation is a list of
-them, newest first, over the one they are in. Ordered by when something was
-last said in it, which is a field (`Kept::last`) because it cannot be
-worked out from anything else, and written in the same words a commit's row
-uses (`how_long_ago`).
+which conversation is which -- so `f4` is a list of them, newest first,
+over whatever the reader is in. Ordered by when something was last said in
+it, which is a field (`Kept::last`) because it cannot be worked out from
+anything else, and written in the same words a commit's row uses
+(`how_long_ago`).
+
+The first row starts a new one, so the list opens on a project nobody has
+talked about too, holding that row alone. `f4` used to open a conversation
+outside one and the list inside, which put the list two presses away from
+a file and gave a reader in a file one answer to "which conversation",
+always the same. It is one question with one key now, and the list starts
+on the conversation the reader is in, where they are in one, and on the new
+row otherwise. A new conversation is an action as well, `new-conversation`
+on the palette, and a new one nothing has been said in yet is gone back to
+rather than joined by a second.
 
 **A row of a list says what is true now, and says it in one answer.** The
 rows of a list are a snapshot -- building them reads files and walks git,
@@ -373,8 +384,9 @@ one agent minted and means nothing to another, so only the agent in use can
 be asked to take one up. The others are shown all the same -- a tab each,
 their rows dim, the reason above them -- because the alternative is a
 reader who changed agents finding their conversations gone and nothing
-saying where. A tab exists only where that agent has something in it, so
-the ordinary case of one agent has no tab row at all; the tabs are scopes
+saying where. A tab exists only where that agent has something in it, or
+is the agent in use -- whose tab is where a new one starts -- so the
+ordinary case of one agent has no tab row at all; the tabs are scopes
 and not groups, because a picker's group tabs come with an `All` in front
 of them and `All` is the one tab this list must not have -- it would mix
 the rows that can be taken up with the rows that cannot. Nothing here
@@ -862,7 +874,7 @@ command is gone and `App::blame` reads the setting.
 
 * **A function key opens something to look at.** Two banks of four, which is
   how they sit on the keyboard: `f1`-`f4` are the things to read (a file, an
-  open file, a changed file, the agent) and `f5`-`f8` are finding, which is
+  open file, a changed file, a conversation) and `f5`-`f8` are finding, which is
   one question at four radii -- this file or every file, its text or its
   names. Bare, never with a modifier: one terminal reports `shift+f5` and
   the next reports `f17` for the same press, so a modified function key is a
@@ -950,15 +962,12 @@ names the files.
 
 And a view that has bound the key itself beats the swap. `App::handle_key`
 asked the swap first, so a key the showing view had taken was answered one
-level out and its own binding was dead: `f4` in a conversation swapped the
+level out and its own binding was dead: `f4`, while it opened a
+conversation from a file and meant *which one* inside one, swapped the
 conversation for itself. `Keymap::bound_here` is that question -- what this
 context binds, with no falling back -- and it is the same precedence
-`Keymap::lookup` already uses. Which is what `f4` inside a conversation is
-for: it opens the conversation from anywhere else and means *which one*
-inside the one it named, the same move `f3` makes in `f1`'s list. So
-`talk-to-agent` is bound in `Context::Normal` rather than everywhere: the
-only two contexts with global keys are Normal and Chat, and Chat has its own
-answer now.
+`Keymap::lookup` already uses. `f4` is the list everywhere now, but the
+precedence stays for the next view that takes a key of its own.
 
 **One mark for "the keys are here", and it says nothing else.** Every list,
 page and card in Obelus puts `selected_row_background` behind the row the

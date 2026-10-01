@@ -461,15 +461,6 @@ pub struct ChatView<'a> {
     /// How full the agent's memory of this conversation is, once it has
     /// said.
     usage: Option<&'a acp::Usage>,
-    /// The key that opens the list of conversations, where there is one to
-    /// take up and a key bound to it.
-    ///
-    /// Read off the key table rather than written down here, because a
-    /// rebind has to change every place a key is displayed -- and asked of
-    /// the application whether the command can run at all, which is the one
-    /// judgement of that: a row saying `f4` over a project nobody has
-    /// talked about is a key that answers nothing.
-    conversations: Option<String>,
 }
 
 impl<'a> ChatView<'a> {
@@ -491,14 +482,6 @@ impl<'a> ChatView<'a> {
             note: app.note(),
             note_is_wrong: app.note_is_wrong(),
             usage: app.agent_usage(),
-            conversations: app
-                .offers(obelus_command::Command::ConversationSelect)
-                .then(|| {
-                    app.keymap()
-                        .chord_for(obelus_command::Command::ConversationSelect)
-                })
-                .flatten()
-                .map(|chord| chord.label()),
         })
     }
 
@@ -1166,7 +1149,7 @@ impl ChatView<'_> {
         //
         // Measured first, because the room the settings have is what is left
         // of the row.
-        let keys = self.status_keys(area);
+        let keys = self.status_keys();
         let hint = joined(&keys);
         if let Some(hint) = &hint
             && let Ok(offset) =
@@ -1396,23 +1379,19 @@ impl ChatView<'_> {
     /// The way back comes first: a conversation about a note is reached
     /// from the notes page, and a way out that nothing says exists is the
     /// same gap one level up -- which is why the key was added at all.
-    /// Then the way to the conversation's neighbours, and the mode last,
-    /// which is the rightmost thing on this row and always has been: a key
-    /// that moved when a conversation gained a setting would be a key the
-    /// reader has to look for.
+    /// Then the mode, which is the rightmost thing on this row and always
+    /// has been: a key that moved when a conversation gained a setting
+    /// would be a key the reader has to look for.
     ///
-    /// Three is more than a narrow row can hold, so one of them goes --
-    /// the one about the *other* conversations, because the other two are
-    /// about the one in front of the reader and that is what a row with no
-    /// room keeps. The same judgement the number beside them is held to,
-    /// and it has to be made here rather than by the drawing: what is left
-    /// of the row for the settings is what is left once this has taken its
-    /// share.
+    /// Not the key to the other conversations, which was here while it
+    /// meant something in a conversation that it meant nowhere else. It
+    /// means the same everywhere now, as `f1` does, and no view spends its
+    /// row on those.
     ///
     /// Asked before the settings are drawn, because the room they have is
     /// what is left of the row once this is on it.
-    fn status_hint(&self, area: Rect) -> Option<String> {
-        joined(&self.status_keys(area))
+    fn status_hint(&self) -> Option<String> {
+        joined(&self.status_keys())
     }
 
     /// The same row, kept as the key and what it does rather than as one
@@ -1422,7 +1401,7 @@ impl ChatView<'_> {
     /// text and the cap round each key is about *where the key is*: a
     /// front end that draws the shape has to be told which cells of that
     /// run are the key, and a run that had already been joined cannot say.
-    fn status_keys(&self, area: Rect) -> Vec<(String, &'static str)> {
+    fn status_keys(&self) -> Vec<(String, &'static str)> {
         let back = self.about.is_some().then(|| {
             let keys = match obelus_icons::enabled() {
                 true => format!("{}t", obelus_icons::key::ALT),
@@ -1440,19 +1419,6 @@ impl ChatView<'_> {
                 };
                 (keys, "Mode")
             });
-        let others = self
-            .conversations
-            .as_ref()
-            .map(|chord| (chord.clone(), "Conversations"));
-        let all: Vec<(String, &'static str)> = [back.clone(), others, mode.clone()]
-            .into_iter()
-            .flatten()
-            .collect();
-        if let Some(said) = joined(&all)
-            && text_width(&said) + 2 + LEAST_SETTINGS <= usize::from(area.width)
-        {
-            return all;
-        }
         [back, mode].into_iter().flatten().collect()
     }
 
@@ -1462,7 +1428,7 @@ impl ChatView<'_> {
     /// other, both of which stay put. Asked by the drawing and by a press,
     /// because a press has to be measured against the row that is there.
     fn status_room(&self, area: Rect) -> usize {
-        let hint = self.status_hint(area);
+        let hint = self.status_hint();
         let taken = hint.as_deref().map_or(0, |hint| text_width(hint) + 2);
         let over = usize::from(area.width).saturating_sub(taken + 2);
         let used = self
@@ -1934,7 +1900,6 @@ mod caret {
                         about: None,
                         note: None,
                         note_is_wrong: false,
-                        conversations: None,
                         usage: None,
                     };
                     let mut cells = ratatui::buffer::Buffer::empty(area);

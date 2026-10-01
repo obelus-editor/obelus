@@ -420,32 +420,17 @@ impl Keymap {
                     context: Context::Normal,
                     chord: function(3),
                 },
-                // `Context::Normal` and not `Context::Always`, which is
-                // what it was while it was the only thing on this key.
-                // Everywhere is Normal and Chat -- those are the two
-                // contexts with global keys -- and Chat has its own
-                // meaning for `f4` now, just below. A binding that is
-                // shadowed wherever it is not the file's is a binding that
-                // belongs to the file.
-                Binding {
-                    command: Command::AgentOpen,
-                    context: Context::Normal,
-                    chord: function(4),
-                },
-                // The same key inside the conversation it names, meaning
-                // what it means everywhere else a key lands on the view it
-                // already opened: *which* one. `f3` in `f1`'s list walks to
-                // a tab rather than opening the list again, and this is the
-                // same move -- the conversation on screen is one of
-                // several, and the answer to "which" is a list of them.
-                //
-                // Found before the binding above, because `Keymap::lookup`
-                // asks the chat's own context first: the same overriding
-                // `alt+t` does, which means "write a note here" in a file
-                // and "the note this came out of" here.
+                // Which conversation, asked the same way from a file and
+                // from inside one, with a new one as the first answer.
+                // It opened the conversation outside one and the list
+                // inside, which made the list two presses away from
+                // anywhere but a conversation and a fresh conversation the
+                // only thing the key ever gave a reader in a file. A
+                // conversation falls back to the file's table, so this one
+                // binding is both.
                 Binding {
                     command: Command::ConversationSelect,
-                    context: Context::Chat,
+                    context: Context::Normal,
                     chord: function(4),
                 },
                 // F5-F8: finding, as a square. Across: the text, then the

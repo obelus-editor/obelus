@@ -199,6 +199,23 @@ pub struct Conversation {
     pub said_not_offered: std::collections::BTreeSet<(String, String)>,
 }
 
+impl Conversation {
+    /// Whether this is a new conversation nobody has said anything in yet.
+    ///
+    /// About nothing in particular, and not one taken up again: those can
+    /// come back with an empty page -- an agent that resumes rather than
+    /// replays sends none of it -- and are the reader's all the same. One
+    /// taken up is waiting on the name it asked for, or holds a session it
+    /// did not mint.
+    #[must_use]
+    pub fn is_blank(&self) -> bool {
+        self.topic == Topic::Loose
+            && !self.chat.anything_said()
+            && self.asked_for.is_none()
+            && (self.session.is_none() || self.minted)
+    }
+}
+
 /// A place on the web the agent wants the reader to go: to sign in
 /// somewhere, to authorise something.
 ///

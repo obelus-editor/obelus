@@ -375,7 +375,7 @@ pub fn for_command(command: obelus_command::Command) -> char {
         // is.
         Command::GoBack => '\u{f17b3}',
         Command::GoForward => '\u{f17b7}',
-        Command::AgentOpen => ui::AGENT,
+        Command::ConversationNew => ui::AGENT,
         // `md-forum_outline`: several of them, which is what this is a
         // list of. Not the one [`ui::AGENT`] wears -- two rows with one
         // picture say less than one, and the difference between these two

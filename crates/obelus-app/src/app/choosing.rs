@@ -291,15 +291,6 @@ impl App {
                 .current_buffer()
                 .and_then(Buffer::language)
                 .is_some_and(|language| language.line_comment().is_some()),
-            // A stat of one file in Obelus's own state directory, and
-            // deliberately not a read of it. This is asked from a view --
-            // the conversation's status row draws the key that opens the
-            // list only where it would do something -- so it is asked on
-            // every frame of every conversation, and parsing the table
-            // there cost 351us a frame with twenty conversations in it
-            // against 285ns for this. What a view asks has to be already
-            // answered or cheap enough to be.
-            Requires::AConversation => obelus_agent::acp::sessions::any(&self.working_directory),
             Requires::AServerLog => obelus_logging::current_file(obelus_logging::SERVERS).is_some(),
         }
     }
@@ -517,6 +508,9 @@ impl App {
         // reason.
         self.history = crate::app::history_view::Showing::default();
         self.close_calls();
+        // And the list of conversations with it, which can be left by a row
+        // that is not a conversation: the one that starts a new one.
+        self.conversing = crate::app::conversations::Conversing::default();
         // A theme worn while walking a list is the reader's choice now,
         // whichever list it was, so there is nothing left to put back. Here
         // rather than on the theme's own arm because the settings page

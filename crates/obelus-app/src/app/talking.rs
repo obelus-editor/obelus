@@ -38,7 +38,7 @@ pub(super) enum Whose {
 }
 
 impl App {
-    /// Goes to the conversation, opening one if there is none.
+    /// Goes to a new conversation about nothing in particular.
     ///
     /// A document, so this switches to it the way any key that opens a file
     /// does: the list keeps it, closing it is the key that closes anything,
@@ -47,22 +47,23 @@ impl App {
     /// there was a second question -- "is it showing" -- beside the
     /// conversation that answers it.
     ///
+    /// One already open with nothing said in it is that new conversation,
+    /// and is gone back to rather than joined by a second: a reader who
+    /// asks twice would otherwise collect empty pages in the list of what
+    /// is open, one per asking.
+    ///
     /// The session is not asked for here: the next frame asks for one for
     /// whichever conversation is on screen -- see
     /// [`App::settle_the_sessions`] -- because this is one of half a dozen
     /// ways onto one.
-    pub fn open_agent(&mut self) {
+    pub fn new_conversation(&mut self) {
         // Whatever the reader had over the file is not what they asked for.
         self.make_room(Room::Region);
-        // The one about nothing in particular, which is what this key opens.
-        // Any conversation would do while there was one; with a conversation
-        // per note it would take the reader into whichever note's happened
-        // to be first in the list.
         let at = self.documents.iter().position(|document| {
             document
                 .as_ref()
                 .and_then(Document::chat)
-                .is_some_and(|talk| talk.topic == Topic::Loose)
+                .is_some_and(crate::conversation::Conversation::is_blank)
         });
         let at = at.unwrap_or_else(|| {
             self.documents
@@ -231,7 +232,7 @@ impl App {
     /// and a note added above would otherwise hand the reader somebody
     /// else's conversation.
     /// The session is the next frame's to ask for, as it is for
-    /// [`App::open_agent`]. The claim is taken here, because the claim is
+    /// [`App::new_conversation`]. The claim is taken here, because the claim is
     /// not about the agent -- it is this window saying the note's
     /// conversation is its own, and it has to be said before another window
     /// says it.
@@ -1929,8 +1930,24 @@ impl App {
         // file. Those are for whoever is here and there is nobody here, so
         // this is the conversation being opened -- the only thing left of
         // what this used to do to every question that came.
+        //
+        // The one about nothing in particular the reader already has, where
+        // there is one, rather than a new one: a question on an empty page
+        // is a question with nothing around it, and that page would mint a
+        // session of its own on the next frame for nobody.
         if matches!(whose, Whose::Whoever) && self.conversation().is_none() {
-            self.open_agent();
+            match self.documents.iter().position(|document| {
+                document
+                    .as_ref()
+                    .and_then(Document::chat)
+                    .is_some_and(|talk| talk.topic == Topic::Loose)
+            }) {
+                Some(at) => {
+                    self.make_room(Room::Region);
+                    self.go_to_document(DocumentId::new(at));
+                }
+                None => self.new_conversation(),
+            }
         }
         // And nothing of the reader's own over it. The list of the agent's
         // commands follows what is being typed in the box, and the box is

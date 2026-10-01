@@ -253,7 +253,7 @@ fn the_caret_is_where_the_keys_are() {
     // in the box: in the region rather than on the status row, because a
     // message is a paragraph.
     let mut app = reading();
-    app.open_agent();
+    app.new_conversation();
     assert!(!app.layers().any(), "a conversation is not over anything");
     let alone = obelus_ui::cursor_position(area, &app).expect("a caret somewhere");
     assert!(
@@ -353,7 +353,7 @@ fn a_list_opens_over_a_page_rather_than_instead_of_it() {
 #[test]
 fn the_keys_about_documents_work_in_a_conversation() {
     let mut app = reading();
-    app.open_agent();
+    app.new_conversation();
     assert!(app.chat().is_some(), "not in a conversation");
 
     assert!(
@@ -385,7 +385,7 @@ fn the_keys_about_documents_work_in_a_conversation() {
 #[test]
 fn a_conversation_can_be_switched_to_from_the_list() {
     let mut app = reading();
-    app.open_agent();
+    app.new_conversation();
     let conversation = app.current_document_for_test().expect("a document");
 
     // Away to the file, and then back through the list.
@@ -441,7 +441,7 @@ fn what_is_over_a_conversation_owns_the_status_row() {
     // The settings, because their filter is what the row says while they are
     // open -- so whether the row is theirs is something a test can read.
     let mut app = reading();
-    app.open_agent();
+    app.new_conversation();
     dispatch::dispatch(&mut app, Command::ConfigOpen);
     support::type_text(&mut app, "wrap");
     let covered = said(&mut app);

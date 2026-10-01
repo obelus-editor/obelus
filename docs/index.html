@@ -299,13 +299,13 @@ ob src/main.rs       # the same file, in the terminal instead</code></pre>
       <p>Obelus implements nobody's model. It talks to whatever you already have, over <strong>ACP</strong> (the Agent Client Protocol) — the same shape as a language server: another program, over its own standard input and output.</p>
 
       <h4>Installing one</h4>
-      <p>Which agents exist is not Obelus's to decide. There is a registry kept by the protocol's own authors, and Obelus reads it: forty entries with a name, a version, a description and how to install each one. <kbd>F4</kbd>, then the agents page, then install one. A terminal that can draw pictures gets each agent's own mark; one that cannot gets a glyph. One agent at a time — two would mean every question having to say which agent it was for, and you having to know which.</p>
+      <p>Which agents exist is not Obelus's to decide. There is a registry kept by the protocol's own authors, and Obelus reads it: forty entries with a name, a version, a description and how to install each one. <kbd>F4</kbd> and a new conversation, then the agents page, then install one. A terminal that can draw pictures gets each agent's own mark; one that cannot gets a glyph. One agent at a time — two would mean every question having to say which agent it was for, and you having to know which.</p>
 
       <h4>A conversation is a document</h4>
       <p>It sits in the list of open documents (<kbd>F2</kbd>). Leaving one is going somewhere else rather than closing it: what was said is still there when you come back. <kbd>Enter</kbd> sends, <kbd>Alt+Enter</kbd> makes a line (and <kbd>Shift+Enter</kbd> where the terminal reports it). The status row is the agent's own session options — mode, model, reasoning effort — walked and changed there, with <kbd>Shift+Tab</kbd> going the other way as it always does. Obelus translates none of them: which options exist is the agent's business.</p>
 
       <h4>A conversation belongs to a note</h4>
-      <p>Opened with <kbd>F4</kbd>, a conversation is about nothing in particular. Opened from a note, it is about that note — and it stays that way: come back tomorrow and the conversation is where you left it, because the agent replays what was said and Obelus only has to remember which conversation was about which note.</p>
+      <p>Started from <kbd>F4</kbd>, a conversation is about nothing in particular. Opened from a note, it is about that note — and it stays that way: come back tomorrow and the conversation is where you left it, because the agent replays what was said and Obelus only has to remember which conversation was about which note.</p>
       <p>Obelus tells the agent what the note says when the conversation starts. You reword the note overnight, and the next message carries what changed — nothing in the protocol would otherwise let an agent find out that a file it was told about on Monday says something else on Tuesday.</p>
       <p>Before your first words, Obelus also says who the agent is talking to: that the person is reading code in a terminal, that what it sends lands beside the file they are reading, and that a choice which is theirs to make should be asked as a question rather than written into a reply as <code>1) … 2) …</code> — because that arrives as prose, and nothing on the screen would say an answer is wanted.</p>
 
@@ -354,7 +354,7 @@ ob src/main.rs       # the same file, in the terminal instead</code></pre>
           <tr><td><kbd>F1</kbd></td><td><code>open-file</code></td><td>Choose a file under the project and open it</td></tr>
           <tr><td><kbd>F2</kbd></td><td><code>switch-document</code></td><td>Choose among the documents already open</td></tr>
           <tr><td><kbd>F3</kbd></td><td><code>open-changed-file</code></td><td>One of the files that changed since the last commit</td></tr>
-          <tr><td><kbd>F4</kbd></td><td><code>talk-to-agent</code></td><td>Talk to the active agent — and, pressed inside a conversation, <code>choose-conversation</code>: which of them to take up again</td></tr>
+          <tr><td><kbd>F4</kbd></td><td><code>choose-conversation</code></td><td>Which conversation with the agent: a new one, or one to take up again</td></tr>
           <tr><td><kbd>F5</kbd></td><td><code>search-file</code></td><td>Search the file being read</td></tr>
           <tr><td><kbd>F6</kbd></td><td><code>search-project</code></td><td>Search every file in the project</td></tr>
           <tr><td><kbd>F7</kbd></td><td><code>show-outline</code></td><td>Every symbol this file defines</td></tr>
@@ -451,7 +451,7 @@ ob src/main.rs       # the same file, in the terminal instead</code></pre>
           </tr>
           <tr>
             <td>Obelus</td>
-            <td><code>choose-theme</code> <code>talk-to-agent</code> <code>choose-conversation</code> <code>open-settings</code> <code>open-project-settings</code> <code>open-settings-file</code> <code>open-log</code> <code>open-server-log</code> <code>restart-server</code> <code>stop-server</code> <code>quit</code></td>
+            <td><code>choose-theme</code> <code>new-conversation</code> <code>choose-conversation</code> <code>open-settings</code> <code>open-project-settings</code> <code>open-settings-file</code> <code>open-log</code> <code>open-server-log</code> <code>restart-server</code> <code>stop-server</code> <code>quit</code></td>
           </tr>
         </tbody>
       </table>

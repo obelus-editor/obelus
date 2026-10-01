@@ -5,10 +5,17 @@
 //! one thing it cannot -- which conversation is which. This is the way back
 //! to one.
 //!
-//! A compact list, over the conversation the reader is in. Not a view of
-//! its own: the rows are that conversation's neighbours and the reader is
-//! choosing between them, which is what a list over something rather than
-//! instead of it is for.
+//! A compact list, over whatever the reader is in -- a file, or one of the
+//! conversations. Not a view of its own: the reader is choosing where to
+//! talk, which is what a list over something rather than instead of it is
+//! for.
+//!
+//! **A new conversation is one of the answers.** The first row starts one,
+//! so the list is never empty and the key that opens it is never dead: on a
+//! project nobody has talked about yet, that row is the whole list. It is
+//! where the reader lands unless they are already in a conversation, which
+//! is where they land then -- the way out of one goes to a neighbour, and
+//! a row away from the one they came from is a row away from either.
 //!
 //! **Its rows are read whole.** A conversation is a sentence -- what the
 //! agent called it, often the whole of what the reader first said, and the
@@ -22,8 +29,9 @@
 //! use can be asked to take one up. The others are still shown -- a tab
 //! each, greyed, with the reason above them -- because the alternative is a
 //! reader who changed agents finding their conversations gone and nowhere
-//! saying where. A tab exists only where that agent has something in it, so
-//! the ordinary case of one agent has no tab row at all.
+//! saying where. A tab exists only where that agent has something in it,
+//! or is the agent in use -- whose tab is where a new one starts -- so the
+//! ordinary case of one agent has no tab row at all.
 //!
 //! **Which conversations there are is a snapshot; which of them can be
 //! taken up is not.** The rows are made once, as the list opens, because
@@ -113,12 +121,20 @@ fn locked() -> (Marking, String) {
     )
 }
 
+/// The mark on the row that starts a new conversation.
+///
+/// In the column the other two marks are in, so that its words start where
+/// every title does.
+fn fresh() -> (Marking, String) {
+    (Marking::Aside, "+".to_string())
+}
+
 /// The mark on the conversation the reader is in.
 ///
 /// The one a history puts on the branch the reader is on, for the same
 /// reason: it is the one row in a list of places that they do not need to
-/// go to. The list is opened from inside a conversation, so without it
-/// the conversation they came from is a row like any other.
+/// go to. Opened from inside a conversation, the list would otherwise draw
+/// the conversation they came from as a row like any other.
 fn here() -> (Marking, String) {
     (Marking::Aside, "\u{2022}".to_string())
 }
@@ -173,6 +189,8 @@ pub(super) struct Conversing {
     pub agents: Vec<String>,
     /// What each row stands for, in the order they were given to the list.
     rows: Vec<Listed>,
+    /// Whether what Obelus wrote down about this project would not read.
+    unreadable: bool,
 }
 
 /// What one row of the list stands for.
@@ -192,23 +210,17 @@ struct Listed {
 impl App {
     /// Offers every conversation this project has had, by agent.
     pub(super) fn open_conversation_picker(&mut self) {
-        // Whatever the table holds, including nothing. The gate that
-        // offered this key answered from the file's *size*, which is
-        // cheap enough for a view to ask and a shade generous: a file
-        // with bytes in it that will not parse reads there as "there is
-        // something here". So the list opens either way and says what it
-        // found, rather than the key doing nothing at all.
+        // Whatever the table holds, including nothing, and including a
+        // table that will not read: the list always has the new row, so it
+        // opens either way and says what it found.
+        //
         // Looked at once as the list is built, because a watch says what
         // happens next and not what was already there -- and the rows are
         // made here, before the frame that takes the watch.
         self.reread_who_holds_what();
-        let reading = obelus_agent::acp::sessions::read(&self.working_directory);
-        // Three answers and not two, which is what that read gives and what
-        // this has to pass on: a table Obelus cannot read is not a project
-        // nobody has said anything about, and telling the reader it is
-        // would be Obelus reporting its own trouble as their history.
-        let unreadable = matches!(reading, obelus_agent::acp::sessions::Reading::Unreadable(_));
-        let remembered = reading.remembered().unwrap_or_default();
+        let remembered = obelus_agent::acp::sessions::read(&self.working_directory)
+            .remembered()
+            .unwrap_or_default();
         // A fourth reason the kept copy is read, and the one that costs
         // nothing: this has the table in its hands. Without it a
         // conversation taken up from here would be told about its note
@@ -230,16 +242,18 @@ impl App {
             }
         }
         let in_use = self.settled.config.agent.clone().unwrap_or_default();
+        // And the one in use whether or not it has said anything here, because
+        // its tab is where a new conversation is started.
+        if !agents.contains(&in_use) {
+            agents.push(in_use.clone());
+        }
         agents.sort_by_key(|agent| {
             (
                 *agent != in_use,
                 std::cmp::Reverse(when.get(agent).copied().unwrap_or(i64::MIN)),
             )
         });
-        let names: Vec<String> = agents
-            .iter()
-            .map(|agent| self.agent_called(agent))
-            .collect();
+        let names: Vec<String> = agents.iter().map(|agent| self.tab_called(agent)).collect();
         // Declared before the rows are built and before the list is shown:
         // the rows are fetched per tab and the tabs are these agents, so
         // nothing about this list can be worked out without them.
@@ -249,6 +263,19 @@ impl App {
         // takes with its radii, and for the same reason.
         self.conversing.agents = agents;
         let rows = self.conversation_rows(0);
+        // Where the list starts: on the conversation the reader is in,
+        // where they are in one, and on the new one otherwise, which is the
+        // first row.
+        let here = self
+            .conversing
+            .rows
+            .iter()
+            .position(|listed| listed.open.is_some() && listed.open == self.current)
+            .and_then(|at| {
+                rows.iter().position(
+                    |item| matches!(item.value, PickerValue::Conversation(row) if row == at),
+                )
+            });
         let mut picker = Picker::new(
             rows,
             PickerLayout::Compact {
@@ -265,10 +292,6 @@ impl App {
         // headings. What it does is say which rows are left.
         picker.keeps_order(true);
         picker.before_typing("Filter conversations");
-        picker.when_empty(match unreadable {
-            true => "Obelus cannot read what it wrote down about this project",
-            false => "Nothing has been said about this project yet",
-        });
         // Scopes rather than groups: the rows of a tab are fetched when the
         // reader walks onto it, the way a search's are. A row of tabs the
         // picker filters would need an "All" in front of them, which is the
@@ -282,6 +305,9 @@ impl App {
             picker.with_scopes(&names);
         }
         self.say_whose_conversations(&mut picker, 0);
+        if let Some(row) = here {
+            picker.select_item(row);
+        }
         let conversing = std::mem::take(&mut self.conversing);
         self.show_list(picker);
         self.conversing = conversing;
@@ -307,11 +333,24 @@ impl App {
     /// Only where it is not the reader's own agent: a list that explained
     /// itself on the tab where everything works would be explaining a rule
     /// nothing on screen has broken.
+    ///
+    /// And where Obelus could not read what it wrote down, which is said
+    /// here rather than as an empty list's line because the list is never
+    /// empty: a table Obelus cannot read is not a project nobody has said
+    /// anything about, and a list holding only the new row would tell the
+    /// reader it is.
     fn say_whose_conversations(&self, picker: &mut Picker, tab: usize) {
         let in_use = self.settled.config.agent.clone().unwrap_or_default();
         let whose = self.conversing.agents.get(tab).cloned().unwrap_or_default();
         let said = match whose == in_use {
+            true if self.conversing.unreadable => {
+                "Obelus cannot read what it wrote down about this project.".to_string()
+            }
             true => String::new(),
+            false if in_use.is_empty() => {
+                "No agent is chosen, and a conversation can only be taken up by the agent that had it."
+                    .to_string()
+            }
             false => format!(
                 "{} is the agent in use, and a conversation can only be taken up by the agent that had it.",
                 self.agent_called(&in_use)
@@ -326,11 +365,40 @@ impl App {
         let Some(whose) = self.conversing.agents.get(tab).cloned() else {
             return Vec::new();
         };
-        let mine = self.settled.config.agent.as_deref() == Some(whose.as_str());
-        let Some(remembered) =
-            obelus_agent::acp::sessions::read(&self.working_directory).remembered()
-        else {
-            return Vec::new();
+        let mine = self.settled.config.agent.as_deref().unwrap_or_default() == whose;
+        // Only on the tab of the agent in use, because that is who a new
+        // conversation would be with. Starting one from another agent's tab
+        // would be changing agents, which is a setting.
+        let fresh = mine.then(|| PickerItem {
+            prose: false,
+            marker: Some(fresh()),
+            icon: None,
+            label: "New conversation".to_string(),
+            detail: None,
+            trailing: None,
+            changed: None,
+            enabled: true,
+            colours: None,
+            status: None,
+            depth: 0,
+            opens: None,
+            kind: None,
+            tab: None,
+            // Above the runs and in none of them: it is not a day's.
+            section: None,
+            value: PickerValue::Command(obelus_command::Command::ConversationNew),
+        });
+        // Read with the rows rather than beside them, so that what is said
+        // over the list and the rows under it come from one reading: two
+        // readings of a file another window writes can disagree. Three
+        // answers and not two, because a table Obelus cannot read is not a
+        // project nobody has said anything about, and the new row alone
+        // would tell the reader it is.
+        let reading = obelus_agent::acp::sessions::read(&self.working_directory);
+        self.conversing.unreadable =
+            matches!(reading, obelus_agent::acp::sessions::Reading::Unreadable(_));
+        let Some(remembered) = reading.remembered() else {
+            return fresh.into_iter().collect();
         };
         // Every conversation somebody has open, as Obelus last looked --
         // which is when something told it to look. See
@@ -417,7 +485,7 @@ impl App {
         // on no evidence at all.
         rows.sort_by_key(|(last, _, _)| std::cmp::Reverse(*last));
         let mut stands_for: Vec<Listed> = Vec::with_capacity(rows.len());
-        let mut items = Vec::with_capacity(rows.len());
+        let mut items: Vec<PickerItem> = fresh.into_iter().collect();
         for (at, (_, listed, mut item)) in rows.into_iter().enumerate() {
             item.value = PickerValue::Conversation(at);
             stands_for.push(listed);
@@ -505,6 +573,18 @@ impl App {
             (true, _) => Some(here()),
             (false, true) => Some(locked()),
             (false, false) => None,
+        }
+    }
+
+    /// What a tab says it is, which for the agent in use when none is
+    /// chosen is that.
+    ///
+    /// A tab with no words on it is what the agent's own name gives there:
+    /// it has none, and the tab is still where a new conversation starts.
+    fn tab_called(&self, agent: &str) -> String {
+        match agent.is_empty() {
+            true => "No agent".to_string(),
+            false => self.agent_called(agent),
         }
     }
 

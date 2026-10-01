@@ -464,7 +464,7 @@ mod in_place {
         obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Kept);
         let (scratch, mut app) = open("field-chat-cut");
         let before = "fn main() {}\n";
-        dispatch::dispatch(&mut app, Command::AgentOpen);
+        dispatch::dispatch(&mut app, Command::ConversationNew);
         assert!(app.chat().is_some(), "the chat did not open");
 
         dispatch::dispatch(&mut app, Command::SelectionCut);

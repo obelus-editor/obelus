@@ -42,7 +42,7 @@ const OFFERED: &[(Command, &str)] = &[
     (Command::FileOpen, "Open a file"),
     (Command::FileChanged, "Changed files"),
     (Command::SearchProject, "Search files"),
-    (Command::AgentOpen, "Ask the agent"),
+    (Command::ConversationSelect, "Ask the agent"),
     (Command::CommandPalette, "Run a command"),
     (Command::Quit, "Leave Obelus"),
 ];

@@ -219,25 +219,6 @@ impl Reading {
     }
 }
 
-/// Whether this project has any conversation written down, without
-/// reading them.
-///
-/// A stat, because that is all the question needs and the question is
-/// asked from a view: [`read`] parses the whole table, which is 37us for
-/// one conversation and 351us for twenty, and a view that asked it drew
-/// every frame of a conversation at that price. What a view asks has to be
-/// already answered or cheap enough to be; this is the second.
-///
-/// What makes the length enough is the writer, just below: [`change`] puts
-/// [`to_toml`] in the file whole, and an empty table writes an empty file.
-/// So bytes in it means rows in it -- the one thing a size cannot tell is
-/// whether they still *parse*, which is why this is a gate and not an
-/// answer. The list it gates says what it found.
-#[must_use]
-pub fn any(root: &Path) -> bool {
-    path(root).is_some_and(|path| std::fs::metadata(path).is_ok_and(|file| file.len() > 0))
-}
-
 /// What the file says.
 #[must_use]
 pub fn read(root: &Path) -> Reading {

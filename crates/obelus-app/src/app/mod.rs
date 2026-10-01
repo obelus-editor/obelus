@@ -2907,10 +2907,10 @@ impl App {
         // view saying what the key means *here* -- and that beats what it
         // means one level out, the same way `Keymap::lookup` asks a
         // context's own table before the file's and the file's before
-        // everywhere. `f4` in a conversation is the case: it opens the
-        // conversation from anywhere else and means "which one" inside the
-        // one it named, and without this it swapped the conversation for
-        // itself and the binding was dead.
+        // everywhere. `f4` was the case while it opened a conversation and
+        // meant "which one" inside one, and it swapped the conversation for
+        // itself; it is the list everywhere now, and this stays for the
+        // next view that takes a key of its own.
         if self.in_a_whole_view()
             && self.keymap.bound_here(&key, self.context()).is_none()
             && let Some(command) = self.keymap.lookup(&key, Context::Normal)

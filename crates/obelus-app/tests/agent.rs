@@ -106,7 +106,7 @@ fn playing(how: &[&str]) -> (App, Receiver<Event>) {
     let mut arguments = vec!["tests/fixtures/fake-agent.sh".to_string()];
     arguments.extend(how.iter().map(|word| (*word).to_string()));
     app.talk_to("fake", Path::new("sh"), &arguments);
-    app.open_agent();
+    app.new_conversation();
     // Now rather than on the first frame, which is what would ask for it
     // otherwise: what these tests are about is what happens in a
     // conversation that is running, from the first thing they draw.
@@ -137,6 +137,21 @@ fn said_in_transcript(app: &App, words: &str) -> bool {
             .iter()
             .any(|row| row.text().contains(words))
     })
+}
+
+/// The rows of the list of conversations that are conversations, past the
+/// one that starts a new one -- which every such list opens with.
+fn listed_conversations(app: &App) -> Vec<&obelus_component::picker::PickerItem> {
+    app.picker()
+        .expect("the list of conversations")
+        .matches()
+        .filter(|item| {
+            matches!(
+                item.value,
+                obelus_component::picker::PickerValue::Conversation(_)
+            )
+        })
+        .collect()
 }
 
 /// Writes a conversation into the project's table, as one that was had and
@@ -986,7 +1001,7 @@ fn the_answer_to_a_cancelled_turn_does_not_end_the_next_one() {
 #[test]
 fn the_view_says_when_nobody_is_chosen() {
     let (mut app, _events) = wired();
-    app.open_agent();
+    app.new_conversation();
     let text = screen(&mut app);
     assert!(
         text.contains("No agent is active"),
@@ -2606,7 +2621,7 @@ fn talking_to_an_agent_that_stopped_starts_it_again() {
     let file = directory.join("config.toml");
     std::fs::write(&file, "agent = \"fake\"\n").expect("a settings file");
     app.config_file_for_test(file);
-    app.open_agent();
+    app.new_conversation();
     app.open_a_session_for_test();
     pump(&mut app, &events, "the session", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -2910,7 +2925,7 @@ fn a_row_naming_a_file_that_is_gone_changes_nothing() {
         Path::new("sh"),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
-    app.open_agent();
+    app.new_conversation();
     app.open_a_session_for_test();
     pump(&mut app, &events, "the session", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -3648,7 +3663,7 @@ fn a_list_over_a_question_does_not_paint_over_it() {
     });
     // Somewhere else to be, so the list has two rows and is worth opening.
     app.open_for_test(Path::new("src/lib.rs"));
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationNew);
     support::type_text(&mut app, "/twice");
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the question", |app| {
@@ -3693,7 +3708,7 @@ fn a_list_over_a_conversation_covers_the_box() {
     });
     // Somewhere else to be, so the list has two rows and is worth opening.
     app.open_for_test(Path::new("src/lib.rs"));
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationNew);
 
     let half_written = "what I was in the middle of saying";
     support::type_text(&mut app, half_written);
@@ -3725,7 +3740,7 @@ fn a_list_over_a_conversation_covers_the_box() {
 /// because the page had no session of its own, and the turn they were
 /// actually having left behind in the document they came from.
 ///
-/// Broken deliberately by putting `open_agent` back at the head of
+/// Broken deliberately by putting `new_conversation` back at the head of
 /// `show_the_question`, which empties the screen of everything the reader
 /// said and leaves the one tool call on a page that is still starting.
 #[test]
@@ -6327,7 +6342,7 @@ fn the_key_from_a_conversation_to_the_notes_lands_the_caret_in_them() {
         in_a_note,
         "escape took the caret out of the note"
     );
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationNew);
     assert!(app.chat().is_some(), "the conversation is not back");
     support::press_alt(&mut app, 't');
     assert_eq!(
@@ -6598,7 +6613,7 @@ fn a_conversation_opens_on_what_the_reader_chose() {
         Path::new("sh"),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
-    app.open_agent();
+    app.new_conversation();
     app.open_a_session_for_test();
 
     pump(&mut app, &events, "the model to be the chosen one", |app| {
@@ -6659,7 +6674,7 @@ fn a_value_the_agent_no_longer_offers_is_not_sent() {
         Path::new("sh"),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
-    app.open_agent();
+    app.new_conversation();
     app.open_a_session_for_test();
 
     pump(&mut app, &events, "the switch to be on", |app| {
@@ -7499,7 +7514,7 @@ fn opening_a_conversation_opens_its_session_before_a_word_is_said() {
         Path::new("sh"),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
-    app.open_agent();
+    app.new_conversation();
     assert!(app.chat().is_some(), "the view did not open");
     support::lay_out(&mut app, WIDTH, HEIGHT);
     pump(&mut app, &events, "the session", |app| {
@@ -7678,15 +7693,12 @@ fn the_list_offers_the_conversations_this_project_has_had() {
     remember_a_conversation(&scratch, "fake", "s-old", "count the lines", Some(1_000));
     remember_a_conversation(&scratch, "fake", "s-new", "the margin lies", Some(2_000));
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationNew);
     // The key rather than the command, because the key is half of it: `f4`
-    // opens the conversation from anywhere and means "which one" inside the
-    // conversation it named, the same way `f3` walks to a tab of `f1`'s
-    // list rather than opening that list again.
+    // is the list from inside a conversation as well as from a file.
     support::press(&mut app, KeyCode::F(4));
-    let picker = app.picker().expect("the list of conversations");
-    let rows: Vec<(String, bool)> = picker
-        .matches()
+    let rows: Vec<(String, bool)> = listed_conversations(&app)
+        .into_iter()
         .map(|item| (item.label.clone(), item.enabled))
         .collect();
     assert_eq!(
@@ -7704,13 +7716,133 @@ fn the_list_offers_the_conversations_this_project_has_had() {
         "a list of one agent's conversations has a row of tabs"
     );
 
-    // Taking one up opens it and asks the agent for that one by name.
+    // Starting on the new one, because the conversation the reader is in
+    // has nothing said in it and so is not in the list. Broken by putting
+    // the new row last in `App::conversation_rows`.
+    assert_eq!(
+        app.picker()
+            .and_then(|picker| picker.selected_item())
+            .map(|item| item.label.as_str()),
+        Some("New conversation"),
+        "the list does not start on the new conversation"
+    );
+    // Taking one up opens it and asks the agent for that one by name --
+    // one row down, past the new one.
+    support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
     assert!(app.picker().is_none(), "the list stayed open");
     assert_eq!(
         app.chat_session_for_test().as_deref(),
         Some("s-new"),
         "it did not ask for the conversation the row named"
+    );
+}
+
+/// On a project nobody has talked about, the list still opens, holding the
+/// one row that starts a conversation.
+///
+/// `f4` is the way to the agent from anywhere, so a key that did nothing
+/// until something had been said would be a way in that only works for a
+/// reader who has already found another.
+///
+/// Broken deliberately two ways. Leaving the agent in use out of the tabs
+/// where it has said nothing -- the `push` in `open_conversation_picker` --
+/// leaves the list with no rows at all. And taking the new row out of
+/// `App::conversation_rows` leaves enter with nothing to choose.
+#[test]
+fn the_list_of_conversations_starts_one_where_there_are_none() {
+    let scratch = support::Scratch::new("agent-conversation-none");
+    let (mut app, _events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    assert!(
+        app.chat().is_none(),
+        "a conversation was open before the key"
+    );
+
+    support::press(&mut app, KeyCode::F(4));
+    let rows: Vec<String> = app
+        .picker()
+        .expect("the list, on a project nobody has talked about")
+        .matches()
+        .map(|item| item.label.clone())
+        .collect();
+    assert_eq!(
+        rows,
+        ["New conversation"],
+        "the list is not the new row alone"
+    );
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_none(), "the list stayed open");
+    assert!(
+        app.chat().is_some(),
+        "choosing the new row did not open a conversation"
+    );
+}
+
+/// A new conversation is a new one once something has been said, and not
+/// before.
+///
+/// One already open with nothing in it *is* the new conversation, so
+/// asking again goes back to it: a reader pressing the row twice would
+/// otherwise collect empty pages in the list of what is open.
+///
+/// Broken deliberately two ways. Having `App::new_conversation` push a
+/// document every time: the count goes up while nothing has been said. And
+/// taking `anything_said` out of `Conversation::is_blank`: the reader is
+/// sent back into the conversation they asked to leave.
+#[test]
+fn a_new_conversation_is_new_once_something_is_said_in_the_last() {
+    let scratch = support::Scratch::new("agent-conversation-new");
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationNew);
+    let documents = app.document_count_for_test();
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::FileOpen);
+    support::press(&mut app, KeyCode::Esc);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationNew);
+    assert_eq!(
+        app.document_count_for_test(),
+        documents,
+        "a second empty conversation was opened beside the first"
+    );
+
+    app.open_a_session_for_test();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/echo");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer", |app| {
+        said_in_transcript(app, "heard you")
+    });
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationNew);
+    assert_eq!(
+        app.document_count_for_test(),
+        documents + 1,
+        "the reader was sent back into the conversation they had talked in"
+    );
+    assert!(
+        !said_in_transcript(&app, "heard you"),
+        "the new conversation has the old one's words in it"
     );
 }
 
@@ -7757,7 +7889,7 @@ fn the_list_of_conversations_is_read_whole_in_runs_by_day() {
         Some(now - 40 * 86_400),
     );
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationNew);
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
     let rows = |app: &mut App| -> Vec<String> {
         support::text_block(&support::render(app, WIDTH, HEIGHT))
@@ -7851,12 +7983,10 @@ fn a_conversation_another_obelus_has_open_cannot_be_taken_up_from_the_list() {
     )
     .expect("their claim");
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationNew);
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
-    let rows: Vec<(String, bool, bool)> = app
-        .picker()
-        .expect("the list")
-        .matches()
+    let rows: Vec<(String, bool, bool)> = listed_conversations(&app)
+        .into_iter()
         .map(|item| (item.label.clone(), item.enabled, item.marker.is_some()))
         .collect();
     assert_eq!(
@@ -7880,7 +8010,9 @@ fn a_conversation_another_obelus_has_open_cannot_be_taken_up_from_the_list() {
     .expect("their second claim");
     // Not heard yet, which is the point of this half: the row still says
     // the conversation is free, and what refuses the reader is the claim
-    // being asked for again at the press.
+    // being asked for again at the press. Down from the new one steps over
+    // the row that is somebody else's.
+    support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
     assert!(
         app.picker().is_some(),
@@ -7891,9 +8023,8 @@ fn a_conversation_another_obelus_has_open_cannot_be_taken_up_from_the_list() {
         "a second window was let into the conversation"
     );
     assert!(
-        app.picker()
-            .expect("the list")
-            .matches()
+        listed_conversations(&app)
+            .into_iter()
             .all(|item| !item.enabled),
         "the row the reader pressed still says it can be taken up"
     );
@@ -7942,7 +8073,7 @@ fn another_agents_conversations_get_a_tab_and_cannot_be_taken_up() {
     remember_a_conversation(&scratch, "fake", "s-mine", "mine", Some(2_000));
     remember_a_conversation(&scratch, "other", "s-theirs", "theirs", Some(1_000));
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationNew);
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
     let picker = app.picker().expect("the list");
     assert_eq!(
@@ -7976,6 +8107,30 @@ fn another_agents_conversations_get_a_tab_and_cannot_be_taken_up() {
             .what_about()
             .is_some_and(|said| said.contains("only be taken up by the agent that had it")),
         "a tab of rows that cannot be chosen says nothing about why"
+    );
+}
+
+/// With no agent chosen, the tab a new conversation starts on says so.
+///
+/// The agent in use always has a tab, and with none chosen its name is no
+/// name at all -- a tab with nothing on it, beside another agent's.
+///
+/// Broken deliberately by naming the tabs with `agent_called` alone in
+/// `open_conversation_picker`: the first tab is blank.
+#[test]
+fn with_no_agent_chosen_the_first_tab_says_so() {
+    let scratch = support::Scratch::new("agent-conversation-no-agent");
+    let (mut app, _events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.configure(obelus_config::Config::default(), Vec::new());
+    remember_a_conversation(&scratch, "other", "s-theirs", "theirs", Some(1_000));
+
+    support::press(&mut app, KeyCode::F(4));
+    let picker = app.picker().expect("the list");
+    assert_eq!(
+        picker.tabs(),
+        ["No agent", "other"],
+        "the tab of no agent has no name"
     );
 }
 
@@ -8013,7 +8168,7 @@ fn a_conversation_already_open_here_is_gone_to() {
         Path::new("sh"),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
-    app.open_agent();
+    app.new_conversation();
     app.open_a_session_for_test();
     pump(&mut app, &events, "the session", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -8026,16 +8181,13 @@ fn a_conversation_already_open_here_is_gone_to() {
     let open = app.chat_session_for_test().expect("a session");
     let documents = app.document_count_for_test();
 
-    // Away to a file, and back through the list.
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::FileOpen);
-    support::press(&mut app, KeyCode::Esc);
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
+    // The list, from inside the conversation.
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
     // It is in the list at all, which is a conversation about nothing in
     // particular being written down: those were left out while the only
     // thing that asked was the notes page, which has no row for one.
     assert_eq!(
-        app.picker().expect("the list").match_count(),
+        listed_conversations(&app).len(),
         1,
         "a conversation about nothing in particular was not written down"
     );
@@ -8045,15 +8197,17 @@ fn a_conversation_already_open_here_is_gone_to() {
     // answering `None` for it in `App::listed_mark`.
     support::lay_out(&mut app, WIDTH, HEIGHT);
     assert_eq!(
-        app.picker()
-            .expect("the list")
-            .matches()
-            .next()
+        listed_conversations(&app)
+            .first()
             .and_then(|item| item.marker.as_ref())
             .map(|(_, mark)| mark.as_str()),
         Some("\u{2022}"),
         "the conversation the reader is in is not marked as theirs"
     );
+    // Enter with nothing pressed before it, because the list starts on the
+    // conversation the reader is in rather than on the new one. Broken by
+    // taking the `select_item` out of `open_conversation_picker`: the
+    // selection stays on the new row, and enter opens a second document.
     support::press(&mut app, KeyCode::Enter);
     // The list went, which is what says the row was taken. It would not
     // have: the claim on a conversation this Obelus is already holding is
@@ -8072,6 +8226,28 @@ fn a_conversation_already_open_here_is_gone_to() {
         app.document_count_for_test(),
         documents,
         "a second document was opened for one conversation"
+    );
+
+    // And from a file, where it is not the conversation the reader is in
+    // and the list starts on the new row instead: one row down is it.
+    app.open_for_test(Path::new("src/lib.rs"));
+    assert!(app.chat().is_none(), "the file is not what is showing");
+    support::press(&mut app, KeyCode::F(4));
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    assert!(
+        app.picker().is_none(),
+        "the row would not take the reader back from a file"
+    );
+    assert_eq!(
+        app.chat_session_for_test().as_deref(),
+        Some(open.as_str()),
+        "the row did not take the reader back to the conversation it named"
+    );
+    assert_eq!(
+        app.document_count_for_test(),
+        documents + 1,
+        "a second document was opened for one conversation, from a file"
     );
 }
 
@@ -8109,13 +8285,12 @@ fn a_conversation_taken_up_elsewhere_says_so_while_the_reader_looks_at_it() {
     remember_a_conversation(&scratch, "fake", "s-one", "the first", Some(2_000));
     remember_a_conversation(&scratch, "fake", "s-two", "the second", Some(1_000));
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationNew);
     support::press(&mut app, KeyCode::F(4));
     support::lay_out(&mut app, WIDTH, HEIGHT);
     assert!(
-        app.picker()
-            .expect("the list")
-            .matches()
+        listed_conversations(&app)
+            .into_iter()
             .all(|item| item.enabled && item.marker.is_none()),
         "a conversation nobody has open is drawn as somebody's"
     );
@@ -8132,10 +8307,8 @@ fn a_conversation_taken_up_elsewhere_says_so_while_the_reader_looks_at_it() {
         &obelus_agent::chats::ChatId::Loose("s-one".to_string()),
     );
     support::lay_out(&mut app, WIDTH, HEIGHT);
-    let rows: Vec<(String, bool, bool)> = app
-        .picker()
-        .expect("the list")
-        .matches()
+    let rows: Vec<(String, bool, bool)> = listed_conversations(&app)
+        .into_iter()
         .map(|item| (item.label.clone(), item.enabled, item.marker.is_some()))
         .collect();
     assert_eq!(
@@ -8158,31 +8331,25 @@ fn a_conversation_taken_up_elsewhere_says_so_while_the_reader_looks_at_it() {
     );
     support::lay_out(&mut app, WIDTH, HEIGHT);
     assert!(
-        app.picker()
-            .expect("the list")
-            .matches()
+        listed_conversations(&app)
+            .into_iter()
             .all(|item| item.enabled && item.marker.is_none()),
         "the row is still somebody else's after they let it go"
     );
 }
 
-/// The key that opens the list is offered from what a stat says, so the
-/// list has to say what it actually found.
+/// A table Obelus cannot read is said over the list, which still opens.
 ///
-/// Whether this project has anything to take up is asked on every frame of
-/// every conversation -- the status row draws that key only where it would
-/// do something -- so it is answered by the size of one file rather than by
-/// parsing it: 285ns against 351us with twenty conversations written down.
-/// Which leaves the gate a shade generous, because a size cannot say
-/// whether the bytes still parse. The list is where that is made good.
+/// The list is never empty -- it starts a new conversation as well -- so a
+/// project whose table will not parse would look exactly like one nobody
+/// has talked about: the new row and nothing under it. That reports
+/// Obelus's own trouble as the reader's history, which is the answer the
+/// notes and the settings both had to learn to tell apart.
 ///
 /// Broken deliberately two ways. Having `open_conversation_picker` return
-/// early on a table it cannot read puts the reader back where `f3` on a
-/// clean project used to leave them: a key the page offered and nothing
-/// happening. And saying "Nothing has been said about this project yet"
-/// for a table that would not read reports Obelus's own trouble as the
-/// reader's history -- which is the answer the notes and the settings both
-/// had to learn to tell apart.
+/// early on a table it cannot read leaves the key doing nothing at all. And
+/// taking the `unreadable` arm out of `say_whose_conversations` says
+/// nothing over the list, which is the new row alone.
 #[test]
 fn a_table_obelus_cannot_read_is_not_a_project_nobody_has_talked_about() {
     let scratch = support::Scratch::new("agent-conversation-unreadable");
@@ -8200,14 +8367,11 @@ fn a_table_obelus_cannot_read_is_not_a_project_nobody_has_talked_about() {
     std::fs::create_dir_all(table.parent().expect("a directory")).expect("the directory");
     std::fs::write(&table, "[[talked]]\nagent = \"half a na").expect("the half-written table");
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
-    assert!(
-        app.offers(obelus_command::Command::ConversationSelect),
-        "the key is not offered for a project that has a table at all"
-    );
     support::press(&mut app, KeyCode::F(4));
-    let picker = app.picker().expect("the list");
-    assert_eq!(picker.match_count(), 0);
+    assert!(
+        listed_conversations(&app).is_empty(),
+        "rows were made out of a table that would not read"
+    );
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     assert!(
         dump.contains("cannot read what it wrote down"),
@@ -8526,8 +8690,8 @@ fn a_conversation_about_a_note_watches_the_notes_without_the_page() {
 
     // In through the list, so the notes page is never opened and never
     // takes the watch this is about.
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::AgentOpen);
     support::press(&mut app, KeyCode::F(4));
+    support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
     assert!(app.notes().is_none(), "the notes page is open after all");
     let dump = support::render(&mut app, WIDTH, HEIGHT);
@@ -8672,7 +8836,7 @@ fn a_conversation_the_agent_died_under_asks_for_another() {
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     // One conversation the reader has said something in.
-    app.open_agent();
+    app.new_conversation();
     support::lay_out(&mut app, WIDTH, HEIGHT);
     support::type_text(&mut app, "/echo");
     support::press(&mut app, KeyCode::Enter);
@@ -8749,7 +8913,7 @@ fn an_answer_nobody_is_waiting_for_goes_to_nobody() {
     // A conversation opened -- which asks for its session -- and closed
     // before the answer is read: nothing here takes events off the channel
     // until the pump below.
-    app.open_agent();
+    app.new_conversation();
     support::lay_out(&mut app, WIDTH, HEIGHT);
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentClose);
     // And a note's, which asks for its own.
@@ -8868,7 +9032,7 @@ fn a_choice_not_offered_is_said_once_however_many_sessions() {
         Path::new("sh"),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
-    app.open_agent();
+    app.new_conversation();
     support::lay_out(&mut app, WIDTH, HEIGHT);
     let said = |app: &App| {
         app.chat().map_or(0, |chat| {
@@ -8886,7 +9050,7 @@ fn a_choice_not_offered_is_said_once_however_many_sessions() {
     // again.
     app.open_buffer_for_test(support::open_fixture("sample.rs"));
     support::lay_out(&mut app, WIDTH, HEIGHT);
-    app.open_agent();
+    app.new_conversation();
     support::lay_out(&mut app, WIDTH, HEIGHT);
     pump(&mut app, &events, "a session of its own again", |app| {
         app.chat_session_for_test().as_deref() == Some("s-2")
@@ -8960,12 +9124,12 @@ fn an_agent_not_installed_is_not_said_into_the_conversation_on_every_visit() {
     };
     app.configure(config, Vec::new());
     for _ in 0..2 {
-        app.open_agent();
+        app.new_conversation();
         support::lay_out(&mut app, WIDTH, HEIGHT);
         app.open_buffer_for_test(support::open_fixture("sample.rs"));
         support::lay_out(&mut app, WIDTH, HEIGHT);
     }
-    app.open_agent();
+    app.new_conversation();
     support::lay_out(&mut app, WIDTH, HEIGHT);
     let said = app.chat().map_or(0, |chat| {
         chat.rows(WIDTH)
@@ -9013,7 +9177,7 @@ fn choosing_the_agent_again_gives_the_conversation_a_session_on_it() {
         ..obelus_config::Config::default()
     };
     app.configure(config, Vec::new());
-    app.open_agent();
+    app.new_conversation();
     support::lay_out(&mut app, WIDTH, HEIGHT);
     pump(&mut app, &events, "the session", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -9076,7 +9240,7 @@ fn a_word_the_last_agent_had_already_said_is_not_the_next_ones() {
     app.configure(config, Vec::new());
     // A conversation asks the first process for a session, and the answer
     // is left in the queue: nothing here reads it until the pump below.
-    app.open_agent();
+    app.new_conversation();
     support::lay_out(&mut app, WIDTH, HEIGHT);
     std::thread::sleep(Duration::from_millis(500));
 
@@ -9121,7 +9285,7 @@ fn a_session_nobody_is_waiting_for_is_let_go() {
         ],
     );
     // Opened, which asks, and closed before the answer is read.
-    app.open_agent();
+    app.new_conversation();
     support::lay_out(&mut app, WIDTH, HEIGHT);
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentClose);
     support::lay_out(&mut app, WIDTH, HEIGHT);
@@ -9151,7 +9315,7 @@ fn a_conversation_after_the_agent_died_introduces_itself_again() {
         ..obelus_config::Config::default()
     };
     app.configure(config, Vec::new());
-    app.open_agent();
+    app.new_conversation();
     support::lay_out(&mut app, WIDTH, HEIGHT);
     let blocks = |app: &App, how_many: &str| {
         app.chat().map_or(0, |chat| {
@@ -9269,7 +9433,7 @@ fn a_second_choice_not_offered_is_said_too() {
         Path::new("sh"),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
-    app.open_agent();
+    app.new_conversation();
     support::lay_out(&mut app, WIDTH, HEIGHT);
     let said = |app: &App| {
         app.chat().map_or(0, |chat| {
@@ -9290,7 +9454,7 @@ fn a_second_choice_not_offered_is_said_too() {
     app.configure(config, Vec::new());
     app.open_buffer_for_test(support::open_fixture("sample.rs"));
     support::lay_out(&mut app, WIDTH, HEIGHT);
-    app.open_agent();
+    app.new_conversation();
     support::lay_out(&mut app, WIDTH, HEIGHT);
     pump(&mut app, &events, "the second to be said", |app| {
         said(app) == 2
@@ -9314,7 +9478,7 @@ fn a_conversation_asks_for_its_session_once_the_agent_is_installed() {
         ..obelus_config::Config::default()
     };
     app.configure(config, Vec::new());
-    app.open_agent();
+    app.new_conversation();
     support::lay_out(&mut app, WIDTH, HEIGHT);
     the_fixture_is_installed(&root);
     app.handle(Event::Agent(obelus_agent::Event::Installed {

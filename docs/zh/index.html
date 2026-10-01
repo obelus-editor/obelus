@@ -299,13 +299,13 @@ ob src/main.rs       # 同一个文件，改在终端里读</code></pre>
       <p>Obelus 不实现任何人的模型，它只和你已经有的那个说话——用 <strong>ACP</strong>（Agent Client Protocol），和语言服务器一样的形状：另一个程序，走它自己的标准输入输出。</p>
 
       <h4>装一个</h4>
-      <p>哪些 agent 存在不是 Obelus 说了算。协议的作者维护着一份注册表，Obelus 读它：四十来条，每条有名字、版本、说明和安装方式。<code>Ctrl+p</code> → <code>talk-to-agent</code>（或 <kbd>F4</kbd>），在 agents 页里挑一个装。能画图的终端会直接显示每个 agent 自己的 logo，不能的显示一个字形。同一时刻只有一个 agent：两个就意味着每次提问都要先说「问哪个」，而你得记住这件事。</p>
+      <p>哪些 agent 存在不是 Obelus 说了算。协议的作者维护着一份注册表，Obelus 读它：四十来条，每条有名字、版本、说明和安装方式。<kbd>F4</kbd> → New conversation（或 <code>Ctrl+p</code> → <code>new-conversation</code>），在 agents 页里挑一个装。能画图的终端会直接显示每个 agent 自己的 logo，不能的显示一个字形。同一时刻只有一个 agent：两个就意味着每次提问都要先说「问哪个」，而你得记住这件事。</p>
 
       <h4>对话是一份文档</h4>
       <p>它就在 <kbd>F2</kbd> 的那份列表里。走开是「去了别处」，不是「关掉了」——回来的时候，说过的话都还在。<kbd>Enter</kbd> 发送，<kbd>Alt+Enter</kbd>（终端支持的话 <kbd>Shift+Enter</kbd> 也行）换行。状态栏那一行是这个 agent 自己声明的会话选项——模式、模型、推理强度之类——就地走、就地改；<kbd>Shift+Tab</kbd> 一直是反着走的那一个。Obelus 一个字也不翻译：哪些选项存在是 agent 的事。</p>
 
       <h4>一场对话属于一条笔记</h4>
-      <p>用 <kbd>F4</kbd> 开的对话不关于任何特定的事；从一条笔记开的，就是关于那条笔记的——而且一直是：明天回来，对话还在你离开的地方，因为说过的话由 agent 自己重放，Obelus 只需要记住哪个对话是关于哪条笔记的。</p>
+      <p>从 <kbd>F4</kbd> 新开的对话不关于任何特定的事；从一条笔记开的，就是关于那条笔记的——而且一直是：明天回来，对话还在你离开的地方，因为说过的话由 agent 自己重放，Obelus 只需要记住哪个对话是关于哪条笔记的。</p>
       <p>对话开始时，Obelus 会把这条笔记说了什么告诉 agent。你半夜把笔记改写了，下一条消息会带上改了什么——否则按协议，agent 没有任何办法知道周一告诉它的那段话周二已经变了。</p>
       <p>在你说第一句话之前，Obelus 还会先说清楚它在跟谁说话：这个人正在终端里读代码，你说的话会落在他正读的文件旁边；凡是该由他决定的事，用提问的方式问，而不要在回复里写成 <code>1) … 2) …</code>——那样到他那里只是一段文字，屏幕上没有任何东西表示这是在等一个回答。</p>
 
@@ -354,7 +354,7 @@ ob src/main.rs       # 同一个文件，改在终端里读</code></pre>
           <tr><td><kbd>F1</kbd></td><td><code>open-file</code></td><td>在这棵树里挑一个文件打开（在弹出的视图里，<kbd>F1</kbd> 是「列出所有键」）</td></tr>
           <tr><td><kbd>F2</kbd></td><td><code>switch-document</code></td><td>在已经打开的文档之间挑</td></tr>
           <tr><td><kbd>F3</kbd></td><td><code>open-changed-file</code></td><td>挑一个自上次提交以来改过的文件</td></tr>
-          <tr><td><kbd>F4</kbd></td><td><code>talk-to-agent</code></td><td>和 agent 说话——在一个对话里按，则是 <code>choose-conversation</code>：挑一个以前的对话接着说</td></tr>
+          <tr><td><kbd>F4</kbd></td><td><code>choose-conversation</code></td><td>和 agent 的哪个对话：开一个新的，或挑一个以前的接着说</td></tr>
           <tr><td><kbd>F5</kbd></td><td><code>search-file</code></td><td>在正在读的这个文件里搜</td></tr>
           <tr><td><kbd>F6</kbd></td><td><code>search-project</code></td><td>在整个项目里搜</td></tr>
           <tr><td><kbd>F7</kbd></td><td><code>show-outline</code></td><td>这个文件定义的每个符号</td></tr>
@@ -451,7 +451,7 @@ ob src/main.rs       # 同一个文件，改在终端里读</code></pre>
           </tr>
           <tr>
             <td>Obelus</td>
-            <td><code>choose-theme</code> <code>talk-to-agent</code> <code>choose-conversation</code> <code>open-settings</code> <code>open-project-settings</code> <code>open-settings-file</code> <code>open-log</code> <code>open-server-log</code> <code>restart-server</code> <code>stop-server</code> <code>quit</code></td>
+            <td><code>choose-theme</code> <code>new-conversation</code> <code>choose-conversation</code> <code>open-settings</code> <code>open-project-settings</code> <code>open-settings-file</code> <code>open-log</code> <code>open-server-log</code> <code>restart-server</code> <code>stop-server</code> <code>quit</code></td>
           </tr>
         </tbody>
       </table>
