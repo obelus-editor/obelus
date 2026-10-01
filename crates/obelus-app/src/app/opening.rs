@@ -2,7 +2,8 @@
 //!
 //! Two pieces, and the difference between them is the whole of this module.
 //! The first is said in every conversation and never changes: who the agent
-//! is talking to, and how to put a question to them. The second is whatever
+//! is talking to, and how to put a question to them -- and, where the
+//! project has chosen one, that it has a workflow. The second is whatever
 //! the conversation is *about*, which is [`Topic`] -- so the way to add an
 //! opening for a new kind of conversation is to add a variant there, and
 //! the match below stops compiling until somebody decides what it says.
@@ -26,6 +27,19 @@ use crate::conversation::Topic;
 
 /// Who the agent is talking to, in every conversation.
 const ALWAYS: &str = include_str!("always.txt");
+
+/// That the project has a workflow, and where to read it.
+///
+/// A line rather than the workflow, because most conversations change
+/// nothing and the workflow is several paragraphs: the agent reads it when
+/// it is about to change something, which is how a skill is loaded too. And
+/// it is told to read it again at the end, because a long conversation is
+/// summarised by the agent and the steps that come last are the ones a
+/// summary drops.
+const WORKFLOW: &str = include_str!("workflow.txt");
+
+/// The workflow `feature-branch` names, as `read_workflow` hands it over.
+const FEATURE_BRANCH: &str = include_str!("feature-branch.txt");
 
 /// What a conversation about a note says it is about.
 const NOTE: &str = include_str!("note.txt");
@@ -80,6 +94,9 @@ impl App {
         let mut pieces = Vec::new();
         if !introduced {
             pieces.push(ALWAYS.trim().to_string());
+            if self.workflow().is_some() {
+                pieces.push(WORKFLOW.trim().to_string());
+            }
         }
         let about = self.about_the_topic(topic, told);
         if let Some((words, _, _)) = &about {
@@ -98,6 +115,30 @@ impl App {
             now: about.map(|(_, _, now)| now),
             introduced: true,
         })
+    }
+
+    /// The workflow this project has chosen, if it has chosen one.
+    ///
+    /// A word Obelus does not know is no workflow, which is what it was
+    /// before the reader wrote it: an agent told to follow nothing in
+    /// particular goes about a change its own way.
+    fn workflow(&self) -> Option<&'static str> {
+        match self.config().workflow.as_str() {
+            "feature-branch" => Some(FEATURE_BRANCH),
+            _ => None,
+        }
+    }
+
+    /// What `read_workflow` answers.
+    ///
+    /// Asked of the settings as they are now rather than as they were when
+    /// the conversation began, so a reader who changes the workflow
+    /// half-way is heard the next time the agent reads it.
+    pub(super) fn workflow_for_an_agent(&self) -> String {
+        self.workflow().map_or_else(
+            || "this project has no workflow, so change it the way you would anyway".to_string(),
+            |workflow| workflow.trim().to_string(),
+        )
     }
 
     /// What the conversation being about something adds, if anything.

@@ -176,6 +176,13 @@ pub struct Config {
     /// and then nothing is sent at all -- not a request whose answer is
     /// thrown away.
     pub new_versions: bool,
+    /// How an agent is to change this project, by the workflow's name.
+    ///
+    /// A word rather than a switch though there is one workflow, because
+    /// workflows exclude each other: two switches could both be on, and
+    /// turning one into a list later would leave every file that wrote
+    /// the switch with a line that did nothing.
+    pub workflow: String,
     /// Which agent Obelus talks to, by the registry's own name for it.
     ///
     /// One, or none. Two would mean every question having to say which
@@ -253,6 +260,10 @@ impl Default for Config {
             // On, because a reader who installed Obelus from a release has
             // no other way to hear of the next one.
             new_versions: true,
+            // None: how an agent goes about a change is the agent's own
+            // until the reader says otherwise, which is what it was before
+            // there was a setting.
+            workflow: "none".to_string(),
             // None until the reader installs one: Obelus does not choose an
             // agent for anybody.
             agent: None,
@@ -370,11 +381,13 @@ pub enum Group {
     Reading,
     /// Which files Obelus offers, and where it looks for them.
     Files,
+    /// How an agent goes about its work.
+    Agent,
 }
 
 impl Group {
     /// Every group, in the order their tabs sit in.
-    pub const ALL: [Self; 3] = [Self::Appearance, Self::Reading, Self::Files];
+    pub const ALL: [Self; 4] = [Self::Appearance, Self::Reading, Self::Files, Self::Agent];
 
     /// The tab's name.
     #[must_use]
@@ -383,6 +396,7 @@ impl Group {
             Self::Appearance => "Appearance",
             Self::Reading => "Reading",
             Self::Files => "Files",
+            Self::Agent => "Agent",
         }
     }
 }
@@ -500,6 +514,12 @@ pub const DEFAULT_FONT_SIZE: usize = 14;
 /// off, beside a list that already has a slowest, is a second way to say
 /// the same thing.
 const DELAYS: &[&str] = &["0", "200", "400", "800"];
+
+/// The workflows an agent can be asked to follow.
+///
+/// `none` is the agent's own way, and the others are written in
+/// `obelus-app`, beside the opening that points an agent at them.
+const WORKFLOWS: &[&str] = &["none", "feature-branch"];
 
 /// Every setting Obelus has.
 pub const ALL: &[Setting] = &[
@@ -657,6 +677,19 @@ pub const ALL: &[Setting] = &[
         kind: Kind::Switch,
         drawn: Drawn::Anywhere,
     },
+    Setting {
+        key: "workflow",
+        name: "Workflow",
+        about: "How an agent changes this project: feature-branch works on a branch in a worktree of its own under .worktree, and asks before a pull request, a merge, or taking the worktree away",
+        group: Group::Agent,
+        // A project's too, because it is about the project: whether its
+        // changes go through pull requests is the project's own rule. And
+        // nothing in it is done unasked but the worktree, which is a
+        // directory the project already ignores.
+        reach: Reach::Anywhere,
+        kind: Kind::Choice(WORKFLOWS),
+        drawn: Drawn::Anywhere,
+    },
 ];
 
 impl Config {
@@ -683,6 +716,7 @@ impl Config {
             "ignored_files" => Some(Value::Switch(self.ignored_files)),
             "hidden_files" => Some(Value::Switch(self.hidden_files)),
             "new_versions" => Some(Value::Switch(self.new_versions)),
+            "workflow" => Some(Value::Choice(self.workflow.clone())),
             "agent" => Some(Value::Choice(self.agent.clone().unwrap_or_default())),
             _ => None,
         }
@@ -709,6 +743,7 @@ impl Config {
             ("ignored_files", Value::Switch(on)) => self.ignored_files = *on,
             ("hidden_files", Value::Switch(on)) => self.hidden_files = *on,
             ("new_versions", Value::Switch(on)) => self.new_versions = *on,
+            ("workflow", Value::Choice(word)) => self.workflow = word.clone(),
             // An empty word is nobody, which is how a reader stops talking
             // to an agent without a second setting meaning "off".
             ("agent", Value::Choice(word)) => {
@@ -1176,6 +1211,11 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
     {
         config.new_versions = on;
     }
+    if let Some(word) = table.get("workflow").and_then(toml::Value::as_str)
+        && allowed("workflow")
+    {
+        config.workflow = word.to_string();
+    }
     if let Some(word) = table.get("agent").and_then(toml::Value::as_str)
         && allowed("agent")
     {
@@ -1401,6 +1441,11 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
         "new_versions",
         config.new_versions != default.new_versions,
         toml_edit::value(config.new_versions),
+    );
+    put(
+        "workflow",
+        config.workflow != default.workflow,
+        toml_edit::value(config.workflow.clone()),
     );
     put(
         "agent",
@@ -1721,6 +1766,20 @@ mod tests {
         assert!(!known("prevlew"), "a name spelled wrong is known");
     }
 
+    /// A project may choose its own workflow, because whether its changes go
+    /// through pull requests is the project's rule rather than the reader's.
+    ///
+    /// Broken deliberately by giving `workflow` `Reach::ReaderOnly`: the
+    /// project's line is ignored and the reader's `none` stands.
+    #[test]
+    fn a_project_may_choose_its_workflow() {
+        let mut config = Config::default();
+        let table: toml::Table = "workflow = \"feature-branch\"".parse().expect("toml");
+        let applied = apply(&mut config, &table, Whose::Project);
+        assert_eq!(config.workflow, "feature-branch");
+        assert!(applied.ignored.is_empty(), "{:?}", applied.ignored);
+    }
+
     /// Written and read back is the same config: the file is the only place
     /// a setting survives, so anything that does not survive the round trip
     /// is a setting the reader has to set twice.
@@ -1743,6 +1802,7 @@ mod tests {
             ignored_files: true,
             hidden_files: true,
             new_versions: false,
+            workflow: "feature-branch".to_string(),
             agent: Some("claude-acp".to_string()),
             // A key moved and a key taken away: both are decisions, and
             // both have to survive the file or the reader makes them again

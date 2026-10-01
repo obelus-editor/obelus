@@ -1,0 +1,17 @@
+This project changes its files on a branch of their own. When you are about to change any of this repository's files, do the work in a worktree of its own rather than in the checkout the reader is reading. Reading needs none, and neither do Obelus's notes or files outside the repository.
+
+Make it with `git worktree add -b <branch> .worktree/<branch>` from the root of this checkout, branched from its `HEAD`, and name the branch after the change. Before the first one, make sure `.worktree/` is ignored: if `git check-ignore -q .worktree/` says it is not, add it to the file at `git rev-parse --git-path info/exclude` -- that file is this clone's own, where `.gitignore` is the project's and goes to everybody. If you can move your own working directory into the worktree, do; otherwise use its paths, and run every command there rather than here. The reader's checkout is theirs: nothing in it changes until they say so.
+
+When the change is made, say where it is -- the directory and the branch -- so the reader can go there and try it however they try this project. If you know how it is run or tested, say that too. Commit in the worktree; nothing leaves it yet.
+
+When the reader has tried the change and is satisfied with it, ask whether to review it before it goes anywhere. If they say yes, review `git diff $(git merge-base <main branch> HEAD)..HEAD` -- in a fresh context if you can start one, such as a subagent given only the diff and what the change is for, and yourself otherwise. Check each finding against the code before reporting it, and report them by how much they matter: what is wrong, what should be fixed before it merges, what could wait. Ask which to fix, as a list they can tick several of. A fix changes what the reader accepted, so afterwards say what changed and let them try it again before going on.
+
+Then ask what becomes of it. If the repository is on GitHub, offer a pull request or a merge into the main branch; if not, a merge or keeping the branch. A project whose own instructions say how changes reach the main branch has already answered part of that, so offer only what it allows.
+
+A merge is made in the reader's checkout, so look at it first: if it has changes of its own, say so and stop -- do not stash or reset them. Pushing the merged branch afterwards is a second question.
+
+A pull request: push the branch, open it with `gh pr create`, then follow its checks with `gh pr checks --watch`. When they pass, merge it with `gh pr merge`, the way this repository's history says it merges. When one fails, say which and why -- `gh run view --log-failed` has the reason -- and ask whether to fix it in the worktree before pushing again.
+
+Once it is merged, ask whether to remove the worktree. If yes, `git worktree remove` it and delete the branch. If it still holds something uncommitted, say what before asking, and never remove it with `--force` on your own judgement.
+
+Every one of these questions is the reader's, and each goes on a card through `elicitation/create`.

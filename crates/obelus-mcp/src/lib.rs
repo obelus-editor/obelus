@@ -36,6 +36,14 @@
 //! It is here because the alternative is an agent naming a file and a line
 //! and leaving the reader to go and find it.
 //!
+//! And one is not about the reader at all: `read_workflow` hands over how
+//! this project has chosen to have its files changed. It is a tool rather
+//! than a paragraph of the opening because most conversations change
+//! nothing, and an agent reads it when it is about to -- the way a skill is
+//! loaded rather than said. It goes through the loop rather than reading a
+//! file here, because which workflow is chosen is the settings laid over
+//! one another, and that is answered once, in `obelus-app`.
+//!
 //! None of them takes a note away. `done` is how a list keeps what was
 //! decided against, so ticking loses nothing and an agent has no need of
 //! the one act that leaves nothing behind.
@@ -86,10 +94,11 @@ pub struct Asked {
 
 /// What an agent asked Obelus to do.
 ///
-/// Two kinds, and the difference is worth the enum: three of the tools
-/// write the reader's notes and one of them puts a file on their screen.
-/// The notes are a file Obelus is the only writer of; the file is the
-/// reader's own attention.
+/// Three kinds, and the difference is worth the enum: three of the tools
+/// write the reader's notes, one of them puts a file on their screen, and
+/// one asks what the settings say. The notes are a file Obelus is the only
+/// writer of; the file is the reader's own attention; the workflow is a
+/// question only the loop can answer.
 #[derive(Debug)]
 pub enum Wanted {
     /// A change to the notes.
@@ -104,6 +113,8 @@ pub enum Wanted {
         /// being opened for the first time is its first line.
         line: Option<u32>,
     },
+    /// How this project has chosen to have its files changed.
+    Workflow,
 }
 
 /// Obelus, as an agent can reach it.
@@ -315,6 +326,26 @@ impl Obelus {
             )]));
         }
         Ok(said(self.told(Wanted::Open { path, line }).await))
+    }
+
+    /// Hands over the project's workflow.
+    ///
+    /// Read-only, which it is: what it reads is the settings, and what it
+    /// answers changes nothing. Through the loop all the same, because
+    /// which workflow is chosen is the reader's settings with the
+    /// project's laid over them, and that is worked out in one place.
+    #[tool(
+        annotations(read_only_hint = true),
+        description = "\
+        How this project has chosen to have its files changed: where to \
+        make a change, what to ask the reader once it is made, and how it \
+        reaches the main branch. Read it before your first change and again \
+        when the reader says the work is done, and follow it. A project \
+        that has chosen none says so."
+    )]
+    async fn read_workflow(&self) -> Result<CallToolResult, ErrorData> {
+        tracing::info!("an agent asked for the workflow");
+        Ok(said(self.told(Wanted::Workflow).await))
     }
 
     /// Ticks a note off.

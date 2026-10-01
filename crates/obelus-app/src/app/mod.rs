@@ -2808,6 +2808,7 @@ impl App {
                 let _ = answer.send(match wanted {
                     obelus_mcp::Wanted::Notes(doing) => self.change_the_notes(doing),
                     obelus_mcp::Wanted::Open { path, line } => self.open_for_an_agent(&path, line),
+                    obelus_mcp::Wanted::Workflow => self.workflow_for_an_agent(),
                 });
             }
             Event::Released(tag) => self.on_released(&tag),

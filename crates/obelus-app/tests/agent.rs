@@ -4183,6 +4183,83 @@ fn a_loose_conversation_is_told_who_it_is_with_and_no_more() {
     });
 }
 
+/// The workflow a project has chosen, as its tool hands it over.
+fn the_workflow(app: &mut App) -> String {
+    let (answer, mut said) = futures::channel::oneshot::channel();
+    app.handle(Event::Tools(obelus_mcp::Asked {
+        wanted: obelus_mcp::Wanted::Workflow,
+        answer,
+    }));
+    said.try_recv()
+        .ok()
+        .flatten()
+        .expect("the tool answered nothing")
+}
+
+/// Chooses a workflow the way the reader's settings file would.
+fn choose_workflow(app: &mut App, workflow: &str) {
+    let mut config = app.config().clone();
+    config.workflow = workflow.to_string();
+    app.configure(config, vec!["workflow"]);
+}
+
+/// A project that has chosen a workflow says so in the first message -- and
+/// says only where to read it, because most conversations change nothing
+/// and the workflow is several paragraphs.
+///
+/// Broken deliberately two ways. Dropping the `workflow()` condition in
+/// `opening` leaves the line out and this reads `first=always`; pushing
+/// the workflow itself in its place reads `first=always+steps`.
+#[test]
+fn a_chosen_workflow_is_pointed_at_in_the_first_message() {
+    let (mut app, events) = talking();
+    choose_workflow(&mut app, "feature-branch");
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/blocks");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "what it got", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text().contains("blocks="))
+        })
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("first=always+workflow "),
+        "the agent was not pointed at the workflow, or was handed it:\n{text}"
+    );
+}
+
+/// The tool answers from the settings as they are when it is asked, not as
+/// they were when the conversation began: a reader who chooses a workflow
+/// half-way is heard the next time the agent reads it, and one who goes
+/// back to none is heard too.
+///
+/// Broken deliberately by answering with the workflow whatever the setting
+/// says: the first assertion, before anything is chosen, fails.
+#[test]
+fn the_workflow_is_read_from_the_settings_when_it_is_asked_for() {
+    let (mut app, _events) = wired();
+    assert!(
+        the_workflow(&mut app).contains("no workflow"),
+        "a project that chose nothing handed over a workflow"
+    );
+    choose_workflow(&mut app, "feature-branch");
+    let said = the_workflow(&mut app);
+    assert!(
+        said.contains("git worktree add -b"),
+        "the chosen workflow was not handed over: {said}"
+    );
+    choose_workflow(&mut app, "none");
+    assert!(
+        the_workflow(&mut app).contains("no workflow"),
+        "going back to none was not heard"
+    );
+}
+
 /// A conversation the agent has forgotten starts a fresh one, in place.
 ///
 /// A `todo.toml` that will not read does not forget every conversation in

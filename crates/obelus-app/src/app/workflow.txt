@@ -1,0 +1,1 @@
+This project has a workflow for changing its files: before your first change, call Obelus's `read_workflow` and follow what it says, and call it again when the reader says the work is done.
