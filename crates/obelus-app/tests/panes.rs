@@ -19,7 +19,6 @@ use ratatui::{buffer::Cell, layout::Rect, style::Color};
 /// A front end that writes down where each pane was.
 #[derive(Default)]
 struct Heard {
-    panes: Mutex<Vec<(Rect, Joined)>>,
     /// The mark the light runs across, and the two colours it runs
     /// between.
     marks: Mutex<Vec<(Rect, Color, Color)>>,
@@ -48,9 +47,6 @@ impl Heard {
 
 impl obelus_ui::shapes::Shapes for Heard {
     fn behind(&self, area: Rect, joined: Joined, _ground: Color, _cells: &[Cell]) {
-        if let Ok(mut panes) = self.panes.lock() {
-            panes.push((area, joined));
-        }
         self.told(Told::Pane(area, joined));
     }
 
@@ -128,7 +124,7 @@ fn items(labels: &[&str]) -> Vec<PickerItem> {
 /// query left behind on a row that does not travel.
 #[test]
 fn a_compact_list_is_a_pane_from_rule_to_rule() {
-    let heard = heard();
+    let since = told_so_far();
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.statuses_for_test(std::collections::HashMap::new());
     app.open_picker_for_test(
@@ -137,11 +133,14 @@ fn a_compact_list_is_a_pane_from_rule_to_rule() {
     );
     let cells = support::cells_of(&mut app, 60, 24);
 
-    let panes = heard.panes.lock().expect("nothing poisoned it").clone();
-    let standing: Vec<Rect> = panes
+    // This thread's only: the names stand on the foot of a screen this
+    // size too, and their test runs beside this one.
+    let standing: Vec<Rect> = told_since(since)
         .into_iter()
-        .filter(|(_, joined)| *joined == Joined::Below)
-        .map(|(area, _)| area)
+        .filter_map(|told| match told {
+            Told::Pane(area, Joined::Below) => Some(area),
+            _ => None,
+        })
         .collect();
     assert_eq!(standing.len(), 1, "one list, one pane: {standing:?}");
     let pane = standing[0];
