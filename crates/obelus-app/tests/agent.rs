@@ -873,6 +873,53 @@ fn enter_on_something_not_yet_sent_takes_it_back() {
     );
 }
 
+/// Something waiting is dim on every row of it, not only the first.
+///
+/// `Row::unsent` is on the first row alone, because that is where the key
+/// that takes it back stands -- and the ink was read off it, so a waiting
+/// message long enough to wrap was dim for one row and in the reader's
+/// colour for the rest, which reads as two things said.
+///
+/// Broken deliberately by reading the ink off `row.unsent` again: the
+/// second row comes out in the reader's colour.
+#[test]
+fn something_waiting_is_dim_on_every_row_of_it() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/forever");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to start thinking", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+    support::type_text(
+        &mut app,
+        "/blocks waiting words that run on long enough to need a second row of the \
+         transcript, and the end of them",
+    );
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.chat().map(|chat| chat.unsent().len()), Some(1));
+
+    let cells = support::cells_of(&mut app, WIDTH, HEIGHT);
+    let ink_of = |needle: &str| {
+        (0..HEIGHT)
+            .find_map(|y| {
+                let row: String = (0..WIDTH).map(|x| cells[(x, y)].symbol()).collect();
+                let from = row.find(needle)?;
+                let x = u16::try_from(row[..from].chars().count()).ok()?;
+                Some(cells[(x, y)].fg)
+            })
+            .unwrap_or_else(|| panic!("{needle:?} is not on the screen"))
+    };
+    let first = ink_of("/blocks waiting");
+    let rest = ink_of("end of them");
+    assert_eq!(
+        first, rest,
+        "one thing waiting is drawn in two colours: {first:?} and then {rest:?}"
+    );
+}
+
 /// A call still running when the reader stops the turn stops saying so.
 ///
 /// A tool call's state is the agent's, and an agent that is told to stop is

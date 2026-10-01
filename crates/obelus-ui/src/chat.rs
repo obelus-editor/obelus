@@ -887,9 +887,15 @@ impl ChatView<'_> {
             // words, dim, until the turn in front of them ends. Not by
             // taking the background away -- that mark says where the keys
             // are and says nothing else.
-            let style = match row.unsent {
-                Some(_) => dim,
-                None => style,
+            //
+            // Asked of what the row was said from, not of `row.unsent`:
+            // that is on the first row only, where the key that takes it
+            // back stands, and a message long enough to wrap was dim for
+            // one row and in the reader's colour for the rest.
+            let waiting = row.from.is_some_and(|(at, _)| self.chat.waits(at));
+            let style = match waiting {
+                true => dim,
+                false => style,
             };
             // A line of a change is drawn the way an opened hunk is drawn
             // in a file: tinted its whole width, with the marker's own bar

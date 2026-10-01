@@ -1028,6 +1028,12 @@ impl Chat {
             .collect()
     }
 
+    /// Whether the thing said at `at` is one of those.
+    #[must_use]
+    pub fn waits(&self, at: usize) -> bool {
+        self.said.get(at).is_some_and(|said| said.unsent)
+    }
+
     /// Says that what was waiting has gone.
     ///
     /// The rows stay as they are and stop being dim. They are not merged
