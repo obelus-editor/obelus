@@ -1,6 +1,6 @@
 screen 34x10  editor 34x8  status 34x1
 -- text --
- 0|       Obelus        v0.9.1       
+ 0|       Obelus        v0.9.2       
  1|                                  
  2|           F1 Open a file         
  3|           F3 Changed files       
