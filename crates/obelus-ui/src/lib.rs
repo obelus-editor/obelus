@@ -149,6 +149,13 @@ pub struct Choosing {
     /// what a path on the command line means -- would put Obelus on
     /// wherever the process began.
     pub there: bool,
+    /// Whether anything is being offered to finish it with.
+    ///
+    /// What keeps the row quiet while a path is half typed: `/tmp/o` is
+    /// not there either, and saying so under a list that is offering
+    /// `obelus/` would be a complaint about typing. The row speaks only
+    /// where there is nothing to suggest *and* nothing at the path.
+    pub offering: bool,
 }
 
 /// One project the reader has had open, as a row.

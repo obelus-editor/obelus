@@ -319,6 +319,11 @@ impl super::App {
         // The list in front of the box gets the key first, and keeps only
         // the ones that move about it or choose from it.
         if self.naming_list_key(key) {
+            // Through the same door the box's own keys go out of: that
+            // key may have put a candidate *in* the box, and leaving
+            // without this left the row's ink describing what was in it
+            // before.
+            self.note_what_the_box_names();
             return true;
         }
         let Some(chooser) = &mut self.chooser else {
@@ -341,19 +346,29 @@ impl super::App {
         // comes back: what they said no to was what was in it then. The
         // same rule `component::completion` follows -- escape takes the
         // panel away and the next letter asks again.
-        let named = self.chooser.as_ref().and_then(Chooser::named);
-        if named != before {
+        if self.chooser.as_ref().and_then(Chooser::named) != before {
             self.naming_shut = false;
         }
-        // Whether what is in the box is there at all, which the row's
-        // ink says. Worked out on the key that moved the box and kept,
-        // because the row is drawn on every frame and a `stat` per frame
-        // is a file read wearing a costume.
-        self.named_is_there = named.is_some_and(|path| path.exists());
+        self.note_what_the_box_names();
         // And what is typed narrows whatever the last read found, which
         // is not a question for the disk.
         self.settle_the_naming_list();
         taken
+    }
+
+    /// Looks at whether what is in the path box is there at all.
+    ///
+    /// Worked out on the keys that can move the box and kept, because
+    /// the row is drawn on every frame and a `stat` per frame is a file
+    /// read wearing a costume. One place, because there are two such
+    /// keys -- what the reader types, and what the list puts in -- and
+    /// the second one forgot.
+    fn note_what_the_box_names(&mut self) {
+        self.named_is_there = self
+            .chooser
+            .as_ref()
+            .and_then(Chooser::named)
+            .is_some_and(|path| path.exists());
     }
 
     /// Reads what a directory holds and makes a list of it.
@@ -638,6 +653,18 @@ impl super::App {
         self.naming_shut = false;
         self.work_in(root);
         self.apply_project();
+        // Everything `App::start` holds back while there is no project.
+        // Held back rather than taken and re-pointed, because one of
+        // them is a server that is already listening: moving it would
+        // mean stopping one Obelus had told nothing about yet, and the
+        // simpler half of that is not to start it.
+        //
+        // The watches are the half that cost most: with git's `HEAD` and
+        // `index` unwatched, the branch on the status row and the marks
+        // in the margin would be whatever they were when the project
+        // opened, for the rest of the session.
+        self.offer_the_tools();
+        self.watch_the_project();
         for file in &opening.files {
             self.open(file);
         }
@@ -681,6 +708,7 @@ impl super::App {
             caret: chooser.typing().caret().get(),
             naming: chooser.is_naming(),
             there: self.named_is_there,
+            offering: self.naming_list.is_some(),
         })
     }
 }

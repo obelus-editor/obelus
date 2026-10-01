@@ -1258,10 +1258,43 @@ impl App {
     /// about what Obelus does on the way up has nothing else to call.
     pub fn start(&mut self, sender: std::sync::mpsc::Sender<Event>) {
         self.events = Some(sender.clone());
-        // What Obelus offers an agent back. Started with the loop rather
-        // than with the first agent, because the address is what an agent is
-        // told and telling two of them two addresses would be two servers.
-        match obelus_mcp::serve(&self.working_directory, std::sync::Arc::new(sender.clone())) {
+        self.start_watching(sender);
+        // Both of these are about the project, and on a start with
+        // nothing to go on there is not one yet: they would be rooted at
+        // the directory the process happened to begin in, which from a
+        // desktop launcher is the home directory, and nothing would move
+        // them when the reader answered. `settle_on` does them then.
+        if self.chooser.is_none() {
+            self.offer_the_tools();
+            self.watch_the_project();
+        }
+        for index in 0..self.documents.len() {
+            self.serve(index);
+        }
+        // Not about the project: whether a newer Obelus is out is the
+        // same question wherever this one was started, so it is asked
+        // whether or not the reader has said where they work.
+        self.ask_about_releases();
+        // Last, and here rather than at the command line: the rows come
+        // from a walk that sends on this channel, so a list opened before
+        // there was one would be a list nothing ever fills.
+        if self.list_at_start {
+            self.open_file_picker();
+        }
+    }
+
+    /// Offers an agent Obelus's own tools, rooted at this project.
+    ///
+    /// Started with the loop rather than with the first agent, because
+    /// the address is what an agent is told and telling two of them two
+    /// addresses would be two servers -- but not before there is a
+    /// project, because the root is the whole of what the tools are
+    /// about.
+    pub(super) fn offer_the_tools(&mut self) {
+        let Some(sender) = self.events.clone() else {
+            return;
+        };
+        match obelus_mcp::serve(&self.working_directory, std::sync::Arc::new(sender)) {
             // Said, because the silent half of this is the half nobody can
             // ask about: whether an agent was offered anything, and whether
             // it took it, were both questions Obelus had no answer to.
@@ -1277,17 +1310,6 @@ impl App {
                 self.amiss
                     .push("An agent asking Obelus for its tools reaches nothing".to_string());
             }
-        }
-        self.start_watching(sender);
-        for index in 0..self.documents.len() {
-            self.serve(index);
-        }
-        self.ask_about_releases();
-        // Last, and here rather than at the command line: the rows come
-        // from a walk that sends on this channel, so a list opened before
-        // there was one would be a list nothing ever fills.
-        if self.list_at_start {
-            self.open_file_picker();
         }
     }
 
@@ -1358,6 +1380,15 @@ impl App {
             .count()
     }
 
+    /// The address an agent is told, where Obelus is offering one.
+    ///
+    /// `None` until there is a project: the tools are about one, so the
+    /// server is not started before the reader has said which.
+    #[must_use]
+    pub fn tools_url(&self) -> Option<&str> {
+        self.tools_url.as_deref()
+    }
+
     /// Says where Obelus's own tools are, without listening anywhere.
     ///
     /// The loop starts a server and puts its address here; a test wants the
@@ -1403,55 +1434,33 @@ impl App {
         }
     }
 
-    /// Starts watching every open file for changes on disk.
-    fn start_watching(&mut self, sender: std::sync::mpsc::Sender<Event>) {
-        let mut watcher = match Watcher::new(sender) {
-            Ok(watcher) => watcher,
-            Err(error) => {
-                tracing::warn!(%error, "auto-reload is off");
-                // The one watcher failure worth saying: without it nothing
-                // Obelus reads is read again for the rest of the session,
-                // so a file changed in another window, a commit, and the
-                // settings all go unheard.
-                self.amiss.push(
-                    "Nothing is being watched, so changes made elsewhere will not arrive"
-                        .to_string(),
-                );
-                return;
-            }
+    /// Takes the watches that are about the project, and nothing else.
+    ///
+    /// Its own piece because the project is not always known when Obelus
+    /// starts: a start with nothing to go on asks which one, and these
+    /// would otherwise all be taken against the directory the process
+    /// happened to begin in -- the home directory, from a desktop
+    /// launcher. Taken when the reader answers instead, which is
+    /// `App::settle_on`.
+    ///
+    /// The one that cost most by being wrong is git's: with `HEAD` and
+    /// `index` unwatched, `forget_what_git_said` never fires, so the
+    /// branch on the status row and the marks in the margin are whatever
+    /// they were when the project opened for the rest of the session.
+    pub(super) fn watch_the_project(&mut self) {
+        let root = self.working_directory.clone();
+        let project = obelus_config::project_path_for(&root);
+        let Some(watcher) = self.watcher.as_mut() else {
+            return;
         };
-        for buffer in self.documents.iter().flatten().filter_map(Document::file) {
-            if let Err(error) = watcher.watch(buffer.path()) {
-                tracing::warn!(%error, path = %buffer.path().display(), "not watching");
-            }
-        }
-        // And what git keeps its state in, because Obelus is not the only
+        // What git keeps its state in, because Obelus is not the only
         // thing in the repository: a commit in another window, or in a
         // shell, changes what has changed in every file on screen. The
-        // margin would otherwise go on showing a diff against a commit that
-        // is no longer the one the file is against.
-        for path in obelus_git::state_of(&self.working_directory) {
+        // margin would otherwise go on showing a diff against a commit
+        // that is no longer the one the file is against.
+        for path in obelus_git::state_of(&root) {
             if let Err(error) = watcher.watch(&path) {
                 tracing::warn!(%error, path = %path.display(), "not watching the repository");
-            }
-        }
-        // And the settings, because Obelus is not the only Obelus. Several
-        // of them on one project is the ordinary way to work -- the
-        // terminal splits the window, Obelus does not -- so a setting
-        // changed in one of them is a setting changed for all of them, and
-        // a file read once at startup would leave every other window
-        // holding what the reader has already moved on from.
-        if let Some(path) = self.settled.path.clone() {
-            // And whatever it really names, which for a reader who keeps
-            // their settings in a dotfiles repository is a file in there:
-            // what a `git pull` rewrites is that one, and a watch on the
-            // link's own directory would never hear about it. Both, because
-            // the link itself can be replaced too -- by the thing that made
-            // it -- and that is a change to these settings as well.
-            for path in [obelus_config::resolved(&path), path] {
-                if let Err(error) = watcher.watch(&path) {
-                    tracing::warn!(%error, path = %path.display(), "not watching the settings");
-                }
             }
         }
         // And the project's own settings, for the same reason twice over:
@@ -1473,14 +1482,13 @@ impl App {
         // `target` and `.git` reported a thousand times over. Where the
         // reader has a file of the project's root open, this is that same
         // watch counted twice rather than a second one.
-        if let Err(error) = watcher.watch_directory(&self.working_directory) {
+        if let Err(error) = watcher.watch_directory(&root) {
             tracing::warn!(
                 %error,
-                path = %self.working_directory.display(),
+                path = %root.display(),
                 "not watching the project for settings appearing"
             );
         }
-        let project = obelus_config::project_path_for(&self.working_directory);
         if let Err(error) = watcher.watch(&project) {
             // A project with no settings of its own has no directory to
             // watch, and that is the ordinary case: a quarter of the starts
@@ -1519,6 +1527,49 @@ impl App {
                     path = %project.display(),
                     "no settings of the project's own yet"
                 ),
+            }
+        }
+    }
+
+    /// Starts watching every open file for changes on disk.
+    fn start_watching(&mut self, sender: std::sync::mpsc::Sender<Event>) {
+        let mut watcher = match Watcher::new(sender) {
+            Ok(watcher) => watcher,
+            Err(error) => {
+                tracing::warn!(%error, "auto-reload is off");
+                // The one watcher failure worth saying: without it nothing
+                // Obelus reads is read again for the rest of the session,
+                // so a file changed in another window, a commit, and the
+                // settings all go unheard.
+                self.amiss.push(
+                    "Nothing is being watched, so changes made elsewhere will not arrive"
+                        .to_string(),
+                );
+                return;
+            }
+        };
+        for buffer in self.documents.iter().flatten().filter_map(Document::file) {
+            if let Err(error) = watcher.watch(buffer.path()) {
+                tracing::warn!(%error, path = %buffer.path().display(), "not watching");
+            }
+        }
+        // And the settings, because Obelus is not the only Obelus. Several
+        // of them on one project is the ordinary way to work -- the
+        // terminal splits the window, Obelus does not -- so a setting
+        // changed in one of them is a setting changed for all of them, and
+        // a file read once at startup would leave every other window
+        // holding what the reader has already moved on from.
+        if let Some(path) = self.settled.path.clone() {
+            // And whatever it really names, which for a reader who keeps
+            // their settings in a dotfiles repository is a file in there:
+            // what a `git pull` rewrites is that one, and a watch on the
+            // link's own directory would never hear about it. Both, because
+            // the link itself can be replaced too -- by the thing that made
+            // it -- and that is a change to these settings as well.
+            for path in [obelus_config::resolved(&path), path] {
+                if let Err(error) = watcher.watch(&path) {
+                    tracing::warn!(%error, path = %path.display(), "not watching the settings");
+                }
             }
         }
         self.watcher = Some(watcher);
