@@ -744,10 +744,14 @@ impl App {
                     // it the beginning of the file.
                     buffer.enter_block(obelus_text::coordinates::LineNumber::new(0));
                 }
-                let changes = obelus_git::history::text_before(&self.working_directory, *id, path)
-                    .map(|before| {
-                        obelus_git::Changes::between(&before, &buffer.text().rope().to_string())
-                    });
+                // Against nothing where the commit added the file, as the
+                // file opened at that commit is.
+                let before = obelus_git::history::text_before(&self.working_directory, *id, path)
+                    .unwrap_or_default();
+                let changes = Some(obelus_git::Changes::between(
+                    &before,
+                    &buffer.text().rope().to_string(),
+                ));
                 Some((buffer, changes))
             }
             // A message on its own, with no file under it: a commit is not
