@@ -126,10 +126,11 @@ pub fn with_home_as_tilde(path: &std::path::Path) -> String {
 #[derive(Clone, Debug, Default)]
 pub struct Choosing {
     /// The projects, newest first, after the filter has had them. Without
-    /// the row that opens one that is not in the list: that row is the
-    /// view's own and is always there.
+    /// the row under them that opens one that is not in the list: that row
+    /// is the view's own and is always there.
     pub known: Vec<Opened>,
-    /// Which row the reader is on, counting the opening row as nought.
+    /// Which row the reader is on: the projects from nought, and the
+    /// opening row after the last of them.
     pub at: usize,
     /// What is in the box at the foot.
     pub typed: String,

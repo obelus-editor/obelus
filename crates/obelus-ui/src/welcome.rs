@@ -84,21 +84,44 @@ const GUTTER: u16 = 4;
 /// makes a block of six read as six things rather than as a paragraph.
 const ROW_HEIGHT: u16 = 2;
 
-/// How wide the block of what went wrong is allowed to be.
-///
-/// What the first row says.
+/// What the row that opens a project not in the list says.
 ///
 /// A verb, because the row is an action among rows that are places. The
 /// ellipsis is what a desktop means by "this opens somewhere to say more",
 /// and here what it opens is the box at the foot.
-const OPEN_ANOTHER: &str = "Open a project…";
+///
+/// Two of them, because "another" is a word about a list: on a machine
+/// with nothing remembered the row is the whole of the screen, and there
+/// is nothing for it to be another of.
+const OPEN_A_PROJECT: &str = "Open a project…";
+const OPEN_ANOTHER: &str = "Open another…";
+
+/// What is over the projects.
+///
+/// Said because the list is not the only thing under the plate: the row
+/// that opens one is below it, and without a word over the rows the two
+/// read as one list in which the last entry happens to be a verb.
+const RECENT: &str = "Recent projects";
+
+/// What the list says when the filter has left none of them.
+const NO_MATCH: &str = "No project matches";
+
+/// How wide the list of projects is allowed to be.
+///
+/// Wider than the plate, as the block of what went wrong is: a path is
+/// most of a row, and held to the plate's fifty columns it lost its head
+/// on a terminal with seventy empty ones either side of it.
+const RECENT_WIDTH: u16 = 64;
 
 /// The least space between a path and the time beside it.
 ///
 /// Two columns, so that the end of one and the start of the other are
-/// never read as one word on a row where both reach their room.
+/// never read as one word on a row where both reach their room. And the
+/// same between a project's name and where it is.
 const WHEN_GAP: u16 = 2;
 
+/// How wide the block of what went wrong is allowed to be.
+///
 /// Wider than the plate, which the keys are centred on: those are two
 /// short words under a cap, and these are a sentence with a file and a
 /// line after it. Capped, because a line of prose run across a wide
@@ -448,51 +471,60 @@ impl WelcomeView<'_> {
 
     /// The plate, and under it the projects this reader has had open.
     ///
-    /// The first row opens one that is not in the list and is always
-    /// there, so the list is never empty: a reader on a machine Obelus
-    /// has never run on has exactly one row, and it is the one that gets
-    /// them in.
-    ///
-    /// **The time is given its room before the path gets any.** A row
-    /// works out what it says about itself first and the words get what
-    /// is left -- so a path long enough to reach the right-hand edge
-    /// cannot take the tail with it. And what is cut off a path is its
-    /// *head*: `~/Work/very/deep/thing` says which project it is at the
-    /// end, and a path cut the other way is a column of identical
-    /// beginnings.
+    /// The projects under a heading, newest first, and below them the row
+    /// that opens one that is not in the list -- which is always there, so
+    /// a reader on a machine Obelus has never run on has exactly one row,
+    /// and it is the one that gets them in. Then it is the whole of the
+    /// block, with no heading over a list that is not there.
     fn asking(&self, area: Rect, cells: &mut CellBuffer) {
         let Some(choosing) = &self.choosing else {
             return;
         };
-        let width = width_of(WORDMARK[0]);
-        let plate = u16::try_from(WORDMARK.len()).unwrap_or(0);
-        // Every row there is, and then as many as the region can hold.
-        let wanted = u16::try_from(choosing.known.len().saturating_add(1)).unwrap_or(u16::MAX);
-        if width > area.width || plate + 2 > area.height {
+        let plate = width_of(WORDMARK[0]);
+        let plate_height = u16::try_from(WORDMARK.len()).unwrap_or(0);
+        let headed = headed(choosing);
+        // The heading and a blank over the projects, and a blank and the
+        // opening row under them; or that row alone.
+        let around = match headed {
+            true => 4,
+            false => 1,
+        };
+        // Every project, or the one line saying the filter left none.
+        let listed = match headed {
+            true => u16::try_from(choosing.known.len().max(1)).unwrap_or(u16::MAX),
+            false => 0,
+        };
+        let least = around + listed.min(1);
+        let width = RECENT_WIDTH.max(plate).min(area.width);
+        let left = area.x + (area.width - width) / 2;
+        let (top, room) = if plate <= area.width && plate_height + 1 + least <= area.height {
+            let room = listed.min(area.height - plate_height - 1 - around);
+            let height = plate_height + 1 + around + room;
+            let y = area.y + (area.height - height) / 2;
+            let plate_left = area.x + (area.width - plate) / 2;
+            (self.plate(cells, plate_left, y, plate) + 1, room)
+        } else {
             // No room for the mark, so the rows are the whole of it: what
             // this screen is for is getting in, and the wordmark is the
             // part that can go.
-            self.rows(cells, choosing, area);
-            return;
-        }
-        let rows = wanted.min(area.height - plate - 1);
-        let height = plate + 1 + rows;
-        let left = area.x + (area.width - width) / 2;
-        let y = area.y + (area.height.saturating_sub(height)) / 2;
-        let y = self.plate(cells, left, y, width) + 1;
+            let room = listed.min(area.height.saturating_sub(around));
+            let height = (around + room).min(area.height);
+            (area.y + (area.height - height) / 2, room)
+        };
         self.rows(
             cells,
             choosing,
             Rect {
                 x: left,
-                y,
+                y: top,
                 width,
-                height: rows,
+                height: area.bottom().saturating_sub(top),
             },
+            room,
         );
     }
 
-    /// The rows themselves.
+    /// The heading, the projects and the opening row.
     fn rows(
         &self,
         cells: &mut CellBuffer,
@@ -501,37 +533,17 @@ impl WelcomeView<'_> {
         // each other are four numbers that can be passed in the wrong
         // order.
         list: Rect,
+        // How many of the projects there is room for.
+        room: u16,
     ) {
-        let (left, top, width, room) = (list.x, list.y, list.width, list.height);
-        // Which of them are on screen. The reader's own row is always
-        // among them, and the one that opens a project stays at the top
-        // of the list rather than scrolling away: it is not one of the
-        // projects, it is the way to one that is not here.
-        let total = choosing.known.len() + 1;
-        let first = match (room as usize) < total {
-            false => 0,
-            // Keep the row the reader is on in view, and keep the opening
-            // row in view with it while it can be.
-            true => choosing
-                .at
-                .saturating_sub(room.saturating_sub(1) as usize)
-                .min(total - room as usize),
-        };
-        for offset in 0..room {
-            let at = first + offset as usize;
-            if at >= total {
-                break;
-            }
-            let y = top + offset;
-            let on = at == choosing.at;
-            // One mark for "the keys are here", and it says nothing else:
-            // the same colour behind the row the reader is on that every
-            // list, page and card in Obelus puts there.
-            let style = match on {
-                true => Style::new().bg(self.theme.selected_row_background),
-                false => Style::new(),
-            };
-            if on {
+        let (left, width) = (list.x, list.width);
+        let total = choosing.known.len();
+        let selected = Style::new().bg(self.theme.selected_row_background);
+        // One mark for "the keys are here", and it says nothing else: the
+        // same colour behind the row the reader is on that every list,
+        // page and card in Obelus puts there.
+        let row_style = |cells: &mut CellBuffer, y: u16, on: bool| match on {
+            true => {
                 fill(
                     cells,
                     Rect {
@@ -540,103 +552,177 @@ impl WelcomeView<'_> {
                         width,
                         height: 1,
                     },
-                    style,
+                    selected,
                 );
+                selected
             }
-            match at {
-                0 => {
-                    write(
-                        cells,
-                        left + 2,
+            false => Style::new(),
+        };
+        let mut y = list.y;
+        let headed = headed(choosing);
+        if headed {
+            write(
+                cells,
+                left + 2,
+                y,
+                RECENT,
+                Style::new().fg(self.theme.syntax.function),
+            );
+            y += 2;
+            if total == 0 {
+                crate::nothing(
+                    cells,
+                    Rect {
+                        x: left + 1,
                         y,
-                        OPEN_ANOTHER,
-                        style.fg(self.theme.syntax.function),
-                    );
-                }
-                _ => {
-                    let Some(opened) = choosing.known.get(at - 1) else {
-                        continue;
-                    };
-                    self.row(cells, left, y, width, opened, style);
+                        width,
+                        height: 1,
+                    },
+                    NO_MATCH,
+                    self.theme,
+                );
+                y += 1;
+            } else {
+                // Which of them are on screen: the reader's own row among
+                // them, and the ones nearest the opening row while the
+                // reader is on that.
+                let focus = choosing.at.min(total - 1);
+                let room = usize::from(room);
+                let first = match room < total {
+                    false => 0,
+                    true => focus
+                        .saturating_sub(room.saturating_sub(1))
+                        .min(total - room),
+                };
+                let names = self.name_width(choosing, width);
+                for (at, opened) in choosing.known.iter().enumerate().skip(first).take(room) {
+                    if y >= list.bottom() {
+                        return;
+                    }
+                    let style = row_style(cells, y, at == choosing.at);
+                    self.row(cells, left, y, width, names, opened, style);
+                    y += 1;
                 }
             }
+            y += 1;
         }
+        if y >= list.bottom() {
+            return;
+        }
+        let style = row_style(cells, y, choosing.at >= total);
+        let said = match headed {
+            true => OPEN_ANOTHER,
+            false => OPEN_A_PROJECT,
+        };
+        write(cells, left + 2, y, said, style.fg(self.theme.foreground));
     }
 
-    /// One project's row: when it was open, and as much of where as fits.
+    /// How wide the column of names is: the widest of them, and never
+    /// more than half the row, so that where each one is keeps room to
+    /// say it.
+    ///
+    /// Taken across every project and not only those on screen, so the
+    /// column does not move under the reader as the list scrolls.
+    fn name_width(&self, choosing: &crate::Choosing, width: u16) -> u16 {
+        let widest = choosing
+            .known
+            .iter()
+            .map(|opened| obelus_text::text_width(name_of(&opened.path).1))
+            .max()
+            .unwrap_or(0);
+        u16::try_from(widest)
+            .unwrap_or(u16::MAX)
+            .min(width.saturating_sub(4) / 2)
+    }
+
+    /// One project's row: its name, where it is, and when it was open.
+    ///
+    /// **The name first, and in the ink.** What tells two projects apart is
+    /// the last part of the path, and a column of whole paths put that at
+    /// the ragged end of each row, behind a head every row shared. So the
+    /// name is a column of its own and where it is follows, dim.
+    ///
+    /// **The time is given its room before the path gets any.** A row
+    /// works out what it says about itself first and the words get what
+    /// is left -- so a path long enough to reach the right-hand edge
+    /// cannot take the tail with it. And what is cut off a path is its
+    /// *head*, for the reason the name comes first: the end is the part
+    /// that says which.
+    #[allow(clippy::too_many_arguments)]
     fn row(
         &self,
         cells: &mut CellBuffer,
         left: u16,
         y: u16,
         width: u16,
+        names: u16,
         opened: &crate::Opened,
         style: Style,
     ) {
+        let right = left + width.saturating_sub(2);
         let when = u16::try_from(obelus_text::text_width(&opened.when)).unwrap_or(0);
-        // Its room first: two columns in from each edge, and a gap wide
-        // enough that a path and a time are never read as one string.
-        let room = width
-            .saturating_sub(4)
-            .saturating_sub(when)
-            .saturating_sub(WHEN_GAP);
-        // From the left, which is the other way round from most things
-        // Obelus cuts: a path says which thing it is at its tail, and a
-        // column of paths cut the ordinary way is a column of identical
-        // beginnings with the one word that tells them apart gone.
-        let dropped = crate::drop_from_left(&opened.path, room as usize);
-        let ink = style.fg(self.theme.status_foreground);
-        let row = Rect {
-            x: left,
+        let marked = |skip| crate::Marked {
+            matched: match opened.matched {
+                Some((first, end)) => crate::Matched::Run(first, end),
+                None => crate::Matched::Nothing,
+            },
+            mark: self.theme.picker_match_background,
+            syntax: None,
+            skip,
+        };
+        let (start, name) = name_of(&opened.path);
+
+        // The name, counted from the start of the whole path so that what
+        // the filter matched lands on the right letters -- the one writer
+        // for it, so this list cannot be the newest one that forgot.
+        let x = left + 2;
+        let ink = style.fg(self.theme.foreground);
+        let long = obelus_text::text_width(name) > usize::from(names);
+        let room = match long {
+            // A cell for the mark that says it was cut.
+            true => names.saturating_sub(1),
+            false => names,
+        };
+        let row = |x: u16, width: u16| Rect {
+            x,
             y,
             width,
             height: 1,
         };
-        let at = match dropped {
-            0 => left + 2,
-            // The mark is drawn plain and the text after it, counted from
-            // the start of the whole path so that what matched lands on
-            // the right letters even though its head has gone.
-            _ => {
-                crate::write_marked(
-                    cells,
-                    row,
-                    left + 2,
-                    y,
-                    "\u{2026}",
-                    ink,
-                    &crate::Marked::plain(),
-                );
-                left + 3
-            }
+        let end = crate::write_marked(cells, row(x, room), x, y, &opened.path, ink, &marked(start));
+        if long {
+            write(cells, end, y, "\u{2026}", ink);
+        }
+
+        // Where it is, in what is left between the name and the time.
+        let dim = style.fg(self.theme.gutter);
+        let from = x + names + WHEN_GAP;
+        let stop = match when {
+            0 => right,
+            _ => right.saturating_sub(when + WHEN_GAP),
         };
-        // What matched, marked -- the one writer for it, so this list
-        // cannot be the newest one that forgot.
-        crate::write_marked(
-            cells,
-            row,
-            at,
-            y,
-            &opened.path,
-            ink,
-            &crate::Marked {
-                matched: match opened.matched {
-                    Some((first, end)) => crate::Matched::Run(first, end),
-                    None => crate::Matched::Nothing,
-                },
-                mark: self.theme.picker_match_background,
-                syntax: None,
-                skip: dropped,
-            },
-        );
-        if when > 0 {
-            write(
+        let place: String = opened.path.chars().take(place_length(start)).collect();
+        let room = stop.saturating_sub(from);
+        // A lone mark saying something was cut says nothing about where.
+        if room > 1 {
+            let dropped = crate::drop_from_left(&place, usize::from(room));
+            let at = match dropped {
+                0 => from,
+                _ => write(cells, from, y, "\u{2026}", dim),
+            };
+            crate::write_marked(
                 cells,
-                left + width.saturating_sub(2).saturating_sub(when),
+                row(at, stop - at),
+                at,
                 y,
-                &opened.when,
-                style.fg(self.theme.gutter),
+                &place,
+                dim,
+                &marked(dropped),
             );
+        }
+
+        if when > 0 {
+            write(cells, right.saturating_sub(when), y, &opened.when, dim);
         }
     }
 
@@ -963,6 +1049,37 @@ fn cell_width(hints: &[Hint]) -> Option<u16> {
 /// How wide the compact block has to be, which is one cell.
 fn hint_block_width(hints: &[Hint]) -> Option<u16> {
     cell_width(hints)
+}
+
+/// Whether the projects are under a heading.
+///
+/// Where there are any, and where a filter has left none: a reader who has
+/// narrowed the list to nothing is told so where the list was, rather than
+/// having it vanish and the opening row change its words. Not on a machine
+/// with nothing remembered, where a heading would be over an empty list.
+fn headed(choosing: &crate::Choosing) -> bool {
+    !choosing.known.is_empty() || (!choosing.naming && !choosing.typed.is_empty())
+}
+
+/// A project's name -- the last part of the path a row shows -- and how
+/// many characters of that path come before it.
+///
+/// Either separator, because a path on Windows may be written with both.
+fn name_of(path: &str) -> (usize, &str) {
+    match path.rfind(std::path::is_separator) {
+        Some(at) if at + 1 < path.len() => (path[..=at].chars().count(), &path[at + 1..]),
+        _ => (0, path),
+    }
+}
+
+/// How many characters of a path say where its project is, given how many
+/// come before the name: all of them but the separator, unless that
+/// separator is all there is -- a project at the root is somewhere.
+fn place_length(start: usize) -> usize {
+    match start {
+        0 | 1 => start,
+        _ => start - 1,
+    }
 }
 
 fn width_of(row: &str) -> u16 {
