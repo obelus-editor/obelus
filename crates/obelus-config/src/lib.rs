@@ -518,8 +518,27 @@ const DELAYS: &[&str] = &["0", "200", "400", "800"];
 /// The workflows an agent can be asked to follow.
 ///
 /// `none` is the agent's own way, and the others are written in
-/// `obelus-app`, beside the opening that points an agent at them.
+/// `obelus-app`, beside the opening that points an agent at them. What
+/// each one does is [`about_choice`].
 const WORKFLOWS: &[&str] = &["none", "feature-branch"];
+
+/// What one of a setting's words does, for the list it is chosen from.
+///
+/// A name like `feature-branch` says what it is to somebody who knows the
+/// term and nothing to anybody else, and the list is where the choosing is
+/// done. `None` where the word is the whole of it, as a theme's is.
+#[must_use]
+pub fn about_choice(key: &str, word: &str) -> Option<&'static str> {
+    match (key, word) {
+        ("workflow", "none") => Some("The agent changes files the way it would anyway"),
+        // Short, because the list gives a choice one row: at eighty columns
+        // there are sixty cells after the name.
+        ("workflow", "feature-branch") => {
+            Some("A branch in .worktree; asks before review, merge and cleanup")
+        }
+        _ => None,
+    }
+}
 
 /// Every setting Obelus has.
 pub const ALL: &[Setting] = &[
@@ -680,7 +699,7 @@ pub const ALL: &[Setting] = &[
     Setting {
         key: "workflow",
         name: "Workflow",
-        about: "How an agent changes this project: feature-branch works on a branch in a worktree of its own under .worktree, and asks before a pull request, a merge, or taking the worktree away",
+        about: "How an agent goes about changing this project",
         group: Group::Agent,
         // A project's too, because it is about the project: whether its
         // changes go through pull requests is the project's own rule. And
@@ -1822,6 +1841,20 @@ mod tests {
                 at: None,
             }]
         );
+    }
+
+    /// Every workflow says what it does, because its name alone does not.
+    ///
+    /// Broken deliberately by taking `feature-branch`'s line out of
+    /// `about_choice`.
+    #[test]
+    fn every_workflow_says_what_it_does() {
+        for workflow in super::WORKFLOWS {
+            assert!(
+                super::about_choice("workflow", workflow).is_some(),
+                "{workflow} says nothing about itself"
+            );
+        }
     }
 
     /// Written and read back is the same config: the file is the only place

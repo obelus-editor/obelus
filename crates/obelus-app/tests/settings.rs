@@ -3686,6 +3686,32 @@ fn what_a_project_may_not_set_is_marked_on_the_projects_file() {
     assert_eq!(problems[0].span.line.get(), 1);
 }
 
+/// The list a workflow is chosen from says what each one does: a name
+/// like `feature-branch` says nothing to a reader who does not know the
+/// term, and the list is where the choosing is done.
+///
+/// Broken deliberately by giving the choices no detail again, which is
+/// what they had: neither line is on screen.
+#[test]
+fn each_workflow_says_what_it_does_where_it_is_chosen() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("workflows");
+    let mut app = open(&settings_file(&scratch));
+    support::type_text(&mut app, "workflow");
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_some(), "the workflows did not open");
+    let dump = support::render(&mut app, 80, 24);
+    let text = support::text_block(&dump);
+    for said in [
+        "The agent changes files the way it would anyway",
+        "A branch in .worktree; asks before review, merge and cleanup",
+    ] {
+        assert!(text.contains(said), "{said:?} is not on the list:\n{dump}");
+    }
+}
+
 /// A workflow nothing answers to is marked on the line that names it.
 ///
 /// On a project's file, because that is where a workflow is most often

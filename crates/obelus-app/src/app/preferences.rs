@@ -416,7 +416,7 @@ impl App {
                 marker: None,
                 icon: None,
                 label: choice.clone(),
-                detail: None,
+                detail: obelus_config::about_choice(key, choice).map(str::to_string),
                 trailing: None,
                 changed: None,
                 value: PickerValue::Setting {
