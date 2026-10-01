@@ -777,6 +777,14 @@ pub struct App {
     /// `component::completion` follows: escape takes the panel away, and
     /// typing is a new question rather than the same one asked twice.
     naming_shut: bool,
+    /// Whether what is in the path box names something that is there.
+    ///
+    /// Kept rather than asked for: the row is drawn on every frame and
+    /// the answer moves only when the box does, so it is worked out on
+    /// the key that moved it. What it is for is the ink -- a reader has
+    /// to see that enter will refuse before they press it, which is the
+    /// rule the palette follows for a command it will not run.
+    named_is_there: bool,
     working_directory: PathBuf,
     /// Which branch the tree Obelus was put on has checked out.
     ///
@@ -948,6 +956,7 @@ impl App {
             naming_list: None,
             naming_read: None,
             naming_shut: false,
+            named_is_there: false,
             working_directory: std::env::current_dir().unwrap_or_default(),
             // Not read here. Which branch the tree is on is a fact about
             // the directory Obelus was *told* to work in, so it is read

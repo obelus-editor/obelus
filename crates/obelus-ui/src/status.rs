@@ -983,7 +983,15 @@ impl StatusView<'_> {
             false => "Filter",
         };
         let line = typed(Some(question), &choosing.typed);
-        write(cells, area.x + 1, area.y, &line, style);
+        // A path that is not there is drawn in the ink that says so, and
+        // nothing is written anywhere about it: enter refuses, and the
+        // reader was told before they pressed. Whether a row can be used
+        // is said in the ink and never by taking a mark away.
+        let ink = match choosing.naming && !choosing.typed.is_empty() && !choosing.there {
+            true => style.fg(self.theme.syntax.warning),
+            false => style,
+        };
+        write(cells, area.x + 1, area.y, &line, ink);
         // What the box says before anything is in it. The filter says
         // what it would narrow; the path box says what shape of answer it
         // wants, because a reader who has never typed one here has no way

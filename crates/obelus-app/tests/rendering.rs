@@ -2572,12 +2572,14 @@ fn a_start_with_no_project_asks_which_one() {
     app.ask_about_these_projects_for_test(vec![
         obelus_component::chooser::Known {
             path: std::path::PathBuf::from("/tmp/obelus/work/obelus"),
+            shown: "/tmp/obelus/work/obelus".to_string(),
             last: None,
         },
         obelus_component::chooser::Known {
             path: std::path::PathBuf::from(
                 "/tmp/obelus/work/something/rather/deeply/nested/indeed",
             ),
+            shown: "/tmp/obelus/work/something/rather/deeply/nested/indeed".to_string(),
             last: None,
         },
     ]);
@@ -2611,6 +2613,7 @@ fn naming_a_path_offers_what_could_finish_it() {
     app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
     app.ask_about_these_projects_for_test(vec![obelus_component::chooser::Known {
         path: std::path::PathBuf::from("/tmp/obelus/alpha"),
+        shown: "/tmp/obelus/alpha".to_string(),
         last: None,
     }]);
     support::press(&mut app, crossterm::event::KeyCode::Enter);

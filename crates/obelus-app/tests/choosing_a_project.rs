@@ -14,19 +14,25 @@ use obelus_component::{chooser::Known, picker::Picker};
 use obelus_ui::Screen as _;
 use support::press;
 
+/// One row, written the way the screen would write it.
+///
+/// These are all outside `$HOME`, so what the row shows is the path
+/// itself and the test does not depend on whose machine it runs on.
+fn known(path: &str, last: Option<i64>) -> Known {
+    Known {
+        path: std::path::PathBuf::from(path),
+        shown: path.to_string(),
+        last,
+    }
+}
+
 /// One asking about two projects, neither of which is anywhere real.
 fn asking() -> App {
     let mut app = App::new(Vec::new());
     app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
     app.ask_about_these_projects_for_test(vec![
-        Known {
-            path: std::path::PathBuf::from("/tmp/obelus/alpha"),
-            last: Some(2_000),
-        },
-        Known {
-            path: std::path::PathBuf::from("/tmp/obelus/beta"),
-            last: Some(1_000),
-        },
+        known("/tmp/obelus/alpha", Some(2_000)),
+        known("/tmp/obelus/beta", Some(1_000)),
     ]);
     app
 }
@@ -458,5 +464,214 @@ fn a_list_that_matched_nothing_comes_back_when_the_letter_goes() {
     assert!(
         app.naming_list().is_some(),
         "rubbing the letter out did not bring back what the directory holds"
+    );
+}
+
+/// Rubbing the box out closes the list.
+///
+/// What was read belongs to a path that is no longer in the box, and an
+/// empty query matches every one of its rows -- so the list did not
+/// merely linger, it opened out into the whole of a directory the reader
+/// had just left.
+///
+/// Which directory the box is about is one answer now, asked both by the
+/// key that decides whether to read and by the frame that decides
+/// whether what was read still applies. Worked out twice, the two
+/// disagreed about exactly this.
+///
+/// Broken deliberately by taking the `directory_named` check out of
+/// `settle_the_naming_list`: an empty box offers everything in the
+/// directory it used to name.
+#[test]
+fn rubbing_the_box_out_closes_the_list() {
+    let scratch = support::Scratch::new("choosing-emptied");
+    std::fs::create_dir_all(scratch.path().join("alpha")).expect("a directory");
+    let mut app = asking();
+    press(&mut app, KeyCode::Enter);
+    let typed = format!("{}/", scratch.path().display());
+    for character in typed.chars() {
+        press(&mut app, KeyCode::Char(character));
+    }
+    assert!(app.naming_list().is_some(), "the directory offered nothing");
+
+    for _ in 0..typed.chars().count() {
+        press(&mut app, KeyCode::Backspace);
+    }
+
+    assert_eq!(
+        app.choosing().expect("asking").typed,
+        "",
+        "the box is not empty"
+    );
+    assert!(
+        app.naming_list().is_none(),
+        "an empty box still offers what the directory it used to name holds"
+    );
+}
+
+/// Rubbing back past a separator moves the list up a directory.
+///
+/// Not the same as emptying the box, which is why both are here: the box
+/// still names a directory, it is just a different one, so what was read
+/// is dropped and the parent is read instead. A list that stayed would
+/// be the child's contents under a box naming the parent.
+///
+/// Broken deliberately by keeping the list across a change of directory
+/// in `look_in`: the rows are still the child's.
+#[test]
+fn rubbing_back_past_a_separator_moves_the_list_up() {
+    let scratch = support::Scratch::new("choosing-back-up");
+    std::fs::create_dir_all(scratch.path().join("alpha").join("inner")).expect("directories");
+    let mut app = asking();
+    press(&mut app, KeyCode::Enter);
+    for character in format!("{}/alpha/", scratch.path().display()).chars() {
+        press(&mut app, KeyCode::Char(character));
+    }
+    assert_eq!(
+        app.naming_list()
+            .and_then(Picker::selected_item)
+            .map(|item| item.label.as_str()),
+        Some(format!("inner{}", std::path::MAIN_SEPARATOR).as_str()),
+        "the child directory was not read"
+    );
+
+    press(&mut app, KeyCode::Backspace);
+
+    assert_eq!(
+        app.naming_list()
+            .and_then(Picker::selected_item)
+            .map(|item| item.label.as_str()),
+        // The parent's own row, narrowed by the `alpha` still in the box.
+        Some(format!("alpha{}", std::path::MAIN_SEPARATOR).as_str()),
+        "the list is still the child's under a box naming the parent"
+    );
+}
+
+/// A path that is not there is not a project.
+///
+/// The worst way this could go wrong, and the way it did: `opening`
+/// answers what a path on the command line *means*, and a path that is
+/// not there means "a file to make, in the directory above it". Right
+/// for `ob notes.md`; here it put Obelus on the directory the process
+/// began in, which from a desktop menu is the home directory -- the one
+/// answer this whole screen exists to avoid. One letter wrong and the
+/// reader was back where they started, with no sign anything had gone
+/// amiss.
+///
+/// Broken deliberately by taking the `path.exists()` check out of
+/// `settle_on`: the screen closes and Obelus is working in whatever
+/// directory the box's path happened to sit in.
+#[test]
+fn a_path_that_is_not_there_is_refused() {
+    let scratch = support::Scratch::new("choosing-unreal");
+    let mut app = asking();
+    let before = app.working_directory().to_path_buf();
+    press(&mut app, KeyCode::Enter);
+    for character in format!("{}/nothing-here", scratch.path().display()).chars() {
+        press(&mut app, KeyCode::Char(character));
+    }
+    // Said in the ink before the key is pressed, which is the half that
+    // keeps enter from looking broken.
+    assert!(
+        !app.choosing().expect("asking").there,
+        "a path that is not there is not drawn as one"
+    );
+
+    // No escape first, and that is the point: the name matches nothing
+    // in the directory, so there is no list in front of the box and
+    // enter is the box's already. Pressing escape here would leave the
+    // box altogether, and the test would pass without the refusal ever
+    // being asked for -- which is how it first went green.
+    assert!(app.naming_list().is_none(), "there is a list in the way");
+    press(&mut app, KeyCode::Enter);
+
+    assert!(app.choosing().is_some(), "it stopped asking");
+    assert_eq!(
+        app.working_directory(),
+        before,
+        "Obelus moved to a directory nobody named"
+    );
+}
+
+/// And a remembered project whose directory has gone is taken off the
+/// list.
+///
+/// A row says what it was; whether it still is comes from trying to open
+/// it, which is why nothing stats twenty paths on the way to this
+/// screen. When the trying fails, the row goes -- a reader pressing a
+/// row and seeing nothing happen has been told nothing.
+///
+/// Broken deliberately by taking the `chooser.forget(path)` out: the row
+/// stays and enter on it does nothing, for ever.
+#[test]
+fn a_remembered_project_that_has_gone_is_dropped() {
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.ask_about_these_projects_for_test(vec![known(
+        "/tmp/obelus/gone-since-it-was-written",
+        None,
+    )]);
+    assert_eq!(app.choosing().expect("asking").known.len(), 1, "no row");
+
+    press(&mut app, KeyCode::Down);
+    press(&mut app, KeyCode::Enter);
+
+    assert!(app.choosing().is_some(), "it opened something that is gone");
+    assert!(
+        app.choosing().expect("asking").known.is_empty(),
+        "a row that cannot be opened is still offered"
+    );
+}
+
+/// The filter marks what it matched, and matches what is on the row.
+///
+/// Two halves of one fault. A list whose matched characters are not
+/// marked is a list that looks as though nothing happened -- which is
+/// the thing `ui::write_marked` exists to stop, and this was the newest
+/// list that had forgotten it.
+///
+/// And it is run against what the row *shows* and not against the path
+/// behind it. On an ordinary machine every path begins `/home/<name>/`,
+/// so `home` matched every row while no row had the word on it -- and a
+/// mark counted in one string and painted onto another lands on the
+/// wrong letters.
+///
+/// Broken deliberately twice: matching `known.path` instead of
+/// `known.shown`, so a row shown as `~/...` is matched on `/home/...`;
+/// and answering `None` for the range, so nothing is marked.
+#[test]
+fn the_filter_marks_what_it_matched_on_the_row_as_shown() {
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.ask_about_these_projects_for_test(vec![Known {
+        path: std::path::PathBuf::from("/home/somebody/Work/obelus"),
+        // What the row shows, which is where `/home/somebody` has gone.
+        shown: "~/Work/obelus".to_string(),
+        last: None,
+    }]);
+
+    // A word that is in the path and not on the row: it must not match.
+    press(&mut app, KeyCode::Char('h'));
+    press(&mut app, KeyCode::Char('o'));
+    press(&mut app, KeyCode::Char('m'));
+    assert!(
+        app.choosing().expect("asking").known.is_empty(),
+        "the filter matched a word that is nowhere on the row"
+    );
+
+    for _ in 0..3 {
+        press(&mut app, KeyCode::Backspace);
+    }
+    for character in "Work".chars() {
+        press(&mut app, KeyCode::Char(character));
+    }
+
+    let choosing = app.choosing().expect("asking");
+    assert_eq!(choosing.known.len(), 1, "the filter matched nothing");
+    assert_eq!(
+        choosing.known[0].matched,
+        // `~/` is two characters, so `Work` begins at the third.
+        Some((2, 6)),
+        "what matched is not marked, or is marked in the wrong place"
     );
 }

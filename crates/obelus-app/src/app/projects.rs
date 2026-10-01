@@ -287,6 +287,7 @@ impl super::App {
             .rows()
             .into_iter()
             .map(|project| obelus_component::chooser::Known {
+                shown: obelus_ui::with_home_as_tilde(&project.path),
                 path: project.path,
                 last: project.last,
             })
@@ -340,9 +341,15 @@ impl super::App {
         // comes back: what they said no to was what was in it then. The
         // same rule `component::completion` follows -- escape takes the
         // panel away and the next letter asks again.
-        if self.chooser.as_ref().and_then(Chooser::named) != before {
+        let named = self.chooser.as_ref().and_then(Chooser::named);
+        if named != before {
             self.naming_shut = false;
         }
+        // Whether what is in the box is there at all, which the row's
+        // ink says. Worked out on the key that moved the box and kept,
+        // because the row is drawn on every frame and a `stat` per frame
+        // is a file read wearing a costume.
+        self.named_is_there = named.is_some_and(|path| path.exists());
         // And what is typed narrows whatever the last read found, which
         // is not a question for the disk.
         self.settle_the_naming_list();
@@ -461,10 +468,19 @@ impl super::App {
             return;
         }
         let segment = chooser.segment();
-        let Some((_, items)) = &self.naming_read else {
+        let Some((read, items)) = &self.naming_read else {
             self.naming_list = None;
             return;
         };
+        // What was read has to be what the box is still about. It is not
+        // when the reader rubs their way back past a separator -- or
+        // rubs out everything -- and offering it then is a list of
+        // somewhere they have left.
+        if chooser.directory_named().as_deref() != Some(read.as_path()) {
+            self.naming_list = None;
+            self.naming_read = None;
+            return;
+        }
         // Made again from what the directory read found rather than kept
         // across keys: it costs one build of a list of names and it is
         // what lets a list that matched nothing come back when the
@@ -586,6 +602,29 @@ impl super::App {
     /// a reader typing one after `ob` means, and two answers to that would
     /// be two ways to open the same thing.
     fn settle_on(&mut self, path: &Path) {
+        // A path that is not there is not a project, and this is the one
+        // place that has to say so. `opening` answers what a path on the
+        // command line *means*, and for one that is not there it means
+        // "a file to make, in the directory above it" -- which is right
+        // for `ob notes.md` and catastrophic here: a reader who typed a
+        // name with a letter wrong would be put on the directory the
+        // process happened to begin in, which from a desktop menu is the
+        // home directory. That is the one answer this whole screen
+        // exists to avoid.
+        //
+        // One `stat`, on a key the reader pressed. Which is not what the
+        // ink on the row is worked out from -- see `named_is_there`.
+        if !path.exists() {
+            // Said in the ink before they pressed, so nothing is said
+            // here. A row of the remembered list whose directory has
+            // gone is dropped instead: it is not there to be offered any
+            // more, and a row that vanishes under the reader is the
+            // answer.
+            if let Some(chooser) = &mut self.chooser {
+                chooser.forget(path);
+            }
+            return;
+        }
         let opening = crate::app::opening(std::slice::from_ref(&path.to_path_buf()));
         let Some(root) = opening.root else {
             return;
@@ -628,8 +667,9 @@ impl super::App {
             known: chooser
                 .rows()
                 .into_iter()
-                .map(|known| obelus_ui::Opened {
-                    path: obelus_ui::with_home_as_tilde(&known.path),
+                .map(|(known, matched)| obelus_ui::Opened {
+                    path: known.shown.clone(),
+                    matched,
                     when: known
                         .last
                         .map(|last| obelus_git::how_long_ago(last, now))
@@ -640,6 +680,7 @@ impl super::App {
             typed: chooser.typing().said(),
             caret: chooser.typing().caret().get(),
             naming: chooser.is_naming(),
+            there: self.named_is_there,
         })
     }
 }

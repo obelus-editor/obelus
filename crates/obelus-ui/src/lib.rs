@@ -141,6 +141,14 @@ pub struct Choosing {
     /// Two boxes and two meanings, which is why this is a flag and not a
     /// guess from whether the text has a separator in it.
     pub naming: bool,
+    /// Whether what is in that box is there at all.
+    ///
+    /// What the ink on the row says, so that a reader sees enter will
+    /// refuse before they press it. A path that is not there is not a
+    /// project, and taking the directory above it instead -- which is
+    /// what a path on the command line means -- would put Obelus on
+    /// wherever the process began.
+    pub there: bool,
 }
 
 /// One project the reader has had open, as a row.
@@ -148,6 +156,12 @@ pub struct Choosing {
 pub struct Opened {
     /// Where it is, with `~` for the reader's own directory.
     pub path: String,
+    /// Which characters of it the filter matched, as `first..end`.
+    ///
+    /// Counted in that string and not in the path it was made from,
+    /// which is why the filter is run against it: a mark worked out in
+    /// one string and painted onto another lands on the wrong letters.
+    pub matched: Option<(usize, usize)>,
     /// When it was last opened, in words. Empty for a row that does not
     /// say.
     pub when: String,
