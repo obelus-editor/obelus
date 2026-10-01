@@ -441,7 +441,14 @@ impl App {
                 section: None,
             })
             .collect();
-        let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
+        // Taller for the workflows, whose choices are a few rows each: the
+        // list only ever draws a choice whole, so at the ordinary height the
+        // second of two left a blank where it should have been.
+        let rows = match key {
+            "workflow" => COMPACT_ROWS * 2,
+            _ => COMPACT_ROWS,
+        };
+        let mut picker = Picker::new(items, PickerLayout::Compact { rows });
         picker.before_typing("Filter values");
         picker.when_empty("This setting has no choices");
         // Read whole, the way the list of conversations is, because what
