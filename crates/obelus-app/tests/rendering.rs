@@ -2628,22 +2628,29 @@ fn naming_a_path_offers_what_could_finish_it() {
     }
 }
 
-/// The welcome screen says which project the keys are about.
+/// The status row says which project, in a word and then the path.
 ///
-/// Every key on it is about one and about no other -- `f1` searches that
-/// project and nothing else, `f3` asks git about it, a note and a
+/// Every key on the screen above it is about one project and no other --
+/// `f1` searches that one, `f3` asks git about it, a note and a
 /// conversation are filed under it -- so a reader is told before they
-/// press. `ui::welcome`'s own doc had claimed this for a long time while
-/// nothing drew it.
+/// press. It goes on the row rather than on the page because that row is
+/// where Obelus says what is being read: a file's path and its mode go
+/// there, and which project is the same kind of fact one step out.
+/// `ui::welcome`'s own doc had claimed it was on the page for a long
+/// time while nothing drew it anywhere.
+///
+/// Named and not left as a bare path, which is the half a reader needs:
+/// a path alone at the foot of a screen is a thing they have to work
+/// out.
 ///
 /// A directory outside `$HOME`, so the `~` it would otherwise be written
 /// with is nobody's and the test holds wherever it is checked out.
 ///
-/// Deliberate break: take the `write` of `working_directory` out of
-/// `lavish`, and the screen offers four keys about a project it does not
+/// Deliberate break: take the `render_project` arm out of the status
+/// row, and the screen offers four keys about a project it does not
 /// name.
 #[test]
-fn the_welcome_screen_says_which_project() {
+fn the_status_row_says_which_project() {
     let mut app = App::new(Vec::new());
     app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
 
@@ -2651,7 +2658,7 @@ fn the_welcome_screen_says_which_project() {
     let text = support::text_block(&dump);
 
     assert!(
-        text.contains("/tmp/obelus"),
-        "the welcome screen does not say which project:\n{dump}"
+        text.contains("Project  /tmp/obelus"),
+        "the status row does not say which project, or does not say what it is:\n{dump}"
     );
 }

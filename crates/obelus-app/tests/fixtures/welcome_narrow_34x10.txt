@@ -9,7 +9,7 @@ screen 34x10  editor 34x8  status 34x1
  6|       Ctrl+p Run a command       
  7|       Ctrl+q Leave Obelus        
  8|──────────────────────────────────
- 9|                                  
+ 9| Project  /tmp/obelus             
 -- style --
  0|aaaaaaaaaaaaaaaaaaaaabbbbbbaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -20,7 +20,7 @@ screen 34x10  editor 34x8  status 34x1
  6|aaaaaaaaaaaaaabbbbbbbbbbbbbaaaaaaa
  7|aaaaaaaaaaaaaabbbbbbbbbbbbaaaaaaaa
  8|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
- 9|cccccccccccccccccccccccccccccccccc
+ 9|cbbbbbbbcccccccccccccccccccccccccc
 -- legend --
 a fg=#e4e4e7 bg=#18181b
 b fg=#52525b bg=#18181b

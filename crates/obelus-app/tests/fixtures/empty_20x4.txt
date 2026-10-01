@@ -3,12 +3,12 @@ screen 20x4  editor 20x2  status 20x1
  0|                    
  1|                    
  2|────────────────────
- 3|                    
+ 3| Project  …elus-app 
 -- style --
  0|aaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaa
  2|bbbbbbbbbbbbbbbbbbbb
- 3|cccccccccccccccccccc
+ 3|cbbbbbbbcccccccccccc
 -- legend --
 a fg=#e4e4e7 bg=#18181b
 b fg=#52525b bg=#18181b
