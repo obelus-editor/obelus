@@ -10,7 +10,7 @@ mod support;
 use crossterm::event::KeyCode;
 use obelus_app::app::App;
 use obelus_command::Command;
-use obelus_component::chooser::Known;
+use obelus_component::{chooser::Known, picker::Picker};
 use obelus_ui::Screen as _;
 use support::press;
 
@@ -239,9 +239,10 @@ fn escape_comes_back_out_of_the_path_box() {
 /// with it, so the next level arrives without the reader typing one --
 /// which makes walking down a tree one key per level.
 ///
-/// Broken deliberately by having `Chooser::put` leave the separator off
-/// a directory: the box holds a directory, no further candidates are
-/// asked for, and the reader has to type the separator themselves.
+/// Broken deliberately twice: `Chooser::put` leaving the separator off a
+/// directory, so no further candidates are asked for; and `look_in`
+/// keeping the list it had, so what is on screen after walking in is
+/// still the directory above.
 #[test]
 fn enter_puts_the_chosen_row_in_the_box() {
     let scratch = support::Scratch::new("choosing-enter");
@@ -264,9 +265,15 @@ fn enter_puts_the_chosen_row_in_the_box() {
         app.choosing().is_some(),
         "enter opened something instead of typing it"
     );
-    assert!(
-        app.naming_list().is_some(),
-        "what is inside the chosen directory was not asked for"
+    assert_eq!(
+        app.naming_list()
+            .and_then(Picker::selected_item)
+            .map(|item| item.label.as_str()),
+        // What is *inside* it, and not what was beside it: a list kept
+        // across the separator would still be the directory above,
+        // narrowed by letters belonging to a name somewhere else.
+        Some("inner/"),
+        "the list is not the chosen directory's"
     );
 }
 
@@ -385,5 +392,65 @@ fn a_path_typed_with_forward_slashes_is_still_a_path() {
         // chosen one.
         Some("inside/"),
         "what the directory holds was not offered"
+    );
+}
+
+/// A list the reader shut comes back when they type.
+///
+/// Escape takes the list away and the next letter asks again, which is
+/// what `component::completion` does and what a reader expects of
+/// anything that completes. Shutting it for good made escape a key that
+/// could not be undone -- and the only way back was to type a separator,
+/// which means naming a different directory.
+///
+/// Broken deliberately by leaving `self.naming_shut` set when the box
+/// moves: the list never comes back and escape is final.
+#[test]
+fn a_list_that_was_shut_comes_back_on_the_next_letter() {
+    let scratch = support::Scratch::new("choosing-reopen");
+    std::fs::create_dir_all(scratch.path().join("alpha")).expect("a directory");
+    let mut app = asking();
+    press(&mut app, KeyCode::Enter);
+    for character in format!("{}/", scratch.path().display()).chars() {
+        press(&mut app, KeyCode::Char(character));
+    }
+    press(&mut app, KeyCode::Esc);
+    assert!(app.naming_list().is_none(), "the list did not shut");
+
+    press(&mut app, KeyCode::Char('a'));
+
+    assert!(
+        app.naming_list().is_some(),
+        "a list the reader shut never came back, so escape could not be undone"
+    );
+}
+
+/// And one that matched nothing comes back when the letter goes.
+///
+/// The same fault wearing different clothes: a list is gone for two
+/// ordinary reasons and both have to be undoable, so what the directory
+/// read found is kept apart from the list made of it. Held together, a
+/// letter too many could not be rubbed out.
+///
+/// Broken deliberately by clearing `self.naming_read` beside
+/// `self.naming_list` when nothing matches: backspace leaves the box
+/// naming a real directory with nothing offered.
+#[test]
+fn a_list_that_matched_nothing_comes_back_when_the_letter_goes() {
+    let scratch = support::Scratch::new("choosing-backspace");
+    std::fs::create_dir_all(scratch.path().join("alpha")).expect("a directory");
+    let mut app = asking();
+    press(&mut app, KeyCode::Enter);
+    for character in format!("{}/", scratch.path().display()).chars() {
+        press(&mut app, KeyCode::Char(character));
+    }
+    press(&mut app, KeyCode::Char('z'));
+    assert!(app.naming_list().is_none(), "`z` matched something");
+
+    press(&mut app, KeyCode::Backspace);
+
+    assert!(
+        app.naming_list().is_some(),
+        "rubbing the letter out did not bring back what the directory holds"
     );
 }

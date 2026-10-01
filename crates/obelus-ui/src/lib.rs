@@ -85,6 +85,32 @@ pub struct WentWrong {
     pub at: Option<(std::path::PathBuf, LineNumber)>,
 }
 
+/// A path with the reader's own directory written as `~`.
+///
+/// Here because it is about drawing and not about the filesystem:
+/// everything under the home directory would otherwise spend a dozen
+/// columns of every row on the same word, taken from the part of the path
+/// that says which thing it is. One piece of code, so the welcome
+/// screen's own line and the rows of projects under it cannot disagree
+/// about how a path is written.
+#[must_use]
+pub fn with_home_as_tilde(path: &std::path::Path) -> String {
+    let said = path.to_string_lossy();
+    let Some(home) = std::env::home_dir() else {
+        return said.into_owned();
+    };
+    let home = home.to_string_lossy();
+    // Only a whole leading component, so `/home/sunlight` is not written
+    // as `~light` for a reader whose directory is `/home/sun`.
+    match said.strip_prefix(home.as_ref()) {
+        Some("") => "~".to_string(),
+        // Either separator: a path on Windows may hold `/` and still be
+        // the reader's own directory with something under it.
+        Some(rest) if rest.starts_with(std::path::is_separator) => format!("~{rest}"),
+        _ => said.into_owned(),
+    }
+}
+
 /// What the welcome screen offers while Obelus is asking which project.
 ///
 /// Here rather than with the application for the reason everything else in
