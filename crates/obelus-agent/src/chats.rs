@@ -208,8 +208,7 @@ pub fn claim(root: &Path, which: &ChatId) -> Option<Claim> {
 /// and the caller already knows -- it is holding them.
 ///
 /// `None` for a claim that says nothing: one caught between being taken and
-/// being written, and on Windows every one, where the holder's lock is on
-/// the bytes this would read.
+/// being written.
 #[must_use]
 pub fn held(root: &Path) -> BTreeMap<ChatId, Option<PathBuf>> {
     let Some(directory) = directory(root) else {
@@ -225,8 +224,9 @@ pub fn held(root: &Path) -> BTreeMap<ChatId, Option<PathBuf>> {
         .filter_map(|entry| {
             let which = ChatId::read(entry.file_name().to_str()?)?;
             let mut file = File::options().read(true).open(entry.path()).ok()?;
-            // Read before the lock is asked about, because asking takes it
-            // for a moment and Windows would refuse the read while it is.
+            // These bytes are nobody's: a claim's lock is on a byte past
+            // any end the file could have, which is what leaves them
+            // readable here at all -- see `held_by_somebody_else`.
             let mut said = String::new();
             let tree = file
                 .read_to_string(&mut said)
@@ -332,7 +332,20 @@ pub(crate) fn held_by_somebody_else(file: &File) -> bool {
     unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) != 0 }
 }
 
-/// The same question, in the terms the other platform puts it in.
+/// The same question, in the terms the other platform puts it in -- which
+/// are a byte range, and that is not only another spelling.
+///
+/// A range here denies *reading* as well, which `flock` does not, and the
+/// bytes of this file are what say which checkout holds the claim. Locked
+/// from zero, as this was, the one thing no other Obelus could read was the
+/// holder's own writing. So the range is a single byte past any end this
+/// file could have: it names the file as surely as the whole of it does,
+/// and it is nowhere near what anybody reads.
+///
+/// Broken deliberately by locking from zero again: `held` comes back with
+/// the claim in it and nothing said about where, and the status row says
+/// `in another window` for a worktree it could have named. Only Windows
+/// shows it.
 #[cfg(windows)]
 pub(crate) fn held_by_somebody_else(file: &File) -> bool {
     use std::os::windows::io::AsRawHandle as _;
@@ -343,19 +356,20 @@ pub(crate) fn held_by_somebody_else(file: &File) -> bool {
     };
 
     // Safety: the handle is this file's and outlives the call, and the
-    // overlapped structure is this stack frame's, written by the call and
-    // read by nobody.
+    // overlapped structure is this stack frame's, written here and by the
+    // call, and read by nobody after it.
     unsafe {
         let mut overlapped: OVERLAPPED = std::mem::zeroed();
+        // The offset, which is where this platform keeps it. Four gigabytes
+        // short of the top so that the byte asked for below is still an
+        // offset, and further out than any filesystem will go.
+        overlapped.Anonymous.Anonymous.OffsetHigh = u32::MAX;
         LockFileEx(
             file.as_raw_handle(),
             LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
             0,
-            // The whole file: what is being locked is the name, and a range
-            // is how this platform spells one. Which is also why another
-            // process cannot read which checkout holds it -- see `held`.
-            u32::MAX,
-            u32::MAX,
+            1,
+            0,
             &raw mut overlapped,
         ) == 0
     }
