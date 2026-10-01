@@ -31,12 +31,20 @@ directory=${OBELUS_INSTALL_DIR:-$HOME/.local/bin}
 # reader who meant Obelus too, and refusable because it writes two files
 # outside `--dir`.
 omarchy=yes
+# Whether to put what was installed in the desktop's launcher, which on
+# Linux is a desktop entry each and an icon. Done unasked for the reason
+# Windows gets a Start menu entry: a launcher is where a reader starts
+# things, and a binary only a shell can find is half an install of one --
+# for `ob` too, which a desktop opens in a terminal of its own choosing.
+# Refusable because it writes files outside `--dir`.
+desktop=yes
 # Whether this is the taking-away rather than the putting-there.
 removing=no
 
-# The two files the omarchy half writes. They are the only things this puts
-# outside `--dir`, and so the two `--uninstall` has to know the names of --
-# which is why they are named here rather than where they are written.
+# The two files the omarchy half writes. They and the desktop half's are
+# the only things this puts outside `--dir`, and so the ones `--uninstall`
+# has to know the names of -- which is why they are named here rather than
+# where they are written.
 # `rendered` is where omarchy renders the theme: the link points *into*
 # that directory rather than at a copy, because the whole of it is replaced
 # when a theme is set.
@@ -46,8 +54,34 @@ themes=$HOME/.config/obelus/themes
 link=$themes/omarchy.toml
 rendered=$HOME/.local/state/omarchy/current/theme/obelus.toml
 
+# The files the desktop half writes, named here for the same reason: an
+# entry per binary, and the icon both of them draw. Under the reader's own
+# data directory, which every launcher reads -- the GNOME and KDE ones, and
+# omarchy's `Apps`, which is the desktop entries and nothing else, so this
+# is how Obelus gets into that menu too.
+data=${XDG_DATA_HOME:-$HOME/.local/share}
+applications=$data/applications
+icon=$data/icons/hicolor/scalable/apps/obelus.svg
+
 say() { printf '%s\n' "$*"; }
 die() { printf 'obelus: %s\n' "$*" >&2; exit 1; }
+
+# Which entry is which binary's. The window's keeps the name the packages
+# give it, so that an install from here and one from a `.deb` are the same
+# entry rather than two.
+entry_of() {
+    case $1 in
+        obg) printf '%s/obelus.desktop' "$applications" ;;
+        ob) printf '%s/obelus-terminal.desktop' "$applications" ;;
+    esac
+}
+
+# What an entry starts, as its `Exec` line. The whole path rather than the
+# name, because a launcher does not read the PATH a shell profile sets, and
+# `--dir` need not be on it at all. Asked by the install and by
+# `--uninstall` alike, which is how the second knows an entry is this
+# install's: one that starts some other `obg` is somebody else's.
+exec_line() { printf 'Exec="%s/%s" %%F' "$directory" "$1"; }
 
 usage() {
     cat <<'USAGE'
@@ -61,9 +95,13 @@ Usage: install.sh [options]
   --no-omarchy        Do not install Obelus's omarchy theme template, which
                       is otherwise installed where omarchy is found. With
                       --uninstall, leave it where it is.
-  --uninstall         Take it away again: `ob` and `obg` out of --dir, and
-                      the omarchy theme template and its link. Nothing else
-                      -- your settings are yours.
+  --no-desktop        Do not put what is installed in the desktop's
+                      launcher, which is otherwise done on Linux. With
+                      --uninstall, leave it there.
+  --uninstall         Take it away again: `ob` and `obg` out of --dir,
+                      their entries in the launcher, and the omarchy theme
+                      template and its link. Nothing else -- your settings
+                      are yours.
   --help              This.
 USAGE
 }
@@ -74,6 +112,7 @@ while [ $# -gt 0 ]; do
         --version) tag=${2:-}; shift 2 ;;
         --dir) directory=${2:-}; shift 2 ;;
         --no-omarchy) omarchy=no; shift ;;
+        --no-desktop) desktop=no; shift ;;
         --uninstall) removing=yes; shift ;;
         --help|-h) usage; exit 0 ;;
         *) die "$1 is not an option this understands. --help says what is." ;;
@@ -106,6 +145,36 @@ take_it_away() {
             say "  $directory/$binary could not be removed"
         fi
     done
+
+    # Each entry, and only where it starts the binary this is taking away
+    # -- the rule the Windows script's shortcut follows. The icon goes once
+    # neither entry is left and not otherwise: an entry left behind for a
+    # second install still draws it.
+    if [ "$desktop" = yes ]; then
+        entries_went=no
+        for binary in ob obg; do
+            entry=$(entry_of "$binary")
+            [ -f "$entry" ] || continue
+            if ! grep -qxF "$(exec_line "$binary")" "$entry"; then
+                say "  left $entry alone: it starts $(sed -n 's/^Exec=//p' "$entry")"
+            elif rm -f "$entry"; then
+                say "  removed $entry"
+                removed=$((removed + 1))
+                entries_went=yes
+            else
+                say "  $entry could not be removed"
+            fi
+        done
+        if [ "$entries_went" = yes ] && [ ! -f "$(entry_of ob)" ] && [ ! -f "$(entry_of obg)" ]; then
+            if [ -f "$icon" ] && rm -f "$icon"; then
+                say "  removed $icon"
+                removed=$((removed + 1))
+            fi
+        fi
+        if [ "$entries_went" = yes ] && command -v update-desktop-database > /dev/null 2>&1; then
+            update-desktop-database "$applications" > /dev/null 2>&1 || true
+        fi
+    fi
 
     if [ "$omarchy" = yes ]; then
         # The link, and only where it is this Obelus's. Anything else of
@@ -337,6 +406,73 @@ for binary in $binaries; do
     say "  installed $directory/$binary"
 done
 
+# One of the release's text files, fetched into `$work` and checked like
+# everything else this downloads: a text file rather than a binary, and the
+# rule is about what the release says it is. Saying what stopped it and
+# answering no, because neither half that asks is a reason to fail an
+# install whose binary is in by now. `$2` is where in the repository the
+# file is, for a release made before it was one of the release's.
+fetch_checked() {
+    want=$(awk -v want="$1" '$2 == want || $2 == "*" want { print $1 }' "$sums")
+    if [ -z "$want" ]; then
+        say "  $tag has no $1 -- $2 in the repository has it"
+        return 1
+    fi
+    fetch "https://github.com/$repository/releases/download/$tag/$1" "$work/$1" \
+        || { say "  $1 could not be fetched"; return 1; }
+    have=$(sum "$work/$1")
+    [ "$have" = "$want" ] \
+        || { say "  $1 is not what the release says it is: $have, where SHA256SUMS says $want"; return 1; }
+}
+
+# What was installed, in the desktop's launcher: an entry for each, and the
+# icon they and the window all ask for by name (the window by
+# `StartupWMClass`, which is what matches the two). `ob`'s entry asks the
+# launcher for a terminal rather than naming one. Linux's half alone -- a
+# Mac has the `.app` for this.
+the_desktop_entries() {
+    say '
+So that it can be started from the desktop'"'"'s launcher:'
+
+    # A launcher splits `Exec` on its own quoting rules, where these five
+    # mean something and need escaping twice over. A `--dir` with one in it
+    # is rare enough to be told about rather than escaped.
+    case $directory in
+        *[\"\`\$\\%]*)
+            say "  $directory has a character a desktop entry would have to escape, so there is none"
+            return
+            ;;
+    esac
+
+    fetch_checked obelus.svg contrib/desktop/ || return
+    mkdir -p "$applications" "${icon%/*}" || { say "  $applications could not be made"; return; }
+    # Written over where it is already there, like the theme template: it is
+    # Obelus's own file at a name Obelus chose, and an earlier install into
+    # another `--dir` is the entry that should now start this one.
+    cp "$work/obelus.svg" "$icon" || { say "  $icon could not be written"; return; }
+    say "  $icon"
+
+    for binary in $binaries; do
+        entry=$(entry_of "$binary")
+        name=${entry##*/}
+        fetch_checked "$name" contrib/desktop/ || continue
+        awk -v exec_line="$(exec_line "$binary")" '/^Exec=/ { print exec_line; next } { print }' \
+            "$work/$name" > "$entry" \
+            || { say "  $entry could not be written"; continue; }
+        say "  $entry"
+    done
+
+    # The entry says which files it opens, and what answers that question is
+    # a cache beside it -- rebuilt where the program that does it is here.
+    if command -v update-desktop-database > /dev/null 2>&1; then
+        update-desktop-database "$applications" > /dev/null 2>&1 || true
+    fi
+}
+
+if [ "$desktop" = yes ] && [ "$system" = Linux ]; then
+    the_desktop_entries
+fi
+
 # omarchy themes every program on the desktop at once -- one palette, a
 # template per program, a directory swapped into place -- and Obelus's part
 # of that is a template in the directory omarchy reads templates from and a
@@ -350,20 +486,8 @@ the_omarchy_theme() {
     say '
 omarchy is here, so Obelus can be themed with the rest of the desktop:'
 
-    # Checked like everything else this downloads. A template is text rather
-    # than a binary, and the rule is about what the release says it is.
-    want=$(awk -v want=obelus.toml.tpl '$2 == want || $2 == "*" want { print $1 }' "$sums")
-    if [ -z "$want" ]; then
-        say "  $tag has no obelus.toml.tpl -- contrib/omarchy/ in the repository has it"
-        return
-    fi
-
     template=$work/obelus.toml.tpl
-    fetch "https://github.com/$repository/releases/download/$tag/obelus.toml.tpl" "$template" \
-        || { say '  obelus.toml.tpl could not be fetched'; return; }
-    have=$(sum "$template")
-    [ "$have" = "$want" ] \
-        || { say "  obelus.toml.tpl is not what the release says it is: $have, where SHA256SUMS says $want"; return; }
+    fetch_checked obelus.toml.tpl contrib/omarchy/ || return
 
     mkdir -p "$templates" "$themes" || { say "  $templates could not be made"; return; }
     # Written over where it is already there. The template is Obelus's own

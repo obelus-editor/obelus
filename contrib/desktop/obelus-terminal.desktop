@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+# Its own name, because a reader with both installed finds two rows when
+# they type `obelus`, and the two have to say which is which.
+Name=Obelus (Terminal)
+Categories=Development;ConsoleOnly;
+GenericName=Code Reader
+Comment=A code reader in a terminal. It doesn't want you to type.
+Exec=ob %F
+Icon=obelus
+# The launcher picks the terminal: `xdg-terminal-exec` where it is there,
+# which is how this lands in the terminal the reader chose -- and on
+# omarchy, in the one omarchy is set up with -- rather than in one named
+# here.
+Terminal=true
+# No `MimeType`, which `obelus.desktop` has. A file opened from a file
+# manager has nowhere to have been but a window, and two entries claiming
+# the same types leave the desktop to pick between them for the reader.
