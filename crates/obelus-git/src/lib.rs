@@ -8,6 +8,35 @@
 //! history, and a library that walks it hands back commit ids rather than
 //! columns of text.
 //!
+//! **Nothing here writes.** Committing, pushing, pulling and fetching were
+//! investigated and turned down, and the investigation is kept here because
+//! it is expensive to redo. gix has no push at all: `gix-transport` knows the
+//! name `git-receive-pack` and nothing in `gix` ever asks for it. It *can*
+//! commit -- `edit_tree` builds the tree, `repo.commit()` writes the object
+//! and moves the ref -- and doing so leaves the index untouched, which is not
+//! a cosmetic problem: after a commit made that way `git status` reports the
+//! newly committed file as deleted, and the reader's next ordinary `git
+//! commit -a` removes it from history. Two lines (`index_from_tree` then
+//! `index.write`) fix that, and four more things stay broken: a `pre-commit`
+//! hook that exits 1 does not stop it, `commit-msg` never runs,
+//! `commit.gpgsign` is ignored, and `.gitattributes` filters are not
+//! applied. All measured against a real repository, not read off the
+//! documentation.
+//!
+//! Which is why nobody does it. zed writes -- and has no git library at all:
+//! 21 subcommands shelled out, blame and diff included, plus its own
+//! `GIT_ASKPASS` script talking back over a socket. helix reads -- and uses
+//! gix, with no network feature and no git commands whatsoever. There is no
+//! third combination. The choice is not which library; it is whether to
+//! write at all, and Obelus does not.
+//!
+//! If that is ever revisited: shell out for all four verbs, because one of
+//! them (push) has no other option and two mechanisms for one act is worse
+//! than one. `GIT_TERMINAL_PROMPT=0` fails cleanly without touching the
+//! terminal; `GIT_ASKPASS=<program>` is called once per credential with the
+//! prompt as `argv[1]` and the answer read from stdout, which is how a TUI
+//! asks for a password without losing the screen. Both measured.
+//!
 //! Nothing here fails loudly. Every answer is an `Option` or an empty
 //! collection, because every one of them is missing for ordinary reasons: a
 //! file outside a repository, a repository with no commits yet, a file git
@@ -108,6 +137,14 @@ fn in_repository(repository: &gix::Repository, path: &Path) -> Option<PathBuf> {
 /// has one list of what they mean to come back to, not three. `common_dir`
 /// is git's own answer to "which repository is this" -- a linked worktree's
 /// is the main checkout's -- so all of them come out with one name.
+///
+/// This is *the* key, and everything Obelus keeps about a project must use
+/// it: the notes and the table saying which conversation is about which note
+/// were keyed apart once, and one note with two conversations under it is a
+/// reader opening it in one worktree and finding an empty page in the next.
+/// The notes moved out of the project's own `.obelus` for this: they were
+/// never shared with the next person anyway, since `.obelus` is a directory
+/// readers gitignore.
 ///
 /// Canonicalised rather than merely made absolute, which is what settles the
 /// same directory reached by two spellings. On Windows that is the whole of
@@ -370,6 +407,15 @@ pub fn how_long_ago(when: i64, now: std::time::SystemTime) -> String {
 /// Whether git says anything in the tree has changed.
 ///
 /// A yes or a no, and it stops at the first answer.
+///
+/// **Ask the question you mean.** The gate that wants to know *whether*
+/// anything has changed -- asked on every command in the palette -- used to
+/// build a map of every changed path and take its length. Measured
+/// afterwards, and honestly: this is two and a half times cheaper on a
+/// project with something in it and no cheaper at all on a clean one,
+/// because the walk has to reach the end to find nothing. The phrasing was
+/// wrong; the cost lives in the walk, and saying otherwise would be a win
+/// claimed rather than got.
 #[must_use]
 pub fn anything_changed(root: &Path) -> bool {
     let Some(repository) = repository(root) else {
@@ -513,7 +559,9 @@ pub enum Head {
 /// asking by [`project`] would answer the same branch for all of them and
 /// be wrong for all but one. What is keyed by the project is what the
 /// worktrees are meant to share -- the notes, and which conversation is
-/// about which -- and the branch is not that.
+/// about which -- and the branch is not that. The test for which key a
+/// question wants is whether two worktrees should agree about the answer:
+/// the notes yes, the branch no.
 ///
 /// Through `head_ref`, which is the same question [`history::refs_of`]
 /// asks to mark which of the names it lists is the current one: one place

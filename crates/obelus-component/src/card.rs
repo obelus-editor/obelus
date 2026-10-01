@@ -38,6 +38,40 @@
 //! they send the card with the box empty, and the field is left out of the
 //! answer. Escape is not that answer -- escape gives up on the whole form,
 //! which is the one thing a reader walking past an aside does not mean.
+//!
+//! **Enter acts on the row the reader is on, and that is the whole key
+//! table.** One answer: enter on it answers the card, with whatever is in
+//! the box. Many: enter ticks, and the card is sent from a row that says
+//! `Submit`, because ticking and sending cannot both be enter. In the box:
+//! enter sends, `alt` and enter makes a line, which is what enter does in
+//! the box anywhere else in Obelus. No new key was needed -- not even space,
+//! which everywhere else in Obelus is a character. The rest is said where
+//! it is done: walking does not choose (`Card::focus`), typing goes to the
+//! box wherever the reader is and a card with no box swallows it
+//! (`handle_key`), and what the card cannot do yet it says only once the
+//! reader has asked for it (`complaining`).
+//!
+//! **A question the reader did not start says what it is about.** The card
+//! carries an `about` -- prose above its answers, a rule under it -- and
+//! both questions an agent can ask fill it: a form puts its own message
+//! there, and a permission request what the agent is actually going to do
+//! (`reason_of` in `obelus-agent`'s `acp/link`, which says why not
+//! `raw_input`). "Allow" and "refuse" are answers, and a question with the
+//! words missing is not one a reader can answer. It is wrapped to the width
+//! and capped (`MOST_ABOUT`): it is somebody else's prose, and an agent
+//! explaining itself at length must not push the list it belongs to off the
+//! screen. The compact list keeps an `about` of its own for the same reason
+//! (`Picker::about`).
+//!
+//! A form said it in a transcript line of its own once ("it asks: ..."),
+//! which is the same words twice: the question is on screen, and what it is
+//! about belongs over it rather than above the last thing the agent said.
+//! The same went for a permission request, which Obelus introduced with a
+//! note of its own ("asking to run the tests") over the question: the call
+//! goes where every call goes now, waiting, which is what says the agent is
+//! asking about it -- and where that row carries the words itself, the card
+//! says nothing rather than quote the first five rows of them
+//! (`App::ask_permission`).
 
 use crossterm::event::{KeyCode, KeyModifiers};
 use obelus_text::coordinates::DisplayColumn;

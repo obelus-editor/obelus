@@ -739,6 +739,16 @@ impl Buffer {
     /// cursor moves through the text, and a viewport is a window on the
     /// screen -- and one function answering both is what let an opened hunk
     /// be drawn where the viewport could not reach it.
+    ///
+    /// Every path that moves the *viewport* counts with this one
+    /// (`step_screen_rows`, `cursor_screen_row`), while the cursor's own
+    /// stepping keeps the text's. What the one function cost was a deletion
+    /// taller than the screen, which could not be read: the block was
+    /// drawn only from its first row, the viewport could not express being
+    /// inside it, and two patches -- a row count re-derived in `ui::editor`
+    /// for the caret, and a height shrunk in `App::prepare` for the
+    /// scrolling -- kept the caret honest without making the rows
+    /// reachable. Both are gone.
     fn screen_rows_of(&self, line: LineNumber, area: TextArea) -> usize {
         // A folded-away line is a line with no rows. Everything that counts
         // rows -- the caret, the paging, the scrolling, the view -- counts
@@ -860,7 +870,8 @@ impl Buffer {
         None
     }
 
-    /// stopping at either end of the document.
+    /// Moves a position on the screen by `rows` rows of it, in either
+    /// direction, stopping at either end of the document.
     ///
     /// A position here is a line and a row *within its screen rows*, so a
     /// row below the inserted ones is the line's own first row. Everything

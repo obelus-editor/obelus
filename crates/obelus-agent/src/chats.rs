@@ -22,6 +22,17 @@
 //! on. The file's *existence* means nothing on its own: one left behind by a
 //! process that died is a file nobody holds, and asking for the lock is what
 //! says which it is.
+//!
+//! **A refused claim is drawn, never said.** Nothing goes on the status row
+//! when the key is refused. The lock beside the note says it, and the foot
+//! says it again by not offering `Talk` there: the reader is told before
+//! they press, which is the rule the palette follows for a command it will
+//! not run. The list of conversations says the same thing the same way --
+//! the lock in the marker column, the row dim -- and asks for the claim
+//! *again* when the row is chosen, because the list was built a moment ago
+//! and another Obelus may have walked in since. Where it has, the list stays
+//! open and the row goes dim under the reader, which is the answer; nothing
+//! happening at all is a key that looks broken.
 
 use std::{
     collections::BTreeSet,

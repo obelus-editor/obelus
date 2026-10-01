@@ -9,7 +9,12 @@
 //! already something on another thread sending to it. The window is simply
 //! one more sender.
 //!
-//! So `App` crosses a thread on the way up and stays there. Nothing else
+//! `app::run` is handed the *receiving* end of the loop's channel because
+//! the other end belongs to whichever front end is running: a terminal
+//! reads keys on a thread of its own, and a window gets them from the event
+//! loop the platform obliges it to run on the process's first thread. So
+//! `App` crosses a thread on the way up and stays there -- one owner of
+//! `&mut App`, as before, just not on `main`'s thread. Nothing else
 //! does: the frames it draws go one way down a channel, the presses go the
 //! other way down another, and neither side ever holds the other's state.
 //!
@@ -18,6 +23,23 @@
 //! platform's own wait does not, and the one way to reach it is to post an
 //! event to the loop it is parked in. That is what the proxy is for, and it
 //! is why the backend holds one.
+//!
+//! **What an input method is spelling is on the page, and is not in the
+//! file.** Typing Chinese is spelling a word before it exists: several
+//! keypresses that are not characters, and then one character that is. The
+//! window draws that spelling itself, over the cells to the right of the
+//! caret, underlined, in the colours of the place it is going into -- and
+//! the application is never told about it. Not because it could not be:
+//! because what would arrive is half-typed pinyin in a buffer with an undo
+//! history and a file that has changed. What arrives instead, when the
+//! input method commits, is a paste -- which is the same question Obelus
+//! already answered about where typed text goes when several things are on
+//! screen.
+//!
+//! The keys during that spelling belong to the input method, so a plain
+//! character is swallowed while one is being composed: it is arriving
+//! twice, once as the spelling and once as the word. A chord is not --
+//! `ctrl+s` means save whatever is being typed.
 
 use std::{
     sync::{

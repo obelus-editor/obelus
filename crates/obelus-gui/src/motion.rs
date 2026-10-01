@@ -1747,7 +1747,6 @@ mod tests {
         assert_eq!(motion.wake(resting, false), None);
     }
 
-    /// Break: leave the check out of any one of the three doors, and a    ///
     /// Break: leave the check out of any one of the three doors, and a
     /// reader who turned animation off still gets that one -- which is a
     /// switch they watched do nothing to the thing they turned it off

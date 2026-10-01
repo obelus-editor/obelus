@@ -66,6 +66,33 @@
 //! nobody should have to go looking for. What the reader said about a run beats
 //! both: one they closed stays closed, whatever is in it.
 //!
+//! **A change that has happened is the working tree's; a change that has
+//! not is the agent's to show.** An agent that edits a file leaves the file
+//! different from the last commit, and drawing that is what Obelus does all
+//! day: the margin, `show-change`, `alt+d`. Rendering the agent's own diff
+//! over it would be a second answer to the same question, and the wrong one
+//! when something else has touched the file too -- so an edit that has been
+//! made is a row with `+12 -4` on it, and the file is where it is read.
+//!
+//! A change it is *asking* to make is the opposite: the lines are in neither
+//! the file nor the last commit, and the reader is being asked to agree to
+//! them. Those go in the transcript, under the call's own row, open -- and
+//! they stay there afterwards, which is how a reader finds out later what
+//! they agreed to. Drawn the way an opened hunk is drawn in a file, tinted
+//! to the edge with the marker's bar against the text, because it is the
+//! same thing being said: `Theme::marker_colour` is where both views ask
+//! what a change looks like.
+//!
+//! The protocol sends the file as it is and as it would be rather than a
+//! patch, so Obelus diffs the two with `Changes::between` -- the engine the
+//! margins come from, through `obelus_git::change::drawn`. Nothing parses
+//! anybody's patch text, and a proposal is read with the same hunks as
+//! everything else. The rows are worked out once, when the call arrives
+//! (`changed_rows`): a frame is not the place to diff a file. It folds
+//! itself once the call is finished and stays open while it is pending
+//! (`Chat::is_open` says why), and the reader's word beats both, as
+//! everywhere else.
+//!
 //! Thinking is not folded away. Folding is for repetition, and thinking is
 //! prose -- often the most of what a turn is worth, since it is where the agent
 //! says why it thinks the bug is where it thinks it is. It gets a heading so a

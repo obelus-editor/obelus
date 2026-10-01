@@ -262,8 +262,9 @@ pub const CLAIM: &str = "installing";
 /// honest -- a half-finished install never counts as installed -- but the
 /// directory is worth not mixing in the first place.
 ///
-/// Created exclusively, which is the one filesystem operation that settles
-/// a race between processes without asking anybody to agree first.
+/// Held by a lock rather than by a file existing, so a claim left by an
+/// Obelus that was killed is given up with the process -- the comment
+/// below says why the file on its own was not enough.
 pub fn claim(id: &str, root: &std::path::Path) -> Result<Claim, String> {
     let Some(home) = home(id, root) else {
         return Err(format!("{id} is not a name Obelus can keep a directory of"));

@@ -38,6 +38,12 @@ pub struct Message {
 /// Three states rather than a boolean, because the two that are not "ready"
 /// mean opposite things to a reader whose jump did nothing: one is worth
 /// waiting for and the other is worth restarting Obelus over.
+///
+/// And no fourth for a server that is busy, which is asked of
+/// `Client::working_on` instead: "busy" is not a state beside `Ready`, it is
+/// a thing a ready server is doing, and a fourth variant would have had the
+/// list of problems' "rust-analyzer is not answering" said about a server
+/// that was answering fine.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ServerState {
     /// Spawned, handshake not answered yet.

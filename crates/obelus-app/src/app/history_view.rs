@@ -1,19 +1,15 @@
 //! The list of commits, and what a row of it opens.
 //!
-//! One view at two radii, the way the search is one question at four: a
-//! file's history and a project's differ only in which commits are listed,
-//! so they are two tabs of one list and the keys land on the tab they name.
-//!
-//! A commit in the project's tab is not a file, so it has nothing to open.
-//! What it has is the list of files it changed, and that list goes *under*
-//! it, in place, the way a run of tool calls opens in the transcript: one
-//! list, one selection, one Escape.
-//!
-//! A history is one view at two radii. A file's commits and a project's
-//! differ only in which commits are listed, so they are two tabs of one list
-//! and `f9` and `f10` land on the tab they name -- the shape the finding keys
-//! have, for the same reason: a reader who does not find it in this file looks
-//! in the project without pressing a second key to get there.
+//! **A view is split by the errand, not by the shape of the answer.** `f9`
+//! and the refs tab both end in the same thing -- a version of the file being
+//! read, one found by time and one by place -- so the arrow between them stays
+//! inside one errand (`About::OF_A_FILE`). The project's commits are the odd
+//! one out: its rows stop being about the file on screen, and what hangs
+//! under them is somebody else's files. That is a key of its own (`f10`), not
+//! a third tab. It used to cost an escape -- Obelus's commands did not run
+//! from inside a list -- and that went when a view's key started reaching
+//! another view from inside one: `f10` from a file's history goes straight to
+//! the project's, and the two stay two views.
 //!
 //! A commit in the project's tab is not a file, so there is nothing for
 //! choosing it to open. What it has is the list of files it changed, and that

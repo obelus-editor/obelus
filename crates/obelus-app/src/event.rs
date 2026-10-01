@@ -98,11 +98,13 @@ pub enum Event {
     Paste(String),
     /// Time passed, and something on screen moves with it.
     ///
-    /// The only animated thing Obelus has is the welcome screen's wordmark,
-    /// and the ticker runs only while that is what is on screen. A reader
-    /// looking at code gets no ticks at all: there is nothing to animate, and
-    /// a redraw a reader did not ask for is a redraw that can only get in the
-    /// way.
+    /// The animation's and nothing else's: a phase and a drag. What moves is
+    /// the welcome screen's sheen and the mark that turns while an agent is
+    /// working, and the ticker runs only while one of those is on screen
+    /// (`App::wants_animating`). A reader looking at code gets no ticks at
+    /// all: there is nothing to animate, and a redraw a reader did not ask
+    /// for is a redraw that can only get in the way. What is owed at a
+    /// moment waits on a [`Pause`] instead.
     Tick,
     /// The pause after typing into the notes ran out.
     NotesSettled,
@@ -421,27 +423,46 @@ impl Drop for Ticker {
 /// A one-shot timer sending one event when a wait has run out.
 ///
 /// What comes back for work that is owed at a moment rather than drawn at a
-/// frame rate: the notes once the reader stops typing, a tree a slow
-/// grammar left behind, a rename whose server has stopped answering.
+/// frame rate: the notes' three hundred milliseconds once the reader stops
+/// typing, a tree a slow grammar left behind, the five seconds a rename
+/// gives a server, the standing questions a server is asked once the reader
+/// stops, and the pointer's rest. Every one is started through
+/// `App::come_back_in`.
 ///
-/// All three hung on [`Ticker`], and that was wrong twice. An animation is
-/// a luxury and `Ticker::start` says so by refusing over a network -- so on
-/// ssh none of these ever happened, and a note typed there reached no file
-/// until the reader walked out of it. And a repeating clock asks twelve
-/// times a second for an answer that is "not yet" until the one time it is
-/// not, waking the screen for each. A pause is a moment and an animation is
-/// a frame rate; the two only ever looked alike.
+/// All five hung on [`Ticker`] or on the frames it kept coming, and that
+/// was wrong twice. An animation is a luxury and `Ticker::start` says so by
+/// refusing over a network -- so on ssh none of these ever happened: a note
+/// typed there reached no file until the reader walked out of it, the
+/// colours stopped arriving, a rename waited on a stuck server for the rest
+/// of the session, and the pointer could rest for ever and never ask. And a
+/// repeating clock asks twelve times a second for an answer that is "not
+/// yet" until the one time it is not, waking the screen for each. A pause
+/// is a moment and an animation is a frame rate; the two only ever looked
+/// alike.
 ///
 /// The event is named by whoever starts one, because the mechanism is
-/// shared and the meaning is not: what these three are waiting for has
-/// nothing in common but the waiting.
+/// shared and the meaning is not: what these are waiting for has nothing
+/// in common but the waiting.
 ///
 /// Dropping it, or starting another in its place, ends the one before -- an
 /// abort has no window, the same reason [`Ticker`] aborts. Whether it is
 /// started again by each key or left alone until it fires belongs to the
-/// caller, and the three differ: the notes measure the reader *stopping* and
-/// so start again on every key, while a tree that is behind wants catching
-/// up soon whether or not the reader has paused.
+/// caller, and they differ: the notes and a document's standing questions
+/// measure the reader *stopping* and so start again on every key, while a
+/// tree that is behind wants catching up soon whether or not the reader has
+/// paused (`App::catch_up_soon`). Where the clock has an owner it lives in
+/// it: the rename's is a field on the wait, so finishing takes the wait and
+/// drops the clock with it.
+///
+/// **A guard on a deadline earns its place exactly when something other
+/// than that deadline's own clock can reach the work.** Saying the deadline
+/// twice is what a repeating clock forces, and three of these said it
+/// twice: `rename_without_them` was asked on every tick whether the
+/// question was five seconds old, and the notes and the standing questions
+/// each kept an `Instant` for a frame to measure. A one-shot arriving *is*
+/// the wait having run out, so those checks went, and `Waiting::asked`,
+/// `notes_settling` and `Settling::since` with them. The one that stayed is
+/// the pointer's -- see `App::settle_hover`.
 #[derive(Debug)]
 pub struct Pause {
     waiting: tokio::task::JoinHandle<()>,

@@ -9,6 +9,27 @@
 //! rebound key changes the screen instead of leaving it lying. The working
 //! directory is on it because the file picker only ever searches that one
 //! project, which is worth knowing before pressing the key that opens it.
+//!
+//! **What went wrong on the way up is said here, under the keys and never in
+//! front of them.** A mark on a line of a settings file is a mark nobody sees
+//! until they open that file, and the reader who has just started Obelus has
+//! opened nothing -- so this screen carries the same sentences again, below
+//! the way in, because the way in is what this screen is for. It is absent on
+//! almost every start, which is the point: a heading over an empty list is a
+//! row of screen spent saying nothing happened.
+//!
+//! The rows are Obelus's own only: what a server says about the code is the
+//! code's business and is not something that went wrong starting up. And the
+//! block takes the keys, because most of what is on it is about a line of a
+//! file the reader wrote and being told without being taken there is half an
+//! answer: the arrows walk it, enter goes to the line, and the row the reader
+//! is on carries `selected_row_background` like the row of every other list.
+//!
+//! Nothing without a place, though. A mark is a mark *on* something: a file
+//! whose permissions forbid it, a watcher that would not start, a terminal
+//! that would not report the wheel -- none of those has a line to draw
+//! under. They go on this screen and nowhere else, which is why they are
+//! kept apart from the marks rather than faked onto line one of something.
 
 use crossterm::event::{KeyCode, KeyModifiers};
 use obelus_command::Command;

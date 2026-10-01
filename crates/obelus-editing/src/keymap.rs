@@ -296,7 +296,12 @@ impl KeyChord {
 /// settings, the counts -- and those are different worlds as far as the keys
 /// go. What is bound everywhere applies to the first and not to the second:
 /// a dialog takes the keys it is given here and nothing else, so Obelus's
-/// own commands cannot put a second dialog over the first.
+/// own commands cannot put a second dialog over the first. Before that a
+/// global key worked inside them, which is how `ctrl+o` in a conversation
+/// put a file list on top of it -- two things on screen, two escapes to
+/// leave, and nothing saying which one a key would reach. So a new dialog
+/// gets a context, and a key it should keep gets a binding in it -- not a
+/// fall-through.
 ///
 /// A conversation is on the first side of that line, not the second: it is
 /// one of the things the reader can be reading, so the keys that work over a
@@ -368,26 +373,33 @@ impl Keymap {
     /// radii: this file or every file, its text or its names. Bare, never
     /// with a modifier: a terminal that sends `F5+shift` and one that sends
     /// `F17` for the same press are both common, so a modified function key
-    /// is a binding that works on one machine and not the next.
+    /// is a binding that works on one machine and not the next. Which is
+    /// also why one reaches its view from inside another: every view it
+    /// names takes the whole screen, so going to it is a swap and never a
+    /// stack (`App::switch_view`).
     ///
-    /// `F9`-`F12` is the bank a view earns a key from, and `F10` is the
-    /// first that has: the reading a file has, shown or stopped. The rest
-    /// are empty on purpose -- a diff, a commit log, a panel of references
-    /// -- because filling the bank before those exist would mean moving
-    /// them later.
+    /// `F9`-`F12` is the bank a view earns a key from, and git's: a file's
+    /// history, a project's and a line's, which are one question at three
+    /// widths -- and `F12`, the jump to a definition, which is the one jump
+    /// this whole program is for. Each is argued where it is bound.
     ///
     /// **Control does something to the file in front of you**, on the
-    /// letter of the word: the palette, closing, re-reading, a line
-    /// number, copying, leaving.
+    /// letter of the word: `p` the palette, `w` close, `r` re-read, `t`
+    /// toggle the reading its format has, `l` a line number, `a` all of it,
+    /// `c` copy, `q` leave. `ctrl+v` was left alone until there was a paste
+    /// to give it, and that is the one chord every reader will try there.
     ///
-    /// **Alt asks about the cursor, or walks what was found**: the symbol
-    /// under it, the change under it, the bracket that matches it -- and
-    /// the arrows, which step between changes and through the places the
-    /// reader has been.
+    /// **Alt asks about the cursor, or walks what was found**: `alt+enter`
+    /// the symbol under it, `alt+d` its diff, `alt+f` the run of lines it is
+    /// inside, `alt+m` its matching bracket -- and the arrows, which step
+    /// up and down between changes and left and right through the places
+    /// the reader has been.
     ///
     /// Shift never names a command. It only ever extends (`shift` plus an
     /// arrow, in the editor) or reverses (`shift+tab`, in the
-    /// conversation), which leaves it meaning one thing everywhere.
+    /// conversation), which leaves it meaning one thing everywhere. The one
+    /// exception, `shift+Insert`, is not a name Obelus chose -- see
+    /// [`why_not`].
     ///
     /// Everything else is reached from the palette. A chord for every
     /// command is how a key table stops being memorable, and most of what
@@ -1155,18 +1167,38 @@ pub fn why_not(chord: KeyChord) -> Option<&'static str> {
     // and they are what a desktop sends a *terminal* when the reader
     // presses its own one chord for copy: omarchy's `super+c` is
     // `ctrl+Insert` where it thinks it is talking to a terminal and
-    // `ctrl+c` where it does not. Obelus answers both, so which of the two
-    // it is taken for stops mattering. The same shape as `shift+enter` and
-    // `alt+enter` being taken together: one act, two chords, because what
-    // arrives is not Obelus's to decide.
+    // `ctrl+c` where it does not, and `super+v` is `shift+Insert` or
+    // `ctrl+v` the same way. Obelus is both and is read as either, so it
+    // answers all four, and which of the two it is taken for stops
+    // mattering. One table, so binding it once binds it for `ob` and `obg`
+    // together. The same shape as `shift+enter` and `alt+enter` being taken
+    // together: one act, two chords, because what arrives is not Obelus's
+    // to decide.
     //
-    // Every terminal reports these the same way, unlike a modified
-    // function key, and no terminal shipped here binds them for itself:
-    // foot, kitty, alacritty and wezterm all put copy on `ctrl+shift+c`.
-    // A terminal that is *configured* to take them keeps them and Obelus
-    // never sees them -- which is what a desktop does to make its own
-    // chord land somewhere in a shell, and is the one case this cannot
-    // reach.
+    // Which is the whole of the exception: `alt+Insert` is still refused,
+    // because nothing sends it. Every terminal reports these the same way,
+    // unlike a modified function key, and no terminal shipped here binds
+    // them for itself: foot, kitty, alacritty and wezterm all put copy on
+    // `ctrl+shift+c`. A terminal that is *configured* to take them keeps
+    // them and Obelus never sees them -- which is what a desktop does to
+    // make its own chord land somewhere in a shell (omarchy adds them to
+    // foot's bindings for exactly that), and is the one case this cannot
+    // reach. Measured, by pressing it at `ob` in such a terminal and at
+    // `ob` in the same terminal with that one binding turned off: the first
+    // copies nothing, the second copies the selection.
+    //
+    // And the two halves come apart there. With the terminal holding both
+    // keys, paste still works and copy cannot, because pasting is something
+    // a terminal can do on behalf of the program inside it and copying is
+    // not: it puts the words down the pty, where they arrive as an ordinary
+    // bracketed paste. Copy it cannot do, because what is selected is the
+    // program's and the terminal does not know -- and `ob` has taken the
+    // mouse, so the selection the terminal *would* copy is empty. The key
+    // does nothing at all. Which is the shape of the whole problem: a
+    // desktop can tell a terminal from a window, and nothing can tell a
+    // shell from a program that has taken the terminal over. Not something
+    // Obelus can answer from the inside -- the terminal decides before
+    // Obelus is asked, and decides unconditionally.
     if chord.code == KeyCode::Insert && (control || chord.modifiers == KeyModifiers::SHIFT) {
         return None;
     }

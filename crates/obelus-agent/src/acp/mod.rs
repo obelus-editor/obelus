@@ -42,6 +42,20 @@
 //! exited is four rows of JSON carrying one sentence and the source path of a
 //! crate in the cargo registry. The sentence goes in the transcript and the
 //! whole of it in the log.
+//!
+//! **Obelus numbers its own turns**, because the protocol will not: the
+//! number goes out with the prompt, comes back on the answer, and an answer
+//! about a turn that is not the one running is dropped where the count is
+//! kept (`Session::turn`). It replaced a flag that said only "given up on",
+//! which the next prompt cleared -- so the cancelled turn's own answer,
+//! which a well-behaved agent sends because the protocol tells it to, was
+//! delivered after all and ended the turn that had replaced it. zed numbers
+//! them too, and has a test whose name is this paragraph.
+//!
+//! The queue Obelus keeps in front of a running turn is what makes two turns
+//! rare (see `obelus_app::conversation`); the number is what makes the rare
+//! one harmless. Both, because the first is Obelus's own discipline and the
+//! second is about what arrives.
 
 pub mod link;
 pub mod sessions;

@@ -116,6 +116,16 @@ pub fn of(within: &Path, only: Option<&Path>, limit: usize) -> Vec<Commit> {
 /// path takes about two seconds, which is nothing to wait through when the
 /// rows arrive as they are found and everything else stays live.
 ///
+/// **A list long enough to be worth searching is long enough to be worth
+/// threading.** The history used to ask for two hundred commits on the main
+/// thread, and both halves of that were wrong together: the bound made the
+/// key cost 346ms on a busy file and 674ms on a rarely-touched one in that
+/// project -- a visible freeze -- and it also made the query lie, because
+/// rows that were never fetched are rows a query cannot match and the reader
+/// is told "no match" either way. On a thread the whole walk costs nothing at
+/// the key, so the bound had nothing left to buy. Reach for a thread before
+/// reaching for a number.
+///
 /// `generation` comes back with every batch: a reader moves between tabs and
 /// files faster than a history can be walked, and the answers to the
 /// question before must be recognizable as stale. `current` is the

@@ -12,6 +12,22 @@
 //! screenful: the window keeps the cells and applies what arrives. A frame
 //! that really did change everything -- a resize, a new theme -- crosses as
 //! everything, which is the cost being paid where it is incurred.
+//!
+//! **A full-width character takes the cells it covers with it, because the
+//! diff will not.** It is two columns of the grid and one glyph, and a
+//! terminal advanced the two columns itself -- so it has to be told twice
+//! here. The second column is a cell `ratatui` has *reset*, and a window
+//! draws every cell, so `Look::columns` says how many a cell spans or the
+//! default background is painted behind the right half of every Chinese
+//! character. And `ratatui`'s diff leaves that second cell out, so what
+//! the window still has in it is whatever was there before: a page of
+//! Chinese over a page of code showed one Latin letter sitting on the right
+//! half of every other character, in the colours it had had. Which is what
+//! said where it came from: a glyph carrying a *style* is not a font going
+//! wrong, it is a cell nobody repainted. So `Page::covered` blanks the
+//! neighbours, with the character's own style, which is what `ratatui`'s
+//! own buffer holds there -- the page saying to itself what the diff did
+//! not.
 
 use std::sync::{
     Arc,

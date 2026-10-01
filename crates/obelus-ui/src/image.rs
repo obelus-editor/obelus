@@ -17,6 +17,15 @@
 //! Detection happens once, before the alternate screen: it writes a query
 //! to the terminal and reads the reply, which cannot be done from inside a
 //! frame. A terminal that does not answer is a terminal that gets glyphs.
+//!
+//! **A window draws the marks itself, and the view does not know the
+//! difference.** A terminal is handed a mark as encoded pixels in the
+//! middle of a frame, if it has a protocol at all; a window has a texture
+//! and somewhere to put a quad, and none of that belongs in a view. So the
+//! view goes on saying the same two things to both -- here is a mark, draw
+//! it there -- and [`Marks`] is the window's end of it. [`Images::available`]
+//! is the same question for both, and also the gate on *fetching* the
+//! drawings at all.
 
 use std::collections::HashMap;
 
@@ -77,8 +86,9 @@ pub struct Palette {
 /// view says the same two things it says to a terminal -- here is a mark,
 /// draw it there -- and what is on the other end turns them into pixels.
 ///
-/// The `svg` crosses once per mark and palette, and the placement once per
-/// frame it is on screen.
+/// The `svg` crosses once per mark and palette, because it is kilobytes of
+/// text and the page is redrawn on every keystroke; the placement crosses
+/// once per frame it is on screen, because that is what a frame is.
 pub trait Marks: Send + Sync {
     /// This mark exists, and is drawn from this text in these colours.
     fn carries(&self, id: &str, svg: &str, focused: bool, palette: Palette);

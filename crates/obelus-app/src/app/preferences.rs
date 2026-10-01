@@ -50,14 +50,25 @@
 //! have are not on it at all: a tab is for somewhere else to go, and one that
 //! goes nowhere is a tab that lies.
 //!
-//! That file is *edited*, not rewritten. Obelus's own it writes whole, because
-//! Obelus wrote all of it; a project's is written by hand and committed, so it
-//! has comments in it, an order somebody chose, and possibly keys this version
-//! has never heard of -- `toml_edit` keeps all three where a round trip through
-//! a `toml::Table` would throw them away on the first switch a reader flipped.
-//! What is written above a key goes with it when it goes, except for whatever
-//! is above the last blank line: a comment touching a key is about that key,
-//! and a heading an empty line away is the file's own.
+//! That file is *edited*, not rewritten -- and so, now, is the reader's own
+//! (`obelus_config::over`, which says why). A project's is written by hand and
+//! committed, so it has comments in it, an order somebody chose, and possibly
+//! keys this version has never heard of -- `toml_edit` keeps all three where a
+//! round trip through a `toml::Table` would throw them away on the first switch
+//! a reader flipped. What is written above a key goes with it when it goes,
+//! except for whatever is above the last blank line: a comment touching a key
+//! is about that key, and a heading an empty line away is the file's own.
+//!
+//! **Anything read once at startup must be re-read when somebody else changes
+//! it.** Several Obelus processes on one project is the normal case. The
+//! settings were read at startup and never again, so a theme changed in one
+//! window was a theme changed in one window. The watcher -- already there for
+//! open files -- watches the settings file too, and `App::reread_config`
+//! applies what it finds: `apply_config` rather than `configure`, for the
+//! reason its doc gives. The agent is the one setting that does *not* reach
+//! in: a conversation is this window's, and restarting it under the reader
+//! because another window chose differently is somebody else's decision
+//! arriving as an interruption.
 //!
 //! What is watched is the file the project *would* have, not the one it has.
 //! The ordinary project has no settings of its own until somebody gives it some
@@ -72,6 +83,43 @@
 //! changes. Laid over what is already there instead, a setting the project has
 //! *stopped* naming would stay in force -- deleting a line from the project's
 //! file would do nothing until Obelus was started again.
+//!
+//! **What Obelus cannot make of a file it reads is a mark on that file.** The
+//! settings, a project's settings: what would not read used to reach the
+//! reader as a line in the log and a sentence on the status row. Neither says
+//! *where*, which is the one thing the reader needs -- a file that will not
+//! parse has a line that will not parse, and Obelus is holding it. So it is
+//! said on the file, into the same list a server's diagnostics go in
+//! (`App::obelus_says`, which has why they are one list). Every file Obelus
+//! reads for its own sake gets it, not the settings alone: a theme that will
+//! not parse is marked on the theme's file, and the notes on theirs -- the
+//! notes because a reader opens that file, writing into it from the page and
+//! editing it by hand, and being told the whole list will not read without
+//! being told which line is a reader reading it all themselves.
+//!
+//! A theme *name* nothing answers to is marked on the line that names it, in
+//! the settings: the name is a fact about the settings and the file it would
+//! name does not exist, so there is nothing else to put a mark on. The colours
+//! on screen stay as they are either way, which is the other half of one
+//! judgement -- a reader who cannot read the screen cannot fix the file -- and
+//! that is exactly why the mark is the only way they find out.
+//!
+//! What is deliberately *not* marked is what Obelus writes for itself: which
+//! conversation belongs to which note, an install record, a claim. A reader
+//! does not write those and will not open them, so a mark on one is a mark
+//! nobody is standing where it can be seen. They stay a line in the log.
+//!
+//! A *line* that did nothing is marked too: one Obelus has never heard of, one
+//! a project is not allowed to set, one that is not the shape it has to be,
+//! and one of the `[keys]` table that bound nothing. That last is where
+//! `why_not` was always headed -- it exists so that a key which cannot fire is
+//! refused where the reader can see it, and the config file was the one place
+//! a refusal still happened in silence. The reason it gives is the reason the
+//! page that binds keys shows, in its own words, because it is one judgement.
+//! From the outside a line like that looks exactly like a line that was
+//! obeyed, which is what made it worth a word in the first place -- and a
+//! warning rather than an error, because the file read and everything else in
+//! it took. Where each line is comes from `obelus_config::spans_in`.
 
 use super::*;
 
@@ -756,7 +804,6 @@ impl App {
         self.reread_config();
     }
 
-    /// Opens the settings file itself, for a reader who would rather see    ///
     /// Opens the settings file itself, for a reader who would rather see
     /// them all at once -- or edit one Obelus has no control for.
     ///

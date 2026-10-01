@@ -11,6 +11,20 @@
 //! keeps it apart from a hunk's removed lines -- a deletion is gone and reads
 //! red, a message is a note and reads raised -- and it is why replacing the
 //! diff closes the hunks and leaves the message where it is.
+//!
+//! **The branch is read where Obelus is told which directory it is in.**
+//! That is `App::work_in`, which the startup and `working_directory_for_test`
+//! both go through, rather than where the field is declared. Three moments,
+//! as ever: there, when the watcher says `HEAD` moved
+//! (`App::forget_what_git_said`), and when Obelus changed it, which is never.
+//! What that seam also buys is the golden fixtures: they render on
+//! `App::new`'s own answer to where it is, which when the suite runs is
+//! inside *this* repository, so a branch read at construction would write
+//! this checkout's branch into `sample_40x8.txt` and go red in a worktree on
+//! another one. It is the `~/Work/obelus` mistake with a branch in place of a
+//! path, and the fixtures say nothing there because nothing told Obelus where
+//! it was. The branch has tests of its own, on repositories built in a temp
+//! directory with a branch name no checkout would have.
 
 use super::*;
 

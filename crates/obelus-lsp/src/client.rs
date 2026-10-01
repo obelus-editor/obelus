@@ -4,6 +4,24 @@
 //! notifications. It does not know what any particular request was *for*:
 //! that is the caller's, because the answer arrives after the world has moved
 //! on and only the caller can say whether it still means anything.
+//!
+//! **A server's running commentary is not news; that it is running is.**
+//! `rust-analyzer` sends a few hundred progress messages over a cold start
+//! -- every crate scanned, every file indexed -- and each landed on the
+//! status row between the file's name and the cursor's position, which are
+//! the two things a reader looks at that row to read. What those words were
+//! really for is one bit: an empty answer while a server is reading the
+//! project and an empty answer about a symbol with no definition are the
+//! same message on the wire, and the row is the only thing that tells them
+//! apart. So the badge that names the server turns while it is busy, in the
+//! same braille everything else in Obelus turns in -- which needs the ticker
+//! woken for it, like every other mark that turns -- and the words stay in
+//! the log.
+//!
+//! Of what a server says in words, only what it calls an error reaches the
+//! reader ([`Client::take_complaints`]). All four kinds went to the log at
+//! `debug`, which for the loudest is the wrong place; the other three are a
+//! diary, and the log is what a diary is for.
 
 use std::{collections::HashMap, path::Path, process::Stdio};
 

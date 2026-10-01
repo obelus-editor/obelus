@@ -14,10 +14,18 @@
 //! It is a list with a query over it, which is what a picker is, and it
 //! borrows a picker's parts for exactly that reason: the same window, the
 //! same six movement keys, the same matcher, the same marking of what
-//! matched. What it is not is a picker: a picker chooses one row and
-//! closes, and this one is opened to be *changed* -- every key that does
-//! anything here adds, removes or moves, and the reader leaves when the
-//! list says what they meant.
+//! matched, the same query on the status row. What it is not is a picker:
+//! a picker chooses one row and closes, and this one is opened to be
+//! *changed* -- every key that does anything here adds, removes or moves,
+//! and the reader leaves when the list says what they meant. Share the
+//! mechanism, not the meaning.
+//!
+//! What is offered comes from the window in `obg`, which is the only part
+//! of Obelus that can see a font database. It says so with an event, once,
+//! which is why the list takes what it is given later as well: the reader
+//! opens it before a machine with a thousand faces has finished answering.
+//! What is drawn with, and what a reader who chose nothing gets, are the
+//! window's (`obelus-gui`'s `font` and `monospace`).
 //!
 //! Cells only, like everything else in this crate. A window draws it the
 //! same way a terminal does.

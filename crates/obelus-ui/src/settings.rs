@@ -1099,8 +1099,7 @@ impl SettingsView<'_> {
         }
     }
 
-    /// What a command's row says beside its name.    /// What a command's row
-    /// says beside its name.
+    /// What a command's row says beside its name.
     ///
     /// What it does, unless the reader is binding it: then it is what the
     /// page is waiting for, or why the key they pressed will not do. On the

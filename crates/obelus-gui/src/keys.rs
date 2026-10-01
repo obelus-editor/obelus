@@ -6,6 +6,12 @@
 //! presses are translated into that type here, and this file is the only
 //! place in `obg` that knows what a key is called on either side.
 //!
+//! The same trick is not available for what a *window* can say and a
+//! terminal cannot: closing one is the reader asking to leave, so it is an
+//! event (`Event::Closed`) that goes the same way the key that leaves goes,
+//! question about unwritten files included -- and the window stays open
+//! until the application says it is done.
+//!
 //! Which is also where the window earns its keep. A terminal cannot tell
 //! `ctrl+i` from `Tab`, `ctrl+m` from `Enter` or `ctrl+[` from `Escape` --
 //! they are one byte each -- and most terminals send nothing at all for

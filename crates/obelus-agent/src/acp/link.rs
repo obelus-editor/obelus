@@ -70,6 +70,39 @@
 //! they return -- see the paragraph above on what waiting costs -- and the
 //! agent says the far end happened with `elicitation/complete`, which is a
 //! notification because nothing is owed back.
+//!
+//! **A command is the agent's namespace; a setting is Obelus's to draw.**
+//! Two things in the protocol, and they must not be mistaken for each
+//! other. An agent's slash commands ([`Order`]) are names it takes *in a
+//! prompt* -- a client offers them and sends the text, and that is all.
+//! Session *config options* ([`Setting`]) are the other kind: `session/new`
+//! and `session/update` carry the whole set, `session/set_config_option`
+//! changes one, the answer is the whole set again because one value can
+//! change what another offers, and the client draws them itself (a boolean
+//! one only if it advertised `session.configOptions.boolean`). So the
+//! conversation's status row is every option with its current value,
+//! walked and changed there -- not a command, because the keys that move
+//! what is on a screen belong to that screen, the way `shift+tab` always
+//! has.
+//!
+//! Obelus used to take `/model` for itself: the agent's command and
+//! Obelus's setting had the same name, and Copilot's own answer to that
+//! command is "the model-picker dialog is only available in the interactive
+//! CLI", so opening the setting's values instead looked like a kindness. It
+//! was a guess about somebody else's namespace -- nothing promises that a
+//! command means what an option of the same name means -- and it is gone.
+//! `/model` goes to the agent, whose answer is its own business; the same
+//! choice is one key away on the row.
+//!
+//! What Copilot offers, probed at 1.0.83: `mode`, `model`,
+//! `reasoning_effort` and `allow_all`. It does not elicit for `/model`
+//! either -- with `elicitation.form` advertised it still answers in words.
+//! Its mode ids are URLs, and most of its rows describe themselves with
+//! their own name, which is why a description that repeats the name is
+//! dropped (`said_twice`). What kind each option is declared as is written
+//! to the log as it arrives (`setting_of`): how an agent declares one
+//! decides how it is drawn and what enter does to it, so that line is
+//! where "why is this one drawn like that" is answered.
 
 use std::path::PathBuf;
 

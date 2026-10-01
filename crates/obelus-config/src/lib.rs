@@ -1,13 +1,31 @@
 //! What the reader has decided, and where it is kept.
 //!
-//! One flat file of `key = value` lines, written whole every time anything
-//! changes. Whole rather than edited in place because there is nothing in it
-//! worth preserving that Obelus does not know about -- no comments it wrote,
-//! no ordering it chose -- and a rewrite cannot half-apply.
+//! One flat file of `key = value` lines, written every time anything changes.
 //!
-//! Missing, unreadable, or nonsense all mean the same thing: the defaults.
-//! A reader whose config file has a typo in it should get Obelus, not an
-//! error message where their editor was.
+//! **Do not delete what you do not recognise.** It is *edited*, with
+//! `toml_edit`, rather than written whole: Obelus used to write it whole on
+//! the grounds that Obelus wrote all of it, which is not true -- readers put
+//! lines in by hand -- and that silently took out a setting from a newer
+//! version, a key renamed since, a line with a typo in it, and the comment
+//! beside them, on the next switch the reader flipped. A project's file was
+//! already edited for exactly this reason; see [`over`].
+//!
+//! **Anything written must survive another process writing it at the same
+//! moment.** Several Obelus processes on one project is the normal case.
+//! [`save_to`] wrote in place, which truncates first; a second Obelus reading
+//! in that gap got an empty file, took it for "no settings", and wrote its
+//! defaults over everything the reader had. It writes beside the file and
+//! renames over it now -- the one filesystem operation with no gap in it, so
+//! a write cannot half-apply either.
+//!
+//! Missing, unreadable, or nonsense all start a session on the defaults. A
+//! reader whose config file has a typo in it should get Obelus, not an error
+//! message where their editor was. But they are not one answer ([`Reading`]):
+//! a file that is there and cannot be read stops Obelus writing at all,
+//! because what is in it is the reader's and saving over something it could
+//! not read replaces settings it never saw. The application says so on the
+//! status row and starts saving again the moment the file reads, which the
+//! watcher notices.
 //!
 //! The settings are a *table* ([`ALL`]), the way the commands are: a setting
 //! is a row with a name, a group, a kind of control and a way to read and
@@ -284,14 +302,21 @@ pub enum Kind {
 ///
 /// Obelus is drawn on two things and they do not ask for the same
 /// preferences: a terminal draws with the font the reader gave the
-/// terminal, and a window draws with its own. A setting shown where it does
-/// nothing is worse than a missing one -- the reader changes it, watches
-/// nothing happen, and has learnt something untrue about the program.
+/// terminal, and a window draws with its own, so `font_size` means nothing
+/// in one and the glyph switch means nothing in the other. A setting shown
+/// where it does nothing is worse than a missing one -- the reader changes
+/// it, watches nothing happen, and has learnt something untrue about the
+/// program.
 ///
 /// It is still one file and one table. What is hidden is a row on the
 /// settings page; the value stays in the file, because the other Obelus on
 /// the same machine is the one it is for -- and writing the file is careful
 /// not to delete what it does not recognise for the same reason.
+///
+/// What a front end owns, it is told about: `App::drawn_by` and one method
+/// per setting, called when the front end says who it is and again after
+/// every change, which in `obg` goes down the frames channel like everything
+/// else about what is on the screen.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Drawn {
     /// Wherever Obelus is drawn.
@@ -1409,11 +1434,11 @@ pub fn resolved(path: &Path) -> PathBuf {
 
 /// Sets or removes one key in a project's own settings file.
 ///
-/// Edited rather than rewritten. Obelus's own file it writes whole, because
-/// Obelus wrote all of it; a project's is written by hand and committed, so it
-/// has comments in it, an order somebody chose, and possibly keys this
-/// version has never heard of. A round trip through a `toml::Table` would
-/// throw all three away on the first switch a reader flipped.
+/// Edited rather than rewritten, like the reader's own ([`over`]). A
+/// project's is written by hand and committed, so it has comments in it, an
+/// order somebody chose, and possibly keys this version has never heard of.
+/// A round trip through a `toml::Table` would throw all three away on the
+/// first switch a reader flipped.
 ///
 /// `None` takes the key out, which is how a setting stops being the project's
 /// and goes back to being the reader's.

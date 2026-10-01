@@ -15,7 +15,17 @@
 //! project nobody has talked about yet, that row is the whole list. It is
 //! where the reader lands unless they are already in a conversation, which
 //! is where they land then -- the way out of one goes to a neighbour, and
-//! a row away from the one they came from is a row away from either.
+//! a row away from the one they came from is a row away from either. `f4`
+//! used to open a conversation outside one and the list inside, which put
+//! the list two presses away from a file and gave a reader in a file one
+//! answer to "which conversation", always the same. It is one question with
+//! one key now. A new conversation is an action as well, `new-conversation`
+//! on the palette, and a new one nothing has been said in yet is gone back
+//! to rather than joined by a second.
+//!
+//! **Newest first, by when something was last said in it**, which is a
+//! field (`Kept::last`) because it cannot be worked out from anything else,
+//! and written in the same words a commit's row uses (`how_long_ago`).
 //!
 //! **Its rows are read whole.** A conversation is a sentence -- what the
 //! agent called it, often the whole of what the reader first said, and the
@@ -31,7 +41,13 @@
 //! reader who changed agents finding their conversations gone and nowhere
 //! saying where. A tab exists only where that agent has something in it,
 //! or is the agent in use -- whose tab is where a new one starts -- so the
-//! ordinary case of one agent has no tab row at all.
+//! ordinary case of one agent has no tab row at all. The tabs are scopes
+//! and not groups, because a picker's group tabs come with an `All` in
+//! front of them and `All` is the one tab this list must not have -- it
+//! would mix the rows that can be taken up with the rows that cannot.
+//! Nothing here switches the agent: that is a setting, and doing it from a
+//! row would drop the session of every conversation open, including the
+//! one the reader is standing in.
 //!
 //! **Which conversations there are is a snapshot; which of them can be
 //! taken up is not.** The rows are made once, as the list opens, because
@@ -42,6 +58,16 @@
 //! they press: a conversation another window took a moment ago goes dim
 //! under them. So one started elsewhere while this list is up shows the
 //! next time it is opened, and one taken up elsewhere shows at once.
+//!
+//! And the waking is the other half. A claim is a lock, and a lock is
+//! invisible to a watcher -- nothing is written when one is taken, which is
+//! the whole reason the claim has a file -- so the directory of them is
+//! what one Obelus wakes another on, and without a watch on it the rows
+//! would be asked again only when the reader happened to press something.
+//! The watch is counted, so the notes page and this list can hold it at
+//! once; which of them holds it is decided every frame from what is showing
+//! (`settle_the_watches`), rather than switched on where a list opens and
+//! off in each of the ways it closes.
 
 use obelus_component::picker::{Marking, Remark, Said};
 

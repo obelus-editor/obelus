@@ -8,6 +8,19 @@
 //! The ranges are turned into the document's own coordinates on the way in,
 //! like every other range the protocol sends: a position in the encoding a
 //! server agreed to is a thing only [`crate`] should hold.
+//!
+//! **A diagnostic is a mark against a piece of a file, and a server is not
+//! the only thing that can make one.** Obelus marks what it cannot make of a
+//! file it reads for its own sake into the same list a server's go in, as a
+//! [`Trouble`] like these, and from there down they are the same thing:
+//! nothing that draws one has to be told which kind it is holding. `source`
+//! is what says who noticed, and Obelus fills in its own name -- which is
+//! also what tells its own from a server's when one of them is taken away
+//! again, because they keep different rules. A server's set for a path is
+//! replaced whole when it publishes another; that is the protocol's, not
+//! Obelus's to apply on a server's behalf. Placed already, unlike a
+//! server's, because Obelus has the text in its hand at the moment it finds
+//! the fault. The application's half is `App::obelus_says`.
 
 use lsp_types::{DiagnosticSeverity, PositionEncodingKind, PublishDiagnosticsParams};
 use obelus_text::{Text, coordinates::Span, kind::SyntaxKind};

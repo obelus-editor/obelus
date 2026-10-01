@@ -14,6 +14,45 @@
 //!
 //! Nothing here talks to an agent. What arrives from one is folded in by
 //! [`crate::app`], which is the half that knows there is a process.
+//!
+//! **A conversation takes one prompt turn at a time, so what the reader
+//! says into a running one waits.** The protocol puts no turn on either end
+//! of the exchange: `session/cancel` names a session, and the answer to
+//! `session/prompt` says the turn is over with nothing on it saying which
+//! turn. So two prompts in flight is two answers Obelus cannot tell apart,
+//! and the first one home put the conversation back to resting while the
+//! other turn worked on -- no `thinking...`, no mark turning, and
+//! `interrupt` gated on the same flag, so escape would not even send the
+//! cancellation. zed queues for this reason too, and "send it now" there is
+//! `cancel` awaited and *then* the prompt, never the two at once. The queue
+//! is what makes two turns rare; the turn's number (see `obelus_agent::acp`)
+//! is what makes the rare one harmless.
+//!
+//! **What is waiting is the reader's, so it waits where their words live.**
+//! It goes straight into the transcript, dim, one row per thing they said,
+//! and enter on one takes that one back into the box. It was a count over
+//! the box -- `2 waiting` -- which said how many and never which, and
+//! offered nowhere to stand to change their mind; and the key that released
+//! it was enter on an empty box, one key that was harmless with words in
+//! the box and a stop to a running turn without them, a pair of presses
+//! apart.
+//!
+//! **And it goes as one prompt, not one per turn.** Three things typed into
+//! a running turn are one thing the reader is saying -- fix the tests, and
+//! the lint, and then commit -- so they are joined with a blank line, which
+//! is what the box's own `alt+enter` makes. One per turn meant the agent
+//! answered the first without ever seeing the second, and the third did not
+//! reach it until two turns had run. The rows stay the rows they were: the
+//! page is what the reader said, and Obelus adds to their half of it rather
+//! than rewriting it.
+//!
+//! Stopping the turn releases them. Escape means "stop what the agent is
+//! doing", not "unsay what I said" -- it used to mean both, because the
+//! words had been taken off the page into a queue and Obelus sending them
+//! unasked would have been Obelus speaking for them. They are on the page
+//! now, and taking one back is a key on the row it is about. They still go
+//! in the order they were typed: a queue that let a later message overtake
+//! an earlier one would put their own words to the agent back to front.
 
 use obelus_agent::acp;
 use obelus_component::{card::Card, chat::Chat, picker::Picker};

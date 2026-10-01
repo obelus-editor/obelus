@@ -11,6 +11,21 @@
 //! tab of the view already showing walks to that tab instead, with the query
 //! kept: `f3` from `f1`'s list is its other tab, not the same list opened
 //! again with the words taken away.
+//!
+//! Which keys those are is `Command::opens_a_view`, and only from a view
+//! that takes the whole screen. A list over the file rather than instead of
+//! it -- the palette, a menu -- keeps its keys: it is somewhere the reader
+//! is choosing, and a function key is not a way out of it.
+//!
+//! **A view that has bound the key itself beats the swap.** `App::handle_key`
+//! asked the swap first once, so a key the showing view had taken was
+//! answered one level out and its own binding was dead: `f4`, while it
+//! opened a conversation from a file and meant *which one* inside one,
+//! swapped the conversation for itself. `Keymap::bound_here` is that
+//! question -- what this context binds, with no falling back -- and it is
+//! the same precedence `Keymap::lookup` already uses. `f4` is the list
+//! everywhere now, but the precedence stays for the next view that takes a
+//! key of its own.
 
 use super::*;
 

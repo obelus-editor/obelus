@@ -81,12 +81,20 @@ pub(super) struct Agents {
     /// Kept in memory for the life of the process and nowhere else. An
     /// agent's list is a fact about the agent as it is now: an update
     /// changes what it offers, and a copy on disk went on answering for a
-    /// version that was no longer there. So the settings page asks every
-    /// time it opens -- see [`App::ask_what_the_agent_offers`] -- and draws
-    /// this while the answer is on its way, which is the first opening's
-    /// wait paid once rather than on every visit. Every conversation that
-    /// says what it offers brings it up to date, and installing that agent
-    /// again throws it away.
+    /// version that was no longer there. So nothing about the list is
+    /// written down -- zed keeps none either, only what the reader chose,
+    /// which stays in their settings file and is checked against the live
+    /// list when a session opens. The settings page asks every time it
+    /// opens -- see [`App::ask_what_the_agent_offers`] -- and draws this
+    /// while the answer is on its way, which is the first opening's wait
+    /// paid once rather than on every visit. Every conversation that says
+    /// what it offers brings it up to date, and installing that agent again
+    /// throws it away.
+    ///
+    /// Only the settings page reads this, because it is the one place that
+    /// needs the list with no conversation to hand. A conversation's row is
+    /// its own session's, which it has from the frame it is shown on; for
+    /// the second before that arrives the row is empty, which is true.
     ///
     /// The agent's id is kept with it so that a copy left over from
     /// another agent is never handed out as this one's.
@@ -158,10 +166,10 @@ impl App {
     /// said each should start on.
     ///
     /// Built on demand from three places, for the reason the cards are:
-    /// which agent is active is a setting, what it offers is a file beside
-    /// its install, and what the reader has chosen is another setting. A
-    /// fourth copy kept level with all three is a fourth thing to get
-    /// wrong.
+    /// which agent is active is a setting, what it offers is what it last
+    /// said (`Agents::offers`), and what the reader has chosen is another
+    /// setting. A fourth copy kept level with all three is a fourth thing
+    /// to get wrong.
     ///
     /// `None` where no agent is active, which is the one case where the
     /// settings page has no group for one: a heading over nothing, on a
@@ -248,6 +256,10 @@ impl App {
     }
 
     /// Keeps installed agents somewhere else, for a test.
+    ///
+    /// Which is what lets a test write the record a finished install would
+    /// leave and then drive `Event::Installed`: pressing install runs `npm`,
+    /// so a test must not press it.
     pub fn agents_root_for_test(&mut self, root: PathBuf) {
         self.agents.root = Some(root);
     }

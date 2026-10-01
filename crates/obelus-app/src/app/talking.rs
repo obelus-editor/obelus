@@ -297,11 +297,21 @@ impl App {
     /// A conversation opens on a session so that what the agent offers is
     /// there to see and choose from before the first word, the way it is
     /// in any conversation that has had one: the settings on the row, and
-    /// what it takes with a slash. Which does not make the conversation the
-    /// reader's. Nothing writes it down against a note until something has
-    /// been said in it -- see `remember_the_conversations` -- and a session
-    /// minted for a view the reader then left is let go, so that a note
-    /// opened by mistake is a note with nothing under it.
+    /// what it takes with a slash. Those come with a session and nowhere
+    /// else, so a conversation that waited for the first message to ask
+    /// for one had a blank row and an empty `/` list at exactly the moment
+    /// a reader looks at them, before they decide what to say. zed opens
+    /// one with the view for this reason.
+    ///
+    /// Opening is not binding, which is what went wrong when this was
+    /// tried before: a key pressed to see what was said yesterday left
+    /// behind an empty conversation that Obelus could write down against
+    /// the note in place of the one the reader had been talking in. So
+    /// nothing writes it down against a note until something has been said
+    /// in it -- see `remember_the_conversations` -- and a session minted for
+    /// a view the reader then left is let go, on the agent's side as well
+    /// as this one's, so that a note opened by mistake is a note with
+    /// nothing under it.
     pub(super) fn settle_the_sessions(&mut self) {
         let showing = self.current.map(DocumentId::get);
         self.let_go_of_what_nothing_was_said_in(showing);
@@ -1315,9 +1325,8 @@ impl App {
     ///
     /// A conversation takes one prompt turn at a time. What the reader says
     /// into a running one waits on the page, dim, where they can see it and
-    /// take it back -- see
-    /// [`Conversation`](crate::conversation::Conversation) for why the
-    /// protocol leaves no third option.
+    /// take it back -- see [`crate::conversation`] for why the protocol
+    /// leaves no third option.
     pub(super) fn send_to_agent(&mut self, parts: &[Part]) {
         if self.talking() == Talking::Thinking {
             if let Some(talk) = self.conversation_mut() {
@@ -1489,7 +1498,12 @@ impl App {
         // And the calls it left open, which the agent will not close if it
         // never saw the cancellation: a row that says it is running under a
         // conversation Obelus has said is resting is the one thing on
-        // screen that cannot both be true.
+        // screen that cannot both be true. Worse than wrong, too: nothing
+        // wakes the screen for a conversation that is not working, so the
+        // mark on that row is a spinner frozen mid-turn. A call Obelus is
+        // running the command for is the exception: its state is the
+        // runner's, read every frame (`Chat::running`), and it says how the
+        // command stopped above ended -- not Obelus's to overwrite.
         if let Some(talk) = self.conversation_mut() {
             talk.chat.stop_the_calls();
         }

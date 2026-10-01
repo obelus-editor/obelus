@@ -12,6 +12,14 @@
 //! patched font, and `icons::NERD_FONT` is Obelus guessing. Here it is a
 //! fact about the binary.
 //!
+//! Nor is a mark the same width in both. A terminal draws with the font
+//! the reader installed, whose non-`Mono` variants take two columns; a
+//! window draws with the `Mono` one carried here, fitted to the one cell it
+//! was given. So a measurement in columns has to ask which front end it is
+//! for, and the welcome screen's `drawn` does -- a column a cell too wide
+//! put its keys a cell left of where the column said, which is a gap nobody
+//! could see until a cap was drawn round them.
+//!
 //! Its own layout is not used. Each cell is shaped by itself and put where
 //! the grid says, because the grid is the layout -- asking a text engine to
 //! lay out a screenful of cells would be asking it a question that is

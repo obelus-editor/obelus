@@ -9,6 +9,10 @@
 //!
 //! What is *not* here is any idea of what the cells mean. This file is
 //! handed a page and a set of faces and turns them into rectangles.
+//!
+//! The colours go through untouched, which is why the surface is viewed
+//! without its sRGB conversion -- a theme's `#1e1e2e` is the colour the
+//! reader picked, and a pipeline that corrects it draws a different one.
 
 use std::{collections::HashMap, ops::Range, sync::Arc};
 
@@ -2859,6 +2863,9 @@ impl Painter {
     /// Rasterised the first time it is asked for at this size and kept in
     /// the same texture the glyphs are in: a mark is a picture of about
     /// sixteen pixels square, which is a large glyph and nothing more.
+    /// Made here, at the moment of drawing, rather than by the view,
+    /// because how many pixels a mark is depends on how big a cell is --
+    /// which the reader changes.
     fn marks(&mut self, marked: &[Marked], cell: crate::font::CellSize) {
         for mark in marked {
             let key = (mark.id.clone(), mark.focused);
@@ -2928,6 +2935,12 @@ impl Painter {
     /// A bar stands between two characters and says the next one goes
     /// there; a block stands on one and says the next one takes its place.
     /// Which is the mode, and the application is what knows it.
+    ///
+    /// Only a window can draw it, because a terminal's caret is the
+    /// terminal's and Obelus does not own its shape. Which is why the
+    /// status row says `Replacing` in a word as well: that half works in
+    /// both, and a mode with no sign is a mode the reader is in without
+    /// knowing.
     ///
     /// The block is the cell with its colours the other way round, which is
     /// what a terminal does and for the same reason: a block that hid the

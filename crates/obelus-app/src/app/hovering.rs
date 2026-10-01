@@ -188,6 +188,16 @@ impl App {
 
     /// Keeps the panel honest, once a frame, and asks what the pointer has
     /// been resting on.
+    ///
+    /// The one wait that kept its guard on the deadline (`since` against
+    /// the dwell) after every wait got a one-shot clock of its own
+    /// (`event::Pause`), and the rule is what decides it: this is still
+    /// reached every frame, because the rest of what it does is letting go
+    /// of an answer the pointer has moved off -- which is about where the
+    /// pointer is now, not about a moment passing -- so a frame arriving for
+    /// some other reason must not be taken for the dwell. A guard on a
+    /// deadline earns its place exactly when something other than that
+    /// deadline's own clock can reach the work.
     pub(super) fn settle_hover(&mut self) {
         // A list or a dialog is what the screen is showing; the other two
         // panels want the same cells and are nearer questions.

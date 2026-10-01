@@ -45,6 +45,14 @@
 //! edited lately, which are exactly the ones whose history a reader goes
 //! looking for. An empty list saying "no commit has touched this file" is an
 //! answer; a missing tab is a key that does nothing.
+//!
+//! A row of a list says what is true now, and says it in one answer. The
+//! rows are a snapshot -- building them reads files and walks git, which is
+//! not work a frame can do -- so what changes under the reader while the
+//! list is up is asked again instead of rebuilt: `Picker::remark`. What it
+//! carries is `Said`, the mark and whether the key works there together,
+//! because a list that could refresh one without the other is a list that
+//! draws a lock on a row and lets the reader into it anyway.
 
 pub mod files;
 pub mod wrapped;
@@ -260,8 +268,14 @@ pub enum Remark {
 /// They are two halves of one fact -- a conversation another Obelus has
 /// open wears a lock *and* refuses the key -- and a list where one could be
 /// refreshed without the other is a list that can say a row is somebody
-/// else's while still letting the reader into it. Whoever answers answers
-/// both.
+/// else's while still letting the reader into it -- the same shape as the
+/// card whose `submit` row stopped saying the keys were on it. Whoever
+/// answers answers both.
+///
+/// It carried the mark alone while the list of open documents was the only
+/// list asking, for the mark that turns while an agent works; the list of
+/// conversations needs the lock and whether the key works on that row,
+/// which are one fact wearing two faces.
 #[derive(Clone, Debug)]
 pub struct Said {
     /// The mark, or none at all.

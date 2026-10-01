@@ -1,4 +1,13 @@
 //! The status bar: the file on the left, the cursor on the right.
+//!
+//! **A list open over anything owns the status row.** It is the thing taking
+//! the keys and holding the caret, so its prompt is drawn before the
+//! settings' filter or the conversation's own row. A row belonging to what
+//! is behind the list is a prompt with somebody else's words in it, and the
+//! caret sitting in it says the words are being typed there. So whose row
+//! this is is one question, asked of whatever is nearest the reader
+//! (`Layer`) the way the caret asks it -- a dialog draws the row at its own
+//! foot, and a question on the status row can open over a list.
 
 use std::path::Path;
 

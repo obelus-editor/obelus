@@ -13,6 +13,38 @@
 //! The notes themselves, and the file they live in, are [`obelus_git::todo`].
 //! Nothing here reads or writes that file -- the application does, because
 //! it is the one that knows which tree this is.
+//!
+//! **Folding is one act, and the notes are the fourth place it happens.** A
+//! run of lines in a file, a run of tool calls in a transcript, a commit's
+//! files in a list, and what hangs under a note: one row standing in for
+//! several, `alt+f`, and the same arrow. So `Command::Fold` asks whichever
+//! document is being read rather than the file always -- which is what it
+//! did, folding a run of lines behind the notes that the reader could not
+//! see -- and `Requires::AFoldHere` follows it, through `TodoView::can_fold`,
+//! because the palette and the key are one judgement. What folds is what
+//! hangs *under* a note and never a note's own lines (`rebuild`); which
+//! notes are shut is this session's and kept by name (`shut`); and the arrow
+//! has a column of its own whether or not anything folds, which is the
+//! drawing's (`FOLDS` in `obelus_ui::todo`).
+//!
+//! **A note somebody else is talking about is read here, not changed.** The
+//! claim says a reader is standing in that conversation, and taking the note
+//! away is what destroys one -- a note that says nothing is not written to
+//! the file at all, so clearing its words does it as surely as the key that
+//! drops it. So every key that would change such a note does nothing: its
+//! words, its box, its depth, its place. The caret still goes in it and the
+//! foot says which keys are left (`elsewhere`); the lock runs upwards
+//! (`run_is_elsewhere`); and the tools an agent is given are refused the same
+//! note, in words it can repeat, because an agent must not do what the
+//! reader in front of it cannot.
+//!
+//! Read off the claims Obelus last looked at, and not asked of the disk.
+//! Asking for a claim opens it for writing, which is the very event a
+//! watcher reports, so a key that asked would wake every Obelus on the
+//! project -- and a letter held down on a locked note would wake them at the
+//! rate the keyboard repeats. A stale lock therefore costs what it already
+//! cost the drawing, and the way out is the key the lock is about: `alt+a`
+//! asks for the claim outright, and a lock nobody holds gives way to it.
 
 use std::{collections::HashSet, ops::Range, path::PathBuf};
 
@@ -289,6 +321,18 @@ impl TodoView {
     /// being written, so instead the notes are swapped and the two things
     /// that are the reader's are put back by *name*: which note the caret
     /// is in, and which one they are part-way through typing.
+    ///
+    /// **A box is the reader's once they have put something in it, not
+    /// because it exists.** The page opens with the caret already in a
+    /// note, so a box holding this page's own copy of the note is there
+    /// before anything has been typed, and keeping that over the file is
+    /// this window saying the other window's change did not happen. So the
+    /// box is asked whether it still says what the page's copy said, and
+    /// where it does, takes the file's words. Both halves have a test,
+    /// because each passes with the other broken:
+    /// `a_note_written_in_one_window_arrives_in_the_other` and
+    /// `what_is_being_typed_beats_what_the_other_window_wrote`. Neither had
+    /// one, which is how a page that kept its own copy lasted.
     ///
     /// A note being typed into that somebody else has deleted is kept, at
     /// the end. The reader is looking at it and has their hands on it; the

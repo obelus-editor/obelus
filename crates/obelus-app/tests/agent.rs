@@ -16,6 +16,13 @@
 //! refused. Both land in `a_whole_turn_of_conversation`. It does the same
 //! for the settings -- the boolean one is only offered to a client that
 //! said in the handshake that it can draw a switch.
+//!
+//! **Pressing install still runs `npm`, so a test must not press it.** The
+//! root has a hook (`App::agents_root_for_test`), which is what lets a test
+//! write the record a finished install would leave and then drive
+//! `Event::Installed`. Everything about talking to one goes through
+//! `App::talk_to`, which takes the command directly and needs no registry,
+//! no install and no network.
 
 mod support;
 

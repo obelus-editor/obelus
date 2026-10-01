@@ -14,6 +14,15 @@
 //! with the font the reader installed, which is why the marks are behind a
 //! switch that is a guess about somebody else's machine. Here the presses
 //! arrive as themselves and the marks are compiled into the binary.
+//!
+//! **Obelus is drawn on two things, and the loop knows neither.** `ob` is
+//! the terminal and `obg` is a window -- gvim's relation to vim, not a
+//! second program: the same grid, the same `component/` and `ui/`, the same
+//! `App`. The seam is one trait and one channel. `ratatui::backend::Backend`
+//! is where a screenful of cells becomes escape sequences or becomes quads
+//! on a texture (`grid`), and `app::run` is handed the *receiving* end of
+//! the loop's channel, because the other end belongs to whichever front end
+//! is running (`window`).
 
 mod blink;
 mod clipboard;

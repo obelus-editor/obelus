@@ -38,6 +38,16 @@
 //! was measured and left out -- it parses RFC 5424 and fails on the RFC 3164
 //! line that is actually in `/var/log/syslog`, which is the file a reader
 //! opens.
+//!
+//! **What Obelus writes, Obelus has to be able to read.** The log gained a
+//! process id at the front of every line so that sessions running at once
+//! could be told apart, and this reader of that format was not told. It
+//! split on the first space expecting a timestamp, got a number, refused
+//! every line, and the file Obelus writes was the one file it could not give
+//! a reading -- so `ctrl+t` was greyed out on it. A format with a writer and
+//! a reader in the same program has a test that the one reads the other
+//! (`obelus_can_read_its_own_log`, in `obelus-app`), or they drift and the
+//! symptom turns up somewhere that looks unrelated.
 
 use obelus_row::{Ink, Row, Span};
 

@@ -14,6 +14,19 @@
 //!
 //! What is left here is the box's own shape: how wide it lays out, which
 //! rows it hands to whoever draws it, and where the caret is in them.
+//!
+//! **Wherever enter means something else, a line is `shift+enter` *and*
+//! `alt+enter`.** Both, every time, and it is one rule rather than a
+//! decision per box: `shift+enter` is what a reader reaches for and it
+//! arrives only from a terminal that speaks the kitty keyboard protocol;
+//! `alt+enter` is what arrives from the rest, because alt is the escape
+//! prefix. A place that took one of them left the other falling through to
+//! whatever was underneath -- in the agent's card, into the box it covers,
+//! where the line went into a message nobody could see and was sent
+//! afterwards. So the pair is taken together, and taken *before* the
+//! modifier check, since alt disqualifies a key everywhere else. Where the
+//! reader has nowhere to type at all, the pair is swallowed rather than
+//! passed on, for the same reason a plain character is.
 
 use std::ops::Range;
 

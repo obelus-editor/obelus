@@ -134,6 +134,8 @@ fn main() -> Result<()> {
 /// Popped on the way out, and from a panic hook: these flags are terminal
 /// state, and a program that leaves them pushed leaves the reader's shell
 /// receiving escape sequences it does not expect.
+///
+/// Nothing else in Obelus depends on the protocol.
 fn enable_keyboard() -> bool {
     use crossterm::event::{KeyboardEnhancementFlags, PushKeyboardEnhancementFlags};
 

@@ -16,6 +16,12 @@
 //! machine the fallback was an escape sequence written to a stdout that is
 //! not a terminal, which is to say nothing at all.
 //!
+//! And one call puts a copy on it in as many shapes as it was made in. So
+//! those two need no owner, no hand-over, and no window -- `ob` in a
+//! terminal there offers Obelus's own shape exactly as `obg` does, which is
+//! why `native::copy` stands in front of both. Owning the selection is
+//! Linux's problem alone.
+//!
 //! What every platform says here is said in mime types, because the one
 //! above it asks in mime types. A UTI and a numbered clipboard format are
 //! each platform's own word for the same few things, and translating them
