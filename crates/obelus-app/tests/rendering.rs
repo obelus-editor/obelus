@@ -2627,3 +2627,31 @@ fn naming_a_path_offers_what_could_finish_it() {
         );
     }
 }
+
+/// The welcome screen says which project the keys are about.
+///
+/// Every key on it is about one and about no other -- `f1` searches that
+/// project and nothing else, `f3` asks git about it, a note and a
+/// conversation are filed under it -- so a reader is told before they
+/// press. `ui::welcome`'s own doc had claimed this for a long time while
+/// nothing drew it.
+///
+/// A directory outside `$HOME`, so the `~` it would otherwise be written
+/// with is nobody's and the test holds wherever it is checked out.
+///
+/// Deliberate break: take the `write` of `working_directory` out of
+/// `lavish`, and the screen offers four keys about a project it does not
+/// name.
+#[test]
+fn the_welcome_screen_says_which_project() {
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+
+    let dump = support::render(&mut app, 64, 20);
+    let text = support::text_block(&dump);
+
+    assert!(
+        text.contains("/tmp/obelus"),
+        "the welcome screen does not say which project:\n{dump}"
+    );
+}

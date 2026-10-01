@@ -45,7 +45,10 @@
 use std::path::{Path, PathBuf};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use obelus_component::picker::{Picker, PickerItem, PickerLayout, PickerValue};
+use obelus_component::{
+    chooser::Chooser,
+    picker::{Picker, PickerItem, PickerLayout, PickerValue},
+};
 
 /// How many are kept.
 ///
@@ -320,13 +323,11 @@ impl super::App {
         let Some(chooser) = &mut self.chooser else {
             return false;
         };
+        let before = chooser.named();
         let taken = match chooser.handle(*key, CHOOSER_ROWS) {
             obelus_component::chooser::Outcome::Taken => true,
             obelus_component::chooser::Outcome::Ignored => false,
             obelus_component::chooser::Outcome::Wants(directory) => {
-                // A new directory is a new question, so a list the reader
-                // shut comes back: what they said no to was the one they
-                // were looking at.
                 self.look_in(&directory);
                 true
             }
@@ -335,8 +336,15 @@ impl super::App {
                 return true;
             }
         };
-        // What was typed narrows whatever the last read found, which is
-        // not a question for the disk.
+        // A box that moved is a new question, so a list the reader shut
+        // comes back: what they said no to was what was in it then. The
+        // same rule `component::completion` follows -- escape takes the
+        // panel away and the next letter asks again.
+        if self.chooser.as_ref().and_then(Chooser::named) != before {
+            self.naming_shut = false;
+        }
+        // And what is typed narrows whatever the last read found, which
+        // is not a question for the disk.
         self.settle_the_naming_list();
         taken
     }
@@ -408,18 +416,18 @@ impl super::App {
                 }
             })
             .collect::<Vec<_>>();
-        if items.is_empty() {
-            self.naming_list = None;
-            return;
-        }
-        let mut list = Picker::new(
-            items,
-            PickerLayout::Compact {
-                rows: super::COMPACT_ROWS,
-            },
-        );
-        list.before_typing("Narrow what is here");
-        self.naming_list = Some(list);
+        // Kept, rather than turned straight into a list: the list goes
+        // whenever the reader shuts it or types past what it holds, and
+        // both have to be undoable without asking the disk again.
+        self.naming_read = match items.is_empty() {
+            true => None,
+            false => Some((directory.to_path_buf(), items)),
+        };
+        // And the list goes with the directory it was made from. Kept,
+        // it would be narrowed by letters belonging to a name in a
+        // different place -- which is what it did: typing the separator
+        // that walks into a directory left the one above it on screen.
+        self.naming_list = None;
         self.settle_the_naming_list();
     }
 
@@ -436,24 +444,59 @@ impl super::App {
     /// allowed to type, and a list that stayed would swallow the enter
     /// that opens it.
     pub(super) fn settle_the_naming_list(&mut self) {
-        let Some(chooser) = &self.chooser else {
+        let Some(chooser) = self.chooser.as_ref().filter(|chooser| chooser.is_naming()) else {
+            // Not naming a path at all, so what a directory held a
+            // moment ago is nobody's: left here, going back into the box
+            // would open on the last directory's names under an empty
+            // one.
+            self.naming_list = None;
+            self.naming_read = None;
+            self.naming_shut = false;
+            return;
+        };
+        // Shut by the reader, on the box as it stands. Not forgotten --
+        // the next letter is a new question and brings it back.
+        if self.naming_shut {
+            self.naming_list = None;
+            return;
+        }
+        let segment = chooser.segment();
+        let Some((_, items)) = &self.naming_read else {
             self.naming_list = None;
             return;
         };
-        let segment = chooser.segment();
-        let room = self.editor_area;
-        let Some(list) = self.naming_list.as_mut() else {
-            return;
+        // Made again from what the directory read found rather than kept
+        // across keys: it costs one build of a list of names and it is
+        // what lets a list that matched nothing come back when the
+        // letter that emptied it is rubbed out.
+        let mut list = match self.naming_list.take() {
+            Some(list) => list,
+            None => {
+                let mut made = Picker::new(
+                    items.clone(),
+                    PickerLayout::Compact {
+                        rows: super::COMPACT_ROWS,
+                    },
+                );
+                made.before_typing("Narrow what is here");
+                made
+            }
         };
         if list.query() != segment {
             list.set_query(&segment);
         }
+        // A list of nothing is not a list, and it has to stop being one:
+        // the reader is typing a path nobody offered, which they are
+        // allowed to do, and a list that stayed would swallow the enter
+        // that opens it.
         if list.match_count() == 0 {
             self.naming_list = None;
             return;
         }
-        let rows = obelus_ui::picker::rows_drawn(list, room);
+        let room = self.editor_area;
+        let rows = obelus_ui::picker::rows_drawn(&list, room);
         list.refresh_indices(rows, room.width);
+        self.naming_list = Some(list);
     }
 
     /// Whatever a key means to that list, if it means anything.
@@ -525,6 +568,7 @@ impl super::App {
             // the reader types their way into somewhere else, which is
             // a new question.
             KeyCode::Esc => {
+                self.naming_shut = true;
                 self.naming_list = None;
                 true
             }
@@ -551,6 +595,8 @@ impl super::App {
         // still saying there is none.
         self.chooser = None;
         self.naming_list = None;
+        self.naming_read = None;
+        self.naming_shut = false;
         self.work_in(root);
         self.apply_project();
         for file in &opening.files {
@@ -583,7 +629,7 @@ impl super::App {
                 .rows()
                 .into_iter()
                 .map(|known| obelus_ui::Opened {
-                    path: shortened(&known.path),
+                    path: obelus_ui::with_home_as_tilde(&known.path),
                     when: known
                         .last
                         .map(|last| obelus_git::how_long_ago(last, now))
@@ -595,31 +641,6 @@ impl super::App {
             caret: chooser.typing().caret().get(),
             naming: chooser.is_naming(),
         })
-    }
-}
-
-/// A path with the reader's own directory written as `~`.
-///
-/// Every row on this screen is under it on an ordinary machine, so
-/// spelling it out is twelve columns of the same word on every row --
-/// taken from the part of the path that says which project this is. The
-/// box the reader types into takes `~` back the other way, which is the
-/// pair that makes the two agree.
-#[must_use]
-fn shortened(path: &Path) -> String {
-    let said = path.to_string_lossy();
-    let Some(home) = std::env::home_dir() else {
-        return said.into_owned();
-    };
-    let home = home.to_string_lossy();
-    // Only a whole leading component, so `/home/sunlight` is not written
-    // as `~light` for a reader whose directory is `/home/sun`.
-    match said.strip_prefix(home.as_ref()) {
-        Some("") => "~".to_string(),
-        // Either separator: a path on Windows may hold `/` and still be
-        // the reader's own directory with something under it.
-        Some(rest) if rest.starts_with(std::path::is_separator) => format!("~{rest}"),
-        _ => said.into_owned(),
     }
 }
 

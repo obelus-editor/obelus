@@ -761,6 +761,22 @@ pub struct App {
     /// knows -- a directory it read -- and `obelus-component` draws and
     /// walks lists rather than looking at disks.
     naming_list: Option<Picker>,
+    /// What the last directory read found, and which directory that was.
+    ///
+    /// Kept apart from the list above, because the list *goes* for two
+    /// ordinary reasons -- the reader shut it, or what they have typed
+    /// since matches none of it -- and both of those have to be
+    /// undoable by typing another letter. Held together they were not:
+    /// once the list was gone there was nothing left to make it from, so
+    /// escape shut it for good and a letter too many could not be rubbed
+    /// out. The disk is read when the *directory* moves and never again.
+    naming_read: Option<(PathBuf, Vec<obelus_component::picker::PickerItem>)>,
+    /// Whether the reader shut the list on what is in the box now.
+    ///
+    /// Cleared the moment the box moves, which is the rule
+    /// `component::completion` follows: escape takes the panel away, and
+    /// typing is a new question rather than the same one asked twice.
+    naming_shut: bool,
     working_directory: PathBuf,
     /// Which branch the tree Obelus was put on has checked out.
     ///
@@ -930,6 +946,8 @@ impl App {
             // front of a launcher.
             chooser: None,
             naming_list: None,
+            naming_read: None,
+            naming_shut: false,
             working_directory: std::env::current_dir().unwrap_or_default(),
             // Not read here. Which branch the tree is on is a fact about
             // the directory Obelus was *told* to work in, so it is read
