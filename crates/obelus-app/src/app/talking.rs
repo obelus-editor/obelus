@@ -994,7 +994,18 @@ impl App {
             None | Some("") => None,
             Some(id) => Some(id),
         };
-        self.talker.as_ref().and_then(acp::Talk::info).or(chosen)
+        // The registry's name rather than its id, which is the same word as
+        // the agent's own title for most of them: a header reading
+        // `claude-acp` and then `Claude Agent` is the change this was
+        // meant to spare the reader.
+        let listed = chosen.map(|id| {
+            self.agents
+                .registry
+                .iter()
+                .find(|agent| agent.id == id)
+                .map_or(id, |agent| agent.name.as_str())
+        });
+        self.talker.as_ref().and_then(acp::Talk::info).or(listed)
     }
 
     /// What an agent is called, by the registry's name for it.

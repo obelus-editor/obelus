@@ -1,6 +1,6 @@
 screen 76x24  editor 76x22  status 76x1
 -- text --
- 0| Fake Agent 0.1                                                             
+ 0| Fake Agent                                                                 
  1|────────────────────────────────────────────────────────────────────────────
  2| >  /edit                                                                   
  3|                                                                            
@@ -25,7 +25,7 @@ screen 76x24  editor 76x22  status 76x1
 22|────────────────────────────────────────────────────────────────────────────
 23| ask first · Fast · Allow everything                        shift+tab  Mode 
 -- style --
- 0|abbbbbbbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 0|abbbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  2|abaabbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  3|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

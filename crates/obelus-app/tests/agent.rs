@@ -376,6 +376,44 @@ fn behind_words(dump: &str, needle: &str) -> Vec<String> {
     seen
 }
 
+/// Before the agent has said who it is, it is called what the registry
+/// calls it, and not by its id.
+///
+/// The id is a word for the settings file. A header that reads
+/// `claude-acp` until the handshake and `Claude Agent` after it changes
+/// under the reader for no reason they can see.
+///
+/// Broken deliberately by answering with the id in `App::agent_name`.
+#[test]
+fn an_agent_not_yet_started_is_called_what_the_registry_calls_it() {
+    let (mut app, _events) = wired();
+    app.configure(
+        obelus_config::Config {
+            agent: Some("claude-acp".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    app.handle(Event::Agent(obelus_agent::Event::Registry {
+        agents: vec![obelus_agent::Agent {
+            id: "claude-acp".to_string(),
+            name: "Claude Agent".to_string(),
+            version: "0.84.0".to_string(),
+            description: "Claude, over the protocol".to_string(),
+            authors: vec!["Somebody".to_string()],
+            license: "MIT".to_string(),
+            website: None,
+            icon: None,
+            distribution: obelus_agent::Distribution::Node {
+                package: "@agentclientprotocol/claude-agent-acp@0.84.0".to_string(),
+                arguments: Vec::new(),
+            },
+        }],
+        failure: None,
+    }));
+    assert_eq!(app.agent_name(), Some("Claude Agent"));
+}
+
 /// One whole turn: the handshake, a prompt, what comes back while it works,
 /// a file read through Obelus, a permission request, and the end.
 #[test]
@@ -384,8 +422,10 @@ fn a_whole_turn_of_conversation() {
     pump(&mut app, &events, "the handshake", |app| {
         app.talking() == obelus_agent::Talking::Ready
     });
-    // What the agent calls itself, which Obelus only knows because it asked.
-    assert_eq!(app.agent_name(), Some("Fake Agent 0.1"));
+    // What the agent calls itself, which Obelus only knows because it asked
+    // -- its title, and not the name it gives for programs or its version.
+    // Broken by taking `info.name` in the handshake instead.
+    assert_eq!(app.agent_name(), Some("Fake Agent"));
 
     support::type_text(&mut app, "what is this file");
     // What is being written is in the box, near the foot of the region,

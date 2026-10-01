@@ -231,7 +231,7 @@ while IFS= read -r line; do
             # that hands an address to an agent which cannot fetch it has
             # offered nothing, so a fixture that stayed quiet here could not
             # tell a client that offers its tools from one that does not.
-            printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentCapabilities":{%s"mcpCapabilities":{"http":true}},"agentInfo":{"name":"%s","version":"0.1"}}}\n' "$(id_of "$line")" "$able" "$me"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentCapabilities":{%s"mcpCapabilities":{"http":true}},"agentInfo":{"name":"fake-agent-acp","title":"%s","version":"0.1"}}}\n' "$(id_of "$line")" "$able" "$me"
             ;;
         *'"method":"session/new"'*)
             opened=$((opened + 1))

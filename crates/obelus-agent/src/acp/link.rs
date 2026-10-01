@@ -1493,9 +1493,15 @@ async fn talk(
             agent,
             |connection: ConnectionTo<agent_client_protocol::Agent>| async move {
                 let ready = connection.send_request(handshake()).block_task().await?;
-                let named = ready.agent_info.map(|info| match info.version.is_empty() {
-                    true => info.name.clone(),
-                    false => format!("{} {}", info.name, info.version),
+                // The title, which the protocol says is the one for people:
+                // the name is for programs, and claude-agent-acp's is its npm
+                // package. No version beside it -- the header says who the
+                // reader is talking to, and which build is the log's to say.
+                let named = ready.agent_info.map(|info| {
+                    tracing::info!(name = %info.name, version = %info.version, "the agent says who it is");
+                    info.title
+                        .filter(|title| !title.is_empty())
+                        .unwrap_or(info.name)
                 });
                 let prompts = &ready.agent_capabilities.prompt_capabilities;
                 let carries = Carries {
