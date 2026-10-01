@@ -2623,9 +2623,13 @@ fn naming_a_path_offers_what_could_finish_it() {
 
     let dump = support::render(&mut app, 80, 20);
     let text = support::text_block(&dump);
-    for name in ["alpha/", "beta/"] {
+    for name in ["alpha", "beta"] {
+        // With the separator this platform writes onto the end of a
+        // directory's name, which is not the one the path was typed
+        // with: Obelus reads either and writes one.
+        let name = format!("{name}{}", std::path::MAIN_SEPARATOR);
         assert!(
-            text.contains(name),
+            text.contains(&name),
             "the list does not offer {name}:\n{dump}"
         );
     }
