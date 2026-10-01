@@ -6,6 +6,7 @@
 
 pub mod card;
 pub mod chat;
+pub mod chooser;
 pub mod completion;
 pub mod composer;
 pub mod counts;

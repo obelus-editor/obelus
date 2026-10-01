@@ -74,12 +74,33 @@ pub fn start(paths: &[PathBuf], built: &'static str) -> Result<App> {
     // directory `App::new` already has: being told is what reads which
     // branch the tree is on, so a bare `ob` drew no branch until git
     // happened to write its index.
+    // Which project, and whether anybody has said. An argument is one
+    // answer; standing in a worktree is the other, and it is a real one --
+    // a reader who typed `cd` has said where they work as plainly as a
+    // reader who typed a path. Neither is a start with nothing to go on:
+    // a desktop launcher begins the process in the home directory, which
+    // git has never heard of, and Obelus used to take that for the
+    // project and file everything about the session under it.
+    //
+    // Asked of the directory rather than of the arguments, which is the
+    // question meant: `cd project && ob` has an answer and should not be
+    // interrupted for one.
+    let here = app.working_directory().to_path_buf();
     let root = opening
         .root
-        .unwrap_or_else(|| app.working_directory().to_path_buf());
-    app.work_in(root);
-    if opening.list {
-        app.list_at_start();
+        .or_else(|| obelus_git::worktree(&here).map(|_| here.clone()));
+    match root {
+        Some(root) => {
+            app.work_in(root);
+            if opening.list {
+                app.list_at_start();
+            }
+        }
+        // Nothing to go on, so the welcome screen asks and is the whole
+        // of the screen until it is answered. `work_in` is deliberately
+        // not called: there is no project to be put on yet, and saying
+        // there is would be the bug this replaces.
+        None => app.ask_which_project(),
     }
     // Read here rather than in `App::new`, so that a test gets the defaults
     // rather than whatever the machine it runs on has in `~/.config`.

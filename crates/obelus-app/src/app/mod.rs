@@ -36,6 +36,7 @@ mod moving;
 mod naming;
 mod preferences;
 mod previewing;
+mod projects;
 mod releases;
 mod renaming;
 mod renaming_files;
@@ -743,6 +744,16 @@ pub struct App {
     /// A number to be *compared* rather than read -- see
     /// `note_where_the_view_has_got_to`.
     travelled: i64,
+    /// The question "which project", while nobody has answered it.
+    ///
+    /// `Some` only on a start with nothing to go on: no argument, and a
+    /// directory git has never heard of -- a desktop launcher, which
+    /// begins the process in the home directory. It is the whole screen
+    /// until it is answered, and `None` ever after: a reader who has
+    /// settled on a project does not go back to being asked, and the way
+    /// to another one is a second Obelus, which is how Obelus is used
+    /// anyway.
+    chooser: Option<obelus_component::chooser::Chooser>,
     working_directory: PathBuf,
     /// Which branch the tree Obelus was put on has checked out.
     ///
@@ -906,6 +917,11 @@ impl App {
             // every path Obelus shows is relative to the same root for the
             // whole session even if something else changes the process's
             // directory.
+            // Nobody is being asked until `startup` says so: everything
+            // that builds an `App` without going through it -- every test
+            // -- has a directory already and is not a reader standing in
+            // front of a launcher.
+            chooser: None,
             working_directory: std::env::current_dir().unwrap_or_default(),
             // Not read here. Which branch the tree is on is a fact about
             // the directory Obelus was *told* to work in, so it is read
@@ -1097,6 +1113,13 @@ impl App {
         // and a watch says what happens next rather than what already
         // has.
         self.head = obelus_git::head_of_the_tree(&self.working_directory);
+        // The one door every way of settling on a project goes through --
+        // an argument, the directory Obelus was started in, a row on the
+        // welcome screen -- which is why the remembering is here and at
+        // none of the three. `remember` declines anything that is not a
+        // worktree, so a process that began in the home directory writes
+        // nothing.
+        projects::remember(&self.working_directory, jiff::Timestamp::now().as_second());
     }
 
     /// Which branch the tree Obelus was put on has checked out.
@@ -1893,6 +1916,14 @@ impl App {
     /// two escapes to leave and gave no way to tell which of the two a key
     /// would reach.
     pub(crate) fn context(&self) -> Context {
+        // Being asked which project is a dialog like any other, and takes
+        // what `Context::Dialog` binds: leaving, and the three keys that
+        // act on what the reader has hold of -- a box they can select in
+        // and not paste into is half a box. Everything else in Obelus is
+        // about a project, and `Requires::AProject` is what refuses it.
+        if self.chooser.is_some() {
+            return Context::Dialog;
+        }
         // A list whose rows are open files is the list of open files, and
         // that one has a command of its own.
         if self.selected_document().is_some() {
@@ -2805,6 +2836,15 @@ impl App {
         // it, and a drag nothing ever ended would go on scrolling under
         // whatever the reader did next.
         self.dragging = None;
+
+        // Before everything, because it is not a thing opened *over* a
+        // project -- it is what is there instead of one, and nothing
+        // behind it would know what to do. What it does not take falls to
+        // the ordinary lookup, which finds a dialog and so offers only
+        // what a dialog binds.
+        if self.chooser.is_some() && self.choosing_a_project(&key) {
+            return;
+        }
 
         // Except the paging keys, while a preview is on screen: a screenful
         // is what the thing being *read* is moved by, and the list above it
