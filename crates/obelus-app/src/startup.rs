@@ -69,9 +69,15 @@ pub fn start(paths: &[PathBuf], built: &'static str) -> Result<App> {
     let mut app = App::new(buffers);
     // Before the settings, because a project has settings of its own and
     // reading those means knowing which project.
-    if let Some(root) = opening.root {
-        app.work_in(root);
-    }
+    //
+    // Told even where the arguments named none, and the answer is the
+    // directory `App::new` already has: being told is what reads which
+    // branch the tree is on, so a bare `ob` drew no branch until git
+    // happened to write its index.
+    let root = opening
+        .root
+        .unwrap_or_else(|| app.working_directory().to_path_buf());
+    app.work_in(root);
     if opening.list {
         app.list_at_start();
     }
