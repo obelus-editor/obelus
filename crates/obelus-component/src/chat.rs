@@ -2221,6 +2221,20 @@ impl Chat {
                 }
                 ChatOutcome::Consumed
             }
+            // Shift holds what the arrow passes over, the way it does in
+            // the file. Without these the pair fell to the arm at the
+            // bottom and did nothing at all. Not the suggestion: taking
+            // that is what right means bare, and holding is not taking.
+            KeyCode::Left if modifiers == KeyModifiers::SHIFT => {
+                self.let_go();
+                self.input.hold_left();
+                ChatOutcome::Consumed
+            }
+            KeyCode::Right if modifiers == KeyModifiers::SHIFT => {
+                self.let_go();
+                self.input.hold_right();
+                ChatOutcome::Consumed
+            }
             // The box owns the arrows while its caret has somewhere to go
             // in it. Past the top of it the caret carries on into the
             // transcript, which is where a reader who has run out of box
@@ -3558,6 +3572,56 @@ mod tests {
         // And a bare motion lets go.
         chat.handle_key(&key(KeyCode::Left), false, ROOM, &[]);
         assert!(!chat.holding(), "a bare motion kept the selection");
+    }
+
+    /// Shift and an arrow hold a character of the box at a time.
+    ///
+    /// The pair fell through every arm and did nothing, so the one way to
+    /// take hold of part of a message from the keyboard was the whole line.
+    ///
+    /// Broken deliberately by taking the two arms out, which holds nothing;
+    /// and by leaving the transcript's hold alone, which leaves two
+    /// selections on one screen.
+    #[test]
+    fn shift_and_an_arrow_hold_characters_in_the_box() {
+        let mut chat = Chat::new();
+        chat.chunk(Speaker::Agent, "hello there");
+        chat.settle(chat.rows(ROOM.reading).len(), ROOM.transcript);
+        chat.put("abcdef");
+
+        chat.handle_key(&shifted(KeyCode::Left), false, ROOM, &[]);
+        chat.handle_key(&shifted(KeyCode::Left), false, ROOM, &[]);
+        assert_eq!(
+            chat.copied(ROOM.reading),
+            ("ef".to_string(), "selection"),
+            "shift and left did not hold what they passed over in the box"
+        );
+        chat.handle_key(&shifted(KeyCode::Right), false, ROOM, &[]);
+        assert_eq!(
+            chat.copied(ROOM.reading),
+            ("f".to_string(), "selection"),
+            "shift and right did not give back what was held"
+        );
+
+        // One selection between the two halves. Held with the pointer,
+        // which leaves the caret in the box: walking up into the transcript
+        // and back lets go on the way down, and would ask nothing of these.
+        chat.hold_from(Spot {
+            said: 0,
+            source: Source::Text,
+            at: 0,
+        });
+        chat.hold_to(Spot {
+            said: 0,
+            source: Source::Text,
+            at: 5,
+        });
+        assert!(chat.holding(), "the transcript did not take hold");
+        chat.handle_key(&shifted(KeyCode::Right), false, ROOM, &[]);
+        assert!(
+            !chat.holding(),
+            "the box took hold and the transcript kept its own"
+        );
     }
 
     /// Shift and home hold a line of the box, in the box.

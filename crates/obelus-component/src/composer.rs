@@ -364,6 +364,18 @@ impl Composer {
             .move_to(obelus_editing::Motion::Right, &(), u16::MAX);
     }
 
+    /// One character leftwards, holding what it passes over.
+    pub fn hold_left(&mut self) {
+        self.writing
+            .extend_to(obelus_editing::Motion::Left, &(), u16::MAX);
+    }
+
+    /// The same, rightwards.
+    pub fn hold_right(&mut self) {
+        self.writing
+            .extend_to(obelus_editing::Motion::Right, &(), u16::MAX);
+    }
+
     /// To the start of the row the caret is on, or the end of it.
     pub fn home(&mut self, width: u16) {
         self.writing
