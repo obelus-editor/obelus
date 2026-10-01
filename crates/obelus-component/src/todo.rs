@@ -46,7 +46,11 @@
 //! cost the drawing, and the way out is the key the lock is about: `alt+a`
 //! asks for the claim outright, and a lock nobody holds gives way to it.
 
-use std::{collections::HashSet, ops::Range, path::PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    ops::Range,
+    path::PathBuf,
+};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use obelus_git::todo::{Change, INDENT, Note, NoteId, Todo};
@@ -126,6 +130,16 @@ impl Row {
     pub fn words(&self) -> bool {
         !self.place && !self.gap
     }
+}
+
+/// Who has the conversation of a note this window cannot change.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Holder {
+    /// Another window on this same checkout, or one whose claim has not
+    /// said where it is held.
+    AnotherWindow,
+    /// A window on another checkout of the project, by its directory's name.
+    Checkout(String),
 }
 
 /// Whether a note has a conversation about it, and whether that
@@ -281,7 +295,11 @@ pub struct TodoView {
     /// says which is which is the foot, where those keys stop being
     /// offered: the reader is told before they press, which is the rule the
     /// palette follows.
-    elsewhere: HashSet<NoteId>,
+    ///
+    /// And who has each, which the status row says of the note the caret
+    /// is in: the lock says *that* the keys will do nothing, and a reader
+    /// with three worktrees open needs to know which one to go to.
+    elsewhere: HashMap<NoteId, Holder>,
     /// The notes this page started that are not in the file yet.
     ///
     /// What tells "put this note in" from "change the one that is there",
@@ -669,8 +687,16 @@ impl TodoView {
     /// Asked the same way [`Self::lay_out`] is -- from the frame, and again
     /// before a key -- because a claim is taken and given up in another
     /// window while this page is open.
-    pub fn these_are_elsewhere(&mut self, which: HashSet<NoteId>) {
+    pub fn these_are_elsewhere(&mut self, which: HashMap<NoteId, Holder>) {
         self.elsewhere = which;
+    }
+
+    /// Who has the conversation of the note the caret is in, where
+    /// somebody else does.
+    #[must_use]
+    pub fn selected_holder(&self) -> Option<&Holder> {
+        self.selected_note()
+            .and_then(|note| self.elsewhere.get(&note.id))
     }
 
     /// Whether the note the caret is in is one of them.
@@ -680,7 +706,7 @@ impl TodoView {
     #[must_use]
     pub fn selected_is_elsewhere(&self) -> bool {
         self.selected_note()
-            .is_some_and(|note| self.elsewhere.contains(&note.id))
+            .is_some_and(|note| self.elsewhere.contains_key(&note.id))
     }
 
     /// Whether this note, or anything hanging under it, is somebody
@@ -714,7 +740,7 @@ impl TodoView {
             .get(at..at + span)
             .unwrap_or_default()
             .iter()
-            .any(|note| self.elsewhere.contains(&note.id))
+            .any(|note| self.elsewhere.contains_key(&note.id))
     }
 
     /// Puts the window where the row the caret is in is on screen.

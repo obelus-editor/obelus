@@ -404,6 +404,7 @@ fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
         kept.put(
             &ChatId::Note(note.clone()),
             "fake",
+            root,
             sessions::Kept {
                 session: "s-1".to_string(),
                 title: Some("why refilter drops rows".to_string()),
@@ -416,7 +417,7 @@ fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
 
     let back = sessions::read(root).remembered().expect("the table");
     let kept = back
-        .get(&ChatId::Note(note.clone()), "fake")
+        .get(&ChatId::Note(note.clone()), "fake", root)
         .expect("the conversation");
     assert_eq!(kept.session, "s-1");
     assert_eq!(kept.title.as_deref(), Some("why refilter drops rows"));
@@ -429,6 +430,7 @@ fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
         kept.put(
             &ChatId::Note(other.clone()),
             "fake",
+            root,
             sessions::Kept {
                 session: "s-2".to_string(),
                 title: None,
@@ -440,10 +442,14 @@ fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
     });
     let back = sessions::read(root).remembered().expect("the table");
     assert!(
-        back.get(&ChatId::Note(note.clone()), "fake").is_some(),
+        back.get(&ChatId::Note(note.clone()), "fake", root)
+            .is_some(),
         "the second write put back what the first wrote"
     );
-    assert!(back.get(&ChatId::Note(other.clone()), "fake").is_some());
+    assert!(
+        back.get(&ChatId::Note(other.clone()), "fake", root)
+            .is_some()
+    );
 
     // A note that has gone takes its conversation with it, collected on the
     // way past rather than when the note was deleted -- because a note can
@@ -451,7 +457,8 @@ fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
     sessions::change(root, Some(std::slice::from_ref(&other)), |_| {});
     let back = sessions::read(root).remembered().expect("the table");
     assert!(
-        back.get(&ChatId::Note(note.clone()), "fake").is_none(),
+        back.get(&ChatId::Note(note.clone()), "fake", root)
+            .is_none(),
         "a conversation outlived the note it was about"
     );
 }

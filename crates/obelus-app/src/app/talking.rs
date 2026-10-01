@@ -551,7 +551,11 @@ impl App {
         // with: the cost of it is the conversation being started again.
         Some(
             self.sessions()?
-                .get(&obelus_agent::chats::ChatId::Note(note.clone()), agent)?
+                .get(
+                    &obelus_agent::chats::ChatId::Note(note.clone()),
+                    agent,
+                    &self.working_directory,
+                )?
                 .session
                 .clone(),
         )
@@ -572,7 +576,13 @@ impl App {
             return (None, false);
         };
         self.sessions()
-            .and_then(|kept| kept.get(&obelus_agent::chats::ChatId::Note(note.clone()), agent))
+            .and_then(|kept| {
+                kept.get(
+                    &obelus_agent::chats::ChatId::Note(note.clone()),
+                    agent,
+                    &self.working_directory,
+                )
+            })
             .map_or((None, false), |kept| (kept.told.clone(), kept.introduced))
     }
 
@@ -596,7 +606,7 @@ impl App {
         !mine
             && self
                 .held_now()
-                .contains(&obelus_agent::chats::ChatId::Note(note.clone()))
+                .contains_key(&obelus_agent::chats::ChatId::Note(note.clone()))
     }
 
     /// Every note of this project whose conversation another Obelus has.
@@ -616,18 +626,35 @@ impl App {
     /// lock is about: `alt+a` asks for the claim outright, and a lock
     /// nobody holds gives way to it.
     #[must_use]
+    /// And who has each: a checkout by its directory's name where the claim
+    /// names one that is not this, and another window otherwise -- one in
+    /// this same checkout, or one whose claim has not said yet.
     pub(super) fn which_notes_are_elsewhere(
         &self,
-    ) -> std::collections::HashSet<obelus_git::todo::NoteId> {
+    ) -> std::collections::HashMap<obelus_git::todo::NoteId, obelus_component::todo::Holder> {
+        use obelus_component::todo::Holder;
+
         let Some(notes) = self.notes() else {
-            return std::collections::HashSet::new();
+            return std::collections::HashMap::new();
         };
         notes
             .todo()
             .notes
             .iter()
             .filter(|note| self.the_conversation_is_elsewhere(&note.id))
-            .map(|note| note.id.clone())
+            .map(|note| {
+                let tree = self
+                    .held_now()
+                    .get(&obelus_agent::chats::ChatId::Note(note.id.clone()))
+                    .cloned()
+                    .flatten()
+                    .filter(|tree| *tree != self.working_directory);
+                let holder = match tree.as_deref().and_then(std::path::Path::file_name) {
+                    Some(name) => Holder::Checkout(name.to_string_lossy().into_owned()),
+                    None => Holder::AnotherWindow,
+                };
+                (note.id.clone(), holder)
+            })
             .collect()
     }
 
@@ -710,8 +737,12 @@ impl App {
                 }
                 let written = !agent.is_empty()
                     && kept.is_some_and(|kept| {
-                        kept.get(&obelus_agent::chats::ChatId::Note(note.id.clone()), &agent)
-                            .is_some()
+                        kept.get(
+                            &obelus_agent::chats::ChatId::Note(note.id.clone()),
+                            &agent,
+                            &self.working_directory,
+                        )
+                        .is_some()
                     });
                 match open.is_some() || written {
                     true => Talked::Yes,
@@ -744,8 +775,13 @@ impl App {
         // Kept, rather than read back: what `change` hands over is the
         // table it has just written, and reading the file again for it
         // would be paying the dear half of this twice.
+        let here = self.working_directory.clone();
         let written = obelus_agent::acp::sessions::change(&self.working_directory, notes, |kept| {
-            kept.forget(&obelus_agent::chats::ChatId::Note(note.clone()), &agent);
+            kept.forget(
+                &obelus_agent::chats::ChatId::Note(note.clone()),
+                &agent,
+                &here,
+            );
         });
         if written.is_some() {
             self.sessions_kept = written;
@@ -848,9 +884,12 @@ impl App {
         let notes = notes.as_deref();
         // The same again: this is one of the three reasons the kept copy
         // is read, and the only one that does not have to read anything.
+        // In the checkout the agent was told, which is the one it will
+        // take the conversation up in and no other.
+        let here = self.working_directory.clone();
         let written = obelus_agent::acp::sessions::change(&self.working_directory, notes, |kept| {
             for (which, what) in mine {
-                kept.put(&which, &agent, what);
+                kept.put(&which, &agent, &here, what);
             }
         });
         if written.is_some() {

@@ -16,6 +16,16 @@
 //! One file per project, named after the project, so that a reader with eight
 //! projects open has eight small files rather than one that every Obelus is
 //! writing at once.
+//!
+//! **A conversation belongs to the checkout it was had in.** The project is
+//! every worktree of one repository, because the notes are; the agent is
+//! told one directory, and keeps what was said under it -- Claude Code files
+//! a conversation by the directory it was started in, and asked for it from
+//! another answers that there is no such thing. So a row says which
+//! checkout it was had in, a note has a conversation in each, and the ones
+//! from somewhere else are shown and not offered, the way another agent's
+//! are. Taking one up from the wrong checkout used to be refused, and the
+//! refusal forgot it -- out of the one table every worktree reads.
 
 use std::{
     collections::BTreeMap,
@@ -82,41 +92,48 @@ pub struct Kept {
 
 /// Which conversation is which, for one project.
 ///
-/// Keyed by the conversation *and* the agent: the same note talked over
-/// with two agents is two conversations, and an agent cannot be handed a
-/// session id that another agent minted -- which is why the list Obelus
-/// offers is one agent's, and why the others are shown and not offered.
+/// Keyed by the conversation, the agent *and* the checkout: the same note
+/// talked over with two agents is two conversations, and an agent cannot be
+/// handed a session id that another agent minted -- which is why the list
+/// Obelus offers is one agent's, and why the others are shown and not
+/// offered. The checkout is the same fact one level down: what an agent
+/// can take up is what it was told the directory of.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Remembered {
-    kept: BTreeMap<(ChatId, String), Kept>,
+    kept: BTreeMap<(ChatId, String, PathBuf), Kept>,
 }
 
 impl Remembered {
-    /// What is remembered about one conversation, for one agent.
+    /// What is remembered about one conversation, for one agent, in one
+    /// checkout.
     #[must_use]
-    pub fn get(&self, which: &ChatId, agent: &str) -> Option<&Kept> {
-        self.kept.get(&(which.clone(), agent.to_string()))
+    pub fn get(&self, which: &ChatId, agent: &str, tree: &Path) -> Option<&Kept> {
+        self.kept
+            .get(&(which.clone(), agent.to_string(), tree.to_path_buf()))
     }
 
     /// Remembers one, replacing whatever was there.
-    pub fn put(&mut self, which: &ChatId, agent: &str, kept: Kept) {
-        self.kept.insert((which.clone(), agent.to_string()), kept);
+    pub fn put(&mut self, which: &ChatId, agent: &str, tree: &Path, kept: Kept) {
+        self.kept
+            .insert((which.clone(), agent.to_string(), tree.to_path_buf()), kept);
     }
 
     /// Forgets one.
-    pub fn forget(&mut self, which: &ChatId, agent: &str) {
-        self.kept.remove(&(which.clone(), agent.to_string()));
+    pub fn forget(&mut self, which: &ChatId, agent: &str, tree: &Path) {
+        self.kept
+            .remove(&(which.clone(), agent.to_string(), tree.to_path_buf()));
     }
 
-    /// Every conversation it holds, with which one it is and whose agent.
+    /// Every conversation it holds, with which one it is, whose agent, and
+    /// which checkout it was had in.
     ///
     /// In no particular order: what orders the list is when each was last
     /// talked in, which is the caller's to sort by because it is the
     /// caller that draws it.
-    pub fn all(&self) -> impl Iterator<Item = (&ChatId, &str, &Kept)> {
+    pub fn all(&self) -> impl Iterator<Item = (&ChatId, &str, &Path, &Kept)> {
         self.kept
             .iter()
-            .map(|((which, agent), kept)| (which, agent.as_str(), kept))
+            .map(|((which, agent, tree), kept)| (which, agent.as_str(), tree.as_path(), kept))
     }
 
     /// Forgets every conversation whose note has gone.
@@ -141,7 +158,7 @@ impl Remembered {
         // anything in that file, so sweeping it against that file would
         // forget every one of them on the first pass.
         self.kept
-            .retain(|(which, _), _| which.note().is_none_or(|note| notes.contains(note)));
+            .retain(|(which, _, _), _| which.note().is_none_or(|note| notes.contains(note)));
     }
 
     /// Every session it holds, for asking an agent which it still knows.
@@ -157,7 +174,7 @@ impl Remembered {
     /// the key and is looking at an empty conversation.
     pub fn forget_what_the_agent_lost(&mut self, agent: &str, still_has: &[String]) {
         self.kept
-            .retain(|(_, whose), kept| whose != agent || still_has.contains(&kept.session));
+            .retain(|(_, whose, _), kept| whose != agent || still_has.contains(&kept.session));
     }
 }
 
@@ -166,8 +183,9 @@ impl Remembered {
 /// Named by the same answer the notes are, and it has to be the same
 /// answer: this table says which conversation is about which note, so a
 /// key that told two checkouts apart while the notes no longer did would
-/// be one note with two conversations under it -- the reader opening it in
-/// one worktree and finding an empty page in the next.
+/// be one note with two conversations under it and neither checkout able
+/// to say the other's was there. Which checkout a conversation can be
+/// taken up in is said on its row instead -- see [`Remembered`].
 ///
 /// It read the checkout's own path once, for the opposite reason, and the
 /// reason went when the notes did: two checkouts of one repository used to
@@ -259,7 +277,9 @@ fn read_from(text: &str) -> Reading {
             continue;
         };
         let text = |key: &str| row.get(key).and_then(toml::Value::as_str);
-        let (Some(agent), Some(session)) = (text("agent"), text("session")) else {
+        let (Some(agent), Some(session), Some(tree)) =
+            (text("agent"), text("session"), text("tree"))
+        else {
             continue;
         };
         // A row with no note is one about nothing in particular, which is
@@ -274,7 +294,7 @@ fn read_from(text: &str) -> Reading {
             None => ChatId::Loose(session.to_string()),
         };
         kept.insert(
-            (which, agent.to_string()),
+            (which, agent.to_string(), PathBuf::from(tree)),
             Kept {
                 session: session.to_string(),
                 title: text("title").map(str::to_string),
@@ -345,12 +365,13 @@ pub fn change(
 #[must_use]
 fn to_toml(remembered: &Remembered) -> String {
     let mut out = String::new();
-    for ((which, agent), kept) in &remembered.kept {
+    for ((which, agent, tree), kept) in &remembered.kept {
         out.push_str("[[talked]]\n");
         if let Some(note) = which.note() {
             out.push_str(&format!("note = \"{note}\"\n"));
         }
         out.push_str(&format!("agent = {}\n", quoted(agent)));
+        out.push_str(&format!("tree = {}\n", quoted(&tree.to_string_lossy())));
         out.push_str(&format!("session = {}\n", quoted(&kept.session)));
         if let Some(title) = &kept.title {
             out.push_str(&format!("title = {}\n", quoted(title)));
@@ -396,6 +417,11 @@ mod tests {
         ChatId::Note(NoteId::read(said).expect("a name"))
     }
 
+    /// The checkout these are had in, which none of them is about.
+    fn here() -> &'static Path {
+        Path::new("/somewhere/obelus")
+    }
+
     /// What goes out comes back, including the parts TOML has opinions
     /// about.
     #[test]
@@ -404,6 +430,7 @@ mod tests {
         remembered.put(
             &note("ABCDEFGH"),
             "claude-acp",
+            here(),
             Kept {
                 session: "s-1".to_string(),
                 title: Some("quotes \" and \\ backslashes".to_string()),
@@ -419,6 +446,7 @@ mod tests {
         remembered.put(
             &note("ABCDEFGH"),
             "codex",
+            here(),
             Kept {
                 session: "other".to_string(),
                 title: None,
@@ -435,13 +463,13 @@ mod tests {
         assert_eq!(written.map(Vec::len), Some(2));
         assert_eq!(
             remembered
-                .get(&note("ABCDEFGH"), "claude-acp")
+                .get(&note("ABCDEFGH"), "claude-acp", here())
                 .map(|kept| kept.session.as_str()),
             Some("s-1")
         );
         assert_ne!(
-            remembered.get(&note("ABCDEFGH"), "codex"),
-            remembered.get(&note("ABCDEFGH"), "claude-acp"),
+            remembered.get(&note("ABCDEFGH"), "codex", here()),
+            remembered.get(&note("ABCDEFGH"), "claude-acp", here()),
             "two agents were given one conversation between them"
         );
         // What the agent was told, through the file and back: a paragraph
@@ -469,14 +497,47 @@ mod tests {
             other => panic!("the file did not read: {other:?}"),
         };
         assert_eq!(
-            back.get(&note("ABCDEFGH"), "claude-acp")
+            back.get(&note("ABCDEFGH"), "claude-acp", here())
                 .map(|kept| kept.introduced),
             Some(true)
         );
         assert_eq!(
-            back.get(&note("ABCDEFGH"), "codex")
+            back.get(&note("ABCDEFGH"), "codex", here())
                 .map(|kept| kept.introduced),
             Some(false)
+        );
+    }
+
+    /// A conversation is the checkout's it was had in, through the file
+    /// and back.
+    ///
+    /// Broken deliberately by writing every row's `tree` as one directory
+    /// in `to_toml`: the row read back is no longer this checkout's.
+    #[test]
+    fn a_conversation_belongs_to_the_checkout_it_was_had_in() {
+        let there = Path::new("/somewhere/obelus-worktree");
+        let kept = |session: &str| Kept {
+            session: session.to_string(),
+            title: None,
+            told: None,
+            introduced: false,
+            last: None,
+        };
+        let mut remembered = Remembered::default();
+        remembered.put(&note("ABCDEFGH"), "claude-acp", here(), kept("here"));
+        let back = match read_from(&to_toml(&remembered)) {
+            Reading::Remembered(back) => back,
+            other => panic!("the file did not read: {other:?}"),
+        };
+        assert_eq!(
+            back.get(&note("ABCDEFGH"), "claude-acp", here())
+                .map(|kept| kept.session.as_str()),
+            Some("here")
+        );
+        assert_eq!(
+            back.get(&note("ABCDEFGH"), "claude-acp", there),
+            None,
+            "a conversation was offered in a checkout the agent was never told of"
         );
     }
 
@@ -488,6 +549,7 @@ mod tests {
             remembered.put(
                 &note(name),
                 "claude-acp",
+                here(),
                 Kept {
                     session: name.to_lowercase(),
                     title: None,
@@ -498,9 +560,15 @@ mod tests {
             );
         }
         remembered.forget_notes_that_are_gone(Some(&[NoteId::read("ABCDEFGH").expect("a name")]));
-        assert!(remembered.get(&note("ABCDEFGH"), "claude-acp").is_some());
         assert!(
-            remembered.get(&note("JKMNPQRS"), "claude-acp").is_none(),
+            remembered
+                .get(&note("ABCDEFGH"), "claude-acp", here())
+                .is_some()
+        );
+        assert!(
+            remembered
+                .get(&note("JKMNPQRS"), "claude-acp", here())
+                .is_none(),
             "a conversation outlived the note it was about"
         );
     }
@@ -544,6 +612,7 @@ mod tests {
             kept.put(
                 &note("JKMNPQRS"),
                 "claude-acp",
+                here(),
                 Kept {
                     session: "one this Obelus made up".to_string(),
                     title: None,
@@ -578,6 +647,7 @@ mod tests {
             remembered.put(
                 &note(name),
                 "claude-acp",
+                here(),
                 Kept {
                     session: name.to_lowercase(),
                     title: None,
@@ -588,9 +658,15 @@ mod tests {
             );
         }
         remembered.forget_notes_that_are_gone(None);
-        assert!(remembered.get(&note("ABCDEFGH"), "claude-acp").is_some());
         assert!(
-            remembered.get(&note("JKMNPQRS"), "claude-acp").is_some(),
+            remembered
+                .get(&note("ABCDEFGH"), "claude-acp", here())
+                .is_some()
+        );
+        assert!(
+            remembered
+                .get(&note("JKMNPQRS"), "claude-acp", here())
+                .is_some(),
             "a conversation was forgotten against a list Obelus does not have"
         );
     }
@@ -606,6 +682,7 @@ mod tests {
         remembered.put(
             &note("ABCDEFGH"),
             "claude-acp",
+            here(),
             Kept {
                 session: "s-1".into(),
                 title: None,
@@ -617,6 +694,7 @@ mod tests {
         remembered.put(
             &note("JKMNPQRS"),
             "claude-acp",
+            here(),
             Kept {
                 session: "s-2".into(),
                 title: None,
@@ -629,6 +707,7 @@ mod tests {
         remembered.put(
             &note("ABCDEFGH"),
             "codex",
+            here(),
             Kept {
                 session: "x-9".into(),
                 title: None,
@@ -640,13 +719,19 @@ mod tests {
 
         remembered.forget_what_the_agent_lost("claude-acp", &["s-1".to_string()]);
 
-        assert!(remembered.get(&note("ABCDEFGH"), "claude-acp").is_some());
         assert!(
-            remembered.get(&note("JKMNPQRS"), "claude-acp").is_none(),
+            remembered
+                .get(&note("ABCDEFGH"), "claude-acp", here())
+                .is_some()
+        );
+        assert!(
+            remembered
+                .get(&note("JKMNPQRS"), "claude-acp", here())
+                .is_none(),
             "a session the agent has never heard of was kept"
         );
         assert!(
-            remembered.get(&note("ABCDEFGH"), "codex").is_some(),
+            remembered.get(&note("ABCDEFGH"), "codex", here()).is_some(),
             "one agent's answer threw away another agent's conversation"
         );
     }

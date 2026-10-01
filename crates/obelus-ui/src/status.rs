@@ -918,15 +918,37 @@ impl StatusView<'_> {
         write(cells, area.x + 1, area.y, &name, style);
 
         let left = notes.todo().notes.iter().filter(|note| !note.done).count();
-        if left == 0 {
-            return;
-        }
-        let said = format!("{left} to come back to");
-        if let Ok(offset) =
-            u16::try_from(usize::from(area.width).saturating_sub(text_width(&said) + 1))
-            && area.x + offset > area.x + 1 + u16::try_from(text_width(&name)).unwrap_or(0)
+        let said = (left > 0).then(|| format!("{left} to come back to"));
+        let count_at = said.as_ref().map_or(usize::from(area.width), |said| {
+            usize::from(area.width).saturating_sub(text_width(said) + 1)
+        });
+        if let Some(said) = &said
+            && count_at > 1 + text_width(&name)
+            && let Ok(offset) = u16::try_from(count_at)
         {
-            write(cells, area.x + offset, area.y, &said, style);
+            write(cells, area.x + offset, area.y, said, style);
+        }
+
+        // Where the note the caret is in is being talked about, when that is
+        // somewhere else: the lock beside it says the keys will do nothing,
+        // and this says where to go to do something. Where the mode goes on
+        // a file's row, because it is the same kind of fact -- what is on
+        // screen cannot simply be changed here. Dropped whole where it does
+        // not fit between the two, because half a place is no place.
+        let Some(holder) = notes.selected_holder() else {
+            return;
+        };
+        let held = match holder {
+            obelus_component::todo::Holder::AnotherWindow => {
+                "Talked about in another window".to_string()
+            }
+            obelus_component::todo::Holder::Checkout(name) => format!("Talked about in {name}"),
+        };
+        let at = 1 + text_width(&name) + 2;
+        if at + text_width(&held) + 2 <= count_at
+            && let Ok(offset) = u16::try_from(at)
+        {
+            write(cells, area.x + offset, area.y, &held, style);
         }
     }
 

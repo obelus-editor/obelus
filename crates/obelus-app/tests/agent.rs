@@ -178,6 +178,7 @@ fn remember_a_conversation(
         remembered.put(
             &obelus_agent::chats::ChatId::Loose(session.to_string()),
             agent,
+            scratch.path(),
             obelus_agent::acp::sessions::Kept {
                 session: session.to_string(),
                 title: Some(title.to_string()),
@@ -215,6 +216,7 @@ fn remember_a_note_conversation(scratch: &support::Scratch, note: &str, session:
                 obelus_git::todo::NoteId::read(note).expect("a name"),
             ),
             "fake",
+            scratch.path(),
             obelus_agent::acp::sessions::Kept {
                 session: session.to_string(),
                 title: None,
@@ -4146,7 +4148,11 @@ fn notes_that_will_not_read_do_not_forget_the_conversations() {
         obelus_agent::acp::sessions::read(scratch.path())
             .remembered()
             .expect("the table")
-            .get(&obelus_agent::chats::ChatId::Note(id.clone()), "fake")
+            .get(
+                &obelus_agent::chats::ChatId::Note(id.clone()),
+                "fake",
+                scratch.path(),
+            )
             .is_some(),
         "the conversation was never written down, so this proves nothing"
     );
@@ -4166,7 +4172,11 @@ fn notes_that_will_not_read_do_not_forget_the_conversations() {
         obelus_agent::acp::sessions::read(scratch.path())
             .remembered()
             .expect("the table")
-            .get(&obelus_agent::chats::ChatId::Note(id.clone()), "fake")
+            .get(
+                &obelus_agent::chats::ChatId::Note(id.clone()),
+                "fake",
+                scratch.path(),
+            )
             .is_some(),
         "the conversation was forgotten because the notes would not read"
     );
@@ -4298,6 +4308,7 @@ fn a_conversation_the_agent_has_forgotten_is_started_again() {
             remembered.put(
                 &obelus_agent::chats::ChatId::Note(id.clone()),
                 "fake",
+                scratch.path(),
                 obelus_agent::acp::sessions::Kept {
                     session: "s-gone".to_string(),
                     title: None,
@@ -5164,6 +5175,7 @@ fn remembering_how(
             remembered.put(
                 &obelus_agent::chats::ChatId::Note(id.clone()),
                 "fake",
+                scratch.path(),
                 obelus_agent::acp::sessions::Kept {
                     session: session.to_string(),
                     title: None,
@@ -5235,6 +5247,7 @@ fn a_note_says_whether_anybody_has_talked_about_it() {
             remembered.put(
                 &obelus_agent::chats::ChatId::Note(id.clone()),
                 "fake",
+                scratch.path(),
                 obelus_agent::acp::sessions::Kept {
                     session: "s-old".to_string(),
                     title: None,
@@ -5647,6 +5660,7 @@ fn the_first_conversation_opened_after_a_restart_is_taken_up() {
             remembered.put(
                 &obelus_agent::chats::ChatId::Note(id.clone()),
                 "fake",
+                scratch.path(),
                 obelus_agent::acp::sessions::Kept {
                     session: "s-old".to_string(),
                     title: None,
@@ -5754,8 +5768,12 @@ fn a_conversation_the_agent_has_not_got_is_forgotten_rather_than_replaced() {
         .remembered()
         .expect("the table");
     assert_eq!(
-        kept.get(&obelus_agent::chats::ChatId::Note(id.clone()), "fake")
-            .map(|kept| kept.session.clone()),
+        kept.get(
+            &obelus_agent::chats::ChatId::Note(id.clone()),
+            "fake",
+            scratch.path(),
+        )
+        .map(|kept| kept.session.clone()),
         None,
         "the note still points at a conversation nobody can reach"
     );
@@ -5775,8 +5793,12 @@ fn a_conversation_the_agent_has_not_got_is_forgotten_rather_than_replaced() {
         .remembered()
         .expect("the table");
     assert!(
-        kept.get(&obelus_agent::chats::ChatId::Note(id.clone()), "fake")
-            .is_some(),
+        kept.get(
+            &obelus_agent::chats::ChatId::Note(id.clone()),
+            "fake",
+            scratch.path(),
+        )
+        .is_some(),
         "a conversation with something in it was not written down"
     );
 }
@@ -7377,14 +7399,25 @@ fn a_conversation_another_obelus_has_open_is_not_opened_again() {
         app.chat().is_none(),
         "a second window was let into the conversation"
     );
-    // And the foot does not offer the key it will not honour. Nothing is
-    // said on the status row: the lock beside the note says it, and the
-    // foot says it again by having nothing to say -- a note as well would
-    // be a third answer to a question the page has answered twice.
+    // And the foot does not offer the key it will not honour: the lock
+    // beside the note says it, and the foot says it again by having nothing
+    // to say. What the status row says is where it is being talked about,
+    // which here is this same checkout.
     let dump = support::render(&mut app, WIDTH, 18);
+    let text = support::text_block(&dump).to_string();
+    let foot = text
+        .lines()
+        .find(|line| line.contains("Another"))
+        .unwrap_or_default();
     assert!(
-        !dump.contains("Talk"),
+        !foot.contains("Talk"),
         "the foot offers a key that does nothing here:\n{dump}"
+    );
+    assert!(
+        text.lines()
+            .last()
+            .is_some_and(|status| status.contains("Talked about in another window")),
+        "the status row does not say the note is talked about elsewhere:\n{dump}"
     );
 
     // Given up, it is the reader's again: they closed it in the other
@@ -7857,7 +7890,11 @@ fn a_note_s_conversation_left_without_a_word_keeps_nothing() {
         .remembered()
         .and_then(|remembered| {
             remembered
-                .get(&obelus_agent::chats::ChatId::Note(id), "fake")
+                .get(
+                    &obelus_agent::chats::ChatId::Note(id),
+                    "fake",
+                    scratch.path(),
+                )
                 .cloned()
         });
     assert!(
@@ -8380,6 +8417,225 @@ fn another_agents_conversations_get_a_tab_and_cannot_be_taken_up() {
     );
 }
 
+/// A conversation had in another checkout of the project is listed and
+/// cannot be taken up, and says which checkout it was.
+///
+/// The table is every worktree's, because the notes are; the agent is told
+/// one directory and keeps a conversation under it, so asked for it from
+/// another it answers that there is no such thing.
+///
+/// Broken deliberately by taking `there.is_none() &&` off `enabled` in
+/// `App::conversation_rows`: the other checkout's row is offered.
+#[test]
+fn another_checkouts_conversations_are_listed_and_cannot_be_taken_up() {
+    let scratch = support::Scratch::new("agent-conversation-checkouts");
+    let (mut app, _events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    remember_a_conversation(&scratch, "fake", "s-here", "here", Some(2_000));
+    obelus_agent::acp::sessions::change(scratch.path(), None, |remembered| {
+        remembered.put(
+            &obelus_agent::chats::ChatId::Loose("s-there".to_string()),
+            "fake",
+            &scratch.path().join("worktree-two"),
+            obelus_agent::acp::sessions::Kept {
+                session: "s-there".to_string(),
+                title: Some("there".to_string()),
+                told: None,
+                introduced: false,
+                last: Some(1_000),
+            },
+        );
+    });
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
+    // Whether the row names the other checkout, beside when it was said.
+    let rows: Vec<(String, bool, bool)> = listed_conversations(&app)
+        .into_iter()
+        .map(|item| {
+            (
+                item.label.clone(),
+                item.trailing
+                    .as_deref()
+                    .is_some_and(|trailing| trailing.starts_with("worktree-two  ")),
+                item.enabled,
+            )
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("here".to_string(), false, true),
+            ("there".to_string(), true, false),
+        ],
+        "the other checkout's conversation is missing, offered, or not said to be elsewhere"
+    );
+    assert!(
+        app.picker()
+            .and_then(|picker| picker.what_about())
+            .is_some_and(|said| said.contains("checkout it was had in")),
+        "a row that cannot be chosen says nothing about why"
+    );
+}
+
+/// A note's conversation from another checkout is not asked for here, and
+/// is still there for the checkout that had it.
+///
+/// Asked for, the agent refused it -- it keeps a conversation under the
+/// directory it was told -- and the refusal forgot it out of the table
+/// every worktree reads: one press of the key in one worktree, and the
+/// conversation was gone from the other as well.
+///
+/// Broken deliberately by having `Remembered::get` answer with any
+/// checkout's row: `session/resume s-there` is in the log.
+#[test]
+fn a_notes_conversation_from_another_checkout_is_not_asked_for() {
+    let scratch = support::Scratch::new("agent-note-other-checkout");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()),
+        "[[todo]]\nid = \"0123456W\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+    let there = scratch.path().join("worktree-two");
+    let id = obelus_git::todo::NoteId::read("0123456W").expect("a name");
+    obelus_agent::acp::sessions::change(
+        scratch.path(),
+        Some(std::slice::from_ref(&id)),
+        |remembered| {
+            remembered.put(
+                &obelus_agent::chats::ChatId::Note(id.clone()),
+                "fake",
+                &there,
+                obelus_agent::acp::sessions::Kept {
+                    session: "s-there".to_string(),
+                    title: None,
+                    told: None,
+                    introduced: false,
+                    last: Some(1_700_000_000),
+                },
+            );
+        },
+    );
+    let log = scratch.path().join("asked.log");
+
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &[
+            "tests/fixtures/fake-agent.sh".to_string(),
+            "only-resumes".to_string(),
+            format!("log={}", log.display()),
+        ],
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    assert_eq!(
+        app.talked_about().first(),
+        Some(&obelus_component::todo::Talked::Not),
+        "the note says it has a conversation this checkout cannot take up"
+    );
+    talk_about_the_note(&mut app);
+    pump(&mut app, &events, "a session for the note", |app| {
+        app.chat_session_for_test().is_some() && app.talking() == obelus_agent::Talking::Ready
+    });
+
+    let asked = std::fs::read_to_string(&log).unwrap_or_default();
+    assert!(
+        !asked.contains("s-there"),
+        "another checkout's conversation was asked for here:\n{asked}"
+    );
+    assert!(
+        obelus_agent::acp::sessions::read(scratch.path())
+            .remembered()
+            .expect("the table")
+            .get(&obelus_agent::chats::ChatId::Note(id), "fake", &there)
+            .is_some_and(|kept| kept.session == "s-there"),
+        "the other checkout's conversation was forgotten"
+    );
+}
+
+/// A note locked from another checkout says which one, on the status row.
+///
+/// The lock says the keys will do nothing; a reader with three worktrees of
+/// one project open needs to know which of them to go to. The claims are
+/// every worktree's, like the notes, so the holder writes where it is.
+///
+/// Broken deliberately by answering `Holder::AnotherWindow` for every note
+/// in `App::which_notes_are_elsewhere`: the row names no checkout.
+#[test]
+fn a_note_locked_from_another_checkout_says_which() {
+    let scratch = support::Scratch::new("agent-note-held-there");
+    let git = |arguments: &[&str]| {
+        let outcome = std::process::Command::new("git")
+            .arg("-C")
+            .arg(scratch.path())
+            .args(arguments)
+            .env("GIT_AUTHOR_NAME", "obelus")
+            .env("GIT_AUTHOR_EMAIL", "obelus@example.invalid")
+            .env("GIT_COMMITTER_NAME", "obelus")
+            .env("GIT_COMMITTER_EMAIL", "obelus@example.invalid")
+            .output()
+            .expect("running git");
+        assert!(outcome.status.success(), "git {arguments:?} failed");
+    };
+    git(&["init", "--quiet", "--initial-branch=master"]);
+    std::fs::write(scratch.path().join("one.rs"), "fn main() {}\n").expect("a file");
+    // A worktree needs a commit to branch from.
+    git(&["add", "one.rs"]);
+    git(&["commit", "--quiet", "-m", "committed"]);
+    // Short, because the status row drops the sentence whole where it does
+    // not fit beside the count.
+    let there = scratch
+        .path()
+        .with_file_name(format!("obelus-two-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&there);
+    git(&[
+        "worktree",
+        "add",
+        "--quiet",
+        "-b",
+        "elsewhere",
+        there.to_str().expect("a path"),
+    ]);
+
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()),
+        "[[todo]]\nid = \"0123456T\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+    let which = obelus_agent::chats::ChatId::Note(
+        obelus_git::todo::NoteId::read("0123456T").expect("a name"),
+    );
+    let _held = obelus_agent::chats::claim(&there, &which).expect("the other checkout's claim");
+
+    let (mut app, _events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    the_claims_changed(&mut app, scratch.path(), &which);
+    let text = screen(&mut app);
+    let _ = std::fs::remove_dir_all(&there);
+
+    let name = there
+        .file_name()
+        .expect("a name")
+        .to_string_lossy()
+        .into_owned();
+    let status = text.lines().last().unwrap_or_default();
+    assert!(
+        status.contains(&format!("Talked about in {name}")),
+        "the status row does not say which checkout has the note:\n{text}"
+    );
+}
+
 /// With no agent chosen, the tab a new conversation starts on says so.
 ///
 /// The agent in use always has a tab, and with none chosen its name is no
@@ -8708,6 +8964,7 @@ fn the_notes_hear_a_conversation_written_down_by_another_window() {
                 obelus_git::todo::NoteId::read("0123456V").expect("a name"),
             ),
             "fake",
+            scratch.path(),
             obelus_agent::acp::sessions::Kept {
                 session: "s-theirs".to_string(),
                 title: None,
@@ -8907,6 +9164,7 @@ fn the_notes_hear_the_table_through_a_watch_they_took_themselves() {
                 obelus_git::todo::NoteId::read("0123456Y").expect("a name"),
             ),
             "fake",
+            scratch.path(),
             obelus_agent::acp::sessions::Kept {
                 session: "s-theirs".to_string(),
                 title: None,

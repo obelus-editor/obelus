@@ -49,6 +49,13 @@
 //! row would drop the session of every conversation open, including the
 //! one the reader is standing in.
 //!
+//! **And to the checkout it was had in.** The agent is told a directory and
+//! keeps the conversation under it, so a worktree of this project is
+//! another place it cannot be taken up from. Rows, not tabs: the reader
+//! has one agent and several checkouts far more often than the other way
+//! round, and a row that names `obelus` beside its time is a row that says
+//! where to go.
+//!
 //! **Which conversations there are is a snapshot; which of them can be
 //! taken up is not.** The rows are made once, as the list opens, because
 //! making them reads the table and the notes and walks the claims -- and
@@ -231,6 +238,13 @@ struct Listed {
     session: String,
     /// Whether this Obelus already has it open, and where.
     open: Option<DocumentId>,
+    /// Whether it was had in another checkout of this project, which is
+    /// the only one its agent can take it up in.
+    ///
+    /// Such a row is about a note this checkout may be talking about too,
+    /// in a conversation of its own: so it is never the one open here, and
+    /// a lock on the note is not a lock on it.
+    there: bool,
 }
 
 impl App {
@@ -259,7 +273,7 @@ impl App {
         // take up.
         let mut agents: Vec<String> = Vec::new();
         let mut when: HashMap<String, i64> = HashMap::new();
-        for (_, agent, kept) in remembered.all() {
+        for (_, agent, _, kept) in remembered.all() {
             let last = kept.last.unwrap_or(i64::MIN);
             let seen = when.entry(agent.to_string()).or_insert(i64::MIN);
             *seen = (*seen).max(last);
@@ -372,6 +386,9 @@ impl App {
             true if self.conversing.unreadable => {
                 "Obelus cannot read what it wrote down about this project.".to_string()
             }
+            true if self.conversing.rows.iter().any(|listed| listed.there) => {
+                "A conversation can only be taken up in the checkout it was had in.".to_string()
+            }
             true => String::new(),
             false if in_use.is_empty() => {
                 "No agent is chosen, and a conversation can only be taken up by the agent that had it."
@@ -439,10 +456,11 @@ impl App {
         let today = jiff::Timestamp::now().to_zoned(zone.clone()).date();
         let mut rows: Vec<(Option<i64>, Listed, PickerItem)> = remembered
             .all()
-            .filter(|(_, agent, _)| *agent == whose)
-            .map(|(which, _, kept)| {
-                let open = self.conversation_open(which);
-                let elsewhere = open.is_none() && held.contains(which);
+            .filter(|(_, agent, _, _)| *agent == whose)
+            .map(|(which, _, tree, kept)| {
+                let there = (tree != self.working_directory).then_some(tree);
+                let open = self.conversation_open_here(which, there.is_some());
+                let elsewhere = there.is_none() && open.is_none() && held.contains_key(which);
                 // What the agent called it, then what the note says, then
                 // nothing anybody wrote: a conversation an agent never
                 // titled and no note names has only the fact that it
@@ -464,6 +482,23 @@ impl App {
                 // nothing at all for a conversation about no note, which
                 // is a row one line shorter rather than a line saying so.
                 let detail = about.filter(|about| *about != label);
+                // Which checkout, by the name a reader gave its directory:
+                // what tells two worktrees of one project apart is the
+                // last part of the path, and the rest is the same for both.
+                // Beside the time rather than under the title, because the
+                // row under it is the note's and carries the note's box.
+                let when = kept.last.map(|last| obelus_git::how_long_ago(last, now));
+                let trailing = match there.map(|tree| {
+                    tree.file_name()
+                        .unwrap_or(tree.as_os_str())
+                        .to_string_lossy()
+                }) {
+                    Some(checkout) => Some(match when {
+                        Some(when) => format!("{checkout}  {when}"),
+                        None => checkout.to_string(),
+                    }),
+                    None => when,
+                };
                 let item = PickerItem {
                     // A sentence, which loses its end where it has to lose
                     // anything: cut from the front, a title is the half of
@@ -473,12 +508,13 @@ impl App {
                     icon: None,
                     label,
                     detail,
-                    trailing: kept.last.map(|last| obelus_git::how_long_ago(last, now)),
+                    trailing,
                     changed: None,
-                    // Both halves say the same thing in the ink: a row that
-                    // belongs to another agent cannot be taken up, and one
-                    // another Obelus is in is not this window's to enter.
-                    enabled: mine && !elsewhere,
+                    // All three say the same thing in the ink: a row that
+                    // belongs to another agent or another checkout cannot
+                    // be taken up, and one another Obelus is in is not this
+                    // window's to enter.
+                    enabled: mine && there.is_none() && !elsewhere,
                     colours: None,
                     status: None,
                     depth: 0,
@@ -501,6 +537,7 @@ impl App {
                         which: which.clone(),
                         session: kept.session.clone(),
                         open,
+                        there: there.is_some(),
                     },
                     item,
                 )
@@ -566,11 +603,11 @@ impl App {
             .rows
             .iter()
             .map(|listed| {
-                let open = self.conversation_open(&listed.which);
-                let elsewhere = open.is_none() && held.contains(&listed.which);
+                let open = self.conversation_open_here(&listed.which, listed.there);
+                let elsewhere = !listed.there && open.is_none() && held.contains_key(&listed.which);
                 Said {
                     marker: self.listed_mark(open, elsewhere),
-                    enabled: mine && !elsewhere,
+                    enabled: mine && !listed.there && !elsewhere,
                 }
             })
             .collect();
@@ -587,6 +624,20 @@ impl App {
                 .map_or(Remark::Keep, |now| Remark::Now(now.clone())),
             _ => Remark::Keep,
         });
+    }
+
+    /// Where this Obelus has a row's conversation open, which for a row from
+    /// another checkout is nowhere: what is open here about the same note is
+    /// this checkout's own conversation about it.
+    fn conversation_open_here(
+        &self,
+        which: &obelus_agent::chats::ChatId,
+        there: bool,
+    ) -> Option<DocumentId> {
+        match there {
+            true => None,
+            false => self.conversation_open(which),
+        }
     }
 
     /// What the column in front of a conversation says about it: that it
@@ -773,9 +824,12 @@ impl App {
             .is_some_and(|directory| path.parent() == Some(directory.as_path()))
     }
 
-    /// Which conversations somebody has open, as Obelus last looked.
+    /// Which conversations somebody has open, as Obelus last looked, and
+    /// which checkout holds each where its claim says.
     #[must_use]
-    pub fn held_now(&self) -> &std::collections::BTreeSet<obelus_agent::chats::ChatId> {
+    pub fn held_now(
+        &self,
+    ) -> &std::collections::BTreeMap<obelus_agent::chats::ChatId, Option<std::path::PathBuf>> {
         &self.held_kept
     }
 

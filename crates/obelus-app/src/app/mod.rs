@@ -608,7 +608,9 @@ pub struct App {
     /// reports that close. See `obelus_watch` for the one Access event it
     /// lets through, and `obelus_agent::chats` for why Obelus's own looking
     /// is a read.
-    held_kept: std::collections::BTreeSet<obelus_agent::chats::ChatId>,
+    ///
+    /// And which checkout holds each, where its claim says.
+    held_kept: std::collections::BTreeMap<obelus_agent::chats::ChatId, Option<PathBuf>>,
     /// Who last changed each line, per file that has been asked about.
     ///
     /// Kept rather than replaced, because a reader goes back and forth
@@ -872,7 +874,7 @@ impl App {
             watching: [const { conversations::Watched::new() }; conversations::WATCHED],
             sessions_kept: None,
             notes_kept: None,
-            held_kept: std::collections::BTreeSet::new(),
+            held_kept: std::collections::BTreeMap::new(),
             blames: std::collections::HashMap::new(),
             committed: None,
             asking_blame: std::collections::HashSet::new(),

@@ -23,6 +23,12 @@
 //! process that died is a file nobody holds, and asking for the lock is what
 //! says which it is.
 //!
+//! What the file *says* is which checkout holds it, so that a note locked
+//! from another worktree can say which one -- the table of conversations is
+//! every worktree's and so is this directory. Written by the holder once the
+//! lock is its own, so it is only ever believed beside a lock: a file left
+//! by an Obelus that died still names a checkout, and nobody holds it.
+//!
 //! **A refused claim is drawn, never said.** Nothing goes on the status row
 //! when the key is refused. The lock beside the note says it, and the foot
 //! says it again by not offering `Talk` there: the reader is told before
@@ -32,11 +38,15 @@
 //! *again* when the row is chosen, because the list was built a moment ago
 //! and another Obelus may have walked in since. Where it has, the list stays
 //! open and the row goes dim under the reader, which is the answer; nothing
-//! happening at all is a key that looks broken.
+//! happening at all is a key that looks broken. What the status row says,
+//! while the caret is in such a note, is where it is being talked about --
+//! `Talked about in obelus-worktree-1` -- which is where the mode goes on a
+//! file's row and the same kind of fact.
 
 use std::{
-    collections::BTreeSet,
+    collections::BTreeMap,
     fs::File,
+    io::{Read as _, Write as _},
     path::{Path, PathBuf},
 };
 
@@ -173,6 +183,15 @@ pub fn claim(root: &Path, which: &ChatId) -> Option<Claim> {
     if held_by_somebody_else(&file) {
         return None;
     }
+    // After the lock rather than before, so that nothing is said over what
+    // the holder wrote: until here, this file was somebody else's to speak
+    // for. A claim that could not say where it is held is still a claim.
+    if let Err(error) = file
+        .set_len(0)
+        .and_then(|()| (&file).write_all(root.to_string_lossy().as_bytes()))
+    {
+        tracing::warn!(%error, path = %path.display(), "a claim does not say where it is held");
+    }
     Some(Claim {
         path,
         leave_the_file: false,
@@ -180,28 +199,41 @@ pub fn claim(root: &Path, which: &ChatId) -> Option<Claim> {
     })
 }
 
-/// Every conversation in this project somebody has open.
+/// Every conversation in this project somebody has open, and which checkout
+/// has it where the claim says.
 ///
 /// Including this Obelus's own: a lock is about the open file and not about
 /// the process, so a second look from the same process finds its own claim
 /// in the way. Which of them are this one's is a question this cannot answer
 /// and the caller already knows -- it is holding them.
+///
+/// `None` for a claim that says nothing: one caught between being taken and
+/// being written, and on Windows every one, where the holder's lock is on
+/// the bytes this would read.
 #[must_use]
-pub fn held(root: &Path) -> BTreeSet<ChatId> {
+pub fn held(root: &Path) -> BTreeMap<ChatId, Option<PathBuf>> {
     let Some(directory) = directory(root) else {
-        return BTreeSet::new();
+        return BTreeMap::new();
     };
     let Ok(entries) = std::fs::read_dir(&directory) else {
         // No conversation has ever been opened in this project, which is
         // where every project starts.
-        return BTreeSet::new();
+        return BTreeMap::new();
     };
     entries
         .flatten()
         .filter_map(|entry| {
             let which = ChatId::read(entry.file_name().to_str()?)?;
-            let file = File::options().read(true).open(entry.path()).ok()?;
-            held_by_somebody_else(&file).then_some(which)
+            let mut file = File::options().read(true).open(entry.path()).ok()?;
+            // Read before the lock is asked about, because asking takes it
+            // for a moment and Windows would refuse the read while it is.
+            let mut said = String::new();
+            let tree = file
+                .read_to_string(&mut said)
+                .ok()
+                .filter(|_| !said.is_empty())
+                .map(|_| PathBuf::from(said));
+            held_by_somebody_else(&file).then_some((which, tree))
         })
         .collect()
 }
@@ -319,8 +351,9 @@ pub(crate) fn held_by_somebody_else(file: &File) -> bool {
             file.as_raw_handle(),
             LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
             0,
-            // The whole file, which has nothing in it: what is being locked
-            // is the name, and a range is how this platform spells one.
+            // The whole file: what is being locked is the name, and a range
+            // is how this platform spells one. Which is also why another
+            // process cannot read which checkout holds it -- see `held`.
             u32::MAX,
             u32::MAX,
             &raw mut overlapped,
@@ -357,6 +390,38 @@ mod tests {
     ///
     /// Broken deliberately by having `claim` answer `Some` without asking
     /// `held_by_somebody_else`: the second one comes back held as well.
+    /// A claim says which checkout holds it, and one that is refused says
+    /// nothing over it.
+    ///
+    /// The refused one is asked from the same project spelled another way
+    /// -- `root/.` names the same directory of claims -- which is what a
+    /// second worktree is to this file: somebody else's checkout asking.
+    ///
+    /// Broken deliberately by writing before `held_by_somebody_else` is
+    /// asked in `claim`: the refused claim writes `root/.` over the holder.
+    #[test]
+    fn a_claim_says_which_checkout_holds_it() {
+        let root = scratch("says-where");
+        let note = ChatId::Note(NoteId::read("0123456B").expect("a name"));
+
+        let _held = claim(&root, &note).expect("nobody had it");
+        assert!(
+            claim(&root.join("."), &note).is_none(),
+            "a second checkout was let into the conversation"
+        );
+        // As written, rather than as paths: a path compares `root/.` and
+        // `root` equal, which is the one difference this is looking for.
+        assert_eq!(
+            held(&root)
+                .get(&note)
+                .cloned()
+                .flatten()
+                .map(PathBuf::into_os_string),
+            Some(root.clone().into_os_string()),
+            "the claim does not say which checkout holds it"
+        );
+    }
+
     #[test]
     fn one_note_has_one_conversation_open() {
         let root = scratch("one-at-a-time");
@@ -367,7 +432,7 @@ mod tests {
             claim(&root, &note).is_none(),
             "a second Obelus was let into the conversation"
         );
-        assert!(held(&root).contains(&note), "the claim does not show");
+        assert!(held(&root).contains_key(&note), "the claim does not show");
 
         // And giving it up gives it up: a reader who closes a conversation
         // in one window can open it in the next.
@@ -409,7 +474,7 @@ mod tests {
             Some(loose.clone()),
             "the name does not survive the filesystem"
         );
-        assert!(held(&root).contains(&loose), "the claim does not show");
+        assert!(held(&root).contains_key(&loose), "the claim does not show");
         drop(first);
         assert!(held(&root).is_empty(), "the claim outlived it");
     }
@@ -449,7 +514,7 @@ mod tests {
             held_by_somebody_else(&looking),
             "a claim cannot be seen without write access, so looking would announce itself"
         );
-        assert!(held(&root).contains(&which), "the walk does not see it");
+        assert!(held(&root).contains_key(&which), "the walk does not see it");
         drop(held_by_them);
         assert!(held(&root).is_empty(), "the claim outlived its holder");
     }

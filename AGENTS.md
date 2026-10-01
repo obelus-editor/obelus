@@ -458,7 +458,10 @@ when either moves.
 project -- the notes, which conversation is about which note -- is keyed by
 `obelus_git::project` (git's `common_dir`, canonicalised) and nothing else;
 what a tree *shows*, like its branch, is its own (`head_of_the_tree`). The
-test is whether two worktrees should agree about the answer.
+test is whether two worktrees should agree about the answer. A conversation
+is the one thing kept by project that a tree cannot share, because the agent
+keeps it under the directory it was told -- so its row says which
+(`acp::sessions`).
 
 *A conversation is not a thing two of them may have open at once.* The queue
 that keeps Obelus to one prompt turn lives in a process, so a conversation is
@@ -509,7 +512,8 @@ crates/
                       its session, and saying something makes it the reader's
                       (app/talking); what a reader said outlives the window,
                       newest first, a conversation belongs to the agent that
-                      had it, and a watch is settled from what is open
+                      had it and to the checkout it was had in, and a watch
+                      is settled from what is open
                       (app/conversations); what an agent offers is asked of it,
                       not remembered (app/agents); a note that has gone takes
                       no conversation off the screen (app/noting); a key that
@@ -616,7 +620,8 @@ crates/
                       lock a conversation is (lib); a conversation is claimed
                       by what names it, and one Obelus at a time has it, a
                       claim is held by a writer and looked at through a read,
-                      and a refused claim is drawn, never said (chats); why the
+                      says which checkout holds it, and a refused claim is
+                      drawn, never said (chats); why the
                       two directions are not symmetrical, the one ordering the
                       protocol does not promise, what waiting on the reader
                       costs the whole connection, what an agent asking
