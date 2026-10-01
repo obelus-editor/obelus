@@ -2457,14 +2457,56 @@ fn a_commit_opens_into_the_files_it_changed() {
                 path: std::path::PathBuf::from("deep/new.rs"),
                 status: FileStatus::New,
                 was: None,
+                changed: Some((1, 0)),
             },
             history::Touched {
                 path: std::path::PathBuf::from("file.rs"),
                 status: FileStatus::Changed,
                 was: None,
+                changed: Some((1, 0)),
             },
         ],
         "not the files it changed, and only the files"
+    );
+}
+
+/// The first commit opens into its files too, however deep they are. It has
+/// no parent to diff against, and its tree was listed instead -- which is
+/// the top level only, so a directory was a row nobody could open and the
+/// files in it were not on the list.
+///
+/// Broken by going back to `tree.iter()` for a commit with no parent: the
+/// list is `deep` and `file.rs`, and this fails.
+#[test]
+fn the_first_commit_opens_into_every_file_in_it() {
+    use obelus_git::{FileStatus, history};
+
+    let repository = Repository::new("history-first-files", "one\n");
+    // Into the first commit itself, so there is still no parent.
+    std::fs::create_dir_all(repository.directory().join("deep")).expect("a directory");
+    std::fs::write(repository.directory().join("deep/inner.rs"), "a\nb\n").expect("the file");
+    repository.run(&["add", "deep/inner.rs"]);
+    repository.run(&["commit", "--quiet", "--amend", "-m", "committed"]);
+
+    let root = repository.directory();
+    let head = history::of(&root, None, 1);
+    assert_eq!(
+        history::files_in(&root, head[0].id),
+        [
+            history::Touched {
+                path: std::path::PathBuf::from("deep/inner.rs"),
+                status: FileStatus::New,
+                was: None,
+                changed: Some((2, 0)),
+            },
+            history::Touched {
+                path: std::path::PathBuf::from("file.rs"),
+                status: FileStatus::New,
+                was: None,
+                changed: Some((1, 0)),
+            },
+        ],
+        "not every file the first commit brought in"
     );
 }
 
@@ -2501,6 +2543,7 @@ fn a_file_a_commit_moved_is_one_row_that_says_where_it_was() {
             path: std::path::PathBuf::from("deep/moved.rs"),
             status: FileStatus::Changed,
             was: Some(std::path::PathBuf::from("file.rs")),
+            changed: Some((1, 0)),
         }],
         "a move read as a deletion and an unrelated arrival"
     );
@@ -2799,6 +2842,55 @@ fn a_commit_opens_its_files_under_it() {
     );
 }
 
+/// Each file a commit opens into says how much the commit changed it, the
+/// way the changed files do: a commit's files are read for which of them to
+/// look at first. The first commit of a project has no tree before it, and
+/// counts all the same.
+///
+/// Broken by putting `changed: None` back on the file rows in
+/// `show_history`: this fails.
+#[test]
+fn a_commits_files_say_how_much_each_changed() {
+    use crossterm::event::KeyCode;
+    use obelus_app::app::App;
+    use obelus_buffer::Buffer;
+
+    let repository = Repository::new("history-file-counts", "one\n");
+    std::fs::write(repository.directory().join("other.rs"), "a\nb\n").expect("the other");
+    // `file.rs`: one line replaced and two added. `other.rs`: two arriving.
+    repository.write("uno\ntwo\nthree\n");
+    repository.commit_all("touching two");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 70, 16);
+    support::press_function(&mut app, 10);
+    support::read_history(&mut app, &events);
+    support::press(&mut app, KeyCode::Enter);
+
+    let row = |app: &mut App, name: &str| {
+        let dump = support::render(app, 70, 16);
+        let text = support::text_block(&dump);
+        text.lines()
+            .find(|row| row.contains(name))
+            .unwrap_or_else(|| panic!("{name} is not in the list:\n{text}"))
+            .to_string()
+    };
+    let file = row(&mut app, "file.rs");
+    assert!(file.contains("+3 \u{2212}1"), "{file}");
+    let other = row(&mut app, "other.rs");
+    assert!(other.contains("+2 \u{2212}0"), "{other}");
+
+    // The first commit, which made `file.rs` with one line in it.
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    let first = row(&mut app, "file.rs");
+    assert!(first.contains("+1 \u{2212}0"), "{first}");
+}
+
 /// A line written down against one version of a file is found again in the
 /// next, which is what a note made while reading needs: it was put beside
 /// something, and the something has been moving ever since.
@@ -3010,6 +3102,31 @@ fn the_message_says_how_much_the_commit_changed_this_file() {
         support::colour_under(&dump, '\u{2212}'),
         support::spelled(DARK.change_removed),
         "what went is not in the colour a removed line wears:\n{dump}"
+    );
+}
+
+/// The commit that brought a file in says so too: every line of it is what
+/// that commit did. There is no version before it to compare with, and the
+/// count was once left off for that reason -- which read as a commit that
+/// had done nothing to the file at all.
+///
+/// Broken by putting the `?` back on `text_before` in `changed_at`: the
+/// header loses its count and this fails.
+#[test]
+fn the_commit_that_added_a_file_counts_all_of_it() {
+    // Nothing committed but the one commit that made the file.
+    let repository = Repository::new("history-added", "one\ntwo\nthree\n");
+    let (mut app, _events) = previewing_it_at_its_commit(&repository);
+
+    let dump = support::render(&mut app, 64, 24);
+    let text = support::previewed(&dump);
+    let head = text
+        .lines()
+        .find(|row| row.contains("just now"))
+        .unwrap_or_else(|| panic!("no header row:\n{text}"));
+    assert!(
+        head.contains("+3") && head.contains("\u{2212}0"),
+        "not every line counted as arriving:\n{head}"
     );
 }
 
@@ -3461,6 +3578,54 @@ fn a_commits_version_is_marked_against_the_commit_before_it() {
         changes.marker_at(LineNumber::new(2)),
         None,
         "a line changed by a later commit is marked against this one"
+    );
+}
+
+/// The commit that brought a file in marks every line of it as added, in the
+/// preview and in the file opened at that commit: there is no version before
+/// it, and every line is what that commit did. The margin once said nothing
+/// there, beside a count over the message saying the opposite.
+///
+/// Broken by putting the `?` back on `text_before` in `App::read`'s commit
+/// arm, and separately by `history.rs` handing back `text_before` as it is:
+/// each fails here.
+#[test]
+fn the_commit_that_added_a_file_marks_all_of_it() {
+    use crossterm::event::KeyCode;
+    use obelus_app::app::App;
+    use obelus_text::{coordinates::LineNumber, marker::Marker};
+
+    // Nothing but the commit that made the file.
+    let repository = Repository::new("history-margin-added", "one\ntwo\nthree\n");
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&repository.path()).expect("opening it"),
+    ]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 60, 24);
+    support::press_function(&mut app, 10);
+    support::read_history(&mut app, &events);
+    // Its files, and the one of them.
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Down);
+    let _ = support::render(&mut app, 60, 24);
+
+    let all_added = |changes: &obelus_git::Changes| {
+        (0..3).all(|line| changes.marker_at(LineNumber::new(line)) == Some(Marker::Added))
+    };
+    let preview = app.preview().expect("a preview of the file at that commit");
+    assert!(
+        preview.changes.is_some_and(all_added),
+        "the preview does not mark what the commit added: {:?}",
+        preview.changes
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    let _ = support::render(&mut app, 60, 24);
+    assert!(
+        app.changes().is_some_and(all_added),
+        "the file at that commit does not mark what it added: {:?}",
+        app.changes()
     );
 }
 

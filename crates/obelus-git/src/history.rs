@@ -551,39 +551,36 @@ pub fn files_in(within: &Path, id: gix::ObjectId) -> Vec<Touched> {
     let Ok(tree) = commit.tree() else {
         return Vec::new();
     };
+    // The first commit of a project is diffed against the empty tree, so
+    // everything in it arrives -- through the same walk as every other
+    // commit. Listing its tree instead gave the top level only: a directory
+    // was a row nobody could open, and the files in it were not there.
     let parent = commit
         .parent_ids()
         .next()
         .and_then(|parent| repository.find_commit(parent.detach()).ok())
-        .and_then(|parent| parent.tree().ok());
+        .and_then(|parent| parent.tree().ok())
+        .unwrap_or_else(|| repository.empty_tree());
 
     let mut changed: Vec<Touched> = Vec::new();
-    match parent {
-        Some(parent) => {
-            if let Ok(mut changes) = parent.changes() {
-                changes.options(|options| {
-                    options.track_rewrites(Some(looking_for_moves()));
-                });
-                let _ = changes.for_each_to_obtain_tree(&tree, |change| {
-                    if let Some(file) = file_of(&change) {
-                        changed.push(file);
-                    }
-                    // Continue is what walks *into* a changed directory, so
-                    // the list is of files however deep they are.
-                    Ok::<_, std::convert::Infallible>(std::ops::ControlFlow::Continue(()))
-                });
+    if let Ok(mut changes) = parent.changes() {
+        changes.options(|options| {
+            options.track_rewrites(Some(looking_for_moves()));
+        });
+        let _ = changes.for_each_to_obtain_tree(&tree, |change| {
+            if let Some(mut file) = file_of(&change) {
+                // Counted here, from the blobs the walk already has in hand,
+                // for the reason `counted_in` is: asking `text_before` and
+                // `text_at` per row reopens the repository twice for every
+                // file.
+                file.changed = texts_of(&change)
+                    .map(|(was, now)| super::change::counted(&super::change::drawn(&was, &now)));
+                changed.push(file);
             }
-        }
-        // The first commit of a project, where everything in it is new.
-        None => {
-            for entry in tree.iter().flatten() {
-                changed.push(Touched {
-                    path: PathBuf::from(entry.inner.filename.to_string()),
-                    status: FileStatus::New,
-                    was: None,
-                });
-            }
-        }
+            // Continue is what walks *into* a changed directory, so the list
+            // is of files however deep they are.
+            Ok::<_, std::convert::Infallible>(std::ops::ControlFlow::Continue(()))
+        });
     }
     changed.sort_by(|left, right| left.path.cmp(&right.path));
     changed
@@ -603,6 +600,9 @@ pub struct Touched {
     /// What it was called before, where this commit is the one that moved
     /// it. `None` for a file that stayed where it was.
     pub was: Option<PathBuf>,
+    /// How many lines the commit added to it and took away. `None` for what
+    /// is not text, which has no lines to count.
+    pub changed: Option<(usize, usize)>,
 }
 
 /// One change from a tree diff, or `None` for a change to a directory.
@@ -652,6 +652,7 @@ fn file_of(change: &gix::object::tree::diff::Change<'_, '_, '_>) -> Option<Touch
         path: PathBuf::from(location.to_string()),
         status,
         was,
+        changed: None,
     })
 }
 
@@ -688,7 +689,7 @@ pub fn counted_in(within: &Path, id: gix::ObjectId) -> Option<(usize, usize)> {
         options.track_rewrites(Some(looking_for_moves()));
     });
     let _ = changes.for_each_to_obtain_tree(&tree, |change| {
-        if let Some((was, now)) = texts_of(change) {
+        if let Some((was, now)) = texts_of(&change) {
             let (up, down) = super::change::counted(&super::change::drawn(&was, &now));
             added += up;
             removed += down;
@@ -699,7 +700,7 @@ pub fn counted_in(within: &Path, id: gix::ObjectId) -> Option<(usize, usize)> {
 }
 
 /// What a change had on either side of it, where both sides are text.
-fn texts_of(change: gix::object::tree::diff::Change<'_, '_, '_>) -> Option<(String, String)> {
+fn texts_of(change: &gix::object::tree::diff::Change<'_, '_, '_>) -> Option<(String, String)> {
     use gix::object::tree::diff::Change;
     let text = |id: gix::Id<'_>| {
         id.object()
@@ -707,20 +708,20 @@ fn texts_of(change: gix::object::tree::diff::Change<'_, '_, '_>) -> Option<(Stri
             .and_then(|object| String::from_utf8(object.data.clone()).ok())
     };
     let (was, now, mode) = match change {
-        Change::Addition { id, entry_mode, .. } => (None, Some(id), entry_mode),
-        Change::Deletion { id, entry_mode, .. } => (Some(id), None, entry_mode),
+        Change::Addition { id, entry_mode, .. } => (None, Some(*id), *entry_mode),
+        Change::Deletion { id, entry_mode, .. } => (Some(*id), None, *entry_mode),
         Change::Modification {
             previous_id,
             id,
             entry_mode,
             ..
-        } => (Some(previous_id), Some(id), entry_mode),
+        } => (Some(*previous_id), Some(*id), *entry_mode),
         Change::Rewrite {
             source_id,
             id,
             entry_mode,
             ..
-        } => (Some(source_id), Some(id), entry_mode),
+        } => (Some(*source_id), Some(*id), *entry_mode),
     };
     if mode.is_tree() {
         return None;

@@ -492,7 +492,9 @@ impl App {
                             .as_ref()
                             .map(|was| format!("\u{2190} {}", was.display())),
                         trailing: None,
-                        changed: None,
+                        // What the commit did to it, which is what a reader
+                        // scanning a commit's files picks the first one by.
+                        changed: touched.changed,
                         value: PickerValue::CommitFile {
                             id: commit.id,
                             path: path.clone(),
@@ -770,12 +772,14 @@ impl App {
     /// from -- so the number over the file and the marks down its side are
     /// two readings of one diff rather than two diffs.
     ///
-    /// `None` where there is nothing to compare: a commit that added the
-    /// file has no "before", and it is honest to say nothing rather than to
-    /// count every line as new.
+    /// A commit that added the file has no "before", and every line of it is
+    /// what that commit did: the same answer the commit's own count and the
+    /// list of changed files give a file that was not there. Saying nothing
+    /// read as a commit that changed nothing.
     pub(super) fn changed_at(&self, id: gix::ObjectId, path: &Path) -> Option<(usize, usize)> {
         let full = self.working_directory.join(path);
-        let before = obelus_git::history::text_before(&self.working_directory, id, &full)?;
+        let before = obelus_git::history::text_before(&self.working_directory, id, &full)
+            .unwrap_or_default();
         let after = obelus_git::history::text_at(&self.working_directory, id, &full)?;
         Some(obelus_git::change::counted(&obelus_git::change::drawn(
             &before, &after,

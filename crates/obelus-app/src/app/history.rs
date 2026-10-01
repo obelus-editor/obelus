@@ -319,7 +319,13 @@ impl App {
             .is_none_or(|committed| committed.of != asked)
         {
             let text = match asked.1 {
-                Some(id) => obelus_git::history::text_before(&self.working_directory, id, &asked.0),
+                // A commit that added the file is compared with nothing,
+                // which makes every line of it what that commit did -- the
+                // same answer the count over its message gives.
+                Some(id) => Some(
+                    obelus_git::history::text_before(&self.working_directory, id, &asked.0)
+                        .unwrap_or_default(),
+                ),
                 None => obelus_git::head_text(&asked.0),
             };
             self.committed = Some(crate::app::Committed { of: asked, text });
@@ -329,9 +335,8 @@ impl App {
             .as_ref()
             .and_then(|committed| committed.text.as_deref());
         // No text to compare with is every way this can have no answer --
-        // not a repository, a file git has never heard of, no commits yet,
-        // a commit that added the file -- and they all mean the same thing
-        // in the margin: nothing to say.
+        // not a repository, a file git has never heard of, no commits yet --
+        // and they all mean the same thing in the margin: nothing to say.
         let changes = before.map(|committed| Changed {
             changes: obelus_git::Changes::between(committed, &now),
             at,
