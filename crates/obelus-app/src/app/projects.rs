@@ -44,7 +44,8 @@
 
 use std::path::{Path, PathBuf};
 
-use crossterm::event::KeyEvent;
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use obelus_component::picker::{Picker, PickerItem, PickerLayout, PickerValue};
 
 /// How many are kept.
 ///
@@ -303,20 +304,6 @@ impl super::App {
         self.chooser = Some(obelus_component::chooser::Chooser::new(known));
     }
 
-    /// Hands the path box candidates without a disk being read.
-    ///
-    /// A test that typed a real directory would put a path with this
-    /// run's process number in it on the screen, which is a grid that
-    /// cannot be a fixture -- the same trap the welcome screen's own
-    /// fixture fell into with the working directory.
-    pub fn offer_these_candidates_for_test(
-        &mut self,
-        directory: &Path,
-        entries: Vec<obelus_component::chooser::Candidate>,
-    ) {
-        self.offer_candidates(directory, entries);
-    }
-
     /// A key, while the reader is being asked which project.
     ///
     /// Answers whether it was taken. What is not taken falls to the
@@ -325,73 +312,223 @@ impl super::App {
     /// what the reader has hold of. Everything else in Obelus is about a
     /// project and `Requires::AProject` refuses it.
     pub(super) fn choosing_a_project(&mut self, key: &KeyEvent) -> bool {
+        // The list in front of the box gets the key first, and keeps only
+        // the ones that move about it or choose from it.
+        if self.naming_list_key(key) {
+            return true;
+        }
         let Some(chooser) = &mut self.chooser else {
             return false;
         };
-        match chooser.handle(*key, CHOOSER_ROWS) {
+        let taken = match chooser.handle(*key, CHOOSER_ROWS) {
             obelus_component::chooser::Outcome::Taken => true,
             obelus_component::chooser::Outcome::Ignored => false,
             obelus_component::chooser::Outcome::Wants(directory) => {
+                // A new directory is a new question, so a list the reader
+                // shut comes back: what they said no to was the one they
+                // were looking at.
                 self.look_in(&directory);
                 true
             }
             obelus_component::chooser::Outcome::Chose(path) => {
                 self.settle_on(&path);
-                true
+                return true;
             }
-        }
+        };
+        // What was typed narrows whatever the last read found, which is
+        // not a question for the disk.
+        self.settle_the_naming_list();
+        taken
     }
 
-    /// Reads what a directory holds, for the box being typed in.
+    /// Reads what a directory holds and makes a list of it.
     ///
     /// On the main thread, and that is a measurement rather than an
     /// oversight: one `read_dir` of one directory is what a shell does
-    /// between two keystrokes of `Tab`. It happens once per directory
-    /// rather than once per letter -- the chooser only asks when the part
-    /// before the last separator has changed -- so a reader typing a long
-    /// path pays for the directories they pass through and not for the
-    /// letters.
+    /// between two presses of a key. It happens once per *directory* and
+    /// not once per letter -- the chooser asks only when the part before
+    /// the last separator has moved -- so a reader typing a long path
+    /// pays for the directories they pass through.
+    ///
+    /// The list itself is the ordinary compact one, which is the
+    /// arrangement the agent's own commands already use: the rows, the
+    /// chosen row and the marking of what matched are the picker's, and
+    /// the box below owns the keys.
     ///
     /// Directories first and then files, each by name: what is being
     /// named is usually a project, and a list with the directories
     /// scattered through it reads as a list of files.
     fn look_in(&mut self, directory: &Path) {
-        let Ok(entries) = std::fs::read_dir(directory) else {
-            // Nothing, and nothing said: a path half typed names a
-            // directory that does not exist yet on almost every keystroke,
-            // and a complaint about each of those is a complaint about
-            // typing.
-            self.offer_candidates(directory, Vec::new());
-            return;
-        };
-        // Whether each is a directory is settled here, where the disk is
-        // being asked anyway, and carried with it: the panel is laid out
-        // on every frame, and asking again there would be a `stat` per
-        // candidate per keystroke for an answer already in hand.
-        let mut found: Vec<obelus_component::chooser::Candidate> = entries
+        let mut found: Vec<(bool, PathBuf)> = std::fs::read_dir(directory)
+            .into_iter()
             .flatten()
-            .map(|entry| obelus_component::chooser::Candidate {
-                directory: entry.path().is_dir(),
-                path: entry.path(),
-            })
+            .flatten()
+            // Settled here, where the disk is being asked anyway: a row
+            // is laid out on every frame, and asking again there would be
+            // a `stat` per candidate per keystroke for an answer already
+            // in hand.
+            .map(|entry| (entry.path().is_dir(), entry.path()))
             .collect();
-        found.sort_by(|left, right| {
-            right
-                .directory
-                .cmp(&left.directory)
-                .then_with(|| left.path.cmp(&right.path))
-        });
-        self.offer_candidates(directory, found);
+        found.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
+        let items = found
+            .into_iter()
+            .map(|(directory, path)| {
+                let name = path.file_name().map_or_else(
+                    || path.to_string_lossy().into_owned(),
+                    |name| name.to_string_lossy().into_owned(),
+                );
+                PickerItem {
+                    prose: false,
+                    marker: None,
+                    icon: None,
+                    // The name alone, and a separator where it holds other
+                    // things: the directory they are all in is in the box
+                    // above them, and repeating it down the list spends
+                    // the width on the one part of every row that is the
+                    // same.
+                    label: match directory {
+                        true => format!("{name}{}", std::path::MAIN_SEPARATOR),
+                        false => name,
+                    },
+                    detail: None,
+                    trailing: None,
+                    changed: None,
+                    value: match directory {
+                        true => PickerValue::Directory(path),
+                        false => PickerValue::File(path),
+                    },
+                    enabled: true,
+                    colours: None,
+                    status: None,
+                    depth: 0,
+                    opens: None,
+                    kind: None,
+                    tab: None,
+                    section: None,
+                }
+            })
+            .collect::<Vec<_>>();
+        if items.is_empty() {
+            self.naming_list = None;
+            return;
+        }
+        let mut list = Picker::new(
+            items,
+            PickerLayout::Compact {
+                rows: super::COMPACT_ROWS,
+            },
+        );
+        list.before_typing("Narrow what is here");
+        self.naming_list = Some(list);
+        self.settle_the_naming_list();
     }
 
-    /// Hands what was found to the box that asked for it.
-    fn offer_candidates(
-        &mut self,
-        directory: &Path,
-        entries: Vec<obelus_component::chooser::Candidate>,
-    ) {
-        if let Some(chooser) = &mut self.chooser {
-            chooser.offer(directory, entries);
+    /// Narrows that list by what has been typed since the separator, and
+    /// gives it the geometry it is about to be drawn in.
+    ///
+    /// No disk is touched: the rows are whatever the last read found, and
+    /// the letters after the separator only choose among them. Which is
+    /// what keeps a reader typing a name from reading the directory once
+    /// per letter.
+    ///
+    /// A list that matches nothing stops being a list. It has to: the
+    /// reader is typing a path nobody offered, which is a path they are
+    /// allowed to type, and a list that stayed would swallow the enter
+    /// that opens it.
+    pub(super) fn settle_the_naming_list(&mut self) {
+        let Some(chooser) = &self.chooser else {
+            self.naming_list = None;
+            return;
+        };
+        let segment = chooser.segment();
+        let room = self.editor_area;
+        let Some(list) = self.naming_list.as_mut() else {
+            return;
+        };
+        if list.query() != segment {
+            list.set_query(&segment);
+        }
+        if list.match_count() == 0 {
+            self.naming_list = None;
+            return;
+        }
+        let rows = obelus_ui::picker::rows_drawn(list, room);
+        list.refresh_indices(rows, room.width);
+    }
+
+    /// Whatever a key means to that list, if it means anything.
+    ///
+    /// Only the keys that move about a list and the ones that choose from
+    /// it -- the rule the agent's commands settled. Every character and
+    /// every other key belongs to the box, which is what makes this a
+    /// list of what is being typed rather than a mode the reader is in.
+    pub(super) fn naming_list_key(&mut self, key: &KeyEvent) -> bool {
+        if self.naming_list.is_none() {
+            return false;
+        }
+        if obelus_editing::keymap::modifiers_of(key) != Some(KeyModifiers::NONE) {
+            return false;
+        }
+        match key.code {
+            // The window is not moved here: the frame that follows
+            // settles it, which is the one place that knows how many rows
+            // are on screen.
+            KeyCode::Up | KeyCode::Down => {
+                let by = match key.code {
+                    KeyCode::Up => -1,
+                    _ => 1,
+                };
+                if let Some(list) = self.naming_list.as_mut() {
+                    list.move_selection_by(by);
+                }
+                true
+            }
+            // Enter puts the chosen row *in the box*, the way enter takes
+            // what is selected in every other completion in Obelus. What
+            // opens the project is enter with no list in front of it,
+            // which is what escape below leaves behind.
+            KeyCode::Enter => {
+                let chosen = self
+                    .naming_list
+                    .as_ref()
+                    .and_then(Picker::selected_item)
+                    .map(|item| item.value.clone());
+                let put = match chosen {
+                    Some(PickerValue::Directory(path)) => Some((path, true)),
+                    Some(PickerValue::File(path)) => Some((path, false)),
+                    _ => None,
+                };
+                if let Some((path, directory)) = put {
+                    self.naming_list = None;
+                    let outcome = self
+                        .chooser
+                        .as_mut()
+                        .map(|chooser| chooser.put(&path, directory));
+                    // A directory asks for what is inside it at once, so
+                    // walking down a tree is one key a level.
+                    if let Some(obelus_component::chooser::Outcome::Wants(next)) = outcome {
+                        self.look_in(&next);
+                    }
+                }
+                true
+            }
+            // The list, not the box: escape gives up on the nearest
+            // thing first, and what the reader typed stays.
+            //
+            // Nothing is written down about having shut it, which is
+            // where this differs from the agent's commands: that list is
+            // rebuilt from the box on every frame, so closing it needs a
+            // flag or the next frame puts it back. This one is built
+            // only when the *directory* moves -- `settle_the_naming_list`
+            // narrows what a read already found and never conjures a
+            // list -- so shutting it is enough, and it comes back when
+            // the reader types their way into somewhere else, which is
+            // a new question.
+            KeyCode::Esc => {
+                self.naming_list = None;
+                true
+            }
+            _ => false,
         }
     }
 
@@ -413,6 +550,7 @@ impl super::App {
         // starts runs with a project settled rather than with the screen
         // still saying there is none.
         self.chooser = None;
+        self.naming_list = None;
         self.work_in(root);
         self.apply_project();
         for file in &opening.files {
@@ -456,26 +594,6 @@ impl super::App {
             typed: chooser.typing().said(),
             caret: chooser.typing().caret().get(),
             naming: chooser.is_naming(),
-            // The name alone: the directory they are all in is already
-            // in the box above them, and repeating it down twenty rows
-            // spends the width on the one part of each row that is the
-            // same. A directory keeps its separator, which is how a
-            // reader tells one from a file without a column of glyphs.
-            candidates: chooser
-                .candidates()
-                .iter()
-                .map(|candidate| {
-                    let name = candidate.path.file_name().map_or_else(
-                        || candidate.path.to_string_lossy().into_owned(),
-                        |name| name.to_string_lossy().into_owned(),
-                    );
-                    match candidate.directory {
-                        true => format!("{name}{}", std::path::MAIN_SEPARATOR),
-                        false => name,
-                    }
-                })
-                .collect(),
-            candidate_at: chooser.candidate_at(),
         })
     }
 }
