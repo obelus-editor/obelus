@@ -405,24 +405,32 @@ impl App {
         // them there are is a question about two directories, and the table
         // is static data about what a setting *is*. So it is asked of the
         // application, which is the thing that knows.
-        let choices: Vec<String> = match key {
-            "theme" => self.themes(),
-            _ => choices.iter().map(|choice| (*choice).to_string()).collect(),
+        //
+        // The workflows are asked of the application too, for what each one
+        // does: a name like `feature-branch` says what it is only to
+        // somebody who knows the term, and the words that say it are in
+        // the file beside what the agent is handed.
+        let choices: Vec<(String, Option<String>)> = match key {
+            "theme" => self.themes().into_iter().map(|name| (name, None)).collect(),
+            "workflow" => super::opening::workflows()
+                .map(|(name, about)| (name.to_string(), Some(about.to_string())))
+                .collect(),
+            _ => choices
+                .iter()
+                .map(|choice| ((*choice).to_string(), None))
+                .collect(),
         };
         let items: Vec<PickerItem> = choices
-            .iter()
-            .map(|choice| PickerItem {
+            .into_iter()
+            .map(|(choice, about)| PickerItem {
                 prose: false,
                 marker: None,
                 icon: None,
                 label: choice.clone(),
-                detail: obelus_config::about_choice(key, choice).map(str::to_string),
+                detail: about,
                 trailing: None,
                 changed: None,
-                value: PickerValue::Setting {
-                    key,
-                    word: choice.clone(),
-                },
+                value: PickerValue::Setting { key, word: choice },
                 enabled: true,
                 colours: None,
                 status: None,
@@ -436,6 +444,13 @@ impl App {
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
         picker.before_typing("Filter values");
         picker.when_empty("This setting has no choices");
+        // Read whole, the way the list of conversations is, because what
+        // is under each workflow is a few sentences rather than a word --
+        // and all of them, because they are Obelus's own.
+        if key == "workflow" {
+            picker.wraps(None);
+            picker.details_whole();
+        }
         // Opened on the one in force, so the list starts by saying which
         // that is.
         picker.prefer(word.to_string());

@@ -3686,12 +3686,17 @@ fn what_a_project_may_not_set_is_marked_on_the_projects_file() {
     assert_eq!(problems[0].span.line.get(), 1);
 }
 
-/// The list a workflow is chosen from says what each one does: a name
-/// like `feature-branch` says nothing to a reader who does not know the
-/// term, and the list is where the choosing is done.
+/// The list a workflow is chosen from says what each one does, whole: a
+/// name like `feature-branch` says nothing to a reader who does not know
+/// the term, and the list is where the choosing is done.
 ///
-/// Broken deliberately by giving the choices no detail again, which is
-/// what they had: neither line is on screen.
+/// Asked of the last words as well as the first, because the list keeps a
+/// detail to two rows unless it is told otherwise, and those are Obelus's
+/// own words cut off half-way.
+///
+/// Broken deliberately three ways: the choices with no detail, which
+/// leaves neither on screen; the list not wrapping, which leaves one row of
+/// each; and the list without `details_whole`, which loses the last words.
 #[test]
 fn each_workflow_says_what_it_does_where_it_is_chosen() {
     let _turn = SETTINGS
@@ -3702,11 +3707,13 @@ fn each_workflow_says_what_it_does_where_it_is_chosen() {
     support::type_text(&mut app, "workflow");
     support::press(&mut app, KeyCode::Enter);
     assert!(app.picker().is_some(), "the workflows did not open");
-    let dump = support::render(&mut app, 80, 24);
+    let dump = support::render(&mut app, 80, 30);
     let text = support::text_block(&dump);
     for said in [
-        "The agent changes files the way it would anyway",
-        "A branch in .worktree; asks before review, merge and cleanup",
+        "Obelus asks nothing of the agent",
+        "straight in the checkout you are reading.",
+        "The agent makes the change on a branch",
+        "taken away only when you say so.",
     ] {
         assert!(text.contains(said), "{said:?} is not on the list:\n{dump}");
     }
@@ -3740,6 +3747,27 @@ fn a_workflow_nothing_answers_to_is_marked() {
     assert_eq!(problems[0].message, "No workflow is called feature_branch");
     assert_eq!(problems[0].span.line.get(), 0);
     assert_eq!(app.config().workflow, "none", "the word was taken anyway");
+}
+
+/// And it is said on the welcome screen, because a reader who has just
+/// started Obelus has opened no settings file to see the mark on.
+///
+/// Broken deliberately the same way as the one above: `apply` taking any
+/// word leaves the welcome screen with nothing to say.
+#[test]
+fn a_workflow_nothing_answers_to_is_said_on_the_welcome_screen() {
+    let _taken = SETTINGS.lock().expect("the lock");
+    let scratch = project("no-workflow-welcome", "workflow = \"feature_branch\"\n");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    let mine = temporary("no-workflow-welcome-mine");
+    app.config_file_for_test(settings_file(&mine));
+    support::lay_out(&mut app, 100, 30);
+    let dump = support::render(&mut app, 100, 30);
+    assert!(
+        support::text_block(&dump).contains("No workflow is called feature_branch"),
+        "the welcome screen does not say so:\n{dump}"
+    );
 }
 
 /// A line of the key table that bound nothing is a warning on that line.

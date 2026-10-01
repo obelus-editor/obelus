@@ -794,6 +794,8 @@ pub struct Picker {
     /// `Some(None)` for a list that wraps with nothing in front of its
     /// details.
     wraps: Option<Option<char>>,
+    /// How many rows a wrapped row's detail may take.
+    detail_rows: usize,
     /// Every row's words wrapped, at the width the list was last settled
     /// at.
     ///
@@ -885,6 +887,7 @@ impl Picker {
             hidden: None,
             layout,
             wraps: None,
+            detail_rows: wrapped::MOST_DETAIL_ROWS,
             measured: None,
             shown: 0,
             matcher: Matcher::new(nucleo_matcher::Config::DEFAULT),
@@ -1093,6 +1096,19 @@ impl Picker {
         self.wraps = Some(detail_mark);
     }
 
+    /// Says a wrapped row's detail is shown whole, however many rows it
+    /// takes.
+    ///
+    /// The cap is for somebody else's text -- what an agent called a
+    /// conversation, what it says about one of its settings -- which may be
+    /// as long as it likes. A list whose details are Obelus's own words has
+    /// nobody to guard against, and cutting them would end a sentence
+    /// Obelus wrote to explain the choice half-way through it. On a narrow
+    /// screen that is a taller row, and the list scrolls.
+    pub const fn details_whole(&mut self) {
+        self.detail_rows = usize::MAX;
+    }
+
     /// Whether the rows of this list wrap.
     #[must_use]
     pub const fn is_wrapping(&self) -> bool {
@@ -1130,7 +1146,7 @@ impl Picker {
         std::borrow::Cow::Owned(
             self.items
                 .get(index)
-                .map(|item| Body::of(item, columns))
+                .map(|item| Body::of(item, columns, self.detail_rows))
                 .unwrap_or_default(),
         )
     }
@@ -1202,7 +1218,7 @@ impl Picker {
             bodies: self
                 .items
                 .iter()
-                .map(|item| Body::of(item, columns))
+                .map(|item| Body::of(item, columns, self.detail_rows))
                 .collect(),
         });
     }

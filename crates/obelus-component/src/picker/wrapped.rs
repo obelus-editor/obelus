@@ -33,6 +33,9 @@ pub const MOST_LABEL_ROWS: usize = 3;
 ///
 /// Fewer than the label: it is what the row is *about*, said under what the
 /// row is, and a reader who wants all of it can open the thing it is about.
+///
+/// A list's own to lift, with `Picker::details_whole`, where the details
+/// are Obelus's own words rather than somebody else's.
 pub const MOST_DETAIL_ROWS: usize = 2;
 
 /// Where the words start: a column to stand clear of the edge, and the two
@@ -100,16 +103,17 @@ pub struct Body {
 }
 
 impl Body {
-    /// Wraps one row's words into the columns it has.
+    /// Wraps one row's words into the columns it has, the detail into at
+    /// most `detail_rows` of them.
     #[must_use]
-    pub fn of(item: &PickerItem, columns: Columns) -> Self {
+    pub fn of(item: &PickerItem, columns: Columns, detail_rows: usize) -> Self {
         let (label, label_cut) = capped(&item.label, columns.label, MOST_LABEL_ROWS);
         let (detail, detail_cut) = item
             .detail
             .as_deref()
             .filter(|detail| !detail.is_empty())
             .map_or((Vec::new(), false), |detail| {
-                capped(detail, columns.detail, MOST_DETAIL_ROWS)
+                capped(detail, columns.detail, detail_rows)
             });
         Self {
             label,
@@ -221,6 +225,7 @@ mod tests {
                 label: 10,
                 detail: 8,
             },
+            MOST_DETAIL_ROWS,
         );
         assert_eq!(body.label.len(), MOST_LABEL_ROWS, "{:?}", body.label);
         assert!(body.label_cut, "a cut label did not say so");
@@ -236,6 +241,7 @@ mod tests {
                 label: 10,
                 detail: 8,
             },
+            MOST_DETAIL_ROWS,
         );
         assert_eq!(short.label.len(), 1);
         assert!(!short.label_cut, "a label that fit said it was cut");
@@ -252,11 +258,15 @@ mod tests {
         let body = Body::of(
             &row("label", Some("aaaa bbbb cccc dddd eeee ffff"), None),
             columns,
+            MOST_DETAIL_ROWS,
         );
         assert_eq!(body.detail.len(), MOST_DETAIL_ROWS);
         assert!(body.detail_cut);
         assert_eq!(body.rows(), 3);
-        assert_eq!(Body::of(&row("label", None, None), columns).rows(), 1);
+        assert_eq!(
+            Body::of(&row("label", None, None), columns, MOST_DETAIL_ROWS).rows(),
+            1
+        );
     }
 
     /// Chinese has no spaces and still wraps, and a row never starts on
@@ -270,6 +280,7 @@ mod tests {
                 label: 12,
                 detail: 10,
             },
+            MOST_DETAIL_ROWS,
         );
         assert!(body.label.len() > 1, "it did not wrap: {:?}", body.label);
         for range in &body.label {
