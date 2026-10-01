@@ -1903,11 +1903,12 @@ impl App {
 
     /// Makes room for a question the agent is waiting on an answer to.
     ///
-    /// It no longer brings the conversation to the front, and the name is
-    /// what is left of one that did: a conversation is a document now, so a
+    /// It does not bring the conversation to the front, and the name is
+    /// what is left of one that did: a conversation is a document, so a
     /// question asked in one the reader is not in waits on its row in the
     /// list with a mark saying so, rather than pulling the screen away from
-    /// whatever they were reading.
+    /// whatever they were reading. Every question names its conversation,
+    /// so none is left to be asked wherever the reader happens to be.
     ///
     /// What is still here is the clearing: a card is drawn inside the
     /// conversation, so anything of Obelus's own over that region would be a
@@ -1923,11 +1924,9 @@ impl App {
     /// One agent cannot do this: the protocol's dispatch loop hands a
     /// message to one handler at a time and waits for it, and Obelus's
     /// elicitation handler waits for the reader -- so a second question
-    /// from the same connection is not read until the first is answered.
-    /// Two agents are two connections and two loops, and both of their
-    /// questions land on whichever conversation the reader is in, which is
-    /// the same "one of them, for now" this file says elsewhere. That is
-    /// why this is here and why no test drives it.
+    /// from the same connection is not read until the first is answered,
+    /// and a conversation is one agent's. That is why this is here and why
+    /// no test drives it.
     fn show_the_question(&mut self, whose: Whose) {
         // The clearing is for the screen, so it happens only where the
         // question is going onto it. A question waiting in a conversation
@@ -1935,30 +1934,6 @@ impl App {
         // closing what is in front of them.
         if self.is_here(whose) {
             self.make_room(Room::Region);
-        }
-        // The one case left that has nowhere to be asked: a question the
-        // protocol puts no session on, arriving while the reader is in a
-        // file. Those are for whoever is here and there is nobody here, so
-        // this is the conversation being opened -- the only thing left of
-        // what this used to do to every question that came.
-        //
-        // The one about nothing in particular the reader already has, where
-        // there is one, rather than a new one: a question on an empty page
-        // is a question with nothing around it, and that page would mint a
-        // session of its own on the next frame for nobody.
-        if matches!(whose, Whose::Whoever) && self.conversation().is_none() {
-            match self.documents.iter().position(|document| {
-                document
-                    .as_ref()
-                    .and_then(Document::chat)
-                    .is_some_and(|talk| talk.topic == Topic::Loose)
-            }) {
-                Some(at) => {
-                    self.make_room(Room::Region);
-                    self.go_to_document(DocumentId::new(at));
-                }
-                None => self.new_conversation(),
-            }
         }
         // And nothing of the reader's own over it. The list of the agent's
         // commands follows what is being typed in the box, and the box is
@@ -1977,12 +1952,13 @@ impl App {
     /// Puts a form the agent asked for to the reader.
     fn ask_reader(
         &mut self,
+        whose: Whose,
         message: &str,
         fields: Vec<acp::Field>,
         answer: acp::Answer<Option<Vec<(String, acp::Reply)>>>,
     ) {
-        self.show_the_question(Whose::Whoever);
-        if let Some(talk) = self.conversation_mut() {
+        self.show_the_question(whose);
+        if let Some(talk) = self.talk_mut(whose) {
             talk.asking = Some(Asking {
                 message: message.to_string(),
                 left: fields.into(),
@@ -1990,7 +1966,7 @@ impl App {
                 answer,
             });
         }
-        self.put_the_question();
+        self.put_the_question(whose);
     }
 
     /// Puts somewhere the agent wants the reader to go to the reader.
@@ -2000,9 +1976,16 @@ impl App {
     /// itself is what the card is about. Shown whole, folded across as many
     /// rows as it takes, because a URL cut short is a URL nobody can use
     /// and this is the one thing on screen a reader may have to read out.
-    fn send_the_reader(&mut self, message: &str, url: &str, id: &str, answer: acp::Answer<bool>) {
-        self.show_the_question(Whose::Whoever);
-        if let Some(talk) = self.conversation_mut() {
+    fn send_the_reader(
+        &mut self,
+        whose: Whose,
+        message: &str,
+        url: &str,
+        id: &str,
+        answer: acp::Answer<bool>,
+    ) {
+        self.show_the_question(whose);
+        if let Some(talk) = self.talk_mut(whose) {
             talk.going = Some(crate::conversation::Going {
                 message: message.to_string(),
                 url: url.to_string(),
@@ -2010,12 +1993,12 @@ impl App {
                 answer,
             });
         }
-        self.put_the_place();
+        self.put_the_place(whose);
     }
 
     /// The card for it.
-    fn put_the_place(&mut self) {
-        let Some(going) = self.conversation().and_then(|talk| talk.going.as_ref()) else {
+    fn put_the_place(&mut self, whose: Whose) {
+        let Some(going) = self.talk(whose).and_then(|talk| talk.going.as_ref()) else {
             return;
         };
         // The agent's words, then the URL under them. One text rather than
@@ -2047,7 +2030,7 @@ impl App {
             false,
         );
         card.about(&about);
-        if let Some(talk) = self.conversation_mut() {
+        if let Some(talk) = self.talk_mut(whose) {
             talk.card = Some(card);
         }
     }
@@ -2096,19 +2079,26 @@ impl App {
 
     /// The agent says the far end happened, so there is nothing left to
     /// wait for.
+    ///
+    /// In whichever conversation was sent there, which the notification
+    /// does not say and the row does: it names only the question, and the
+    /// reader who went to sign in is rarely still looking at the page they
+    /// left from.
     fn went_through(&mut self, id: &str) {
-        if let Some(talk) = self.conversation_mut() {
-            talk.chat.arrived(id);
+        for document in self.documents.iter_mut().flatten() {
+            if let Some(talk) = Document::chat_mut(document) {
+                talk.chat.arrived(id);
+            }
         }
     }
 
     /// Puts the next field, or answers the form when there is none left.
-    fn put_the_question(&mut self) {
-        let Some(asking) = self.conversation().and_then(|talk| talk.asking.as_ref()) else {
+    fn put_the_question(&mut self, whose: Whose) {
+        let Some(asking) = self.talk(whose).and_then(|talk| talk.asking.as_ref()) else {
             return;
         };
         if asking.left.is_empty() {
-            self.settle_asking();
+            self.settle_asking(whose);
             return;
         }
         // What the card says it is about: the agent's own words the first
@@ -2119,7 +2109,7 @@ impl App {
             true => asking.message.clone(),
             false => String::new(),
         };
-        let (choice, words) = self.asked_now();
+        let (choice, words) = self.asked_now(whose);
         let mut card = match &choice {
             Some(field) => card_of(field),
             None => Card::new(Vec::new(), false),
@@ -2144,7 +2134,7 @@ impl App {
             // row, and what it is for has been said above.
             card.writing(&field.title, field.required, suggested.as_deref());
         }
-        if let Some(talk) = self.conversation_mut() {
+        if let Some(talk) = self.talk_mut(whose) {
             talk.card = Some(card);
         }
     }
@@ -2155,8 +2145,8 @@ impl App {
     /// One function rather than two places working it out, because putting
     /// the question and taking the answer have to agree about which fields
     /// were on the card.
-    fn asked_now(&self) -> (Option<acp::Field>, Option<acp::Field>) {
-        let Some(asking) = self.conversation().and_then(|talk| talk.asking.as_ref()) else {
+    fn asked_now(&self, whose: Whose) -> (Option<acp::Field>, Option<acp::Field>) {
+        let Some(asking) = self.talk(whose).and_then(|talk| talk.asking.as_ref()) else {
             return (None, None);
         };
         let Some(field) = asking.left.front().cloned() else {
@@ -2201,7 +2191,7 @@ impl App {
             }
             return;
         }
-        let (choice, asked) = self.asked_now();
+        let (choice, asked) = self.asked_now(Whose::Whoever);
         let mut given: Vec<(String, acp::Reply)> = Vec::new();
         let mut said: Vec<String> = Vec::new();
         if let Some(field) = &choice {
@@ -2297,7 +2287,7 @@ impl App {
         if let Some(talk) = self.conversation_mut() {
             talk.card = None;
         }
-        self.put_the_question();
+        self.put_the_question(Whose::Whoever);
     }
 
     /// A number the reader typed, if it is one the field will take.
@@ -2330,12 +2320,12 @@ impl App {
     }
 
     /// Answers the form, now that every field has one.
-    fn settle_asking(&mut self) {
-        let Some(asking) = self.conversation_mut().and_then(|talk| talk.asking.take()) else {
+    fn settle_asking(&mut self, whose: Whose) {
+        let Some(asking) = self.talk_mut(whose).and_then(|talk| talk.asking.take()) else {
             return;
         };
         if asking.answer.send(Some(asking.given)).is_err() {
-            self.in_transcript(|chat| chat.note("It stopped waiting for an answer"));
+            self.in_talk(whose, |chat| chat.note("It stopped waiting for an answer"));
         }
     }
 
@@ -2432,17 +2422,22 @@ impl App {
     /// `None` for a session nothing open has, which is the one case with
     /// nowhere to put anything.
     ///
-    /// The two that name none are the two the protocol does not put a
-    /// session on: an elicitation, and a request for a file. Those go to
-    /// whoever is here, which is right while one conversation is waiting on
-    /// the agent and is a guess when two are. The protocol is where that has
-    /// to be fixed, so this is where it is written down.
+    /// A question is routed like everything else, by the conversation it
+    /// was asked in. It went to whoever was here once, and where nobody was
+    /// a conversation was found or made and put on screen for it: the
+    /// reader was taken out of what they were reading to answer a question
+    /// on a page that was not having the turn, which then went on with
+    /// nothing on screen saying so. What is left going to whoever is here
+    /// -- a file to read or write, a command to run -- puts nothing on a
+    /// page.
     fn whose(&self, incoming: &acp::Incoming) -> Option<Whose> {
         let named = match incoming {
             acp::Incoming::Update { session, .. }
             | acp::Incoming::Ended { session, .. }
             | acp::Incoming::Remembered { session }
-            | acp::Incoming::Permission { session, .. } => Some(session),
+            | acp::Incoming::Permission { session, .. }
+            | acp::Incoming::Ask { session, .. }
+            | acp::Incoming::Open { session, .. } => Some(session),
             acp::Incoming::Started { .. }
             | acp::Incoming::Lost { .. }
             | acp::Incoming::Ready { .. }
@@ -2452,8 +2447,6 @@ impl App {
             | acp::Incoming::Offers { .. }
             | acp::Incoming::Failed(..)
             | acp::Incoming::Gone(_)
-            | acp::Incoming::Ask { .. }
-            | acp::Incoming::Open { .. }
             | acp::Incoming::Finished { .. }
             | acp::Incoming::Read { .. }
             | acp::Incoming::Write { .. }
@@ -2960,13 +2953,15 @@ impl App {
                 message,
                 fields,
                 answer,
-            } => self.ask_reader(&message, fields, answer),
+                ..
+            } => self.ask_reader(whose, &message, fields, answer),
             acp::Incoming::Open {
                 message,
                 url,
                 id,
                 answer,
-            } => self.send_the_reader(&message, &url, &id, answer),
+                ..
+            } => self.send_the_reader(whose, &message, &url, &id, answer),
             acp::Incoming::Finished { id } => self.went_through(&id),
             // A command the agent asked for. Run without asking the
             // reader -- the agent asks, which is the rule Obelus's own

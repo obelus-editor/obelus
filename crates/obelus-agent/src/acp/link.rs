@@ -84,7 +84,7 @@ use agent_client_protocol::{
             CreateElicitationResponse, CreateTerminalRequest, CreateTerminalResponse,
             DeleteSessionRequest, ElicitationAcceptAction, ElicitationAction,
             ElicitationCapabilities, ElicitationContentValue, ElicitationFormCapabilities,
-            ElicitationMode, ElicitationPropertySchema, ElicitationSchema,
+            ElicitationMode, ElicitationPropertySchema, ElicitationSchema, ElicitationScope,
             ElicitationUrlCapabilities, FileSystemCapabilities, ImageContent, Implementation,
             InitializeRequest, KillTerminalRequest, KillTerminalResponse, LoadSessionRequest,
             McpCapabilities, McpServer, McpServerHttp, McpServerSse, MultiSelectItems,
@@ -432,12 +432,11 @@ pub enum Incoming {
     /// It wants the reader to go and do something on the web: sign in
     /// somewhere, authorise something.
     ///
-    /// With no conversation on it, for the reason [`Incoming::Ask`] gives:
-    /// the protocol does not put one on an elicitation.
-    ///
     /// Answered by going, not by finishing: the agent watches for the far
     /// end itself and says when it is done. See [`Incoming::Finished`].
     Open {
+        /// Which conversation it is asking in.
+        session: SessionId,
         /// What it says this is for, in its own words.
         message: String,
         /// Where to send them. Checked before it gets here: `http` or
@@ -469,12 +468,9 @@ pub enum Incoming {
         id: String,
     },
     /// The agent is asking the reader for something.
-    ///
-    /// With no conversation on it, because the protocol does not put one
-    /// there: `session/request_permission` names the session and an
-    /// elicitation does not. Whoever routes this has to work it out, and
-    /// the only honest answer is "whichever one is waiting on the agent".
     Ask {
+        /// Which conversation it is asking in.
+        session: SessionId,
         /// What it says it needs, in its own words.
         message: String,
         /// What it wants, in the order Obelus will put them.
@@ -1106,7 +1102,7 @@ async fn open_session(
     connection: &ConnectionTo<agent_client_protocol::Agent>,
     root: &std::path::Path,
     tools: Option<&McpServer>,
-    events: &impl Sink<Event>,
+    events: &(impl Sink<Event> + Clone),
 ) -> Result<SessionId, agent_client_protocol::Error> {
     // What Obelus itself offers the agent: a handful of tools about this
     // reader's notes, which the protocol has no way to express because it is
@@ -1115,25 +1111,42 @@ async fn open_session(
     if let Some(offered) = tools {
         asking = asking.mcp_servers(vec![offered.clone()]);
     }
-    let opened = connection.send_request(asking).block_task().await?;
-    let session = opened.session_id.clone();
-    // The old mode methods, read into a setting at the edge -- and kept
-    // only until the settings say they carry the mode themselves, which is
-    // what replaces them.
-    let mode = opened.modes.as_ref().map(mode_setting);
-    let _ = events.send(Event::Acp(Incoming::Started {
-        session: session.clone(),
-        mode,
-        asking: None,
-    }));
-    if let Some(options) = opened.config_options.as_ref() {
-        let settings = options.iter().filter_map(setting_of).collect();
-        let _ = events.send(Event::Acp(Incoming::Update {
-            session: session.clone(),
-            update: Update::Settings(settings),
-        }));
-    }
-    Ok(session)
+    // Said from the callback rather than after an await, because the
+    // callback is the one place the crate keeps in order: nothing the agent
+    // sends after this answer is read until it has run. Awaited, the answer
+    // could reach the main loop after a question the agent asked in the same
+    // breath -- and a question naming a conversation nothing has been told
+    // of yet is a question about nothing, dropped.
+    let (told, opened) = oneshot::channel();
+    let events = events.clone();
+    connection
+        .send_request(asking)
+        .on_receiving_result(move |answer| {
+            if let Ok(opened) = &answer {
+                let session = opened.session_id.clone();
+                // The old mode methods, read into a setting at the edge --
+                // and kept only until the settings say they carry the mode
+                // themselves, which is what replaces them.
+                let mode = opened.modes.as_ref().map(mode_setting);
+                let _ = events.send(Event::Acp(Incoming::Started {
+                    session: session.clone(),
+                    mode,
+                    asking: None,
+                }));
+                if let Some(options) = opened.config_options.as_ref() {
+                    let settings = options.iter().filter_map(setting_of).collect();
+                    let _ = events.send(Event::Acp(Incoming::Update {
+                        session,
+                        update: Update::Settings(settings),
+                    }));
+                }
+            }
+            let _ = told.send(answer.map(|opened| opened.session_id));
+            std::future::ready(Ok(()))
+        })?;
+    opened.await.map_err(|_| {
+        agent_client_protocol::util::internal_error("the answer to session/new never came")
+    })?
 }
 
 /// The whole connection, from the handshake to the end of the stream.
@@ -1271,6 +1284,23 @@ async fn talk(
                 // A URL takes a different road: nothing is filled in, the
                 // reader is sent somewhere, and the agent hears that they
                 // went rather than what they said.
+                //
+                // Asked in a conversation, which is where it waits for the
+                // reader: a question is about the turn that raised it, not
+                // about whatever is on screen when it arrives. The other
+                // scope is a question about a request Obelus made outside
+                // any conversation -- opening one, before it exists -- and
+                // no agent Obelus has met sends it, so it is declined rather
+                // than put in front of a conversation it was not asked in.
+                let ElicitationScope::Session(scope) = request.scope() else {
+                    tracing::warn!(
+                        message = %request.message,
+                        "a question about no conversation, declined"
+                    );
+                    return responder
+                        .respond(CreateElicitationResponse::new(ElicitationAction::Decline));
+                };
+                let session = scope.session_id.clone();
                 if let ElicitationMode::Url(mode) = &request.mode {
                     let Some(url) = somewhere_to_go(&mode.url) else {
                         // An error rather than a decline, because this is
@@ -1287,6 +1317,7 @@ async fn talk(
                     };
                     let (answer, answered) = oneshot::channel();
                     let question = Incoming::Open {
+                        session,
                         message: request.message.clone(),
                         url,
                         id: mode.elicitation_id.0.to_string(),
@@ -1331,6 +1362,7 @@ async fn talk(
                 };
                 let (answer, answered) = oneshot::channel();
                 let question = Incoming::Ask {
+                    session,
                     message: request.message.clone(),
                     fields,
                     answer,

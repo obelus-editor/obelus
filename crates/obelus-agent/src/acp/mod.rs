@@ -908,6 +908,8 @@ fn about(incoming: &Incoming) -> Option<&SessionId> {
         | Incoming::Ended { session, .. }
         | Incoming::Lost { session, .. }
         | Incoming::Permission { session, .. }
+        | Incoming::Ask { session, .. }
+        | Incoming::Open { session, .. }
         | Incoming::Remembered { session, .. } => Some(session),
         // Its own session is what it is the answer about, and forgetting
         // that session is the answer's own business.

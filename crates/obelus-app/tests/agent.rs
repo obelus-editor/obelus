@@ -2508,41 +2508,105 @@ fn the_box_on_a_ticked_card_is_ticked_open() {
     );
 }
 
-/// A question asked while the reader is away from the conversation brings
-/// it back.
+/// A question asked in the same breath as the answer that opens the
+/// session is asked in that conversation.
 ///
-/// The card is drawn inside the conversation, so a question asked while the
-/// reader is looking at something else would be a card nobody can see --
-/// taking their keys, and holding up an agent waiting for an answer it
-/// never showed them. Agents ask before anything is said to them: a login,
-/// a workspace.
+/// Agents ask before anything is said to them: a login, a workspace. The
+/// question names the session the answer has just named, and the crate
+/// does not promise that an answer awaited elsewhere reaches Obelus before
+/// the next thing the agent sends -- so the question could arrive about a
+/// conversation nothing had been told of yet, and be dropped as being about
+/// nothing.
+///
+/// Deliberate break: `open_session` awaiting its answer with `block_task`
+/// again. A race, but one the old code lost every time it was run -- eight
+/// out of eight -- because the question is already in the pipe behind the
+/// answer.
 #[test]
-fn a_question_asked_while_the_conversation_is_away_brings_it_back() {
+fn a_question_asked_as_the_conversation_opens_is_asked_in_it() {
     let (mut app, events) = playing(&["asks-at-once"]);
-
-    // Away from it before it has even opened: a file is opened over the top
-    // of it, the way switching documents does, and the agent goes on
-    // starting with nobody looking.
-    app.open_for_test(std::path::Path::new("tests/fixtures/sample.rs"));
-    assert!(
-        app.chat().is_none(),
-        "the conversation is still what is being read"
-    );
-    assert!(app.card().is_none(), "the question was already here");
-
     pump(&mut app, &events, "the question", |app| {
         app.card().is_some()
     });
-    assert!(
-        app.chat().is_some(),
-        "the question is on a card nobody can see"
-    );
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     assert!(
         rows(&dump)
             .iter()
             .any(|row| row.contains("which workspace am I in")),
         "the question is not on screen:\n{dump}"
+    );
+}
+
+/// A question asked while the reader is away from the conversation waits
+/// in it, and does not take them back to it.
+///
+/// It used to: an elicitation was taken to name no conversation, so it was
+/// asked wherever the reader was, and where they were in no conversation
+/// one was found or made and put on screen -- the first about nothing in
+/// particular, or a new one. A reader on the notes while a note's
+/// conversation was working was taken to an empty page, answered there, and
+/// was left looking at a conversation with no turn in it while the one with
+/// the turn went on out of sight. The question names its conversation; it
+/// waits there, wearing the mark the list of open documents puts on a
+/// conversation with something in it to answer.
+///
+/// Deliberate breaks: `show_the_question` going to the conversation it
+/// asks in, which fails the reader still being on the notes; and `whose`
+/// routing `Ask` nowhere, which leaves the question with no conversation to
+/// wait in and the wait for it gives up.
+#[test]
+fn a_question_asked_while_the_reader_is_away_waits_in_its_conversation() {
+    let scratch = support::Scratch::new("agent-form-away");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()),
+        "[[todo]]\nid = \"0123456P\"\nsaid = \"wire the counts tree up to the search\"\n\
+         done = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    talk_about_the_note(&mut app);
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+
+    // A turn that asks a form, walked away from before the form arrives.
+    support::type_text(&mut app, "/wordy");
+    support::press(&mut app, KeyCode::Enter);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    assert!(
+        app.chat().is_none(),
+        "the reader is still in the conversation"
+    );
+    pump(&mut app, &events, "the question", App::anything_waiting);
+
+    // Still on the notes.
+    assert!(
+        app.chat().is_none(),
+        "the question took the reader out of what they were reading"
+    );
+
+    // And it is there when they go back, under what they said, with the
+    // turn that asked it still running.
+    talk_about_the_note(&mut app);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(app.card().is_some(), "the question is not there:\n{dump}");
+    assert!(
+        rows(&dump).iter().any(|row| row.contains("/wordy")),
+        "the question is not in the conversation that asked it:\n{dump}"
+    );
+    assert_eq!(
+        app.talking(),
+        obelus_agent::Talking::Thinking,
+        "the conversation the question is in does not say its turn is running"
     );
 }
 
@@ -4187,6 +4251,8 @@ fn a_note_can_be_offered_in_a_conversation_about_nothing() {
     let (answer, answered) = futures::channel::oneshot::channel();
     app.handle(Event::Agent(obelus_agent::Event::Acp(
         obelus_agent::acp::Incoming::Ask {
+            // The fake agent's first, which is this conversation's.
+            session: obelus_agent::acp::SessionId::new("s-1"),
             message: "worth writing down?".to_string(),
             fields: vec![obelus_agent::acp::Field {
                 name: "notes".to_string(),
@@ -4742,6 +4808,50 @@ fn where_the_reader_was_sent_stays_on_the_page_until_it_is_done() {
     assert!(
         obelus_clipboard::links::opened().is_some_and(|url| url.contains("console.example.com")),
         "the row would not send them again"
+    );
+}
+
+/// The far end happening is said in the conversation that sent the reader
+/// there, wherever the reader has gone since.
+///
+/// `elicitation/complete` names only the question, and it was marked in
+/// whichever conversation was on screen when it arrived -- which, for a
+/// reader who has just gone off to sign in, is rarely the one they left:
+/// the row said it was under way for good.
+///
+/// Broken deliberately by marking only the conversation on screen in
+/// `went_through`: the row never settles and the wait for it gives up.
+#[test]
+fn the_far_end_is_marked_where_the_reader_was_sent_from() {
+    let _turn = support::clipboard_turn();
+    obelus_clipboard::links::use_opener_for_test(obelus_clipboard::links::Opener::Kept);
+
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/signin");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the card", |app| app.card().is_some());
+    support::press(&mut app, KeyCode::Enter);
+
+    // Off to something else before the agent says the far end happened.
+    app.open_for_test(std::path::Path::new("tests/fixtures/sample.rs"));
+    assert!(app.chat().is_none(), "still in the conversation");
+    pump(
+        &mut app,
+        &events,
+        "the far end, in the conversation",
+        |app| {
+            app.document(obelus_buffer::DocumentId::new(0))
+                .and_then(|document| document.chat())
+                .is_some_and(|talk| {
+                    talk.chat.rows(WIDTH).iter().any(|row| {
+                        row.text().contains("sign in to continue")
+                            && row.state.as_deref() == Some("completed")
+                    })
+                })
+        },
     );
 }
 
@@ -7557,12 +7667,14 @@ fn opening_a_conversation_opens_its_session_before_a_word_is_said() {
     app.new_conversation();
     assert!(app.chat().is_some(), "the view did not open");
     support::lay_out(&mut app, WIDTH, HEIGHT);
-    pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_agent::Talking::Ready
-    });
-    assert!(
-        !app.agent_orders().is_empty(),
-        "what it takes with a slash is not there before a word is said"
+    // Waited for rather than looked at once the session is there: the
+    // agent says what it takes after the answer that opens the session,
+    // and that answer is told first.
+    pump(
+        &mut app,
+        &events,
+        "what it takes with a slash, before a word is said",
+        |app| app.talking() == obelus_agent::Talking::Ready && !app.agent_orders().is_empty(),
     );
 
     support::type_text(&mut app, "/echo");
