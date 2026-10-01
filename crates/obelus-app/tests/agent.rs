@@ -7470,8 +7470,9 @@ fn a_conversation_another_obelus_has_open_is_not_opened_again() {
 /// is told before they press, which is the rule the palette follows.
 ///
 /// Broken deliberately one key at a time -- the guard in `take_note_away`,
-/// in `can_shift`, in `move_over`, in `alt+space`'s arm, or in the box's own
-/// arm -- and this goes red on whichever one was let through. The note below
+/// in `can_shift`, in `move_over`, in `alt+space`'s arm, in the line break's
+/// arm, or in the box's own arm -- and this goes red on whichever one was let
+/// through. The note below
 /// is what says the page did not simply go read-only.
 #[test]
 fn a_note_another_obelus_is_talking_about_is_not_changed_here() {
@@ -7524,6 +7525,8 @@ fn a_note_another_obelus_is_talking_about_is_not_changed_here() {
     let before = support::text_block(&was).to_string();
     support::type_text(&mut app, "zz");
     support::press(&mut app, KeyCode::Delete);
+    support::press_shift(&mut app, KeyCode::Enter);
+    support::press_alt_key(&mut app, KeyCode::Enter);
     let now = support::render(&mut app, WIDTH, 18);
     let after = support::text_block(&now).to_string();
     assert_eq!(

@@ -1412,7 +1412,7 @@ impl TodoView {
             },
 
             // Another note, which is what enter means in a page being
-            // written. Where it points is `alt+enter`: this is not a list of
+            // written. Where it points is `alt+o`: this is not a list of
             // rows to choose from, it is the text of them.
             KeyCode::Enter if bare => {
                 // After the whole of what hangs under the selected note,
@@ -1517,9 +1517,27 @@ impl TodoView {
                 }
                 None => TodoOutcome::Consumed,
             },
+            // A line in the note, by either of the two keys every box takes
+            // for one: `alt+enter` is the one that arrives where
+            // `shift+enter` does not, inside tmux among others. Here rather
+            // than left to the box, because neither is typing to
+            // `typing_for` -- so the lock below let a line into a note
+            // somebody else is talking about.
+            KeyCode::Enter if alt || key.modifiers == KeyModifiers::SHIFT => {
+                if self.selected_is_elsewhere() {
+                    return TodoOutcome::Consumed;
+                }
+                if let Some((_, composer)) = self.writing.as_mut() {
+                    composer.newline();
+                    self.rebuild();
+                    self.follow_caret();
+                }
+                TodoOutcome::Consumed
+            }
             // Where it points. A note about the project has nowhere to go,
-            // and nothing is the honest answer.
-            KeyCode::Enter if alt => match self.selected().and_then(|at| {
+            // and nothing is the honest answer. On `o` for open, because
+            // `alt+enter` is the line break here as in every other box.
+            KeyCode::Char('o') if alt => match self.selected().and_then(|at| {
                 let place = self.todo.notes.get(at)?.at.as_ref()?;
                 Some((place.path.clone(), (*self.where_now.get(at)?)?))
             }) {
