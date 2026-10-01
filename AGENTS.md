@@ -458,10 +458,7 @@ when either moves.
 project -- the notes, which conversation is about which note -- is keyed by
 `obelus_git::project` (git's `common_dir`, canonicalised) and nothing else;
 what a tree *shows*, like its branch, is its own (`head_of_the_tree`). The
-test is whether two worktrees should agree about the answer. A conversation
-is the one thing kept by project that a tree cannot share, because the agent
-keeps it under the directory it was told -- so its row says which
-(`acp::sessions`).
+test is whether two worktrees should agree about the answer.
 
 *A conversation is not a thing two of them may have open at once.* The queue
 that keeps Obelus to one prompt turn lives in a process, so a conversation is
@@ -713,6 +710,11 @@ A `·` line is the rules that live in that module's own doc rather than here,
 by the sentence they open with. They are there because they are read at the
 moment they matter -- and listed here because a rule you only meet by opening
 the file is a rule you break while deciding not to open it.
+
+**Keep this file short.** It is loaded whole into every session, so a rule
+that is one module's goes in that module's doc and here only as a few words
+on its `·` line; this file holds what crosses modules. A story told twice
+drifts.
 
 Two rules the views share and neither enforces: **leave a blank column after
 a Nerd Font glyph** (the non-`Mono` variants draw two cells wide while the
