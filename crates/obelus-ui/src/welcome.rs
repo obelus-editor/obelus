@@ -580,17 +580,54 @@ impl WelcomeView<'_> {
             .saturating_sub(4)
             .saturating_sub(when)
             .saturating_sub(WHEN_GAP);
-        write(
-            cells,
-            left + 2,
+        // From the left, which is the other way round from most things
+        // Obelus cuts: a path says which thing it is at its tail, and a
+        // column of paths cut the ordinary way is a column of identical
+        // beginnings with the one word that tells them apart gone.
+        let dropped = crate::drop_from_left(&opened.path, room as usize);
+        let ink = style.fg(self.theme.status_foreground);
+        let row = Rect {
+            x: left,
             y,
-            // From the left, which is the other way round from most
-            // things Obelus cuts: a path says which thing it is at its
-            // tail, and a column of paths cut the ordinary way is a
-            // column of identical beginnings with the one word that tells
-            // them apart gone.
-            &crate::truncate_from_left(&opened.path, room as usize),
-            style.fg(self.theme.status_foreground),
+            width,
+            height: 1,
+        };
+        let at = match dropped {
+            0 => left + 2,
+            // The mark is drawn plain and the text after it, counted from
+            // the start of the whole path so that what matched lands on
+            // the right letters even though its head has gone.
+            _ => {
+                crate::write_marked(
+                    cells,
+                    row,
+                    left + 2,
+                    y,
+                    "\u{2026}",
+                    ink,
+                    &crate::Marked::plain(),
+                );
+                left + 3
+            }
+        };
+        // What matched, marked -- the one writer for it, so this list
+        // cannot be the newest one that forgot.
+        crate::write_marked(
+            cells,
+            row,
+            at,
+            y,
+            &opened.path,
+            ink,
+            &crate::Marked {
+                matched: match opened.matched {
+                    Some((first, end)) => crate::Matched::Run(first, end),
+                    None => crate::Matched::Nothing,
+                },
+                mark: self.theme.picker_match_background,
+                syntax: None,
+                skip: dropped,
+            },
         );
         if when > 0 {
             write(

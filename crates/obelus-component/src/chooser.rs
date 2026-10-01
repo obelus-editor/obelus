@@ -55,6 +55,15 @@ use crate::{
 pub struct Known {
     /// Where it is, as it was named.
     pub path: PathBuf,
+    /// The same, written the way the row shows it.
+    ///
+    /// Handed over rather than worked out here, and the filter is run
+    /// against *this* and not against the path: a reader types what
+    /// they can see. Matching the whole path instead meant `home`
+    /// matched every row on an ordinary machine while no row had the
+    /// word on it, and the characters a match would mark were counted
+    /// in a string nobody was looking at.
+    pub shown: String,
     /// When it was last opened, in seconds since the epoch.
     ///
     /// `None` for a row written before Obelus kept one, which is drawn
@@ -162,12 +171,21 @@ impl Chooser {
     /// one short string and a list of twenty: a cache here would be a
     /// second answer to a question that costs nothing to ask.
     #[must_use]
-    pub fn rows(&self) -> Vec<&Known> {
+    pub fn rows(&self) -> Vec<(&Known, Option<(usize, usize)>)> {
         let query = self.filter.said().to_lowercase();
+        if query.is_empty() {
+            return self.known.iter().map(|known| (known, None)).collect();
+        }
         self.known
             .iter()
-            .filter(|known| {
-                query.is_empty() || known.path.to_string_lossy().to_lowercase().contains(&query)
+            .filter_map(|known| {
+                // In characters and not in bytes, because what comes back
+                // is handed to a view that marks characters -- and a path
+                // may hold one that is several bytes wide.
+                let shown = known.shown.to_lowercase();
+                let at = shown.find(&query)?;
+                let first = shown[..at].chars().count();
+                Some((known, Some((first, first + query.chars().count()))))
             })
             .collect()
     }
@@ -219,7 +237,7 @@ impl Chooser {
                 self.wants()
             }
             KeyCode::Enter => match self.rows().get(self.at - 1) {
-                Some(known) => Outcome::Chose(known.path.clone()),
+                Some((known, _)) => Outcome::Chose(known.path.clone()),
                 // A row that went while the key was travelling. Nothing,
                 // rather than a guess at which row was meant.
                 None => Outcome::Ignored,
@@ -311,6 +329,19 @@ impl Chooser {
         }
     }
 
+    /// Drops a project from the list.
+    ///
+    /// For one whose directory has gone since it was written down. The
+    /// row is not dimmed, it is taken away: a dim row says "not here",
+    /// and what is true of this one is that there is nothing to offer.
+    /// Nothing is written back -- the list on disk is tidied the next
+    /// time something is remembered, and a reader who reaches a dead row
+    /// twice in one session is a reader who pressed it twice.
+    pub fn forget(&mut self, path: &Path) {
+        self.known.retain(|known| known.path != path);
+        self.at = self.at.min(self.known.len());
+    }
+
     /// Which part of the box the list is narrowing by.
     ///
     /// Everything after the last separator: the directory in front of it
@@ -328,6 +359,31 @@ impl Chooser {
         }
     }
 
+    /// Which directory the box is about, where it is about one.
+    ///
+    /// Everything up to and including the last separator. One answer,
+    /// asked both by the key that decides whether a directory has to be
+    /// read and by the frame that decides whether what was read still
+    /// applies -- worked out twice, those two disagreed about an empty
+    /// box, and the whole of the last directory stayed on screen under a
+    /// box the reader had rubbed out.
+    ///
+    /// Either separator, because Windows takes both: a reader who types
+    /// `C:/Users` and one who types it with a backslash have named the
+    /// same directory, and looking only for the one this platform writes
+    /// leaves the other with no candidates at all.
+    #[must_use]
+    pub fn directory_named(&self) -> Option<PathBuf> {
+        let Doing::Naming(naming) = &self.doing else {
+            return None;
+        };
+        let said = expanded(&naming.typed.said());
+        // The separator itself stays, so that a box holding `/` asks
+        // about the root rather than about the empty string.
+        let at = said.rfind(std::path::is_separator)?;
+        Some(PathBuf::from(&said[..=at]))
+    }
+
     /// Which directory's entries would answer the box as it stands.
     ///
     /// Everything up to the last separator. A box holding `~/Work/ob` is
@@ -335,22 +391,19 @@ impl Chooser {
     /// the answer -- so the question only changes when a separator is
     /// typed or taken away, and the reading only happens then.
     fn wants(&mut self) -> Outcome {
+        let asked = self.directory_named();
         let Doing::Naming(naming) = &mut self.doing else {
             return Outcome::Ignored;
         };
-        let said = expanded(&naming.typed.said());
-        // Either separator, because Windows takes both: a reader who
-        // types `C:/Users` and a reader who types `C:\\Users` have named
-        // the same directory, and looking only for the one this platform
-        // writes leaves the other with no candidates at all.
-        let directory = match said.rfind(std::path::is_separator) {
-            // The separator itself stays, so that a box holding `/` asks
-            // about the root rather than about the empty string.
-            Some(at) => PathBuf::from(&said[..=at]),
-            // Nothing that looks like a path yet. The reader is typing a
-            // name with nowhere to look it up, and an empty list says so
-            // better than the whole of the current directory would.
-            None => return Outcome::Taken,
+        let Some(directory) = asked else {
+            // The box names no directory -- it is empty, or holds a bare
+            // name with nowhere to look one up. What was read a moment
+            // ago belongs to a path that is no longer in the box, so
+            // forgetting it is the whole of the answer: a reader who
+            // rubs out everything they typed should not be left looking
+            // at the contents of where they used to be.
+            naming.read = None;
+            return Outcome::Taken;
         };
         if naming.read.as_deref() == Some(directory.as_path()) {
             // The same directory as the letter before, so the candidates
