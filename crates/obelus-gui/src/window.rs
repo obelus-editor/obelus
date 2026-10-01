@@ -42,11 +42,12 @@
 //! `ctrl+s` means save whatever is being typed.
 
 use std::{
+    cell::Cell,
     sync::{
         Arc, Mutex,
         mpsc::{Receiver, Sender},
     },
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result};
@@ -80,11 +81,21 @@ use crate::{
 /// sends and so what the rest of Obelus already expects.
 const NOTCH: isize = 3;
 
+/// How long a wait on the window's side has to be before it is a line in
+/// the log.
+///
+/// The window has been seen to sit still for most of a minute with both of
+/// its threads asleep -- the application waiting for an event, the window
+/// waiting on the compositor -- and nothing in the log to say which wait it
+/// was. A frame is a few milliseconds, so a second is not a slow frame: it
+/// is something that did not arrive.
+pub(crate) const SLOW: Duration = Duration::from_secs(1);
+
 /// What the window's loop is woken for.
 #[derive(Clone, Copy, Debug)]
 enum Waking {
-    /// Obelus drew a frame.
-    Frame,
+    /// Obelus drew a frame, at this moment.
+    Frame(Instant),
     /// Obelus's loop has ended, which is the window's reason to exist gone.
     Finished,
 }
@@ -260,6 +271,12 @@ struct Showing {
     /// the next one is saying: a screen part way through being described
     /// would be marks from two screens at once.
     marking: Vec<Marked>,
+    /// When the window first asked to be drawn and has not been yet.
+    ///
+    /// The earliest unanswered ask, because on Wayland a redraw waits for
+    /// the compositor's frame callback, and a callback that never comes is
+    /// a screen that stops changing while nothing is busy.
+    asked: Cell<Option<Instant>>,
     /// What the window is animating, and when it wants waking for it.
     ///
     /// The window's own, and nothing the application is ever told about:
@@ -332,6 +349,7 @@ impl Showing {
             // The blink is asked once, on the way up: it is a question
             // about the system rather than about this window.
             motion: Motion::new(Blink::asked()),
+            asked: Cell::new(None),
             points,
         }
     }
@@ -392,6 +410,8 @@ impl Showing {
     /// screen comes from a frame, and a frame asks for its own redraw.
     fn redraw(&self) {
         if let Some(window) = self.window.as_ref() {
+            self.asked
+                .set(self.asked.get().or_else(|| Some(Instant::now())));
             window.request_redraw();
         }
     }
@@ -621,7 +641,7 @@ impl ApplicationHandler<Waking> for Showing {
 
         let proxy = self.proxy.clone();
         let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || {
-            let _ = proxy.send_event(Waking::Frame);
+            let _ = proxy.send_event(Waking::Frame(Instant::now()));
         });
         let cells = Cells::new(
             frames.clone(),
@@ -676,7 +696,11 @@ impl ApplicationHandler<Waking> for Showing {
 
     fn user_event(&mut self, events: &ActiveEventLoop, waking: Waking) {
         match waking {
-            Waking::Frame => {
+            Waking::Frame(sent) => {
+                let waited = sent.elapsed();
+                if waited >= SLOW {
+                    tracing::warn!(?waited, "a frame waited for the window to wake");
+                }
                 let Some(frames) = self.frames.as_ref() else {
                     return;
                 };
@@ -977,9 +1001,7 @@ impl ApplicationHandler<Waking> for Showing {
                 }
                 if drew {
                     self.point_the_input_method();
-                    if let Some(window) = self.window.as_ref() {
-                        window.request_redraw();
-                    }
+                    self.redraw();
                 }
             }
             Waking::Finished => {
@@ -1022,8 +1044,9 @@ impl ApplicationHandler<Waking> for Showing {
         events.set_control_flow(match wake {
             Some(Wake::At(when)) => ControlFlow::WaitUntil(when),
             // Something is in flight, so the next frame is wanted as soon
-            // as the screen will take one. What paces it is the surface
-            // itself, which is presented on the vertical blank: that is
+            // as the screen will take one. What paces it is the screen's
+            // refresh -- the surface presented on the vertical blank, or on
+            // Wayland the compositor's frame callback (see `paint`): that is
             // the rate an animation is meant to run at, and the one
             // number nobody here has to pick -- and it paces nothing at
             // all unless a frame was actually asked for, which is what
@@ -1041,6 +1064,12 @@ impl ApplicationHandler<Waking> for Showing {
             // it is done.
             WindowEvent::CloseRequested => self.tell(Event::Closed),
             WindowEvent::RedrawRequested => {
+                if let Some(asked) = self.asked.take() {
+                    let waited = asked.elapsed();
+                    if waited >= SLOW {
+                        tracing::warn!(?waited, "the window waited to be let draw");
+                    }
+                }
                 // How each bar is being shown, worked out for this frame:
                 // the settling is a moment's answer and the pointer moves
                 // between frames, so neither is a thing to keep.
