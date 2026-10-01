@@ -220,11 +220,18 @@ impl Widget for StatusView<'_> {
                         &truncate_from_right(note, usize::from(area.width).saturating_sub(2)),
                         self.wrong_ink().map_or(style, |ink| style.fg(ink)),
                     );
+                } else {
+                    self.render_project(area, cells, style);
                 }
             }
         }
     }
 }
+
+/// The blank between a word that says what something is and the thing.
+///
+/// Two, which is what every other pair of them on this row uses.
+const LABEL_GAP: u16 = 2;
 
 /// How few columns of the path are still worth drawing.
 ///
@@ -918,6 +925,45 @@ impl StatusView<'_> {
     /// And one number, where a file puts the cursor's place: how many are
     /// still to come back to. It is the only thing about this document that
     /// changes, and it is the answer to whether it is worth switching to.
+    /// Which project the welcome screen's keys are about.
+    ///
+    /// Said here and not on the page above it, because this row is where
+    /// Obelus says what the thing being read *is* -- a file's path and
+    /// its mode go here, and which project is the same kind of fact one
+    /// step out. The page is for the way in.
+    ///
+    /// Named, rather than left as a bare path: a path alone at the foot
+    /// of a screen is a thing the reader has to work out, and what makes
+    /// it worth saying at all is that every key above it is about this
+    /// one project and no other -- `f1` searches it, `f3` asks git about
+    /// it, a note and a conversation are filed under it.
+    ///
+    /// Last of the four, so a sentence Obelus has just said still takes
+    /// the row: that is news and this is standing information, and the
+    /// news goes when the next key is pressed.
+    fn render_project(&self, area: Rect, cells: &mut CellBuffer, style: Style) {
+        let said = crate::with_home_as_tilde(self.working_directory);
+        let label = "Project";
+        write(
+            cells,
+            area.x + 1,
+            area.y,
+            label,
+            style.fg(self.theme.gutter),
+        );
+        let after = u16::try_from(text_width(label)).unwrap_or(0) + LABEL_GAP;
+        let room = usize::from(area.width.saturating_sub(after + 2));
+        write(
+            cells,
+            area.x + 1 + after,
+            area.y,
+            // From the left, the way a path is cut everywhere it is one:
+            // what says which project it is is at the end.
+            &crate::truncate_from_left(&said, room),
+            style,
+        );
+    }
+
     /// The box at the foot of the welcome screen, which is one of two.
     ///
     /// One piece draws both, and the word in front is what says which:

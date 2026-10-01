@@ -6,9 +6,13 @@
 //! an empty one.
 //!
 //! The keys come from the key table rather than from strings here, so a
-//! rebound key changes the screen instead of leaving it lying. The working
-//! directory is on it because the file picker only ever searches that one
-//! project, which is worth knowing before pressing the key that opens it.
+//! rebound key changes the screen instead of leaving it lying.
+//!
+//! Which project they are about is *not* here. It is on the status row
+//! under this screen, where everything Obelus says about what is being
+//! read goes -- a file's path and its mode go there, and which project is
+//! the same kind of fact one step out. This doc claimed for a long time
+//! that it was on the page, while nothing drew it anywhere.
 //!
 //! **What went wrong on the way up is said here, under the keys and never in
 //! front of them.** A mark on a line of a settings file is a mark nobody sees
@@ -88,9 +92,6 @@ const ROW_HEIGHT: u16 = 2;
 /// ellipsis is what a desktop means by "this opens somewhere to say more",
 /// and here what it opens is the box at the foot.
 const OPEN_ANOTHER: &str = "Open a project…";
-
-/// The rows which project takes: the line itself and the blank under it.
-const WHERE_HEIGHT: u16 = 2;
 
 /// The least space between a path and the time beside it.
 ///
@@ -275,18 +276,6 @@ pub struct WelcomeView<'a> {
     /// The version of a newer Obelus, where one is out.
     newer: Option<&'a str>,
     theme: &'a Theme,
-    /// Which project the keys below are about.
-    ///
-    /// Said because every one of them is about *this* one and about no
-    /// other: `f1` searches it and nothing else, `f3` asks git about it,
-    /// a note and a conversation are filed under it. A reader who came
-    /// here from a desktop menu has just chosen it and a reader who
-    /// typed `ob` did not choose it at all, and both of them are about
-    /// to press a key that depends on the answer.
-    ///
-    /// This module's own doc has claimed for a long time that the
-    /// directory was on this screen. It was not.
-    working_directory: String,
     /// What is being asked, where Obelus has no project yet. The keys
     /// are not drawn then: none of them can do anything until this is
     /// answered, and a screen offering them would be offering nothing.
@@ -309,7 +298,6 @@ impl<'a> WelcomeView<'a> {
             at: app.went_wrong_at(),
             showing: app.went_wrong_showing(AMISS_ROWS),
             newer: app.newer_release(),
-            working_directory: crate::with_home_as_tilde(app.working_directory()),
             choosing: app.choosing(),
             theme: app.theme(),
             phase: app.phase(),
@@ -344,9 +332,7 @@ impl Widget for WelcomeView<'_> {
         let lines = u16::try_from(hints.len().div_ceil(COLUMNS)).unwrap_or(1);
         let keys = (lines * ROW_HEIGHT).saturating_sub(1);
         let amiss = self.amiss_height();
-        // The plate, a blank, which project, a blank, and the keys.
-        let tall =
-            u16::try_from(WORDMARK.len()).unwrap_or(u16::MAX) + WHERE_HEIGHT + 1 + keys + amiss;
+        let tall = u16::try_from(WORDMARK.len()).unwrap_or(u16::MAX) + 1 + keys + amiss;
         let wordmark = width_of(WORDMARK[0]);
         let short = u16::try_from(hints.len() + 2).unwrap_or(u16::MAX);
 
@@ -394,18 +380,7 @@ impl WelcomeView<'_> {
         // thing that has stopped.
         let mut y = self.plate(cells, left, y, width);
 
-        // Which project, between the mark and the keys: the keys are all
-        // about it, so it is read before them rather than after.
         y += 1;
-        write(
-            cells,
-            left + (width.saturating_sub(width_of(&self.working_directory))) / 2,
-            y,
-            &crate::truncate_from_left(&self.working_directory, width as usize),
-            Style::new().fg(self.theme.gutter),
-        );
-
-        y += WHERE_HEIGHT;
         self.grid(cells, left, y, width, hints);
 
         // Under the keys, where the caller said there was room for it.
