@@ -14,7 +14,7 @@
 //! without its sRGB conversion -- a theme's `#1e1e2e` is the colour the
 //! reader picked, and a pipeline that corrects it draws a different one.
 
-use std::{collections::HashMap, ops::Range, sync::Arc};
+use std::{collections::HashMap, ops::Range, sync::Arc, time::Instant};
 
 use anyhow::{Context, Result};
 use bytemuck::{Pod, Zeroable};
@@ -1163,7 +1163,13 @@ impl Painter {
         self.queue
             .write_buffer(&self.instances, 0, bytemuck::cast_slice(&self.quads));
 
-        let frame = match self.surface.get_current_texture() {
+        let acquiring = Instant::now();
+        let acquired = self.surface.get_current_texture();
+        let waited = acquiring.elapsed();
+        if waited >= crate::window::SLOW {
+            tracing::warn!(?waited, "the surface took this long to give up a frame");
+        }
+        let frame = match acquired {
             wgpu::CurrentSurfaceTexture::Success(frame)
             | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
             // The surface went out from under the frame -- the window was
@@ -1274,7 +1280,12 @@ impl Painter {
             }
         }
         self.queue.submit([encoder.finish()]);
+        let presenting = Instant::now();
         self.queue.present(frame);
+        let waited = presenting.elapsed();
+        if waited >= crate::window::SLOW {
+            tracing::warn!(?waited, "the surface took this long to take a frame");
+        }
         Ok(())
     }
 
