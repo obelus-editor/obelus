@@ -430,7 +430,15 @@ pub enum Status {
     /// Not here, and installable.
     Missing,
     /// Being installed right now, on a thread.
-    Installing,
+    Installing {
+        /// The version it is going over, when it is an update.
+        ///
+        /// Kept through the install because the card said `Update` and
+        /// which two versions a moment ago, and a card that says
+        /// `Installing` the moment it is pressed reads as an agent that
+        /// was never there.
+        replacing: Option<String>,
+    },
     /// Here, and startable.
     Installed,
     /// Here, and the registry has a newer one.

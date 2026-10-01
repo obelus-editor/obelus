@@ -128,7 +128,11 @@ impl App {
                     .as_deref()
                     .and_then(|root| obelus_agent::installation(&agent.id, root));
                 let status = if self.agents.installing.contains_key(&agent.id) {
-                    Status::Installing
+                    Status::Installing {
+                        replacing: installed
+                            .filter(|installed| installed.version != agent.version)
+                            .map(|installed| installed.version),
+                    }
                 } else if let Some(failure) = self.agents.install_failures.get(&agent.id) {
                     Status::Failed(failure.clone())
                 } else if let Some(installed) = installed {

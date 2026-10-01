@@ -95,6 +95,8 @@ pub struct SettingsView<'a> {
     named: Vec<&'static str>,
     /// That file, if there is one.
     project: Option<String>,
+    /// Which frame the mark beside an install that is running is on.
+    phase: u32,
 }
 
 impl<'a> SettingsView<'a> {
@@ -125,6 +127,7 @@ impl<'a> SettingsView<'a> {
                 .display()
                 .to_string()
             }),
+            phase: app.phase(),
         })
     }
 }
@@ -1374,7 +1377,10 @@ impl SettingsView<'_> {
     fn facts(&self, agent: &Listed) -> String {
         let mut facts: Vec<String> = Vec::new();
         match &agent.status {
-            obelus_agent::Status::Outdated { installed } => {
+            obelus_agent::Status::Outdated { installed }
+            | obelus_agent::Status::Installing {
+                replacing: Some(installed),
+            } => {
                 facts.push(format!("{installed} \u{2192} {}", agent.agent.version));
             }
             _ if !agent.agent.version.is_empty() => facts.push(agent.agent.version.clone()),
@@ -1401,7 +1407,7 @@ impl SettingsView<'_> {
             Status::Missing | Status::Failed(_) => {
                 ("Install \u{25b8}".to_string(), self.theme.foreground)
             }
-            Status::Installing => (self.installing(agent), self.theme.foreground),
+            Status::Installing { .. } => (self.installing(agent), self.theme.foreground),
             Status::Unavailable(why) => ((*why).to_string(), self.theme.gutter),
         }
     }
@@ -1410,21 +1416,33 @@ impl SettingsView<'_> {
     ///
     /// Bytes and a time only when there are bytes to count: a package
     /// manager is asked to do the whole job and says nothing until it has,
-    /// so the card says it is running and nothing it cannot know.
+    /// so the card says it is running and nothing it cannot know -- which
+    /// is why the mark in front turns. For as long as `npm` is silent it is
+    /// the one thing on the card that says the install has not stopped.
     fn installing(&self, agent: &Listed) -> String {
+        format!("{} {}", crate::spinning(self.phase), Self::how_far(agent))
+    }
+
+    /// How far an install has got, in words -- and an update says it is
+    /// one, because that is what the button it came from said.
+    fn how_far(agent: &Listed) -> String {
+        let doing = match agent.status {
+            obelus_agent::Status::Installing { replacing: Some(_) } => "Updating",
+            _ => "Installing",
+        };
         let Some(progress) = agent.progress else {
-            return "Installing\u{2026}".to_string();
+            return format!("{doing}\u{2026}");
         };
         match (progress.fraction(), progress.remaining()) {
             (Some(fraction), Some(left)) => format!(
-                "Installing {}% \u{b7} {}s left",
+                "{doing} {}% \u{b7} {}s left",
                 (fraction * 100.0).round() as u32,
                 left.as_secs().max(1)
             ),
             (Some(fraction), None) => {
-                format!("Installing {}%", (fraction * 100.0).round() as u32)
+                format!("{doing} {}%", (fraction * 100.0).round() as u32)
             }
-            _ => "Installing\u{2026}".to_string(),
+            _ => format!("{doing}\u{2026}"),
         }
     }
 }

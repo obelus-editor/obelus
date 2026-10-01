@@ -3027,6 +3027,154 @@ fn install_progress_moves_no_mark() {
     }
 }
 
+/// An install that has said nothing yet turns a mark on its card, and the
+/// screen is woken to turn it for exactly as long as the install runs.
+///
+/// `npm` says nothing until it is done, so a card with no progress is the
+/// one this is for: a mark standing still there reads as an install that
+/// stopped. Checked by dropping the clause from `wants_animating` (the
+/// first `is_waking` fails), by drawing the words without the mark (the
+/// mark is not in front of them), and by handing the view a phase of 0
+/// rather than the app's (the mark does not move with the clock).
+#[test]
+fn an_install_turns_its_mark() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("install-turns");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+    support::press(&mut app, KeyCode::BackTab);
+
+    app.handle(one_agent());
+    support::render(&mut app, 76, 16);
+    assert!(!app.is_waking(), "something was already waking the screen");
+
+    app.handle(Event::Agent(obelus_agent::Event::Installing {
+        id: "agent-0".to_string(),
+        progress: obelus_agent::install::Progress {
+            done: 0,
+            total: None,
+            elapsed: std::time::Duration::ZERO,
+        },
+    }));
+    let first = support::render(&mut app, 76, 16);
+    assert!(
+        app.is_waking(),
+        "the mark turns and nothing is waking the screen to turn it"
+    );
+    let row = first
+        .lines()
+        .find(|row| row.contains("Installing"))
+        .expect("the card says it is installing");
+    assert_eq!(
+        support::glyph_before(row, "Installing"),
+        obelus_ui::spinning(0),
+        "no turning mark in front of the words: {row}"
+    );
+
+    app.phase_for_test(1);
+    let next = support::render(&mut app, 76, 16);
+    let row = next
+        .lines()
+        .find(|row| row.contains("Installing"))
+        .expect("the card says it is installing");
+    assert_eq!(
+        support::glyph_before(row, "Installing"),
+        obelus_ui::spinning(1),
+        "the mark did not move with the clock: {row}"
+    );
+
+    app.handle(Event::Agent(obelus_agent::Event::Installed {
+        id: "agent-0".to_string(),
+        failure: Some("npm went away".to_string()),
+    }));
+    support::render(&mut app, 76, 16);
+    assert!(
+        !app.is_waking(),
+        "the screen is still being woken with nothing moving on it"
+    );
+}
+
+/// An update is an install over an older version, turns the same mark, and
+/// says it is an update while it runs.
+///
+/// The card offered `Update` and the facts said which two versions, so a
+/// card that said `Installing` the moment it was pressed would read as an
+/// agent that had never been there. Checked by putting `Outdated` before
+/// `Installing` where an agent's status is decided (the card goes on
+/// offering the button and nothing turns), by leaving `replacing` empty
+/// there (the card says `Installing`), and by taking `Installing` out of
+/// the arm that writes the two versions (they go).
+#[test]
+fn an_update_turns_its_mark() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("update-turns");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+    let root = file.with_file_name("agents");
+    app.agents_root_for_test(root.clone());
+    installed(&root, "agent-0", "0.9.0");
+    support::press(&mut app, KeyCode::BackTab);
+
+    app.handle(one_agent());
+    let before = support::render(&mut app, 76, 16);
+    assert!(
+        before.contains("Update \u{25b8}"),
+        "the card was not offering an update:\n{before}"
+    );
+
+    app.handle(Event::Agent(obelus_agent::Event::Installing {
+        id: "agent-0".to_string(),
+        progress: obelus_agent::install::Progress {
+            done: 0,
+            total: None,
+            elapsed: std::time::Duration::ZERO,
+        },
+    }));
+    let during = support::render(&mut app, 76, 16);
+    assert!(
+        app.is_waking(),
+        "the mark turns and nothing is waking the screen to turn it"
+    );
+    let row = during
+        .lines()
+        .find(|row| row.contains("Updating"))
+        .unwrap_or_else(|| panic!("the card does not say it is updating:\n{during}"));
+    assert_eq!(
+        support::glyph_before(row, "Updating"),
+        obelus_ui::spinning(0),
+        "no turning mark in front of the words: {row}"
+    );
+    assert!(
+        during.contains("0.9.0 \u{2192} 1.0.0"),
+        "the card forgot which two versions the update is between:\n{during}"
+    );
+}
+
+/// A registry of one agent, which installs with `npm`.
+fn one_agent() -> Event {
+    Event::Agent(obelus_agent::Event::Registry {
+        agents: vec![obelus_agent::Agent {
+            id: "agent-0".to_string(),
+            name: "Agent 0".to_string(),
+            version: "1.0.0".to_string(),
+            description: "The only one".to_string(),
+            authors: vec!["Somebody".to_string()],
+            license: "MIT".to_string(),
+            website: None,
+            icon: None,
+            distribution: obelus_agent::Distribution::Node {
+                package: "agent-0@1.0.0".to_string(),
+                arguments: Vec::new(),
+            },
+        }],
+        failure: None,
+    })
+}
+
 /// The marks arrive one at a time, an event each, and the frame one lands
 /// on writes a picture into cells that had a glyph in them.
 ///
