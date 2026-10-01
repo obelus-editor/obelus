@@ -38,6 +38,14 @@ a doc comment.
 
 ## Rules that are easy to break by accident
 
+**Nothing reaches `master` except through a pull request.** Windows, macOS
+and Linux on arm exist only in CI, so a change green at this terminal is one
+nobody has run on three of the systems it ships to -- and pushed straight to
+`master` it goes red there with the tree broken until a fix lands. CI runs
+on `pull_request` as well as on a push, so a branch is answered before it is
+merged. What this cost last was a claim's lock: whole-file on Windows, it
+passed every test on Linux and failed the one that reads the bytes under it.
+
 **Every test must be checked by breaking the thing it covers.** Write the test,
 then deliberately break that path and watch the test fail. Seven tests here
 passed while the feature under them was broken; each was found this way and no
