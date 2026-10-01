@@ -115,10 +115,6 @@ pub struct Choosing {
     /// Two boxes and two meanings, which is why this is a flag and not a
     /// guess from whether the text has a separator in it.
     pub naming: bool,
-    /// What could finish the path, where one is being named.
-    pub candidates: Vec<String>,
-    /// Which of those the reader has walked onto, where they have.
-    pub candidate_at: Option<usize>,
 }
 
 /// One project the reader has had open, as a row.
@@ -302,6 +298,12 @@ pub trait Screen {
     /// What the welcome screen is asking, while it is asking which
     /// project. `None` on every start that was told one.
     fn choosing(&self) -> Option<Choosing>;
+    /// What could finish the path being named, while one is being named.
+    ///
+    /// An ordinary compact list, the way the agent's own commands are:
+    /// the rows and the chosen row are the picker's, and the box below it
+    /// owns the keys.
+    fn naming_list(&self) -> Option<&Picker>;
     /// Which of those rows the reader is on.
     fn went_wrong_at(&self) -> usize;
     /// The version of a newer Obelus, where one is out and the reader
@@ -389,7 +391,6 @@ pub mod editor;
 pub mod hover;
 pub mod image;
 pub mod names;
-pub mod naming;
 pub mod picker;
 pub mod reading;
 pub mod settings;
@@ -745,17 +746,12 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     // leaves it alone, and this is what they would be over.
     if app.reading_nothing() && !layers.filling() {
         welcome::WelcomeView::new(app).render(regions.editor, cells);
-        // Over it, because it is a panel and not part of the page: what
-        // could finish the path being typed, beside the box it would go
-        // in.
-        if let Some(choosing) = app.choosing() {
-            naming::draw(
-                cells,
-                regions.editor,
-                regions.status,
-                &choosing,
-                app.theme(),
-            );
+        // What could finish the path being named, which is not a layer
+        // for the reason the agent's own commands are not one: the list
+        // follows what is in the box rather than being something the
+        // reader opened, and it goes where any compact list goes.
+        if let Some(list) = app.naming_list() {
+            list_over(cells, app, list, regions.editor, regions.edge, None);
         }
     }
 

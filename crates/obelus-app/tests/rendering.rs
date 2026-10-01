@@ -2584,21 +2584,29 @@ fn a_start_with_no_project_asks_which_one() {
     support::check("welcome_choosing_64x20", &support::render(&mut app, 64, 20));
 }
 
-/// Naming a path puts a panel of what could finish it over the list.
+/// Naming a path puts a list of what could finish it over the welcome
+/// screen.
 ///
-/// Its own panel and not the one a language server's completions go in:
-/// those carry a kind, a detail and a paragraph, and a path carries none
-/// of them. What the two share is the edge.
+/// The ordinary compact list, which is the arrangement the agent's own
+/// commands settled: the rows, the chosen row and the marking of what
+/// matched are the picker's, and the box at the foot owns the keys. So
+/// what is worth asserting here is that it is *there* and that it holds
+/// what the directory holds -- how a compact list looks is already
+/// pinned by the grids of every other one.
 ///
-/// The names and the directory are the test's own: a real one typed here
-/// would put this run's process number on the screen.
+/// No golden grid, because the path in the box is a real directory with
+/// this run's process number in it: a fixture of that would only ever
+/// match the run that wrote it.
 ///
-/// Deliberate break: answer `Some(0)` rather than `None` for
-/// `candidate_at` when nothing has been walked onto, and the first row
-/// comes back wearing the mark that says the keys are there -- while
-/// enter would still open what is in the box.
+/// Deliberate break: draw the list only when `layers.filling()` is false
+/// *and* a buffer is open, and nothing comes back -- the welcome screen
+/// has no buffer behind it.
 #[test]
 fn naming_a_path_offers_what_could_finish_it() {
+    let scratch = support::Scratch::new("rendering-naming");
+    for name in ["alpha", "beta"] {
+        std::fs::create_dir_all(scratch.path().join(name)).expect("a directory");
+    }
     let mut app = App::new(Vec::new());
     app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
     app.ask_about_these_projects_for_test(vec![obelus_component::chooser::Known {
@@ -2606,25 +2614,16 @@ fn naming_a_path_offers_what_could_finish_it() {
         last: None,
     }]);
     support::press(&mut app, crossterm::event::KeyCode::Enter);
-    for character in "/tmp/obelus/".chars() {
+    for character in format!("{}/", scratch.path().display()).chars() {
         support::press(&mut app, crossterm::event::KeyCode::Char(character));
     }
-    app.offer_these_candidates_for_test(
-        std::path::Path::new("/tmp/obelus/"),
-        vec![
-            obelus_component::chooser::Candidate {
-                path: std::path::PathBuf::from("/tmp/obelus/alpha"),
-                directory: true,
-            },
-            obelus_component::chooser::Candidate {
-                path: std::path::PathBuf::from("/tmp/obelus/beta"),
-                directory: true,
-            },
-            obelus_component::chooser::Candidate {
-                path: std::path::PathBuf::from("/tmp/obelus/notes.md"),
-                directory: false,
-            },
-        ],
-    );
-    support::check("welcome_naming_64x20", &support::render(&mut app, 64, 20));
+
+    let dump = support::render(&mut app, 80, 20);
+    let text = support::text_block(&dump);
+    for name in ["alpha/", "beta/"] {
+        assert!(
+            text.contains(name),
+            "the list does not offer {name}:\n{dump}"
+        );
+    }
 }

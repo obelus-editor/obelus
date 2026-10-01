@@ -32,9 +32,14 @@
 //! `1`-`9`, and that cannot happen here: both states of the foot are typed
 //! into, so a digit is a character. `~/Work/project2` is the example that
 //! settles it. The rows are walked with the keys every other list is
-//! walked with, and `Tab` -- which no command may be bound to, because
-//! every box takes it itself -- is what a path box has always meant by
-//! "finish this for me".
+//! walked with.
+//!
+//! **What could finish a path is not here.** It is an ordinary compact
+//! list, built and drawn where every other one is -- the agent's own
+//! commands while one is being typed are the same arrangement, and the
+//! rule they settled is the rule here: the list follows what is in the
+//! box, and the box owns the keys. This says *which directory* is being
+//! asked about ([`Outcome::Wants`]) and nothing about what is in it.
 
 use std::path::{Path, PathBuf};
 
@@ -55,21 +60,6 @@ pub struct Known {
     /// `None` for a row written before Obelus kept one, which is drawn
     /// with nothing where the words about when would go.
     pub last: Option<i64>,
-}
-
-/// One thing a directory holds, as something a path could be finished
-/// with.
-///
-/// Whether it is a directory comes with it rather than being asked of the
-/// disk where it is drawn: the panel is laid out on every frame and a
-/// `is_dir` per candidate per frame is twenty file reads a keystroke, for
-/// an answer that was already known when the directory was read.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Candidate {
-    /// The whole path, which is what choosing it opens.
-    pub path: PathBuf,
-    /// Whether it holds other things.
-    pub directory: bool,
 }
 
 /// What the chooser wants the application to do about a key.
@@ -110,23 +100,15 @@ enum Doing {
     Naming(Box<Naming>),
 }
 
-/// The path being typed, and what could finish it.
+/// The path being typed.
 #[derive(Debug)]
 struct Naming {
     typed: Field,
-    /// The directory the candidates were read from, so that a letter which
-    /// does not change it does not ask for them again.
+    /// The directory last asked about, so that a letter which does not
+    /// change it does not ask again. This is the whole of why a reader
+    /// typing a long path pays for the directories they pass through and
+    /// not for the letters.
     read: Option<PathBuf>,
-    /// What that directory holds, in the order it was handed over.
-    candidates: Vec<Candidate>,
-    /// Which of them are on screen, and which the reader is on.
-    ///
-    /// Nothing is on by default: the caret is in the box, and a candidate
-    /// is reached by walking down into the list. Which is also what keeps
-    /// enter meaning "open what I typed" until the reader has said
-    /// otherwise.
-    at: Option<usize>,
-    window: Window,
 }
 
 /// The question, and everything being done about it.
@@ -202,43 +184,6 @@ impl Chooser {
         self.at
     }
 
-    /// What could finish the path being typed, where one is.
-    #[must_use]
-    pub fn candidates(&self) -> &[Candidate] {
-        match &self.doing {
-            Doing::Choosing => &[],
-            Doing::Naming(naming) => &naming.candidates,
-        }
-    }
-
-    /// Which candidate the reader is on, where they are on one.
-    #[must_use]
-    pub const fn candidate_at(&self) -> Option<usize> {
-        match &self.doing {
-            Doing::Choosing => None,
-            Doing::Naming(naming) => naming.at,
-        }
-    }
-
-    /// Hands over what a directory holds, in answer to [`Outcome::Wants`].
-    ///
-    /// Ignored where the reader has typed on since asking, which is the
-    /// normal case rather than the exceptional one: the answer describes a
-    /// box that may have moved, and a list of candidates for a directory
-    /// nobody is typing in is worse than none.
-    pub fn offer(&mut self, directory: &Path, entries: Vec<Candidate>) {
-        let Doing::Naming(naming) = &mut self.doing else {
-            return;
-        };
-        if naming.read.as_deref() != Some(directory) {
-            return;
-        }
-        naming.window.set_count(entries.len());
-        naming.candidates = entries;
-        naming.at = None;
-        naming.window.set_focus(0);
-    }
-
     /// Takes a key, and says what the application has to do about it.
     ///
     /// `height` is how many rows the list on screen has, which the paging
@@ -246,7 +191,7 @@ impl Chooser {
     pub fn handle(&mut self, key: KeyEvent, height: u16) -> Outcome {
         match &self.doing {
             Doing::Choosing => self.choosing(key, height),
-            Doing::Naming(_) => self.naming(key, height),
+            Doing::Naming(_) => self.naming(key),
         }
     }
 
@@ -270,9 +215,6 @@ impl Chooser {
                     // start of a path, and the two boxes mean two things.
                     typed: Field::new(),
                     read: None,
-                    candidates: Vec::new(),
-                    at: None,
-                    window: Window::new(),
                 }));
                 self.wants()
             }
@@ -306,49 +248,30 @@ impl Chooser {
     }
 
     /// A key while the reader is naming a path.
-    fn naming(&mut self, key: KeyEvent, height: u16) -> Outcome {
-        // Before the modifiers are looked at, because a box takes these
-        // itself: `Tab` is how every path box a reader has used says
-        // "finish this", and `keymap::why_not` refuses to bind it for
-        // exactly that reason.
-        if key.code == KeyCode::Tab {
-            return self.finish_it();
-        }
-        if let Some(movement) = movement(key) {
-            let Doing::Naming(naming) = &mut self.doing else {
-                return Outcome::Ignored;
-            };
-            if naming.candidates.is_empty() {
-                return Outcome::Ignored;
-            }
-            naming.window.set_count(naming.candidates.len());
-            naming.window.set_focus(naming.at.unwrap_or(0));
-            naming.window.apply(movement, height, Wrap::Yes);
-            naming.at = Some(naming.window.focus());
-            return Outcome::Taken;
-        }
+    ///
+    /// Only the box. What could finish the path is a list somewhere else
+    /// and it is offered the key first -- the arrangement the agent's own
+    /// commands settled: the list follows what is typed, and the box owns
+    /// every key the list did not want.
+    fn naming(&mut self, key: KeyEvent) -> Outcome {
         match key.code {
-            // Here there *is* something nearer to give up on, so escape
-            // does what it does everywhere: the path box goes and the
-            // list of projects is underneath it again.
+            // Something nearer to give up on than the screen, so escape
+            // does here what it does everywhere: the path box goes and
+            // the projects are underneath it again. The list in front of
+            // *it* has already had its turn at this key.
             KeyCode::Esc => {
                 self.doing = Doing::Choosing;
                 self.at = 0;
                 Outcome::Taken
             }
+            // What is in the box. A candidate is never chosen here --
+            // choosing one puts it *in* the box, which is the list's own
+            // doing, and by the time this is reached there is no list.
             KeyCode::Enter => {
                 let Doing::Naming(naming) = &self.doing else {
                     return Outcome::Ignored;
                 };
-                // What the reader is standing on, or what they typed
-                // where they are standing on nothing. The box is the
-                // answer until they walk into the list, which is what
-                // makes a path nobody offered still openable.
-                let chosen = match naming.at.and_then(|at| naming.candidates.get(at)) {
-                    Some(candidate) => candidate.path.clone(),
-                    None => PathBuf::from(expanded(&naming.typed.said())),
-                };
-                Outcome::Chose(chosen)
+                Outcome::Chose(PathBuf::from(expanded(&naming.typed.said())))
             }
             _ => {
                 let Doing::Naming(naming) = &mut self.doing else {
@@ -357,34 +280,52 @@ impl Chooser {
                 if !naming.typed.handle_key(&key) {
                     return Outcome::Ignored;
                 }
-                // Typing is about the box again, not about whichever
-                // candidate was under the reader a moment ago.
-                naming.at = None;
                 self.wants()
             }
         }
     }
 
-    /// Puts the one thing every candidate agrees on into the box.
+    /// Puts a chosen candidate in the box.
     ///
-    /// What a reader means by `Tab`, and the half of it that is not
-    /// choosing: where every candidate starts the same way, that much is
-    /// certain and typing it again is work the machine can do. Where they
-    /// do not agree, nothing is put in -- the list below is already
-    /// showing what the disagreement is.
-    fn finish_it(&mut self) -> Outcome {
+    /// A directory takes a separator with it, so that the next level's
+    /// candidates are asked for without the reader typing one -- which is
+    /// what makes walking down a tree one key per level.
+    pub fn put(&mut self, path: &Path, directory: bool) -> Outcome {
         let Doing::Naming(naming) = &mut self.doing else {
             return Outcome::Ignored;
         };
-        let Some(shared) = common_prefix(&naming.candidates) else {
-            return Outcome::Ignored;
-        };
-        if shared.len() <= naming.typed.said().len() {
-            return Outcome::Ignored;
+        let mut said = path.to_string_lossy().into_owned();
+        if directory && !said.ends_with(std::path::is_separator) {
+            said.push(std::path::MAIN_SEPARATOR);
         }
-        naming.typed.replace(&shared);
-        naming.at = None;
+        naming.typed.replace(&said);
         self.wants()
+    }
+
+    /// What is in the box, as a path.
+    #[must_use]
+    pub fn named(&self) -> Option<PathBuf> {
+        match &self.doing {
+            Doing::Choosing => None,
+            Doing::Naming(naming) => Some(PathBuf::from(expanded(&naming.typed.said()))),
+        }
+    }
+
+    /// Which part of the box the list is narrowing by.
+    ///
+    /// Everything after the last separator: the directory in front of it
+    /// is what was read, and these are the letters that choose among what
+    /// it holds.
+    #[must_use]
+    pub fn segment(&self) -> String {
+        let Doing::Naming(naming) = &self.doing else {
+            return String::new();
+        };
+        let said = naming.typed.said();
+        match said.rfind(std::path::is_separator) {
+            Some(at) => said[at + 1..].to_string(),
+            None => said,
+        }
     }
 
     /// Which directory's entries would answer the box as it stands.
@@ -417,8 +358,6 @@ impl Chooser {
             return Outcome::Taken;
         }
         naming.read = Some(directory.clone());
-        naming.candidates.clear();
-        naming.at = None;
         Outcome::Wants(directory)
     }
 }
@@ -443,32 +382,6 @@ fn expanded(said: &str) -> String {
         return said.to_string();
     };
     format!("{}{rest}", home.display())
-}
-
-/// The longest beginning every candidate shares, where there are any.
-///
-/// By characters rather than by bytes: a path with a multi-byte character
-/// in it would otherwise be cut in the middle of one, and what goes in the
-/// box has to be a string.
-#[must_use]
-fn common_prefix(candidates: &[Candidate]) -> Option<String> {
-    let mut all = candidates
-        .iter()
-        .map(|candidate| candidate.path.to_string_lossy().into_owned());
-    let first = all.next()?;
-    let mut shared: Vec<char> = first.chars().collect();
-    for each in all {
-        let common = shared
-            .iter()
-            .zip(each.chars())
-            .take_while(|(left, right)| **left == *right)
-            .count();
-        shared.truncate(common);
-    }
-    match shared.is_empty() {
-        true => None,
-        false => Some(shared.into_iter().collect()),
-    }
 }
 
 /// The key as one of the six ways of moving about a list, where it is one.

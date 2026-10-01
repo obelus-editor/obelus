@@ -754,6 +754,13 @@ pub struct App {
     /// to another one is a second Obelus, which is how Obelus is used
     /// anyway.
     chooser: Option<obelus_component::chooser::Chooser>,
+    /// What could finish the path being named, while one is.
+    ///
+    /// Here rather than inside the chooser for the reason the agent's own
+    /// commands are here: a list is built out of what the application
+    /// knows -- a directory it read -- and `obelus-component` draws and
+    /// walks lists rather than looking at disks.
+    naming_list: Option<Picker>,
     working_directory: PathBuf,
     /// Which branch the tree Obelus was put on has checked out.
     ///
@@ -922,6 +929,7 @@ impl App {
             // -- has a directory already and is not a reader standing in
             // front of a launcher.
             chooser: None,
+            naming_list: None,
             working_directory: std::env::current_dir().unwrap_or_default(),
             // Not read here. Which branch the tree is on is a fact about
             // the directory Obelus was *told* to work in, so it is read
@@ -2363,6 +2371,12 @@ impl App {
         self.prepare_icons();
         self.settle_chat(editor_area);
         self.refresh_slash();
+        // The same thing for the list of what could finish a path: the
+        // window follows the selection only once it knows how many rows
+        // are on screen, and the matched characters are worked out for
+        // the rows about to be drawn. No disk is touched -- the rows are
+        // whatever the last directory read found.
+        self.settle_the_naming_list();
 
         // Less the scrollbar's column, which the drawing keeps for itself:
         // a reading laid out for the whole width would have its last cell
@@ -4304,6 +4318,9 @@ impl Screen for App {
     }
     fn choosing(&self) -> Option<obelus_ui::Choosing> {
         self.what_is_being_chosen()
+    }
+    fn naming_list(&self) -> Option<&Picker> {
+        self.naming_list.as_ref()
     }
 
     fn went_wrong_at(&self) -> usize {

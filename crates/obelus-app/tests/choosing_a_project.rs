@@ -229,43 +229,97 @@ fn escape_comes_back_out_of_the_path_box() {
     assert_eq!(choosing.known.len(), 2, "the projects did not come back");
 }
 
-/// What a directory holds is offered, and `Tab` finishes what is certain.
+/// What a directory holds is offered, the first of them chosen, and
+/// enter puts it in the box.
 ///
-/// The half of `Tab` that is not choosing: where every candidate starts
-/// the same way, that much is certain and typing it again is work the
-/// machine can do.
+/// The arrangement the agent's own commands settled, and the rule every
+/// completion in Obelus follows: the list comes up already chosen, so
+/// enter takes it without a key in between, and what it takes goes into
+/// the box rather than being acted on. A directory takes a separator
+/// with it, so the next level arrives without the reader typing one --
+/// which makes walking down a tree one key per level.
 ///
-/// Broken deliberately by having `finish_it` answer `Ignored` always: the
-/// box keeps what was typed and the reader finishes the name by hand.
+/// Broken deliberately by having `Chooser::put` leave the separator off
+/// a directory: the box holds a directory, no further candidates are
+/// asked for, and the reader has to type the separator themselves.
 #[test]
-fn tab_puts_in_what_every_candidate_agrees_on() {
-    let scratch = support::Scratch::new("choosing-tab");
-    // Two that share a beginning, so there is something certain and
-    // something still to choose.
-    for name in ["shared-one", "shared-two"] {
-        std::fs::create_dir_all(scratch.path().join(name)).expect("a directory");
-    }
+fn enter_puts_the_chosen_row_in_the_box() {
+    let scratch = support::Scratch::new("choosing-enter");
+    std::fs::create_dir_all(scratch.path().join("alpha").join("inner")).expect("directories");
     let mut app = asking();
     press(&mut app, KeyCode::Enter);
     for character in format!("{}/", scratch.path().display()).chars() {
         press(&mut app, KeyCode::Char(character));
     }
-    assert_eq!(
-        app.choosing().expect("asking").candidates.len(),
-        2,
-        "the directory was not read"
-    );
+    assert!(app.naming_list().is_some(), "the directory offered nothing");
 
-    press(&mut app, KeyCode::Tab);
+    press(&mut app, KeyCode::Enter);
 
     let typed = app.choosing().expect("asking").typed;
     assert!(
-        typed.ends_with("shared-"),
-        "tab did not put in what both of them start with: {typed:?}"
+        typed.ends_with(&format!("alpha{}", std::path::MAIN_SEPARATOR)),
+        "enter did not put the chosen row in the box with its separator: {typed:?}"
+    );
+    assert!(
+        app.choosing().is_some(),
+        "enter opened something instead of typing it"
+    );
+    assert!(
+        app.naming_list().is_some(),
+        "what is inside the chosen directory was not asked for"
+    );
+}
+
+/// Escape shuts the list, and then enter opens what is in the box.
+///
+/// The one place a path differs from the agent's commands: a command's
+/// name settles itself with a blank after it, and a path never does --
+/// every directory chosen opens the next level. So there has to be a key
+/// that says "this one", and escape already means "give up on the
+/// nearest thing", which the list is.
+///
+/// Escape reaches the list and not the box, which is the half worth
+/// asserting: one key further and the reader is back among the projects
+/// with what they typed thrown away.
+///
+/// Broken deliberately by answering `false` for escape in
+/// `App::naming_list_key`: the key falls through to the box, the path
+/// box closes, and the reader is back on the list of projects.
+#[test]
+fn escape_shuts_the_list_and_then_enter_opens_what_is_typed() {
+    let scratch = support::Scratch::new("choosing-escape-list");
+    std::fs::create_dir_all(scratch.path().join("alpha")).expect("a directory");
+    let mut app = asking();
+    press(&mut app, KeyCode::Enter);
+    for character in format!("{}/", scratch.path().display()).chars() {
+        press(&mut app, KeyCode::Char(character));
+    }
+    assert!(app.naming_list().is_some(), "no list");
+
+    press(&mut app, KeyCode::Esc);
+    assert!(app.naming_list().is_none(), "the list did not shut");
+    assert!(
+        app.choosing().expect("asking").naming,
+        "escape left the box as well as the list"
+    );
+
+    press(&mut app, KeyCode::Enter);
+
+    assert!(app.choosing().is_none(), "it is still asking");
+    assert_eq!(
+        app.working_directory(),
+        scratch.path(),
+        "it did not open what was in the box"
     );
 }
 
 /// Choosing a project is the end of being asked.
+///
+/// Escape before enter, because what is typed names a directory that
+/// exists and so has a list of its own in front of it -- and enter
+/// belongs to the list while there is one. That chain is the subject of
+/// the test above; here it is only how a reader gets to the thing being
+/// tested.
 ///
 /// Broken deliberately by leaving `self.chooser` alone in `settle_on`:
 /// the screen goes on asking over a project Obelus has already been put
@@ -278,6 +332,7 @@ fn choosing_a_project_settles_it() {
     for character in scratch.path().display().to_string().chars() {
         press(&mut app, KeyCode::Char(character));
     }
+    press(&mut app, KeyCode::Esc);
     press(&mut app, KeyCode::Enter);
 
     assert!(app.choosing().is_none(), "it is still asking");
@@ -321,13 +376,14 @@ fn a_path_typed_with_forward_slashes_is_still_a_path() {
         press(&mut app, KeyCode::Char(character));
     }
 
-    let choosing = app.choosing().expect("asking");
-    assert!(
-        choosing
-            .candidates
-            .iter()
-            .any(|name| name.starts_with("inside")),
-        "a directory typed with forward slashes offered nothing: {:?}",
-        choosing.candidates
+    let list = app
+        .naming_list()
+        .expect("a directory typed with forward slashes offered nothing");
+    assert_eq!(
+        list.selected_item().map(|item| item.label.as_str()),
+        // The one thing in there, so it is both the only match and the
+        // chosen one.
+        Some("inside/"),
+        "what the directory holds was not offered"
     );
 }

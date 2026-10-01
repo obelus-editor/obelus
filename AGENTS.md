@@ -602,7 +602,8 @@ crates/
                       `shift+enter` and `alt+enter` (composer); a list the
                       reader builds is not a picker (names); a screen that
                       cannot be left, two boxes that never share their
-                      text, and why no numbers (chooser)
+                      text, why no numbers, and what could finish a path
+                      is an ordinary list somewhere else (chooser)
   obelus-reading/   what a file is when it is not code: markdown, a log
                     · a log's format is decided by its lines, not its name;
                       what Obelus writes, Obelus has to be able to read (log)
@@ -666,8 +667,7 @@ crates/
                       what a region *is* and the front end says what that looks
                       like, nothing may be said there that the cells do not
                       already say in their own way, and what is said carries
-                      enough to be checked against them (shapes); a path is
-                      not a completion, and a name is not a path (naming); the argument
+                      enough to be checked against them (shapes); the argument
                       being marked is the one thing that may not be clipped
                       away (signature); every layer is asked the same question
                       (settings)
