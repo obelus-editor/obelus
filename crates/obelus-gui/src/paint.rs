@@ -115,6 +115,9 @@ const ATLAS: u32 = 1024;
 
 /// What Obelus draws on.
 pub(crate) struct Painter {
+    /// Told each time a frame is about to go, which is what lets winit pace
+    /// the next one by the compositor rather than by the swapchain.
+    window: Arc<Window>,
     surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -457,6 +460,14 @@ fn whole_window(window: [f32; 2], margin: [f32; 2]) -> [f32; 4] {
     [-margin[0], -margin[1], window[0], window[1]]
 }
 
+/// Whether the window is a Wayland surface.
+fn on_wayland(window: &Window) -> bool {
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    window
+        .window_handle()
+        .is_ok_and(|handle| matches!(handle.as_raw(), RawWindowHandle::Wayland(_)))
+}
+
 /// How wide a change mark is drawn, as a part of the cell it sits in.
 ///
 /// The same as a bar's track, because the map and the bar are next to each
@@ -604,15 +615,33 @@ impl Painter {
         // The surface is drawn through a view that does not convert, and
         // the view has to be declared before the surface is configured.
         configured.view_formats = vec![view];
+        let capabilities = surface.get_capabilities(&adapter);
         // Waiting for the screen rather than racing it: Obelus draws when
         // something happened, so there is never a frame to throw away.
-        configured.present_mode = wgpu::PresentMode::AutoVsync;
+        //
+        // Except on Wayland, where FIFO is the compositor's to release, and
+        // Hyprland on NVIDIA was seen not to: every acquire ran out its
+        // second, so a window drew a frame a second for most of a minute
+        // with nothing busy on either side -- with the driver's explicit
+        // sync turned off as well. Mailbox never waits on that, and the
+        // pacing FIFO gave an animation comes from the frame callback
+        // instead, which `pre_present_notify` asks winit for. Only there,
+        // because elsewhere that call paces nothing and Mailbox would draw
+        // an animation as fast as the card can.
+        configured.present_mode = if on_wayland(&window)
+            && capabilities
+                .present_modes
+                .contains(&wgpu::PresentMode::Mailbox)
+        {
+            wgpu::PresentMode::Mailbox
+        } else {
+            wgpu::PresentMode::AutoVsync
+        };
         // Said, because the default is whatever the platform would rather
         // do and on a Wayland compositor that is to honour the alpha
         // channel: a page drawn in a theme's own dark background came out
         // with the wallpaper showing through it. Obelus's window is not a
         // transparent window.
-        let capabilities = surface.get_capabilities(&adapter);
         if capabilities
             .alpha_modes
             .contains(&wgpu::CompositeAlphaMode::Opaque)
@@ -629,6 +658,8 @@ impl Painter {
             view = ?view,
             alpha = ?configured.alpha_mode,
             offered = ?capabilities.alpha_modes,
+            present = ?configured.present_mode,
+            presents = ?capabilities.present_modes,
             "drawing with"
         );
 
@@ -791,6 +822,7 @@ impl Painter {
         });
 
         Ok(Self {
+            window,
             surface,
             device,
             queue,
@@ -1280,6 +1312,10 @@ impl Painter {
             }
         }
         self.queue.submit([encoder.finish()]);
+        // Only where a frame really goes: the callback this asks for comes
+        // with a commit, and one asked for with nothing committed is a
+        // redraw winit holds back for ever.
+        self.window.pre_present_notify();
         let presenting = Instant::now();
         self.queue.present(frame);
         let waited = presenting.elapsed();

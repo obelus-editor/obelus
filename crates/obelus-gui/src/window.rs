@@ -1044,8 +1044,9 @@ impl ApplicationHandler<Waking> for Showing {
         events.set_control_flow(match wake {
             Some(Wake::At(when)) => ControlFlow::WaitUntil(when),
             // Something is in flight, so the next frame is wanted as soon
-            // as the screen will take one. What paces it is the surface
-            // itself, which is presented on the vertical blank: that is
+            // as the screen will take one. What paces it is the screen's
+            // refresh -- the surface presented on the vertical blank, or on
+            // Wayland the compositor's frame callback (see `paint`): that is
             // the rate an animation is meant to run at, and the one
             // number nobody here has to pick -- and it paces nothing at
             // all unless a frame was actually asked for, which is what
