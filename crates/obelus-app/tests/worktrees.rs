@@ -236,6 +236,44 @@ fn the_worktrees_are_a_tab_of_what_is_open() {
     );
 }
 
+/// A tree inside the main checkout is named the way the ones beside it
+/// are: from the directory the main checkout sits in.
+///
+/// Broken deliberately by going back to naming only a tree beside the
+/// main checkout by a word: the one under `.worktree` is called by its
+/// whole path while `main` is a name.
+#[test]
+fn a_tree_inside_the_main_checkout_is_named_from_where_it_sits() {
+    let scratch = Scratch::new("worktrees-inside");
+    let (main, _, _) = repository(&scratch);
+    let nested = main.join(".worktree").join("nested");
+    git(
+        &main,
+        &[
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            "nested",
+            nested.to_str().expect("a path"),
+        ],
+    );
+    let asked = Arc::new(Asked::default());
+    let (mut app, _events) = window_on(&main, &asked);
+
+    dispatch::dispatch(&mut app, Command::WorktreeList);
+    let said = rows(&app);
+    // Sorted, because the order of the linked trees is git's to choose.
+    let mut named: Vec<String> = said.iter().map(|row| row.0.clone()).collect();
+    named.sort();
+    let inside = Path::new("main").join(".worktree").join("nested");
+    assert_eq!(
+        named,
+        ["feature", "main", &inside.display().to_string(), "spare"],
+        "{said:?}"
+    );
+}
+
 /// A tree no window is on is opened in a new one; this window's own is
 /// where the reader already is.
 ///

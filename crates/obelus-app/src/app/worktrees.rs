@@ -338,9 +338,14 @@ impl App {
                 Listed { tree, door }
             })
             .collect();
-        // Named by the directory where they sit together, which is how
-        // `git worktree add ../name` leaves them: the parent is the same
-        // word on every row, and the name is what tells them apart.
+        // Named from the directory the main checkout sits in, which is the
+        // one rule that names every row the same way: `git worktree add
+        // ../name` leaves a tree beside it and so called by its name, and
+        // `.worktree/name` -- where the feature-branch workflow puts one --
+        // leaves it inside, and called by the way down to it from there.
+        // Naming the second by its whole path while the first had a word
+        // made the main checkout a name and the others addresses. A tree
+        // anywhere else is said in full, because nothing shorter is true.
         // Resolved, because git hands the main checkout back resolved and
         // the linked ones as they were added -- which on a mac, whose
         // temporary directory is a link, are two spellings of one place.
@@ -355,8 +360,13 @@ impl App {
             .enumerate()
             .map(|(at, listed)| {
                 let path = &listed.tree.path;
-                let label = match (path.parent().map(resolved) == beside, path.file_name()) {
-                    (true, Some(name)) => name.to_string_lossy().into_owned(),
+                let label = match beside.as_deref().and_then(|beside| {
+                    resolved(path)
+                        .strip_prefix(beside)
+                        .ok()
+                        .map(Path::to_path_buf)
+                }) {
+                    Some(under) if !under.as_os_str().is_empty() => under.display().to_string(),
                     _ => obelus_ui::with_home_as_tilde(path),
                 };
                 let here = same_tree(path, &tree);
