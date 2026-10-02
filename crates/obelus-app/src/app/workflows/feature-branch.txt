@@ -1,3 +1,5 @@
+Feature branch
+----
 The agent works on a branch in a worktree of its own under .worktree, and tells you where to try it and what it ran. Once you accept it, it asks whether to review it, then whether it goes back as a merge or a pull request or waits for later. A pull request is merged when its checks pass -- by you, from a link it gives you, where `gh` is not installed and signed in -- and the worktree is taken away only when you say so.
 ----
 This project changes its files on a branch of their own. When you are about to change any of this repository's files, do the work in a worktree of its own rather than in the checkout the reader is reading. Reading needs none, and neither do Obelus's notes or files outside the repository. One worktree is enough for one conversation: once you have made it, every later change goes there too.

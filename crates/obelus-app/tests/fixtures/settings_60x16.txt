@@ -4,14 +4,14 @@ screen 60x16  editor 60x14  status 60x1
  1|────────────────────────────────────────────────────────────
  2| Appearance                                                █
  3|                                                           █
- 4|   Theme                                      dark ▸       █
+ 4|   Theme                                    dark ▸         █
  5|                                                           █
- 6|   Nerd Font glyphs                           □            █
+ 6|   Nerd Font glyphs                         □              █
  7|     In lists, on the status bar, and beside a file's      █
  8|     name -- a terminal without a patched font draws a     █
  9|     box instead                                           █
 10|                                                           █
-11|   New versions                               ☑            █
+11|   New versions                             ☑              █
 12|────────────────────────────────────────────────────────────
 13|   Enter  Change    type  To filter           Ctrl+k  Keys  
 14|────────────────────────────────────────────────────────────
@@ -21,7 +21,7 @@ screen 60x16  editor 60x14  status 60x1
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  2|cddddddddddcccccccccccccccccccccccccccccccccccccccccccccccce
  3|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
- 4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbfbbbbbbbe
+ 4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbfbbbbbbbbbe
  5|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
  6|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccce
  7|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccce

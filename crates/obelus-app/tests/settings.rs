@@ -3724,9 +3724,72 @@ fn each_workflow_says_what_it_does_where_it_is_chosen() {
         "straight in the checkout you are reading.",
         "The agent works on a branch",
         "taken away only when you say so.",
+        "No workflow",
+        "Feature branch",
     ] {
         assert!(text.contains(said), "{said:?} is not on the list:\n{dump}");
     }
+}
+
+/// A workflow is called by its title wherever it is drawn, and written
+/// down by its name.
+///
+/// The name is the setting's word, and a word like `feature-branch` is a
+/// name and not copy: the list says the title, so the row it goes back to
+/// says it too, and the list opens again on the title of the one in force.
+///
+/// Broken deliberately three ways: the list's label back to the name,
+/// which leaves no `Feature branch` on the list; the settings row's
+/// `value_of` handing back the word, which leaves `feature-branch` on the
+/// page; and `prefer` given the word, which opens the list on the first
+/// row rather than on the one chosen.
+#[test]
+fn a_workflow_is_called_by_its_title_and_written_by_its_name() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("workflow-titles");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+    support::type_text(&mut app, "workflow");
+    support::press(&mut app, KeyCode::Enter);
+    let labels: Vec<String> = app
+        .picker()
+        .expect("the workflows did not open")
+        .matches()
+        .map(|item| item.label.clone())
+        .collect();
+    assert_eq!(labels, ["No workflow", "Feature branch"]);
+
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_none(), "choosing did not close the list");
+    assert_eq!(app.config().workflow, "feature-branch");
+    let written = std::fs::read_to_string(&file).expect("the file was written");
+    assert!(
+        written.contains("workflow = \"feature-branch\""),
+        "the file does not say so by name: {written:?}"
+    );
+
+    let dump = support::render(&mut app, 100, 24);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("Feature branch"),
+        "the row does not say the title:\n{dump}"
+    );
+    assert!(
+        !text.contains("feature-branch"),
+        "the row says the name:\n{dump}"
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.picker()
+            .and_then(|picker| picker.selected_item())
+            .map(|item| item.label.as_str()),
+        Some("Feature branch"),
+        "the list did not open on the one in force"
+    );
 }
 
 /// A workflow nothing answers to is marked on the line that names it.

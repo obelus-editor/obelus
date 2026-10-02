@@ -4390,6 +4390,11 @@ impl Screen for App {
     fn agent_offering(&self) -> Option<obelus_component::settings::Offering> {
         App::agent_offering(self)
     }
+    fn workflows(&self) -> Vec<(&'static str, &'static str)> {
+        opening::workflows()
+            .map(|(name, title, _)| (name, title))
+            .collect()
+    }
     fn agent_usage(&self) -> Option<&acp::Usage> {
         App::agent_usage(self)
     }

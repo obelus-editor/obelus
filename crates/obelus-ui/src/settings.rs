@@ -27,8 +27,9 @@ use crate::{
 ///
 /// Fixed, so the controls line up down the screen: a column of `on` and
 /// `off` and theme names at ragged left edges is three columns pretending to
-/// be one.
-const CONTROL_WIDTH: u16 = 12;
+/// be one. As wide as the longest word a control is set to, which is the
+/// title `Feature branch`.
+const CONTROL_WIDTH: u16 = 14;
 
 /// Where the arrow beside a value goes: after it, and never past the
 /// column's own last cell.
@@ -97,6 +98,8 @@ pub struct SettingsView<'a> {
     project: Option<String>,
     /// Which frame the mark beside an install that is running is on.
     phase: u32,
+    /// What each workflow is called, by the word the setting has.
+    workflows: Vec<(&'static str, &'static str)>,
 }
 
 impl<'a> SettingsView<'a> {
@@ -128,6 +131,7 @@ impl<'a> SettingsView<'a> {
                 .to_string()
             }),
             phase: app.phase(),
+            workflows: app.workflows(),
         })
     }
 }
@@ -475,6 +479,23 @@ impl SettingsView<'_> {
             .collect()
     }
 
+    /// What a setting's control says it is set to.
+    ///
+    /// A workflow by its title rather than its word: the list it is chosen
+    /// from says the title, and a row that went back to the word would be
+    /// a second name for the one choice.
+    fn value_of(&self, setting: &obelus_config::Setting) -> Value {
+        match (setting.key, Settings::value_of(setting, self.config)) {
+            ("workflow", Value::Choice(word)) => Value::Choice(
+                self.workflows
+                    .iter()
+                    .find(|(name, _)| *name == word)
+                    .map_or(word, |(_, title)| (*title).to_string()),
+            ),
+            (_, value) => value,
+        }
+    }
+
     /// One of them, without what is wrong with it.
     fn row(&self, shown: &Shown, width: u16) -> Row {
         match shown {
@@ -490,7 +511,7 @@ impl SettingsView<'_> {
                 // explain.
                 body: self.settings.wrapped(setting.about, width),
                 warning: Vec::new(),
-                aside: Aside::Control(setting.kind, Settings::value_of(setting, self.config)),
+                aside: Aside::Control(setting.kind, self.value_of(setting)),
                 // On the reader's page, the file that has this one
                 // instead of them. On the project's, nothing: a setting
                 // the project has is exactly what that page is for.

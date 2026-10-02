@@ -297,6 +297,12 @@ pub trait Screen {
     fn config(&self) -> &obelus_config::Config;
     /// The line counts, while they are showing.
     fn counts(&self) -> Option<&Counts>;
+    /// Every workflow's name, the setting's word, with what it is called
+    /// on screen.
+    ///
+    /// Asked of the application because the titles are written in the
+    /// files beside what each workflow hands an agent, which are its.
+    fn workflows(&self) -> Vec<(&'static str, &'static str)>;
     /// The document being read, if any is open.
     fn current_buffer(&self) -> Option<&Buffer>;
     /// What is drawn in the file being read that the file does not contain.

@@ -40,12 +40,17 @@ const WORKFLOW: &str = include_str!("workflow.txt");
 
 /// Every workflow, by the name the setting gives it.
 ///
-/// One file each, holding both of the things a workflow says, so that the
-/// two are written side by side: what the list it is chosen from says
-/// about it, then a line of `----`, then what `read_workflow` hands an
-/// agent. A file with nothing under the line, or no line, asks nothing of
-/// the agent -- which is what `none` is, and why it is a file like the
-/// others rather than a case in the code.
+/// One file each, holding everything a workflow says, so that it is all
+/// written side by side: what it is called on screen, then a line of
+/// `----`, then what the list it is chosen from says about it, then
+/// another `----`, then what `read_workflow` hands an agent. A file with
+/// nothing under the second line, or no second line, asks nothing of the
+/// agent -- which is what `none` is, and why it is a file like the others
+/// rather than a case in the code.
+///
+/// A title of its own because the name is the setting's word, written in
+/// the reader's file and read by `obelus-config`, and a word like
+/// `feature-branch` is a name and not copy.
 ///
 /// The names are written twice, here and in `obelus-config`, which reads
 /// the setting and cannot see these files: the test below is what keeps
@@ -58,23 +63,27 @@ const WORKFLOWS: &[(&str, &str)] = &[
     ),
 ];
 
-/// A workflow's file, as what the list says and what the agent is handed.
-fn read_workflow(file: &'static str) -> (&'static str, Option<&'static str>) {
-    match file.split_once("\n----\n") {
+/// A workflow's file, as what it is called, what the list says and what
+/// the agent is handed.
+fn read_workflow(file: &'static str) -> (&'static str, &'static str, Option<&'static str>) {
+    let (title, rest) = file.split_once("\n----\n").unwrap_or((file, ""));
+    match rest.split_once("\n----\n") {
         Some((about, asked)) => (
+            title.trim(),
             about.trim(),
             Some(asked.trim()).filter(|asked| !asked.is_empty()),
         ),
-        None => (file.trim(), None),
+        None => (title.trim(), rest.trim(), None),
     }
 }
 
-/// Every workflow's name, and what the list it is chosen from says about
-/// it.
-pub(super) fn workflows() -> impl Iterator<Item = (&'static str, &'static str)> {
-    WORKFLOWS
-        .iter()
-        .map(|(name, file)| (*name, read_workflow(file).0))
+/// Every workflow's name, what it is called on screen, and what the list
+/// it is chosen from says about it.
+pub(super) fn workflows() -> impl Iterator<Item = (&'static str, &'static str, &'static str)> {
+    WORKFLOWS.iter().map(|(name, file)| {
+        let (title, about, _) = read_workflow(file);
+        (*name, title, about)
+    })
 }
 
 /// What a conversation about a note says it is about.
@@ -162,7 +171,7 @@ impl App {
         let (_, file) = WORKFLOWS
             .iter()
             .find(|(name, _)| *name == self.config().workflow)?;
-        read_workflow(file).1
+        read_workflow(file).2
     }
 
     /// What `read_workflow` answers.
@@ -303,34 +312,41 @@ mod tests {
     }
 
     /// The workflows here are the ones the setting accepts, and each says
-    /// what it does.
+    /// what it is called and what it does.
     ///
     /// Two lists of one set of names, because the setting is read where
     /// these files cannot be seen. Broken deliberately by adding a name to
-    /// the setting's list with no file beside it, and by taking the line
-    /// above `----` out of `feature-branch.txt`.
+    /// the setting's list with no file beside it, by taking the title and
+    /// its `----` out of `feature-branch.txt`, which moves every piece up
+    /// one and hands the agent nothing, and by taking the line between the
+    /// title and the description out of `none.txt`, which runs the two
+    /// together into a title of two lines.
     #[test]
     fn every_workflow_the_setting_accepts_is_written_here() {
         let accepted = match obelus_config::Setting::named("workflow").map(|setting| setting.kind) {
             Some(obelus_config::Kind::Choice(words)) => words,
             other => panic!("the workflow setting is not a choice: {other:?}"),
         };
-        let written: Vec<&str> = super::workflows().map(|(name, _)| name).collect();
+        let written: Vec<&str> = super::workflows().map(|(name, ..)| name).collect();
         assert_eq!(accepted, written.as_slice());
         for (name, file) in super::WORKFLOWS {
-            let (about, _) = super::read_workflow(file);
+            let (title, about, _) = super::read_workflow(file);
+            assert!(
+                !title.is_empty() && !title.contains('\n') && !title.contains("----"),
+                "{name} is not called anything: {title:?}"
+            );
             assert!(
                 !about.is_empty() && !about.contains("----"),
                 "{name} does not say what it does: {about:?}"
             );
         }
         assert!(
-            super::read_workflow(super::WORKFLOWS[0].1).1.is_none(),
+            super::read_workflow(super::WORKFLOWS[0].1).2.is_none(),
             "none asks something of the agent"
         );
         assert!(
             super::read_workflow(super::WORKFLOWS[1].1)
-                .1
+                .2
                 .is_some_and(|asked| asked.contains("git worktree add")),
             "feature-branch hands the agent nothing"
         );

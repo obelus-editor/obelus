@@ -407,26 +407,39 @@ impl App {
         // application, which is the thing that knows.
         //
         // The workflows are asked of the application too, for what each one
-        // does: a name like `feature-branch` says what it is only to
-        // somebody who knows the term, and the words that say it are in
-        // the file beside what the agent is handed.
-        let choices: Vec<(String, Option<String>)> = match key {
-            "theme" => self.themes().into_iter().map(|name| (name, None)).collect(),
+        // is called and what it does: a name like `feature-branch` is the
+        // setting's word and says what it is only to somebody who knows the
+        // term, and the words that say it are in the file beside what the
+        // agent is handed.
+        let choices: Vec<(String, String, Option<String>)> = match key {
+            "theme" => self
+                .themes()
+                .into_iter()
+                .map(|name| (name.clone(), name, None))
+                .collect(),
             "workflow" => super::opening::workflows()
-                .map(|(name, about)| (name.to_string(), Some(about.to_string())))
+                .map(|(name, title, about)| {
+                    (name.to_string(), title.to_string(), Some(about.to_string()))
+                })
                 .collect(),
             _ => choices
                 .iter()
-                .map(|choice| ((*choice).to_string(), None))
+                .map(|choice| ((*choice).to_string(), (*choice).to_string(), None))
                 .collect(),
         };
+        // The one in force, as the list says it: it finds what to open on
+        // by the label rather than the word the file has.
+        let preferred = choices
+            .iter()
+            .find(|(choice, ..)| choice == word)
+            .map_or_else(|| word.to_string(), |(_, label, _)| label.clone());
         let items: Vec<PickerItem> = choices
             .into_iter()
-            .map(|(choice, about)| PickerItem {
+            .map(|(choice, label, about)| PickerItem {
                 prose: false,
                 marker: None,
                 icon: None,
-                label: choice.clone(),
+                label,
                 detail: about,
                 trailing: None,
                 changed: None,
@@ -460,7 +473,7 @@ impl App {
         }
         // Opened on the one in force, so the list starts by saying which
         // that is.
-        picker.prefer(word.to_string());
+        picker.prefer(preferred);
         // What the theme was, for the same reason the theme list keeps it:
         // walking this list wears each colour in turn, and the one that was
         // on is only in the running program.
