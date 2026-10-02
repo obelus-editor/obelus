@@ -1592,6 +1592,7 @@ impl App {
             talk.permission = None;
             talk.asking = None;
             talk.going = None;
+            talk.queued.clear();
             talk.card = None;
             if asked {
                 talk.chat.note("It stopped waiting for an answer");
@@ -1938,10 +1939,12 @@ impl App {
                     true => self.refuse_permission(),
                     false => self.refuse_asking(),
                 }
+                self.ask_the_next(Whose::Whoever);
                 true
             }
             CardOutcome::Answered { chosen, words } => {
                 self.answer_card(&chosen, words.as_deref());
+                self.ask_the_next(Whose::Whoever);
                 true
             }
         }
@@ -1966,20 +1969,6 @@ impl App {
     /// What is still here is the clearing: a card is drawn inside the
     /// conversation, so anything of Obelus's own over that region would be a
     /// card the reader cannot see while the agent waits on it.
-    ///
-    /// And whatever question was already up, which is the same clearing
-    /// for the same reason. There is one card, so a second question takes
-    /// the first one's place; letting the first stay would leave the agent
-    /// waiting for ever on a question nothing on screen is asking, and --
-    /// where the two were of different kinds -- would send the answer to
-    /// the card on screen back to the wrong one of them.
-    ///
-    /// One agent cannot do this: the protocol's dispatch loop hands a
-    /// message to one handler at a time and waits for it, and Obelus's
-    /// elicitation handler waits for the reader -- so a second question
-    /// from the same connection is not read until the first is answered,
-    /// and a conversation is one agent's. That is why this is here and why
-    /// no test drives it.
     fn show_the_question(&mut self, whose: Whose) {
         // The clearing is for the screen, so it happens only where the
         // question is going onto it. A question waiting in a conversation
@@ -1994,12 +1983,105 @@ impl App {
         // question, about words the keys are no longer going to.
         if let Some(talk) = self.talk_mut(whose) {
             talk.slash = None;
-            // Dropped rather than answered: a channel that goes away is
-            // what the agent hears as a cancellation, which is the truth
-            // about a question nobody was ever shown.
-            talk.asking = None;
-            talk.going = None;
         }
+    }
+
+    /// Puts a question to the reader, or behind the one already up.
+    ///
+    /// There is one card, so a second question waits for the first to be
+    /// answered: taking its place would leave the agent waiting for ever on
+    /// a question nothing on screen is asking. A permission's call goes in
+    /// the transcript the moment it arrives all the same, waiting, so the
+    /// page says there is more to answer before the card does.
+    fn put_to_the_reader(&mut self, whose: Whose, question: acp::Question) {
+        if let Some(talk) = self.talk_mut(whose)
+            && talk.is_waiting_on_the_reader()
+        {
+            if let acp::Question::Permission { call, .. } = &question {
+                talk.chat.tool(call, "pending");
+            }
+            talk.queued.push_back(question);
+            return;
+        }
+        match question {
+            acp::Question::Permission {
+                call,
+                reason,
+                options,
+                answer,
+            } => self.ask_permission(whose, &call, reason.as_deref(), &options, answer),
+            acp::Question::Ask {
+                message,
+                fields,
+                answer,
+            } => self.ask_reader(whose, &message, fields, answer),
+            acp::Question::Open {
+                message,
+                url,
+                id,
+                answer,
+            } => self.send_the_reader(whose, &message, &url, &id, answer),
+        }
+        // A form with nothing in it is answered as it is asked, and then
+        // nothing else would put up what was waiting behind it.
+        self.ask_the_next(whose);
+    }
+
+    /// Puts up the question waiting behind the one just answered.
+    pub(super) fn ask_the_next(&mut self, whose: Whose) {
+        let Some(talk) = self.talk_mut(whose) else {
+            return;
+        };
+        if talk.is_waiting_on_the_reader() {
+            return;
+        }
+        if let Some(next) = talk.queued.pop_front() {
+            self.put_to_the_reader(whose, next);
+        }
+    }
+
+    /// Takes down what the agent no longer wants answered.
+    ///
+    /// The one up or one waiting: each question's answer channel says
+    /// whether anybody is still at the other end, so the agent does not have
+    /// to say which it took back.
+    fn take_back(&mut self, whose: Whose) {
+        let Some(talk) = self.talk_mut(whose) else {
+            return;
+        };
+        let (gone, kept) = std::mem::take(&mut talk.queued)
+            .into_iter()
+            .partition(taken_back);
+        talk.queued = kept;
+        // A call waiting behind the card was put in the transcript as
+        // waiting, and nothing else will say it stopped: the agent took the
+        // question back, not necessarily the call.
+        for question in gone {
+            if let acp::Question::Permission { call, .. } = question {
+                talk.chat.tool(&call, "cancelled");
+            }
+        }
+        let up = talk
+            .permission
+            .as_ref()
+            .is_some_and(acp::Answer::is_canceled)
+            || talk
+                .asking
+                .as_ref()
+                .is_some_and(|asking| asking.answer.is_canceled())
+            || talk
+                .going
+                .as_ref()
+                .is_some_and(|going| going.answer.is_canceled());
+        if !up {
+            return;
+        }
+        talk.permission = None;
+        talk.asking = None;
+        talk.going = None;
+        talk.card = None;
+        talk.chat.note("It stopped waiting for an answer");
+        self.ask_the_next(whose);
     }
 
     /// Puts a form the agent asked for to the reader.
@@ -2508,9 +2590,8 @@ impl App {
             acp::Incoming::Update { session, .. }
             | acp::Incoming::Ended { session, .. }
             | acp::Incoming::Remembered { session }
-            | acp::Incoming::Permission { session, .. }
-            | acp::Incoming::Ask { session, .. }
-            | acp::Incoming::Open { session, .. } => Some(session),
+            | acp::Incoming::Asked { session, .. }
+            | acp::Incoming::Withdrawn { session } => Some(session),
             acp::Incoming::Started { .. }
             | acp::Incoming::Lost { .. }
             | acp::Incoming::Ready { .. }
@@ -3018,26 +3099,8 @@ impl App {
                     );
                 });
             }
-            acp::Incoming::Permission {
-                call,
-                reason,
-                options,
-                answer,
-                ..
-            } => self.ask_permission(whose, &call, reason.as_deref(), &options, answer),
-            acp::Incoming::Ask {
-                message,
-                fields,
-                answer,
-                ..
-            } => self.ask_reader(whose, &message, fields, answer),
-            acp::Incoming::Open {
-                message,
-                url,
-                id,
-                answer,
-                ..
-            } => self.send_the_reader(whose, &message, &url, &id, answer),
+            acp::Incoming::Asked { question, .. } => self.put_to_the_reader(whose, question),
+            acp::Incoming::Withdrawn { .. } => self.take_back(whose),
             acp::Incoming::Finished { id } => self.went_through(&id),
             // A command the agent asked for. Run without asking the
             // reader -- the agent asks, which is the rule Obelus's own
@@ -3467,6 +3530,15 @@ impl App {
         // large file asks for a window of it, and answering with the whole
         // thing is a different answer.
         let _ = answer.send(text.map(|text| window(&text, line, limit)));
+    }
+}
+
+/// Whether the agent has taken back a question still waiting to go up.
+fn taken_back(question: &acp::Question) -> bool {
+    match question {
+        acp::Question::Permission { answer, .. } => answer.is_canceled(),
+        acp::Question::Ask { answer, .. } => answer.is_canceled(),
+        acp::Question::Open { answer, .. } => answer.is_canceled(),
     }
 }
 

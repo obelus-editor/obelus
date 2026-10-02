@@ -4543,27 +4543,29 @@ fn a_note_can_be_offered_in_a_conversation_about_nothing() {
     // The same question `todo_add` puts, arriving the same way.
     let (answer, answered) = futures::channel::oneshot::channel();
     app.handle(Event::Agent(obelus_agent::Event::Acp(
-        obelus_agent::acp::Incoming::Ask {
+        obelus_agent::acp::Incoming::Asked {
             // The fake agent's first, which is this conversation's.
             session: obelus_agent::acp::SessionId::new("s-1"),
-            message: "worth writing down?".to_string(),
-            fields: vec![obelus_agent::acp::Field {
-                name: "notes".to_string(),
-                title: "keep which of these".to_string(),
-                about: None,
-                takes: obelus_agent::acp::Takes::Some {
-                    values: vec![obelus_agent::acp::Value {
-                        id: "0".to_string(),
-                        name: "the cache is wrong".to_string(),
-                        about: None,
-                    }],
-                    least: Some(0),
-                    most: None,
-                    chosen: Vec::new(),
-                },
-                required: false,
-            }],
-            answer,
+            question: obelus_agent::acp::Question::Ask {
+                message: "worth writing down?".to_string(),
+                fields: vec![obelus_agent::acp::Field {
+                    name: "notes".to_string(),
+                    title: "keep which of these".to_string(),
+                    about: None,
+                    takes: obelus_agent::acp::Takes::Some {
+                        values: vec![obelus_agent::acp::Value {
+                            id: "0".to_string(),
+                            name: "the cache is wrong".to_string(),
+                            about: None,
+                        }],
+                        least: Some(0),
+                        most: None,
+                        chosen: Vec::new(),
+                    },
+                    required: false,
+                }],
+                answer,
+            },
         },
     )));
     support::lay_out(&mut app, WIDTH, HEIGHT);
@@ -10192,4 +10194,252 @@ fn a_conversation_asks_for_its_session_once_the_agent_is_installed() {
     pump(&mut app, &events, "the session", |app| {
         app.talking() == obelus_agent::Talking::Ready
     });
+}
+
+/// A question up in one conversation does not hold another still.
+///
+/// One agent is behind every conversation in the window, on one connection,
+/// and the protocol's crate reads nothing more from it while a handler is
+/// running. The permission handler used to wait for the reader inside the
+/// handler, so a card in one conversation stopped every other one: a
+/// second conversation opened beside it never got its session, and what
+/// was said in it was never answered, until the card was.
+///
+/// Deliberate break: `answered.await` back inside the permission handler,
+/// responding there. The second conversation's session never arrives.
+#[test]
+fn a_question_in_one_conversation_does_not_hold_another() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/edit");
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", App::is_asking_permission);
+
+    // Another conversation, with the first one's card still up and nobody
+    // answering it.
+    app.new_conversation();
+    app.open_a_session_for_test();
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    pump(&mut app, &events, "a session of its own", |app| {
+        app.chat_session_for_test().as_deref() == Some("s-2")
+    });
+    support::type_text(&mut app, "/echo");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer in the second", |app| {
+        said_in_transcript(app, "heard you")
+    });
+}
+
+/// Two questions at once in one conversation are put one after the other.
+///
+/// An agent that is not held while it waits can ask twice before the
+/// reader has answered once -- two tool calls side by side, each wanting
+/// permission. There is one card, so the second waits behind the first;
+/// taking its place would cancel the first, which the agent hears as the
+/// reader refusing a thing they were never shown. The second call is in
+/// the transcript as soon as it is asked, so the page says there is more
+/// to come before the card does.
+///
+/// Deliberate breaks: put a question up whatever is already up, as
+/// `ask_permission` did -- the first comes back `[cancelled]`; and leave
+/// the waiting call out of the transcript -- the second row is not on the
+/// page while the first is asked.
+#[test]
+fn two_questions_at_once_are_put_one_after_the_other() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/pair");
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "both questions", |app| {
+        app.is_asking_permission() && said_in_transcript(app, "Read the second file")
+    });
+    assert!(
+        said_in_transcript(&app, "Read the first file"),
+        "the call being asked about is not in the transcript"
+    );
+
+    // The first is the one on the card: allowing it is answered as the
+    // first, and the second goes up in its place.
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the first answer", |app| {
+        said_in_transcript(app, "the first was")
+    });
+    assert!(
+        said_in_transcript(&app, "the first was [once]"),
+        "the first question was not the reader's to answer:\n{}",
+        screen(&mut app)
+    );
+    assert!(
+        app.is_asking_permission(),
+        "the second question never went up"
+    );
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the second answer", |app| {
+        said_in_transcript(app, "the second was")
+    });
+    assert!(
+        said_in_transcript(&app, "the second was [once]"),
+        "the second question was not the reader's to answer:\n{}",
+        screen(&mut app)
+    );
+    assert!(!app.is_asking_permission());
+}
+
+/// A question the agent takes back is taken off the card.
+///
+/// `$/cancel_request` is how an agent says it no longer wants an answer --
+/// the call it was about overtaken, the turn moved on. Left up, the card is
+/// a question nobody is asking, and what the reader chose on it goes to a
+/// request that has already been answered.
+///
+/// Deliberate breaks: answer in `answer_when` without watching for the
+/// cancellation -- the agent is never told, and never says so; and drop
+/// `Incoming::Withdrawn` where it arrives -- the card stays up after the
+/// agent has said it gave up.
+#[test]
+fn a_question_taken_back_comes_off_the_card() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/takeback");
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        &events,
+        "the agent to hear it was taken back",
+        |app| said_in_transcript(app, "it was taken back and I was told"),
+    );
+    assert!(
+        !app.is_asking_permission(),
+        "the card is still asking a question nobody is:\n{}",
+        screen(&mut app)
+    );
+}
+
+/// A list opened over a question and closed again leaves the question.
+///
+/// The question is a card in the conversation, not the list: walking away
+/// from a list used to refuse whatever the conversation on screen was
+/// asking, which was right when questions were lists and answered "no" for
+/// a reader who had only looked at what else was open.
+///
+/// Deliberate break: refuse the permission in `leave(Layer::Picker)` again.
+/// The question is gone once the list closes.
+#[test]
+fn a_list_closed_over_a_question_leaves_it_asked() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/edit");
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", App::is_asking_permission);
+
+    support::press(&mut app, KeyCode::F(2));
+    assert!(
+        app.picker().is_some(),
+        "F2 opened no list over the question"
+    );
+    support::press(&mut app, KeyCode::Esc);
+    assert!(app.picker().is_none(), "escape left the list open");
+    assert!(
+        app.is_asking_permission(),
+        "closing a list refused the question under it"
+    );
+}
+
+/// Refusing the question up puts up the one waiting behind it.
+///
+/// Escape answers the card -- the protocol's cancelled -- and the agent is
+/// still waiting on the second question, so refusing is as much an end to
+/// the first as answering it.
+///
+/// Deliberate break: leave out `ask_the_next` after `CardOutcome::Cancelled`.
+/// The first is refused and nothing goes up after it.
+#[test]
+fn refusing_a_question_puts_up_the_next() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/pair");
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "both questions", |app| {
+        app.is_asking_permission() && said_in_transcript(app, "Read the second file")
+    });
+
+    support::press(&mut app, KeyCode::Esc);
+    pump(&mut app, &events, "the first answer", |app| {
+        said_in_transcript(app, "the first was")
+    });
+    assert!(
+        said_in_transcript(&app, "the first was [cancelled]"),
+        "escape did not refuse the first:\n{}",
+        screen(&mut app)
+    );
+    assert!(
+        app.is_asking_permission(),
+        "the second question never went up after the first was refused"
+    );
+}
+
+/// A question taken back while it waits behind the card is never put, and
+/// its call says it stopped.
+///
+/// It is not on the card, so nothing comes down; what the reader has of it
+/// is the call in the transcript, put there waiting when it was asked, and
+/// nothing else would ever say that it is not waiting any more.
+///
+/// Deliberate breaks: mark the call but keep the question in the queue in
+/// `take_back` -- it goes up once the first is answered, a question nobody
+/// is asking; and drop it without marking the call -- its row still says
+/// it is waiting.
+#[test]
+fn a_question_taken_back_while_it_waits_is_never_put() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/secondback");
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        &events,
+        "the agent to hear it was taken back",
+        |app| said_in_transcript(app, "the waiting one was taken back and I was told"),
+    );
+    assert!(
+        app.is_asking_permission(),
+        "the question that was not taken back came off the card"
+    );
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let row = rows(&dump)
+        .into_iter()
+        .find(|row| row.contains("Delete the cache"))
+        .unwrap_or_else(|| panic!("the waiting call is not in the transcript:\n{dump}"))
+        .to_string();
+    assert!(
+        row.contains("Stopped"),
+        "the call taken back still says it is waiting:\n{dump}"
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the end of the turn", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    assert!(
+        !app.is_asking_permission(),
+        "a question taken back was put after all"
+    );
 }

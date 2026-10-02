@@ -209,6 +209,14 @@ pub struct Conversation {
     /// Somewhere the agent wants the reader to go, while they have not
     /// said whether they will.
     pub going: Option<Going>,
+    /// What the agent asked while a question was already up, oldest first.
+    ///
+    /// One card, so one question at a time, and the next goes up when the
+    /// one before it is answered. Not the second taking the first one's
+    /// place: the connection is no longer held while a question waits, so
+    /// an agent can ask again before the first is answered -- two tool
+    /// calls side by side, say -- and neither was the reader's to lose.
+    pub queued: std::collections::VecDeque<acp::Question>,
     /// Which of the reader's standing choices Obelus has already asked
     /// this conversation for, by the agent's id for the setting.
     ///
@@ -239,6 +247,12 @@ pub struct Conversation {
 }
 
 impl Conversation {
+    /// Whether the agent is waiting on the reader in this one.
+    #[must_use]
+    pub fn is_waiting_on_the_reader(&self) -> bool {
+        self.permission.is_some() || self.asking.is_some() || self.going.is_some()
+    }
+
     /// Whether this is a new conversation nobody has said anything in yet.
     ///
     /// About nothing in particular, and not one taken up again: those can

@@ -66,7 +66,7 @@ pub use agent_client_protocol::schema::v1::SessionId;
 use futures::channel::mpsc;
 pub use link::{
     Answer, Ask, Call, Category, Change, Choice, Chosen, Cost, Field, Incoming, Kind, Order, Place,
-    Reply, Setting, Step, Takes, Turn, Update, Usage, Value,
+    Question, Reply, Setting, Step, Takes, Turn, Update, Usage, Value,
 };
 use obelus_sink::Sink;
 
@@ -917,9 +917,8 @@ fn about(incoming: &Incoming) -> Option<&SessionId> {
         | Incoming::Update { session, .. }
         | Incoming::Ended { session, .. }
         | Incoming::Lost { session, .. }
-        | Incoming::Permission { session, .. }
-        | Incoming::Ask { session, .. }
-        | Incoming::Open { session, .. }
+        | Incoming::Asked { session, .. }
+        | Incoming::Withdrawn { session }
         | Incoming::Remembered { session, .. } => Some(session),
         // Its own session is what it is the answer about, and forgetting
         // that session is the answer's own business.

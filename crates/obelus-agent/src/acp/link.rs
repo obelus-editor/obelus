@@ -27,19 +27,24 @@
 //! thinking is read rather than queued behind it. What the agent asks --
 //! permission, the text of a file -- is a question Obelus cannot answer
 //! without the reader, so the handler sends the question to the main loop
-//! with a [`oneshot`] to answer through, and waits. Waiting is right there:
-//! the agent has stopped, and what it is waiting for is a keystroke. It is
-//! also why [`Event`] is not `Clone`.
+//! with a [`oneshot`] to answer through. That is also why [`Event`] is not
+//! `Clone`.
 //!
-//! What waiting costs is the whole connection, not that one request. The
-//! crate hands each message to a handler and does not read the next until
-//! the handler returns, so while a card is up nothing else from that agent
-//! is read -- no answer, no tool call, no count of what it has used. That
-//! is right for a question it has stopped on, and it is why a question
-//! that only *sends* the reader somewhere is answered the moment they are
-//! sent rather than when they come back: the second would hold the agent
-//! shut for as long as a sign-in takes. It also means one agent cannot
-//! have two questions up at once, whatever the protocol allows.
+//! **What waits on the reader does not wait in the handler.** The crate
+//! hands each message to a handler and does not read the next until the
+//! handler returns, so a handler that waited for a keystroke held the whole
+//! connection -- and one agent is behind every conversation in the window,
+//! so a card up in one held every other one still: no answer, no tool call,
+//! no count of what it has used, until the card was answered. What waits
+//! for the reader, or for a command that may take minutes, is waited for on
+//! a task of its own (`answer_when`), which is what the crate says to do.
+//! The question still goes to the main loop from inside the handler, so
+//! what the agent said arrives in the order it said it; only the answer
+//! goes back later, and it carries the request's own number. So one
+//! conversation can have two questions waiting at once now, and the main
+//! loop puts them to the reader one at a time. And the agent taking a
+//! question back is a message that can be read, which is what takes its
+//! card down.
 //!
 //! One thing the crate does not promise: that a notification sent after a
 //! request leaves after it. A cancellation typed in the same instant as a
@@ -67,9 +72,9 @@
 //! `http` and `https`, and with a host: what happens to one of these is
 //! that the machine runs whatever is registered for the scheme, and the
 //! string came from the agent. Answered when the reader is sent, not when
-//! they return -- see the paragraph above on what waiting costs -- and the
-//! agent says the far end happened with `elicitation/complete`, which is a
-//! notification because nothing is owed back.
+//! they return, because what the agent asked for is that they be directed
+//! there -- and it says the far end happened with `elicitation/complete`,
+//! which is a notification because nothing is owed back.
 //!
 //! **A command is the agent's namespace; a setting is Obelus's to draw.**
 //! Two things in the protocol, and they must not be mistaken for each
@@ -107,7 +112,7 @@
 use std::path::PathBuf;
 
 use agent_client_protocol::{
-    AcpAgentConfig, Client, ConnectionTo,
+    AcpAgentConfig, Agent, Client, ConnectionTo, JsonRpcResponse, Responder,
     schema::{
         ProtocolVersion,
         v1::{
@@ -450,44 +455,23 @@ pub enum Incoming {
         /// What the agent said about it.
         why: String,
     },
-    /// The agent is asking to be allowed something.
-    Permission {
+    /// The agent is asking the reader something, and waits for the
+    /// answer.
+    Asked {
         /// Which conversation it is asking in.
         session: SessionId,
-        /// The call it is asking about, which is the same call the
-        /// transcript already has a row for -- or is about to.
-        /// Boxed, like the one on [`Update::Tool`] and for the same
-        /// reason: this enum travels inside an event, where every other
-        /// variant is a key or a path.
-        call: Box<Call>,
-        /// And in its own words: which command, which file -- what the
-        /// reader is actually being asked about.
-        reason: Option<String>,
-        /// What Obelus may answer.
-        options: Vec<Choice>,
-        /// Which option, or nothing for "not answered".
-        answer: Answer<Option<String>>,
+        /// What it is asking.
+        question: Question,
     },
-    /// It wants the reader to go and do something on the web: sign in
-    /// somewhere, authorise something.
+    /// It took back something it had asked the reader, before they
+    /// answered.
     ///
-    /// Answered by going, not by finishing: the agent watches for the far
-    /// end itself and says when it is done. See [`Incoming::Finished`].
-    Open {
-        /// Which conversation it is asking in.
+    /// Which one is not said, because it does not need to be: the answer
+    /// channel of a question taken back has nobody at the other end now,
+    /// and that is the mark it carries.
+    Withdrawn {
+        /// Which conversation it was asked in.
         session: SessionId,
-        /// What it says this is for, in its own words.
-        message: String,
-        /// Where to send them. Checked before it gets here: `http` or
-        /// `https`, and a host.
-        url: String,
-        /// The agent's name for this question, which is how it later says
-        /// the question is answered.
-        id: String,
-        /// `true` once the reader has been sent there, `false` if they will
-        /// not go. Dropped without an answer means the question went away,
-        /// which the agent hears as a cancellation.
-        answer: Answer<bool>,
     },
     /// A conversation taken up again by an agent that keeps its context and
     /// cannot send back what was said.
@@ -505,17 +489,6 @@ pub enum Incoming {
     Finished {
         /// Which question, by the name it was asked under.
         id: String,
-    },
-    /// The agent is asking the reader for something.
-    Ask {
-        /// Which conversation it is asking in.
-        session: SessionId,
-        /// What it says it needs, in its own words.
-        message: String,
-        /// What it wants, in the order Obelus will put them.
-        fields: Vec<Field>,
-        /// Every field's answer, or nothing for "not answered".
-        answer: Answer<Option<Vec<(String, Reply)>>>,
     },
     /// The agent wants a file's text.
     Read {
@@ -560,9 +533,8 @@ pub enum Incoming {
     },
     /// Wait for a command to end.
     ///
-    /// Answered when it does, which may be minutes. The dispatch loop is
-    /// held for the whole of it -- see this module's own account of what
-    /// waiting costs -- and that is right here: the agent asked to wait.
+    /// Answered when it does, which may be minutes -- on a task of its own,
+    /// so that the agent's other conversations are not held for them.
     Waited {
         /// Which command.
         id: String,
@@ -586,6 +558,58 @@ pub enum Incoming {
     },
     /// The conversation is over: the agent exited, or the protocol did.
     Gone(Option<String>),
+}
+
+/// What the agent can ask the reader: one card's worth.
+///
+/// Apart from [`Incoming`] because it is kept: a question asked while another
+/// is up waits behind it, and what waits is only ever one of these.
+#[derive(Debug)]
+pub enum Question {
+    /// To be allowed something.
+    Permission {
+        /// The call it is asking about, which is the same call the
+        /// transcript already has a row for -- or is about to.
+        /// Boxed, like the one on [`Update::Tool`] and for the same
+        /// reason: this enum travels inside an event, where every other
+        /// variant is a key or a path.
+        call: Box<Call>,
+        /// And in its own words: which command, which file -- what the
+        /// reader is actually being asked about.
+        reason: Option<String>,
+        /// What Obelus may answer.
+        options: Vec<Choice>,
+        /// Which option, or nothing for "not answered".
+        answer: Answer<Option<String>>,
+    },
+    /// That the reader go and do something on the web: sign in
+    /// somewhere, authorise something.
+    ///
+    /// Answered by going, not by finishing: the agent watches for the far
+    /// end itself and says when it is done. See [`Incoming::Finished`].
+    Open {
+        /// What it says this is for, in its own words.
+        message: String,
+        /// Where to send them. Checked before it gets here: `http` or
+        /// `https`, and a host.
+        url: String,
+        /// The agent's name for this question, which is how it later says
+        /// the question is answered.
+        id: String,
+        /// `true` once the reader has been sent there, `false` if they will
+        /// not go. Dropped without an answer means the question went away,
+        /// which the agent hears as a cancellation.
+        answer: Answer<bool>,
+    },
+    /// For something: a form, filled in a field at a time.
+    Ask {
+        /// What it says it needs, in its own words.
+        message: String,
+        /// What it wants, in the order Obelus will put them.
+        fields: Vec<Field>,
+        /// Every field's answer, or nothing for "not answered".
+        answer: Answer<Option<Vec<(String, Reply)>>>,
+    },
 }
 
 /// How a conversation from a previous sitting is taken up again.
@@ -1246,16 +1270,16 @@ async fn talk(
             agent_client_protocol::on_receive_notification!(),
         )
         .on_receive_request(
-            async move |request: RequestPermissionRequest, responder, _connection| {
+            async move |request: RequestPermissionRequest, responder, connection| {
                 said_about(&request);
                 // The reader's to answer, so the question goes to the main
-                // loop and this waits for the keystroke. An answer that
-                // never comes -- the view closed, Obelus quit -- is the
-                // protocol's "cancelled", which is what an agent needs to
-                // hear to stop waiting.
+                // loop and the answer is waited for off the connection's
+                // loop. An answer that never comes -- the view closed,
+                // Obelus quit -- is the protocol's "cancelled", which is
+                // what an agent needs to hear to stop waiting.
+                let session = request.session_id.clone();
                 let (answer, answered) = oneshot::channel();
-                let question = Incoming::Permission {
-                    session: request.session_id.clone(),
+                let question = Question::Permission {
                     call: Box::new(call_of(
                         &request.tool_call.tool_call_id,
                         &request.tool_call.fields,
@@ -1272,18 +1296,33 @@ async fn talk(
                         .collect(),
                     answer,
                 };
+                let question = Incoming::Asked {
+                    session: request.session_id.clone(),
+                    question,
+                };
                 if asking.send(Event::Acp(question)).is_err() {
                     return responder.respond(RequestPermissionResponse::new(
                         RequestPermissionOutcome::Cancelled,
                     ));
                 }
-                let outcome = match answered.await {
-                    Ok(Some(option)) => RequestPermissionOutcome::Selected(
-                        SelectedPermissionOutcome::new(PermissionOptionId::new(option)),
-                    ),
-                    Ok(None) | Err(_) => RequestPermissionOutcome::Cancelled,
-                };
-                responder.respond(RequestPermissionResponse::new(outcome))
+                let withdrawn = asking.clone();
+                answer_when(
+                    &connection,
+                    responder,
+                    answered,
+                    move || {
+                        let _ = withdrawn.send(Event::Acp(Incoming::Withdrawn { session }));
+                    },
+                    |answered| {
+                        let outcome = match answered {
+                            Ok(Some(option)) => RequestPermissionOutcome::Selected(
+                                SelectedPermissionOutcome::new(PermissionOptionId::new(option)),
+                            ),
+                            Ok(None) | Err(_) => RequestPermissionOutcome::Cancelled,
+                        };
+                        Ok(RequestPermissionResponse::new(outcome))
+                    },
+                )
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -1313,7 +1352,7 @@ async fn talk(
             agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
-            async move |request: CreateElicitationRequest, responder, _connection| {
+            async move |request: CreateElicitationRequest, responder, connection| {
                 // The agent is asking the reader something. What it may ask
                 // for is a flat form of primitives, and Obelus puts that
                 // the way it puts every other choice: a list where the
@@ -1355,12 +1394,15 @@ async fn talk(
                         );
                     };
                     let (answer, answered) = oneshot::channel();
-                    let question = Incoming::Open {
-                        session,
+                    let question = Question::Open {
                         message: request.message.clone(),
                         url,
                         id: mode.elicitation_id.0.to_string(),
                         answer,
+                    };
+                    let question = Incoming::Asked {
+                        session: session.clone(),
+                        question,
                     };
                     if elicited.send(Event::Acp(question)).is_err() {
                         return responder
@@ -1369,16 +1411,30 @@ async fn talk(
                     // Accepted the moment the reader is sent there, not
                     // when they come back: what the agent asked for is that
                     // they be directed to the URL, and it watches the far
-                    // end itself. Waiting here would hold a turn open
-                    // across a sign-in nobody can time.
-                    let action = match answered.await {
-                        Ok(true) => ElicitationAction::Accept(ElicitationAcceptAction::new()),
-                        Ok(false) => ElicitationAction::Decline,
-                        // The question going away without an answer, which
-                        // is what the card being taken down means.
-                        Err(_) => ElicitationAction::Cancel,
-                    };
-                    return responder.respond(CreateElicitationResponse::new(action));
+                    // end itself. Waiting for the return would hold a turn
+                    // open across a sign-in nobody can time.
+                    let withdrawn = elicited.clone();
+                    return answer_when(
+                        &connection,
+                        responder,
+                        answered,
+                        move || {
+                            let _ = withdrawn.send(Event::Acp(Incoming::Withdrawn { session }));
+                        },
+                        |answered| {
+                            let action = match answered {
+                                Ok(true) => {
+                                    ElicitationAction::Accept(ElicitationAcceptAction::new())
+                                }
+                                Ok(false) => ElicitationAction::Decline,
+                                // The question going away without an answer,
+                                // which is what the card being taken down
+                                // means.
+                                Err(_) => ElicitationAction::Cancel,
+                            };
+                            Ok(CreateElicitationResponse::new(action))
+                        },
+                    );
                 }
                 let asked = match &request.mode {
                     ElicitationMode::Form(form) => fields_of(&form.requested_schema),
@@ -1400,11 +1456,14 @@ async fn talk(
                     }
                 };
                 let (answer, answered) = oneshot::channel();
-                let question = Incoming::Ask {
-                    session,
+                let question = Question::Ask {
                     message: request.message.clone(),
                     fields,
                     answer,
+                };
+                let question = Incoming::Asked {
+                    session: session.clone(),
+                    question,
                 };
                 if elicited.send(Event::Acp(question)).is_err() {
                     return responder
@@ -1414,14 +1473,25 @@ async fn talk(
                 // question still up is a cancellation. Either way the agent
                 // hears something, because one that hears nothing waits for
                 // ever.
-                let action = match answered.await {
-                    Ok(Some(given)) => ElicitationAction::Accept(
-                        ElicitationAcceptAction::new().content(content_of(given)),
-                    ),
-                    Ok(None) => ElicitationAction::Decline,
-                    Err(_) => ElicitationAction::Cancel,
-                };
-                responder.respond(CreateElicitationResponse::new(action))
+                let withdrawn = elicited.clone();
+                answer_when(
+                    &connection,
+                    responder,
+                    answered,
+                    move || {
+                        let _ = withdrawn.send(Event::Acp(Incoming::Withdrawn { session }));
+                    },
+                    |answered| {
+                        let action = match answered {
+                            Ok(Some(given)) => ElicitationAction::Accept(
+                                ElicitationAcceptAction::new().content(content_of(given)),
+                            ),
+                            Ok(None) => ElicitationAction::Decline,
+                            Err(_) => ElicitationAction::Cancel,
+                        };
+                        Ok(CreateElicitationResponse::new(action))
+                    },
+                )
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -1479,11 +1549,10 @@ async fn talk(
             agent_client_protocol::on_receive_request!(),
         )
         .on_receive_request(
-            async move |request: WaitForTerminalExitRequest, responder, _connection| {
-                // Answered when the command ends, which may be minutes.
-                // The whole connection waits with it -- what this module
-                // says about waiting -- and that is what the agent asked
-                // for by calling this rather than reading the output.
+            async move |request: WaitForTerminalExitRequest, responder, connection| {
+                // Answered when the command ends, which may be minutes --
+                // off the connection's loop, because every other
+                // conversation on it would wait those minutes too.
                 let (answer, answered) = oneshot::channel();
                 let question = Incoming::Waited {
                     id: request.terminal_id.0.to_string(),
@@ -1492,14 +1561,18 @@ async fn talk(
                 if waiting.send(Event::Acp(question)).is_err() {
                     return responder.respond_with_error(refusal("Obelus is not listening"));
                 }
-                match answered.await {
-                    Ok(Some(ended)) => {
-                        responder.respond(WaitForTerminalExitResponse::new(exit_status(ended)))
-                    }
-                    Ok(None) | Err(_) => {
-                        responder.respond_with_error(refusal("Obelus is not running that"))
-                    }
-                }
+                // Taken back, it is the command's end that nobody is
+                // waiting for, and the command is still the reader's to see.
+                answer_when(
+                    &connection,
+                    responder,
+                    answered,
+                    || {},
+                    |answered| match answered {
+                        Ok(Some(ended)) => Ok(WaitForTerminalExitResponse::new(exit_status(ended))),
+                        Ok(None) | Err(_) => Err(refusal("Obelus is not running that")),
+                    },
+                )
             },
             agent_client_protocol::on_receive_request!(),
         )
@@ -1972,6 +2045,49 @@ fn exit_status(ended: crate::running::Ended) -> TerminalExitStatus {
 /// What Obelus says when it will not do something.
 fn refusal(why: &str) -> agent_client_protocol::Error {
     agent_client_protocol::Error::method_not_found().data(serde_json::json!(why))
+}
+
+/// Answers a request when what it waits on arrives, on a task of its own.
+///
+/// Not in the handler: the connection reads nothing while a handler runs,
+/// and one agent is behind every conversation in the window -- so a card
+/// waited for in there held every other conversation still until it was
+/// answered. And off the loop, the agent taking the request back is a
+/// message that can be read: it drops what was waiting, and `withdrawn`
+/// says so.
+fn answer_when<T, R>(
+    connection: &ConnectionTo<Agent>,
+    responder: Responder<R>,
+    answered: oneshot::Receiver<T>,
+    withdrawn: impl FnOnce() + Send + 'static,
+    answer: impl FnOnce(Result<T, oneshot::Canceled>) -> Result<R, agent_client_protocol::Error>
+    + Send
+    + 'static,
+) -> Result<(), agent_client_protocol::Error>
+where
+    T: Send + 'static,
+    R: JsonRpcResponse + Send + 'static,
+{
+    let cancellation = responder.cancellation();
+    connection.spawn(async move {
+        let sent = match cancellation
+            .run_until_cancelled(async { Ok(answered.await) })
+            .await
+        {
+            Ok(got) => responder.respond_with_result(answer(got)),
+            Err(error) => {
+                withdrawn();
+                responder.respond_with_error(error)
+            }
+        };
+        // Swallowed rather than returned: an error from a task ends the
+        // whole connection, and an answer that could not be sent is one
+        // to a connection that has already ended.
+        if let Err(error) = sent {
+            tracing::debug!(?error, "an answer went nowhere");
+        }
+        Ok(())
+    })
 }
 
 /// What the agent is actually about to do, for the reader deciding whether
