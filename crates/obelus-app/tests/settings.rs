@@ -3759,11 +3759,11 @@ fn a_workflow_nothing_answers_to_is_marked() {
     assert_eq!(app.config().workflow, "none", "the word was taken anyway");
 }
 
-/// And it is said on the welcome screen, because a reader who has just
+/// And it is said over the welcome screen, because a reader who has just
 /// started Obelus has opened no settings file to see the mark on.
 ///
 /// Broken deliberately the same way as the one above: `apply` taking any
-/// word leaves the welcome screen with nothing to say.
+/// word leaves the start with nothing to say.
 #[test]
 fn a_workflow_nothing_answers_to_is_said_on_the_welcome_screen() {
     let _taken = SETTINGS.lock().expect("the lock");
@@ -3772,6 +3772,9 @@ fn a_workflow_nothing_answers_to_is_said_on_the_welcome_screen() {
     app.working_directory_for_test(scratch.path().to_path_buf());
     let mine = temporary("no-workflow-welcome-mine");
     app.config_file_for_test(settings_file(&mine));
+    // Started, the way `main` does: what went wrong is put up then.
+    let (sender, _events) = std::sync::mpsc::channel();
+    app.start(sender);
     support::lay_out(&mut app, 100, 30);
     let dump = support::render(&mut app, 100, 30);
     assert!(

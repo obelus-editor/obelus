@@ -696,20 +696,13 @@ pub struct App {
     /// A watcher that would not start, an agent offered no tools. Most of
     /// what Obelus finds on the way up is a mark on a line of a file the
     /// reader wrote; these are what is left over, and they have nowhere to
-    /// go but the screen that is showing when nothing is open.
+    /// go but the list put up over the first screen of a start.
     ///
     /// Not every failure on the way up belongs here. Watching a file that
     /// is not there yet fails, and that is the ordinary state of a project
     /// with no settings of its own -- a list that said so would be a list
     /// that says something on every start.
     amiss: Vec<String>,
-    /// Which of [`App::what_went_wrong`]'s rows the reader is on, and
-    /// which of them are on screen.
-    ///
-    /// A window like every other list's, because that is the one thing
-    /// that answers which rows are showing -- this list is six rows deep
-    /// on the welcome screen and can be longer than that.
-    went_wrong_window: obelus_component::window::Window,
     /// Whether a newer Obelus is out, and whether this session asked.
     releases: releases::Releases,
     /// The file watcher, once started.
@@ -952,7 +945,6 @@ impl App {
             walk_generation: obelus_runtime::cancel::Latest::default(),
             events: None,
             amiss: Vec::new(),
-            went_wrong_window: obelus_component::window::Window::default(),
             releases: releases::Releases::default(),
             watcher: None,
             theme_watched: Vec::new(),
@@ -1332,10 +1324,16 @@ impl App {
         // same question wherever this one was started, so it is asked
         // whether or not the reader has said where they work.
         self.ask_about_releases();
+        // What went wrong on the way up, over whatever the first screen is,
+        // and last of all so that everything that could go wrong has.
+        let told = self.tell_what_went_wrong();
         // Last, and here rather than at the command line: the rows come
         // from a walk that sends on this channel, so a list opened before
-        // there was one would be a list nothing ever fills.
-        if self.list_at_start {
+        // there was one would be a list nothing ever fills. Not over what
+        // went wrong, though: a list opened over a list would put the one
+        // the reader is owed under the one they asked for, and the files
+        // are one key away once it has been read.
+        if self.list_at_start && !told {
             self.open_file_picker();
         }
     }
@@ -1551,9 +1549,9 @@ impl App {
             // watch, and that is the ordinary case: a quarter of the starts
             // in this machine's own log said so, every one of them about a
             // project that was working perfectly. A warning on every start
-            // is how a log stops being read -- the same argument the
-            // welcome screen's list of what went wrong is built on, and the
-            // level `settle_a_watch` already uses for the same failure.
+            // is how a log stops being read -- the same argument the list of
+            // what went wrong on the way up is built on, and the level
+            // `settle_a_watch` already uses for the same failure.
             //
             // A directory that *is* there and will not be watched is a real
             // failure and keeps its warning: settings changed in another
@@ -1647,14 +1645,38 @@ impl App {
     /// Both halves: what Obelus could not make of a file it reads for its
     /// own sake, and what has no file to be about. The first is already a
     /// mark on that file -- but a mark on a file nobody has opened is a
-    /// mark nobody sees, and the screen that shows when nothing is open is
-    /// the one place a reader will be standing when it matters.
+    /// mark nobody sees, and the first screen of a start is the one place a
+    /// reader will be standing when it matters.
     ///
     /// Obelus's own only. What a server says about the code is the code's
     /// business and is not something that went wrong starting up.
+    ///
+    /// As the rows of a list, because that is what they are drawn as, and
+    /// rows that go nowhere: a row is read here, not gone to. Where it is
+    /// is said at the end of it all the same, which is how a reader finds
+    /// the line to fix -- and the marks on that file, and `show-problems`,
+    /// are where it is gone to.
     #[must_use]
-    pub fn what_went_wrong(&self) -> Vec<obelus_ui::WentWrong> {
-        let mut rows: Vec<obelus_ui::WentWrong> = Vec::new();
+    pub fn what_went_wrong(&self) -> Vec<PickerItem> {
+        let row = |said: String, at: Option<String>| PickerItem {
+            prose: true,
+            marker: None,
+            icon: None,
+            label: said,
+            detail: None,
+            trailing: at,
+            changed: None,
+            value: PickerValue::Nothing,
+            enabled: true,
+            colours: None,
+            status: None,
+            depth: 0,
+            opens: None,
+            kind: None,
+            tab: None,
+            section: None,
+        };
+        let mut rows = Vec::new();
         let mut paths: Vec<&PathBuf> = self.troubles.keys().collect();
         paths.sort();
         for path in paths {
@@ -1662,94 +1684,55 @@ impl App {
                 if trouble.source.as_deref() != Some(semantics::OBELUS) {
                     continue;
                 }
-                rows.push(obelus_ui::WentWrong {
+                // The file by its name and the line counted the way a
+                // reader counts: the directory is the reader's own settings
+                // or the project's, and either way the name says which.
+                let name = path.file_name().map_or_else(
+                    || path.display().to_string(),
+                    |name| name.to_string_lossy().into_owned(),
+                );
+                rows.push(row(
                     // The first line: what Obelus says about a file that
                     // will not read carries the parser's own words under
                     // its sentence, and a row is one line.
-                    said: trouble
+                    trouble
                         .message
                         .lines()
                         .next()
                         .unwrap_or_default()
                         .to_string(),
-                    at: Some((path.clone(), trouble.span.line)),
-                });
+                    Some(format!("{name}:{}", trouble.span.line.get() + 1)),
+                ));
             }
         }
-        rows.extend(self.amiss.iter().map(|said| obelus_ui::WentWrong {
-            said: said.clone(),
-            at: None,
-        }));
+        rows.extend(self.amiss.iter().map(|said| row(said.clone(), None)));
         rows
     }
 
-    /// How many things went wrong on the way up.
+    /// Puts what went wrong on the way up in front of the reader, where
+    /// anything did, and answers whether it did.
     ///
-    /// Without building the list, which is what a frame wants: the number
-    /// is all a window needs, and the rows cost a sort and a clone apiece.
-    #[must_use]
-    pub fn how_much_went_wrong(&self) -> usize {
-        self.troubles
-            .values()
-            .flatten()
-            .filter(|trouble| trouble.source.as_deref() == Some(semantics::OBELUS))
-            .count()
-            + self.amiss.len()
-    }
-
-    /// Which row of what went wrong the reader is on.
-    #[must_use]
-    pub fn went_wrong_at(&self) -> usize {
-        self.went_wrong_window.focus()
-    }
-
-    /// And which of them are on screen, out of `rows` that fit.
-    #[must_use]
-    pub fn went_wrong_showing(&self, rows: u16) -> std::ops::Range<usize> {
-        self.went_wrong_window.visible(rows)
-    }
-
-    /// The keys that walk what went wrong, while it is what is showing.
+    /// A list over the first screen -- the welcome screen, or the page
+    /// asking which project -- and not a block drawn on it: a block on a
+    /// screen was a second thing there with keys of its own, and a list is
+    /// the one thing on screen until it is let go, which is what the
+    /// reader is owed before the way in. Once a start, from `start`: what
+    /// went wrong on the way up is news once, and the marks on the file
+    /// and `show-problems` are where it is kept after that.
     ///
-    /// Only where the welcome screen is: the block is walked there and
-    /// nowhere else, and a key that moved a selection nobody can see would
-    /// be a key that does nothing the reader can tell. The page that asks
-    /// which project draws it too, but to be read -- its keys are the
-    /// projects' -- and a key the path box had no use for used to land
-    /// here and move a row the welcome screen then opened on.
-    fn went_wrong_key(&mut self, key: &KeyEvent) -> bool {
-        // The cheap questions first: this is asked of every key, and the
-        // list is built by walking everything anything has been said about.
-        if !self.reading_nothing() || self.chooser.is_some() || !key.modifiers.is_empty() {
+    /// Not where the first screen is a file, which was asked for by name
+    /// and is what the reader came to read.
+    pub(super) fn tell_what_went_wrong(&mut self) -> bool {
+        if !self.reading_nothing() {
             return false;
         }
         let rows = self.what_went_wrong();
         if rows.is_empty() {
             return false;
         }
-        if let Some(movement) = obelus_component::window::Move::of(key.code) {
-            // Wrapping, like every list a reader chooses from: the other
-            // end is faster to reach than to walk back through.
-            self.went_wrong_window.apply(
-                movement,
-                obelus_ui::welcome::AMISS_ROWS,
-                obelus_component::window::Wrap::Yes,
-            );
-            return true;
-        }
-        if key.code != KeyCode::Enter {
-            return false;
-        }
-        // A row with nowhere to go swallows the key rather than letting it
-        // through: what is under this screen is nothing, and a key that
-        // fell past it would be a key doing something else entirely.
-        let Some((path, line)) = rows
-            .get(self.went_wrong_window.focus())
-            .and_then(|row| row.at.clone())
-        else {
-            return true;
-        };
-        self.go_to(&path, u32::try_from(line.get()).unwrap_or(0), 0);
+        let mut picker = Picker::new(rows, PickerLayout::Compact { rows: COMPACT_ROWS });
+        picker.before_typing("What went wrong starting up");
+        self.show_list(picker);
         true
     }
 
@@ -2469,22 +2452,6 @@ impl App {
                 chooser.settle(rows);
             }
         }
-        // What went wrong on the way up, which the welcome screen draws a
-        // window's worth of. Asked from what is true once a frame, like
-        // every other window: a count set only where a key is pressed is a
-        // list whose rows are not on screen until somebody presses one.
-        // Only where it is drawn, and counted rather than built: this runs
-        // on every frame, and building the list means sorting the paths
-        // anything has been said about and cloning a row for each -- all
-        // of it thrown away for a number that is zero on almost every
-        // start.
-        if self.reading_nothing() {
-            let wrong = self.how_much_went_wrong();
-            self.went_wrong_window.set_count(wrong);
-            self.went_wrong_window
-                .settle(obelus_ui::welcome::AMISS_ROWS);
-        }
-
         // Unconditionally, because with no list open the geometry is `None`
         // and the trees parsed for the last one are what has to be let go.
         self.colour_visible_rows(rows.unwrap_or(0));
@@ -3025,7 +2992,14 @@ impl App {
         // behind it would know what to do. What it does not take falls to
         // the ordinary lookup, which finds a dialog and so offers only
         // what a dialog binds.
-        if self.chooser.is_some() && self.choosing_a_project(&key) {
+        //
+        // Except while a list is up over it, which is what went wrong on
+        // the way up: that is nearer, and the page has the keys back once
+        // the reader has let it go.
+        if self.chooser.is_some()
+            && self.layers().nearest().is_none()
+            && self.choosing_a_project(&key)
+        {
             return;
         }
 
@@ -3105,13 +3079,6 @@ impl App {
         // And the holes a snippet left, which take `tab` while there are
         // any left to fill in.
         if self.snippet_key(&key) {
-            return;
-        }
-
-        // What went wrong on the way up, while that is what is on screen.
-        // Before the file's own keys, which are about a file and there is
-        // not one: this is what has the arrows when nothing is open.
-        if self.went_wrong_key(&key) {
             return;
         }
 
@@ -4482,9 +4449,6 @@ impl Screen for App {
     fn opened_hunks(&self) -> Vec<LineNumber> {
         App::opened_hunks(self)
     }
-    fn went_wrong(&self) -> Vec<obelus_ui::WentWrong> {
-        self.what_went_wrong()
-    }
     fn choosing(&self) -> Option<obelus_ui::Choosing> {
         self.what_is_being_chosen()
     }
@@ -4492,16 +4456,8 @@ impl Screen for App {
         self.naming_list.as_ref()
     }
 
-    fn went_wrong_at(&self) -> usize {
-        App::went_wrong_at(self)
-    }
-
     fn newer_release(&self) -> Option<&str> {
         App::newer_release(self)
-    }
-
-    fn went_wrong_showing(&self, rows: u16) -> std::ops::Range<usize> {
-        App::went_wrong_showing(self, rows)
     }
 
     fn phase(&self) -> u32 {

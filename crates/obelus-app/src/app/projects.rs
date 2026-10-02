@@ -341,8 +341,8 @@ impl super::App {
     pub(crate) fn ask_which_project(&mut self) {
         let reading = read();
         // What Obelus could not make of its own file goes where everything
-        // else that went wrong on the way up goes -- under the projects on
-        // the screen that asks -- rather than into a log nobody is going to
+        // else that went wrong on the way up goes -- the list put up over
+        // the page that asks -- rather than into a log nobody is going to
         // open. The list is empty behind it, which is honest: there is one
         // row either way and it is the one that opens a project.
         if let Reading::Unreadable(why) = &reading {
@@ -769,12 +769,7 @@ impl super::App {
     /// that cost.
     pub(super) fn chooser_rows(&self) -> u16 {
         self.what_is_being_chosen().map_or(1, |choosing| {
-            obelus_ui::projects::list_height(
-                self.drawn_in(),
-                &choosing,
-                &self.keymap,
-                self.how_much_went_wrong(),
-            )
+            obelus_ui::projects::list_height(self.drawn_in(), &choosing, &self.keymap)
         })
     }
 

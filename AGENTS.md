@@ -246,8 +246,10 @@ its own sake -- the settings, a theme, the notes, a `[keys]` line that bound
 nothing -- goes into the same list a server's go in, under Obelus's own name
 (`Reported::source`), so everything that draws or walks problems reads one
 list. What Obelus writes for itself and a reader never opens stays a line in
-the log, and what went wrong on the way up with no line to mark is said on the
-welcome screen (`app/preferences`, `obelus_lsp::trouble`, `ui::welcome`).
+the log, and what went wrong on the way up -- the marks on files nobody has
+opened yet, and what has no line to mark -- is a list put up over the first
+screen of a start, read there and let go with escape
+(`app/preferences`, `obelus_lsp::trouble`, `App::tell_what_went_wrong`).
 
 **A setting the reader turned on is not a reason to refuse them.** Saving
 with formatting on and no server to ask writes the file unformatted. The
@@ -669,10 +671,9 @@ crates/
                       is, the foot says what is happening, a row keeps the room
                       for what it says about itself, and a place the title
                       named is not said after it (chat); a list open over
-                      anything owns the status row (status); what went wrong on
-                      the way up is said under the keys and never in front of
-                      them (welcome); asking which project is a page of its
-                      own, and the welcome screen comes after (projects); a
+                      anything owns the status row (status); asking which
+                      project is a page of its own, and the welcome screen
+                      comes after (projects); a
                       window draws the marks itself, and the view does not
                       know the difference (image); a view says
                       what a region *is* and the front end says what that looks

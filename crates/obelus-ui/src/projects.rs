@@ -18,15 +18,10 @@
 //! the way to a twenty-first off the screen would be a page whose one
 //! sure answer was out of sight.
 //!
-//! **What went wrong on the way up is said here too**, under the way in and
-//! never in front of it, for the reason the welcome screen says it: this is
-//! the first thing a reader started from a launcher sees, and the list of
-//! projects not reading is exactly the sort of thing they should be told.
-//! Read here and not walked: the arrows and enter belong to the projects,
-//! and most of what is in that block is a line of a file -- going to it
-//! would open a file with no project to open it in. So no row of it carries
-//! the mark that says the keys are there, and the welcome screen, which
-//! comes next, is where it is walked.
+//! What went wrong on the way up is not drawn here. It is a list put up
+//! over this page when Obelus starts, the way it is put up over the welcome
+//! screen -- `App::tell_what_went_wrong` -- and the page has the keys back
+//! once the reader has read it and let it go.
 
 use crossterm::event::{KeyCode, KeyModifiers};
 use obelus_command::Command;
@@ -34,7 +29,7 @@ use obelus_editing::keymap::{KeyChord, Keymap};
 use obelus_theme::Theme;
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets::Widget};
 
-use crate::{Hint, Screen, fill, welcome::WentWrongBlock, write};
+use crate::{Hint, Screen, fill, write};
 
 /// What the page is, along the top of it.
 ///
@@ -125,13 +120,10 @@ struct Laid {
     list: Rect,
     /// The row that opens a project not in the list.
     opening: Rect,
-    /// Where what went wrong starts, where there is room for it.
-    amiss: Option<u16>,
 }
 
-/// How the page is laid out in `area`, with `wrong` rows of what went
-/// wrong to find room for.
-fn laid(area: Rect, choosing: &crate::Choosing, hints: &[Hint], wrong: usize) -> Laid {
+/// How the page is laid out in `area`.
+fn laid(area: Rect, choosing: &crate::Choosing, hints: &[Hint]) -> Laid {
     let page = crate::footed(area, hints);
     let row = |y: u16| Rect {
         y,
@@ -148,19 +140,9 @@ fn laid(area: Rect, choosing: &crate::Choosing, hints: &[Hint], wrong: usize) ->
         false => 0,
     };
     let gap = u16::from(listed > 0);
-    // What went wrong takes its room before the projects do, where there
-    // is room for it beside the opening row and one of them: it goes
-    // before the way in does, and the projects get the rest because the
-    // filter is what reaches the ones below the fold.
-    let amiss = match WentWrongBlock::height_for(wrong, false) {
-        0 => 0,
-        rows => rows + 1,
-    };
-    let amiss = match listed.min(1) + gap + 1 + amiss <= room {
-        true => amiss,
-        false => 0,
-    };
-    let shown = listed.min(room.saturating_sub(gap + 1 + amiss));
+    // The projects get what the opening row and the blank over it leave,
+    // and the filter is what reaches the ones below the fold.
+    let shown = listed.min(room.saturating_sub(gap + 1));
     let list = Rect {
         y: below,
         height: shown,
@@ -179,24 +161,20 @@ fn laid(area: Rect, choosing: &crate::Choosing, hints: &[Hint], wrong: usize) ->
         rule: row(page.y.saturating_add(1)),
         list,
         opening,
-        amiss: (amiss > 0).then_some(opening.y + 2),
     }
 }
 
 /// How many projects the page has room for in `area`, which is what the
 /// paging keys move by.
 #[must_use]
-pub fn list_height(area: Rect, choosing: &crate::Choosing, keymap: &Keymap, wrong: usize) -> u16 {
-    laid(area, choosing, &hints(choosing, keymap), wrong)
-        .list
-        .height
+pub fn list_height(area: Rect, choosing: &crate::Choosing, keymap: &Keymap) -> u16 {
+    laid(area, choosing, &hints(choosing, keymap)).list.height
 }
 
 /// The page.
 pub struct ProjectsView<'a> {
     choosing: crate::Choosing,
     keymap: &'a Keymap,
-    went_wrong: WentWrongBlock<'a>,
     theme: &'a Theme,
 }
 
@@ -207,7 +185,6 @@ impl<'a> ProjectsView<'a> {
         Some(Self {
             choosing: app.choosing()?,
             keymap: app.keymap(),
-            went_wrong: WentWrongBlock::read(app),
             theme: app.theme(),
         })
     }
@@ -217,7 +194,7 @@ impl Widget for ProjectsView<'_> {
     fn render(self, area: Rect, cells: &mut CellBuffer) {
         let choosing = &self.choosing;
         let hints = hints(choosing, self.keymap);
-        let laid = laid(area, choosing, &hints, self.went_wrong.len());
+        let laid = laid(area, choosing, &hints);
 
         write(
             cells,
@@ -243,18 +220,6 @@ impl Widget for ProjectsView<'_> {
             said,
             style.fg(self.theme.foreground),
         );
-        // A cell in from either side of the list, so that its heading
-        // starts where the names do and its tails end where the times do:
-        // the block sets its words a cell into its room, and the list two,
-        // for the mark behind the row the reader is on.
-        if let Some(top) = laid.amiss {
-            let under = Rect {
-                x: laid.list.x + 1,
-                width: laid.list.width.saturating_sub(2),
-                ..area
-            };
-            self.went_wrong.draw(cells, under, top);
-        }
         crate::foot_without_a_card(cells, area, &hints, self.theme);
     }
 }

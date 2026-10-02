@@ -2392,167 +2392,125 @@ fn the_end_of_a_reading_is_its_last_screenful() {
     let _ = std::fs::remove_file(&path);
 }
 
-/// The welcome screen says what went wrong on the way up.
-///
-/// Which is the one place it can be said: a mark on a line of a settings
-/// file is a mark nobody sees until they open it, and the screen that shows
-/// when nothing is open is where a reader is standing when it matters.
-///
-/// Under the keys and never in front of them: what this screen is for is
-/// the way in.
-///
-/// Deliberate break: `WelcomeView` drawing the block above the keys instead
-/// (the last assertion), and `WentWrongBlock::height` answering zero (the
-/// rest).
-#[test]
-fn the_welcome_screen_says_what_went_wrong_starting_up() {
-    let scratch = support::Scratch::new("welcome-amiss");
-    let file = scratch.join("config.toml");
-    std::fs::write(&file, "theme = \"dark\"\nshrift = 15\n").expect("writing a settings file");
-
-    let mut app = App::new(Vec::new());
-    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
-    app.config_file_for_test(file);
-    let dump = support::render(&mut app, 76, 26);
-    let text = support::text_block(&dump);
-
-    assert!(text.contains("What went wrong starting up"), "{dump}");
-    assert!(text.contains("No setting is called shrift"), "{dump}");
-    // The file and the line it is on, counted the way a reader counts.
-    assert!(text.contains("config.toml:2"), "{dump}");
-
-    let keys = text
-        .find(&obelus_editing::keymap::function(1).label())
-        .expect("the key that opens a file");
-    let wrong = text
-        .find("What went wrong starting up")
-        .expect("the heading");
-    assert!(
-        keys < wrong,
-        "what went wrong was put in front of the way in"
-    );
-}
-
-/// And a screen with nothing wrong has no block at all.
-///
-/// Almost every start is this one. A heading over an empty list would be a
-/// row of screen spent saying nothing happened.
-///
-/// Deliberate break: `WentWrongBlock::draw` drawing its heading whatever the
-/// list holds.
-#[test]
-fn a_welcome_screen_with_nothing_wrong_says_nothing() {
-    let scratch = support::Scratch::new("welcome-well");
-    let file = scratch.join("config.toml");
-    std::fs::write(&file, "theme = \"dark\"\n").expect("writing a settings file");
-
-    let mut app = App::new(Vec::new());
-    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
-    app.config_file_for_test(file);
-    let dump = support::render(&mut app, 76, 26);
-    assert!(
-        !support::text_block(&dump).contains("What went wrong"),
-        "{dump}"
-    );
-}
-
-/// The arrows walk what went wrong, and enter goes to the line.
-///
-/// Which is why it is a list and not a paragraph: most of what Obelus finds
-/// on the way up is about a line of a file the reader wrote, and being told
-/// about it without being taken there is half an answer.
-///
-/// Deliberate break: `went_wrong_key` answering `false`, which lets the
-/// arrows fall through to a file that is not open and leaves the focus
-/// where it was; and `Enter` handled before the movement, which never
-/// reaches the second row.
-#[test]
-fn the_arrows_walk_what_went_wrong_and_enter_goes_there() {
-    let scratch = support::Scratch::new("welcome-walk");
+/// A settings file Obelus cannot make all of, which is what went wrong.
+fn a_settings_file_with_two_mistakes(scratch: &support::Scratch) -> std::path::PathBuf {
     let file = scratch.join("config.toml");
     std::fs::write(&file, "theme = \"dark\"\nshrift = 15\nwrapp = true\n")
         .expect("writing a settings file");
-
-    let mut app = App::new(Vec::new());
-    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
-    app.config_file_for_test(file.clone());
-    support::lay_out(&mut app, 76, 26);
-    assert_eq!(app.what_went_wrong().len(), 2);
-    assert_eq!(app.went_wrong_at(), 0);
-
-    support::press(&mut app, KeyCode::Down);
-    assert_eq!(app.went_wrong_at(), 1, "the arrow did not walk the list");
-
-    support::press(&mut app, KeyCode::Enter);
-    let buffer = app.current_buffer().expect("the settings file was opened");
-    assert_eq!(buffer.path(), file);
-    // The third line, where `wrapp` is written -- counted from zero by the
-    // cursor and from one by the reader.
-    assert_eq!(buffer.cursor().line.get(), 2);
+    file
 }
 
-/// And nothing walks when there is nothing wrong.
+/// Starts it, the way `main` does once the screen is up.
+fn started(app: &mut App) {
+    let (sender, _events) = std::sync::mpsc::channel();
+    app.start(sender);
+}
+
+/// What went wrong on the way up is a list put up over the welcome screen.
 ///
-/// Deliberate break: `went_wrong_key` walking a list it has not been given
-/// -- `set_count` left out of the frame, so the window keeps whatever
-/// count it had from a screen that did have something wrong.
+/// Which is the one place it can be said: a mark on a line of a settings
+/// file is a mark nobody sees until they open it, and the screen that shows
+/// when nothing is open is where a reader is standing when it matters. A
+/// list rather than a block on the screen, because a block was a second
+/// thing there with keys of its own: the list is the one thing on screen
+/// until it is let go.
 ///
-/// What this does *not* check is the guard on the list being empty. It is
-/// there so the arrows are not claimed where no block is drawn, and with
-/// nothing open there is nothing under them to claim them instead -- so
-/// taking the guard out changes nothing a test can see. Kept because the
-/// moment something is under this screen it would be wrong, and noted here
-/// because a guard nothing holds to is a guard somebody deletes.
+/// Deliberate break: taking the `tell_what_went_wrong` out of `App::start`,
+/// and the welcome screen opens with nothing said.
 #[test]
-fn nothing_walks_a_welcome_screen_with_nothing_wrong() {
-    let scratch = support::Scratch::new("welcome-nowalk");
+fn what_went_wrong_is_a_list_over_the_welcome_screen() {
+    let scratch = support::Scratch::new("welcome-told");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.config_file_for_test(a_settings_file_with_two_mistakes(&scratch));
+    started(&mut app);
+    let dump = support::render(&mut app, 76, 26);
+    let text = support::text_block(&dump);
+
+    assert!(text.contains("No setting is called shrift"), "{dump}");
+    assert!(text.contains("No setting is called wrapp"), "{dump}");
+    // The file and the line it is on, counted the way a reader counts.
+    assert!(text.contains("config.toml:2"), "{dump}");
+    // And what the list is, where a list says what it is.
+    assert!(text.contains("What went wrong starting up"), "{dump}");
+}
+
+/// The list has the keys until it is let go, and then the screen under it
+/// does.
+///
+/// Deliberate break: none needed for the first half -- a compact list
+/// keeps every key it is given, and `f1` is not a way out of one (see
+/// `app/switching`). The second half is broken by having escape leave the
+/// list where it is, which is the break that matters: the welcome screen's
+/// keys never come back.
+#[test]
+fn what_went_wrong_has_the_keys_until_it_is_let_go() {
+    let scratch = support::Scratch::new("welcome-held");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.config_file_for_test(a_settings_file_with_two_mistakes(&scratch));
+    started(&mut app);
+    support::lay_out(&mut app, 76, 26);
+
+    press(&mut app, KeyCode::F(1));
+    let dump = support::render(&mut app, 76, 26);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("No setting is called shrift"),
+        "a key reached the screen under the list:\n{text}"
+    );
+
+    press(&mut app, KeyCode::Esc);
+    let dump = support::render(&mut app, 76, 26);
+    let text = support::text_block(&dump);
+    assert!(
+        !text.contains("No setting is called shrift"),
+        "escape did not let it go:\n{text}"
+    );
+    assert!(
+        text.contains(&obelus_editing::keymap::function(1).label()),
+        "the welcome screen's keys did not come back:\n{text}"
+    );
+}
+
+/// And a start with nothing wrong puts nothing up.
+///
+/// Almost every start is this one. A list saying nothing happened would be
+/// a key to press on every start for no reason.
+///
+/// Deliberate break: `tell_what_went_wrong` putting its list up whatever it
+/// holds.
+#[test]
+fn a_start_with_nothing_wrong_puts_nothing_up() {
+    let scratch = support::Scratch::new("welcome-quiet");
     let file = scratch.join("config.toml");
     std::fs::write(&file, "theme = \"dark\"\n").expect("writing a settings file");
 
     let mut app = App::new(Vec::new());
     app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
     app.config_file_for_test(file);
-    support::lay_out(&mut app, 76, 26);
-
-    support::press(&mut app, KeyCode::Down);
-    support::press(&mut app, KeyCode::Enter);
-    assert_eq!(app.went_wrong_at(), 0);
-    assert!(app.reading_nothing(), "something was opened");
+    started(&mut app);
+    assert!(app.picker().is_none(), "a list was put up over nothing");
 }
 
-/// A screen with room for the keys but not for what went wrong gets the
-/// keys.
+/// A start that was asked for the files, as `ob some-directory` is, says
+/// what went wrong first, and does not put the files over it.
 ///
-/// The way in is the only thing this screen is for, so the block is what
-/// gives way -- and giving way has to mean not drawing it, which is not
-/// the same as deciding not to. The height is worked out once and the
-/// drawing obeys it; worked out twice, the second answer said there was
-/// room and drew the block into a screen measured as too short for it.
-///
-/// Deliberate break: `lavish` deciding for itself whether the block fits,
-/// which is what it did -- `height >= plate + 1 + block` is true whenever
-/// the keys happen to take as many rows as the block would.
+/// Deliberate break: opening the file list whatever was said, and it goes
+/// up over the list the reader is owed.
 #[test]
-fn a_screen_too_short_for_what_went_wrong_still_gets_the_keys() {
-    let scratch = support::Scratch::new("welcome-tight");
-    let file = scratch.join("config.toml");
-    std::fs::write(&file, "theme = \"dark\"\nshrift = 15\n").expect("writing a settings file");
-
+fn what_went_wrong_is_not_put_under_the_files() {
+    let scratch = support::Scratch::new("welcome-files");
     let mut app = App::new(Vec::new());
-    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
-    app.config_file_for_test(file);
-
-    // The plate, a blank and the keys are thirteen rows; the block wants
-    // five more. Fifteen has room for the first and not the second.
-    let dump = support::render(&mut app, 76, 16);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.config_file_for_test(a_settings_file_with_two_mistakes(&scratch));
+    app.list_at_start();
+    started(&mut app);
+    let dump = support::render(&mut app, 76, 26);
     let text = support::text_block(&dump);
     assert!(
-        text.contains(&obelus_editing::keymap::function(1).label()),
-        "the keys gave way instead:\n{dump}"
-    );
-    assert!(
-        !text.contains("What went wrong starting up"),
-        "the block was drawn into a screen with no room for it:\n{dump}"
+        text.contains("No setting is called shrift"),
+        "the files went up over what went wrong:\n{text}"
     );
 }
 
@@ -2592,48 +2550,6 @@ fn a_start_with_no_project_asks_which_one() {
     support::check(
         "choosing_a_project_64x20",
         &support::render(&mut app, 64, 20),
-    );
-}
-
-/// The keys on the page that asks which project do not walk what went
-/// wrong, which is read there and not walked.
-///
-/// A key the path box has no use for -- an arrow, with nothing offered
-/// under it -- used to fall through to the keys of the welcome screen's
-/// block, and move a selection nobody could see: the welcome screen then
-/// opened on a row the reader had never chosen.
-///
-/// Deliberate break: taking `self.chooser.is_some()` out of
-/// `went_wrong_key`'s first question, and the arrow moves it to the second.
-#[test]
-fn asking_which_project_does_not_walk_what_went_wrong() {
-    let scratch = support::Scratch::new("choosing-walk");
-    let file = scratch.join("config.toml");
-    std::fs::write(&file, "theme = \"dark\"\nshrift = 15\nwrapp = true\n")
-        .expect("writing a settings file");
-
-    let mut app = App::new(Vec::new());
-    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
-    app.config_file_for_test(file);
-    app.ask_about_these_projects_for_test(many_projects(2));
-    support::lay_out(&mut app, 76, 26);
-    assert_eq!(app.what_went_wrong().len(), 2);
-
-    // The path box, naming somewhere with nothing in it to offer.
-    press(&mut app, KeyCode::End);
-    press(&mut app, KeyCode::Enter);
-    for character in "/nowhere-at-all/".chars() {
-        press(&mut app, KeyCode::Char(character));
-    }
-    assert!(
-        obelus_ui::Screen::naming_list(&app).is_none(),
-        "something is offered"
-    );
-    press(&mut app, KeyCode::Down);
-    assert_eq!(
-        app.went_wrong_at(),
-        0,
-        "the arrow walked a block that is not walked here"
     );
 }
 
@@ -2740,48 +2656,46 @@ fn the_foot_says_what_enter_does_here_and_how_to_leave() {
     );
 }
 
-/// What went wrong on the way up is said where Obelus asks which project,
-/// too: that is the first screen a reader started from a launcher sees,
-/// and the list of projects not reading is exactly what they should hear.
+/// What went wrong on the way up is put up over the page that asks which
+/// project, too, and the page does not take a key while it is there.
 ///
-/// Under the way in, and read rather than walked: the arrows and enter are
-/// the projects', so no row of it says the keys are on it and there is no
-/// foot saying what enter does there.
-///
-/// Deliberate break: `ProjectsView::render` leaving the block out (the
-/// first assertions), drawing it above the projects (the order), and
-/// `WentWrongBlock::read` building a walked block (the foot).
+/// Deliberate break: taking the `layers().nearest().is_none()` out of the
+/// chooser's turn in `handle_key`, and the letter goes into the projects'
+/// filter under the list (the second assertion); and taking it out of the
+/// chooser's turn in `cursor_position`, and the caret is not in the list's
+/// box (the first).
 #[test]
-fn asking_which_project_says_what_went_wrong_starting_up() {
-    let scratch = support::Scratch::new("choosing-amiss");
-    let file = scratch.join("config.toml");
-    std::fs::write(&file, "theme = \"dark\"\nshrift = 15\n").expect("writing a settings file");
-
+fn what_went_wrong_is_put_over_the_page_that_asks_too() {
+    let scratch = support::Scratch::new("choosing-told");
     let mut app = App::new(Vec::new());
     app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
-    app.config_file_for_test(file);
-    app.ask_about_these_projects_for_test(vec![obelus_component::chooser::Known {
-        path: std::path::PathBuf::from("/tmp/obelus/work/obelus"),
-        shown: "/tmp/obelus/work/obelus".to_string(),
-        last: None,
-    }]);
+    app.config_file_for_test(a_settings_file_with_two_mistakes(&scratch));
+    app.ask_about_these_projects_for_test(many_projects(2));
+    started(&mut app);
     let dump = support::render(&mut app, 76, 26);
-    let text = support::text_block(&dump);
-
-    assert!(text.contains("What went wrong starting up"), "{dump}");
-    assert!(text.contains("No setting is called shrift"), "{dump}");
-    assert!(text.contains("config.toml:2"), "{dump}");
-    let opening = text.find("Open another").expect("the opening row");
-    let wrong = text
-        .find("What went wrong starting up")
-        .expect("the heading");
     assert!(
-        opening < wrong,
-        "what went wrong was put in front of the way in:\n{dump}"
+        support::text_block(&dump).contains("No setting is called shrift"),
+        "{dump}"
     );
     assert!(
-        !text.contains("Go to it"),
-        "a key that is the projects' was offered for what went wrong:\n{dump}"
+        !dump.ends_with("-- cursor --\nnone\n") && !dump.contains("-- cursor --\nnone"),
+        "the caret is not in the list's box:\n{dump}"
+    );
+
+    press(&mut app, KeyCode::Char('p'));
+    assert_eq!(
+        obelus_ui::Screen::choosing(&app).expect("asking").typed,
+        "",
+        "a letter went into the page under the list"
+    );
+
+    press(&mut app, KeyCode::Esc);
+    press(&mut app, KeyCode::Esc);
+    press(&mut app, KeyCode::Char('p'));
+    assert_eq!(
+        obelus_ui::Screen::choosing(&app).expect("asking").typed,
+        "p",
+        "the page did not have the keys back"
     );
 }
 

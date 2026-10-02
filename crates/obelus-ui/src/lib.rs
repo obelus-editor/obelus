@@ -71,20 +71,6 @@ use obelus_text::coordinates::{LineNumber, Span};
 
 use crate::image::Images;
 
-/// One thing that went wrong on the way up.
-///
-/// The words are written by the time they get here -- what Obelus says
-/// about a file it could not read is the same sentence whether it is drawn
-/// under a line or on a list -- so this carries them and where to go, and
-/// nothing else.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct WentWrong {
-    /// What Obelus says about it.
-    pub said: String,
-    /// The file it is about and the line in it, where there is one.
-    pub at: Option<(std::path::PathBuf, LineNumber)>,
-}
-
 /// A path with the reader's own directory written as `~`.
 ///
 /// Here because it is about drawing and not about the filesystem:
@@ -340,13 +326,6 @@ pub trait Screen {
     fn opened_hunks(&self) -> Vec<LineNumber>;
     /// How far along the welcome screen's colours have travelled, in ticks.
     fn phase(&self) -> u32;
-    /// What went wrong on the way up, for the screen that is showing when
-    /// nothing is open.
-    ///
-    /// Empty on almost every start, and the block it fills is absent then:
-    /// what this screen is for is the way in, and what went wrong goes
-    /// under it rather than in front of it.
-    fn went_wrong(&self) -> Vec<WentWrong>;
     /// What is being asked, while Obelus is asking which project. `None`
     /// on every start that was told one.
     fn choosing(&self) -> Option<Choosing>;
@@ -356,13 +335,9 @@ pub trait Screen {
     /// the rows and the chosen row are the picker's, and the box below it
     /// owns the keys.
     fn naming_list(&self) -> Option<&Picker>;
-    /// Which of those rows the reader is on.
-    fn went_wrong_at(&self) -> usize;
     /// The version of a newer Obelus, where one is out and the reader
     /// wants to be told.
     fn newer_release(&self) -> Option<&str>;
-    /// And which of them are on screen, out of `rows` that fit.
-    fn went_wrong_showing(&self, rows: u16) -> std::ops::Range<usize>;
     /// The open picker, for the renderer.
     fn picker(&self) -> Option<&Picker>;
     /// The settings the project has set, which are the ones the reader cannot
@@ -622,8 +597,12 @@ pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
 
     // Being asked which project, which is not a layer -- it is a page of
     // its own, and the page is what this row is under. Before the layers
-    // for that reason rather than for an order among them.
-    if let Some(choosing) = app.choosing() {
+    // for that reason rather than for an order among them -- and so only
+    // where no layer is up: what went wrong on the way up is a list put
+    // over this page, and while it is there the keys are its.
+    if app.layers().nearest().is_none()
+        && let Some(choosing) = app.choosing()
+    {
         let question = match choosing.naming {
             true => "Open",
             false => "Filter",

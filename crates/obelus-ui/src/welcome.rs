@@ -14,30 +14,14 @@
 //! the same kind of fact one step out. This doc claimed for a long time
 //! that it was on the page, while nothing drew it anywhere.
 //!
-//! **What went wrong on the way up is said here, under the keys and never in
-//! front of them.** A mark on a line of a settings file is a mark nobody sees
-//! until they open that file, and the reader who has just started Obelus has
-//! opened nothing -- so this screen carries the same sentences again, below
-//! the way in, because the way in is what this screen is for. It is absent on
-//! almost every start, which is the point: a heading over an empty list is a
-//! row of screen spent saying nothing happened.
-//!
-//! The rows are Obelus's own only: what a server says about the code is the
-//! code's business and is not something that went wrong starting up. And the
-//! block takes the keys, because most of what is on it is about a line of a
-//! file the reader wrote and being told without being taken there is half an
-//! answer: the arrows walk it, enter goes to the line, and the row the reader
-//! is on carries `selected_row_background` like the row of every other list.
-//!
-//! Nothing without a place, though. A mark is a mark *on* something: a file
-//! whose permissions forbid it, a watcher that would not start, a terminal
-//! that would not report the wheel -- none of those has a line to draw
-//! under. They go on this screen and nowhere else, which is why they are
-//! kept apart from the marks rather than faked onto line one of something.
+//! What went wrong on the way up is *not* here either. It is a list put up
+//! over this screen, or over the page that asks which project, when Obelus
+//! starts -- `App::tell_what_went_wrong` -- and a block drawn here under the
+//! keys was a second thing on this screen with keys of its own, which is
+//! one more than a way in should have.
 
-use crossterm::event::{KeyCode, KeyModifiers};
 use obelus_command::Command;
-use obelus_editing::keymap::{KeyChord, Keymap};
+use obelus_editing::keymap::Keymap;
 use obelus_theme::Theme;
 use ratatui::{
     buffer::Buffer as CellBuffer,
@@ -83,25 +67,6 @@ const GUTTER: u16 = 4;
 /// Two: the keys are read one at a time, and a blank between them is what
 /// makes a block of six read as six things rather than as a paragraph.
 const ROW_HEIGHT: u16 = 2;
-
-/// How wide the block of what went wrong is allowed to be.
-///
-/// Wider than the plate, which the keys are centred on: those are two
-/// short words under a cap, and these are a sentence with a file and a
-/// line after it. Capped, because a line of prose run across a wide
-/// terminal is a line the eye loses its place in.
-const AMISS_WIDTH: u16 = 64;
-
-/// And how many of them are shown at once.
-///
-/// Six, which is as many as the keys above take. More than that and the
-/// block is the screen rather than a note under the way in -- and the list
-/// is a list, reachable by name, where there is room for all of them.
-///
-/// Public because the application walks the list by it: what the keys move
-/// by has to be what is on screen, and two answers to how many rows there
-/// are is a page key that skips some.
-pub const AMISS_ROWS: u16 = 6;
 
 /// The gap between a key and what it opens.
 ///
@@ -239,24 +204,9 @@ fn foot(newer: Option<&str>) -> (String, std::ops::Range<usize>) {
     (foot, at + 1 + news.start..at + 1 + news.end)
 }
 
-/// Whether the screen has room for what went wrong under the keys.
-///
-/// Answered where the height is worked out and carried down, rather than
-/// asked again lower: the second answer disagreed with the first.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Amiss {
-    /// There is room.
-    Shown,
-    /// There is not, so the way in gets the screen.
-    Left,
-}
-
 /// The centred block.
 pub struct WelcomeView<'a> {
     keymap: &'a Keymap,
-    /// What went wrong on the way up. Empty on almost every start, and
-    /// then the block is not there at all.
-    went_wrong: WentWrongBlock<'a>,
     /// The version of a newer Obelus, where one is out.
     newer: Option<&'a str>,
     theme: &'a Theme,
@@ -274,7 +224,6 @@ impl<'a> WelcomeView<'a> {
     pub fn new(app: &'a impl Screen) -> Self {
         Self {
             keymap: app.keymap(),
-            went_wrong: WentWrongBlock::walked(app),
             newer: app.newer_release(),
             theme: app.theme(),
             phase: app.phase(),
@@ -301,25 +250,12 @@ impl Widget for WelcomeView<'_> {
         // between the lines -- and none after the last of them.
         let lines = u16::try_from(hints.len().div_ceil(COLUMNS)).unwrap_or(1);
         let keys = (lines * ROW_HEIGHT).saturating_sub(1);
-        let amiss = self.went_wrong.height();
-        let tall = u16::try_from(WORDMARK.len()).unwrap_or(u16::MAX) + 1 + keys + amiss;
+        let tall = u16::try_from(WORDMARK.len()).unwrap_or(u16::MAX) + 1 + keys;
         let wordmark = width_of(WORDMARK[0]);
         let short = u16::try_from(hints.len() + 2).unwrap_or(u16::MAX);
 
         if wordmark <= area.width && tall <= area.height {
-            self.lavish(area, cells, &hints, wordmark, tall, Amiss::Shown);
-        } else if wordmark <= area.width && tall.saturating_sub(amiss) <= area.height {
-            // The plate and the keys, and what went wrong left out. Which
-            // is the wrong way round if it were a matter of what is worth
-            // the room -- but the block is reachable by name and the way
-            // in is the only thing this screen is for.
-            //
-            // Said rather than worked out again: `lavish` deciding for
-            // itself whether the block fits is a second answer to a
-            // question already asked, and it got it wrong -- the keys and
-            // the block are the same height, so "there is room below the
-            // plate" was true in exactly the case this branch is for.
-            self.lavish(area, cells, &hints, wordmark, tall - amiss, Amiss::Left);
+            self.lavish(area, cells, &hints, wordmark, tall);
         } else if let Some(narrow) = hint_block_width(&hints)
             && narrow <= area.width
             && short <= area.height
@@ -331,15 +267,7 @@ impl Widget for WelcomeView<'_> {
 
 impl WelcomeView<'_> {
     /// The plate, and the keys under it.
-    fn lavish(
-        &self,
-        area: Rect,
-        cells: &mut CellBuffer,
-        hints: &[Hint],
-        width: u16,
-        height: u16,
-        amiss: Amiss,
-    ) {
+    fn lavish(&self, area: Rect, cells: &mut CellBuffer, hints: &[Hint], width: u16, height: u16) {
         let left = area.x + (area.width - width) / 2;
         let y = area.y + (area.height - height) / 2;
 
@@ -352,22 +280,6 @@ impl WelcomeView<'_> {
 
         y += 1;
         self.grid(cells, left, y, width, hints);
-
-        // Under the keys, where the caller said there was room for it.
-        if amiss == Amiss::Shown && self.went_wrong.height() > 0 {
-            let keys = (u16::try_from(hints.len().div_ceil(COLUMNS)).unwrap_or(1) * ROW_HEIGHT)
-                .saturating_sub(1);
-            // Centred, and wider than the plate: those are two short words
-            // under a cap, and these are a sentence with a file and a line
-            // after it.
-            let width = AMISS_WIDTH.min(area.width);
-            let under = Rect {
-                x: area.x + (area.width - width) / 2,
-                width,
-                ..area
-            };
-            self.went_wrong.draw(cells, under, y + keys + 1);
-        }
     }
 
     /// The wordmark, with the version set into its foot.
@@ -578,183 +490,6 @@ impl WelcomeView<'_> {
                 })
             })
             .collect()
-    }
-}
-
-/// What went wrong on the way up, as a block under the way in.
-///
-/// Its own piece because two screens draw it -- this one, and the one that
-/// asks which project -- and a block drawn twice is a block that drifts.
-pub(crate) struct WentWrongBlock<'a> {
-    rows: Vec<crate::WentWrong>,
-    /// Which of them the reader is on, and which are on screen.
-    at: usize,
-    showing: std::ops::Range<usize>,
-    /// Whether the keys walk it. They do here; they do not while Obelus is
-    /// asking which project, where the arrows and enter are the
-    /// projects' and going to a line of a file would open it in no
-    /// project at all -- so no row there wears the mark that says the
-    /// keys are on it, and no foot says what enter does.
-    walked: bool,
-    theme: &'a Theme,
-}
-
-impl<'a> WentWrongBlock<'a> {
-    /// The block the keys walk.
-    pub(crate) fn walked(app: &'a impl Screen) -> Self {
-        Self {
-            rows: app.went_wrong(),
-            at: app.went_wrong_at(),
-            showing: app.went_wrong_showing(AMISS_ROWS),
-            walked: true,
-            theme: app.theme(),
-        }
-    }
-
-    /// The block, to be read and not walked.
-    pub(crate) fn read(app: &'a impl Screen) -> Self {
-        let rows = app.went_wrong();
-        Self {
-            showing: 0..rows.len().min(usize::from(AMISS_ROWS)),
-            rows,
-            at: 0,
-            walked: false,
-            theme: app.theme(),
-        }
-    }
-
-    /// How many rows the block of what went wrong takes, with its heading
-    /// and the blank above it.
-    pub(crate) fn height(&self) -> u16 {
-        Self::height_for(self.rows.len(), self.walked)
-    }
-
-    /// The same, for a block of `rows` that has not been read yet: what a
-    /// page lays itself out by, where the keys that page it have to know
-    /// the answer as well as the drawing does.
-    pub(crate) fn height_for(rows: usize, walked: bool) -> u16 {
-        let rows = u16::try_from(rows.min(usize::from(AMISS_ROWS))).unwrap_or(0);
-        match (rows, walked) {
-            (0, _) => 0,
-            // The heading and a blank above the rows, and a blank and the
-            // foot below them: a reader has to be told the key is there
-            // before they press it, which is the rule the palette follows
-            // for a command it will not run.
-            (rows, true) => rows + 4,
-            // And no foot where no key reaches it.
-            (rows, false) => rows + 2,
-        }
-    }
-
-    /// How many there are.
-    pub(crate) fn len(&self) -> usize {
-        self.rows.len()
-    }
-
-    /// What went wrong on the way up, under a heading of its own, from
-    /// `top` and across exactly `area`'s columns: where it goes across the
-    /// screen is the caller's, which knows what it is under.
-    ///
-    /// The heading is in the theme's warning colour and the rows are not:
-    /// a block of coloured prose is a block a reader cannot read, and what
-    /// the colour is for is saying which block this is. Where each row is
-    /// about a line of a file, that file and line are the row's tail --
-    /// worked out first, so a long sentence cannot push it off the screen.
-    pub(crate) fn draw(&self, cells: &mut CellBuffer, area: Rect, top: u16) {
-        let (left, width) = (area.x, area.width);
-        write(
-            cells,
-            left + 1,
-            top,
-            "What went wrong starting up",
-            Style::new().fg(self.theme.syntax.warning),
-        );
-        let showing = self.showing.start..self.showing.end.min(self.rows.len());
-        for (offset, at) in showing.clone().enumerate() {
-            let Some(row) = self.rows.get(at) else {
-                continue;
-            };
-            let Ok(offset) = u16::try_from(offset) else {
-                continue;
-            };
-            let here = self.walked && at == self.at;
-            self.row(cells, left, top + 2 + offset, width, row, here);
-        }
-
-        // What the key on the row does, and only where it does anything:
-        // a row with nowhere to go is one the reader is told about by the
-        // foot going quiet rather than by pressing and getting nothing.
-        let goes = self.walked && self.rows.get(self.at).is_some_and(|row| row.at.is_some());
-        if goes {
-            let Ok(under) = u16::try_from(showing.len()) else {
-                return;
-            };
-            let enter = KeyChord::new(KeyCode::Enter, KeyModifiers::NONE).label();
-            write(
-                cells,
-                left + 1,
-                top + 3 + under,
-                &format!("{enter}  Go to it"),
-                Style::new().fg(self.theme.gutter),
-            );
-        }
-    }
-
-    /// One of them: what Obelus says, and where to go.
-    fn row(
-        &self,
-        cells: &mut CellBuffer,
-        left: u16,
-        y: u16,
-        width: u16,
-        row: &crate::WentWrong,
-        here: bool,
-    ) {
-        // The one mark for "the keys are here", the same one every list,
-        // page and card in Obelus puts behind the row the reader is on.
-        let ink = Style::new().fg(self.theme.foreground);
-        let ink = match here {
-            true => ink.bg(self.theme.selected_row_background),
-            false => ink,
-        };
-        if here {
-            for column in 0..width {
-                put(
-                    cells,
-                    left + column,
-                    y,
-                    ' ',
-                    Style::new().bg(self.theme.selected_row_background),
-                );
-            }
-        }
-        let tail = row.at.as_ref().map(|(path, line)| {
-            let name = path.file_name().map_or_else(
-                || path.display().to_string(),
-                |name| name.to_string_lossy().to_string(),
-            );
-            format!("{name}:{}", line.get() + 1)
-        });
-        // The tail first, so the sentence takes what is left: somebody
-        // else's words may be as long as they like and may not push what
-        // the row says about itself off the screen.
-        let tail_width = tail.as_deref().map_or(0, str::width);
-        let room = usize::from(width)
-            .saturating_sub(2)
-            .saturating_sub(if tail_width > 0 { tail_width + 2 } else { 0 });
-        let said = crate::truncate_from_right(&row.said, room);
-        write(cells, left + 1, y, &said, ink);
-        if let Some(tail) = tail
-            && let Ok(offset) = u16::try_from(usize::from(width).saturating_sub(tail_width + 1))
-        {
-            let tail_ink = match here {
-                true => Style::new()
-                    .fg(self.theme.gutter)
-                    .bg(self.theme.selected_row_background),
-                false => Style::new().fg(self.theme.gutter),
-            };
-            write(cells, left + offset, y, &tail, tail_ink);
-        }
     }
 }
 
