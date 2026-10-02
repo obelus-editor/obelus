@@ -99,9 +99,9 @@
       <p>So this is a day with it: a note — a line I doubt, or just what I mean to do next — turned into a change that has merged — without the checkout I am reading moving under me, and without my typing a git command.</p>
 
       <figure class="shot">
-        <img class="dark" src="workflow-dark.png" width="1500" height="1086" alt="A conversation in Obelus about a note. Its header names the branch stable-top-ties. The transcript shows the agent making a worktree under .worktree for that branch and running the tests there, editing src/lib.rs in the worktree, running the tests again and committing; below it a card asks whether the change should be reviewed before it goes anywhere, with Yes, review it on the row the reader is on.">
+        <img class="dark" src="workflow-dark.png" width="1500" height="1086" alt="A conversation in Obelus about a note. Its header names the branch stable-tie-order. The transcript shows the agent editing src/lib.rs in a worktree under .worktree, running the tests and committing there, then saying where the change is and waiting to be told it has been tried. The reader says they tried it, and a card asks whether the change should be reviewed before it goes anywhere.">
         <img class="light" src="workflow-light.png" width="1500" height="1086" alt="The same conversation in Obelus's light theme.">
-        <figcaption class="caption">A real run of <code>feature-branch</code>, on a made-up project. The header says which branch the changes are on; the agent has made the worktree, run the tests before and after, and committed there — and the card is it asking about the review, rather than starting one.</figcaption>
+        <figcaption class="caption">A real run of <code>feature-branch</code>, on a made-up project. The header says which branch the changes are on. The agent made the worktree, ran the tests before and after and committed there, said where the change was, and waited; only once it was told the change had been tried did it ask about a review, on a card rather than in its reply.</figcaption>
       </figure>
 
       <ol class="tenets">
@@ -130,14 +130,14 @@
           <span class="no">04</span>
           <div>
             <p class="claim">It tells me where to try it, and I go there.</p>
-            <p class="why">When the change is made it runs the tests again and says the directory and the branch, what it ran and what that showed — not that it should work. <kbd>F2</kbd> and <kbd>Tab</kbd> is <a href="#worktrees">every worktree</a> of the repository: choosing that one brings its window forward, or opens one on it, and there the change is the newest commit on the branch — <kbd>F11</kbd> on a line it wrote opens that commit, marked against the one before it.</p>
+            <p class="why">When the change is made it runs the tests again and says the directory and the branch, what it ran and what that showed — not that it should work — and waits until I have tried it. <kbd>F2</kbd> and <kbd>Tab</kbd> is <a href="#worktrees">every worktree</a> of the repository: choosing that one brings its window forward, or opens one on it, and there the change is the newest commit on the branch — <kbd>F11</kbd> on a line it wrote opens that commit, marked against the one before it.</p>
           </div>
         </li>
         <li>
           <span class="no">05</span>
           <div>
             <p class="claim">Nothing leaves before I have said so.</p>
-            <p class="why">Once I am satisfied, it asks whether to review the change first — in a fresh context, given only the diff, what it is for and the note — and lists what it found by how much it matters, for me to tick which to fix. Then whether it goes back as a merge, as a pull request, or waits on its branch for later.</p>
+            <p class="why">Once I tell it I have tried it and am satisfied, it asks whether to review the change first — in a fresh context, given only the diff, what it is for and the note — and lists what it found by how much it matters, for me to tick which to fix. Then whether it goes back as a merge, as a pull request, or waits on its branch for later.</p>
           </div>
         </li>
         <li>
@@ -405,6 +405,11 @@ ob src/main.rs       # the same file, in the terminal instead</code></pre>
 
       <h4 id="worktrees">Going to another worktree</h4>
       <p>In a window, <kbd>F2</kbd> has a second tab, and <kbd>Tab</kbd> goes to it: every checkout the repository has, with the ones an Obelus is open on marked. Choosing one brings that window forward, or starts a new one on the tree; the one you are in is listed too, and choosing it only closes the list. A tree deleted behind git's back says <code>Missing</code> and cannot be chosen. And a tree removed under a window — <code>git worktree remove</code>, once its pull request merged — leaves the window with what was open in it, and the project dim.</p>
+      <figure class="shot">
+        <img class="dark" src="worktrees-dark.png" width="1500" height="286" alt="The Worktrees tab of the list of open documents: tally on main, and tally/.worktree/stable-tie-order on stable-tie-order, both marked as having a window open, the second marked This window.">
+        <img class="light" src="worktrees-light.png" width="1500" height="286" alt="The same list in Obelus's light theme.">
+        <figcaption class="caption"><kbd>F2</kbd> and <kbd>Tab</kbd>, in the window on the agent's tree. Both trees have a window, so both are marked; choosing <code>tally</code> brings the other one forward.</figcaption>
+      </figure>
       <p class="quiet small">Only <code>obg</code> lists them. Going somewhere is starting an Obelus or bringing one forward, and a terminal can do neither: the window it is drawn in is the terminal's, and which terminal you would want a new Obelus started in is not something Obelus can know. So <code>ob</code> has no such tab, and <code>switch-worktree</code> is dim there.</p>
 
       <h4>Two windows writing notes do not erase each other</h4>

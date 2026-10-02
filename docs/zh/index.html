@@ -99,9 +99,9 @@
       <p>所以我的一天是这样的：从一条笔记——一行存疑的代码，或者只是接下来想做的事——到它变成一个已经合进去的改动——中间我正在读的那份 checkout 一直没动过，我也没敲过一条 git 命令。</p>
 
       <figure class="shot">
-        <img class="dark" src="../workflow-dark.png" width="1500" height="1086" alt="Obelus 里一段关于一条笔记的对话。标题行写着分支 stable-top-ties。记录里是 agent 在 .worktree 底下为这个分支开 worktree、在那里跑测试，改 worktree 里的 src/lib.rs，再跑测试、提交；下面一张卡片问这次改动要不要先审一遍，读者停在「Yes, review it」那一行。">
+        <img class="dark" src="../workflow-dark.png" width="1500" height="1086" alt="Obelus 里一段关于一条笔记的对话。标题行写着分支 stable-tie-order。记录里是 agent 在 .worktree 底下的 worktree 里改 src/lib.rs、在那里跑测试并提交，然后说明改动在哪、等着读者说试过了。读者说试过了，一张卡片问这次改动要不要先审一遍。">
         <img class="light" src="../workflow-light.png" width="1500" height="1086" alt="同一段对话，Obelus 的浅色主题。">
-        <figcaption class="caption"><code>feature-branch</code> 真跑一遍的样子，项目是编的。标题行写着改动在哪个分支上；agent 已经开好 worktree、改之前和改之后各跑了一遍测试、在那里提交了——卡片是它在问要不要审，而不是自己审了起来。</figcaption>
+        <figcaption class="caption"><code>feature-branch</code> 真跑一遍的样子，项目是编的。标题行写着改动在哪个分支上。agent 开好 worktree、改之前和改之后各跑了一遍测试、在那里提交，说清楚改动在哪，然后就等着；直到被告知试过了，它才问要不要审——用卡片问，而不是写在回复里。</figcaption>
       </figure>
 
       <ol class="tenets">
@@ -130,14 +130,14 @@
           <span class="no">04</span>
           <div>
             <p class="claim">它告诉我去哪试，我就过去。</p>
-            <p class="why">改完它会再跑一遍测试，告诉我目录和分支、跑了什么、结果是什么——而不是「应该没问题」。<kbd>F2</kbd> 再按 <kbd>Tab</kbd> 就是这个仓库的<a href="#worktrees">所有 worktree</a>：选中那一个，开着它的窗口就会跳到前面来，没开就新开一个；在那边，这次改动就是这个分支上最新的那个提交——在它写的某一行上按 <kbd>F11</kbd>，就打开那个提交，标着它比上一个提交改了什么。</p>
+            <p class="why">改完它会再跑一遍测试，告诉我目录和分支、跑了什么、结果是什么——而不是「应该没问题」——然后等我试过再说。<kbd>F2</kbd> 再按 <kbd>Tab</kbd> 就是这个仓库的<a href="#worktrees">所有 worktree</a>：选中那一个，开着它的窗口就会跳到前面来，没开就新开一个；在那边，这次改动就是这个分支上最新的那个提交——在它写的某一行上按 <kbd>F11</kbd>，就打开那个提交，标着它比上一个提交改了什么。</p>
           </div>
         </li>
         <li>
           <span class="no">05</span>
           <div>
             <p class="claim">我没点头，什么都不会离开那个分支。</p>
-            <p class="why">我试满意了，它先问要不要审一遍——换一个干净的上下文，只给它 diff、这次改动为了什么、以及那条笔记——再把发现的问题按轻重列出来，让我勾要修哪些。然后问这次改动怎么回去：直接合并，开 pull request，还是先留在分支上以后再说。</p>
+            <p class="why">我告诉它试过了、满意了，它才问要不要审一遍——换一个干净的上下文，只给它 diff、这次改动为了什么、以及那条笔记——再把发现的问题按轻重列出来，让我勾要修哪些。然后问这次改动怎么回去：直接合并，开 pull request，还是先留在分支上以后再说。</p>
           </div>
         </li>
         <li>
@@ -405,6 +405,11 @@ ob src/main.rs       # 同一个文件，改在终端里读</code></pre>
 
       <h4 id="worktrees">去另一个 worktree</h4>
       <p>在窗口里，<kbd>F2</kbd> 有第二个 tab，按 <kbd>Tab</kbd> 过去：这个仓库所有的 checkout 都在里面，有 Obelus 开着的会标出来。选一个，开着它的那个窗口就跳到前面来，没开就在那棵树上新开一个；你所在的这一棵也列着，选它只是关掉列表。在 git 背后被删掉的树写着 <code>Missing</code>，选不了。一个窗口底下的树被删掉——比如 PR 合进去以后 <code>git worktree remove</code>——窗口留着，里面开着的东西也留着，只是项目变灰。</p>
+      <figure class="shot">
+        <img class="dark" src="../worktrees-dark.png" width="1500" height="286" alt="打开的文档列表里的 Worktrees 标签页：tally 在 main 上，tally/.worktree/stable-tie-order 在 stable-tie-order 上，两棵都标着有窗口开着，第二棵标着 This window。">
+        <img class="light" src="../worktrees-light.png" width="1500" height="286" alt="同一个列表，Obelus 的浅色主题。">
+        <figcaption class="caption">在 agent 那棵树的窗口里按 <kbd>F2</kbd> 和 <kbd>Tab</kbd>。两棵树都有窗口开着，所以都标了出来；选 <code>tally</code> 就把另一个窗口带到前面。</figcaption>
+      </figure>
       <p class="quiet small">只有 <code>obg</code> 列这些。去另一个地方，要么是启动一个 Obelus，要么是把一个带到前面来，而终端两样都做不到：它所在的窗口是终端的，你想在哪个终端里开新的 Obelus，Obelus 也没法知道。所以 <code>ob</code> 里没有这个 tab，<code>switch-worktree</code> 也是灰的。</p>
 
       <h4>两个窗口同时记笔记，不会互相抹掉</h4>
