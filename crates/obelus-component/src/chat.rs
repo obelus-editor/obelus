@@ -2299,6 +2299,21 @@ impl Chat {
                 self.input.hold_right();
                 ChatOutcome::Consumed
             }
+            // And up and down, which fell to the same arm: a message is a
+            // paragraph, and holding a line of it is shift and down. Never
+            // on into the transcript the way the bare key goes -- one
+            // selection between the two halves, so the press that reached
+            // the transcript would have let go of what it had just held.
+            KeyCode::Up if modifiers == KeyModifiers::SHIFT => {
+                self.let_go();
+                self.input.hold_up(room.writing);
+                ChatOutcome::Consumed
+            }
+            KeyCode::Down if modifiers == KeyModifiers::SHIFT => {
+                self.let_go();
+                self.input.hold_down(room.writing);
+                ChatOutcome::Consumed
+            }
             // The box owns the arrows while its caret has somewhere to go
             // in it. Past the top of it the caret carries on into the
             // transcript, which is where a reader who has run out of box
@@ -4416,6 +4431,42 @@ mod tests {
             chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]),
             ChatOutcome::Ignored
         );
+    }
+
+    /// Shift and up holds a row of the box, and shift and down gives it
+    /// back -- and neither carries the caret out of the box, the way the
+    /// bare keys do at its ends.
+    ///
+    /// Deliberate breaks: drop the two arms, and shift and up is `Ignored`
+    /// with nothing held -- the bug as it was reported; send the shifted up
+    /// on into the transcript when the caret did not move, as the bare one
+    /// goes, and the focus is the transcript's after the second press.
+    #[test]
+    fn shift_and_up_or_down_holds_rows_of_the_box() {
+        let shift = |code| KeyEvent::new(code, KeyModifiers::SHIFT);
+        let mut chat = Chat::new();
+        chat.note("something said");
+        for character in "ab".chars() {
+            chat.handle_key(&key(KeyCode::Char(character)), false, ROOM, &[]);
+        }
+        chat.handle_key(&shift(KeyCode::Enter), false, ROOM, &[]);
+        for character in "cd".chars() {
+            chat.handle_key(&key(KeyCode::Char(character)), false, ROOM, &[]);
+        }
+        assert_eq!(
+            chat.handle_key(&shift(KeyCode::Up), false, ROOM, &[]),
+            ChatOutcome::Consumed
+        );
+        assert_eq!(chat.writing().selected().as_deref(), Some("\ncd"));
+        // From the top row there is nowhere to go, and the box keeps it.
+        chat.handle_key(&shift(KeyCode::Up), false, ROOM, &[]);
+        assert_eq!(chat.focus(), Focus::Writing, "it left the box");
+        assert!(chat.writing().selected().is_some(), "it let go");
+        // And back down, to where it started.
+        chat.handle_key(&shift(KeyCode::Down), false, ROOM, &[]);
+        chat.handle_key(&shift(KeyCode::Down), false, ROOM, &[]);
+        assert_eq!(chat.focus(), Focus::Writing, "it left the box");
+        assert_eq!(chat.writing().text(), "ab\ncd", "the keys wrote something");
     }
 
     /// What was waiting goes back in the box with its pictures, in front of
