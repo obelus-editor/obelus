@@ -1952,11 +1952,7 @@ fn a_key_that_could_never_fire_is_refused() {
         (KeyCode::Char('z'), KeyModifiers::NONE, "Typing"),
         // The front of the reason, which is what a row this narrow has
         // room for once the key is spelled out rather than drawn.
-        (
-            KeyCode::Tab,
-            KeyModifiers::NONE,
-            "every list and box takes this",
-        ),
+        (KeyCode::Tab, KeyModifiers::NONE, "every list and box takes"),
     ] {
         app.handle(Event::Key(KeyEvent::new(code, modifiers)));
         let dump = support::render(&mut app, 66, 12);
@@ -3738,11 +3734,12 @@ fn each_workflow_says_what_it_does_where_it_is_chosen() {
 /// name and not copy: the list says the title, so the row it goes back to
 /// says it too, and the list opens again on the title of the one in force.
 ///
-/// Broken deliberately three ways: the list's label back to the name,
+/// Broken deliberately four ways: the list's label back to the name,
 /// which leaves no `Feature branch` on the list; the settings row's
 /// `value_of` handing back the word, which leaves `feature-branch` on the
-/// page; and `prefer` given the word, which opens the list on the first
-/// row rather than on the one chosen.
+/// page; `prefer` given the word, which opens the list on the first row
+/// rather than on the one chosen; and `CONTROL_WIDTH` at 14, which puts
+/// the arrow against the title and the title against the edge.
 #[test]
 fn a_workflow_is_called_by_its_title_and_written_by_its_name() {
     let _turn = SETTINGS
@@ -3780,6 +3777,13 @@ fn a_workflow_is_called_by_its_title_and_written_by_its_name() {
     assert!(
         !text.contains("feature-branch"),
         "the row says the name:\n{dump}"
+    );
+    // Room before the arrow and after it: a title as wide as the column
+    // put the arrow against the word and the word against the edge.
+    assert!(
+        text.lines()
+            .any(|row| row.ends_with("Feature branch \u{25b8} ")),
+        "the row has no room round its arrow:\n{dump}"
     );
 
     support::press(&mut app, KeyCode::Enter);

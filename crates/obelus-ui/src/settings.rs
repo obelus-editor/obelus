@@ -27,9 +27,11 @@ use crate::{
 ///
 /// Fixed, so the controls line up down the screen: a column of `on` and
 /// `off` and theme names at ragged left edges is three columns pretending to
-/// be one. As wide as the longest word a control is set to, which is the
-/// title `Feature branch`.
-const CONTROL_WIDTH: u16 = 14;
+/// be one. Two wider than the longest word a control is set to, which is
+/// the title `Feature branch`: one for the gap before the arrow and one
+/// after it, because a word and an arrow up against the page's edge read
+/// as cut off.
+const CONTROL_WIDTH: u16 = 16;
 
 /// Where the arrow beside a value goes: after it, and never past the
 /// column's own last cell.
