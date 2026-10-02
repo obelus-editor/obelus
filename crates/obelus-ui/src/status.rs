@@ -78,13 +78,11 @@ pub struct StatusView<'a> {
     /// at once and only one of them is taking the keys: a question asked
     /// on the status row opens *over* a list rather than closing it, so
     /// the list is not always the nearest thing any more.
-    /// What the welcome screen is asking, where it is asking which
-    /// project.
+    /// What is being asked, where Obelus is asking which project.
     ///
     /// The row is that question's then. Here rather than drawn at a
     /// dialog's own foot because the chooser is not a dialog over
-    /// anything -- it is the welcome screen, which is the page, and this
-    /// is the page's row.
+    /// anything -- it is the page, and this is the page's row.
     choosing: Option<crate::Choosing>,
     nearest: Option<Layer>,
     /// Whether what is typed goes over what is under the cursor.
@@ -991,7 +989,8 @@ impl StatusView<'_> {
         );
     }
 
-    /// The box at the foot of the welcome screen, which is one of two.
+    /// The box at the foot of the screen that asks which project, which is
+    /// one of two.
     ///
     /// One piece draws both, and the word in front is what says which:
     /// `Filter` narrows the projects above it, `Open` is a path being

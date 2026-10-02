@@ -1888,7 +1888,11 @@ impl App {
         // leaves up while they decide what to open. The cells keep the
         // ramp they were last drawn with, which is that sheen at one
         // moment and as true as any other frame of it.
+        //
+        // Nor while Obelus is asking which project: that screen is not the
+        // welcome screen and has no mark to run a sheen across.
         (self.current.is_none()
+            && self.chooser.is_none()
             && !self.layers().filling()
             && !obelus_config::in_a_window())
             // An agent at work in the conversation being read.

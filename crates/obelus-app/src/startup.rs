@@ -96,7 +96,7 @@ pub fn start(paths: &[PathBuf], built: &'static str) -> Result<App> {
                 app.list_at_start();
             }
         }
-        // Nothing to go on, so the welcome screen asks and is the whole
+        // Nothing to go on, so Obelus asks, and the asking is the whole
         // of the screen until it is answered. `work_in` is deliberately
         // not called: there is no project to be put on yet, and saying
         // there is would be the bug this replaces.

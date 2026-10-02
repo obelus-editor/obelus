@@ -9,13 +9,14 @@
 //! file list walked the whole of `$HOME`, and the notes and the
 //! conversations were filed under a directory nobody works in.
 //!
-//! So the welcome screen asks, and this is what it offers: the projects
+//! So Obelus asks, on a screen of its own before the welcome screen, and
+//! this is what it offers: the projects
 //! this reader has had open, newest first. The same shape the
 //! conversations have and for the same reason -- what a reader did
 //! outlives the window.
 //!
 //! **A project is remembered however it was named.** By an argument, by
-//! the directory Obelus was started in, or by being chosen on the welcome
+//! the directory Obelus was started in, or by being chosen on that
 //! screen: all three are a reader saying where they work, and a list that
 //! held only the third would be empty for exactly the reader who works
 //! from a terminal and then reaches for the menu once. [`App::work_in`] is
@@ -95,9 +96,9 @@ pub(super) struct Project {
 /// Three answers and not two, for the reason the conversations' table
 /// gives three: a file that will not read is not a file with nothing in
 /// it, and "nothing in it" is what [`remember`] would write back over it.
-/// A reader whose list is briefly unreadable gets an empty welcome screen
-/// and can type a path; one whose list is *replaced* by an empty one has
-/// lost every project they had.
+/// A reader whose list is briefly unreadable gets an empty list of
+/// projects and can type a path; one whose list is *replaced* by an empty one
+/// has lost every project they had.
 #[derive(Debug)]
 pub(super) enum Reading {
     /// There is none yet, which is where every machine starts. Also where
@@ -114,7 +115,7 @@ impl Reading {
     /// caller can live with.
     ///
     /// `None` for a file that would not read, which is the answer
-    /// [`remember`] needs and the welcome screen does not: a screen that
+    /// [`remember`] needs and the screen that asks does not: a screen that
     /// drew no rows because of a parse error would say the reader has
     /// never opened anything, and the one row that is always there is the
     /// way out of that.
@@ -273,8 +274,8 @@ impl super::App {
     pub(crate) fn ask_which_project(&mut self) {
         let reading = read();
         // What Obelus could not make of its own file goes where everything
-        // else that went wrong on the way up goes -- under the keys on the
-        // welcome screen -- rather than into a log nobody is going to
+        // else that went wrong on the way up goes -- under the projects on
+        // the screen that asks -- rather than into a log nobody is going to
         // open. The list is empty behind it, which is honest: there is one
         // row either way and it is the one that opens a project.
         if let Reading::Unreadable(why) = &reading {
@@ -679,7 +680,7 @@ impl super::App {
 }
 
 impl super::App {
-    /// What the welcome screen is asking, where it is asking.
+    /// What is being asked, where Obelus is asking which project.
     ///
     /// The words are settled here and the room for them is not: a path is
     /// shortened with `~` because which directory is the reader's own is
@@ -948,7 +949,7 @@ mod tests {
     /// The list does not grow without end.
     ///
     /// Broken deliberately by taking the `truncate` out of `remember`:
-    /// the file grows for ever and the welcome screen's filter searches a
+    /// the file grows for ever and the screen's filter searches a
     /// list of every directory the reader has ever opened.
     #[test]
     fn the_list_stops_at_twenty() {

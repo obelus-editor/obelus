@@ -2402,7 +2402,8 @@ fn the_end_of_a_reading_is_its_last_screenful() {
 /// the way in.
 ///
 /// Deliberate break: `WelcomeView` drawing the block above the keys instead
-/// (the last assertion), and `amiss_height` answering zero (the rest).
+/// (the last assertion), and `WentWrongBlock::height` answering zero (the
+/// rest).
 #[test]
 fn the_welcome_screen_says_what_went_wrong_starting_up() {
     let scratch = support::Scratch::new("welcome-amiss");
@@ -2437,7 +2438,8 @@ fn the_welcome_screen_says_what_went_wrong_starting_up() {
 /// Almost every start is this one. A heading over an empty list would be a
 /// row of screen spent saying nothing happened.
 ///
-/// Deliberate break: `amiss` drawing its heading whatever the list holds.
+/// Deliberate break: `WentWrongBlock::draw` drawing its heading whatever the
+/// list holds.
 #[test]
 fn a_welcome_screen_with_nothing_wrong_says_nothing() {
     let scratch = support::Scratch::new("welcome-well");
@@ -2555,18 +2557,20 @@ fn a_screen_too_short_for_what_went_wrong_still_gets_the_keys() {
 }
 
 /// A start with nothing to go on asks which project, and offers the ones
-/// this reader has had open.
+/// this reader has had open -- on a screen of its own, with no plate: the
+/// welcome screen comes after, once there is a project to welcome anybody
+/// into.
 ///
 /// The rows are the test's own rather than the machine's: reading the real
 /// list would make this grid depend on which projects whoever ran it has
 /// opened, which is the trap the welcome screen's own fixture fell into
 /// with the working directory.
 ///
-/// Deliberate break: have `WelcomeView::render` draw the keys rather than
-/// branching on `choosing`, and the grid comes back with `F1 Open a file`
-/// on it -- a key that cannot do anything until this is answered. And by
-/// having `name_of` never find a separator: the rows go back to whole
-/// paths in one ink, with the name at the ragged end of each.
+/// Deliberate break: have `draw` render `WelcomeView` whatever
+/// `ProjectsView::new` answers, and the grid comes back with the plate and
+/// `F1 Open a file` on it -- a key that cannot do anything until this is
+/// answered. And by having `name_of` never find a separator: the rows go
+/// back to whole paths in one ink, with the name at the ragged end of each.
 #[test]
 fn a_start_with_no_project_asks_which_one() {
     let mut app = App::new(Vec::new());
@@ -2585,7 +2589,72 @@ fn a_start_with_no_project_asks_which_one() {
             last: None,
         },
     ]);
-    support::check("welcome_choosing_64x20", &support::render(&mut app, 64, 20));
+    support::check(
+        "choosing_a_project_64x20",
+        &support::render(&mut app, 64, 20),
+    );
+}
+
+/// What went wrong on the way up is said where Obelus asks which project,
+/// too: that is the first screen a reader started from a launcher sees,
+/// and the list of projects not reading is exactly what they should hear.
+///
+/// Under the way in, and read rather than walked: the arrows and enter are
+/// the projects', so no row of it says the keys are on it and there is no
+/// foot saying what enter does there.
+///
+/// Deliberate break: `ProjectsView::render` leaving the block out (the
+/// first assertions), drawing it above the projects (the order), and
+/// `WentWrongBlock::read` building a walked block (the foot).
+#[test]
+fn asking_which_project_says_what_went_wrong_starting_up() {
+    let scratch = support::Scratch::new("choosing-amiss");
+    let file = scratch.join("config.toml");
+    std::fs::write(&file, "theme = \"dark\"\nshrift = 15\n").expect("writing a settings file");
+
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.config_file_for_test(file);
+    app.ask_about_these_projects_for_test(vec![obelus_component::chooser::Known {
+        path: std::path::PathBuf::from("/tmp/obelus/work/obelus"),
+        shown: "/tmp/obelus/work/obelus".to_string(),
+        last: None,
+    }]);
+    let dump = support::render(&mut app, 76, 26);
+    let text = support::text_block(&dump);
+
+    assert!(text.contains("What went wrong starting up"), "{dump}");
+    assert!(text.contains("No setting is called shrift"), "{dump}");
+    assert!(text.contains("config.toml:2"), "{dump}");
+    let opening = text.find("Open another").expect("the opening row");
+    let wrong = text
+        .find("What went wrong starting up")
+        .expect("the heading");
+    assert!(
+        opening < wrong,
+        "what went wrong was put in front of the way in:\n{dump}"
+    );
+    assert!(
+        !text.contains("Go to it"),
+        "a key that is the projects' was offered for what went wrong:\n{dump}"
+    );
+}
+
+/// The screen that asks which project has no mark on it, so nothing on it
+/// moves and nothing wakes Obelus to draw it again.
+///
+/// Deliberate break: taking `self.chooser.is_none()` out of
+/// `wants_animating`, and the welcome screen's clock runs under a screen
+/// that has no sheen.
+#[test]
+fn asking_which_project_does_not_wake() {
+    let mut app = App::new(Vec::new());
+    app.ask_about_these_projects_for_test(Vec::new());
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert!(
+        !app.is_waking(),
+        "the welcome screen's clock is running under the question"
+    );
 }
 
 /// Naming a path puts a list of what could finish it over the welcome

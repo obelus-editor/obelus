@@ -343,8 +343,8 @@ pub trait Screen {
     /// what this screen is for is the way in, and what went wrong goes
     /// under it rather than in front of it.
     fn went_wrong(&self) -> Vec<WentWrong>;
-    /// What the welcome screen is asking, while it is asking which
-    /// project. `None` on every start that was told one.
+    /// What is being asked, while Obelus is asking which project. `None`
+    /// on every start that was told one.
     fn choosing(&self) -> Option<Choosing>;
     /// What could finish the path being named, while one is being named.
     ///
@@ -445,6 +445,7 @@ pub mod hover;
 pub mod image;
 pub mod names;
 pub mod picker;
+pub mod projects;
 pub mod reading;
 pub mod settings;
 pub mod shapes;
@@ -797,8 +798,15 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     // telling what the keys are. Not while something has taken the region,
     // because then the region is not empty -- but a list or a question
     // leaves it alone, and this is what they would be over.
+    //
+    // Or, where there is no project yet, the question of which: a screen
+    // of its own rather than the welcome screen, because every key the
+    // welcome screen names is about a project.
     if app.reading_nothing() && !layers.filling() {
-        welcome::WelcomeView::new(app).render(regions.editor, cells);
+        match projects::ProjectsView::new(app) {
+            Some(view) => view.render(regions.editor, cells),
+            None => welcome::WelcomeView::new(app).render(regions.editor, cells),
+        }
         // What could finish the path being named, which is not a layer
         // for the reason the agent's own commands are not one: the list
         // follows what is in the box rather than being something the

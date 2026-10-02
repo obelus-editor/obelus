@@ -661,7 +661,7 @@ crates/
   obelus-mcp/       the tools Obelus offers an agent -- and why none of them
                     asks the reader anything itself
   obelus-ui/        editor, status bar, picker, settings, chat, welcome,
-                    images, shapes, shared cell writers
+                    which project, images, shapes, shared cell writers
                     · what the bar measures is what is shown, the caret can be
                       in the block, a bar is a block, a column a file might
                       need is reserved for the whole file (editor); everything
@@ -671,7 +671,8 @@ crates/
                       named is not said after it (chat); a list open over
                       anything owns the status row (status); what went wrong on
                       the way up is said under the keys and never in front of
-                      them (welcome); a window draws the marks itself, and the
+                      them (welcome); asking which project is a screen of its
+                      own, and the welcome screen comes after (projects); a window draws the marks itself, and the
                       view does not know the difference (image); a view says
                       what a region *is* and the front end says what that looks
                       like, nothing may be said there that the cells do not
