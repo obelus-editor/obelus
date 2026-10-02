@@ -63,8 +63,13 @@ impl App {
         // does not find out Obelus has it -- while a row that runs and then
         // reports why it did nothing is a row nobody trusts. Dim and
         // unselectable is both answers at once.
+        //
+        // Except what this front end can never do, which is not a row at
+        // all: dim says "not here, not now", and a command that needs a
+        // window is not one a terminal will ever have.
         let items = obelus_command::ALL
             .iter()
+            .filter(|spec| spec.command.shown())
             .map(|spec| PickerItem {
                 prose: false,
                 marker: None,

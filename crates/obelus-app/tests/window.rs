@@ -149,3 +149,33 @@ fn a_keys_cap_does_not_touch_the_mark_beside_it() {
         assert_eq!(after, ' ', "the cap at {cap:?} touches {after:?}:\n{dump}");
     }
 }
+
+/// What only a window can do is offered in one: the palette lists
+/// `switch-worktree`, and the keys page has a row to bind it on.
+///
+/// The other half of the terminal's leaving it out, in the binary that can
+/// say it is a window. Broken deliberately by saying `InATerminal` for it in
+/// `Command::drawn`: both of these go.
+#[test]
+fn a_window_offers_what_only_a_window_can_do() {
+    let _turn = turn();
+    obelus_config::drawn_in_a_window();
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    support::lay_out(&mut app, 60, 12);
+    support::press_control(&mut app, 'p');
+    let listed = app
+        .picker()
+        .expect("the palette is open")
+        .matches()
+        .any(|item| item.label == "switch-worktree");
+    assert!(listed, "a window's palette leaves out switch-worktree");
+    support::press(&mut app, crossterm::event::KeyCode::Esc);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConfigOpen);
+    support::press(&mut app, crossterm::event::KeyCode::Tab);
+    let keys = app.settings().expect("the settings").key_rows();
+    assert!(
+        keys.contains(&obelus_command::Command::WorktreeList),
+        "a window's keys page has no row for switch-worktree"
+    );
+}

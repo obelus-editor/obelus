@@ -773,6 +773,98 @@ pub const ALL: &[CommandSpec] = &[
 ];
 
 impl Command {
+    /// Where the command means anything.
+    ///
+    /// The question a setting answers with the same word, and for the same
+    /// reason: a row offered where it can never do anything teaches the
+    /// reader something untrue about the program. A command that is
+    /// merely dim here -- nothing selected, no server yet -- is dim, because
+    /// that can change while they watch; one that needs the other front end
+    /// cannot, and is not listed at all. Spelled out per command, so a new
+    /// one has to say.
+    #[must_use]
+    pub const fn drawn(self) -> obelus_config::Drawn {
+        match self {
+            // Going to another worktree is starting a window or bringing
+            // one forward, and only a window can do either: a terminal's
+            // window is the terminal's.
+            Self::WorktreeList => obelus_config::Drawn::InAWindow,
+            Self::FileOpen
+            | Self::FileNew
+            | Self::FileChanged
+            | Self::FileReload
+            | Self::FileSave
+            | Self::DocumentList
+            | Self::DocumentClose
+            | Self::FileRename
+            | Self::PreviewToggle
+            | Self::ThemeSelect
+            | Self::CommandPalette
+            | Self::SymbolMenu
+            | Self::SymbolComplete
+            | Self::SymbolHover
+            | Self::SymbolSignature
+            | Self::CodeActions
+            | Self::SymbolRename
+            | Self::SymbolTroubles
+            | Self::SymbolTroublePrevious
+            | Self::SymbolTroubleNext
+            | Self::SymbolOutline
+            | Self::SymbolDefinition
+            | Self::SymbolTypeDefinition
+            | Self::SymbolImplementation
+            | Self::SymbolReferences
+            | Self::SymbolCalls
+            | Self::SearchFile
+            | Self::SearchProject
+            | Self::SearchSymbols
+            | Self::GoLine
+            | Self::GoBracket
+            | Self::HistoryFile
+            | Self::HistoryProject
+            | Self::HistoryLine
+            | Self::Fold
+            | Self::FoldAll
+            | Self::UnfoldAll
+            | Self::GitHunk
+            | Self::GitPrevious
+            | Self::GitNext
+            | Self::SelectionCopy
+            | Self::SelectionCut
+            | Self::LineUp
+            | Self::LineDown
+            | Self::CommentToggle
+            | Self::ReplaceToggle
+            | Self::Paste
+            | Self::Undo
+            | Self::Redo
+            | Self::SelectionClear
+            | Self::SelectionWiden
+            | Self::SelectionAll
+            | Self::GoBack
+            | Self::GoForward
+            | Self::ConversationNew
+            | Self::ConversationSelect
+            | Self::CountLines
+            | Self::TodoOpen
+            | Self::TodoAdd
+            | Self::ConfigFile
+            | Self::ConfigOpen
+            | Self::ConfigProject
+            | Self::LogOpen
+            | Self::LogServers
+            | Self::LspRestart
+            | Self::LspStop
+            | Self::Quit => obelus_config::Drawn::Anywhere,
+        }
+    }
+
+    /// Whether the command is one to show the reader here.
+    #[must_use]
+    pub fn shown(self) -> bool {
+        self.drawn().here()
+    }
+
     /// Whether the command opens something that takes the whole screen.
     ///
     /// Which is what makes its key reach it from inside another such thing:

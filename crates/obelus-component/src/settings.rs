@@ -538,8 +538,11 @@ impl Settings {
             return Vec::new();
         }
         let query = self.query.said().to_lowercase();
+        // What this front end can never do has no key worth giving it here,
+        // for the reason the palette leaves it out.
         obelus_command::ALL
             .iter()
+            .filter(|spec| spec.command.shown())
             .filter(|spec| {
                 query.is_empty()
                     || spec.name.to_lowercase().contains(&query)

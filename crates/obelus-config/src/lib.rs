@@ -349,6 +349,21 @@ pub enum Drawn {
     InAWindow,
 }
 
+impl Drawn {
+    /// Whether this Obelus is drawn where it means anything.
+    ///
+    /// The one answer, for everything that says where it is drawn: a
+    /// setting, and a command.
+    #[must_use]
+    pub fn here(self) -> bool {
+        match self {
+            Self::Anywhere => true,
+            Self::InATerminal => !in_a_window(),
+            Self::InAWindow => in_a_window(),
+        }
+    }
+}
+
 /// Whether this Obelus is the one that draws its own pixels.
 ///
 /// A global, like the tab width and the glyph switch, and for the same
@@ -476,11 +491,7 @@ impl Setting {
     /// Whether this setting is one to show the reader here.
     #[must_use]
     pub fn shown(&self) -> bool {
-        match self.drawn {
-            Drawn::Anywhere => true,
-            Drawn::InATerminal => !in_a_window(),
-            Drawn::InAWindow => in_a_window(),
-        }
+        self.drawn.here()
     }
 
     /// The setting a key names, if Obelus has one.
