@@ -369,7 +369,7 @@ impl App {
             .map(|(at, listed)| {
                 let path = &listed.tree.path;
                 let label = match beside.as_deref().and_then(|beside| {
-                    resolved(path)
+                    resolved_as_far_as_it_goes(path)
                         .strip_prefix(beside)
                         .ok()
                         .map(Path::to_path_buf)
@@ -513,6 +513,26 @@ fn same_tree(one: &Path, other: &Path) -> bool {
 /// A path with its links followed, or as it was written where it has gone.
 fn resolved(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// A path with its links followed as far as it is still there, and the
+/// rest of it as it was written.
+///
+/// For a row's name, which is worked out against the main checkout
+/// resolved. A tree deleted behind git's back resolves to nothing, and
+/// taken as it was written it is a different spelling of the place
+/// wherever resolving changes the spelling -- on Windows always, where a
+/// resolved path is a `\\?\` one -- so a tree called `spare` the moment
+/// before was called by its whole path the moment it went. Held by
+/// `a_tree_that_has_gone_is_missing_and_goes_nowhere`, on Windows: git
+/// resolves a link when a tree is added, so nothing on Linux spells the
+/// place two ways.
+fn resolved_as_far_as_it_goes(path: &Path) -> PathBuf {
+    path.canonicalize()
+        .unwrap_or_else(|_| match (path.parent(), path.file_name()) {
+            (Some(parent), Some(name)) => resolved_as_far_as_it_goes(parent).join(name),
+            _ => path.to_path_buf(),
+        })
 }
 
 /// The door of a window on this tree, where one is open.
