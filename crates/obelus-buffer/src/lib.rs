@@ -1533,7 +1533,10 @@ impl Buffer {
     /// and the name is the link.
     pub fn save(&mut self) -> Result<()> {
         let path = obelus_config::resolved(&self.path);
-        let beside = path.with_extension("obelus-writing");
+        // This process's own name beside it and not one every Obelus shares:
+        // two writing at once into one shared name truncate each other's
+        // half-written file, and the first rename takes the other's away.
+        let beside = path.with_extension(format!("obelus-writing.{}", std::process::id()));
 
         let mut file = std::fs::File::create(&beside)
             .with_context(|| format!("writing beside {}", path.display()))?;

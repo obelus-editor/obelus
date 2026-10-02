@@ -745,6 +745,36 @@ mod saving {
         (scratch, app, path)
     }
 
+    /// Another Obelus halfway through saving the same file is left alone.
+    ///
+    /// Two of them on one project is the ordinary case, and both can save
+    /// one file. Its bytes sit beside the file under the name every Obelus
+    /// once saved through, and saving through that name again truncates
+    /// them and renames them away under it.
+    ///
+    /// Broken deliberately by having `Buffer::save` write beside the file
+    /// as `obelus-writing` again, with no process number: the other's file
+    /// is gone.
+    #[test]
+    fn another_obelus_saving_the_same_file_is_left_alone() {
+        let (_scratch, mut app, path) = reading("save-beside", "fn main() {}\n");
+        let theirs = path.with_extension("obelus-writing");
+        std::fs::write(&theirs, "another Obelus is halfway through this").expect("theirs");
+        support::type_text(&mut app, "// ");
+        dispatch::dispatch(&mut app, Command::FileSave);
+
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("reading it back"),
+            "// fn main() {}\n",
+            "the file was not saved"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&theirs).ok().as_deref(),
+            Some("another Obelus is halfway through this"),
+            "the other Obelus's half-written file was taken"
+        );
+    }
+
     #[test]
     fn what_was_typed_reaches_the_file() {
         let (_scratch, mut app, path) = reading("save-basic", "fn main() {}\n");

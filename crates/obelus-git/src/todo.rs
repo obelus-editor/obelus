@@ -845,7 +845,10 @@ impl Todo {
         if let Some(directory) = path.parent() {
             std::fs::create_dir_all(directory)?;
         }
-        let beside = path.with_extension("toml.writing");
+        // This process's own name beside it and not one every Obelus shares:
+        // two writing at once into one shared name truncate each other's
+        // half-written file, and the first rename takes the other's away.
+        let beside = path.with_extension(format!("toml.writing.{}", std::process::id()));
         std::fs::write(&beside, self.to_toml())?;
         std::fs::rename(&beside, &path)
     }
@@ -1570,5 +1573,30 @@ mod tests {
         assert_eq!(long.title(), "a title");
         assert!(long.folds());
         assert_eq!(long.body(), ["and more", "and more"]);
+    }
+
+    /// Another Obelus halfway through writing the notes is left alone.
+    ///
+    /// Broken deliberately by writing beside them as `toml.writing` again,
+    /// with no process number: the other's file is truncated and renamed
+    /// away under it.
+    #[test]
+    fn another_obelus_writing_the_notes_is_left_alone() {
+        state_of_its_own();
+        let root = std::env::temp_dir().join(format!("obelus-notes-beside-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("the project");
+        let theirs = path(&root)
+            .expect("somewhere")
+            .with_extension("toml.writing");
+        std::fs::create_dir_all(theirs.parent().expect("a directory")).expect("the directory");
+        std::fs::write(&theirs, "another Obelus is halfway through this").expect("theirs");
+
+        named(vec![note("one")]).write(&root).expect("the notes");
+        assert_eq!(
+            std::fs::read_to_string(&theirs).ok().as_deref(),
+            Some("another Obelus is halfway through this"),
+            "the other Obelus's half-written notes were taken"
+        );
     }
 }

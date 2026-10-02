@@ -192,6 +192,13 @@ pub(super) fn read() -> Reading {
 /// and the last one to write would otherwise put the list back as it was
 /// when it started.
 ///
+/// What it does not do is take a lock, and that is a choice rather than
+/// an oversight: two of these within the same fraction of a millisecond
+/// both read the list before either writes it, and what the second writes
+/// has no row for what the first remembered. That costs one project
+/// missing until it is next opened, which opening puts right -- and a lock
+/// is whole-file on Windows, which is what a claim's cost last time.
+///
 /// Answers whether anything was written, which is `false` for a directory
 /// that is not a worktree and for a list that would not read -- neither is
 /// a failure worth telling the reader about, and the caller uses it only
@@ -267,7 +274,10 @@ fn write(path: &Path, projects: &[Project]) -> bool {
     // Beside it and a rename, the way the conversations, the notes and the
     // settings are written: another Obelus writing this at the same moment
     // leaves one whole file or the other, never half of either.
-    let beside = path.with_extension("toml.writing");
+    // This process's own name beside it and not one every Obelus shares:
+    // two writing at once into one shared name truncate each other's
+    // half-written file, and the first rename takes the other's away.
+    let beside = path.with_extension(format!("toml.writing.{}", std::process::id()));
     if let Err(error) =
         std::fs::write(&beside, to_toml(projects)).and_then(|()| std::fs::rename(&beside, path))
     {
@@ -1107,6 +1117,30 @@ mod tests {
             read().rows().len(),
             1,
             "the gone project is still in the file"
+        );
+    }
+
+    /// Another Obelus halfway through writing the list is left alone.
+    ///
+    /// Its file sits beside the list under the name every Obelus once
+    /// wrote through, and writing through that name again truncates it and
+    /// renames it away under the other's feet.
+    ///
+    /// Broken deliberately by writing beside the list as `toml.writing`
+    /// again, with no process number: the other's file is gone.
+    #[test]
+    fn another_obelus_writing_the_list_is_left_alone() {
+        let (root, _turn) = scratch("beside");
+        a_repository(&root);
+        let theirs = path().expect("somewhere").with_extension("toml.writing");
+        std::fs::create_dir_all(theirs.parent().expect("a directory")).expect("the directory");
+        std::fs::write(&theirs, "another Obelus is halfway through this").expect("theirs");
+
+        assert!(remember(&root, 10), "nothing was written");
+        assert_eq!(
+            std::fs::read_to_string(&theirs).ok().as_deref(),
+            Some("another Obelus is halfway through this"),
+            "the other Obelus's half-written list was taken"
         );
     }
 

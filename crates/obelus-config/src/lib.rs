@@ -1625,7 +1625,10 @@ pub fn write_project(path: &Path, key: &str, value: Option<&Value>) -> std::io::
     // Beside it and renamed over it, for the reason the reader's own file is
     // written that way: another Obelus on this project may be reading it at
     // this moment, and a plain write truncates first.
-    let beside = path.with_extension("toml.writing");
+    // This process's own name beside it and not one every Obelus shares:
+    // two writing at once into one shared name truncate each other's
+    // half-written file, and the first rename takes the other's away.
+    let beside = path.with_extension(format!("toml.writing.{}", std::process::id()));
     std::fs::write(&beside, document.to_string())?;
     std::fs::rename(&beside, path)
 }
@@ -1676,7 +1679,10 @@ pub fn save_to(path: &Path, config: &Config) -> std::io::Result<()> {
     // Beside it rather than in a temporary directory: rename is only atomic
     // within a filesystem, and the only directory known to be on the same
     // one is this one.
-    let beside = path.with_extension("toml.writing");
+    // This process's own name beside it and not one every Obelus shares:
+    // two writing at once into one shared name truncate each other's
+    // half-written file, and the first rename takes the other's away.
+    let beside = path.with_extension(format!("toml.writing.{}", std::process::id()));
     std::fs::write(&beside, over(&existing, config))?;
     std::fs::rename(&beside, path)
 }
@@ -1765,12 +1771,18 @@ mod tests {
             written.contains("light"),
             "the file in the repository did not get the change: {written:?}"
         );
-        // And nothing left beside either of them.
-        assert!(
-            !config_home.join("config.toml.writing").exists()
-                && !repository.join("config.toml.writing").exists(),
-            "a half-written file was left behind"
-        );
+        // And nothing left beside either of them, under whatever name it
+        // was written through -- which has this process's number in it,
+        // so asking after one name is asking after nothing.
+        for directory in [&config_home, &repository] {
+            let beside: Vec<_> = std::fs::read_dir(directory)
+                .expect("the directory")
+                .filter_map(Result::ok)
+                .map(|entry| entry.file_name())
+                .filter(|name| name != "config.toml")
+                .collect();
+            assert!(beside.is_empty(), "it left {beside:?} behind");
+        }
 
         let _ = std::fs::remove_dir_all(&directory);
     }
@@ -2222,6 +2234,43 @@ mod tests {
             "a file the reader emptied was filled in again"
         );
         let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// Another Obelus halfway through writing the settings is left alone,
+    /// the reader's own and a project's.
+    ///
+    /// Broken deliberately by writing beside them as `toml.writing` again,
+    /// with no process number, in `save_to` (the first) and in
+    /// `write_project` (the second): the other's file is truncated and
+    /// renamed away under it.
+    #[test]
+    fn another_obelus_writing_the_settings_is_left_alone() {
+        let root =
+            std::env::temp_dir().join(format!("obelus-config-beside-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("the directory");
+
+        let own = root.join("config.toml");
+        let theirs = own.with_extension("toml.writing");
+        std::fs::write(&theirs, "another Obelus is halfway through this").expect("theirs");
+        super::save_to(&own, &super::Config::default()).expect("saving");
+        assert_eq!(
+            std::fs::read_to_string(&theirs).ok().as_deref(),
+            Some("another Obelus is halfway through this"),
+            "the other Obelus's half-written settings were taken"
+        );
+
+        let project = super::project_path_for(&root);
+        let theirs = project.with_extension("toml.writing");
+        std::fs::create_dir_all(theirs.parent().expect("a directory")).expect("the directory");
+        std::fs::write(&theirs, "another Obelus is halfway through this").expect("theirs");
+        let theme = super::Value::Choice("light".to_string());
+        super::write_project(&project, "theme", Some(&theme)).expect("a project's setting");
+        assert_eq!(
+            std::fs::read_to_string(&theirs).ok().as_deref(),
+            Some("another Obelus is halfway through this"),
+            "the other Obelus's half-written project settings were taken"
+        );
     }
 }
 
