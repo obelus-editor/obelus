@@ -432,7 +432,11 @@ fn a_tree_another_window_is_on_brings_that_window_forward() {
 ///
 /// Broken deliberately twice: a tree that has gone left enabled (a window
 /// is opened on nothing), and a window whose tree went keeping its claim
-/// (the row is marked as somewhere to go).
+/// (the row is marked as somewhere to go). And on Windows a third, which
+/// only Windows can show: naming a row from `resolved` rather than
+/// `resolved_as_far_as_it_goes` takes the tree that has gone as git wrote
+/// it, which is not the `\\?\` spelling the main checkout resolves to, so
+/// the row is called by its whole path and no row says `spare`.
 #[test]
 fn a_tree_that_has_gone_is_missing_and_goes_nowhere() {
     let scratch = Scratch::new("worktrees-gone");

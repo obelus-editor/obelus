@@ -355,9 +355,11 @@ impl App {
         // made the main checkout a name and the others addresses. Anything
         // under that directory is called by the way down to it, and a tree
         // outside it is said in full, because nothing shorter is true.
-        // Resolved, because git hands the main checkout back resolved and
-        // the linked ones as they were added -- which on a mac, whose
-        // temporary directory is a link, are two spellings of one place.
+        // Resolved, and every row resolved before it is compared, because a
+        // path as git writes it and the same path resolved can be spelled
+        // two ways -- on Windows always, where a resolved path is a `\\?\`
+        // one -- and a row compared in the other spelling was called by its
+        // whole path.
         let beside = self
             .worktrees
             .listed
