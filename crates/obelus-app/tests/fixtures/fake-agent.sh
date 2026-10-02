@@ -314,6 +314,17 @@ while IFS= read -r line; do
             set_turn "$session" "$(id_of "$line")"
             printf '{"jsonrpc":"2.0","id":904,"method":"elicitation/create","params":{"mode":"form","sessionId":"'"$session"'","message":"what would you like to do","requestedSchema":{"type":"object","properties":{"task":{"type":"string","title":"Task","oneOf":[{"const":"report","title":"Write the weekly report","description":"Gather the git changes of the week and write them up"},{"const":"review","title":"Review the code","description":"Read the current diff for bugs and simplifications"},{"const":"build","title":"Carry on with Obelus","description":"Write code in this repository"},{"const":"survey","title":"Survey the repository","description":"Read the recent commits and describe where things stand"}]},"other":{"type":"string","title":"Other","description":"Type your own answer instead of choosing one above"}},"required":["task"]}}}\n'
             ;;
+        *'"method":"session/prompt"'*'"text":"/questions'*)
+            # Two questions at once, the way Claude's adapter sends them:
+            # a message that says only that there are questions, and each
+            # question in its field's description under a title that is
+            # the short label the agent gave it.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","id":932,"method":"elicitation/create","params":{"mode":"form","sessionId":"'"$session"'","message":"Please answer the following questions.","requestedSchema":{"type":"object","properties":{"question_0":{"type":"string","title":"Approach","description":"should the window keep a state of its own","oneOf":[{"const":"state","title":"Keep a state"},{"const":"clamp","title":"Clamp the selection"}]},"question_0_custom":{"type":"string","title":"Other"},"question_1":{"type":"string","title":"When","description":"should I start on it now","oneOf":[{"const":"now","title":"Now"},{"const":"later","title":"Later"}]},"question_1_custom":{"type":"string","title":"Other"}}}}}\n'
+            ;;
+        *'"id":932'*)
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
         *'"method":"session/prompt"'*'"text":"/wordy'*)
             # The same form with one answer whose line about itself is
             # longer than a card is wide. What an agent writes there is a

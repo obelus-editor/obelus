@@ -54,8 +54,9 @@
 //! **A question the reader did not start says what it is about.** The card
 //! carries an `about` -- prose above its answers, a rule under it -- and
 //! both questions an agent can ask fill it: a form puts its own message
-//! there, and a permission request what the agent is actually going to do
-//! (`reason_of` in `obelus-agent`'s `acp/link`, which says why not
+//! there and the question of the field on the card (`App::put_the_question`
+//! says when each), and a permission request what the agent is actually going
+//! to do (`reason_of` in `obelus-agent`'s `acp/link`, which says why not
 //! `raw_input`). "Allow" and "refuse" are answers, and a question with the
 //! words missing is not one a reader can answer. It is wrapped to the width
 //! and capped (`MOST_ABOUT`): it is somebody else's prose, and an agent
