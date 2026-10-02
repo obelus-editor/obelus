@@ -232,22 +232,6 @@ pub trait Shapes: Send + Sync {
     /// which; a front end counting colours would be guessing.
     fn behind(&self, area: Rect, joined: Joined, ground: Color, cells: &[Cell]);
 
-    /// These cells, inside the pane, are a page of their own: a document
-    /// the pane is showing -- the preview under a list, which *is* the
-    /// editor's view of somewhere else.
-    ///
-    /// Said because the pane's own colour is the page's colour too, and
-    /// `behind` makes every cell of the pane wearing it glass. A preview
-    /// says nothing in most of its cells, so most of it was glass, and
-    /// the file the list was opened over showed through behind the file
-    /// it was previewing: two files on one screen, a dozen lines apart.
-    /// A page is opaque, here as everywhere else.
-    ///
-    /// A terminal has its answer already, which is the test this module
-    /// holds everything to: it draws every pane opaque, so a page inside
-    /// one is drawn the way the rest of it is.
-    fn paged(&self, area: Rect);
-
     /// This cell is a switch, and it is set or it is not.
     ///
     /// One cell, which is the one the glyph is in: the blank after it
@@ -405,13 +389,6 @@ pub(crate) fn behind(area: Rect, joined: Joined, ground: Color, cells: &CellBuff
         }
     }
     shapes.behind(room, joined, ground, &under);
-}
-
-/// Tells whoever is drawing that part of a pane is a page of its own.
-pub(crate) fn paged(area: Rect) {
-    if let Some(shapes) = DRAWING.get() {
-        shapes.paged(area);
-    }
 }
 
 /// Tells whoever is drawing that a switch is here.

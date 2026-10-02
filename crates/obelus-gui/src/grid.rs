@@ -191,12 +191,6 @@ pub(crate) enum Update {
         /// Which cells it is.
         area: Rect,
     },
-    /// Cells inside the pane that are a page of their own -- see
-    /// `obelus_ui::shapes::Shapes::paged`.
-    Paged {
-        /// Which cells.
-        area: Rect,
-    },
     /// A row that begins something new, with no row between it and what
     /// it is parted from.
     Parted {
@@ -266,9 +260,6 @@ pub(crate) struct Said<'a> {
     pub(crate) stroked: &'a [Stroked],
     /// And what is under the pane, where there is one.
     pub(crate) behind: Option<&'a Behind>,
-    /// And which cells inside it are a page of their own, where the pane's
-    /// colour is a page's ground and not glass.
-    pub(crate) paged: &'a [Rect],
     /// And under each box with a frame round it, nearest the reader last:
     /// over that pane where both are up.
     pub(crate) cards: &'a [Behind],
@@ -830,10 +821,6 @@ impl obelus_ui::shapes::Shapes for Marking {
         let _ = self.updates.send(Update::Parted { area });
     }
 
-    fn paged(&self, area: Rect) {
-        let _ = self.updates.send(Update::Paged { area });
-    }
-
     fn sheened(&self, area: Rect, from: Color, to: Color) {
         let _ = self.updates.send(Update::Sheened { area, from, to });
     }
@@ -1379,7 +1366,6 @@ impl Page {
             | Update::Ruled { area }
             | Update::Sheened { area, .. }
             | Update::Parted { area }
-            | Update::Paged { area }
             | Update::Behind { area, .. }
             | Update::Scrolled { area, .. } => {
                 tracing::warn!(?area, "a cap reached the page");

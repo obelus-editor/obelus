@@ -1025,7 +1025,7 @@ impl Painter {
             .iter()
             .filter(|cap| cap.still_said(page))
             .collect();
-        self.backgrounds(page, cell, &panes, said.paged, &framed, &capped);
+        self.backgrounds(page, cell, &panes, &framed, &capped);
         // Over the page and under everything written on it: a hold is a
         // ground, and the letters it is behind are the ones the reader is
         // holding.
@@ -1335,7 +1335,6 @@ impl Painter {
         page: &Page,
         cell: CellSize,
         panes: &[&Behind],
-        paged: &[Rect],
         framed: &[&Behind],
         capped: &[&Capped],
     ) {
@@ -1357,8 +1356,10 @@ impl Painter {
                 holes.extend(
                     panes
                         .iter()
-                        .filter(|pane| colour == pane.ground)
-                        .flat_map(|pane| glass_in(pane.area, paged, row)),
+                        .filter(|pane| {
+                            colour == pane.ground && row >= pane.area.y && row < pane.area.bottom()
+                        })
+                        .map(|pane| (pane.area.x, pane.area.right())),
                 );
                 // And a cap on glass, whose cells are the run a shade off
                 // the page that is a terminal's cap: `caps` draws the
@@ -3684,21 +3685,6 @@ fn lettered_behind(under: Look<'_>, barred: &[Barred], x: u16, y: u16) -> bool {
         })
 }
 
-/// The runs of one row of a pane that are glass where the cells wear the
-/// pane's own colour: all of it, less the pages inside it -- see
-/// `obelus_ui::shapes::Shapes::paged`.
-fn glass_in(pane: Rect, paged: &[Rect], row: u16) -> Vec<(u16, u16)> {
-    if row < pane.y || row >= pane.bottom() {
-        return Vec::new();
-    }
-    let mut pages: Vec<(u16, u16)> = paged
-        .iter()
-        .filter(|page| row >= page.y && row < page.bottom())
-        .map(|page| (page.x, page.right()))
-        .collect();
-    without(pane.x, pane.right(), &mut pages)
-}
-
 fn seen_through(panes: &[&Behind], x: u16, y: u16, colour: Color) -> bool {
     panes.iter().any(|pane| {
         let area = pane.area;
@@ -4757,35 +4743,6 @@ mod tests {
         assert!(!seen_through(&[], 2, 1, ground), "no pane at all");
     }
 
-    /// A page inside a pane is not glass: the rows it covers are glass
-    /// only either side of it, and the rows it does not are glass across.
-    ///
-    /// Deliberate break: have `glass_in` leave out none of the pages. A
-    /// list's preview is then glass wherever it says nothing, and the file
-    /// the list was opened over shows through behind the file it previews.
-    /// That `backgrounds` hands it the frame's pages is not this test's:
-    /// it is seen in a window, and was, on a list over a file.
-    #[test]
-    fn a_page_inside_a_pane_is_not_glass() {
-        let rect = |x, y, width, height| ratatui::layout::Rect {
-            x,
-            y,
-            width,
-            height,
-        };
-        let pane = rect(0, 0, 10, 6);
-        let paged = [rect(2, 3, 6, 2)];
-        assert_eq!(glass_in(pane, &paged, 1), [(0, 10)], "a row over the page");
-        assert_eq!(
-            glass_in(pane, &paged, 3),
-            [(0, 2), (8, 10)],
-            "a row of the page"
-        );
-        assert_eq!(glass_in(pane, &paged, 5), [(0, 10)], "a row under it");
-        assert!(glass_in(pane, &paged, 6).is_empty(), "outside the pane");
-        assert_eq!(glass_in(pane, &[], 3), [(0, 10)], "a pane with no page");
-    }
-
     /// A bar's cells are the window's to draw, so the letters leave them
     /// alone -- and only while the cells are still the bar's.
     ///
@@ -4832,7 +4789,6 @@ mod tests {
             parted: &[],
             stroked: &[],
             behind: None,
-            paged: &[],
             cards: &[],
             bands: &[],
         };
@@ -5106,7 +5062,6 @@ mod tests {
             sheened: None,
             parted: &[],
             behind: None,
-            paged: &[],
             cards: &[],
             bands: &[],
         };

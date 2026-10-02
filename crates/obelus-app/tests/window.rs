@@ -20,8 +20,6 @@ struct Heard {
 }
 
 impl obelus_ui::shapes::Shapes for Heard {
-    fn paged(&self, _area: Rect) {}
-
     fn behind(&self, _area: Rect, _joined: obelus_ui::shapes::Joined, _g: Color, _c: &[Cell]) {}
 
     fn scrolled(&self, _area: Rect, _top: i64, _bar: Option<obelus_ui::shapes::Bar>) {}

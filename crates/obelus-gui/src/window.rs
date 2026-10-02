@@ -272,11 +272,6 @@ struct Showing {
     behind: Option<Behind>,
     /// And on the frame being laid out.
     behinding: Option<Behind>,
-    /// Which cells of that pane are a page of their own, on the frame
-    /// being shown.
-    paged: Vec<Rect>,
-    /// And on the one being laid out.
-    paging: Vec<Rect>,
     /// Every pane on the frame being shown, by the edge it is joined
     /// along, furthest first -- see `Motion::panes_laid`.
     panes: Vec<Joined>,
@@ -373,8 +368,6 @@ impl Showing {
             scrolling: Vec::new(),
             behind: None,
             behinding: None,
-            paged: Vec::new(),
-            paging: Vec::new(),
             panes: Vec::new(),
             paning: Vec::new(),
             cards: Vec::new(),
@@ -862,9 +855,6 @@ impl ApplicationHandler<Waking> for Showing {
                         Update::Parted { area } => {
                             self.parting.push(Parted { area });
                         }
-                        Update::Paged { area } => {
-                            self.paging.push(area);
-                        }
                         Update::Sheened { area, from, to } => {
                             self.sheening = Some(Sheened { area, from, to });
                         }
@@ -920,7 +910,6 @@ impl ApplicationHandler<Waking> for Showing {
                                 .sheen_drawn(self.sheened.is_some(), Instant::now());
                             self.stroked = std::mem::take(&mut self.stroking);
                             self.behind = self.behinding.take();
-                            self.paged = std::mem::take(&mut self.paging);
                             self.panes = std::mem::take(&mut self.paning);
                             self.cards = std::mem::take(&mut self.carding);
                             self.scrolled = std::mem::take(&mut self.scrolling);
@@ -1213,7 +1202,6 @@ impl ApplicationHandler<Waking> for Showing {
                         parted: &self.parted,
                         stroked: &self.stroked,
                         behind: self.behind.as_ref(),
-                        paged: &self.paged,
                         cards: &self.cards,
                         bands: &rolled,
                     },
