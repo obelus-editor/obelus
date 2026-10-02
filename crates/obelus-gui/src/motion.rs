@@ -1536,10 +1536,14 @@ mod tests {
         // another's place, and the settings are reached no other way.
         motion.panes_laid(&[Joined::Below], &settings, later);
         assert!(motion.moving(later).pane.is_some(), "the settings arrive");
-        // And the same pile again is nothing at all.
-        let much_later = later + SLIDE * 2;
-        motion.panes_laid(&settings, &settings, much_later);
-        assert_eq!(motion.moving(much_later).pane, None);
+        // And the same pile again is nothing at all -- asked while they are
+        // still on their way, because a frame drawn during a slide is the
+        // usual case and must not end it. Break: drop `now.len() <
+        // was.len()` and the pile that has not moved counts as uncovered,
+        // which this notices and a question asked after the slide did not.
+        let half_way = later + SLIDE / 2;
+        motion.panes_laid(&settings, &settings, half_way);
+        assert!(motion.moving(half_way).pane.is_some(), "still arriving");
     }
 
     /// A band of rows, which is the area a list is drawn in.
