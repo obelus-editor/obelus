@@ -727,7 +727,7 @@ impl App {
             obelus_agent::acp::sessions::path,
         );
         // And the notes themselves: the page reads them, and so does the
-        // header of a conversation about one -- which is usually open with
+        // box of a conversation about one -- which is usually open with
         // that page shut.
         self.settle_a_watch(
             NOTES,
@@ -906,7 +906,7 @@ impl App {
             return false;
         };
         self.make_room(Room::Region);
-        // The same as the notes' own door: what the header is drawn from is
+        // The same as the notes' own door: what the box is offered from is
         // read as the conversation opens, and kept level by a watch settled
         // on the next frame.
         self.reread_the_notes_kept();

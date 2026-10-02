@@ -1492,26 +1492,7 @@ fn each_note_gets_a_conversation_of_its_own() {
     );
 }
 
-/// The conversation says which note it is about.
-///
-/// A header earns its row by carrying something. A reader with four
-/// conversations open has four screens that differ only in what was said in
-/// them, and the agent's name is the same on all four -- so what tells them
-/// apart is the note, in the words the reader wrote.
-#[test]
-fn a_conversation_says_which_note_it_is_about() {
-    let scratch = tree("header", "[[todo]]\nsaid = \"wire the counts tree up\"\n");
-    let mut app = open(&scratch, 76, 24);
-    support::press_alt(&mut app, 'a');
-
-    let screen = support::text_block(&support::render(&mut app, 76, 24)).to_string();
-    assert!(
-        screen.contains("wire the counts tree up"),
-        "the conversation does not say what it is about:\n{screen}"
-    );
-}
-
-/// And says how to get back to it.
+/// A conversation says how to get back to its note.
 ///
 /// The key was added because the round trip had an outward leg and no
 /// return. A return leg nothing says exists is the same gap one level up:

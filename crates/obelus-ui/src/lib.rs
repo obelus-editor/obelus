@@ -425,6 +425,9 @@ pub trait Screen {
     /// The note the conversation being read is about, in the words the
     /// reader wrote.
     fn what_this_conversation_is_about(&self) -> Option<String>;
+    /// The branch the conversation being read is working on, once its
+    /// agent has changed a file.
+    fn branch_this_conversation_works_on(&self) -> Option<&obelus_git::Head>;
     /// Where Obelus was started, and the root every path is shown relative to.
     fn working_directory(&self) -> &Path;
     /// Which branch that tree has checked out, where it is a repository.

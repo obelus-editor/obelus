@@ -601,7 +601,8 @@ pub struct App {
     /// Not the page's copy, which is the reader's and is ahead of the file
     /// while they are typing in it. This one is the file, for the one
     /// thing outside that page which has to know what a note says: the
-    /// header of the conversation about it.
+    /// box of the conversation about it, which offers to ask about the
+    /// note again once it has been rewritten.
     notes_kept: Option<obelus_git::todo::Todo>,
     /// Which conversations somebody has open, as Obelus last looked.
     ///
@@ -2741,7 +2742,7 @@ impl App {
                     // back what Obelus itself just wrote changes nothing on
                     // the page.
                     self.reread_notes();
-                    // And the copy the conversation's header is drawn
+                    // And the copy the conversation's box is offered
                     // from, which is wanted whether or not that page is
                     // open: a reader talking about a note has usually
                     // walked away from the list of them.
@@ -4569,6 +4570,9 @@ impl Screen for App {
     }
     fn what_this_conversation_is_about(&self) -> Option<String> {
         App::what_this_conversation_is_about(self)
+    }
+    fn branch_this_conversation_works_on(&self) -> Option<&obelus_git::Head> {
+        App::branch_this_conversation_works_on(self)
     }
     fn head(&self) -> Option<&obelus_git::Head> {
         App::head(self)

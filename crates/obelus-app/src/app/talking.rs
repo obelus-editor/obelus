@@ -264,7 +264,7 @@ impl App {
                     // answered.
                     return;
                 };
-                // What the note says, for the header: read as this opens,
+                // What the note says, for the box: read as this opens,
                 // for the reason the notes page reads what it is drawn
                 // from as *it* opens. The watch that keeps it level is
                 // settled on the next frame.
@@ -902,7 +902,7 @@ impl App {
     ///
     /// Kept rather than parsed here, and heard rather than polled: the
     /// reader can change what a note says from the notes page, from their
-    /// own editor or from a second Obelus, and a header holding a copy
+    /// own editor or from a second Obelus, and a view holding a copy
     /// nothing refreshed would go on saying what the note used to. What
     /// keeps the copy honest is that all three of those *write the file*,
     /// and a write is something a watcher hears.
@@ -924,9 +924,47 @@ impl App {
             .map(|note| note.title().to_string())
     }
 
+    /// The branch the conversation being read is working on, once its agent
+    /// has changed something.
+    #[must_use]
+    pub fn branch_this_conversation_works_on(&self) -> Option<&obelus_git::Head> {
+        self.conversation()?.working_on.as_ref()
+    }
+
+    /// Notes the branch a call changed a file on, if this update finished
+    /// a change.
+    ///
+    /// Asked again on every change rather than once: where the agent works
+    /// is not settled by where it first wrote, and a checkout's branch can
+    /// move under it. The tree must be this project's, a worktree or the
+    /// reader's own: a file outside it is somebody else's repository, or
+    /// none, and its branch says nothing about this work.
+    fn hear_where_it_wrote(&mut self, whose: Whose, call: &str) {
+        let Some(path) = self
+            .talk(whose)
+            .and_then(|talk| talk.chat.wrote(call))
+            .map(|path| self.working_directory.join(path))
+        else {
+            return;
+        };
+        let Some(tree) = obelus_git::worktree(&path) else {
+            return;
+        };
+        let ours = obelus_git::project(&self.working_directory);
+        if ours.is_none() || obelus_git::project(&tree) != ours {
+            return;
+        }
+        let head = obelus_git::head_of_the_tree(&tree);
+        if let Some(talk) = self.talk_mut(whose) {
+            talk.working_on = head;
+        }
+    }
+
     /// Reads the project's notes again, because there is a reason to.
     ///
-    /// What the conversation's header is drawn from. The page has its own
+    /// What the box of a conversation about a note asks, on every frame,
+    /// to know whether the agent has been told what the note says now. The
+    /// page has its own
     /// copy and does not use this one: what is on the page is the reader's,
     /// edits and all, and is ahead of the file rather than behind it.
     pub(super) fn reread_the_notes_kept(&mut self) {
@@ -3026,7 +3064,8 @@ impl App {
                 // of it Obelus cannot write itself.
                 acp::Update::Heard(text) => self.in_talk(whose, |chat| chat.heard(&text)),
                 acp::Update::Tool { call, status } => {
-                    self.in_talk(whose, |chat| chat.tool(&call, &status))
+                    self.in_talk(whose, |chat| chat.tool(&call, &status));
+                    self.hear_where_it_wrote(whose, &call.id);
                 }
                 // What it means to do about this turn. Not a thing said --
                 // it never goes in the transcript -- so it is handed to the

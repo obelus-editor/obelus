@@ -172,6 +172,15 @@ pub struct Conversation {
     /// `None` for a conversation about no note: there is nothing for two
     /// windows to collide over, because nothing else can name it.
     pub claim: Option<obelus_agent::chats::Claim>,
+    /// The branch of the checkout the agent last changed a file in.
+    ///
+    /// Learnt from where its changes landed rather than from anything it
+    /// says: an agent told to work in a worktree of its own may not, and
+    /// one that changes the reader's own checkout is the one most worth
+    /// seeing. `None` until it has changed something, which is when there
+    /// starts to be a branch to speak of. A session taken up again replays
+    /// its calls, so this comes back with them and is written down nowhere.
+    pub working_on: Option<obelus_git::Head>,
     /// What was said, and what is being typed.
     pub chat: Chat,
     /// The agent's own commands, while one is being typed in the box.
