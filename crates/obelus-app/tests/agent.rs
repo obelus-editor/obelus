@@ -4170,9 +4170,11 @@ fn a_loose_conversation_is_told_who_it_is_with_and_no_more() {
         text.contains("blocks=2") && text.contains("first=always"),
         "a conversation about nothing was not told who it is with:\n{text}"
     );
-    // And nothing about a note, because there is none to be about.
+    // And nothing about a note, because there is none to be about. Asked
+    // of the note and not of everything after `always`, because the
+    // workflow is on by default and its line goes with any conversation.
     assert!(
-        !text.contains("first=always+"),
+        !text.contains("+note"),
         "something about a note went with a conversation about nothing:\n{text}"
     );
     // The reader is told nothing about it: it went in their name but it is
@@ -4595,30 +4597,63 @@ fn a_chosen_workflow_is_pointed_at_in_the_first_message() {
     );
 }
 
+/// And a project that has chosen none says nothing about one: the line
+/// would send the agent to a tool that answers that there is nothing to
+/// follow.
+///
+/// Broken deliberately by pushing the line whatever the setting says,
+/// which reads `first=always+workflow`.
+#[test]
+fn no_workflow_is_not_pointed_at() {
+    let (mut app, events) = talking();
+    choose_workflow(&mut app, "none");
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/blocks");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "what it got", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text().contains("blocks="))
+        })
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("first=always "),
+        "the agent was pointed at a workflow nobody chose:\n{text}"
+    );
+}
+
 /// The tool answers from the settings as they are when it is asked, not as
-/// they were when the conversation began: a reader who chooses a workflow
-/// half-way is heard the next time the agent reads it, and one who goes
-/// back to none is heard too.
+/// they were when the conversation began: a reader who turns the workflow
+/// off half-way is heard the next time the agent reads it, and one who
+/// turns it back on is heard too.
+///
+/// A project that chose nothing has the feature branch, because that is
+/// the default.
 ///
 /// Broken deliberately by answering with the workflow whatever the setting
-/// says: the first assertion, before anything is chosen, fails.
+/// says: the assertion after `none` is chosen fails.
 #[test]
 fn the_workflow_is_read_from_the_settings_when_it_is_asked_for() {
     let (mut app, _events) = wired();
+    let said = the_workflow(&mut app);
+    assert!(
+        said.contains("git worktree add -b"),
+        "a project that chose nothing was not handed the default: {said}"
+    );
+    choose_workflow(&mut app, "none");
     assert!(
         the_workflow(&mut app).contains("no workflow"),
-        "a project that chose nothing handed over a workflow"
+        "choosing none was not heard"
     );
     choose_workflow(&mut app, "feature-branch");
     let said = the_workflow(&mut app);
     assert!(
         said.contains("git worktree add -b"),
-        "the chosen workflow was not handed over: {said}"
-    );
-    choose_workflow(&mut app, "none");
-    assert!(
-        the_workflow(&mut app).contains("no workflow"),
-        "going back to none was not heard"
+        "going back to the feature branch was not heard: {said}"
     );
 }
 

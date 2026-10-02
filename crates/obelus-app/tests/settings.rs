@@ -3731,15 +3731,21 @@ fn each_workflow_says_what_it_does_where_it_is_chosen() {
 /// down by its name.
 ///
 /// The name is the setting's word, and a word like `feature-branch` is a
-/// name and not copy: the list says the title, so the row it goes back to
-/// says it too, and the list opens again on the title of the one in force.
+/// name and not copy: the row says the title, the list says it too and
+/// opens on the title of the one in force, and what is chosen is written
+/// by its name.
 ///
-/// Broken deliberately four ways: the list's label back to the name,
+/// The feature branch is the default, so it is the row before anything is
+/// chosen, and what is chosen and written is `none` -- a default is not
+/// written at all.
+///
+/// Broken deliberately five ways: the list's label back to the name,
 /// which leaves no `Feature branch` on the list; the settings row's
 /// `value_of` handing back the word, which leaves `feature-branch` on the
 /// page; `prefer` given the word, which opens the list on the first row
-/// rather than on the one chosen; and `CONTROL_WIDTH` at 14, which puts
-/// the arrow against the title and the title against the edge.
+/// rather than on the one in force; `CONTROL_WIDTH` at 14, which puts
+/// the arrow against the title and the title against the edge; and the
+/// file given the title, which writes `No workflow`.
 #[test]
 fn a_workflow_is_called_by_its_title_and_written_by_its_name() {
     let _turn = SETTINGS
@@ -3749,24 +3755,6 @@ fn a_workflow_is_called_by_its_title_and_written_by_its_name() {
     let file = settings_file(&scratch);
     let mut app = open(&file);
     support::type_text(&mut app, "workflow");
-    support::press(&mut app, KeyCode::Enter);
-    let labels: Vec<String> = app
-        .picker()
-        .expect("the workflows did not open")
-        .matches()
-        .map(|item| item.label.clone())
-        .collect();
-    assert_eq!(labels, ["No workflow", "Feature branch"]);
-
-    support::press(&mut app, KeyCode::Down);
-    support::press(&mut app, KeyCode::Enter);
-    assert!(app.picker().is_none(), "choosing did not close the list");
-    assert_eq!(app.config().workflow, "feature-branch");
-    let written = std::fs::read_to_string(&file).expect("the file was written");
-    assert!(
-        written.contains("workflow = \"feature-branch\""),
-        "the file does not say so by name: {written:?}"
-    );
 
     let dump = support::render(&mut app, 100, 24);
     let text = support::text_block(&dump);
@@ -3787,12 +3775,23 @@ fn a_workflow_is_called_by_its_title_and_written_by_its_name() {
     );
 
     support::press(&mut app, KeyCode::Enter);
+    let picker = app.picker().expect("the workflows did not open");
+    let labels: Vec<String> = picker.matches().map(|item| item.label.clone()).collect();
+    assert_eq!(labels, ["No workflow", "Feature branch"]);
     assert_eq!(
-        app.picker()
-            .and_then(|picker| picker.selected_item())
-            .map(|item| item.label.as_str()),
+        picker.selected_item().map(|item| item.label.as_str()),
         Some("Feature branch"),
         "the list did not open on the one in force"
+    );
+
+    support::press(&mut app, KeyCode::Up);
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_none(), "choosing did not close the list");
+    assert_eq!(app.config().workflow, "none");
+    let written = std::fs::read_to_string(&file).expect("the file was written");
+    assert!(
+        written.contains("workflow = \"none\""),
+        "the file does not say so by name: {written:?}"
     );
 }
 
@@ -3823,7 +3822,11 @@ fn a_workflow_nothing_answers_to_is_marked() {
     assert_eq!(problems.len(), 1, "{problems:?}");
     assert_eq!(problems[0].message, "Nothing answers to `feature_branch`");
     assert_eq!(problems[0].span.line.get(), 0);
-    assert_eq!(app.config().workflow, "none", "the word was taken anyway");
+    assert_eq!(
+        app.config().workflow,
+        obelus_config::Config::default().workflow,
+        "the word was taken anyway"
+    );
 }
 
 /// And it is said over the welcome screen, because a reader who has just
