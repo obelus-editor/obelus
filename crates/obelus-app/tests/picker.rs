@@ -1198,15 +1198,21 @@ fn the_palette_shows_the_key_each_command_is_bound_to() {
     // A command bound to nothing shows nothing. Whatever the label of a bound
     // key looks like, an unbound row cannot hold the one thing every label
     // has, which is a key. Trimmed of the scrollbar and the padding, so what
-    // is left is the row's own text.
-    let unbound = row(text, "choose-theme");
+    // is left is the row's own text. Past the ten rows a compact list
+    // shows, so reached by typing.
+    type_text(&mut app, "theme");
+    let narrowed = support::render(&mut app, 60, 26);
+    let unbound = row(support::text_block(&narrowed), "choose-theme");
     let ends_with_description = unbound
         .trim_end_matches(['\u{2502}', '\u{2588}', ' '])
         .ends_with("colours");
     assert!(
         ends_with_description,
-        "choose-theme has no binding, so it should show no key:\n{dump}"
+        "choose-theme has no binding, so it should show no key:\n{narrowed}"
     );
+    for _ in 0..5 {
+        press(&mut app, KeyCode::Backspace);
+    }
 
     // Past the ten rows a compact list shows, so it is reached the way a
     // reader reaches it: by typing.

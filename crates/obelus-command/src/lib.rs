@@ -31,6 +31,8 @@ pub enum Command {
     FileSave,
     /// Choose among the documents already open.
     DocumentList,
+    /// Go to another of the repository's worktrees, in a window of its own.
+    WorktreeList,
     /// Stop showing the current document.
     DocumentClose,
     /// Call the file being read something else, or put it somewhere else.
@@ -371,6 +373,15 @@ pub enum Requires {
     /// the welcome screen, where nothing can be open and there is nowhere
     /// yet to open anything.
     SomethingOpenOrAProject,
+    /// There has to be another worktree to go to, and a window to go there
+    /// in.
+    ///
+    /// A window, because what going to a worktree means is starting an
+    /// Obelus on it or bringing forward the one already there, and a
+    /// window is the one thing that can do either: a terminal belongs to
+    /// the terminal, and which one the reader would want it opened in is
+    /// not something Obelus can know.
+    AnotherWorktree,
 }
 
 /// A command's name and description, for the palette to list and match on.
@@ -424,6 +435,11 @@ pub const ALL: &[CommandSpec] = &[
         command: Command::DocumentList,
         name: "switch-document",
         title: "Switch to something already open",
+    },
+    CommandSpec {
+        command: Command::WorktreeList,
+        name: "switch-worktree",
+        title: "Go to another worktree, in a window of its own",
     },
     CommandSpec {
         command: Command::DocumentClose,
@@ -771,6 +787,8 @@ impl Command {
             Self::FileOpen
             | Self::FileChanged
             | Self::DocumentList
+            // The other tab of the same list, so it goes where that goes.
+            | Self::WorktreeList
             | Self::SearchFile
             | Self::SearchProject
             | Self::SearchSymbols
@@ -861,6 +879,7 @@ impl Command {
             | Self::FileReload
             | Self::FileSave
             | Self::DocumentList
+            | Self::WorktreeList
             | Self::DocumentClose
             | Self::FileRename
             | Self::PreviewToggle
@@ -1115,6 +1134,7 @@ impl Command {
             // command saying so is the only way a reader learns that
             // logging failed.
             Self::LogServers => Requires::AServerLog,
+            Self::WorktreeList => Requires::AnotherWorktree,
         }
     }
 
@@ -1164,6 +1184,7 @@ mod tests {
             Command::FileReload,
             Command::FileSave,
             Command::DocumentList,
+            Command::WorktreeList,
             Command::DocumentClose,
             Command::FileRename,
             Command::PreviewToggle,

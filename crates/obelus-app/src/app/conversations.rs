@@ -87,8 +87,10 @@ pub(super) const CLAIMS: usize = 0;
 pub(super) const TABLE: usize = 1;
 /// What the notes say.
 pub(super) const NOTES: usize = 2;
+/// Which windows are on which of the repository's trees.
+pub(super) const WINDOWS: usize = 3;
 /// How many of them there are.
-pub(super) const WATCHED: usize = 3;
+pub(super) const WATCHED: usize = 4;
 
 /// One of the things Obelus watches, and whether it managed to.
 ///
@@ -673,9 +675,10 @@ impl App {
     /// Watches what the views showing are drawn from, and stops watching
     /// what nothing is drawn from.
     ///
-    /// Three things, and every one of them a file somebody else writes:
+    /// Four things, and every one of them a file somebody else writes:
     /// which conversations are open elsewhere, which of the notes has a
-    /// conversation at all, and what the notes say. Each is kept in memory
+    /// conversation at all, what the notes say, and which windows are on
+    /// which of the repository's trees. Each is kept in memory
     /// and each is only as honest as what refreshes it, so the watch is the
     /// whole of the promise.
     ///
@@ -731,6 +734,16 @@ impl App {
             notes || about_a_note,
             How::File,
             obelus_git::todo::path,
+        );
+        // And the other windows, which the list of worktrees marks. A
+        // directory, for the reason the claims are one: a window is a file
+        // appearing and going again.
+        let worktrees = project && self.showing_worktrees();
+        self.settle_a_watch(
+            WINDOWS,
+            worktrees,
+            How::Directory,
+            super::worktrees::directory,
         );
     }
 

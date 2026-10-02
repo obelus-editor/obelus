@@ -343,6 +343,11 @@ open = "5"
 #
 # 0.30 rather than 0.31, which is still a beta.
 wayland-client = "0.31"
+# The one Wayland protocol the client crate does not carry and the window
+# needs: activation, which is how a window another Obelus asked for comes to
+# the front. The version winit's toolkit already builds, with the features
+# it already asks for, so this adds nothing to compile.
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 winit = "0.30"
 x11rb = "0.13"
 

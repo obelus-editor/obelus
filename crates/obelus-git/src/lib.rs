@@ -594,14 +594,83 @@ pub enum Head {
 /// that knows how to ask what `HEAD` is.
 #[must_use]
 pub fn head_of_the_tree(within: &Path) -> Option<Head> {
-    let repository = repository(within)?;
-    let Ok(head) = repository.head_ref() else {
-        return Some(Head::Detached);
+    Some(head_of(&repository(within)?))
+}
+
+/// What `HEAD` is in a repository already opened.
+fn head_of(repository: &gix::Repository) -> Head {
+    match repository.head_ref() {
+        Ok(Some(head)) => Head::Branch(head.name().shorten().to_string()),
+        Ok(None) | Err(_) => Head::Detached,
+    }
+}
+
+/// One of the checkouts a repository has.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Worktree {
+    /// Where it is, as git wrote it down.
+    pub path: PathBuf,
+    /// What it has checked out.
+    ///
+    /// Read from the tree's own `HEAD`, which lives in the repository and
+    /// not in the checkout, so a tree whose directory has gone still says.
+    pub head: Head,
+    /// Whether its directory is there.
+    ///
+    /// Asked here rather than left to whoever draws it, because git goes
+    /// on listing a checkout that was deleted without being told --
+    /// `rm -rf` rather than `git worktree remove` -- until somebody prunes
+    /// it, and a row for it is a row for somewhere there is nothing.
+    pub there: bool,
+}
+
+/// Every checkout of the repository a path is in: the main one first, then
+/// the linked ones in git's order, which is by their names.
+///
+/// Empty where git has never heard of the path. A bare repository has no
+/// main checkout, so its list is the linked ones alone.
+#[must_use]
+pub fn worktrees(within: &Path) -> Vec<Worktree> {
+    let Some(repository) = repository(within) else {
+        return Vec::new();
     };
-    Some(match head {
-        Some(head) => Head::Branch(head.name().shorten().to_string()),
-        None => Head::Detached,
-    })
+    let main = main_checkout(within).and_then(|path| {
+        let opened = repository.main_repo().ok()?;
+        Some(Worktree {
+            head: head_of(&opened),
+            there: path.is_dir(),
+            path,
+        })
+    });
+    let linked = repository.worktrees().unwrap_or_default();
+    main.into_iter()
+        .chain(linked.into_iter().filter_map(|proxy| {
+            let path = proxy.base().ok()?;
+            // Opened without its checkout, because the checkout is what
+            // may have gone and the `HEAD` that says what it had is not in
+            // it.
+            let opened = proxy.into_repo_with_possibly_inaccessible_worktree().ok()?;
+            Some(Worktree {
+                head: head_of(&opened),
+                there: path.is_dir(),
+                path,
+            })
+        }))
+        .collect()
+}
+
+/// Whether the repository a path is in has a checkout besides that one.
+///
+/// [`worktrees`] counted rather than built: building opens every linked
+/// tree to read what it has checked out, and this is asked for a row of the
+/// palette, where what is wanted is whether there is a second one to go to.
+#[must_use]
+pub fn has_another_worktree(within: &Path) -> bool {
+    let Some(repository) = repository(within) else {
+        return false;
+    };
+    let linked = repository.worktrees().map_or(0, |linked| linked.len());
+    linked + usize::from(main_checkout(within).is_some()) > 1
 }
 
 /// Everything git says has changed in a tree, by path.

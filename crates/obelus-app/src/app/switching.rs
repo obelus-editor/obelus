@@ -88,6 +88,9 @@ impl App {
     /// other view.
     fn tab_for(&self, command: Command) -> Option<usize> {
         let picker = self.picker.as_ref()?;
+        if !self.worktrees.tabs.is_empty() {
+            return self.switching_tab_for(command);
+        }
         if picker.is_listing() {
             let wanted = match command {
                 Command::FileOpen => Listing::All,
