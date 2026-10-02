@@ -2429,8 +2429,8 @@ fn what_went_wrong_is_a_list_over_the_welcome_screen() {
     let dump = support::render(&mut app, 76, 26);
     let text = support::text_block(&dump);
 
-    assert!(text.contains("No setting is called shrift"), "{dump}");
-    assert!(text.contains("No setting is called wrapp"), "{dump}");
+    assert!(text.contains("No setting is called `shrift`"), "{dump}");
+    assert!(text.contains("No setting is called `wrapp`"), "{dump}");
     // The file and the line it is on, counted the way a reader counts.
     assert!(text.contains("config.toml:2"), "{dump}");
     // And what the list is, where a list says what it is -- with the key
@@ -2463,7 +2463,7 @@ fn what_went_wrong_has_the_keys_until_it_is_let_go() {
     let dump = support::render(&mut app, 76, 26);
     let text = support::text_block(&dump);
     assert!(
-        text.contains("No setting is called shrift"),
+        text.contains("No setting is called `shrift`"),
         "a key reached the screen under the list:\n{text}"
     );
 
@@ -2471,7 +2471,7 @@ fn what_went_wrong_has_the_keys_until_it_is_let_go() {
     let dump = support::render(&mut app, 76, 26);
     let text = support::text_block(&dump);
     assert!(
-        !text.contains("No setting is called shrift"),
+        !text.contains("No setting is called `shrift`"),
         "escape did not let it go:\n{text}"
     );
     assert!(
@@ -2537,7 +2537,10 @@ fn no_row_of_what_went_wrong_is_marked_as_the_readers() {
         .filter(|line| line.contains(&mark))
         .filter_map(|line| line.chars().next())
         .collect();
-    for words in ["No setting is called shrift", "No setting is called wrapp"] {
+    for words in [
+        "No setting is called `shrift`",
+        "No setting is called `wrapp`",
+    ] {
         let row = styles_of_the_row_saying(&dump, words);
         assert!(
             !row.chars().any(|letter| marked.contains(&letter)),
@@ -2668,7 +2671,7 @@ fn what_went_wrong_is_not_put_under_the_files() {
     let dump = support::render(&mut app, 76, 26);
     let text = support::text_block(&dump);
     assert!(
-        text.contains("No setting is called shrift"),
+        text.contains("No setting is called `shrift`"),
         "the files went up over what went wrong:\n{text}"
     );
 }
@@ -2838,7 +2841,7 @@ fn what_went_wrong_is_put_over_the_page_that_asks_too() {
     started(&mut app);
     let dump = support::render(&mut app, 76, 26);
     assert!(
-        support::text_block(&dump).contains("No setting is called shrift"),
+        support::text_block(&dump).contains("No setting is called `shrift`"),
         "{dump}"
     );
     assert!(
