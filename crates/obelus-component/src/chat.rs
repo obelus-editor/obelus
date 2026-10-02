@@ -2200,13 +2200,21 @@ impl Chat {
         }
 
         match key.code {
-            // Stopping the agent is the one thing escape does here. A
-            // conversation is a document, not something over one, and
-            // escape is what leaves whatever is over the document being
-            // read -- so with nothing in flight there is nothing for it to
-            // give up on, and it leaves the box alone rather than taking
-            // the reader somewhere.
+            // Stopping the agent is the first thing escape does here, and
+            // emptying the box the second: those are the two things in a
+            // conversation there are to give up on. A conversation is a
+            // document, not something over one, and escape is what leaves
+            // whatever is over the document being read -- so with neither
+            // it does nothing, rather than taking the reader somewhere.
+            //
+            // At once, with no second press to make sure: the press that
+            // stops a turn puts what was waiting back in the box, and
+            // taking all of it back is what the next one is for.
             KeyCode::Esc if bare && thinking => ChatOutcome::Interrupt,
+            KeyCode::Esc if bare && !self.input.is_blank() => {
+                let _ = self.input.take_parts();
+                ChatOutcome::Consumed
+            }
             // Which is why the box takes shift: a message to an agent is a
             // paragraph, and enter is how you send one.
             KeyCode::Enter if !bare => {
@@ -4288,14 +4296,30 @@ mod tests {
 
     /// What escape means depends on whether anything is happening, and
     /// nothing else about the keys does.
+    ///
+    /// Stopping first and emptying the box second, one press each: a
+    /// press that stopped the agent and emptied the box as well would
+    /// throw away what the reader was in the middle of saying.
+    ///
+    /// Deliberate break: drop the arm that empties the box, and the second
+    /// escape is `Ignored` with `hello` still in it.
     #[test]
-    fn escape_stops_the_agent_and_otherwise_does_nothing() {
+    fn escape_stops_the_agent_then_empties_the_box() {
         let mut chat = Chat::new();
+        for character in "hello".chars() {
+            chat.handle_key(&key(KeyCode::Char(character)), false, ROOM, &[]);
+        }
         assert_eq!(
             chat.handle_key(&key(KeyCode::Esc), true, ROOM, &[]),
             ChatOutcome::Interrupt
         );
-        // And with nothing in flight it is not the conversation's key: a
+        assert_eq!(chat.writing().text(), "hello", "stopping emptied the box");
+        assert_eq!(
+            chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]),
+            ChatOutcome::Consumed
+        );
+        assert_eq!(chat.writing().text(), "", "escape left the box as it was");
+        // And with neither it is not the conversation's key: a
         // conversation is a document, and escape leaves what is *over* a
         // document. There is nothing over this one.
         assert_eq!(

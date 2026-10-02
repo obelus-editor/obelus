@@ -713,7 +713,8 @@ fn what_the_reader_says_into_a_running_turn_waits_for_it() {
 ///
 /// Broken deliberately by taking the `take_back_waiting` out of
 /// `interrupt_agent`: the turn's end lets them go, and the box is left with
-/// only what was being typed.
+/// only what was being typed. And by dropping the arm in `Chat::handle_key`
+/// that empties the box: the second escape leaves all of it there.
 #[test]
 fn a_turn_the_reader_stopped_puts_what_was_waiting_back_in_the_box() {
     let (mut app, events) = talking();
@@ -753,6 +754,15 @@ fn a_turn_the_reader_stopped_puts_what_was_waiting_back_in_the_box() {
     assert!(
         !text.contains("blocks="),
         "what was waiting went to the agent:\n{text}"
+    );
+
+    // And the next press takes all of it back, which is what a reader who
+    // stopped the agent to stop saying those things wants.
+    support::press(&mut app, KeyCode::Esc);
+    assert_eq!(
+        app.chat().map(|chat| chat.writing().text()),
+        Some(String::new()),
+        "the second escape left what was waiting in the box"
     );
 }
 
