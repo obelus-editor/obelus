@@ -1082,6 +1082,12 @@ impl ApplicationHandler<Waking> for Showing {
     /// see `clipboard::let_go`.
     fn exiting(&mut self, _events: &ActiveEventLoop) {
         crate::clipboard::let_go();
+        // And what brings other windows forward, which holds the same
+        // display for the same reason. Let go of here rather than with the
+        // rest of the window: dropped afterwards, its connection destroyed
+        // its proxies on a display winit had already closed, and every way
+        // out of the window ended in a segfault.
+        self.here = None;
     }
 
     /// When to wake next, which is whatever the window is animating.

@@ -10,6 +10,11 @@
 //!
 //! No thread and no events: the protocol's global sends nothing, and an
 //! `activate` is a request that goes out and is the whole of the answer.
+//!
+//! **It goes before winit's display does.** Dropping the connection
+//! destroys the proxies made on it, which is a call into a display that has
+//! to still be there -- so the window lets go of this in `exiting`, the last
+//! moment it is, the way the clipboard does.
 
 use std::{ffi::c_void, ptr::NonNull};
 
