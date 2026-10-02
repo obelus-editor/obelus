@@ -581,9 +581,9 @@ crates/
                       at the same moment (lib)
   obelus-logging/   two logs split by module, and where a panic goes
                     · every line says whose it is (lib)
-  obelus-command/   the Command enum, its table, its groups and what each
-                    one requires -- running one is obelus-app's, in
-                    src/app/dispatch.rs
+  obelus-command/   the Command enum, its table, its groups, what each one
+                    requires and where it is `Drawn` -- running one is
+                    obelus-app's, in src/app/dispatch.rs
   obelus-component/ picker (one component, several instantiations), settings,
                     the conversation, the box a message is written in, and
                     the window every list shares

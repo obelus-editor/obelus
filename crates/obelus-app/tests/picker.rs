@@ -1492,7 +1492,11 @@ fn a_question_with_no_server_is_dim_and_keeps_its_key() {
 }
 
 /// The whole rule, in one place: every command is listed, and one that
-/// cannot do its job here is dim and cannot be chosen. A row that silently
+/// cannot do its job here is dim and cannot be chosen -- except one that
+/// needs the other front end, which is not here to be dim.
+///
+/// Broken deliberately by taking the `shown` filter out of the palette: the
+/// count is one over and `switch-worktree` is listed. A row that silently
 /// fails is worse than no row at all -- but a list that hides what it cannot
 /// do cannot be learned from, and a reader who never sees `show-change` does
 /// not find out Obelus has it.
@@ -1516,11 +1520,18 @@ fn the_palette_lists_everything_and_dims_what_cannot_run() {
             .map(|(_, enabled)| *enabled)
     };
 
-    // Every command Obelus has, whatever it can do here.
+    // Every command Obelus has, whatever it can do here -- but the one a
+    // terminal can never do, which needs a window. Named rather than asked
+    // of `shown`, for the reason the dim ones below are.
     assert_eq!(
         rows.len(),
-        obelus_command::ALL.len(),
+        obelus_command::ALL.len() - 1,
         "the palette is not the whole command table: {rows:?}"
+    );
+    assert_eq!(
+        listed("switch-worktree"),
+        None,
+        "a command only a window can run is listed in a terminal"
     );
 
     // Named here rather than taken from `requires`, which is the rule under
