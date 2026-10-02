@@ -1993,38 +1993,34 @@ impl App {
     /// a question nothing on screen is asking. A permission's call goes in
     /// the transcript the moment it arrives all the same, waiting, so the
     /// page says there is more to answer before the card does.
-    fn put_to_the_reader(&mut self, whose: Whose, question: acp::Incoming) {
+    fn put_to_the_reader(&mut self, whose: Whose, question: acp::Question) {
         if let Some(talk) = self.talk_mut(whose)
             && talk.is_waiting_on_the_reader()
         {
-            if let acp::Incoming::Permission { call, .. } = &question {
+            if let acp::Question::Permission { call, .. } = &question {
                 talk.chat.tool(call, "pending");
             }
             talk.queued.push_back(question);
             return;
         }
         match question {
-            acp::Incoming::Permission {
+            acp::Question::Permission {
                 call,
                 reason,
                 options,
                 answer,
-                ..
             } => self.ask_permission(whose, &call, reason.as_deref(), &options, answer),
-            acp::Incoming::Ask {
+            acp::Question::Ask {
                 message,
                 fields,
                 answer,
-                ..
             } => self.ask_reader(whose, &message, fields, answer),
-            acp::Incoming::Open {
+            acp::Question::Open {
                 message,
                 url,
                 id,
                 answer,
-                ..
             } => self.send_the_reader(whose, &message, &url, &id, answer),
-            _ => {}
         }
         // A form with nothing in it is answered as it is asked, and then
         // nothing else would put up what was waiting behind it.
@@ -2061,7 +2057,7 @@ impl App {
         // waiting, and nothing else will say it stopped: the agent took the
         // question back, not necessarily the call.
         for question in gone {
-            if let acp::Incoming::Permission { call, .. } = question {
+            if let acp::Question::Permission { call, .. } = question {
                 talk.chat.tool(&call, "cancelled");
             }
         }
@@ -2594,9 +2590,7 @@ impl App {
             acp::Incoming::Update { session, .. }
             | acp::Incoming::Ended { session, .. }
             | acp::Incoming::Remembered { session }
-            | acp::Incoming::Permission { session, .. }
-            | acp::Incoming::Ask { session, .. }
-            | acp::Incoming::Open { session, .. }
+            | acp::Incoming::Asked { session, .. }
             | acp::Incoming::Withdrawn { session } => Some(session),
             acp::Incoming::Started { .. }
             | acp::Incoming::Lost { .. }
@@ -3105,9 +3099,7 @@ impl App {
                     );
                 });
             }
-            question @ (acp::Incoming::Permission { .. }
-            | acp::Incoming::Ask { .. }
-            | acp::Incoming::Open { .. }) => self.put_to_the_reader(whose, question),
+            acp::Incoming::Asked { question, .. } => self.put_to_the_reader(whose, question),
             acp::Incoming::Withdrawn { .. } => self.take_back(whose),
             acp::Incoming::Finished { id } => self.went_through(&id),
             // A command the agent asked for. Run without asking the
@@ -3542,12 +3534,11 @@ impl App {
 }
 
 /// Whether the agent has taken back a question still waiting to go up.
-fn taken_back(question: &acp::Incoming) -> bool {
+fn taken_back(question: &acp::Question) -> bool {
     match question {
-        acp::Incoming::Permission { answer, .. } => answer.is_canceled(),
-        acp::Incoming::Ask { answer, .. } => answer.is_canceled(),
-        acp::Incoming::Open { answer, .. } => answer.is_canceled(),
-        _ => false,
+        acp::Question::Permission { answer, .. } => answer.is_canceled(),
+        acp::Question::Ask { answer, .. } => answer.is_canceled(),
+        acp::Question::Open { answer, .. } => answer.is_canceled(),
     }
 }
 

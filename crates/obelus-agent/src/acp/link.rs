@@ -40,10 +40,11 @@
 //! a task of its own (`answer_when`), which is what the crate says to do.
 //! The question still goes to the main loop from inside the handler, so
 //! what the agent said arrives in the order it said it; only the answer
-//! goes back later, and it carries the request's own number. Two questions
-//! can be up at once now, in one conversation, and the main loop puts them
-//! one at a time. And the agent taking a question back is a message that
-//! can be read, which is what takes its card down.
+//! goes back later, and it carries the request's own number. So one
+//! conversation can have two questions waiting at once now, and the main
+//! loop puts them to the reader one at a time. And the agent taking a
+//! question back is a message that can be read, which is what takes its
+//! card down.
 //!
 //! One thing the crate does not promise: that a notification sent after a
 //! request leaves after it. A cancellation typed in the same instant as a
@@ -454,44 +455,13 @@ pub enum Incoming {
         /// What the agent said about it.
         why: String,
     },
-    /// The agent is asking to be allowed something.
-    Permission {
+    /// The agent is asking the reader something, and waits for the
+    /// answer.
+    Asked {
         /// Which conversation it is asking in.
         session: SessionId,
-        /// The call it is asking about, which is the same call the
-        /// transcript already has a row for -- or is about to.
-        /// Boxed, like the one on [`Update::Tool`] and for the same
-        /// reason: this enum travels inside an event, where every other
-        /// variant is a key or a path.
-        call: Box<Call>,
-        /// And in its own words: which command, which file -- what the
-        /// reader is actually being asked about.
-        reason: Option<String>,
-        /// What Obelus may answer.
-        options: Vec<Choice>,
-        /// Which option, or nothing for "not answered".
-        answer: Answer<Option<String>>,
-    },
-    /// It wants the reader to go and do something on the web: sign in
-    /// somewhere, authorise something.
-    ///
-    /// Answered by going, not by finishing: the agent watches for the far
-    /// end itself and says when it is done. See [`Incoming::Finished`].
-    Open {
-        /// Which conversation it is asking in.
-        session: SessionId,
-        /// What it says this is for, in its own words.
-        message: String,
-        /// Where to send them. Checked before it gets here: `http` or
-        /// `https`, and a host.
-        url: String,
-        /// The agent's name for this question, which is how it later says
-        /// the question is answered.
-        id: String,
-        /// `true` once the reader has been sent there, `false` if they will
-        /// not go. Dropped without an answer means the question went away,
-        /// which the agent hears as a cancellation.
-        answer: Answer<bool>,
+        /// What it is asking.
+        question: Question,
     },
     /// It took back something it had asked the reader, before they
     /// answered.
@@ -519,17 +489,6 @@ pub enum Incoming {
     Finished {
         /// Which question, by the name it was asked under.
         id: String,
-    },
-    /// The agent is asking the reader for something.
-    Ask {
-        /// Which conversation it is asking in.
-        session: SessionId,
-        /// What it says it needs, in its own words.
-        message: String,
-        /// What it wants, in the order Obelus will put them.
-        fields: Vec<Field>,
-        /// Every field's answer, or nothing for "not answered".
-        answer: Answer<Option<Vec<(String, Reply)>>>,
     },
     /// The agent wants a file's text.
     Read {
@@ -599,6 +558,58 @@ pub enum Incoming {
     },
     /// The conversation is over: the agent exited, or the protocol did.
     Gone(Option<String>),
+}
+
+/// What the agent can ask the reader: one card's worth.
+///
+/// Apart from [`Incoming`] because it is kept: a question asked while another
+/// is up waits behind it, and what waits is only ever one of these.
+#[derive(Debug)]
+pub enum Question {
+    /// To be allowed something.
+    Permission {
+        /// The call it is asking about, which is the same call the
+        /// transcript already has a row for -- or is about to.
+        /// Boxed, like the one on [`Update::Tool`] and for the same
+        /// reason: this enum travels inside an event, where every other
+        /// variant is a key or a path.
+        call: Box<Call>,
+        /// And in its own words: which command, which file -- what the
+        /// reader is actually being asked about.
+        reason: Option<String>,
+        /// What Obelus may answer.
+        options: Vec<Choice>,
+        /// Which option, or nothing for "not answered".
+        answer: Answer<Option<String>>,
+    },
+    /// That the reader go and do something on the web: sign in
+    /// somewhere, authorise something.
+    ///
+    /// Answered by going, not by finishing: the agent watches for the far
+    /// end itself and says when it is done. See [`Incoming::Finished`].
+    Open {
+        /// What it says this is for, in its own words.
+        message: String,
+        /// Where to send them. Checked before it gets here: `http` or
+        /// `https`, and a host.
+        url: String,
+        /// The agent's name for this question, which is how it later says
+        /// the question is answered.
+        id: String,
+        /// `true` once the reader has been sent there, `false` if they will
+        /// not go. Dropped without an answer means the question went away,
+        /// which the agent hears as a cancellation.
+        answer: Answer<bool>,
+    },
+    /// For something: a form, filled in a field at a time.
+    Ask {
+        /// What it says it needs, in its own words.
+        message: String,
+        /// What it wants, in the order Obelus will put them.
+        fields: Vec<Field>,
+        /// Every field's answer, or nothing for "not answered".
+        answer: Answer<Option<Vec<(String, Reply)>>>,
+    },
 }
 
 /// How a conversation from a previous sitting is taken up again.
@@ -1268,8 +1279,7 @@ async fn talk(
                 // what an agent needs to hear to stop waiting.
                 let session = request.session_id.clone();
                 let (answer, answered) = oneshot::channel();
-                let question = Incoming::Permission {
-                    session: request.session_id.clone(),
+                let question = Question::Permission {
                     call: Box::new(call_of(
                         &request.tool_call.tool_call_id,
                         &request.tool_call.fields,
@@ -1285,6 +1295,10 @@ async fn talk(
                         })
                         .collect(),
                     answer,
+                };
+                let question = Incoming::Asked {
+                    session: request.session_id.clone(),
+                    question,
                 };
                 if asking.send(Event::Acp(question)).is_err() {
                     return responder.respond(RequestPermissionResponse::new(
@@ -1380,12 +1394,15 @@ async fn talk(
                         );
                     };
                     let (answer, answered) = oneshot::channel();
-                    let question = Incoming::Open {
-                        session: session.clone(),
+                    let question = Question::Open {
                         message: request.message.clone(),
                         url,
                         id: mode.elicitation_id.0.to_string(),
                         answer,
+                    };
+                    let question = Incoming::Asked {
+                        session: session.clone(),
+                        question,
                     };
                     if elicited.send(Event::Acp(question)).is_err() {
                         return responder
@@ -1439,11 +1456,14 @@ async fn talk(
                     }
                 };
                 let (answer, answered) = oneshot::channel();
-                let question = Incoming::Ask {
-                    session: session.clone(),
+                let question = Question::Ask {
                     message: request.message.clone(),
                     fields,
                     answer,
+                };
+                let question = Incoming::Asked {
+                    session: session.clone(),
+                    question,
                 };
                 if elicited.send(Event::Acp(question)).is_err() {
                     return responder

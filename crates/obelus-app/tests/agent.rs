@@ -4543,27 +4543,29 @@ fn a_note_can_be_offered_in_a_conversation_about_nothing() {
     // The same question `todo_add` puts, arriving the same way.
     let (answer, answered) = futures::channel::oneshot::channel();
     app.handle(Event::Agent(obelus_agent::Event::Acp(
-        obelus_agent::acp::Incoming::Ask {
+        obelus_agent::acp::Incoming::Asked {
             // The fake agent's first, which is this conversation's.
             session: obelus_agent::acp::SessionId::new("s-1"),
-            message: "worth writing down?".to_string(),
-            fields: vec![obelus_agent::acp::Field {
-                name: "notes".to_string(),
-                title: "keep which of these".to_string(),
-                about: None,
-                takes: obelus_agent::acp::Takes::Some {
-                    values: vec![obelus_agent::acp::Value {
-                        id: "0".to_string(),
-                        name: "the cache is wrong".to_string(),
-                        about: None,
-                    }],
-                    least: Some(0),
-                    most: None,
-                    chosen: Vec::new(),
-                },
-                required: false,
-            }],
-            answer,
+            question: obelus_agent::acp::Question::Ask {
+                message: "worth writing down?".to_string(),
+                fields: vec![obelus_agent::acp::Field {
+                    name: "notes".to_string(),
+                    title: "keep which of these".to_string(),
+                    about: None,
+                    takes: obelus_agent::acp::Takes::Some {
+                        values: vec![obelus_agent::acp::Value {
+                            id: "0".to_string(),
+                            name: "the cache is wrong".to_string(),
+                            about: None,
+                        }],
+                        least: Some(0),
+                        most: None,
+                        chosen: Vec::new(),
+                    },
+                    required: false,
+                }],
+                answer,
+            },
         },
     )));
     support::lay_out(&mut app, WIDTH, HEIGHT);

@@ -213,10 +213,10 @@ pub struct Conversation {
     ///
     /// One card, so one question at a time, and the next goes up when the
     /// one before it is answered. Not the second taking the first one's
-    /// place: an agent is no longer stopped while it waits -- the other
-    /// conversations it is having go on -- so two in one conversation is
-    /// two tool calls at once, and neither was the reader's to lose.
-    pub queued: std::collections::VecDeque<acp::Incoming>,
+    /// place: the connection is no longer held while a question waits, so
+    /// an agent can ask again before the first is answered -- two tool
+    /// calls side by side, say -- and neither was the reader's to lose.
+    pub queued: std::collections::VecDeque<acp::Question>,
     /// Which of the reader's standing choices Obelus has already asked
     /// this conversation for, by the agent's id for the setting.
     ///
