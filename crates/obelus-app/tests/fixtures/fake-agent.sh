@@ -325,6 +325,15 @@ while IFS= read -r line; do
         *'"id":932'*)
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
+        *'"method":"session/prompt"'*'"text":"/count'*)
+            # One number, asked in the message, with nothing but a title
+            # and its bounds in the field.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","id":933,"method":"elicitation/create","params":{"mode":"form","sessionId":"'"$session"'","message":"how many times","requestedSchema":{"type":"object","properties":{"times":{"type":"integer","title":"Times","minimum":1,"maximum":9}},"required":["times"]}}}\n'
+            ;;
+        *'"id":933'*)
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
         *'"method":"session/prompt"'*'"text":"/wordy'*)
             # The same form with one answer whose line about itself is
             # longer than a card is wide. What an agent writes there is a

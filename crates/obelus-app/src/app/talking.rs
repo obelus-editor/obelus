@@ -2423,12 +2423,13 @@ impl App {
         // Under the message only where the field says something of its own:
         // an agent asking several things at once writes "answer these" there
         // and each question in its field's description, which the message
-        // alone left on nothing but the transcript. Asking one thing, it
-        // writes the question in the message and the title is a label for
-        // it, which under the question would be a word on its own.
+        // alone left on nothing but the transcript -- and a number says what
+        // it will take. Asking one thing, an agent writes the question in the
+        // message and the title is a label for it, which under the question
+        // would be a word on its own.
         let about = match (message.is_empty(), choice.as_ref().or(words.as_ref())) {
             (true, Some(field)) => question(field),
-            (false, Some(field)) if field.about.is_some() => {
+            (false, Some(field)) if question(field) != field.title => {
                 format!("{message}\n\n{}", question(field))
             }
             (_, _) => message,
