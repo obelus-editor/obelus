@@ -9,11 +9,10 @@
 //! file list walked the whole of `$HOME`, and the notes and the
 //! conversations were filed under a directory nobody works in.
 //!
-//! So Obelus asks, on a screen of its own before the welcome screen, and
-//! this is what it offers: the projects
-//! this reader has had open, newest first. The same shape the
-//! conversations have and for the same reason -- what a reader did
-//! outlives the window.
+//! So Obelus asks, on a page of its own before the welcome screen, and
+//! this is what it offers: the projects this reader has had open, newest
+//! first. The same shape the conversations have and for the same reason
+//! -- what a reader did outlives the window.
 //!
 //! **A project is remembered however it was named.** By an argument, by
 //! the directory Obelus was started in, or by being chosen on that
@@ -101,8 +100,8 @@ pub(super) struct Project {
 /// gives three: a file that will not read is not a file with nothing in
 /// it, and "nothing in it" is what [`remember`] would write back over it.
 /// A reader whose list is briefly unreadable gets an empty list of
-/// projects and can type a path; one whose list is *replaced* by an empty one
-/// has lost every project they had.
+/// projects and can type a path; one whose list is *replaced* by an empty
+/// one has lost every project they had.
 #[derive(Debug)]
 pub(super) enum Reading {
     /// There is none yet, which is where every machine starts. Also where
@@ -709,6 +708,7 @@ impl super::App {
             // gone is dropped instead: it is not there to be offered any
             // more, and a row that vanishes under the reader is the
             // answer.
+            //
             // And off the file, for the reason the screen forgets one
             // when it opens: a path typed into the box is not on the list,
             // and taking it off that is nothing written.

@@ -111,7 +111,7 @@ pub fn with_home_as_tilde(path: &std::path::Path) -> String {
     }
 }
 
-/// What the welcome screen offers while Obelus is asking which project.
+/// What the page that asks which project offers, while Obelus is asking.
 ///
 /// Here rather than with the application for the reason everything else in
 /// this file is: it exists so that a screen can be drawn, and what the
@@ -620,9 +620,9 @@ pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
         })
     };
 
-    // Being asked which project, which is not a layer -- it is the
-    // welcome screen, and the welcome screen is the page. Before the
-    // layers for that reason rather than for an order among them.
+    // Being asked which project, which is not a layer -- it is a page of
+    // its own, and the page is what this row is under. Before the layers
+    // for that reason rather than for an order among them.
     if let Some(choosing) = app.choosing() {
         let question = match choosing.naming {
             true => "Open",

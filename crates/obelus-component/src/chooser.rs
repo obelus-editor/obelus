@@ -370,9 +370,8 @@ impl Chooser {
     /// For one whose directory has gone since it was written down. The
     /// row is not dimmed, it is taken away: a dim row says "not here",
     /// and what is true of this one is that there is nothing to offer.
-    /// Nothing is written back -- the list on disk is tidied the next
-    /// time something is remembered, and a reader who reaches a dead row
-    /// twice in one session is a reader who pressed it twice.
+    /// The list on disk forgets it too, which is the application's to
+    /// write: this crate draws and walks, and does not know the file.
     pub fn forget(&mut self, path: &Path) {
         self.known.retain(|known| known.path != path);
         self.at = self.at.min(self.known.len());

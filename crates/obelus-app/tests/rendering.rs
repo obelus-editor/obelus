@@ -2661,8 +2661,11 @@ fn many_projects(how_many: usize) -> Vec<obelus_component::chooser::Known> {
 /// Deliberate break: taking the `chooser.settle` out of the frame, and the
 /// window stays on the first six while the reader walks off the bottom of
 /// it (the second assertion); having `laid` place the opening row after
-/// every one of the projects rather than after the ones on the page, and it
-/// goes off the page (the third); and drawing no bar (the fourth).
+/// every one of the projects rather than after the ones on the page, with
+/// the `min` that holds it on the page taken out as well, and it goes off
+/// the page (the third) -- with the `min` left in, that break is held at
+/// the very row it would have had, and stays green; and drawing no bar
+/// (the fourth).
 #[test]
 fn a_long_list_of_projects_scrolls_and_the_opening_row_stays() {
     let mut app = App::new(Vec::new());

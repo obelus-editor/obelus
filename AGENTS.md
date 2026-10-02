@@ -330,9 +330,9 @@ key. This repository answers in two milliseconds.
 
 And `AProject` is the one that is known without any walk at all: a start
 from a desktop menu names no project and begins in the home directory, so
-until the welcome screen is answered there is none -- which `open-changed-file`
-and `show-project-history` used to discover by walking a repository that was
-not there.
+until the page that asks which project is answered there is none -- which
+`open-changed-file` and `show-project-history` used to discover by walking a
+repository that was not there.
 
 **A command does something; a preference is a setting.** A switch that
 should outlive the session is a setting and nothing else -- the only key to
@@ -672,8 +672,9 @@ crates/
                       anything owns the status row (status); what went wrong on
                       the way up is said under the keys and never in front of
                       them (welcome); asking which project is a page of its
-                      own, and the welcome screen comes after (projects); a window draws the marks itself, and the
-                      view does not know the difference (image); a view says
+                      own, and the welcome screen comes after (projects); a
+                      window draws the marks itself, and the view does not
+                      know the difference (image); a view says
                       what a region *is* and the front end says what that looks
                       like, nothing may be said there that the cells do not
                       already say in their own way, and what is said carries

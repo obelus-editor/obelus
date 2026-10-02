@@ -646,20 +646,20 @@ impl<'a> WentWrongBlock<'a> {
         }
     }
 
-    /// What went wrong on the way up, under a heading of its own.
+    /// How many there are.
+    pub(crate) fn len(&self) -> usize {
+        self.rows.len()
+    }
+
+    /// What went wrong on the way up, under a heading of its own, from
+    /// `top` and across exactly `area`'s columns: where it goes across the
+    /// screen is the caller's, which knows what it is under.
     ///
     /// The heading is in the theme's warning colour and the rows are not:
     /// a block of coloured prose is a block a reader cannot read, and what
     /// the colour is for is saying which block this is. Where each row is
     /// about a line of a file, that file and line are the row's tail --
     /// worked out first, so a long sentence cannot push it off the screen.
-    /// How many there are.
-    pub(crate) fn len(&self) -> usize {
-        self.rows.len()
-    }
-
-    /// Draws it from `top`, across exactly `area`'s columns: where it goes
-    /// across the screen is the caller's, which knows what it is under.
     pub(crate) fn draw(&self, cells: &mut CellBuffer, area: Rect, top: u16) {
         let (left, width) = (area.x, area.width);
         write(

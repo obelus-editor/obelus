@@ -1166,10 +1166,10 @@ impl App {
         self.head = obelus_git::head_of_the_tree(&self.working_directory);
         // The one door every way of settling on a project goes through --
         // an argument, the directory Obelus was started in, a row on the
-        // welcome screen -- which is why the remembering is here and at
-        // none of the three. `remember` declines anything that is not a
-        // worktree, so a process that began in the home directory writes
-        // nothing.
+        // page that asks which -- which is why the remembering is here
+        // and at none of the three. `remember` declines anything that is
+        // not a worktree, so a process that began in the home directory
+        // writes nothing.
         projects::remember(&self.working_directory, jiff::Timestamp::now().as_second());
     }
 
@@ -1181,7 +1181,7 @@ impl App {
 
     /// Whether there is a project to do anything in.
     ///
-    /// Not while the welcome screen is still asking for one, and not once
+    /// Not while Obelus is still asking which one, and not once
     /// the one it was has gone. Both are known without doing any work,
     /// which is what a requirement has to be.
     #[must_use]
@@ -2460,6 +2460,15 @@ impl App {
         if let (Some(rows), Some((_, names))) = (building, self.names.as_mut()) {
             names.settle_window(rows);
         }
+        // The window over the projects, while Obelus is asking which: the
+        // rule every window follows, on the page's own count of the rows it
+        // has.
+        if self.chooser.is_some() {
+            let rows = self.chooser_rows();
+            if let Some(chooser) = self.chooser.as_mut() {
+                chooser.settle(rows);
+            }
+        }
         // What went wrong on the way up, which the welcome screen draws a
         // window's worth of. Asked from what is true once a frame, like
         // every other window: a count set only where a key is pressed is a
@@ -2469,14 +2478,6 @@ impl App {
         // anything has been said about and cloning a row for each -- all
         // of it thrown away for a number that is zero on almost every
         // start.
-        // And the window over the projects, while Obelus is asking which:
-        // the same rule, on the page's own count of the rows it has.
-        if self.chooser.is_some() {
-            let rows = self.chooser_rows();
-            if let Some(chooser) = self.chooser.as_mut() {
-                chooser.settle(rows);
-            }
-        }
         if self.reading_nothing() {
             let wrong = self.how_much_went_wrong();
             self.went_wrong_window.set_count(wrong);
