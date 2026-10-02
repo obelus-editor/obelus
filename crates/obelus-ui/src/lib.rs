@@ -69,7 +69,7 @@ use obelus_editing::keymap::Keymap;
 use obelus_syntax::highlight::Highlights;
 use obelus_text::coordinates::{LineNumber, Span};
 
-use crate::image::Images;
+use crate::{bars::Whose, image::Images};
 
 /// A path with the reader's own directory written as `~`.
 ///
@@ -421,6 +421,7 @@ pub trait Screen {
     fn tree_has_gone(&self) -> bool;
 }
 
+pub mod bars;
 pub mod card;
 pub mod chat;
 pub mod complete;
@@ -741,7 +742,15 @@ pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
 /// cell a wide glyph covers — correctly, since the terminal advances two
 /// columns for it, but the record left behind cannot be told apart from a cell
 /// nothing painted.
-pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
+///
+/// Hands back the bars it left on the page, which is what a press on one is
+/// asked against: see [`bars`].
+pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) -> Vec<bars::Drawn> {
+    bars::collect(cells, |cells| draw_the_frame(cells, area, app))
+}
+
+/// What [`draw`] draws.
+fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     let regions = regions(area);
     let layers = app.layers();
     // Under whatever the region holds and over the status bar, once, for
@@ -766,11 +775,11 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     let room = editor_room(area, app);
     let canvas = editor_canvas(area);
     if let Some(view) = todo::TodoUi::new(app) {
-        view.render(canvas, cells);
+        bars::of(Whose::Notes, || view.render(canvas, cells));
     } else {
         match chat::ChatView::new(app) {
-            Some(view) => view.render(regions.editor, cells),
-            None => match app.rendering() {
+            Some(view) => bars::of(Whose::Conversation, || view.render(regions.editor, cells)),
+            None => bars::of(Whose::Document, || match app.rendering() {
                 Some(rows) => {
                     let top = app
                         .current_buffer()
@@ -787,7 +796,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
                 None => editor::EditorView::new(app)
                     .the_reader_has(room.height)
                     .render(canvas, cells),
-            },
+            }),
         }
     }
     // Nothing open and nothing to open: the one moment a reader needs
@@ -800,7 +809,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     // welcome screen names is about a project.
     if app.reading_nothing() && !layers.filling() {
         match projects::ProjectsView::new(app) {
-            Some(view) => view.render(regions.editor, cells),
+            Some(view) => bars::of(Whose::Projects, || view.render(regions.editor, cells)),
             None => welcome::WelcomeView::new(app).render(regions.editor, cells),
         }
         // What could finish the path being named, which is not a layer
@@ -808,7 +817,9 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
         // follows what is in the box rather than being something the
         // reader opened, and it goes where any compact list goes.
         if let Some(list) = app.naming_list() {
-            list_over(cells, app, list, regions.editor, regions.edge, None);
+            bars::of(Whose::Naming, || {
+                list_over(cells, app, list, regions.editor, regions.edge, None);
+            });
         }
     }
 
@@ -860,7 +871,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
                     // has, and the rule went missing the moment there was
                     // one: the page was handed the row the rule is drawn on
                     // and painted over it.
-                    view.render(regions.editor, cells);
+                    bars::of(Whose::Settings, || view.render(regions.editor, cells));
                     if let Some(settings) = app.settings() {
                         let style = Style::new()
                             .bg(app.theme().background)
@@ -884,7 +895,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
             Layer::Counts => {
                 if let Some(view) = counts::CountsView::new(app) {
                     shapes::behind(area, shapes::Joined::Screen, app.theme().background, cells);
-                    view.render(area, cells);
+                    bars::of(Whose::Counts, || view.render(area, cells));
                 }
             }
             Layer::Picker => {
@@ -893,14 +904,16 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
                     // what works out the room the list takes: two answers
                     // to that would be a backdrop that does not line up
                     // with what is over it.
-                    list_over(
-                        cells,
-                        app,
-                        list,
-                        room_for_a_picker(app, regions.editor),
-                        regions.edge,
-                        Some(regions.status),
-                    );
+                    bars::of(Whose::Picker, || {
+                        list_over(
+                            cells,
+                            app,
+                            list,
+                            room_for_a_picker(app, regions.editor),
+                            regions.edge,
+                            Some(regions.status),
+                        );
+                    });
                 }
             }
             Layer::Names => {
@@ -916,7 +929,9 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
                         app.theme().background,
                         cells,
                     );
-                    names::NamesView::new(names, app.theme()).render(region, cells);
+                    bars::of(Whose::Names, || {
+                        names::NamesView::new(names, app.theme()).render(region, cells);
+                    });
                     let style = Style::new()
                         .bg(app.theme().background)
                         .fg(app.theme().status_foreground);
@@ -950,16 +965,18 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     if !layers.has(Layer::Picker)
         && let Some(list) = app.slash()
     {
-        list_over(
-            cells,
-            app,
-            list,
-            room_for_the_commands(app, regions.editor),
-            regions.edge,
-            // Not a layer, so it never took the row: the conversation's own
-            // row is still the conversation's while this is showing.
-            None,
-        );
+        bars::of(Whose::Commands, || {
+            list_over(
+                cells,
+                app,
+                list,
+                room_for_the_commands(app, regions.editor),
+                regions.edge,
+                // Not a layer, so it never took the row: the conversation's
+                // own row is still the conversation's while this is showing.
+                None,
+            );
+        });
     }
 
     // The three panels that belong to a place in the file. Each is empty
@@ -969,7 +986,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     // What could be typed next belongs beside the cursor, and the cursor is
     // on top of everything in the region.
     if let Some(panel) = complete::layout(app, regions.editor) {
-        complete::draw(cells, panel, app);
+        bars::of(Whose::Completion, || complete::draw(cells, panel, app));
     }
     // And what the call takes, which is the same kind of thing one question
     // further back. Never both: the panel's own accessor refuses to give a
@@ -981,7 +998,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     // furthest back of the three -- so it is drawn last and its own
     // accessor gives nothing while either of the others is up.
     if let Some(panel) = hover::layout(app, regions.editor) {
-        hover::draw(cells, panel, app);
+        bars::of(Whose::Hover, || hover::draw(cells, panel, app));
     }
     // And what is *wrong* with the line the reader is on, which is the
     // one of the four nobody asked for -- so it is drawn last and gives
@@ -1169,15 +1186,17 @@ fn list_over(
     if let Some(over) = picker::preview_over(Some(list), picker::room_above(list, room))
         && let Some(shown) = app.preview()
     {
-        editor::EditorView::for_buffer(
-            shown.buffer,
-            shown.highlights,
-            app.theme(),
-            shown.marked,
-            shown.changes,
-            shown.troubles,
-        )
-        .render(over, cells);
+        bars::of(Whose::Preview, || {
+            editor::EditorView::for_buffer(
+                shown.buffer,
+                shown.highlights,
+                app.theme(),
+                shown.marked,
+                shown.changes,
+                shown.troubles,
+            )
+            .render(over, cells);
+        });
         // And what is wrong with the line it is showing, floated over it
         // the way the editor floats one over the caret's. Here and not
         // under a full list's rows: the box is an answer to a row that
@@ -1209,7 +1228,7 @@ fn list_over(
         );
 
         match app.preview() {
-            Some(shown) => {
+            Some(shown) => bars::of(Whose::Preview, || {
                 editor::EditorView::for_buffer(
                     shown.buffer,
                     shown.highlights,
@@ -1219,7 +1238,7 @@ fn list_over(
                     shown.troubles,
                 )
                 .render(preview, cells);
-            }
+            }),
             // Room set aside and nothing to put in it: a file that has gone,
             // or a row that names no file.
             None => fill(cells, preview, Style::new().bg(app.theme().background)),
@@ -1350,7 +1369,22 @@ pub(crate) fn scrollbar(
         thumb: u16::try_from(thumb).unwrap_or(area.height),
     };
     shapes::barred(bar);
+    bars::said(bar, total);
     Some(bar)
+}
+
+/// Which row is at the top when a bar's mark starts on this row of it.
+///
+/// [`bar_mark`] the other way round, for a pointer that has hold of the
+/// mark: from the same `bar_reach`, so a mark dragged to a row is drawn on
+/// that row, and to the foot of the track is the last screenful.
+#[must_use]
+pub fn bar_top(height: u16, mark: u16, total: usize) -> usize {
+    let (_, travel, furthest) = bar_reach(usize::from(height), total.max(1));
+    if travel == 0 {
+        return 0;
+    }
+    usize::from(mark).min(travel) * furthest / travel
 }
 
 /// How big a bar's thumb is, how far it can travel, and how far the top it

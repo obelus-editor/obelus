@@ -663,6 +663,11 @@ impl Settings {
         &self.window
     }
 
+    /// Puts this row at the top, for a bar the reader has hold of.
+    pub fn drag_to(&mut self, top: usize) {
+        self.window.drag_to(top);
+    }
+
     /// The settings on show: all of them, narrowed by what has been typed,
     /// each with the heading it opens where it opens one.
     ///

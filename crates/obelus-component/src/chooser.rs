@@ -222,8 +222,18 @@ impl Chooser {
     pub fn settle(&mut self, height: u16) {
         let rows = self.rows().len();
         self.window.set_count(rows);
-        self.window.set_focus(self.at.min(rows.saturating_sub(1)));
+        // Only where it moved, because this is once a frame: see
+        // `Window::set_focus`.
+        let at = self.at.min(rows.saturating_sub(1));
+        if at != self.window.focus() {
+            self.window.set_focus(at);
+        }
         self.window.settle(height);
+    }
+
+    /// Puts this row at the top, for a bar the reader has hold of.
+    pub fn drag_to(&mut self, top: usize) {
+        self.window.drag_to(top);
     }
 
     /// Whether the reader is on the row that opens a project not in the

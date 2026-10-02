@@ -287,7 +287,10 @@ fn placed(
     for (at, row) in rows
         .iter()
         .enumerate()
-        .skip(window.top().min(window.focus()))
+        // The window's own top and not one pulled up to the focus: a bar
+        // the reader has dragged leaves the focus off the page, and the
+        // page has to go where the bar says it is.
+        .skip(window.top())
     {
         if y >= region.bottom() {
             break;
@@ -757,7 +760,7 @@ impl SettingsView<'_> {
         // screen, which on this page is not the entry the window is on:
         // see `entry_rows`. The bar above is the other question and takes
         // the entry, because what it says is a proportion.
-        let first = window.top().min(window.focus());
+        let first = window.top().min(rows.len());
         if let Ok(top) = i64::try_from(rows_above(rows, first, self.settings.on_keys())) {
             crate::shapes::scrolled(
                 Rect {
@@ -1206,7 +1209,9 @@ impl SettingsView<'_> {
             .map(|agent| self.settings.card_rows(agent, width) + 1)
             .collect();
         let focus = self.settings.focus().min(listed.len().saturating_sub(1));
-        let first = self.settings.top().min(focus);
+        // The window's top, which a dragged bar has put away from the
+        // focus -- see `placed` -- and never past the last card.
+        let first = self.settings.top().min(listed.len().saturating_sub(1));
 
         // The same bar the page of settings has, measured in rows rather
         // than in cards: a card is as tall as its description needs, so
@@ -1216,7 +1221,12 @@ impl SettingsView<'_> {
         let total = rows(&heights);
         let top = rows(&heights[..first]);
         let bar = (total > usize::from(area.height))
-            .then(|| crate::scrollbar(cells, area, top, total, self.theme))
+            .then(|| {
+                let bar = crate::scrollbar(cells, area, top, total, self.theme);
+                // And what the window is moved by is the card.
+                crate::bars::in_items(bar, &heights);
+                bar
+            })
             .flatten();
         // And where the page of cards has got to, in the same rows the
         // bar is measured in.

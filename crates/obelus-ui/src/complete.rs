@@ -185,14 +185,16 @@ pub fn draw(cells: &mut CellBuffer, panel: Panel, app: &impl Screen) {
     if let Some(area) = documentation {
         // The reading draws its own bar in the column it keeps for one,
         // which is the column the rows were laid out without.
-        crate::reading::draw(
-            cells,
-            area,
-            completion.documentation_rows(),
-            completion.scrolled(),
-            theme,
-            theme.background,
-        );
+        crate::bars::of(crate::bars::Whose::Documentation, || {
+            crate::reading::draw(
+                cells,
+                area,
+                completion.documentation_rows(),
+                completion.scrolled(),
+                theme,
+                theme.background,
+            );
+        });
     }
 }
 

@@ -338,6 +338,16 @@ impl Counts {
         &self.window
     }
 
+    /// Puts this row at the top, for a bar the reader has hold of, in a
+    /// list `height` rows tall.
+    ///
+    /// Settled here because nothing settles this window once a frame: the
+    /// keys settle it as they move it, and so does this.
+    pub fn drag_to(&mut self, top: usize, height: u16) {
+        self.window.drag_to(top);
+        self.window.settle(height);
+    }
+
     /// Rebuilds the rows for the page as it stands.
     ///
     /// Into a local list and then into place, which is not ceremony: the

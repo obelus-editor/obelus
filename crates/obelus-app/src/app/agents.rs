@@ -500,7 +500,9 @@ impl App {
         let focus = settings.focus().min(rows.len().saturating_sub(1));
         PictureLayout {
             room: (editor.width, editor.height),
-            first: settings.top().min(focus),
+            // Where the page drew its first card, which is the window's
+            // top: see `SettingsView::agents`.
+            first: settings.top().min(rows.len().saturating_sub(1)),
             focus,
             cards: rows
                 .iter()

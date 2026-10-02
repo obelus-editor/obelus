@@ -4152,3 +4152,109 @@ fn the_keys_page_leaves_out_what_only_a_window_can_do() {
         "a terminal's keys page offers a key for what only a window can do"
     );
 }
+
+/// Which rows of the last column are a bar's.
+fn bar_rows(app: &mut App, width: u16, height: u16) -> Vec<u16> {
+    let dump = support::render(app, width, height);
+    support::text_block(&dump)
+        .lines()
+        .filter_map(|row| row.split_once('|').map(|(_, cells)| cells.to_string()))
+        .enumerate()
+        .filter(|(_, row)| row.chars().nth(usize::from(width - 1)) == Some('\u{2588}'))
+        .map(|(y, _)| u16::try_from(y).expect("a row"))
+        .collect()
+}
+
+/// Drags the bar in the last column from its first row to its last.
+fn drag_the_bar_down(app: &mut App, width: u16, height: u16) {
+    let rows = bar_rows(app, width, height);
+    let (first, last) = (rows[0], *rows.last().expect("a bar"));
+    for (kind, y) in [
+        (obelus_app::event::Pointer::Pressed, first),
+        (obelus_app::event::Pointer::Dragged, last),
+        (obelus_app::event::Pointer::Released, last),
+    ] {
+        app.handle(Event::Pointer {
+            kind,
+            x: width - 1,
+            y,
+        });
+        support::lay_out(app, width, height);
+    }
+}
+
+/// The page of settings goes where its bar is dragged, and the focus stays
+/// on the setting it was on.
+///
+/// Deliberate break: draw from `window.top().min(window.focus())` in
+/// `placed` again. The bar's mark goes down and every row stays where it
+/// was.
+#[test]
+fn the_settings_go_where_their_bar_is_dragged() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("dragged");
+    let mut app = open(&settings_file(&scratch));
+    let before = support::render(&mut app, 66, 12);
+
+    drag_the_bar_down(&mut app, 66, 12);
+    let after = support::render(&mut app, 66, 12);
+    let rows = |dump: &str| -> Vec<String> {
+        // The page's own rows, without the bar's column.
+        support::text_block(dump)
+            .lines()
+            .skip(1)
+            .take(9)
+            .map(|row| row.chars().take(60).collect())
+            .collect()
+    };
+    assert_ne!(rows(&before), rows(&after), "the rows stayed put:\n{after}");
+    assert_eq!(app.settings().expect("the settings").focus(), 0);
+}
+
+/// And the agents page, whose cards are as tall as they need: dragged to
+/// the foot it shows the last of them, and the focus stays on the first.
+///
+/// Deliberate break: draw from `top().min(focus)` in `SettingsView::agents`
+/// again. The bar's mark goes down and the first card stays at the top.
+#[test]
+fn the_agents_go_where_their_bar_is_dragged() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("cards-dragged");
+    let mut app = open(&settings_file(&scratch));
+    support::press(&mut app, KeyCode::BackTab);
+    let agents: Vec<obelus_agent::Agent> = (0..12)
+        .map(|index| obelus_agent::Agent {
+            id: format!("agent-{index}"),
+            name: format!("Agent {index}"),
+            version: "1.0.0".to_string(),
+            description: "One of several".to_string(),
+            authors: vec!["Somebody".to_string()],
+            license: "MIT".to_string(),
+            website: None,
+            icon: None,
+            distribution: obelus_agent::Distribution::Node {
+                package: format!("agent-{index}@1.0.0"),
+                arguments: Vec::new(),
+            },
+        })
+        .collect();
+    app.handle(Event::Agent(obelus_agent::Event::Registry {
+        agents,
+        failure: None,
+    }));
+    support::lay_out(&mut app, 76, 16);
+
+    drag_the_bar_down(&mut app, 76, 16);
+    let dump = support::render(&mut app, 76, 16);
+    let text = support::text_block(&dump);
+    assert!(!text.contains("Agent 0 "), "the first card stayed:\n{dump}");
+    assert!(
+        text.contains("Agent 11"),
+        "the foot is not the last card:\n{dump}"
+    );
+    assert_eq!(app.settings().expect("the settings").focus(), 0);
+}
