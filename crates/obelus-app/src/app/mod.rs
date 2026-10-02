@@ -2466,6 +2466,14 @@ impl App {
         // anything has been said about and cloning a row for each -- all
         // of it thrown away for a number that is zero on almost every
         // start.
+        // And the window over the projects, while Obelus is asking which:
+        // the same rule, on the page's own count of the rows it has.
+        if self.chooser.is_some() {
+            let rows = self.chooser_rows();
+            if let Some(chooser) = self.chooser.as_mut() {
+                chooser.settle(rows);
+            }
+        }
         if self.reading_nothing() {
             let wrong = self.how_much_went_wrong();
             self.went_wrong_window.set_count(wrong);

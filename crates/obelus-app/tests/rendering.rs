@@ -2595,6 +2595,106 @@ fn a_start_with_no_project_asks_which_one() {
     );
 }
 
+/// Projects enough to fill the page, each named for where it is in the list.
+fn many_projects(how_many: usize) -> Vec<obelus_component::chooser::Known> {
+    (0..how_many)
+        .map(|at| {
+            let path = format!("/tmp/obelus/work/p{at:02}");
+            obelus_component::chooser::Known {
+                path: std::path::PathBuf::from(&path),
+                shown: path,
+                last: None,
+            }
+        })
+        .collect()
+}
+
+/// A list longer than the page scrolls under the reader, and the row that
+/// opens another stays where it is under it.
+///
+/// At 64x14 the page has six rows for projects: twelve for the editor
+/// region, two for the foot, two for the title and its rule, and the
+/// opening row and the blank over it.
+///
+/// Deliberate break: taking the `chooser.settle` out of the frame, and the
+/// window stays on the first six while the reader walks off the bottom of
+/// it (the second assertion); having `laid` place the opening row after
+/// every one of the projects rather than after the ones on the page, and it
+/// goes off the page (the third); and drawing no bar (the fourth).
+#[test]
+fn a_long_list_of_projects_scrolls_and_the_opening_row_stays() {
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.ask_about_these_projects_for_test(many_projects(20));
+    support::lay_out(&mut app, 64, 14);
+    for _ in 0..8 {
+        press(&mut app, KeyCode::Down);
+    }
+    let dump = support::render(&mut app, 64, 14);
+    let text = support::text_block(&dump);
+
+    assert_eq!(
+        obelus_ui::Screen::choosing(&app).expect("asking").at,
+        8,
+        "the arrows did not walk"
+    );
+    assert!(
+        text.contains("p08"),
+        "the reader walked off the page:\n{dump}"
+    );
+    assert!(
+        text.contains("Open another"),
+        "the opening row went with the projects:\n{dump}"
+    );
+    assert!(
+        // The bar's block, which nothing else on this page is drawn with.
+        text.contains('\u{2588}'),
+        "a list longer than the page does not say so:\n{dump}"
+    );
+}
+
+/// A page key moves by the rows the page has, which is six here.
+///
+/// Deliberate break: `chooser_rows` answering the ten it used to be
+/// hard-wired to, and the reader lands four rows past the page.
+#[test]
+fn a_page_of_projects_is_what_the_page_holds() {
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.ask_about_these_projects_for_test(many_projects(20));
+    support::lay_out(&mut app, 64, 14);
+    press(&mut app, KeyCode::PageDown);
+    assert_eq!(
+        obelus_ui::Screen::choosing(&app).expect("asking").at,
+        6,
+        "a page is not the page"
+    );
+}
+
+/// The foot says what enter does on the row the reader is on, and how to
+/// leave a page that escape cannot leave.
+///
+/// Deliberate break: `hints` saying `Open` whichever row it is (the second
+/// assertion), and leaving the quit key off (the first).
+#[test]
+fn the_foot_says_what_enter_does_here_and_how_to_leave() {
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.ask_about_these_projects_for_test(many_projects(2));
+    let dump = support::render(&mut app, 64, 14);
+    assert!(
+        support::text_block(&dump).contains("Leave"),
+        "the way off the page is not named:\n{dump}"
+    );
+
+    press(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, 64, 14);
+    assert!(
+        support::text_block(&dump).contains("Type a path"),
+        "the foot does not say what enter does on the opening row:\n{dump}"
+    );
+}
+
 /// What went wrong on the way up is said where Obelus asks which project,
 /// too: that is the first screen a reader started from a launcher sees,
 /// and the list of projects not reading is exactly what they should hear.

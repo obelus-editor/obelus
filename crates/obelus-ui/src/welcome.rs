@@ -357,7 +357,16 @@ impl WelcomeView<'_> {
         if amiss == Amiss::Shown && self.went_wrong.height() > 0 {
             let keys = (u16::try_from(hints.len().div_ceil(COLUMNS)).unwrap_or(1) * ROW_HEIGHT)
                 .saturating_sub(1);
-            self.went_wrong.draw(cells, area, y + keys + 1);
+            // Centred, and wider than the plate: those are two short words
+            // under a cap, and these are a sentence with a file and a line
+            // after it.
+            let width = AMISS_WIDTH.min(area.width);
+            let under = Rect {
+                x: area.x + (area.width - width) / 2,
+                width,
+                ..area
+            };
+            self.went_wrong.draw(cells, under, y + keys + 1);
         }
     }
 
@@ -617,9 +626,15 @@ impl<'a> WentWrongBlock<'a> {
     /// How many rows the block of what went wrong takes, with its heading
     /// and the blank above it.
     pub(crate) fn height(&self) -> u16 {
-        let rows = self.rows.len().min(AMISS_ROWS as usize);
-        let rows = u16::try_from(rows).unwrap_or(0);
-        match (rows, self.walked) {
+        Self::height_for(self.rows.len(), self.walked)
+    }
+
+    /// The same, for a block of `rows` that has not been read yet: what a
+    /// page lays itself out by, where the keys that page it have to know
+    /// the answer as well as the drawing does.
+    pub(crate) fn height_for(rows: usize, walked: bool) -> u16 {
+        let rows = u16::try_from(rows.min(usize::from(AMISS_ROWS))).unwrap_or(0);
+        match (rows, walked) {
             (0, _) => 0,
             // The heading and a blank above the rows, and a blank and the
             // foot below them: a reader has to be told the key is there
@@ -638,9 +653,15 @@ impl<'a> WentWrongBlock<'a> {
     /// the colour is for is saying which block this is. Where each row is
     /// about a line of a file, that file and line are the row's tail --
     /// worked out first, so a long sentence cannot push it off the screen.
+    /// How many there are.
+    pub(crate) fn len(&self) -> usize {
+        self.rows.len()
+    }
+
+    /// Draws it from `top`, across exactly `area`'s columns: where it goes
+    /// across the screen is the caller's, which knows what it is under.
     pub(crate) fn draw(&self, cells: &mut CellBuffer, area: Rect, top: u16) {
-        let width = AMISS_WIDTH.min(area.width);
-        let left = area.x + (area.width.saturating_sub(width)) / 2;
+        let (left, width) = (area.x, area.width);
         write(
             cells,
             left + 1,

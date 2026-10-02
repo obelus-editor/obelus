@@ -671,7 +671,7 @@ crates/
                       named is not said after it (chat); a list open over
                       anything owns the status row (status); what went wrong on
                       the way up is said under the keys and never in front of
-                      them (welcome); asking which project is a screen of its
+                      them (welcome); asking which project is a page of its
                       own, and the welcome screen comes after (projects); a window draws the marks itself, and the
                       view does not know the difference (image); a view says
                       what a region *is* and the front end says what that looks

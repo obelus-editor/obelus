@@ -327,11 +327,13 @@ impl super::App {
             self.note_what_the_box_names();
             return true;
         }
+        // What a page key moves by, which is what the page has room for.
+        let rows = self.chooser_rows();
         let Some(chooser) = &mut self.chooser else {
             return false;
         };
         let before = chooser.named();
-        let taken = match chooser.handle(*key, CHOOSER_ROWS) {
+        let taken = match chooser.handle(*key, rows) {
             obelus_component::chooser::Outcome::Taken => true,
             obelus_component::chooser::Outcome::Ignored => false,
             obelus_component::chooser::Outcome::Wants(directory) => {
@@ -680,6 +682,23 @@ impl super::App {
 }
 
 impl super::App {
+    /// How many projects the page has room for.
+    ///
+    /// Asked of the same function the page lays itself out with, so the
+    /// keys that page the list and the window over it are about the rows
+    /// the reader can see -- see `App::chat_key` for what two answers to
+    /// that cost.
+    pub(super) fn chooser_rows(&self) -> u16 {
+        self.what_is_being_chosen().map_or(1, |choosing| {
+            obelus_ui::projects::list_height(
+                self.drawn_in(),
+                &choosing,
+                &self.keymap,
+                self.how_much_went_wrong(),
+            )
+        })
+    }
+
     /// What is being asked, where Obelus is asking which project.
     ///
     /// The words are settled here and the room for them is not: a path is
@@ -706,6 +725,7 @@ impl super::App {
                 })
                 .collect(),
             at: chooser.at(),
+            top: chooser.top(),
             typed: chooser.typing().said(),
             caret: chooser.typing().caret().get(),
             naming: chooser.is_naming(),
@@ -714,14 +734,6 @@ impl super::App {
         })
     }
 }
-
-/// How many rows the chooser's list is paged by.
-///
-/// The screen's own height is what a page should be, and the view is the
-/// one that knows it. Until the key and the drawing take their room from
-/// the same place, this is the number the keys use -- see `App::chat_key`
-/// for why that is a thing worth being careful about.
-const CHOOSER_ROWS: u16 = 10;
 
 #[cfg(test)]
 mod tests {

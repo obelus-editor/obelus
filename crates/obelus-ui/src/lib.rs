@@ -132,6 +132,10 @@ pub struct Choosing {
     /// Which row the reader is on: the projects from nought, and the
     /// opening row after the last of them.
     pub at: usize,
+    /// Which of the projects is on the first row, where the window over
+    /// them is -- the one every list keeps, which moves only when the
+    /// reader's row leaves it.
+    pub top: usize,
     /// What is in the box at the foot.
     pub typed: String,
     /// How many characters of it are in front of the caret.
