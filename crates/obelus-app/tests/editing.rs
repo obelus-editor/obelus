@@ -745,6 +745,34 @@ mod saving {
         (scratch, app, path)
     }
 
+    /// A save that fails leaves nothing in the reader's tree.
+    ///
+    /// The name it was written through is this process's own, so nobody
+    /// will write over it later -- and it is in the reader's repository,
+    /// beside their file.
+    ///
+    /// Broken deliberately by taking the `remove_file` out of
+    /// `Buffer::save`: the bytes it wrote stay beside the file.
+    #[test]
+    fn a_save_that_fails_leaves_nothing_beside_the_file() {
+        let scratch = support::Scratch::new("save-failed");
+        let path = scratch.path().join("sample.rs");
+        std::fs::write(&path, "fn main() {}\n").expect("writing the file");
+        let mut buffer = Buffer::open(&path).expect("opening it");
+        // A directory where the file was, so the rename has nowhere to go.
+        std::fs::remove_file(&path).expect("taking it away");
+        std::fs::create_dir_all(path.join("in the way")).expect("a directory where it goes");
+
+        assert!(buffer.save().is_err(), "it was saved");
+        let beside: Vec<_> = std::fs::read_dir(scratch.path())
+            .expect("the directory")
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name())
+            .filter(|name| name != "sample.rs")
+            .collect();
+        assert!(beside.is_empty(), "it left {beside:?} behind");
+    }
+
     /// Another Obelus halfway through saving the same file is left alone.
     ///
     /// Two of them on one project is the ordinary case, and both can save

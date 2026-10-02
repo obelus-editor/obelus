@@ -1629,8 +1629,15 @@ pub fn write_project(path: &Path, key: &str, value: Option<&Value>) -> std::io::
     // two writing at once into one shared name truncate each other's
     // half-written file, and the first rename takes the other's away.
     let beside = path.with_extension(format!("toml.writing.{}", std::process::id()));
-    std::fs::write(&beside, document.to_string())?;
-    std::fs::rename(&beside, path)
+    let written =
+        std::fs::write(&beside, document.to_string()).and_then(|()| std::fs::rename(&beside, path));
+    if written.is_err() {
+        // And not left behind: the name is this process's own, so nobody
+        // else will ever write over it, and a failed rename would leave one
+        // more of them for every Obelus that failed.
+        let _ = std::fs::remove_file(&beside);
+    }
+    written
 }
 
 /// Where a project's settings *would* go, for a project that has none yet.
@@ -1683,8 +1690,15 @@ pub fn save_to(path: &Path, config: &Config) -> std::io::Result<()> {
     // two writing at once into one shared name truncate each other's
     // half-written file, and the first rename takes the other's away.
     let beside = path.with_extension(format!("toml.writing.{}", std::process::id()));
-    std::fs::write(&beside, over(&existing, config))?;
-    std::fs::rename(&beside, path)
+    let written = std::fs::write(&beside, over(&existing, config))
+        .and_then(|()| std::fs::rename(&beside, path));
+    if written.is_err() {
+        // And not left behind: the name is this process's own, so nobody
+        // else will ever write over it, and a failed rename would leave one
+        // more of them for every Obelus that failed.
+        let _ = std::fs::remove_file(&beside);
+    }
+    written
 }
 
 #[cfg(test)]
@@ -2271,6 +2285,33 @@ mod tests {
             Some("another Obelus is halfway through this"),
             "the other Obelus's half-written project settings were taken"
         );
+    }
+
+    /// A save that fails leaves nothing beside the settings.
+    ///
+    /// Broken deliberately by taking the `remove_file` out of `save_to`:
+    /// the half that was written stays, under a name nobody will write
+    /// again.
+    #[test]
+    fn a_save_that_fails_leaves_nothing_beside_the_settings() {
+        let root =
+            std::env::temp_dir().join(format!("obelus-config-failed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let target = root.join("config.toml");
+        std::fs::create_dir_all(target.join("in the way")).expect("a directory where it goes");
+
+        assert!(
+            super::save_to(&target, &super::Config::default()).is_err(),
+            "it was saved"
+        );
+        let beside: Vec<_> = std::fs::read_dir(&root)
+            .expect("the directory")
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name())
+            .filter(|name| name != "config.toml")
+            .collect();
+        let _ = std::fs::remove_dir_all(&root);
+        assert!(beside.is_empty(), "it left {beside:?} behind");
     }
 }
 

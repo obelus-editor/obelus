@@ -359,6 +359,10 @@ pub fn change(
         std::fs::write(&beside, to_toml(&remembered)).and_then(|()| std::fs::rename(&beside, &path))
     {
         tracing::warn!(%error, path = %path.display(), "the conversations were not remembered");
+        // And not left behind: the name is this process's own, so nobody
+        // else will ever write over it, and a failed rename would leave one
+        // more of them for every Obelus that failed.
+        let _ = std::fs::remove_file(&beside);
         return None;
     }
     Some(remembered)

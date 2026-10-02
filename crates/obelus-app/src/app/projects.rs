@@ -300,6 +300,10 @@ fn write(path: &Path, projects: &[Project]) -> bool {
         std::fs::write(&beside, to_toml(projects)).and_then(|()| std::fs::rename(&beside, path))
     {
         tracing::warn!(%error, path = %path.display(), "the list of projects was not written");
+        // And not left behind: the name is this process's own, so nobody
+        // else will ever write over it, and a failed rename would leave one
+        // more of them for every Obelus that failed.
+        let _ = std::fs::remove_file(&beside);
         return false;
     }
     true
@@ -1223,6 +1227,31 @@ mod tests {
             Some("another Obelus is halfway through this"),
             "the other Obelus's half-written list was taken"
         );
+    }
+
+    /// A write that fails leaves nothing beside the list.
+    ///
+    /// The name it was written through is this process's own, so nobody
+    /// will write over it later; left, there would be one per Obelus that
+    /// ever failed. Asked of `write` and not of `remember`, because what
+    /// refuses a rename here -- a directory where the list goes -- is what
+    /// refuses the read before it.
+    ///
+    /// Broken deliberately by taking the `remove_file` out of `write`.
+    #[test]
+    fn a_write_that_fails_leaves_nothing_beside_the_list() {
+        let (root, _turn) = scratch("failed");
+        let target = root.join("projects.toml");
+        std::fs::create_dir_all(target.join("in the way")).expect("a directory where it goes");
+
+        assert!(!write(&target, &[]), "it was written");
+        let beside: Vec<_> = std::fs::read_dir(&root)
+            .expect("the directory")
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name())
+            .filter(|name| name != "projects.toml")
+            .collect();
+        assert!(beside.is_empty(), "it left {beside:?} behind");
     }
 
     /// The list does not grow without end.
