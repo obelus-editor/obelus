@@ -2142,11 +2142,12 @@ impl Chat {
 
     /// Handles a key.
     ///
-    /// `thinking` decides what escape means: while the agent is working it
-    /// stops the agent, and otherwise there is nothing here to stop and the
-    /// key is not this component's. Escape everywhere in Obelus means "stop
-    /// what is happening", and once a conversation is a document rather than
-    /// something over one, leaving it is not stopping anything.
+    /// `thinking` decides what escape means first: while the agent is
+    /// working it stops the agent. Otherwise it lets go of what is held,
+    /// then empties the box, and with none of those the key is not this
+    /// component's. Escape everywhere in Obelus means "give up on the
+    /// nearest thing", and once a conversation is a document rather than
+    /// something over one, leaving it is not giving up on anything.
     pub fn handle_key(
         &mut self,
         key: &KeyEvent,
@@ -4320,7 +4321,7 @@ mod tests {
     }
 
     /// What escape means depends on whether anything is happening, and
-    /// nothing else about the keys does.
+    /// after that on what is in the box.
     ///
     /// Stopping first and emptying the box second, one press each: a
     /// press that stopped the agent and emptied the box as well would

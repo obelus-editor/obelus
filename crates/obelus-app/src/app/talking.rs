@@ -1487,8 +1487,9 @@ impl App {
     /// of. Joined by a blank line, which is what the box's own `alt+enter`
     /// makes, so what arrives is what they would have typed.
     ///
-    /// A turn the reader stopped has nothing left here to say: escape took
-    /// it back into the box first (`interrupt_agent`).
+    /// A turn the reader stopped has only what they said after pressing
+    /// escape and before the stop landed: what was waiting when they
+    /// pressed it went back into the box (`interrupt_agent`).
     fn say_what_was_waiting(&mut self, whose: Whose) {
         let Some(talk) = self.talk_mut(whose) else {
             return;
