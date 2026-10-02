@@ -144,7 +144,7 @@ pub fn directory(root: &Path) -> Option<PathBuf> {
     Some(
         obelus_logging::state_directory()?
             .join("chats")
-            .join(obelus_git::project(root)),
+            .join(obelus_git::project(root)?),
     )
 }
 

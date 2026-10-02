@@ -11,7 +11,10 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod support;
+
 use obelus_app::event::Event;
+use obelus_command::Command;
 use obelus_watch::Watcher;
 
 /// How long a change has to arrive in before the test gives up.
@@ -769,4 +772,140 @@ fn settings_a_project_loses_and_gains_again_are_heard() {
         !app.config().blame_margin,
         "settings put back after the directory was deleted were never heard"
     );
+}
+
+/// A project on a tree, and a file from it open with a setting of the
+/// project's own in force: what a tree that goes takes with it.
+fn a_tree_with_settings(name: &str) -> (Scratch, PathBuf, obelus_app::app::App) {
+    let scratch = Scratch::new(name);
+    let source = scratch.directory.join("src");
+    fs::create_dir_all(&source).expect("making the source directory");
+    let file = source.join("one.rs");
+    fs::write(&file, "fn one() {}\n").expect("writing the file");
+    let settings = scratch.directory.join(".obelus").join("config.toml");
+    fs::create_dir_all(settings.parent().expect("a directory")).expect("making it");
+    fs::write(&settings, "blame_margin = false\n").expect("writing the settings");
+    let mut app = obelus_app::app::App::new(vec![
+        obelus_buffer::Buffer::open(&file).expect("opening the file"),
+    ]);
+    app.working_directory_for_test(scratch.directory.clone());
+    assert!(
+        !app.config().blame_margin,
+        "the project's setting was not in force to begin with"
+    );
+    (scratch, settings, app)
+}
+
+/// A tree that goes from under Obelus takes the project with it, and
+/// leaves the window and what is open in it.
+///
+/// What arrives first is whatever the kernel and the debouncing leave
+/// first, which is usually something inside the tree -- so the change fed
+/// here is the project's settings file going, and that has to be enough:
+/// taken on its own it is the reader taking the project's settings away,
+/// and the project's theme and margin vanished at the moment the tree did.
+///
+/// By hand rather than through a watcher, because this is about what the
+/// application makes of the change and holds on every platform; that the
+/// change arrives at all is the test after this one.
+///
+/// Broken deliberately four ways, one at a time: the question about the
+/// tree taken out of the handler (nothing goes dim), `has_a_project` back to
+/// asking only about the welcome screen (`open-file` is offered on a tree
+/// that is not there), `switch-document` back to wanting a project (the one
+/// list the reader needs goes dim), and the project's settings file read as
+/// one when there is no project (the setting goes) -- each fails its own
+/// line below. And once with the badge's words left out of the status row.
+#[test]
+fn a_tree_that_goes_takes_the_project_and_leaves_the_window() {
+    let (scratch, settings, mut app) = a_tree_with_settings("tree-gone");
+    assert!(
+        app.offers(Command::FileOpen),
+        "a project that is there offers its files"
+    );
+
+    fs::remove_dir_all(&scratch.directory).expect("the tree going");
+    app.handle(Event::Watched(obelus_watch::Changed { path: settings }));
+
+    assert!(
+        app.tree_has_gone(),
+        "a tree that has gone was taken for one that is there"
+    );
+    for command in [
+        Command::FileOpen,
+        Command::FileNew,
+        Command::SearchProject,
+        Command::TodoOpen,
+        Command::ConversationNew,
+        Command::ConfigProject,
+        Command::HistoryProject,
+        Command::FileChanged,
+    ] {
+        assert!(
+            !app.offers(command),
+            "{} is offered on a tree that has gone",
+            command.name()
+        );
+    }
+    assert!(
+        app.offers(Command::DocumentList),
+        "what is open cannot be reached once the tree has gone"
+    );
+    assert!(
+        !app.config().blame_margin,
+        "the project's settings went the moment the tree did"
+    );
+    let dump = support::render(&mut app, 80, 6);
+    assert!(
+        dump.contains("Tree gone"),
+        "the status row does not say so:\n{dump}"
+    );
+    assert!(!scratch.directory.exists(), "the tree was made again");
+}
+
+/// And the change arrives: a tree deleted from under a watching Obelus is
+/// heard, without anything asking.
+///
+/// Linux's, because what this rests on is inotify telling a watch that the
+/// directory it was on has gone. Elsewhere the window may go on believing
+/// in the tree until something else says otherwise; what holds there as
+/// well is that nothing of the project is written into a tree that has
+/// gone, which is asked of the disk at the moment of writing.
+///
+/// Broken deliberately by taking the question about the tree out of the
+/// handler: everything arrives and nothing is made of it.
+#[test]
+#[cfg(target_os = "linux")]
+fn a_tree_deleted_from_under_obelus_is_heard() {
+    let (scratch, _, mut app) = a_tree_with_settings("tree-deleted");
+    let (sender, events) = std::sync::mpsc::channel();
+    app.start(sender);
+    settled_into(&events, &mut app);
+
+    fs::remove_dir_all(&scratch.directory).expect("the tree going");
+    let deadline = Instant::now() + DEADLINE;
+    let mut heard = Vec::new();
+    while Instant::now() < deadline && !app.tree_has_gone() {
+        let Ok(event) = events.recv_timeout(Duration::from_millis(200)) else {
+            continue;
+        };
+        if let Event::Watched(obelus_watch::Changed { path }) = &event {
+            heard.push(path.display().to_string());
+        }
+        app.handle(event);
+    }
+    assert!(
+        app.tree_has_gone(),
+        "the tree went and Obelus did not hear it; what arrived: {heard:?}"
+    );
+}
+
+/// Hands the application whatever starting it stirred, until it is quiet.
+///
+/// The one test that wants it is Linux's, and so is this.
+#[cfg(target_os = "linux")]
+fn settled_into(events: &Receiver<Event>, app: &mut obelus_app::app::App) {
+    while let Ok(event) = events.recv_timeout(Duration::from_millis(200)) {
+        app.handle(event);
+    }
 }

@@ -15,7 +15,7 @@ fn listening(name: &str) -> (support::Scratch, String) {
     let scratch = support::Scratch::new(name);
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()),
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"wire the counts tree up\"\ndone = false\n",
     )
     .expect("the notes");
@@ -163,7 +163,7 @@ fn what_an_agent_writes_down_is_in_the_file() {
     let scratch = support::Scratch::new("tools-written");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()),
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"the one that was there\"\ndone = false\n",
     )
     .expect("the notes");
@@ -247,7 +247,7 @@ fn a_note_of_several_lines_is_one_entry() {
     let scratch = support::Scratch::new("tools-paragraph");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()),
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"\"\"\nthe title\nand a body\nof two lines\n\"\"\"\ndone = false\n",
     )
     .expect("the notes");
@@ -329,7 +329,7 @@ fn a_depth_nothing_could_hang_at_is_brought_up_before_it_is_written() {
 
     let scratch = support::Scratch::new("tools-too-deep");
     support::make_room_for_notes(scratch.path());
-    let file = obelus_git::todo::path(scratch.path());
+    let file = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
     std::fs::write(
         &file,
         "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"the one\"\ndone = false\n",
@@ -392,7 +392,7 @@ fn a_reworded_note_is_the_same_note() {
 
     let scratch = support::Scratch::new("tools-reworded");
     support::make_room_for_notes(scratch.path());
-    let file = obelus_git::todo::path(scratch.path());
+    let file = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
     std::fs::write(
         &file,
         "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"what it was written for\"\n\
@@ -478,7 +478,7 @@ fn a_note_cannot_be_reworded_into_nothing() {
     let scratch = support::Scratch::new("tools-reworded-empty");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()),
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"ABCDEFGH\"\nsaid = \"the one that was there\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");

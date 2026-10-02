@@ -468,6 +468,12 @@ but will not read stops Obelus writing at all until it reads again.
 and `index` are watched, and `App::forget_what_git_said` drops what git said
 when either moves.
 
+*A tree that goes takes the project and leaves the window.* `git worktree
+remove` or an `rm` in the reader's shell is somebody else changing the
+world: what is open stays open, everything keyed by the project goes dim,
+and nothing of the project is written into a tree that is not there
+(`App::the_tree_has_gone`, `obelus_git::project`).
+
 *A repository and its worktrees are one project.* What Obelus keeps about a
 project -- the notes, which conversation is about which note -- is keyed by
 `obelus_git::project` (git's `common_dir`, canonicalised) and nothing else;

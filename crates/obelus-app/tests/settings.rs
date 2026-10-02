@@ -3922,7 +3922,7 @@ fn notes_that_will_not_read_are_an_error_on_the_notes_file() {
     let _taken = SETTINGS.lock().expect("the lock");
     let scratch = support::Scratch::new("notes-unreadable");
     support::make_room_for_notes(scratch.path());
-    let notes = obelus_git::todo::path(scratch.path());
+    let notes = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
     std::fs::write(&notes, "[[todo]]\nid = \"ABCDEFGH\"\nsaid \"a note\"\n").expect("the notes");
 
     let mut app = App::new(vec![

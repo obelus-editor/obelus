@@ -158,9 +158,12 @@ impl App {
             // known without doing any work -- and not whether the answer
             // turned out to hold anything, which is what the two history
             // and change conditions below go and find out. There is no
-            // project exactly while the welcome screen is still asking
-            // for one.
-            Requires::AProject => self.chooser.is_none(),
+            // project while the welcome screen is still asking for one,
+            // and none once the one it was has gone.
+            Requires::AProject => self.has_a_project(),
+            Requires::SomethingOpenOrAProject => {
+                self.has_a_project() || self.documents.iter().any(Option::is_some)
+            }
             Requires::AFileOpen => buffer.is_some(),
             Requires::AFileOnDisk => buffer.is_some_and(|buffer| buffer.content().is_file()),
             // A file, or a box a reader is typing into. The same places a
@@ -184,7 +187,12 @@ impl App {
             // Not `current_buffer`, which is the point of the distinction: a
             // conversation is something open and is not a file.
             Requires::ADocumentOpen => !self.reading_nothing(),
-            Requires::AFileInHistory => buffer.is_some() && self.has_history(),
+            // A project before the walk, for all three of these: git asked
+            // about a tree that has gone looks in the directory above it,
+            // and that may well be some other repository.
+            Requires::AFileInHistory => {
+                buffer.is_some() && self.has_a_project() && self.has_history()
+            }
             Requires::AKnownLanguage => buffer.and_then(Buffer::language).is_some(),
             // Either the file has a reading, or it is already showing one
             // -- which is the same question asked from the other side: the
@@ -264,7 +272,7 @@ impl App {
             // fold where the reader is standing.
             // A walk of one commit, which is what "is there a history
             // here" costs: the same trade `AChangedFile` makes.
-            Requires::AHistory => self.has_history(),
+            Requires::AHistory => self.has_a_project() && self.has_history(),
             Requires::SomethingToUndo => self.current_buffer().is_some_and(Buffer::can_undo),
             Requires::SomethingToRedo => self.current_buffer().is_some_and(Buffer::can_redo),
             // The file's own runs, and nothing a block holds. A block used
@@ -291,7 +299,7 @@ impl App {
             // Whether there is one, not what they all are: this is asked
             // for every row of the palette, and building a map of every
             // changed path to look at its length walks the project each time.
-            Requires::AChangedFile => self.anything_changed(),
+            Requires::AChangedFile => self.has_a_project() && self.anything_changed(),
             // The language's own fact, and a cheap one: what a file is
             // parsed as is already known.
             Requires::ALineComment => self

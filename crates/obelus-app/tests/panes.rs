@@ -421,7 +421,7 @@ fn the_notes_say_where_one_stops_and_the_next_begins() {
     let scratch = support::Scratch::new("panes-parted");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()),
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
         // The middle one says three lines and points at a place, so most
         // of the rows on this page are *not* a note's first: without one
         // like it, every row is a head row and "only a note's first" is

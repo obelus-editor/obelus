@@ -1602,7 +1602,15 @@ pub fn write_project(path: &Path, key: &str, value: Option<&Value>) -> std::io::
     let Some(directory) = path.parent() else {
         return std::fs::write(path, document.to_string());
     };
-    std::fs::create_dir_all(directory)?;
+    // The settings' own directory and nothing above it. What is above it is
+    // the project, and a project that has gone is not one to make again by
+    // writing a setting into it: making the whole path did, and a tree the
+    // reader had deleted came back with one directory and one file in it.
+    match std::fs::create_dir(directory) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(error) => return Err(error),
+    }
     // Beside it and renamed over it, for the reason the reader's own file is
     // written that way: another Obelus on this project may be reading it at
     // this moment, and a plain write truncates first.
@@ -1669,7 +1677,37 @@ mod tests {
     // build is not warned about a name nothing there uses.
     #[cfg(unix)]
     use super::save_to;
-    use super::{Config, Value, Whose, apply, from_toml, known, over, to_toml};
+    use super::{
+        Config, Value, Whose, apply, from_toml, known, over, project_path_for, to_toml,
+        write_project,
+    };
+
+    /// A setting written into a project that has gone does not make the
+    /// project again.
+    ///
+    /// The settings' own directory is made where it is missing, which is
+    /// how a project first gets any; everything above it is the project,
+    /// and is the reader's to make or delete.
+    ///
+    /// Broken deliberately by making the whole path again, which is what
+    /// this did: the tree comes back holding `.obelus/config.toml`.
+    #[test]
+    fn a_setting_written_into_a_project_that_has_gone_does_not_make_it_again() {
+        let root = std::env::temp_dir().join(format!("obelus-gone-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("the project");
+        let path = project_path_for(&root);
+        let theme = Value::Choice("light".to_string());
+        write_project(&path, "theme", Some(&theme)).expect("a project's first setting");
+        assert!(path.is_file(), "a project's first setting made no file");
+
+        std::fs::remove_dir_all(&root).expect("the project going");
+        assert!(
+            write_project(&path, "theme", Some(&theme)).is_err(),
+            "a setting was written into a project that has gone"
+        );
+        assert!(!root.exists(), "the project was made again");
+    }
 
     /// A path that is a link is written *through*, not over.
     ///

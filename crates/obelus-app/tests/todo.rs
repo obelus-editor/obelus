@@ -14,7 +14,11 @@ use support::press;
 fn tree(name: &str, notes: &str) -> support::Scratch {
     let scratch = support::Scratch::new(&format!("todo-{name}"));
     support::make_room_for_notes(scratch.path());
-    std::fs::write(obelus_git::todo::path(scratch.path()), notes).expect("the notes");
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        notes,
+    )
+    .expect("the notes");
     scratch
 }
 
@@ -127,8 +131,10 @@ fn there_is_no_mode_to_get_into() {
         app.notes().is_some(),
         "escape closed a document, which is not what escape is for"
     );
-    let written =
-        std::fs::read_to_string(obelus_git::todo::path(scratch.path())).expect("the notes");
+    let written = std::fs::read_to_string(
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+    )
+    .expect("the notes");
     assert!(written.contains("!!wire the counts"), "{written}");
 }
 
@@ -164,8 +170,10 @@ fn enter_starts_another_note_and_shift_enter_a_line() {
     assert_eq!(at("and the rest"), at("and more of it") + 1);
 
     press(&mut app, KeyCode::Esc);
-    let written =
-        std::fs::read_to_string(obelus_git::todo::path(scratch.path())).expect("the notes");
+    let written = std::fs::read_to_string(
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+    )
+    .expect("the notes");
     assert!(
         written.contains("a fresh one\nand more of it\nand the rest"),
         "the two lines are not one note: {written}"
@@ -461,8 +469,10 @@ fn cutting_with_nothing_held_takes_the_note() {
         obelus_clipboard::paste().as_deref(),
         Some("wire the counts tree up to the search")
     );
-    let written =
-        std::fs::read_to_string(obelus_git::todo::path(scratch.path())).expect("the notes");
+    let written = std::fs::read_to_string(
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+    )
+    .expect("the notes");
     assert!(
         !written.contains("wire the counts"),
         "the cut note was not written away: {written}"
@@ -535,8 +545,10 @@ fn alt_space_ticks_a_note() {
     let mut app = open(&scratch, 76, 18);
     app.handle(alt(KeyCode::Char(' ')));
 
-    let written =
-        std::fs::read_to_string(obelus_git::todo::path(scratch.path())).expect("the notes");
+    let written = std::fs::read_to_string(
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+    )
+    .expect("the notes");
     let table = written.parse::<toml::Table>().expect("it parses");
     let notes = table["todo"].as_array().expect("the notes");
     assert_eq!(notes[0]["done"].as_bool(), Some(true), "{written}");
@@ -551,8 +563,10 @@ fn alt_backspace_takes_a_note_away() {
     let mut app = open(&scratch, 76, 18);
     app.handle(alt(KeyCode::Backspace));
 
-    let written =
-        std::fs::read_to_string(obelus_git::todo::path(scratch.path())).expect("the notes");
+    let written = std::fs::read_to_string(
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+    )
+    .expect("the notes");
     assert!(!written.contains("wire the counts tree"), "{written}");
     assert!(
         written.contains("settings live in a directory"),
@@ -612,8 +626,10 @@ fn alt_and_an_arrow_moves_a_note() {
     app.handle(alt(KeyCode::Up));
     assert_eq!(heads(&app)[1], first);
 
-    let written =
-        std::fs::read_to_string(obelus_git::todo::path(scratch.path())).expect("the notes");
+    let written = std::fs::read_to_string(
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+    )
+    .expect("the notes");
     let table = written.parse::<toml::Table>().expect("it parses");
     assert_eq!(
         table["todo"].as_array().expect("the notes")[1]["said"].as_str(),
@@ -646,8 +662,10 @@ fn a_note_with_nothing_in_it_is_dropped() {
     press(&mut app, KeyCode::Enter);
     support::type_text(&mut app, "   ");
     press(&mut app, KeyCode::Esc);
-    let written =
-        std::fs::read_to_string(obelus_git::todo::path(scratch.path())).expect("the notes");
+    let written = std::fs::read_to_string(
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+    )
+    .expect("the notes");
     let table = written.parse::<toml::Table>().expect("it parses");
     assert_eq!(
         table["todo"].as_array().expect("the notes").len(),
@@ -799,8 +817,10 @@ fn a_note_made_while_reading_carries_the_line() {
     support::type_text(&mut app, "look at this again");
     press(&mut app, KeyCode::Esc);
 
-    let written =
-        std::fs::read_to_string(obelus_git::todo::path(scratch.path())).expect("the notes");
+    let written = std::fs::read_to_string(
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+    )
+    .expect("the notes");
     let table = written.parse::<toml::Table>().expect("it parses");
     let note = &table["todo"].as_array().expect("the notes")[0];
     assert_eq!(note["said"].as_str(), Some("look at this again"));
@@ -826,8 +846,10 @@ fn a_tree_with_no_notes_says_so() {
     press(&mut app, KeyCode::Enter);
     support::type_text(&mut app, "the first");
     press(&mut app, KeyCode::Esc);
-    let written =
-        std::fs::read_to_string(obelus_git::todo::path(scratch.path())).expect("the notes");
+    let written = std::fs::read_to_string(
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+    )
+    .expect("the notes");
     assert!(written.contains("the first"), "{written}");
 }
 
@@ -896,7 +918,7 @@ fn a_long_note_wraps_when_the_reader_wraps() {
     let scratch = support::Scratch::new("todo-wrap");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()),
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
         format!("[[todo]]\nsaid = \"{long}\"\ndone = false\n"),
     )
     .expect("the notes");
@@ -972,7 +994,7 @@ fn a_place_is_a_row_of_its_own() {
     let scratch = support::Scratch::new("todo-place");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()),
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
         format!(
             "[[todo]]\nsaid = \"{long}\"\ndone = false\nat = \"src/ui/picker.rs\"\nline = 412\n\
              \n[[todo]]\nsaid = \"{long}\"\ndone = false\n"
@@ -1085,7 +1107,7 @@ fn the_words_keys_work_in_a_note_too() {
 fn a_note_added_from_outside_survives_the_next_save() {
     let scratch = tree("outside", "[[todo]]\nsaid = \"the first\"\ndone = false\n");
     let mut app = open(&scratch, 76, 24);
-    let file = obelus_git::todo::path(scratch.path());
+    let file = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
 
     // Somebody else, with the list open. Their file keeps Obelus's note --
     // they read it before writing, as Obelus would -- and adds one.
@@ -1124,7 +1146,7 @@ fn a_note_added_from_outside_survives_the_next_save() {
 fn the_notes_do_not_open_on_a_file_that_will_not_read() {
     let half = "[[todo]]\nid = \"0123456B\"\nsaid = \"half a no";
     let scratch = tree("half-written", half);
-    let file = obelus_git::todo::path(scratch.path());
+    let file = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
     let app = open(&scratch, 76, 24);
 
     assert!(
@@ -1159,7 +1181,7 @@ fn the_notes_do_not_open_on_a_file_that_will_not_read() {
 fn what_was_done_while_the_file_would_not_read_lands_when_it_reads_again() {
     let whole = "[[todo]]\nid = \"0123456C\"\nsaid = \"the first\"\ndone = false\ndepth = 0\n";
     let scratch = tree("fixed-again", whole);
-    let file = obelus_git::todo::path(scratch.path());
+    let file = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
     let mut app = open(&scratch, 76, 24);
 
     // Broken under a page that is already open, the way an editor in
@@ -1213,7 +1235,7 @@ fn two_windows_on_one_tree_keep_both_their_notes() {
     );
     let mut one = open(&scratch, 76, 24);
     let mut two = open(&scratch, 76, 24);
-    let file = obelus_git::todo::path(scratch.path());
+    let file = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
 
     press(&mut one, KeyCode::Enter);
     support::type_text(&mut one, "from the first window");
@@ -1249,7 +1271,7 @@ fn a_note_written_in_one_window_arrives_in_the_other() {
     let scratch = tree("two-sync", THREE);
     let mut one = open(&scratch, 76, 24);
     let mut two = open(&scratch, 76, 24);
-    let file = obelus_git::todo::path(scratch.path());
+    let file = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
 
     support::type_text(&mut one, "!!");
     one.handle(Event::NotesSettled);
@@ -1285,7 +1307,7 @@ fn what_is_being_typed_beats_what_the_other_window_wrote() {
     let scratch = tree("two-typing", THREE);
     let mut one = open(&scratch, 76, 24);
     let mut two = open(&scratch, 76, 24);
-    let file = obelus_git::todo::path(scratch.path());
+    let file = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
 
     // The second window's reader is part way through the first note and has
     // not stopped long enough for it to be written down.
@@ -1323,7 +1345,7 @@ fn ticking_off_a_note_another_window_took_away_does_not_put_it_back() {
     );
     let mut one = open(&scratch, 76, 24);
     let mut two = open(&scratch, 76, 24);
-    let file = obelus_git::todo::path(scratch.path());
+    let file = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
 
     // The second window takes the second note away.
     press(&mut two, KeyCode::Down);
@@ -1369,7 +1391,7 @@ fn a_note_being_typed_in_stays_with_the_reader_who_is_typing() {
     );
     let mut one = open(&scratch, 76, 24);
     let mut two = open(&scratch, 76, 24);
-    let file = obelus_git::todo::path(scratch.path());
+    let file = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
 
     // The first window is typing in the second note.
     press(&mut one, KeyCode::Down);
@@ -1404,7 +1426,7 @@ fn a_note_being_typed_in_stays_with_the_reader_who_is_typing() {
 fn a_note_being_written_survives_someone_else_saving() {
     let scratch = tree("writing", "[[todo]]\nsaid = \"the first\"\ndone = false\n");
     let mut app = open(&scratch, 76, 24);
-    let file = obelus_git::todo::path(scratch.path());
+    let file = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
 
     // The caret opens at the very start of the first note, so this goes in
     // front of what is there. What matters is that it is still there after.
@@ -2171,7 +2193,7 @@ fn a_note_that_outlives_its_parent_is_written_at_a_depth_it_reads_back_at() {
 
     // Somebody else rewrites the file without it, and with nothing it could
     // hang under.
-    let file = obelus_git::todo::path(scratch.path());
+    let file = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
     std::fs::write(
         &file,
         "[[todo]]\nsaid = \"only this\"\ndone = false\ndepth = 0\n",
@@ -2256,7 +2278,7 @@ fn what_was_pasted_stays_on_the_page_when_the_file_is_read_again() {
     app.handle(Event::Paste("the words the reader pasted".to_string()));
 
     // Somebody else writes the file, and Obelus takes it again.
-    let path = obelus_git::todo::path(scratch.path());
+    let path = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
     let written = std::fs::read_to_string(&path).expect("the notes");
     std::fs::write(
         &path,
@@ -2290,7 +2312,7 @@ fn a_paste_does_not_write_the_notes_file_over_somebody_elses_change() {
         "[[todo]]\nsaid = \"first note\"\ndone = false\n",
     );
     let mut app = open(&scratch, 76, 18);
-    let path = obelus_git::todo::path(scratch.path());
+    let path = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
     press(&mut app, KeyCode::Enter);
 
     // Another writer, and Obelus has not heard about it yet.
@@ -2331,7 +2353,7 @@ fn a_paste_does_not_write_the_notes_file_over_somebody_elses_change() {
 fn starting_a_note_does_not_put_a_blank_one_in_the_file() {
     let scratch = tree("blank", "[[todo]]\nsaid = \"first note\"\ndone = false\n");
     let mut app = open(&scratch, 76, 18);
-    let path = obelus_git::todo::path(scratch.path());
+    let path = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
     press(&mut app, KeyCode::Enter);
 
     let written = std::fs::read_to_string(&path).expect("the notes");
@@ -2370,7 +2392,7 @@ fn what_is_written_down_is_what_the_reader_has_on_the_page() {
         "[[todo]]\nsaid = \"first note\"\ndone = false\n",
     );
     let mut app = open(&scratch, 76, 18);
-    let path = obelus_git::todo::path(scratch.path());
+    let path = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
 
     // A second note, typed into, and then a key that saves: tab, which
     // puts it one level in under the first.
@@ -2408,7 +2430,7 @@ fn a_note_that_says_nothing_is_not_written_down() {
         "[[todo]]\nsaid = \"first note\"\ndone = false\n",
     );
     let mut app = open(&scratch, 76, 18);
-    let path = obelus_git::todo::path(scratch.path());
+    let path = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
 
     // All of it out of the note, which leaves the row with nothing in it
     // and saves -- a cut is a change to the page.
@@ -2437,7 +2459,7 @@ fn a_note_that_says_nothing_is_not_written_down() {
 fn a_note_being_started_stays_where_it_is_when_the_file_is_read_again() {
     let scratch = tree("stays-put", THREE);
     let mut app = open(&scratch, 76, 18);
-    let path = obelus_git::todo::path(scratch.path());
+    let path = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
 
     // Started on the first of three, so it is the second row.
     press(&mut app, KeyCode::Enter);
@@ -2667,7 +2689,7 @@ fn down_lets_go_of_what_is_held_before_it_leaves_the_note() {
 fn typing_is_written_down_once_the_reader_stops() {
     let scratch = tree("settles", THREE);
     let mut app = open(&scratch, 76, 18);
-    let file = obelus_git::todo::path(scratch.path());
+    let file = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
 
     support::type_text(&mut app, "!!");
     let at_once = std::fs::read_to_string(&file).expect("the notes");
@@ -2697,7 +2719,7 @@ fn typing_is_written_down_once_the_reader_stops() {
 fn the_notes_do_not_wait_on_the_animation() {
     let scratch = tree("unticked", THREE);
     let mut app = open(&scratch, 76, 18);
-    let file = obelus_git::todo::path(scratch.path());
+    let file = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
 
     support::type_text(&mut app, "%%");
 
@@ -2755,7 +2777,7 @@ fn the_pause_comes_back_by_itself() {
 fn closing_the_notes_writes_what_was_typed() {
     let scratch = tree("closes", THREE);
     let mut app = open(&scratch, 76, 18);
-    let file = obelus_git::todo::path(scratch.path());
+    let file = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
 
     support::type_text(&mut app, "??");
     dispatch::dispatch(&mut app, Command::DocumentClose);
@@ -2776,7 +2798,7 @@ fn closing_the_notes_writes_what_was_typed() {
 fn leaving_obelus_writes_what_was_typed() {
     let scratch = tree("leaves", THREE);
     let mut app = open(&scratch, 76, 18);
-    let file = obelus_git::todo::path(scratch.path());
+    let file = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
 
     support::type_text(&mut app, "~~");
     app.request_quit();
@@ -2845,7 +2867,7 @@ fn a_note_an_agent_writes_behind_the_conversation_is_not_put_back() {
     let scratch = support::Scratch::new("todo-agent-behind");
     support::make_room_for_notes(scratch.path());
     std::fs::write(
-        obelus_git::todo::path(scratch.path()),
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456W\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");
