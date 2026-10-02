@@ -1711,13 +1711,16 @@ impl App {
 
     /// The keys that walk what went wrong, while it is what is showing.
     ///
-    /// Only where the welcome screen is: the block is drawn there and
+    /// Only where the welcome screen is: the block is walked there and
     /// nowhere else, and a key that moved a selection nobody can see would
-    /// be a key that does nothing the reader can tell.
+    /// be a key that does nothing the reader can tell. The page that asks
+    /// which project draws it too, but to be read -- its keys are the
+    /// projects' -- and a key the path box had no use for used to land
+    /// here and move a row the welcome screen then opened on.
     fn went_wrong_key(&mut self, key: &KeyEvent) -> bool {
         // The cheap questions first: this is asked of every key, and the
         // list is built by walking everything anything has been said about.
-        if !self.reading_nothing() || !key.modifiers.is_empty() {
+        if !self.reading_nothing() || self.chooser.is_some() || !key.modifiers.is_empty() {
             return false;
         }
         let rows = self.what_went_wrong();

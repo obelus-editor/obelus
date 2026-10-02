@@ -2595,6 +2595,48 @@ fn a_start_with_no_project_asks_which_one() {
     );
 }
 
+/// The keys on the page that asks which project do not walk what went
+/// wrong, which is read there and not walked.
+///
+/// A key the path box has no use for -- an arrow, with nothing offered
+/// under it -- used to fall through to the keys of the welcome screen's
+/// block, and move a selection nobody could see: the welcome screen then
+/// opened on a row the reader had never chosen.
+///
+/// Deliberate break: taking `self.chooser.is_some()` out of
+/// `went_wrong_key`'s first question, and the arrow moves it to the second.
+#[test]
+fn asking_which_project_does_not_walk_what_went_wrong() {
+    let scratch = support::Scratch::new("choosing-walk");
+    let file = scratch.join("config.toml");
+    std::fs::write(&file, "theme = \"dark\"\nshrift = 15\nwrapp = true\n")
+        .expect("writing a settings file");
+
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.config_file_for_test(file);
+    app.ask_about_these_projects_for_test(many_projects(2));
+    support::lay_out(&mut app, 76, 26);
+    assert_eq!(app.what_went_wrong().len(), 2);
+
+    // The path box, naming somewhere with nothing in it to offer.
+    press(&mut app, KeyCode::End);
+    press(&mut app, KeyCode::Enter);
+    for character in "/nowhere-at-all/".chars() {
+        press(&mut app, KeyCode::Char(character));
+    }
+    assert!(
+        obelus_ui::Screen::naming_list(&app).is_none(),
+        "something is offered"
+    );
+    press(&mut app, KeyCode::Down);
+    assert_eq!(
+        app.went_wrong_at(),
+        0,
+        "the arrow walked a block that is not walked here"
+    );
+}
+
 /// Projects enough to fill the page, each named for where it is in the list.
 fn many_projects(how_many: usize) -> Vec<obelus_component::chooser::Known> {
     (0..how_many)
