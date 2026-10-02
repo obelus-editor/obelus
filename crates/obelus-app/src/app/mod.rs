@@ -1731,10 +1731,10 @@ impl App {
             return false;
         }
         let mut picker = Picker::new(rows, PickerLayout::Compact { rows: COMPACT_ROWS });
-        picker.before_typing("What went wrong starting up");
         // Read, not chosen from: its rows go nowhere, so no row is the
-        // reader's to be on.
+        // reader's to be on and nothing is typed to narrow them.
         picker.only_read();
+        picker.ask("What went wrong starting up");
         self.show_list(picker);
         true
     }

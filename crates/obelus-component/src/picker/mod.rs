@@ -800,9 +800,12 @@ pub struct Picker {
     /// reader is on -- a mark behind one would say the keys act on it,
     /// and nothing does -- so it is drawn without one, the keys that move
     /// a selection move the rows instead, and neither enter nor a click
-    /// does anything. Said where the list is made rather than worked out
-    /// from its rows going nowhere, which a row may do in a list that is
-    /// otherwise chosen from.
+    /// does anything. Nor is it typed at: a filter narrows a list to the
+    /// row the reader means to choose, and here there is none to mean, so
+    /// a letter is not this list's and nothing goes into the query. Said
+    /// where the list is made rather than worked out from its rows going
+    /// nowhere, which a row may do in a list that is otherwise chosen
+    /// from.
     reads: bool,
     /// Whether the rows of this list wrap, and the mark in front of a
     /// row's detail where they do.
@@ -1779,6 +1782,11 @@ impl Picker {
 
     /// Puts a run of text into the query, which is what a paste is.
     pub fn put_in_query(&mut self, said: &str) {
+        // A paste is typing all at once, and a list that is only read is
+        // not typed at.
+        if self.reads {
+            return;
+        }
         self.query.put(said);
         self.refilter_typed();
     }
@@ -1788,11 +1796,17 @@ impl Picker {
     /// `cell` is counted from the first character of the query: what is
     /// drawn in front of it belongs to whoever draws it.
     pub fn place_in_query(&mut self, cell: u16, extend: bool) {
+        if self.reads {
+            return;
+        }
         self.query.place_at_cell(cell, extend);
     }
 
     /// Takes hold of the word under the caret, or of the whole query.
     pub fn hold_in_query(&mut self, all: bool) {
+        if self.reads {
+            return;
+        }
         match all {
             true => self.query.hold_all(),
             false => self.query.hold_word(),
@@ -2097,9 +2111,10 @@ impl Picker {
             // Swallowed rather than refused, so it does not reach whatever
             // is under the list.
             KeyCode::Enter if self.reads => PickerOutcome::Consumed,
+            // Bare home and end among them: here there is no query for
+            // a caret to move along.
             code if self.reads
                 && (bare || control)
-                && !(bare && matches!(code, KeyCode::Home | KeyCode::End))
                 && let Some(movement) = Move::of(code) =>
             {
                 self.scroll_reading(movement, page);
@@ -2188,6 +2203,9 @@ impl Picker {
                 }
                 PickerOutcome::Consumed
             }
+            // Not a list that is only read, which has no query: what it did
+            // not want is somebody else's, and `ctrl+q` still leaves.
+            _ if self.reads => PickerOutcome::Ignored,
             // Everything the list did not want goes to the query, which
             // is a line with a caret in it and takes the keys a line takes:
             // the arrows, the words, what is held, what is typed. A key it
@@ -2562,6 +2580,32 @@ mod tests {
         picker.move_selection_by(3);
         picker.refresh_indices(10, 40);
         assert_eq!(picker.window().top(), 4, "the wheel did not move the rows");
+    }
+
+    /// And it is not typed at: a letter is not its own, and a paste is
+    /// typing all at once.
+    ///
+    /// Deliberate break: taking the `_ if self.reads` arm out of
+    /// `handle_key` (the first two assertions: the letter is taken and the
+    /// rows narrow to it), and the early return out of `put_in_query` (the
+    /// third).
+    #[test]
+    fn a_list_that_is_only_read_is_not_typed_at() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let rows = (0..30).map(|n| named(&n.to_string())).collect();
+        let mut picker = Picker::new(rows, PickerLayout::Compact { rows: 10 });
+        picker.only_read();
+
+        assert!(
+            matches!(
+                picker.handle_key(&KeyEvent::new(KeyCode::Char('7'), KeyModifiers::NONE), 10),
+                PickerOutcome::Ignored
+            ),
+            "a letter was taken by a list that is only read"
+        );
+        assert_eq!(picker.match_count(), 30, "a letter narrowed the rows");
+        picker.put_in_query("7");
+        assert_eq!(picker.match_count(), 30, "a paste narrowed the rows");
     }
 
     /// A compact list is as tall as it has rows, up to what it asked for.

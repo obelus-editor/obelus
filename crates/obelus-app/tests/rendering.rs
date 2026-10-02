@@ -2416,7 +2416,9 @@ fn started(app: &mut App) {
 /// until it is let go.
 ///
 /// Deliberate break: taking the `tell_what_went_wrong` out of `App::start`,
-/// and the welcome screen opens with nothing said.
+/// and the welcome screen opens with nothing said; and taking the
+/// `is_only_read` branch out of `prompt_row`, and the row under the list is
+/// a box to type into with no word on it of how to leave.
 #[test]
 fn what_went_wrong_is_a_list_over_the_welcome_screen() {
     let scratch = support::Scratch::new("welcome-told");
@@ -2431,8 +2433,13 @@ fn what_went_wrong_is_a_list_over_the_welcome_screen() {
     assert!(text.contains("No setting is called wrapp"), "{dump}");
     // The file and the line it is on, counted the way a reader counts.
     assert!(text.contains("config.toml:2"), "{dump}");
-    // And what the list is, where a list says what it is.
+    // And what the list is, where a list says what it is -- with the key
+    // that lets it go, since nothing on it can be typed or chosen.
     assert!(text.contains("What went wrong starting up"), "{dump}");
+    assert!(
+        text.contains("Close"),
+        "nothing says how to let it go:\n{dump}"
+    );
 }
 
 /// The list has the keys until it is let go, and then the screen under it
@@ -2473,8 +2480,37 @@ fn what_went_wrong_has_the_keys_until_it_is_let_go() {
     );
 }
 
+/// The style letters a row of the dump is drawn in, by the row's text.
+fn styles_of_the_row_saying(dump: &str, words: &str) -> String {
+    let text: Vec<&str> = dump
+        .split("-- text --\n")
+        .nth(1)
+        .and_then(|rest| rest.split("-- style --").next())
+        .expect("the text")
+        .lines()
+        .collect();
+    let style: Vec<&str> = dump
+        .split("-- style --\n")
+        .nth(1)
+        .and_then(|rest| rest.split("-- legend --").next())
+        .expect("the style")
+        .lines()
+        .collect();
+    let at = text
+        .iter()
+        .position(|line| line.contains(words))
+        .expect("the row");
+    style[at]
+        .split_once('|')
+        .map_or("", |(_, row)| row)
+        .to_string()
+}
+
 /// No row of it is marked as the reader's, because its rows go nowhere:
 /// the mark behind a row says the keys act on it.
+///
+/// Asked of the rows themselves: the cap at the end of the status row is
+/// one shade off the page as well, and in this theme it is the same shade.
 ///
 /// Deliberate break: taking the `is_only_read` out of the picker view's
 /// `selected`, and the first row wears the mark.
@@ -2492,10 +2528,22 @@ fn no_row_of_what_went_wrong_is_marked_as_the_readers() {
         panic!("a theme whose rows are not marked in a colour");
     };
     let mark = format!("bg=#{red:02x}{green:02x}{blue:02x}");
-    assert!(
-        !dump.contains(&mark),
-        "a row is marked as the reader's:\n{dump}"
-    );
+    // Which letters of the legend wear it.
+    let marked: Vec<char> = dump
+        .split("-- legend --\n")
+        .nth(1)
+        .expect("the legend")
+        .lines()
+        .filter(|line| line.contains(&mark))
+        .filter_map(|line| line.chars().next())
+        .collect();
+    for words in ["No setting is called shrift", "No setting is called wrapp"] {
+        let row = styles_of_the_row_saying(&dump, words);
+        assert!(
+            !row.chars().any(|letter| marked.contains(&letter)),
+            "the row saying {words:?} is marked as the reader's:\n{dump}"
+        );
+    }
 }
 
 /// And a start with nothing wrong puts nothing up.
@@ -2684,11 +2732,16 @@ fn the_foot_says_what_enter_does_here_and_how_to_leave() {
 /// What went wrong on the way up is put up over the page that asks which
 /// project, too, and the page does not take a key while it is there.
 ///
+/// And it is not typed into, so there is no caret on screen at all.
+///
 /// Deliberate break: taking the `layers().nearest().is_none()` out of the
 /// chooser's turn in `handle_key`, and the letter goes into the projects'
-/// filter under the list (the second assertion); and taking it out of the
-/// chooser's turn in `cursor_position`, and the caret is not in the list's
-/// box (the first).
+/// filter under the list (the second assertion); and taking the
+/// `is_only_read` out of `cursor_position`, and a caret stands in a box
+/// nothing can be typed into (the first). The same guard in
+/// `cursor_position`'s turn for the chooser has no break that shows here:
+/// the list is up only at the start, when the page's own filter is empty
+/// and so has no caret of its own either.
 #[test]
 fn what_went_wrong_is_put_over_the_page_that_asks_too() {
     let scratch = support::Scratch::new("choosing-told");
@@ -2703,8 +2756,8 @@ fn what_went_wrong_is_put_over_the_page_that_asks_too() {
         "{dump}"
     );
     assert!(
-        !dump.ends_with("-- cursor --\nnone\n") && !dump.contains("-- cursor --\nnone"),
-        "the caret is not in the list's box:\n{dump}"
+        dump.contains("-- cursor --\nnone"),
+        "a caret stands in a list nothing can be typed into:\n{dump}"
     );
 
     press(&mut app, KeyCode::Char('p'));

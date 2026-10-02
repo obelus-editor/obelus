@@ -630,7 +630,14 @@ pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
     // key will do, and that is what two chains in two orders produced.
     match app.layers().nearest() {
         Some(Layer::Prompt) => return on_the_status_row(status::answer_caret(app.prompt()?)),
-        Some(Layer::Picker) => return on_the_status_row(status::prompt_caret(app.picker()?)),
+        // None in a list that is only read, which is not typed into.
+        Some(Layer::Picker) => {
+            let picker = app.picker()?;
+            if picker.is_only_read() {
+                return None;
+            }
+            return on_the_status_row(status::prompt_caret(picker));
+        }
         // The same shape a picker's query has, because it is the same
         // thing: what has been typed narrows what is above it.
         Some(Layer::Names) => {
