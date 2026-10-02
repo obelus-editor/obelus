@@ -2217,6 +2217,14 @@ impl Chat {
             // stops a turn puts what was waiting back in the box, and
             // taking all of it back is what the next one is for.
             KeyCode::Esc if bare && thinking => ChatOutcome::Interrupt,
+            // A selection is nearer than the box it is in, and the box has
+            // no undo: so what is held goes first, the box's or the
+            // transcript's, and the words only on the press after.
+            KeyCode::Esc if bare && (self.holding() || self.input.selected().is_some()) => {
+                self.let_go();
+                self.input.let_go();
+                ChatOutcome::Consumed
+            }
             KeyCode::Esc if bare && !self.input.is_blank() => {
                 let _ = self.input.take_parts();
                 ChatOutcome::Consumed
@@ -4318,8 +4326,11 @@ mod tests {
     /// press that stopped the agent and emptied the box as well would
     /// throw away what the reader was in the middle of saying.
     ///
-    /// Deliberate break: drop the arm that empties the box, and the second
-    /// escape is `Ignored` with `hello` still in it.
+    /// And a selection before the box it is in, because the box has no undo.
+    ///
+    /// Deliberate breaks: drop the arm that empties the box, and the last
+    /// escape is `Ignored` with `hello` still in it; drop the arm that lets
+    /// go, and the escape meant for the selection empties the box.
     #[test]
     fn escape_stops_the_agent_then_empties_the_box() {
         let mut chat = Chat::new();
@@ -4331,6 +4342,47 @@ mod tests {
             ChatOutcome::Interrupt
         );
         assert_eq!(chat.writing().text(), "hello", "stopping emptied the box");
+        // What is held goes before the words do.
+        chat.handle_key(
+            &KeyEvent::new(KeyCode::Left, KeyModifiers::SHIFT),
+            false,
+            ROOM,
+            &[],
+        );
+        assert!(chat.writing().selected().is_some(), "nothing was held");
+        assert_eq!(
+            chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]),
+            ChatOutcome::Consumed
+        );
+        assert_eq!(
+            chat.writing().text(),
+            "hello",
+            "escape took the words with the selection"
+        );
+        assert!(chat.writing().selected().is_none(), "escape kept hold");
+        // And the transcript's, held with the pointer while the caret
+        // stays in the box.
+        chat.note("something said");
+        chat.hold_from(Spot {
+            said: 0,
+            source: Source::Text,
+            at: 0,
+        });
+        chat.hold_to(Spot {
+            said: 0,
+            source: Source::Text,
+            at: 5,
+        });
+        assert_eq!(
+            chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]),
+            ChatOutcome::Consumed
+        );
+        assert_eq!(
+            chat.writing().text(),
+            "hello",
+            "escape took the words with the transcript's selection"
+        );
+        assert!(!chat.holding(), "escape kept hold of the transcript");
         assert_eq!(
             chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]),
             ChatOutcome::Consumed
