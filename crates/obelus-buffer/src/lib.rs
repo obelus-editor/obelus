@@ -1533,23 +1533,36 @@ impl Buffer {
     /// and the name is the link.
     pub fn save(&mut self) -> Result<()> {
         let path = obelus_config::resolved(&self.path);
-        let beside = path.with_extension("obelus-writing");
+        // This process's own name beside it and not one every Obelus shares:
+        // two writing at once into one shared name truncate each other's
+        // half-written file, and the first rename takes the other's away.
+        let beside = path.with_extension(format!("obelus-writing.{}", std::process::id()));
 
-        let mut file = std::fs::File::create(&beside)
-            .with_context(|| format!("writing beside {}", path.display()))?;
-        for chunk in self.editing.text().rope().chunks() {
-            std::io::Write::write_all(&mut file, chunk.as_bytes())?;
+        let written = (|| -> Result<()> {
+            let mut file = std::fs::File::create(&beside)
+                .with_context(|| format!("writing beside {}", path.display()))?;
+            for chunk in self.editing.text().rope().chunks() {
+                std::io::Write::write_all(&mut file, chunk.as_bytes())?;
+            }
+            file.sync_all()?;
+            // Whatever the file was allowed to be, it still is. A file that
+            // is not there yet has nothing to copy and keeps what the system
+            // gives.
+            if let Ok(data) = std::fs::metadata(&path) {
+                let _ = file.set_permissions(data.permissions());
+            }
+            drop(file);
+            std::fs::rename(&beside, &path)
+                .with_context(|| format!("putting {} in place", path.display()))
+        })();
+        if written.is_err() {
+            // And not left behind in the reader's own tree: the name is
+            // this process's own, so nobody else will ever write over it,
+            // and a failed save would leave one more of them for every
+            // Obelus that failed.
+            let _ = std::fs::remove_file(&beside);
         }
-        file.sync_all()?;
-        // Whatever the file was allowed to be, it still is. A file that is
-        // not there yet has nothing to copy and keeps what the system gives.
-        if let Ok(data) = std::fs::metadata(&path) {
-            let _ = file.set_permissions(data.permissions());
-        }
-        drop(file);
-
-        std::fs::rename(&beside, &path)
-            .with_context(|| format!("putting {} in place", path.display()))?;
+        written?;
         self.settle();
         tracing::info!(path = %path.display(), bytes = self.editing.text().byte_length().get(), "saved");
         Ok(())

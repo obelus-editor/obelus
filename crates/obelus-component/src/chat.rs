@@ -548,7 +548,7 @@ pub enum ChatOutcome {
     Interrupt,
     /// Put these words back in the box: the reader took back something
     /// they had said that had not gone yet.
-    TakeBack(String),
+    TakeBack(Vec<crate::composer::Part>),
     /// Move to the agent's next way of working.
     StepMode,
     /// Open what a row of the transcript names.
@@ -1081,12 +1081,37 @@ impl Chat {
     ///
     /// Only something that has not gone: a thing already said to an agent
     /// cannot be unsaid, and a row that has gone does not offer this.
-    pub fn take_back(&mut self, at: usize) -> Option<String> {
+    pub fn take_back(&mut self, at: usize) -> Option<Vec<crate::composer::Part>> {
         if !self.said.get(at).is_some_and(|said| said.unsent) {
             return None;
         }
         self.forget_the_layout();
-        Some(self.said.remove(at).text)
+        Some(self.said.remove(at).parts)
+    }
+
+    /// Takes back everything the reader said that has not gone, joined the
+    /// way it would have gone.
+    ///
+    /// And lets go of whatever the transcript held: a hold is a place in
+    /// what was said, and with these out of it the place names other words.
+    pub fn take_back_waiting(&mut self) -> Option<Vec<crate::composer::Part>> {
+        if !self.said.iter().any(|said| said.unsent) {
+            return None;
+        }
+        self.forget_the_layout();
+        let (waiting, kept): (Vec<Said>, Vec<Said>) = std::mem::take(&mut self.said)
+            .into_iter()
+            .partition(|said| said.unsent);
+        self.said = kept;
+        self.let_go();
+        let mut parts = Vec::new();
+        for said in waiting {
+            if !parts.is_empty() {
+                parts.push(crate::composer::Part::Words("\n\n".to_string()));
+            }
+            parts.extend(said.parts);
+        }
+        Some(parts)
     }
 
     /// Takes the reader's own words back from the agent.
@@ -1375,6 +1400,28 @@ impl Chat {
         if !status.is_empty() {
             said.state = Some(status.to_string());
         }
+    }
+
+    /// The file the call with this id changed, once it has.
+    ///
+    /// Asked of the row rather than of the update, because an update says
+    /// only what changed: the kind and the place arrive with the call, and
+    /// that it is done arrives later on its own. Done and not asked: a
+    /// change put to the reader for permission has not happened, and may
+    /// not.
+    #[must_use]
+    pub fn wrote(&self, id: &str) -> Option<&std::path::Path> {
+        let said = self
+            .said
+            .iter()
+            .rev()
+            .find(|said| said.tag.as_deref() == Some(id))?;
+        let changes =
+            matches!(said.kind.as_str(), "edit" | "delete" | "move") || !said.change.is_empty();
+        (changes && said.state.as_deref() == Some("completed"))
+            .then(|| said.places.first())
+            .flatten()
+            .map(|place| place.path.as_path())
     }
 
     /// Everything said, as rows wrapped to a width.
@@ -2115,11 +2162,12 @@ impl Chat {
 
     /// Handles a key.
     ///
-    /// `thinking` decides what escape means: while the agent is working it
-    /// stops the agent, and otherwise there is nothing here to stop and the
-    /// key is not this component's. Escape everywhere in Obelus means "stop
-    /// what is happening", and once a conversation is a document rather than
-    /// something over one, leaving it is not stopping anything.
+    /// `thinking` decides what escape means first: while the agent is
+    /// working it stops the agent. Otherwise it lets go of what is held,
+    /// then empties the box, and with none of those the key is not this
+    /// component's. Escape everywhere in Obelus means "give up on the
+    /// nearest thing", and once a conversation is a document rather than
+    /// something over one, leaving it is not giving up on anything.
     pub fn handle_key(
         &mut self,
         key: &KeyEvent,
@@ -2179,13 +2227,29 @@ impl Chat {
         }
 
         match key.code {
-            // Stopping the agent is the one thing escape does here. A
-            // conversation is a document, not something over one, and
-            // escape is what leaves whatever is over the document being
-            // read -- so with nothing in flight there is nothing for it to
-            // give up on, and it leaves the box alone rather than taking
-            // the reader somewhere.
+            // Stopping the agent is the first thing escape does here, and
+            // emptying the box the second: those are the two things in a
+            // conversation there are to give up on. A conversation is a
+            // document, not something over one, and escape is what leaves
+            // whatever is over the document being read -- so with neither
+            // it does nothing, rather than taking the reader somewhere.
+            //
+            // At once, with no second press to make sure: the press that
+            // stops a turn puts what was waiting back in the box, and
+            // taking all of it back is what the next one is for.
             KeyCode::Esc if bare && thinking => ChatOutcome::Interrupt,
+            // A selection is nearer than the box it is in, and the box has
+            // no undo: so what is held goes first, the box's or the
+            // transcript's, and the words only on the press after.
+            KeyCode::Esc if bare && (self.holding() || self.input.selected().is_some()) => {
+                self.let_go();
+                self.input.let_go();
+                ChatOutcome::Consumed
+            }
+            KeyCode::Esc if bare && !self.input.is_blank() => {
+                let _ = self.input.take_parts();
+                ChatOutcome::Consumed
+            }
             // Which is why the box takes shift: a message to an agent is a
             // paragraph, and enter is how you send one.
             KeyCode::Enter if !bare => {
@@ -2423,6 +2487,17 @@ impl Chat {
     /// input after it.
     pub fn put(&mut self, words: &str) {
         self.input.replace(words);
+    }
+
+    /// Puts what the reader took back into the box, in front of whatever
+    /// they had started typing and as its own paragraph: neither of the two
+    /// is Obelus's to throw away.
+    pub fn put_back(&mut self, mut parts: Vec<crate::composer::Part>) {
+        if !self.input.is_blank() {
+            parts.push(crate::composer::Part::Words("\n\n".to_string()));
+            parts.extend(self.input.parts());
+        }
+        self.input.put_parts(parts);
     }
 
     /// Adds something said, and keeps the view at the end.
@@ -4266,20 +4341,130 @@ mod tests {
     }
 
     /// What escape means depends on whether anything is happening, and
-    /// nothing else about the keys does.
+    /// after that on what is in the box.
+    ///
+    /// Stopping first and emptying the box second, one press each: a
+    /// press that stopped the agent and emptied the box as well would
+    /// throw away what the reader was in the middle of saying.
+    ///
+    /// And a selection before the box it is in, because the box has no undo.
+    ///
+    /// Deliberate breaks: drop the arm that empties the box, and the last
+    /// escape is `Ignored` with `hello` still in it; drop the arm that lets
+    /// go, and the escape meant for the selection empties the box.
     #[test]
-    fn escape_stops_the_agent_and_otherwise_does_nothing() {
+    fn escape_stops_the_agent_then_empties_the_box() {
         let mut chat = Chat::new();
+        for character in "hello".chars() {
+            chat.handle_key(&key(KeyCode::Char(character)), false, ROOM, &[]);
+        }
         assert_eq!(
             chat.handle_key(&key(KeyCode::Esc), true, ROOM, &[]),
             ChatOutcome::Interrupt
         );
-        // And with nothing in flight it is not the conversation's key: a
+        assert_eq!(chat.writing().text(), "hello", "stopping emptied the box");
+        // What is held goes before the words do.
+        chat.handle_key(
+            &KeyEvent::new(KeyCode::Left, KeyModifiers::SHIFT),
+            false,
+            ROOM,
+            &[],
+        );
+        assert!(chat.writing().selected().is_some(), "nothing was held");
+        assert_eq!(
+            chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]),
+            ChatOutcome::Consumed
+        );
+        assert_eq!(
+            chat.writing().text(),
+            "hello",
+            "escape took the words with the selection"
+        );
+        assert!(chat.writing().selected().is_none(), "escape kept hold");
+        // And the transcript's, held with the pointer while the caret
+        // stays in the box.
+        chat.note("something said");
+        chat.hold_from(Spot {
+            said: 0,
+            source: Source::Text,
+            at: 0,
+        });
+        chat.hold_to(Spot {
+            said: 0,
+            source: Source::Text,
+            at: 5,
+        });
+        assert_eq!(
+            chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]),
+            ChatOutcome::Consumed
+        );
+        assert_eq!(
+            chat.writing().text(),
+            "hello",
+            "escape took the words with the transcript's selection"
+        );
+        assert!(!chat.holding(), "escape kept hold of the transcript");
+        assert_eq!(
+            chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]),
+            ChatOutcome::Consumed
+        );
+        assert_eq!(chat.writing().text(), "", "escape left the box as it was");
+        // And with neither it is not the conversation's key: a
         // conversation is a document, and escape leaves what is *over* a
         // document. There is nothing over this one.
         assert_eq!(
             chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]),
             ChatOutcome::Ignored
+        );
+    }
+
+    /// What was waiting goes back in the box with its pictures, in front of
+    /// what was being typed.
+    ///
+    /// It went back as the words the page spells it with, so a picture
+    /// came back as `[Image 1]` -- words, which enter then sent as words.
+    ///
+    /// Deliberate breaks: have `take_back_waiting` hand back each one's
+    /// `text` as words rather than its `parts`, and the picture is gone;
+    /// take out its `let_go`, and the transcript is still holding.
+    #[test]
+    fn what_was_waiting_goes_back_with_its_pictures() {
+        use crate::composer::{Attached, Part};
+        let picture = Attached {
+            mime: "image/png".to_string(),
+            bytes: b"png".to_vec(),
+        };
+        let mut chat = Chat::new();
+        chat.will_say(&[
+            Part::Words("look at ".to_string()),
+            Part::Picture(picture.clone()),
+        ]);
+        chat.will_say(&[Part::Words("and this".to_string())]);
+        chat.put("half typed");
+        // Held across both, which do not survive it.
+        chat.hold_from(Spot {
+            said: 0,
+            source: Source::Text,
+            at: 0,
+        });
+        chat.hold_to(Spot {
+            said: 1,
+            source: Source::Text,
+            at: 3,
+        });
+        assert!(chat.holding(), "the transcript did not take hold");
+
+        let parts = chat.take_back_waiting();
+        assert!(chat.unsent().is_empty(), "it is still waiting on the page");
+        assert!(!chat.holding(), "the hold outlived the words it was on");
+        chat.put_back(parts.expect("nothing came back"));
+        assert_eq!(
+            chat.writing().parts(),
+            vec![
+                Part::Words("look at ".to_string()),
+                Part::Picture(picture),
+                Part::Words("\n\nand this\n\nhalf typed".to_string()),
+            ]
         );
     }
 

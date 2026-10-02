@@ -71,20 +71,6 @@ use obelus_text::coordinates::{LineNumber, Span};
 
 use crate::image::Images;
 
-/// One thing that went wrong on the way up.
-///
-/// The words are written by the time they get here -- what Obelus says
-/// about a file it could not read is the same sentence whether it is drawn
-/// under a line or on a list -- so this carries them and where to go, and
-/// nothing else.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct WentWrong {
-    /// What Obelus says about it.
-    pub said: String,
-    /// The file it is about and the line in it, where there is one.
-    pub at: Option<(std::path::PathBuf, LineNumber)>,
-}
-
 /// A path with the reader's own directory written as `~`.
 ///
 /// Here because it is about drawing and not about the filesystem:
@@ -111,7 +97,7 @@ pub fn with_home_as_tilde(path: &std::path::Path) -> String {
     }
 }
 
-/// What the welcome screen offers while Obelus is asking which project.
+/// What the page that asks which project offers, while Obelus is asking.
 ///
 /// Here rather than with the application for the reason everything else in
 /// this file is: it exists so that a screen can be drawn, and what the
@@ -132,6 +118,10 @@ pub struct Choosing {
     /// Which row the reader is on: the projects from nought, and the
     /// opening row after the last of them.
     pub at: usize,
+    /// Which of the projects is on the first row, where the window over
+    /// them is -- the one every list keeps, which moves only when the
+    /// reader's row leaves it.
+    pub top: usize,
     /// What is in the box at the foot.
     pub typed: String,
     /// How many characters of it are in front of the caret.
@@ -342,15 +332,8 @@ pub trait Screen {
     fn opened_hunks(&self) -> Vec<LineNumber>;
     /// How far along the welcome screen's colours have travelled, in ticks.
     fn phase(&self) -> u32;
-    /// What went wrong on the way up, for the screen that is showing when
-    /// nothing is open.
-    ///
-    /// Empty on almost every start, and the block it fills is absent then:
-    /// what this screen is for is the way in, and what went wrong goes
-    /// under it rather than in front of it.
-    fn went_wrong(&self) -> Vec<WentWrong>;
-    /// What the welcome screen is asking, while it is asking which
-    /// project. `None` on every start that was told one.
+    /// What is being asked, while Obelus is asking which project. `None`
+    /// on every start that was told one.
     fn choosing(&self) -> Option<Choosing>;
     /// What could finish the path being named, while one is being named.
     ///
@@ -358,13 +341,9 @@ pub trait Screen {
     /// the rows and the chosen row are the picker's, and the box below it
     /// owns the keys.
     fn naming_list(&self) -> Option<&Picker>;
-    /// Which of those rows the reader is on.
-    fn went_wrong_at(&self) -> usize;
     /// The version of a newer Obelus, where one is out and the reader
     /// wants to be told.
     fn newer_release(&self) -> Option<&str>;
-    /// And which of them are on screen, out of `rows` that fit.
-    fn went_wrong_showing(&self, rows: u16) -> std::ops::Range<usize>;
     /// The open picker, for the renderer.
     fn picker(&self) -> Option<&Picker>;
     /// The settings the project has set, which are the ones the reader cannot
@@ -428,9 +407,12 @@ pub trait Screen {
     fn project_config(&self) -> Option<&Path>;
     /// What the server says is wrong with the file being read.
     fn troubles(&self) -> &[obelus_lsp::trouble::Trouble];
-    /// The note the conversation being read is about, in the words the
-    /// reader wrote.
-    fn what_this_conversation_is_about(&self) -> Option<String>;
+    /// Whether the conversation being read is about a note that is still
+    /// there.
+    fn is_about_a_note(&self) -> bool;
+    /// The branch the conversation being read is working on, once its
+    /// agent has changed a file.
+    fn branch_this_conversation_works_on(&self) -> Option<&obelus_git::Head>;
     /// Where Obelus was started, and the root every path is shown relative to.
     fn working_directory(&self) -> &Path;
     /// Which branch that tree has checked out, where it is a repository.
@@ -448,6 +430,7 @@ pub mod hover;
 pub mod image;
 pub mod names;
 pub mod picker;
+pub mod projects;
 pub mod reading;
 pub mod settings;
 pub mod shapes;
@@ -618,10 +601,14 @@ pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
         })
     };
 
-    // Being asked which project, which is not a layer -- it is the
-    // welcome screen, and the welcome screen is the page. Before the
-    // layers for that reason rather than for an order among them.
-    if let Some(choosing) = app.choosing() {
+    // Being asked which project, which is not a layer -- it is a page of
+    // its own, and the page is what this row is under. Before the layers
+    // for that reason rather than for an order among them -- and so only
+    // where no layer is up: what went wrong on the way up is a list put
+    // over this page, and while it is there the keys are its.
+    if app.layers().nearest().is_none()
+        && let Some(choosing) = app.choosing()
+    {
         let question = match choosing.naming {
             true => "Open",
             false => "Filter",
@@ -649,7 +636,14 @@ pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
     // key will do, and that is what two chains in two orders produced.
     match app.layers().nearest() {
         Some(Layer::Prompt) => return on_the_status_row(status::answer_caret(app.prompt()?)),
-        Some(Layer::Picker) => return on_the_status_row(status::prompt_caret(app.picker()?)),
+        // None in a list that is only read, which is not typed into.
+        Some(Layer::Picker) => {
+            let picker = app.picker()?;
+            if picker.is_only_read() {
+                return None;
+            }
+            return on_the_status_row(status::prompt_caret(picker));
+        }
         // The same shape a picker's query has, because it is the same
         // thing: what has been typed narrows what is above it.
         Some(Layer::Names) => {
@@ -800,8 +794,15 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     // telling what the keys are. Not while something has taken the region,
     // because then the region is not empty -- but a list or a question
     // leaves it alone, and this is what they would be over.
+    //
+    // Or, where there is no project yet, the question of which: a screen
+    // of its own rather than the welcome screen, because every key the
+    // welcome screen names is about a project.
     if app.reading_nothing() && !layers.filling() {
-        welcome::WelcomeView::new(app).render(regions.editor, cells);
+        match projects::ProjectsView::new(app) {
+            Some(view) => view.render(regions.editor, cells),
+            None => welcome::WelcomeView::new(app).render(regions.editor, cells),
+        }
         // What could finish the path being named, which is not a layer
         // for the reason the agent's own commands are not one: the list
         // follows what is in the box rather than being something the

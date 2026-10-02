@@ -369,9 +369,9 @@ pub enum Requires {
     /// something in.
     ///
     /// The list of open documents, which says so itself when it is empty --
-    /// worth saying in a project the reader has just started on, and not on
-    /// the welcome screen, where nothing can be open and there is nowhere
-    /// yet to open anything.
+    /// worth saying in a project the reader has just started on, and not
+    /// while Obelus is asking which project, where nothing can be open and
+    /// there is nowhere yet to open anything.
     SomethingOpenOrAProject,
     /// There has to be another worktree to go to, and a window to go there
     /// in.

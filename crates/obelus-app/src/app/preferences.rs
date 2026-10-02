@@ -675,7 +675,8 @@ impl App {
             }
             Err(wrong) => {
                 tracing::warn!(why = wrong.why, "a theme that would not read");
-                self.wrong(format!("{name} will not read"));
+                // Not opening on the name, which a sentence may not.
+                self.wrong(format!("The theme `{name}` will not read"));
                 // And on the theme's own file, where the line is. The
                 // colours on screen stay as they are: a reader who cannot
                 // read the screen cannot fix the file.
@@ -1142,20 +1143,31 @@ impl App {
                 // Never starting with the name, which is the rule every
                 // sentence with one in it follows: `Nothing is bound to
                 // open-file`, not `open-file has no key`.
+                //
+                // And the name in backticks, the way a compiler writes one
+                // in the middle of a sentence: it is what the reader wrote
+                // and what they will look for in the file, and among the
+                // words around it a name like `wrap` reads as one of them.
+                // Not the setting where it names the kind of thing the word
+                // was meant to be -- `No theme is called` -- which is the
+                // sentence's own noun.
                 obelus_config::Why::NoSuchSetting => {
-                    format!("No setting is called {}", one.key)
+                    format!("No setting is called `{}`", one.key)
                 }
                 obelus_config::Why::NotForAProject => {
-                    format!("A project may not set {}", one.key)
+                    format!("A project may not set `{}`", one.key)
                 }
                 obelus_config::Why::NotATable => {
-                    format!("What {} is set to is not a table of its settings", one.key)
+                    format!(
+                        "What `{}` is set to is not a table of its settings",
+                        one.key
+                    )
                 }
                 // Not "No workflow is called ...", which opens on the title
                 // of one of the workflows. Which setting it is goes without
                 // saying: the mark is on the line that sets it.
                 obelus_config::Why::NoSuchChoice(word) => {
-                    format!("Nothing answers to {word}")
+                    format!("Nothing answers to `{word}`")
                 }
             };
             self.obelus_says(path, one.at, obelus_lsp::trouble::Severity::Warning, &said);
@@ -1180,12 +1192,13 @@ impl App {
     ) {
         if let Some(called) = self.settled.no_theme.clone() {
             // Never starting with the name: `dark` is a theme's own
-            // spelling and a sentence may not open on one.
+            // spelling and a sentence may not open on one. In backticks,
+            // as every name these sentences carry is.
             self.obelus_says(
                 path,
                 spans.get("theme").copied(),
                 obelus_lsp::trouble::Severity::Warning,
-                &format!("No theme is called {called}"),
+                &format!("No theme is called `{called}`"),
             );
         }
         for one in std::mem::take(&mut self.settled.unbound) {
@@ -1194,18 +1207,18 @@ impl App {
                 // rather than what the reader wrote: what is left to say is
                 // the thing they cannot see.
                 obelus_editing::keymap::Unbindable::NoSuchCommand => {
-                    format!("No command is called {}", one.name)
+                    format!("No command is called `{}`", one.name)
                 }
                 obelus_editing::keymap::Unbindable::Unreadable => {
                     format!(
-                        "Nothing is bound to {}: {} is not a key",
+                        "Nothing is bound to `{}`: `{}` is not a key",
                         one.name, one.text
                     )
                 }
                 // The reason the page that binds keys gives, in its own
                 // words, because it is the same judgement.
                 obelus_editing::keymap::Unbindable::NotAllowed(why) => {
-                    format!("Nothing is bound to {}: {why}", one.name)
+                    format!("Nothing is bound to `{}`: {why}", one.name)
                 }
             };
             let at = spans.get(&format!("keys.{}", one.name)).copied();

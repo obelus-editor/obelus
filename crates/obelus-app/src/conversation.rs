@@ -46,13 +46,15 @@
 //! page is what the reader said, and Obelus adds to their half of it rather
 //! than rewriting it.
 //!
-//! Stopping the turn releases them. Escape means "stop what the agent is
-//! doing", not "unsay what I said" -- it used to mean both, because the
-//! words had been taken off the page into a queue and Obelus sending them
-//! unasked would have been Obelus speaking for them. They are on the page
-//! now, and taking one back is a key on the row it is about. They still go
-//! in the order they were typed: a queue that let a later message overtake
-//! an earlier one would put their own words to the agent back to front.
+//! Stopping the turn puts them back in the box, all of them, joined the way
+//! they would have gone. It released them for a while, on the grounds that
+//! escape means "stop what the agent is doing" and not "unsay what I said":
+//! so one press stopped the turn and started the next, the mark went on
+//! turning under `Stopped`, and the second press -- which every reader made
+//! -- stopped their own words. In the box they are neither unsaid nor said
+//! for them, and enter is the one key that sends. They still go in the
+//! order they were typed: a queue that let a later message overtake an
+//! earlier one would put their own words to the agent back to front.
 
 use obelus_agent::acp;
 use obelus_component::{card::Card, chat::Chat, picker::Picker};
@@ -170,6 +172,21 @@ pub struct Conversation {
     /// `None` for a conversation about no note: there is nothing for two
     /// windows to collide over, because nothing else can name it.
     pub claim: Option<obelus_agent::chats::Claim>,
+    /// The checkout the agent last changed a file in, and its branch.
+    ///
+    /// Learnt from where its changes landed rather than from anything it
+    /// says: an agent told to work in a worktree of its own may not, and
+    /// one that changes the reader's own checkout is the one most worth
+    /// seeing. `None` until it has changed something, which is when there
+    /// starts to be a branch to speak of. A session taken up again replays
+    /// its calls, so this comes back with them and is written down nowhere.
+    ///
+    /// The tree is kept beside the branch so that the branch can be asked
+    /// again when the repository moves, the way the status row's is. What
+    /// tells Obelus that is a watch on the reader's own checkout; an agent's
+    /// worktree has none, and is asked again when the agent next changes
+    /// something in it.
+    pub working_in: Option<(std::path::PathBuf, obelus_git::Head)>,
     /// What was said, and what is being typed.
     pub chat: Chat,
     /// The agent's own commands, while one is being typed in the box.

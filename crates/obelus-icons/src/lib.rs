@@ -489,6 +489,30 @@ pub fn for_kind(kind: obelus_text::kind::SyntaxKind) -> char {
     }
 }
 
+/// The glyph for how bad a problem is, by the kind it is coloured as.
+///
+/// A table of its own and not [`for_kind`]'s: that one is for what a
+/// *name* is, and an error is not a kind of name. Asked there, every row of
+/// a list of problems wore the mark for "something Obelus could not name",
+/// which in front of a sentence reads as the sentence having been cut.
+///
+/// By the kind rather than by a severity, because the severity is a
+/// server's word and this crate draws for everything: `Severity::kind` is
+/// how a problem says which colour it is, and the picture goes with the
+/// colour. The two quieter ones share it as they share the colour.
+#[must_use]
+pub fn for_problem(kind: obelus_text::kind::SyntaxKind) -> char {
+    use obelus_text::kind::SyntaxKind;
+    match kind {
+        // `md-close_circle`: what stops the thing it is about.
+        SyntaxKind::Error => '\u{f0159}',
+        // `md-alert`: what goes on, and should not.
+        SyntaxKind::Warning => '\u{f0026}',
+        // `md-information`: a remark.
+        _ => '\u{f02fc}',
+    }
+}
+
 /// What a file with nothing more specific gets.
 const FILE: char = '\u{f15b}';
 
@@ -689,6 +713,28 @@ mod command_tests {
                 anything,
                 "{kind:?} is drawn as something Obelus could not name"
             );
+        }
+    }
+
+    /// How bad a problem is, it says in a picture of its own: an error is not
+    /// a warning, and neither is the mark for a name Obelus could not tell
+    /// the kind of -- which is what every problem wore while they were drawn
+    /// out of `for_kind`, and in front of a sentence it reads as a cut.
+    ///
+    /// Broken deliberately by having `for_problem` answer `for_kind`.
+    #[test]
+    fn a_problem_says_how_bad_it_is_in_a_picture_of_its_own() {
+        use obelus_text::kind::SyntaxKind;
+
+        let error = for_problem(SyntaxKind::Error);
+        let warning = for_problem(SyntaxKind::Warning);
+        let remark = for_problem(SyntaxKind::Comment);
+        assert_ne!(error, warning, "an error looks like a warning");
+        assert_ne!(warning, remark, "a warning looks like a remark");
+        assert_ne!(error, remark, "an error looks like a remark");
+        let anything = for_kind(SyntaxKind::Operator);
+        for glyph in [error, warning, remark] {
+            assert_ne!(glyph, anything, "a problem wears the mark for a cut");
         }
     }
 

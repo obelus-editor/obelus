@@ -242,3 +242,35 @@ fn the_command_palette_has_no_glyphs() {
         "a private-use codepoint reached the palette:\n{dump}"
     );
 }
+
+/// What went wrong on the way up wears the picture of how bad it is, the
+/// one every list of problems wears -- not the mark for a name Obelus could
+/// not tell the kind of, which is what it wore in front of every row.
+///
+/// Broken deliberately by having `problem_row` draw its mark out of
+/// `obelus_icons::for_kind` again: the row starts with the dots.
+#[test]
+fn what_went_wrong_wears_the_picture_of_how_bad_it_is() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("glyphs-went-wrong");
+    let file = scratch.path().join("config.toml");
+    std::fs::write(&file, "theme = \"dark\"\nshrift = 15\n").expect("writing a settings file");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.config_file_for_test(file);
+    // After the settings, which put the switch where their default is.
+    obelus_icons::use_glyphs(true);
+    let (sender, _events) = std::sync::mpsc::channel();
+    app.start(sender);
+    let dump = support::render(&mut app, 76, 26);
+    let row = support::text_block(&dump)
+        .lines()
+        .find(|line| line.contains("No setting is called"))
+        .expect("the row")
+        .to_string();
+    let warning = obelus_icons::for_problem(obelus_text::kind::SyntaxKind::Warning);
+    assert!(
+        row.contains(warning),
+        "the warning does not wear a warning's picture: {row}"
+    );
+}

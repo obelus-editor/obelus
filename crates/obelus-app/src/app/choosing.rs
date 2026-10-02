@@ -163,8 +163,8 @@ impl App {
             // known without doing any work -- and not whether the answer
             // turned out to hold anything, which is what the two history
             // and change conditions below go and find out. There is no
-            // project while the welcome screen is still asking for one,
-            // and none once the one it was has gone.
+            // project while Obelus is still asking which one, and none
+            // once the one it was has gone.
             Requires::AProject => self.has_a_project(),
             Requires::AnotherWorktree => self.another_worktree(),
             Requires::SomethingOpenOrAProject => {

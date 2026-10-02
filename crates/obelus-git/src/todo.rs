@@ -845,9 +845,19 @@ impl Todo {
         if let Some(directory) = path.parent() {
             std::fs::create_dir_all(directory)?;
         }
-        let beside = path.with_extension("toml.writing");
-        std::fs::write(&beside, self.to_toml())?;
-        std::fs::rename(&beside, &path)
+        // This process's own name beside it and not one every Obelus shares:
+        // two writing at once into one shared name truncate each other's
+        // half-written file, and the first rename takes the other's away.
+        let beside = path.with_extension(format!("toml.writing.{}", std::process::id()));
+        let written =
+            std::fs::write(&beside, self.to_toml()).and_then(|()| std::fs::rename(&beside, &path));
+        if written.is_err() {
+            // And not left behind: the name is this process's own, so nobody
+            // else will ever write over it, and a failed rename would leave one
+            // more of them for every Obelus that failed.
+            let _ = std::fs::remove_file(&beside);
+        }
+        written
     }
 
     /// What the file says, as text.
@@ -1570,5 +1580,64 @@ mod tests {
         assert_eq!(long.title(), "a title");
         assert!(long.folds());
         assert_eq!(long.body(), ["and more", "and more"]);
+    }
+
+    /// Another Obelus halfway through writing the notes is left alone.
+    ///
+    /// Broken deliberately by writing beside them as `toml.writing` again,
+    /// with no process number: the other's file is truncated and renamed
+    /// away under it.
+    #[test]
+    fn another_obelus_writing_the_notes_is_left_alone() {
+        state_of_its_own();
+        let root = std::env::temp_dir().join(format!("obelus-notes-beside-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("the project");
+        let theirs = path(&root)
+            .expect("somewhere")
+            .with_extension("toml.writing");
+        std::fs::create_dir_all(theirs.parent().expect("a directory")).expect("the directory");
+        std::fs::write(&theirs, "another Obelus is halfway through this").expect("theirs");
+
+        named(vec![note("one")]).write(&root).expect("the notes");
+        assert_eq!(
+            std::fs::read_to_string(&theirs).ok().as_deref(),
+            Some("another Obelus is halfway through this"),
+            "the other Obelus's half-written notes were taken"
+        );
+    }
+
+    /// A write that fails leaves nothing beside the notes.
+    ///
+    /// Broken deliberately by taking the `remove_file` out of `write`: the
+    /// half that was written stays, under a name nobody will write again.
+    #[test]
+    fn a_write_that_fails_leaves_nothing_beside_the_notes() {
+        state_of_its_own();
+        let root = std::env::temp_dir().join(format!("obelus-notes-failed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("the project");
+        let target = path(&root).expect("somewhere");
+        let _ = std::fs::remove_dir_all(&target);
+        std::fs::create_dir_all(target.join("in the way")).expect("a directory where it goes");
+
+        assert!(
+            named(vec![note("one")]).write(&root).is_err(),
+            "it was written"
+        );
+        let name = target.file_name().expect("a name").to_os_string();
+        let beside: Vec<_> = std::fs::read_dir(target.parent().expect("a directory"))
+            .expect("the directory")
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name())
+            .filter(|other| {
+                other
+                    .to_string_lossy()
+                    .starts_with(&*name.to_string_lossy())
+            })
+            .filter(|other| *other != name)
+            .collect();
+        let _ = std::fs::remove_dir_all(&target);
+        assert!(beside.is_empty(), "it left {beside:?} behind");
     }
 }

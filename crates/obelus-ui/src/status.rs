@@ -78,13 +78,11 @@ pub struct StatusView<'a> {
     /// at once and only one of them is taking the keys: a question asked
     /// on the status row opens *over* a list rather than closing it, so
     /// the list is not always the nearest thing any more.
-    /// What the welcome screen is asking, where it is asking which
-    /// project.
+    /// What is being asked, where Obelus is asking which project.
     ///
     /// The row is that question's then. Here rather than drawn at a
     /// dialog's own foot because the chooser is not a dialog over
-    /// anything -- it is the welcome screen, which is the page, and this
-    /// is the page's row.
+    /// anything -- it is the page, and this is the page's row.
     choosing: Option<crate::Choosing>,
     nearest: Option<Layer>,
     /// Whether what is typed goes over what is under the cursor.
@@ -256,7 +254,7 @@ const PATH_AT_LEAST: usize = 8;
 /// branch checked out and no tree at all are two different things, and a
 /// row silent about both tells a reader neither.
 #[must_use]
-fn branch_badge(head: Option<&obelus_git::Head>) -> String {
+pub(crate) fn branch_badge(head: Option<&obelus_git::Head>) -> String {
     let Some(head) = head else {
         return String::new();
     };
@@ -501,6 +499,14 @@ pub fn prompt_row(
     theme: &Theme,
     phase: u32,
 ) {
+    // A list that is only read is not typed into, so its row is not a box:
+    // what the list is, and at the far end the one key that does anything
+    // here. No prompt and no caret -- two marks saying "type here" over a
+    // list nothing can be typed into would be two lies.
+    if picker.is_only_read() {
+        read_row(picker, area, cells, style, theme);
+        return;
+    }
     let said = picker.query();
     let line = typed(picker.question(), &said);
     // What is held, marked where it is: the prefix in front of the
@@ -535,6 +541,42 @@ pub fn prompt_row(
             picker.invitation(),
             phase,
             theme,
+        );
+    }
+}
+
+/// The row under a list that is only read: what it is, and how to let it
+/// go.
+///
+/// Escape, which is otherwise the one key no foot names -- it gives up on
+/// the nearest thing everywhere, so saying so is saying what every view
+/// says. Named here because it is the only key this list answers to, and
+/// a row with no box and no key on it is a row that does not say how to
+/// get the screen back. The cap is the foot's own, so a key looks the same
+/// here as on every page.
+fn read_row(picker: &Picker, area: Rect, cells: &mut CellBuffer, style: Style, theme: &Theme) {
+    let key = obelus_editing::keymap::KeyChord::new(
+        crossterm::event::KeyCode::Esc,
+        crossterm::event::KeyModifiers::NONE,
+    )
+    .label();
+    let does = "Close";
+    // The key first, so the words cannot take it off the row.
+    let width = u16::try_from(crate::cap_width(&key) + 1 + text_width(does)).unwrap_or(0);
+    let at = area.right().saturating_sub(width + 2);
+    let room = at.saturating_sub(area.x + 1).saturating_sub(2);
+    if let Some(what) = picker.question() {
+        let said = crate::truncate_from_right(what, usize::from(room));
+        write(cells, area.x + 1, area.y, &said, style);
+    }
+    if at > area.x {
+        let after = crate::capped(cells, at, area.y, &key, theme);
+        write(
+            cells,
+            after + 1,
+            area.y,
+            does,
+            Style::new().fg(theme.gutter).bg(theme.background),
         );
     }
 }
@@ -991,7 +1033,8 @@ impl StatusView<'_> {
         );
     }
 
-    /// The box at the foot of the welcome screen, which is one of two.
+    /// The box at the foot of the screen that asks which project, which is
+    /// one of two.
     ///
     /// One piece draws both, and the word in front is what says which:
     /// `Filter` narrows the projects above it, `Open` is a path being

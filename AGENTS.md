@@ -246,8 +246,10 @@ its own sake -- the settings, a theme, the notes, a `[keys]` line that bound
 nothing -- goes into the same list a server's go in, under Obelus's own name
 (`Reported::source`), so everything that draws or walks problems reads one
 list. What Obelus writes for itself and a reader never opens stays a line in
-the log, and what went wrong on the way up with no line to mark is said on the
-welcome screen (`app/preferences`, `obelus_lsp::trouble`, `ui::welcome`).
+the log, and what went wrong on the way up -- the marks on files nobody has
+opened yet, and what has no line to mark -- is a list put up over the first
+screen of a start, read there and let go with escape
+(`app/preferences`, `obelus_lsp::trouble`, `App::tell_what_went_wrong`).
 
 **A setting the reader turned on is not a reason to refuse them.** Saving
 with formatting on and no server to ask writes the file unformatted. The
@@ -330,9 +332,9 @@ key. This repository answers in two milliseconds.
 
 And `AProject` is the one that is known without any walk at all: a start
 from a desktop menu names no project and begins in the home directory, so
-until the welcome screen is answered there is none -- which `open-changed-file`
-and `show-project-history` used to discover by walking a repository that was
-not there.
+until the page that asks which project is answered there is none -- which
+`open-changed-file` and `show-project-history` used to discover by walking a
+repository that was not there.
 
 **A command does something; a preference is a setting.** A switch that
 should outlive the session is a setting and nothing else -- the only key to
@@ -661,7 +663,7 @@ crates/
   obelus-mcp/       the tools Obelus offers an agent -- and why none of them
                     asks the reader anything itself
   obelus-ui/        editor, status bar, picker, settings, chat, welcome,
-                    images, shapes, shared cell writers
+                    which project, images, shapes, shared cell writers
                     · what the bar measures is what is shown, the caret can be
                       in the block, a bar is a block, a column a file might
                       need is reserved for the whole file (editor); everything
@@ -669,10 +671,11 @@ crates/
                       is, the foot says what is happening, a row keeps the room
                       for what it says about itself, and a place the title
                       named is not said after it (chat); a list open over
-                      anything owns the status row (status); what went wrong on
-                      the way up is said under the keys and never in front of
-                      them (welcome); a window draws the marks itself, and the
-                      view does not know the difference (image); a view says
+                      anything owns the status row (status); asking which
+                      project is a page of its own, and the welcome screen
+                      comes after (projects); a
+                      window draws the marks itself, and the view does not
+                      know the difference (image); a view says
                       what a region *is* and the front end says what that looks
                       like, nothing may be said there that the cells do not
                       already say in their own way, and what is said carries

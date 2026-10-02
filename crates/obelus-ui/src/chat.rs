@@ -448,13 +448,17 @@ pub struct ChatView<'a> {
     root: &'a Path,
     /// Where the animation has got to, for the row that turns.
     phase: u32,
-    /// The note this conversation is about, where it is about one.
+    /// The branch the agent is changing files on, once it has changed one.
     ///
-    /// A header earns its row by carrying something, and this is what it
-    /// carries: a reader with four conversations open has four screens that
-    /// would otherwise differ only in what was said in them. A label reading
-    /// "chat" would answer a question nobody asked -- they pressed the key.
-    about: Option<String>,
+    /// Not the note it is about, which the header used to carry: the note
+    /// is what the reader opened the conversation from, and the first
+    /// thing said in it. Where the work is going is not on the page
+    /// anywhere, and an agent told to work on a branch of its own is out
+    /// of sight of the status row, which says the reader's.
+    branch: Option<&'a obelus_git::Head>,
+    /// Whether it is about a note that is still there, for the key back to
+    /// it.
+    about_a_note: bool,
     /// What Obelus has to say, until the next key.
     ///
     /// A conversation has a status row of its own, so it has to carry this
@@ -485,7 +489,8 @@ impl<'a> ChatView<'a> {
             card: app.card(),
             root: app.working_directory(),
             phase: app.phase(),
-            about: app.what_this_conversation_is_about(),
+            branch: app.branch_this_conversation_works_on(),
+            about_a_note: app.is_about_a_note(),
             note: app.note(),
             note_is_wrong: app.note_is_wrong(),
             usage: app.agent_usage(),
@@ -1432,7 +1437,7 @@ impl ChatView<'_> {
     /// front end that draws the shape has to be told which cells of that
     /// run are the key, and a run that had already been joined cannot say.
     fn status_keys(&self) -> Vec<(String, &'static str)> {
-        let back = self.about.is_some().then(|| {
+        let back = self.about_a_note.then(|| {
             let keys = match obelus_icons::enabled() {
                 true => format!("{}t", obelus_icons::key::ALT),
                 false => "alt+t".to_string(),
@@ -1542,11 +1547,11 @@ impl ChatView<'_> {
         (placed, None)
     }
 
-    /// Who is being talked to, and what about.
+    /// Who is being talked to, and where its work is going.
     ///
     /// A header says what the thing it names *is*, which for an agent is its
-    /// name -- and, once a reader can have four conversations open, which of
-    /// them this is. What is *happening* goes at the foot of the transcript,
+    /// name -- and, once it has changed something, the branch the change
+    /// is on. What is *happening* goes at the foot of the transcript,
     /// where the next thing will appear; what went wrong is a line in the
     /// transcript where it went wrong. Five states used to sit here, two of
     /// them saying what the screen already said better and one of them
@@ -1565,29 +1570,16 @@ impl ChatView<'_> {
             name,
             plain.fg(self.theme.gutter_current),
         );
-        // The note, dimmed after it, for as much of the row as is left. It
-        // is what the reader called this conversation and the agent's name
-        // is the same on all of them, so this is the half that tells one
-        // screen from another.
-        let Some(about) = self.about.as_deref() else {
-            return;
-        };
-        let left = area.x + area.width;
-        if column + 2 >= left {
+        // The branch, dimmed after it, in the badge the status row gives
+        // the reader's own. Dropped whole where it does not fit, the rule
+        // that row follows: half a branch name is worse than none.
+        let branch = crate::status::branch_badge(self.branch);
+        let wide = 2 + text_width(branch.trim_end());
+        if branch.is_empty() || usize::from(column) + wide > usize::from(area.x + area.width) {
             return;
         }
         column = write(cells, column, area.y, "  ", dim);
-        // From the right, because a note's first words are the ones a
-        // reader wrote to recognise it by: "wire the counts tree up to the
-        // search" cut at the back is still the note they meant.
-        let room = usize::from(left - column);
-        write(
-            cells,
-            column,
-            area.y,
-            &crate::truncate_from_right(about, room),
-            dim,
-        );
+        write(cells, column, area.y, branch.trim_end(), dim);
     }
 
     /// The glyph and colour one speaker's rows are drawn in.
@@ -1938,7 +1930,8 @@ mod caret {
                         card: None,
                         root: std::path::Path::new("/"),
                         phase: 0,
-                        about: None,
+                        branch: None,
+                        about_a_note: false,
                         note: None,
                         note_is_wrong: false,
                         usage: None,

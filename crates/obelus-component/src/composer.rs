@@ -236,6 +236,28 @@ impl Composer {
         parts
     }
 
+    /// Puts these in, in place of whatever was there: what
+    /// [`Self::take_parts`] took out goes back the way it was, pictures and
+    /// all.
+    ///
+    /// Each picture as its mark and its bytes, never as the label the page
+    /// spells it with -- words that say `[Image 1]` are words, and sent
+    /// again they would tell the agent about a picture it was not given.
+    pub fn put_parts(&mut self, parts: Vec<Part>) {
+        let mut text = String::new();
+        self.attached.clear();
+        for part in parts {
+            match part {
+                Part::Words(words) => text.push_str(&words),
+                Part::Picture(picture) => {
+                    text.push(ATTACHED);
+                    self.attached.push(picture);
+                }
+            }
+        }
+        self.replace(&text);
+    }
+
     /// Takes everything out, in order, leaving the box empty.
     ///
     /// The pictures go with the words because they are the same message:
@@ -755,6 +777,23 @@ mod tests {
             mime: "image/png".to_string(),
             bytes: name.as_bytes().to_vec(),
         }
+    }
+
+    /// What is taken out goes back in as it was, pictures and all.
+    ///
+    /// Deliberate break: have `put_parts` write `Composer::spelling` of a
+    /// picture instead of its mark, and it comes back as words.
+    #[test]
+    fn what_is_taken_out_goes_back_in_as_it_was() {
+        let mut composer = Composer::new();
+        composer.replace("abc");
+        composer.attach(picture("one"), 40);
+        composer.writing.write_in("def", 40);
+        let parts = composer.take_parts();
+        assert!(composer.parts().is_empty(), "taking left something behind");
+
+        composer.put_parts(parts.clone());
+        assert_eq!(composer.parts(), parts);
     }
 
     /// A picture is one character in the text, wherever the reader put it.

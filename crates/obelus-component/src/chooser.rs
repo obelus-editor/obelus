@@ -206,6 +206,26 @@ impl Chooser {
         self.at
     }
 
+    /// Which of the projects is on the first row of the list.
+    #[must_use]
+    pub const fn top(&self) -> usize {
+        self.window.top()
+    }
+
+    /// Moves the window over the projects if the reader's row has left
+    /// it, for a list `height` rows tall.
+    ///
+    /// Over the projects only: the row that opens another is held under
+    /// them rather than scrolled with them, so while the reader is on it
+    /// the window keeps the last of the projects -- which is the row the
+    /// arrow above it goes to.
+    pub fn settle(&mut self, height: u16) {
+        let rows = self.rows().len();
+        self.window.set_count(rows);
+        self.window.set_focus(self.at.min(rows.saturating_sub(1)));
+        self.window.settle(height);
+    }
+
     /// Whether the reader is on the row that opens a project not in the
     /// list.
     ///
@@ -350,9 +370,8 @@ impl Chooser {
     /// For one whose directory has gone since it was written down. The
     /// row is not dimmed, it is taken away: a dim row says "not here",
     /// and what is true of this one is that there is nothing to offer.
-    /// Nothing is written back -- the list on disk is tidied the next
-    /// time something is remembered, and a reader who reaches a dead row
-    /// twice in one session is a reader who pressed it twice.
+    /// The list on disk forgets it too, which is the application's to
+    /// write: this crate draws and walks, and does not know the file.
     pub fn forget(&mut self, path: &Path) {
         self.known.retain(|known| known.path != path);
         self.at = self.at.min(self.known.len());

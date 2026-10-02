@@ -1,0 +1,52 @@
+screen 64x20  editor 64x18  status 64x1
+-- text --
+ 0|  Open a project                                                
+ 1|────────────────────────────────────────────────────────────────
+ 2|  obelus  /tmp/obelus/work                                      
+ 3|  indeed  /tmp/obelus/work/something/rather/deeply/nested       
+ 4|                                                                
+ 5|  Open another…                                                 
+ 6|                                                                
+ 7|                                                                
+ 8|                                                                
+ 9|                                                                
+10|                                                                
+11|                                                                
+12|                                                                
+13|                                                                
+14|                                                                
+15|                                                                
+16|────────────────────────────────────────────────────────────────
+17|   Enter  Open    type  To filter    Ctrl+q  Leave              
+18|────────────────────────────────────────────────────────────────
+19| Filter  > Narrow the list                                      
+-- style --
+ 0|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 1|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+ 2|ccccccccccddddddddddddddddccccccccccccccccccccccccccccccccccccca
+ 3|aaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbaaaaaaa
+ 4|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 6|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 7|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 8|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 9|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+10|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+11|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+12|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+13|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+14|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+15|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+16|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+17|aaeeeeeeeabbbbaaaeeeeeeabbbbbbbbbaaaeeeeeeeeabbbbbaaaaaaaaaaaaaa
+18|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+19|fffffffffffbbbbbbbbbbbbbbbffffffffffffffffffffffffffffffffffffff
+-- legend --
+a fg=#e4e4e7 bg=#18181b
+b fg=#52525b bg=#18181b
+c fg=#e4e4e7 bg=#27272a
+d fg=#52525b bg=#27272a
+e fg=#a1a1aa bg=#27272a
+f fg=#d4d4d8 bg=#18181b
+-- cursor --
+none

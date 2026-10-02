@@ -264,7 +264,7 @@ impl App {
                     // answered.
                     return;
                 };
-                // What the note says, for the header: read as this opens,
+                // What the note says, for the box: read as this opens,
                 // for the reason the notes page reads what it is drawn
                 // from as *it* opens. The watch that keeps it level is
                 // settled on the next frame.
@@ -897,12 +897,18 @@ impl App {
         }
     }
 
-    /// The note the conversation being read is about, in the words the
-    /// reader wrote.
+    /// Whether the conversation being read is about a note that is still
+    /// there, which is whether there is a note for its key to go back to.
+    #[must_use]
+    pub fn is_about_a_note(&self) -> bool {
+        self.the_note_this_is_about().is_some()
+    }
+
+    /// The note the conversation being read is about, as the file last said.
     ///
     /// Kept rather than parsed here, and heard rather than polled: the
     /// reader can change what a note says from the notes page, from their
-    /// own editor or from a second Obelus, and a header holding a copy
+    /// own editor or from a second Obelus, and a view holding a copy
     /// nothing refreshed would go on saying what the note used to. What
     /// keeps the copy honest is that all three of those *write the file*,
     /// and a write is something a watcher hears.
@@ -911,8 +917,7 @@ impl App {
     /// twenty -- and a conversation builds its view twice a frame, for the
     /// editor and for the status row, so that was the bill twice on every
     /// keystroke of every conversation about a note.
-    #[must_use]
-    pub fn what_this_conversation_is_about(&self) -> Option<String> {
+    fn the_note_this_is_about(&self) -> Option<&obelus_git::todo::Note> {
         let Topic::Note(id) = &self.conversation()?.topic else {
             return None;
         };
@@ -921,14 +926,75 @@ impl App {
             .notes
             .iter()
             .find(|note| note.id == *id)
-            .map(|note| note.title().to_string())
+    }
+
+    /// The branch the conversation being read is working on, once its agent
+    /// has changed something.
+    #[must_use]
+    pub fn branch_this_conversation_works_on(&self) -> Option<&obelus_git::Head> {
+        self.conversation()?
+            .working_in
+            .as_ref()
+            .map(|(_, head)| head)
+    }
+
+    /// Asks every conversation's checkout which branch it is on again,
+    /// because the repository moved.
+    ///
+    /// A tree that has gone answers nothing rather than being asked: git
+    /// would look upwards from where it was and answer for whatever
+    /// repository is above it, which for a worktree under `.worktree` is
+    /// the reader's own.
+    pub(super) fn ask_the_conversations_their_branch(&mut self) {
+        for document in &mut self.documents {
+            let Some(talk) = document.as_mut().and_then(Document::chat_mut) else {
+                continue;
+            };
+            talk.working_in = talk.working_in.take().and_then(|(tree, _)| {
+                if obelus_git::is_gone(&tree) {
+                    return None;
+                }
+                obelus_git::head_of_the_tree(&tree).map(|head| (tree, head))
+            });
+        }
+    }
+
+    /// Notes the branch a call changed a file on, if this update finished
+    /// a change.
+    ///
+    /// Asked again on every change rather than once: where the agent works
+    /// is not settled by where it first wrote, and a checkout's branch can
+    /// move under it. The tree must be this project's, a worktree or the
+    /// reader's own: a file outside it is somebody else's repository, or
+    /// none, and its branch says nothing about this work.
+    fn hear_where_it_wrote(&mut self, whose: Whose, call: &str) {
+        let Some(path) = self
+            .talk(whose)
+            .and_then(|talk| talk.chat.wrote(call))
+            .map(|path| self.working_directory.join(path))
+        else {
+            return;
+        };
+        let Some(tree) = obelus_git::worktree(&path) else {
+            return;
+        };
+        let ours = obelus_git::project(&self.working_directory);
+        if ours.is_none() || obelus_git::project(&tree) != ours {
+            return;
+        }
+        let head = obelus_git::head_of_the_tree(&tree);
+        if let Some(talk) = self.talk_mut(whose) {
+            talk.working_in = head.map(|head| (tree, head));
+        }
     }
 
     /// Reads the project's notes again, because there is a reason to.
     ///
-    /// What the conversation's header is drawn from. The page has its own
-    /// copy and does not use this one: what is on the page is the reader's,
-    /// edits and all, and is ahead of the file rather than behind it.
+    /// What the box of a conversation about a note asks, on every frame,
+    /// to know whether the agent has been told what the note says now. The
+    /// page has its own copy and does not use this one: what is on the page
+    /// is the reader's, edits and all, and is ahead of the file rather than
+    /// behind it.
     pub(super) fn reread_the_notes_kept(&mut self) {
         self.notes_kept = obelus_git::todo::read(&self.working_directory).notes();
     }
@@ -1487,10 +1553,9 @@ impl App {
     /// of. Joined by a blank line, which is what the box's own `alt+enter`
     /// makes, so what arrives is what they would have typed.
     ///
-    /// A turn the reader stopped releases these too. Their words were
-    /// never taken from them -- the rows are on the page and enter takes
-    /// one back -- so escape means "stop what the agent is doing" and not
-    /// "unsay what I said".
+    /// A turn the reader stopped has only what they said after pressing
+    /// escape and before the stop landed: what was waiting when they
+    /// pressed it went back into the box (`interrupt_agent`).
     fn say_what_was_waiting(&mut self, whose: Whose) {
         let Some(talk) = self.talk_mut(whose) else {
             return;
@@ -1525,7 +1590,20 @@ impl App {
     ///
     /// The half Obelus owes for not asking before it runs them: a key
     /// stops it.
+    ///
+    /// And what the reader said while it ran goes back into the box rather
+    /// than to the agent. It used to go the moment the turn ended, so the
+    /// conversation stopped and started again on one press -- the mark
+    /// still turning under `Stopped`, because the words that had gone were
+    /// above that line -- and the reader pressed escape again and stopped
+    /// their own words. Stop means stop; saying them is enter, in the box,
+    /// where they can be changed first.
     pub(super) fn interrupt_agent(&mut self) {
+        if let Some(talk) = self.conversation_mut()
+            && let Some(parts) = talk.chat.take_back_waiting()
+        {
+            talk.chat.put_back(parts);
+        }
         let running: Vec<String> = self
             .conversation()
             .map(|talk| talk.chat.commands())
@@ -1857,17 +1935,9 @@ impl App {
                 self.interrupt_agent();
                 true
             }
-            ChatOutcome::TakeBack(words) => {
+            ChatOutcome::TakeBack(parts) => {
                 if let Some(talk) = self.conversation_mut() {
-                    // In front of whatever they had started typing, as its
-                    // own paragraph: neither of the two is Obelus's to
-                    // throw away.
-                    let started = talk.chat.writing().text();
-                    let put = match started.trim().is_empty() {
-                        true => words,
-                        false => format!("{words}\n\n{started}"),
-                    };
-                    talk.chat.put(&put);
+                    talk.chat.put_back(parts);
                 }
                 true
             }
@@ -2538,16 +2608,7 @@ impl App {
         // it again, and one already told does not. From the kept copy of
         // the notes, because this is asked every frame.
         let suggested = self.conversation().and_then(|talk| {
-            let Topic::Note(id) = &talk.topic else {
-                return None;
-            };
-            let note = self
-                .notes_kept
-                .as_ref()?
-                .notes
-                .iter()
-                .find(|note| note.id == *id)?;
-            let now = super::opening::what_the_note_says(note);
+            let now = super::opening::what_the_note_says(self.the_note_this_is_about()?);
             (talk.told.as_deref() != Some(now.as_str())).then_some(super::opening::LOOK)
         });
         if let Some(talk) = self.conversation_mut() {
@@ -3022,7 +3083,8 @@ impl App {
                 // of it Obelus cannot write itself.
                 acp::Update::Heard(text) => self.in_talk(whose, |chat| chat.heard(&text)),
                 acp::Update::Tool { call, status } => {
-                    self.in_talk(whose, |chat| chat.tool(&call, &status))
+                    self.in_talk(whose, |chat| chat.tool(&call, &status));
+                    self.hear_where_it_wrote(whose, &call.id);
                 }
                 // What it means to do about this turn. Not a thing said --
                 // it never goes in the transcript -- so it is handed to the
