@@ -28,6 +28,11 @@
 #                            Obelus, tries to write one (which Obelus
 #                            refuses), uses a tool, and asks permission; the
 #                            turn ends once the answer to that arrives
+#   session/prompt "/pair"
+#                         -> asks permission twice at once, and says what
+#                            each answer was
+#   session/prompt "/takeback"
+#                         -> asks permission and takes the question back
 #   session/prompt "/ask" -> asks the reader three things through
 #                            `elicitation/create` -- one of a list, a switch,
 #                            and a number -- and says what came back
@@ -500,6 +505,51 @@ while IFS= read -r line; do
                 said="$said$group\\n\\n"
             done
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$session" "$said"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
+        *'"method":"session/prompt"'*'"text":"/pair'*)
+            # Two questions at once, in one conversation: two tool calls
+            # an agent runs side by side, each wanting permission before
+            # it goes. Only the requests carry the calls, so a row for the
+            # second is in the transcript because Obelus put it there.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","id":940,"method":"session/request_permission","params":{"sessionId":"%s","toolCall":{"toolCallId":"q1","title":"Read the first file","kind":"read"},"options":[{"optionId":"once","name":"Allow once","kind":"allow_once"},{"optionId":"never","name":"Reject","kind":"reject_once"}]}}\n' "$session"
+            printf '{"jsonrpc":"2.0","id":941,"method":"session/request_permission","params":{"sessionId":"%s","toolCall":{"toolCallId":"q2","title":"Read the second file","kind":"read"},"options":[{"optionId":"once","name":"Allow once","kind":"allow_once"},{"optionId":"never","name":"Reject","kind":"reject_once"}]}}\n' "$session"
+            ;;
+        *'"id":940'*|*'"id":941'*)
+            # Which answer, in brackets, so a test can tell an answer the
+            # reader gave from the cancellation a question pushed off the
+            # card would get.
+            case "$line" in
+                *'"optionId":"once"'*) answered='once' ;;
+                *'"optionId":"never"'*) answered='never' ;;
+                *) answered='cancelled' ;;
+            esac
+            case "$line" in
+                *'"id":940'*) which='first' ;;
+                *) which='second' ;;
+            esac
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"the %s was [%s] "}}}}\n' "$which" "$answered"
+            if [ "$which" = 'second' ]; then
+                printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            fi
+            ;;
+        *'"method":"session/prompt"'*'"text":"/takeback'*)
+            # A question asked and then taken back before anybody answered
+            # it -- the tool call it was about overtaken, the turn moving
+            # on -- which is what `$/cancel_request` is for. A moment
+            # between the two, so that the card is up when it goes.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","id":942,"method":"session/request_permission","params":{"sessionId":"%s","toolCall":{"toolCallId":"k1","title":"Delete the build","kind":"delete"},"options":[{"optionId":"once","name":"Allow once","kind":"allow_once"},{"optionId":"never","name":"Reject","kind":"reject_once"}]}}\n' "$session"
+            sleep 0.3
+            printf '{"jsonrpc":"2.0","method":"$/cancel_request","params":{"requestId":942}}\n'
+            ;;
+        *'"id":942'*)
+            case "$line" in
+                *'"error"'*) said='it was taken back and I was told' ;;
+                *) said='it was answered after all' ;;
+            esac
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
         *'"method":"session/prompt"'*'/twice'*)

@@ -2152,6 +2152,7 @@ impl App {
                 if self.is_asking() {
                     self.refuse_asking();
                 }
+                self.ask_the_next(talking::Whose::Whoever);
                 // A theme previewed but not chosen, and the file a
                 // question about leaving took the reader to. The two
                 // things a picker changes about the application while it

@@ -651,8 +651,8 @@ crates/
                       says which checkout holds it, and a refused claim is
                       drawn, never said (chats); why the
                       two directions are not symmetrical, the one ordering the
-                      protocol does not promise, what waiting on the reader
-                      costs the whole connection, what an agent asking
+                      protocol does not promise, what waits on the reader
+                      does not wait in the handler, what an agent asking
                       something may ask for, and a command is the agent's
                       namespace while a setting is Obelus's to draw (acp/link);
                       an agent that stopped is started again by talking to it,
