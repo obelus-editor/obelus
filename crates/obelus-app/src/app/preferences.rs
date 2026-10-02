@@ -407,39 +407,30 @@ impl App {
         // application, which is the thing that knows.
         //
         // The workflows are asked of the application too, for what each one
-        // is called and what it does: a name like `feature-branch` is the
-        // setting's word and says what it is only to somebody who knows the
-        // term, and the words that say it are in the file beside what the
-        // agent is handed.
-        let choices: Vec<(String, String, Option<String>)> = match key {
-            "theme" => self
-                .themes()
-                .into_iter()
-                .map(|name| (name.clone(), name, None))
-                .collect(),
+        // does: a name like `feature-branch` says what it is only to
+        // somebody who knows the term, and the words that say it are in
+        // the file beside what the agent is handed.
+        let choices: Vec<(String, Option<String>)> = match key {
+            "theme" => self.themes().into_iter().map(|name| (name, None)).collect(),
             "workflow" => super::opening::workflows()
-                .map(|(name, title, about)| {
-                    (name.to_string(), title.to_string(), Some(about.to_string()))
-                })
+                .map(|(name, _, about)| (name.to_string(), Some(about.to_string())))
                 .collect(),
             _ => choices
                 .iter()
-                .map(|choice| ((*choice).to_string(), (*choice).to_string(), None))
+                .map(|choice| ((*choice).to_string(), None))
                 .collect(),
         };
+        let label = |word: &str| self.called(key, word).unwrap_or(word).to_string();
         // The one in force, as the list says it: it finds what to open on
         // by the label rather than the word the file has.
-        let preferred = choices
-            .iter()
-            .find(|(choice, ..)| choice == word)
-            .map_or_else(|| word.to_string(), |(_, label, _)| label.clone());
+        let preferred = label(word);
         let items: Vec<PickerItem> = choices
             .into_iter()
-            .map(|(choice, label, about)| PickerItem {
+            .map(|(choice, about)| PickerItem {
                 prose: false,
                 marker: None,
                 icon: None,
-                label,
+                label: label(&choice),
                 detail: about,
                 trailing: None,
                 changed: None,
@@ -626,6 +617,24 @@ impl App {
             .as_deref()
             .and_then(obelus_theme::written::beside);
         project.into_iter().chain(readers).collect()
+    }
+
+    /// What one of a setting's words is called on screen, where it is
+    /// called something other than the word.
+    ///
+    /// The one answer the list a word is chosen from and the settings row
+    /// it goes back to both read, so the two cannot call one choice by two
+    /// names. Only the workflows have titles: a word like `feature-branch`
+    /// is the setting's, written in the reader's file, and a name rather
+    /// than copy.
+    #[must_use]
+    pub fn called(&self, key: &str, word: &str) -> Option<&'static str> {
+        match key {
+            "workflow" => super::opening::workflows()
+                .find(|(name, ..)| *name == word)
+                .map(|(_, title, _)| title),
+            _ => None,
+        }
     }
 
     /// Every theme there is to choose from, nearest first and without

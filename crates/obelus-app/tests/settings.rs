@@ -3693,7 +3693,7 @@ fn what_a_project_may_not_set_is_marked_on_the_projects_file() {
 /// Broken deliberately four ways: the choices with no detail, which
 /// leaves neither on screen; the list not wrapping, which leaves one row of
 /// each; the list without `details_whole`, which loses the last words; and
-/// the list at the ordinary height, which leaves `feature-branch` off it.
+/// the list at the ordinary height, which leaves `Feature branch` off it.
 #[test]
 fn each_workflow_says_what_it_does_where_it_is_chosen() {
     let _turn = SETTINGS
