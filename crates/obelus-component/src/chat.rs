@@ -1089,6 +1089,27 @@ impl Chat {
         Some(self.said.remove(at).text)
     }
 
+    /// Takes back everything the reader said that has not gone, joined the
+    /// way it would have gone, and puts the caret where they go.
+    ///
+    /// The box and not the transcript, even for a reader standing in the
+    /// transcript: the rows they were on are the ones leaving it.
+    pub fn take_back_waiting(&mut self) -> Option<String> {
+        if !self.said.iter().any(|said| said.unsent) {
+            return None;
+        }
+        self.forget_the_layout();
+        let (waiting, kept): (Vec<Said>, Vec<Said>) = std::mem::take(&mut self.said)
+            .into_iter()
+            .partition(|said| said.unsent);
+        self.said = kept;
+        if let Focus::Transcript(at) = self.focus {
+            self.leave_the_transcript(at);
+        }
+        let words: Vec<String> = waiting.into_iter().map(|said| said.text).collect();
+        Some(words.join("\n\n"))
+    }
+
     /// Takes the reader's own words back from the agent.
     ///
     /// What this is for is a conversation taken up again: the agent replays

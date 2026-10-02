@@ -1487,10 +1487,8 @@ impl App {
     /// of. Joined by a blank line, which is what the box's own `alt+enter`
     /// makes, so what arrives is what they would have typed.
     ///
-    /// A turn the reader stopped releases these too. Their words were
-    /// never taken from them -- the rows are on the page and enter takes
-    /// one back -- so escape means "stop what the agent is doing" and not
-    /// "unsay what I said".
+    /// A turn the reader stopped has nothing left here to say: escape took
+    /// it back into the box first (`interrupt_agent`).
     fn say_what_was_waiting(&mut self, whose: Whose) {
         let Some(talk) = self.talk_mut(whose) else {
             return;
@@ -1525,7 +1523,21 @@ impl App {
     ///
     /// The half Obelus owes for not asking before it runs them: a key
     /// stops it.
+    ///
+    /// And what the reader said while it ran goes back into the box rather
+    /// than to the agent. It used to go the moment the turn ended, so the
+    /// conversation stopped and started again on one press -- the mark
+    /// still turning under `Stopped`, because the words that had gone were
+    /// above that line -- and the reader pressed escape again and stopped
+    /// their own words. Stop means stop; saying them is enter, in the box,
+    /// where they can be changed first.
     pub(super) fn interrupt_agent(&mut self) {
+        if let Some(words) = self
+            .conversation_mut()
+            .and_then(|talk| talk.chat.take_back_waiting())
+        {
+            self.put_back(words);
+        }
         let running: Vec<String> = self
             .conversation()
             .map(|talk| talk.chat.commands())
@@ -1551,6 +1563,20 @@ impl App {
             return;
         };
         talker.interrupt(session.as_ref());
+    }
+
+    /// Puts words the reader took back into the box, in front of whatever
+    /// they had started typing and as its own paragraph: neither of the two
+    /// is Obelus's to throw away.
+    fn put_back(&mut self, words: String) {
+        if let Some(talk) = self.conversation_mut() {
+            let started = talk.chat.writing().text();
+            let put = match started.trim().is_empty() {
+                true => words,
+                false => format!("{words}\n\n{started}"),
+            };
+            talk.chat.put(&put);
+        }
     }
 
     /// Stops the agent, if one is running.
@@ -1858,17 +1884,7 @@ impl App {
                 true
             }
             ChatOutcome::TakeBack(words) => {
-                if let Some(talk) = self.conversation_mut() {
-                    // In front of whatever they had started typing, as its
-                    // own paragraph: neither of the two is Obelus's to
-                    // throw away.
-                    let started = talk.chat.writing().text();
-                    let put = match started.trim().is_empty() {
-                        true => words,
-                        false => format!("{words}\n\n{started}"),
-                    };
-                    talk.chat.put(&put);
-                }
+                self.put_back(words);
                 true
             }
             // Somewhere the reader was sent, sent again: the browser tab

@@ -699,20 +699,23 @@ fn what_the_reader_says_into_a_running_turn_waits_for_it() {
     );
 }
 
-/// A turn the reader stopped lets what they said out behind it.
+/// A turn the reader stopped puts what they said into it back in the box.
 ///
-/// Stopping is the reader saying "stop what the agent is doing". It used to
-/// mean "and hold my words back as well", because the words had been taken
-/// off the page into a queue and Obelus sending them unasked was Obelus
-/// speaking for them. They are on the page now, in their own voice, and
-/// enter on one takes it back -- so escape has no business unsaying them,
-/// and stopping the turn is the one key that means "go now".
+/// It let them go, as the next turn, the moment the stop arrived: so one
+/// press of escape stopped the agent and started it again, the mark went on
+/// turning under `Stopped` -- the words that went were above that line --
+/// and the reader pressed escape a second time and stopped their own words.
+/// Stop means stop, and enter is the key that says something.
 ///
-/// Broken deliberately by returning from the `cancelled` arm of
-/// `Incoming::Ended` before it reaches `say_what_was_waiting`, which is
-/// what `held_back` used to do: `blocks=` never arrives.
+/// All of them, in the order they were said, joined the way they would have
+/// gone; and in front of what was already in the box, which is the reader's
+/// too.
+///
+/// Broken deliberately by taking the `take_back_waiting` out of
+/// `interrupt_agent`: the turn's end lets them go, and the box is left with
+/// only what was being typed.
 #[test]
-fn a_turn_the_reader_stopped_lets_what_was_waiting_go() {
+fn a_turn_the_reader_stopped_puts_what_was_waiting_back_in_the_box() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the handshake", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -724,14 +727,13 @@ fn a_turn_the_reader_stopped_lets_what_was_waiting_go() {
     });
     support::type_text(&mut app, "/blocks");
     support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "and then");
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "half typed");
 
     support::press(&mut app, KeyCode::Esc);
-    pump(&mut app, &events, "what was waiting", |app| {
-        app.chat().is_some_and(|chat| {
-            chat.rows(WIDTH)
-                .iter()
-                .any(|row| row.text().contains("blocks="))
-        })
+    pump(&mut app, &events, "the turn to end", |app| {
+        app.talking() == obelus_agent::Talking::Ready
     });
     let text = screen(&mut app);
     assert!(
@@ -739,9 +741,18 @@ fn a_turn_the_reader_stopped_lets_what_was_waiting_go() {
         "it did not say it stopped:\n{text}"
     );
     assert_eq!(
+        app.chat().map(|chat| chat.writing().text()),
+        Some("/blocks\n\nand then\n\nhalf typed".to_string()),
+        "what was waiting is not back in the box, in order"
+    );
+    assert_eq!(
         app.chat().map(|chat| chat.unsent()),
         Some(Vec::new()),
-        "it went and was kept waiting as well"
+        "it is in the box and still waiting on the page as well"
+    );
+    assert!(
+        !text.contains("blocks="),
+        "what was waiting went to the agent:\n{text}"
     );
 }
 
@@ -759,6 +770,9 @@ fn a_turn_the_reader_stopped_lets_what_was_waiting_go() {
 /// arm it tries before `/blocks`: joined, the prompt reaches the arm named
 /// by its second half, and `blocks=` never arrives.
 ///
+/// Behind `/run`, which ends on its own once its command has: a turn the
+/// reader stops puts what was waiting back in the box instead.
+///
 /// Broken deliberately by sending only `unsent()[0]` from
 /// `say_what_was_waiting`, which leaves `/forever` behind and answers
 /// `/blocks` on its own.
@@ -768,7 +782,7 @@ fn what_was_waiting_goes_as_one_prompt() {
     pump(&mut app, &events, "the handshake", |app| {
         app.talking() == obelus_agent::Talking::Ready
     });
-    support::type_text(&mut app, "/forever");
+    support::type_text(&mut app, "/run");
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "it to start thinking", |app| {
         app.talking() == obelus_agent::Talking::Thinking
@@ -783,12 +797,11 @@ fn what_was_waiting_goes_as_one_prompt() {
         "both should be waiting"
     );
 
-    support::press(&mut app, KeyCode::Esc);
-    pump(&mut app, &events, "the stop to land", |app| {
+    pump(&mut app, &events, "the first turn to end", |app| {
         app.chat().is_some_and(|chat| {
             chat.rows(WIDTH)
                 .iter()
-                .any(|row| row.text().contains("Stopped"))
+                .any(|row| row.text().contains("obelus-ran-this"))
         })
     });
     // Long enough for an answer to either of them to have arrived.
@@ -1045,7 +1058,8 @@ fn a_title_longer_than_the_row_keeps_the_row_its_own_end() {
 /// turn that replaced it and the conversation goes to resting with an agent
 /// still working in it -- the whole bug this queue was written for,
 /// arriving by the one door the queue leaves open, which is the reader
-/// stopping a turn with something waiting behind it.
+/// saying something in the moment between pressing escape and the stop
+/// landing: it waits, and goes when the stop lands.
 ///
 /// Broken deliberately by dropping the `open.turn != Some(turn)` guard in
 /// `Talk::on`, so that any answer ends whatever is running: this reads
@@ -1061,14 +1075,14 @@ fn the_answer_to_a_cancelled_turn_does_not_end_the_next_one() {
     pump(&mut app, &events, "it to start thinking", |app| {
         app.talking() == obelus_agent::Talking::Thinking
     });
-    // A second turn that also does not end on its own, so that "is it still
-    // thinking" is a question about the second one and nothing else.
+    // Stop the first turn, and say something before the stop has landed
+    // -- a second turn that also does not end on its own, so that "is it
+    // still thinking" is a question about the second one and nothing else.
+    // It waits, and goes out when the stop lands; the agent answers the
+    // cancelled prompt with `cancelled` somewhere behind it.
+    support::press(&mut app, KeyCode::Esc);
     support::type_text(&mut app, "/forever");
     support::press(&mut app, KeyCode::Enter);
-
-    // Stop the first turn, which lets the second out behind it: the agent
-    // answers the cancelled prompt with `cancelled` somewhere behind us.
-    support::press(&mut app, KeyCode::Esc);
     pump(&mut app, &events, "the first turn to end", |app| {
         app.chat().is_some_and(|chat| {
             chat.rows(WIDTH)
