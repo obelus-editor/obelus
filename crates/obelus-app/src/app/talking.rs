@@ -1532,11 +1532,10 @@ impl App {
     /// their own words. Stop means stop; saying them is enter, in the box,
     /// where they can be changed first.
     pub(super) fn interrupt_agent(&mut self) {
-        if let Some(words) = self
-            .conversation_mut()
-            .and_then(|talk| talk.chat.take_back_waiting())
+        if let Some(talk) = self.conversation_mut()
+            && let Some(parts) = talk.chat.take_back_waiting()
         {
-            self.put_back(words);
+            talk.chat.put_back(parts);
         }
         let running: Vec<String> = self
             .conversation()
@@ -1563,20 +1562,6 @@ impl App {
             return;
         };
         talker.interrupt(session.as_ref());
-    }
-
-    /// Puts words the reader took back into the box, in front of whatever
-    /// they had started typing and as its own paragraph: neither of the two
-    /// is Obelus's to throw away.
-    fn put_back(&mut self, words: String) {
-        if let Some(talk) = self.conversation_mut() {
-            let started = talk.chat.writing().text();
-            let put = match started.trim().is_empty() {
-                true => words,
-                false => format!("{words}\n\n{started}"),
-            };
-            talk.chat.put(&put);
-        }
     }
 
     /// Stops the agent, if one is running.
@@ -1883,8 +1868,10 @@ impl App {
                 self.interrupt_agent();
                 true
             }
-            ChatOutcome::TakeBack(words) => {
-                self.put_back(words);
+            ChatOutcome::TakeBack(parts) => {
+                if let Some(talk) = self.conversation_mut() {
+                    talk.chat.put_back(parts);
+                }
                 true
             }
             // Somewhere the reader was sent, sent again: the browser tab

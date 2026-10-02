@@ -548,7 +548,7 @@ pub enum ChatOutcome {
     Interrupt,
     /// Put these words back in the box: the reader took back something
     /// they had said that had not gone yet.
-    TakeBack(String),
+    TakeBack(Vec<crate::composer::Part>),
     /// Move to the agent's next way of working.
     StepMode,
     /// Open what a row of the transcript names.
@@ -1081,12 +1081,12 @@ impl Chat {
     ///
     /// Only something that has not gone: a thing already said to an agent
     /// cannot be unsaid, and a row that has gone does not offer this.
-    pub fn take_back(&mut self, at: usize) -> Option<String> {
+    pub fn take_back(&mut self, at: usize) -> Option<Vec<crate::composer::Part>> {
         if !self.said.get(at).is_some_and(|said| said.unsent) {
             return None;
         }
         self.forget_the_layout();
-        Some(self.said.remove(at).text)
+        Some(self.said.remove(at).parts)
     }
 
     /// Takes back everything the reader said that has not gone, joined the
@@ -1094,7 +1094,7 @@ impl Chat {
     ///
     /// The box and not the transcript, even for a reader standing in the
     /// transcript: the rows they were on are the ones leaving it.
-    pub fn take_back_waiting(&mut self) -> Option<String> {
+    pub fn take_back_waiting(&mut self) -> Option<Vec<crate::composer::Part>> {
         if !self.said.iter().any(|said| said.unsent) {
             return None;
         }
@@ -1106,8 +1106,14 @@ impl Chat {
         if let Focus::Transcript(at) = self.focus {
             self.leave_the_transcript(at);
         }
-        let words: Vec<String> = waiting.into_iter().map(|said| said.text).collect();
-        Some(words.join("\n\n"))
+        let mut parts = Vec::new();
+        for said in waiting {
+            if !parts.is_empty() {
+                parts.push(crate::composer::Part::Words("\n\n".to_string()));
+            }
+            parts.extend(said.parts);
+        }
+        Some(parts)
     }
 
     /// Takes the reader's own words back from the agent.
@@ -2452,6 +2458,17 @@ impl Chat {
     /// input after it.
     pub fn put(&mut self, words: &str) {
         self.input.replace(words);
+    }
+
+    /// Puts what the reader took back into the box, in front of whatever
+    /// they had started typing and as its own paragraph: neither of the two
+    /// is Obelus's to throw away.
+    pub fn put_back(&mut self, mut parts: Vec<crate::composer::Part>) {
+        if !self.input.is_blank() {
+            parts.push(crate::composer::Part::Words("\n\n".to_string()));
+            parts.extend(self.input.parts());
+        }
+        self.input.put_parts(parts);
     }
 
     /// Adds something said, and keeps the view at the end.
@@ -4325,6 +4342,42 @@ mod tests {
         assert_eq!(
             chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]),
             ChatOutcome::Ignored
+        );
+    }
+
+    /// What was waiting goes back in the box with its pictures, in front of
+    /// what was being typed.
+    ///
+    /// It went back as the words the page spells it with, so a picture
+    /// came back as `[Image 1]` -- words, which enter then sent as words.
+    ///
+    /// Deliberate break: have `take_back_waiting` hand back each one's
+    /// `text` as words rather than its `parts`, and the picture is gone.
+    #[test]
+    fn what_was_waiting_goes_back_with_its_pictures() {
+        use crate::composer::{Attached, Part};
+        let picture = Attached {
+            mime: "image/png".to_string(),
+            bytes: b"png".to_vec(),
+        };
+        let mut chat = Chat::new();
+        chat.will_say(&[
+            Part::Words("look at ".to_string()),
+            Part::Picture(picture.clone()),
+        ]);
+        chat.will_say(&[Part::Words("and this".to_string())]);
+        chat.put("half typed");
+
+        let parts = chat.take_back_waiting();
+        assert!(chat.unsent().is_empty(), "it is still waiting on the page");
+        chat.put_back(parts.expect("nothing came back"));
+        assert_eq!(
+            chat.writing().parts(),
+            vec![
+                Part::Words("look at ".to_string()),
+                Part::Picture(picture),
+                Part::Words("\n\nand this\n\nhalf typed".to_string()),
+            ]
         );
     }
 
