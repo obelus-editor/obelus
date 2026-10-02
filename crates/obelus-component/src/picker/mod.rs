@@ -793,6 +793,17 @@ pub struct Picker {
     /// before them, rather than commands out of the table: nothing else
     /// binds them and there is nothing for a reader to rebind.
     opens: bool,
+    /// Whether the rows of this list are only read.
+    ///
+    /// A list of things to be told rather than chosen from: what went wrong
+    /// on the way up, whose rows go nowhere. Such a list has no row the
+    /// reader is on -- a mark behind one would say the keys act on it,
+    /// and nothing does -- so it is drawn without one, the keys that move
+    /// a selection move the rows instead, and neither enter nor a click
+    /// does anything. Said where the list is made rather than worked out
+    /// from its rows going nowhere, which a row may do in a list that is
+    /// otherwise chosen from.
+    reads: bool,
     /// Whether the rows of this list wrap, and the mark in front of a
     /// row's detail where they do.
     ///
@@ -882,6 +893,7 @@ impl Picker {
             prefer: None,
             nests: false,
             opens: false,
+            reads: false,
             filling: None,
             ordered: false,
             footed: false,
@@ -1508,7 +1520,32 @@ impl Picker {
     /// list and reappearing at the top is a jump nobody asked for, and a
     /// wheel is rolled without looking.
     pub fn move_selection_by(&mut self, rows: isize) {
+        // The wheel over a list that is only read moves the rows, since
+        // there is no selection for a notch to step. A page of one, which
+        // lets the top go as far as the last row: the next frame's settle
+        // is what holds it to a page from the end.
+        if self.reads {
+            let movement = match rows < 0 {
+                true => Move::Up,
+                false => Move::Down,
+            };
+            for _ in 0..rows.unsigned_abs() {
+                self.scroll_reading(movement, 1);
+            }
+            return;
+        }
         self.move_selection(rows, Wrap::No);
+    }
+
+    /// Makes this a list that is only read: see `reads`.
+    pub fn only_read(&mut self) {
+        self.reads = true;
+    }
+
+    /// Whether it is one.
+    #[must_use]
+    pub const fn is_only_read(&self) -> bool {
+        self.reads
     }
 
     /// Puts a query back, for a list that has been rebuilt under a reader
@@ -2054,6 +2091,20 @@ impl Picker {
         let paging = matches!(key.code, KeyCode::PageUp | KeyCode::PageDown);
 
         let outcome = match key.code {
+            // A list that is only read is moved, not chosen in: the keys
+            // that walk a selection elsewhere move the rows under a window
+            // with no row marked in it, and enter has nothing to act on.
+            // Swallowed rather than refused, so it does not reach whatever
+            // is under the list.
+            KeyCode::Enter if self.reads => PickerOutcome::Consumed,
+            code if self.reads
+                && (bare || control)
+                && !(bare && matches!(code, KeyCode::Home | KeyCode::End))
+                && let Some(movement) = Move::of(code) =>
+            {
+                self.scroll_reading(movement, page);
+                PickerOutcome::Consumed
+            }
             // The same keys the editor uses to reach the ends of a document,
             // doing the same thing to a list. That they duplicate Home and
             // End here is worth it: a key should not mean one thing in one
@@ -2167,7 +2218,33 @@ impl Picker {
     /// on; a selection that jumped to the top would leave the reader
     /// somewhere they did not ask to be.
     pub fn select_row(&mut self, row: usize) {
+        // A list that is only read has no row to be on.
+        if self.reads {
+            return;
+        }
         self.select(row);
+    }
+
+    /// Moves the rows of a list that is only read.
+    ///
+    /// The window's top and its focus kept together, so that settling it
+    /// on the next frame -- which brings the focus back on screen -- has
+    /// nothing to bring back: the focus is where the window starts.
+    fn scroll_reading(&mut self, movement: Move, page: isize) {
+        let rows = isize::try_from(self.matched.len()).unwrap_or(isize::MAX);
+        let last = (rows - page).max(0);
+        let top = isize::try_from(self.window.top()).unwrap_or(0);
+        let to = match movement {
+            Move::Up => top - 1,
+            Move::Down => top + 1,
+            Move::PageUp => top - page,
+            Move::PageDown => top + page,
+            Move::First => 0,
+            Move::Last => last,
+        }
+        .clamp(0, last);
+        self.window.scroll(to - top);
+        self.window.set_focus(usize::try_from(to).unwrap_or(0));
     }
 
     fn select(&mut self, row: usize) {
@@ -2446,6 +2523,46 @@ impl Picker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A list that is only read is moved, not chosen in.
+    ///
+    /// The keys that walk a selection move the rows, enter does nothing, a
+    /// click puts the reader on no row, and the wheel moves the rows too --
+    /// what went wrong on the way up is such a list, and its rows go
+    /// nowhere.
+    ///
+    /// Deliberate break: taking the `self.reads` arms out of `handle_key`
+    /// (the first two assertions: the arrow moves a selection inside the
+    /// window, which does not move, and enter accepts the row); taking the
+    /// early return out of `select_row` (the third); and out of
+    /// `move_selection_by` (the fourth).
+    #[test]
+    fn a_list_that_is_only_read_moves_its_rows_and_chooses_nothing() {
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+        let rows = (0..30).map(|n| named(&n.to_string())).collect();
+        let mut picker = Picker::new(rows, PickerLayout::Compact { rows: 10 });
+        picker.only_read();
+        let bare = |code| KeyEvent::new(code, KeyModifiers::NONE);
+
+        picker.handle_key(&bare(KeyCode::Down), 10);
+        picker.refresh_indices(10, 40);
+        assert_eq!(picker.window().top(), 1, "the arrow did not move the rows");
+
+        assert!(
+            matches!(
+                picker.handle_key(&bare(KeyCode::Enter), 10),
+                PickerOutcome::Consumed
+            ),
+            "enter chose a row of a list that is only read"
+        );
+
+        picker.select_row(7);
+        assert_eq!(picker.selected(), 1, "a click put the reader on a row");
+
+        picker.move_selection_by(3);
+        picker.refresh_indices(10, 40);
+        assert_eq!(picker.window().top(), 4, "the wheel did not move the rows");
+    }
 
     /// A compact list is as tall as it has rows, up to what it asked for.
     /// It is drawn over code that is still being read, so a row it takes

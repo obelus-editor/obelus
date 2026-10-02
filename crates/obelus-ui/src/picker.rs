@@ -549,7 +549,9 @@ impl Widget for PickerView<'_> {
             crate::shapes::scrolled(rows, top, bar);
         }
 
-        let selected = self.picker.selected();
+        // No row is the reader's in a list that is only read, so none is
+        // marked as theirs.
+        let selected = (!self.picker.is_only_read()).then(|| self.picker.selected());
         for (row, (index, item)) in self
             .picker
             .matches()
@@ -564,7 +566,7 @@ impl Widget for PickerView<'_> {
                 rows,
                 rows.y + row,
                 item,
-                index == selected,
+                Some(index) == selected,
                 self.picker.indices_at(index),
             );
         }
@@ -674,7 +676,7 @@ impl PickerView<'_> {
             return;
         }
         let matched = self.picker.indices_at(place);
-        let background = match place == self.picker.selected() {
+        let background = match place == self.picker.selected() && !self.picker.is_only_read() {
             true => self.theme.selected_row_background,
             false => self.theme.background,
         };

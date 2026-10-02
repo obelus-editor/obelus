@@ -2473,6 +2473,31 @@ fn what_went_wrong_has_the_keys_until_it_is_let_go() {
     );
 }
 
+/// No row of it is marked as the reader's, because its rows go nowhere:
+/// the mark behind a row says the keys act on it.
+///
+/// Deliberate break: taking the `is_only_read` out of the picker view's
+/// `selected`, and the first row wears the mark.
+#[test]
+fn no_row_of_what_went_wrong_is_marked_as_the_readers() {
+    let scratch = support::Scratch::new("welcome-unmarked");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.config_file_for_test(a_settings_file_with_two_mistakes(&scratch));
+    started(&mut app);
+    let dump = support::render(&mut app, 76, 26);
+    let ratatui::style::Color::Rgb(red, green, blue) =
+        obelus_ui::Screen::theme(&app).selected_row_background
+    else {
+        panic!("a theme whose rows are not marked in a colour");
+    };
+    let mark = format!("bg=#{red:02x}{green:02x}{blue:02x}");
+    assert!(
+        !dump.contains(&mark),
+        "a row is marked as the reader's:\n{dump}"
+    );
+}
+
 /// And a start with nothing wrong puts nothing up.
 ///
 /// Almost every start is this one. A list saying nothing happened would be

@@ -1732,6 +1732,9 @@ impl App {
         }
         let mut picker = Picker::new(rows, PickerLayout::Compact { rows: COMPACT_ROWS });
         picker.before_typing("What went wrong starting up");
+        // Read, not chosen from: its rows go nowhere, so no row is the
+        // reader's to be on.
+        picker.only_read();
         self.show_list(picker);
         true
     }
