@@ -745,6 +745,64 @@ mod saving {
         (scratch, app, path)
     }
 
+    /// A save that fails leaves nothing in the reader's tree.
+    ///
+    /// The name it was written through is this process's own, so nobody
+    /// will write over it later -- and it is in the reader's repository,
+    /// beside their file.
+    ///
+    /// Broken deliberately by taking the `remove_file` out of
+    /// `Buffer::save`: the bytes it wrote stay beside the file.
+    #[test]
+    fn a_save_that_fails_leaves_nothing_beside_the_file() {
+        let scratch = support::Scratch::new("save-failed");
+        let path = scratch.path().join("sample.rs");
+        std::fs::write(&path, "fn main() {}\n").expect("writing the file");
+        let mut buffer = Buffer::open(&path).expect("opening it");
+        // A directory where the file was, so the rename has nowhere to go.
+        std::fs::remove_file(&path).expect("taking it away");
+        std::fs::create_dir_all(path.join("in the way")).expect("a directory where it goes");
+
+        assert!(buffer.save().is_err(), "it was saved");
+        let beside: Vec<_> = std::fs::read_dir(scratch.path())
+            .expect("the directory")
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name())
+            .filter(|name| name != "sample.rs")
+            .collect();
+        assert!(beside.is_empty(), "it left {beside:?} behind");
+    }
+
+    /// Another Obelus halfway through saving the same file is left alone.
+    ///
+    /// Two of them on one project is the ordinary case, and both can save
+    /// one file. Its bytes sit beside the file under the name every Obelus
+    /// once saved through, and saving through that name again truncates
+    /// them and renames them away under it.
+    ///
+    /// Broken deliberately by having `Buffer::save` write beside the file
+    /// as `obelus-writing` again, with no process number: the other's file
+    /// is gone.
+    #[test]
+    fn another_obelus_saving_the_same_file_is_left_alone() {
+        let (_scratch, mut app, path) = reading("save-beside", "fn main() {}\n");
+        let theirs = path.with_extension("obelus-writing");
+        std::fs::write(&theirs, "another Obelus is halfway through this").expect("theirs");
+        support::type_text(&mut app, "// ");
+        dispatch::dispatch(&mut app, Command::FileSave);
+
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("reading it back"),
+            "// fn main() {}\n",
+            "the file was not saved"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&theirs).ok().as_deref(),
+            Some("another Obelus is halfway through this"),
+            "the other Obelus's half-written file was taken"
+        );
+    }
+
     #[test]
     fn what_was_typed_reaches_the_file() {
         let (_scratch, mut app, path) = reading("save-basic", "fn main() {}\n");

@@ -3644,7 +3644,7 @@ fn a_line_that_did_nothing_is_a_warning_on_that_line() {
         .map(|problem| (problem.span.line.get(), problem.message.as_str()))
         .collect();
     assert!(
-        said.contains(&(1, "No setting is called shrift")),
+        said.contains(&(1, "No setting is called `shrift`")),
         "{said:?}"
     );
     // Under the table it is in, which is the only way to say which of an
@@ -3652,7 +3652,7 @@ fn a_line_that_did_nothing_is_a_warning_on_that_line() {
     assert!(
         said.contains(&(
             4,
-            "What agents.copilot is set to is not a table of its settings"
+            "What `agents.copilot` is set to is not a table of its settings"
         )),
         "{said:?}"
     );
@@ -3681,7 +3681,7 @@ fn what_a_project_may_not_set_is_marked_on_the_projects_file() {
 
     let problems: Vec<_> = app.problems().collect();
     assert_eq!(problems.len(), 1, "{problems:?}");
-    assert_eq!(problems[0].message, "A project may not set agent");
+    assert_eq!(problems[0].message, "A project may not set `agent`");
     // The second line of the project's file, where `agent` is written.
     assert_eq!(problems[0].span.line.get(), 1);
 }
@@ -3754,16 +3754,19 @@ fn a_workflow_nothing_answers_to_is_marked() {
 
     let problems: Vec<_> = app.problems().collect();
     assert_eq!(problems.len(), 1, "{problems:?}");
-    assert_eq!(problems[0].message, "No workflow is called feature_branch");
+    assert_eq!(
+        problems[0].message,
+        "No workflow is called `feature_branch`"
+    );
     assert_eq!(problems[0].span.line.get(), 0);
     assert_eq!(app.config().workflow, "none", "the word was taken anyway");
 }
 
-/// And it is said on the welcome screen, because a reader who has just
+/// And it is said over the welcome screen, because a reader who has just
 /// started Obelus has opened no settings file to see the mark on.
 ///
 /// Broken deliberately the same way as the one above: `apply` taking any
-/// word leaves the welcome screen with nothing to say.
+/// word leaves the start with nothing to say.
 #[test]
 fn a_workflow_nothing_answers_to_is_said_on_the_welcome_screen() {
     let _taken = SETTINGS.lock().expect("the lock");
@@ -3772,10 +3775,13 @@ fn a_workflow_nothing_answers_to_is_said_on_the_welcome_screen() {
     app.working_directory_for_test(scratch.path().to_path_buf());
     let mine = temporary("no-workflow-welcome-mine");
     app.config_file_for_test(settings_file(&mine));
+    // Started, the way `main` does: what went wrong is put up then.
+    let (sender, _events) = std::sync::mpsc::channel();
+    app.start(sender);
     support::lay_out(&mut app, 100, 30);
     let dump = support::render(&mut app, 100, 30);
     assert!(
-        support::text_block(&dump).contains("No workflow is called feature_branch"),
+        support::text_block(&dump).contains("No workflow is called `feature_branch`"),
         "the welcome screen does not say so:\n{dump}"
     );
 }
@@ -3817,12 +3823,12 @@ fn a_key_that_bound_nothing_is_a_warning_on_that_line() {
     assert_eq!(said.len(), 3, "{said:?}");
     // The line that binds is not one of them.
     assert!(!said.iter().any(|(line, _)| *line == 3), "{said:?}");
-    assert_eq!(said[0], (4, "No command is called open-fiel".to_string()));
+    assert_eq!(said[0], (4, "No command is called `open-fiel`".to_string()));
     assert_eq!(
         said[1],
         (
             5,
-            "Nothing is bound to save-file: ctrl+shiftier+s is not a key".to_string()
+            "Nothing is bound to `save-file`: `ctrl+shiftier+s` is not a key".to_string()
         )
     );
     // The reason the page that binds keys gives, in its own words, because
@@ -3830,7 +3836,7 @@ fn a_key_that_bound_nothing_is_a_warning_on_that_line() {
     assert!(
         said[2]
             .1
-            .starts_with("Nothing is bound to close-document: "),
+            .starts_with("Nothing is bound to `close-document`: "),
         "{said:?}"
     );
     assert_eq!(said[2].0, 6);
@@ -3860,7 +3866,7 @@ fn a_theme_nothing_answers_to_is_a_warning_on_its_line() {
 
     let problems: Vec<_> = app.problems().collect();
     assert_eq!(problems.len(), 1, "{problems:?}");
-    assert_eq!(problems[0].message, "No theme is called moonlight");
+    assert_eq!(problems[0].message, "No theme is called `moonlight`");
     assert_eq!(
         problems[0].severity,
         obelus_lsp::trouble::Severity::Warning,

@@ -351,11 +351,18 @@ pub fn change(
     // Through a name beside it and a rename, the way the notes and the
     // settings are written: a crash halfway leaves the old file rather than
     // half of the new one.
-    let beside = path.with_extension("toml.writing");
+    // This process's own name beside it and not one every Obelus shares:
+    // two writing at once into one shared name truncate each other's
+    // half-written file, and the first rename takes the other's away.
+    let beside = path.with_extension(format!("toml.writing.{}", std::process::id()));
     if let Err(error) =
         std::fs::write(&beside, to_toml(&remembered)).and_then(|()| std::fs::rename(&beside, &path))
     {
         tracing::warn!(%error, path = %path.display(), "the conversations were not remembered");
+        // And not left behind: the name is this process's own, so nobody
+        // else will ever write over it, and a failed rename would leave one
+        // more of them for every Obelus that failed.
+        let _ = std::fs::remove_file(&beside);
         return None;
     }
     Some(remembered)
@@ -733,6 +740,36 @@ mod tests {
         assert!(
             remembered.get(&note("ABCDEFGH"), "codex", here()).is_some(),
             "one agent's answer threw away another agent's conversation"
+        );
+    }
+
+    /// Another Obelus halfway through writing this table is left alone.
+    ///
+    /// Broken deliberately by writing beside it as `toml.writing` again,
+    /// with no process number: the other's file is truncated and renamed
+    /// away under it.
+    #[test]
+    fn another_obelus_writing_the_table_is_left_alone() {
+        obelus_logging::state_directory_for_test(
+            std::env::temp_dir().join(format!("obelus-sessions-state-{}", std::process::id())),
+        );
+        let Some(state) = obelus_logging::state_directory() else {
+            return;
+        };
+        let root = state.join("sessions-beside-test");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("the directory");
+        let theirs = path(&root)
+            .expect("somewhere to keep it")
+            .with_extension("toml.writing");
+        std::fs::create_dir_all(theirs.parent().expect("the directory")).expect("the directory");
+        std::fs::write(&theirs, "another Obelus is halfway through this").expect("theirs");
+
+        assert!(change(&root, None, |_| {}).is_some(), "nothing was written");
+        assert_eq!(
+            std::fs::read_to_string(&theirs).ok().as_deref(),
+            Some("another Obelus is halfway through this"),
+            "the other Obelus's half-written table was taken"
         );
     }
 }

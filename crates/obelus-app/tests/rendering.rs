@@ -2392,181 +2392,305 @@ fn the_end_of_a_reading_is_its_last_screenful() {
     let _ = std::fs::remove_file(&path);
 }
 
-/// The welcome screen says what went wrong on the way up.
-///
-/// Which is the one place it can be said: a mark on a line of a settings
-/// file is a mark nobody sees until they open it, and the screen that shows
-/// when nothing is open is where a reader is standing when it matters.
-///
-/// Under the keys and never in front of them: what this screen is for is
-/// the way in.
-///
-/// Deliberate break: `WelcomeView` drawing the block above the keys instead
-/// (the last assertion), and `amiss_height` answering zero (the rest).
-#[test]
-fn the_welcome_screen_says_what_went_wrong_starting_up() {
-    let scratch = support::Scratch::new("welcome-amiss");
-    let file = scratch.join("config.toml");
-    std::fs::write(&file, "theme = \"dark\"\nshrift = 15\n").expect("writing a settings file");
-
-    let mut app = App::new(Vec::new());
-    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
-    app.config_file_for_test(file);
-    let dump = support::render(&mut app, 76, 26);
-    let text = support::text_block(&dump);
-
-    assert!(text.contains("What went wrong starting up"), "{dump}");
-    assert!(text.contains("No setting is called shrift"), "{dump}");
-    // The file and the line it is on, counted the way a reader counts.
-    assert!(text.contains("config.toml:2"), "{dump}");
-
-    let keys = text
-        .find(&obelus_editing::keymap::function(1).label())
-        .expect("the key that opens a file");
-    let wrong = text
-        .find("What went wrong starting up")
-        .expect("the heading");
-    assert!(
-        keys < wrong,
-        "what went wrong was put in front of the way in"
-    );
-}
-
-/// And a screen with nothing wrong has no block at all.
-///
-/// Almost every start is this one. A heading over an empty list would be a
-/// row of screen spent saying nothing happened.
-///
-/// Deliberate break: `amiss` drawing its heading whatever the list holds.
-#[test]
-fn a_welcome_screen_with_nothing_wrong_says_nothing() {
-    let scratch = support::Scratch::new("welcome-well");
-    let file = scratch.join("config.toml");
-    std::fs::write(&file, "theme = \"dark\"\n").expect("writing a settings file");
-
-    let mut app = App::new(Vec::new());
-    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
-    app.config_file_for_test(file);
-    let dump = support::render(&mut app, 76, 26);
-    assert!(
-        !support::text_block(&dump).contains("What went wrong"),
-        "{dump}"
-    );
-}
-
-/// The arrows walk what went wrong, and enter goes to the line.
-///
-/// Which is why it is a list and not a paragraph: most of what Obelus finds
-/// on the way up is about a line of a file the reader wrote, and being told
-/// about it without being taken there is half an answer.
-///
-/// Deliberate break: `went_wrong_key` answering `false`, which lets the
-/// arrows fall through to a file that is not open and leaves the focus
-/// where it was; and `Enter` handled before the movement, which never
-/// reaches the second row.
-#[test]
-fn the_arrows_walk_what_went_wrong_and_enter_goes_there() {
-    let scratch = support::Scratch::new("welcome-walk");
+/// A settings file Obelus cannot make all of, which is what went wrong.
+fn a_settings_file_with_two_mistakes(scratch: &support::Scratch) -> std::path::PathBuf {
     let file = scratch.join("config.toml");
     std::fs::write(&file, "theme = \"dark\"\nshrift = 15\nwrapp = true\n")
         .expect("writing a settings file");
-
-    let mut app = App::new(Vec::new());
-    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
-    app.config_file_for_test(file.clone());
-    support::lay_out(&mut app, 76, 26);
-    assert_eq!(app.what_went_wrong().len(), 2);
-    assert_eq!(app.went_wrong_at(), 0);
-
-    support::press(&mut app, KeyCode::Down);
-    assert_eq!(app.went_wrong_at(), 1, "the arrow did not walk the list");
-
-    support::press(&mut app, KeyCode::Enter);
-    let buffer = app.current_buffer().expect("the settings file was opened");
-    assert_eq!(buffer.path(), file);
-    // The third line, where `wrapp` is written -- counted from zero by the
-    // cursor and from one by the reader.
-    assert_eq!(buffer.cursor().line.get(), 2);
+    file
 }
 
-/// And nothing walks when there is nothing wrong.
+/// Starts it, the way `main` does once the screen is up.
+fn started(app: &mut App) {
+    let (sender, _events) = std::sync::mpsc::channel();
+    app.start(sender);
+}
+
+/// What went wrong on the way up is a list put up over the welcome screen.
 ///
-/// Deliberate break: `went_wrong_key` walking a list it has not been given
-/// -- `set_count` left out of the frame, so the window keeps whatever
-/// count it had from a screen that did have something wrong.
+/// Which is the one place it can be said: a mark on a line of a settings
+/// file is a mark nobody sees until they open it, and the screen that shows
+/// when nothing is open is where a reader is standing when it matters. A
+/// list rather than a block on the screen, because a block was a second
+/// thing there with keys of its own: the list is the one thing on screen
+/// until it is let go.
 ///
-/// What this does *not* check is the guard on the list being empty. It is
-/// there so the arrows are not claimed where no block is drawn, and with
-/// nothing open there is nothing under them to claim them instead -- so
-/// taking the guard out changes nothing a test can see. Kept because the
-/// moment something is under this screen it would be wrong, and noted here
-/// because a guard nothing holds to is a guard somebody deletes.
+/// Deliberate break: taking the `tell_what_went_wrong` out of `App::start`,
+/// and the welcome screen opens with nothing said; and taking the
+/// `is_only_read` branch out of `prompt_row`, and the row under the list is
+/// a box to type into with no word on it of how to leave.
 #[test]
-fn nothing_walks_a_welcome_screen_with_nothing_wrong() {
-    let scratch = support::Scratch::new("welcome-nowalk");
+fn what_went_wrong_is_a_list_over_the_welcome_screen() {
+    let scratch = support::Scratch::new("welcome-told");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.config_file_for_test(a_settings_file_with_two_mistakes(&scratch));
+    started(&mut app);
+    let dump = support::render(&mut app, 76, 26);
+    let text = support::text_block(&dump);
+
+    assert!(text.contains("No setting is called `shrift`"), "{dump}");
+    assert!(text.contains("No setting is called `wrapp`"), "{dump}");
+    // The file and the line it is on, counted the way a reader counts.
+    assert!(text.contains("config.toml:2"), "{dump}");
+    // And what the list is, where a list says what it is -- with the key
+    // that lets it go, since nothing on it can be typed or chosen.
+    assert!(text.contains("What went wrong starting up"), "{dump}");
+    assert!(
+        text.contains("Close"),
+        "nothing says how to let it go:\n{dump}"
+    );
+}
+
+/// The list has the keys until it is let go, and then the screen under it
+/// does.
+///
+/// Deliberate break: none needed for the first half -- a compact list
+/// keeps every key it is given, and `f1` is not a way out of one (see
+/// `app/switching`). The second half is broken by having escape leave the
+/// list where it is, which is the break that matters: the welcome screen's
+/// keys never come back.
+#[test]
+fn what_went_wrong_has_the_keys_until_it_is_let_go() {
+    let scratch = support::Scratch::new("welcome-held");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.config_file_for_test(a_settings_file_with_two_mistakes(&scratch));
+    started(&mut app);
+    support::lay_out(&mut app, 76, 26);
+
+    press(&mut app, KeyCode::F(1));
+    let dump = support::render(&mut app, 76, 26);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("No setting is called `shrift`"),
+        "a key reached the screen under the list:\n{text}"
+    );
+
+    press(&mut app, KeyCode::Esc);
+    let dump = support::render(&mut app, 76, 26);
+    let text = support::text_block(&dump);
+    assert!(
+        !text.contains("No setting is called `shrift`"),
+        "escape did not let it go:\n{text}"
+    );
+    assert!(
+        text.contains(&obelus_editing::keymap::function(1).label()),
+        "the welcome screen's keys did not come back:\n{text}"
+    );
+}
+
+/// The style letters a row of the dump is drawn in, by the row's text.
+fn styles_of_the_row_saying(dump: &str, words: &str) -> String {
+    let text: Vec<&str> = dump
+        .split("-- text --\n")
+        .nth(1)
+        .and_then(|rest| rest.split("-- style --").next())
+        .expect("the text")
+        .lines()
+        .collect();
+    let style: Vec<&str> = dump
+        .split("-- style --\n")
+        .nth(1)
+        .and_then(|rest| rest.split("-- legend --").next())
+        .expect("the style")
+        .lines()
+        .collect();
+    let at = text
+        .iter()
+        .position(|line| line.contains(words))
+        .expect("the row");
+    style[at]
+        .split_once('|')
+        .map_or("", |(_, row)| row)
+        .to_string()
+}
+
+/// No row of it is marked as the reader's, because its rows go nowhere:
+/// the mark behind a row says the keys act on it.
+///
+/// Asked of the rows themselves: the cap at the end of the status row is
+/// one shade off the page as well, and in this theme it is the same shade.
+///
+/// Deliberate break: taking the `is_only_read` out of the picker view's
+/// `selected`, and the first row wears the mark.
+#[test]
+fn no_row_of_what_went_wrong_is_marked_as_the_readers() {
+    let scratch = support::Scratch::new("welcome-unmarked");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.config_file_for_test(a_settings_file_with_two_mistakes(&scratch));
+    started(&mut app);
+    let dump = support::render(&mut app, 76, 26);
+    let ratatui::style::Color::Rgb(red, green, blue) =
+        obelus_ui::Screen::theme(&app).selected_row_background
+    else {
+        panic!("a theme whose rows are not marked in a colour");
+    };
+    let mark = format!("bg=#{red:02x}{green:02x}{blue:02x}");
+    // Which letters of the legend wear it.
+    let marked: Vec<char> = dump
+        .split("-- legend --\n")
+        .nth(1)
+        .expect("the legend")
+        .lines()
+        .filter(|line| line.contains(&mark))
+        .filter_map(|line| line.chars().next())
+        .collect();
+    for words in [
+        "No setting is called `shrift`",
+        "No setting is called `wrapp`",
+    ] {
+        let row = styles_of_the_row_saying(&dump, words);
+        assert!(
+            !row.chars().any(|letter| marked.contains(&letter)),
+            "the row saying {words:?} is marked as the reader's:\n{dump}"
+        );
+    }
+}
+
+/// The ink one cell of the dump is drawn in, at the first of `words`.
+fn ink_of(dump: &str, words: &str) -> String {
+    let text = support::text_block(dump);
+    let line = text
+        .lines()
+        .find(|line| line.contains(words))
+        .expect("the row");
+    let column = line
+        .split_once('|')
+        .map_or("", |(_, row)| row)
+        .find(words)
+        .expect("the words");
+    let column = line.split_once('|').map_or("", |(_, row)| row)[..column]
+        .chars()
+        .count();
+    let letter = styles_of_the_row_saying(dump, words)
+        .chars()
+        .nth(column)
+        .expect("a letter");
+    dump.split("-- legend --\n")
+        .nth(1)
+        .expect("the legend")
+        .lines()
+        .find(|entry| entry.starts_with(letter))
+        .and_then(|entry| entry.split_whitespace().nth(1))
+        .expect("an entry")
+        .to_string()
+}
+
+/// A colour as the dump writes one.
+fn written(colour: ratatui::style::Color) -> String {
+    let ratatui::style::Color::Rgb(red, green, blue) = colour else {
+        panic!("a theme in named colours");
+    };
+    format!("fg=#{red:02x}{green:02x}{blue:02x}")
+}
+
+/// An error and a warning are told apart the way a list of problems tells
+/// them apart: each in the colour it is in the file.
+///
+/// The error is a settings file that will not read, and the warning is
+/// something with no file to be about -- which goes on as a warning, since
+/// Obelus went on without it.
+///
+/// Deliberate break: building the rows without a `kind`, and both are in
+/// the page's own ink.
+#[test]
+fn an_error_and_a_warning_are_told_apart_by_their_colour() {
+    let scratch = support::Scratch::new("welcome-severities");
+    let file = scratch.join("config.toml");
+    std::fs::write(&file, "theme = \"dark\n").expect("half a settings file");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.config_file_for_test(file);
+    app.amiss("The wheel will not be reported, so it moves the cursor");
+    started(&mut app);
+    let dump = support::render(&mut app, 76, 26);
+    let theme = obelus_ui::Screen::theme(&app);
+    let error = written(theme.syntax.colour(obelus_text::kind::SyntaxKind::Error));
+    let warning = written(theme.syntax.colour(obelus_text::kind::SyntaxKind::Warning));
+
+    let said = support::text_block(&dump);
+    let wrong = said
+        .lines()
+        .find(|line| line.contains("config.toml:"))
+        .and_then(|line| line.split_once('|'))
+        .map(|(_, row)| {
+            row.trim()
+                .split("  ")
+                .next()
+                .unwrap_or_default()
+                .to_string()
+        })
+        .expect("the settings file's row");
+    assert_eq!(
+        ink_of(&dump, &wrong),
+        error,
+        "the error is not an error's colour:\n{dump}"
+    );
+    assert_eq!(
+        ink_of(&dump, "The wheel will not be reported"),
+        warning,
+        "the warning is not a warning's colour:\n{dump}"
+    );
+}
+
+/// And a start with nothing wrong puts nothing up.
+///
+/// Almost every start is this one. A list saying nothing happened would be
+/// a key to press on every start for no reason.
+///
+/// Deliberate break: `tell_what_went_wrong` putting its list up whatever it
+/// holds.
+#[test]
+fn a_start_with_nothing_wrong_puts_nothing_up() {
+    let scratch = support::Scratch::new("welcome-quiet");
     let file = scratch.join("config.toml");
     std::fs::write(&file, "theme = \"dark\"\n").expect("writing a settings file");
 
     let mut app = App::new(Vec::new());
     app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
     app.config_file_for_test(file);
-    support::lay_out(&mut app, 76, 26);
-
-    support::press(&mut app, KeyCode::Down);
-    support::press(&mut app, KeyCode::Enter);
-    assert_eq!(app.went_wrong_at(), 0);
-    assert!(app.reading_nothing(), "something was opened");
+    started(&mut app);
+    assert!(app.picker().is_none(), "a list was put up over nothing");
 }
 
-/// A screen with room for the keys but not for what went wrong gets the
-/// keys.
+/// A start that was asked for the files, as `ob some-directory` is, says
+/// what went wrong first, and does not put the files over it.
 ///
-/// The way in is the only thing this screen is for, so the block is what
-/// gives way -- and giving way has to mean not drawing it, which is not
-/// the same as deciding not to. The height is worked out once and the
-/// drawing obeys it; worked out twice, the second answer said there was
-/// room and drew the block into a screen measured as too short for it.
-///
-/// Deliberate break: `lavish` deciding for itself whether the block fits,
-/// which is what it did -- `height >= plate + 1 + block` is true whenever
-/// the keys happen to take as many rows as the block would.
+/// Deliberate break: opening the file list whatever was said, and it goes
+/// up over the list the reader is owed.
 #[test]
-fn a_screen_too_short_for_what_went_wrong_still_gets_the_keys() {
-    let scratch = support::Scratch::new("welcome-tight");
-    let file = scratch.join("config.toml");
-    std::fs::write(&file, "theme = \"dark\"\nshrift = 15\n").expect("writing a settings file");
-
+fn what_went_wrong_is_not_put_under_the_files() {
+    let scratch = support::Scratch::new("welcome-files");
     let mut app = App::new(Vec::new());
-    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
-    app.config_file_for_test(file);
-
-    // The plate, a blank and the keys are thirteen rows; the block wants
-    // five more. Fifteen has room for the first and not the second.
-    let dump = support::render(&mut app, 76, 16);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.config_file_for_test(a_settings_file_with_two_mistakes(&scratch));
+    app.list_at_start();
+    started(&mut app);
+    let dump = support::render(&mut app, 76, 26);
     let text = support::text_block(&dump);
     assert!(
-        text.contains(&obelus_editing::keymap::function(1).label()),
-        "the keys gave way instead:\n{dump}"
-    );
-    assert!(
-        !text.contains("What went wrong starting up"),
-        "the block was drawn into a screen with no room for it:\n{dump}"
+        text.contains("No setting is called `shrift`"),
+        "the files went up over what went wrong:\n{text}"
     );
 }
 
 /// A start with nothing to go on asks which project, and offers the ones
-/// this reader has had open.
+/// this reader has had open -- on a screen of its own, with no plate: the
+/// welcome screen comes after, once there is a project to welcome anybody
+/// into.
 ///
 /// The rows are the test's own rather than the machine's: reading the real
 /// list would make this grid depend on which projects whoever ran it has
 /// opened, which is the trap the welcome screen's own fixture fell into
 /// with the working directory.
 ///
-/// Deliberate break: have `WelcomeView::render` draw the keys rather than
-/// branching on `choosing`, and the grid comes back with `F1 Open a file`
-/// on it -- a key that cannot do anything until this is answered. And by
-/// having `name_of` never find a separator: the rows go back to whole
-/// paths in one ink, with the name at the ragged end of each.
+/// Deliberate break: have `draw` render `WelcomeView` whatever
+/// `ProjectsView::new` answers, and the grid comes back with the plate and
+/// `F1 Open a file` on it -- a key that cannot do anything until this is
+/// answered. And by having `name_of` never find a separator: the rows go
+/// back to whole paths in one ink, with the name at the ragged end of each.
 #[test]
 fn a_start_with_no_project_asks_which_one() {
     let mut app = App::new(Vec::new());
@@ -2585,7 +2709,178 @@ fn a_start_with_no_project_asks_which_one() {
             last: None,
         },
     ]);
-    support::check("welcome_choosing_64x20", &support::render(&mut app, 64, 20));
+    support::check(
+        "choosing_a_project_64x20",
+        &support::render(&mut app, 64, 20),
+    );
+}
+
+/// Projects enough to fill the page, each named for where it is in the list.
+fn many_projects(how_many: usize) -> Vec<obelus_component::chooser::Known> {
+    (0..how_many)
+        .map(|at| {
+            let path = format!("/tmp/obelus/work/p{at:02}");
+            obelus_component::chooser::Known {
+                path: std::path::PathBuf::from(&path),
+                shown: path,
+                last: None,
+            }
+        })
+        .collect()
+}
+
+/// A list longer than the page scrolls under the reader, and the row that
+/// opens another stays where it is under it.
+///
+/// At 64x14 the page has six rows for projects: twelve for the editor
+/// region, two for the foot, two for the title and its rule, and the
+/// opening row and the blank over it.
+///
+/// Deliberate break: taking the `chooser.settle` out of the frame, and the
+/// window stays on the first six while the reader walks off the bottom of
+/// it (the second assertion); having `laid` place the opening row after
+/// every one of the projects rather than after the ones on the page, with
+/// the `min` that holds it on the page taken out as well, and it goes off
+/// the page (the third) -- with the `min` left in, that break is held at
+/// the very row it would have had, and stays green; and drawing no bar
+/// (the fourth).
+#[test]
+fn a_long_list_of_projects_scrolls_and_the_opening_row_stays() {
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.ask_about_these_projects_for_test(many_projects(20));
+    support::lay_out(&mut app, 64, 14);
+    for _ in 0..8 {
+        press(&mut app, KeyCode::Down);
+    }
+    let dump = support::render(&mut app, 64, 14);
+    let text = support::text_block(&dump);
+
+    assert_eq!(
+        obelus_ui::Screen::choosing(&app).expect("asking").at,
+        8,
+        "the arrows did not walk"
+    );
+    assert!(
+        text.contains("p08"),
+        "the reader walked off the page:\n{dump}"
+    );
+    assert!(
+        text.contains("Open another"),
+        "the opening row went with the projects:\n{dump}"
+    );
+    assert!(
+        // The bar's block, which nothing else on this page is drawn with.
+        text.contains('\u{2588}'),
+        "a list longer than the page does not say so:\n{dump}"
+    );
+}
+
+/// A page key moves by the rows the page has, which is six here.
+///
+/// Deliberate break: `chooser_rows` answering the ten it used to be
+/// hard-wired to, and the reader lands four rows past the page.
+#[test]
+fn a_page_of_projects_is_what_the_page_holds() {
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.ask_about_these_projects_for_test(many_projects(20));
+    support::lay_out(&mut app, 64, 14);
+    press(&mut app, KeyCode::PageDown);
+    assert_eq!(
+        obelus_ui::Screen::choosing(&app).expect("asking").at,
+        6,
+        "a page is not the page"
+    );
+}
+
+/// The foot says what enter does on the row the reader is on, and how to
+/// leave a page that escape cannot leave.
+///
+/// Deliberate break: `hints` saying `Open` whichever row it is (the second
+/// assertion), and leaving the quit key off (the first).
+#[test]
+fn the_foot_says_what_enter_does_here_and_how_to_leave() {
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.ask_about_these_projects_for_test(many_projects(2));
+    let dump = support::render(&mut app, 64, 14);
+    assert!(
+        support::text_block(&dump).contains("Leave"),
+        "the way off the page is not named:\n{dump}"
+    );
+
+    press(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, 64, 14);
+    assert!(
+        support::text_block(&dump).contains("Type a path"),
+        "the foot does not say what enter does on the opening row:\n{dump}"
+    );
+}
+
+/// What went wrong on the way up is put up over the page that asks which
+/// project, too, and the page does not take a key while it is there.
+///
+/// And it is not typed into, so there is no caret on screen at all.
+///
+/// Deliberate break: taking the `layers().nearest().is_none()` out of the
+/// chooser's turn in `handle_key`, and the letter goes into the projects'
+/// filter under the list (the second assertion); and taking the
+/// `is_only_read` out of `cursor_position`, and a caret stands in a box
+/// nothing can be typed into (the first). The same guard in
+/// `cursor_position`'s turn for the chooser has no break that shows here:
+/// the list is up only at the start, when the page's own filter is empty
+/// and so has no caret of its own either.
+#[test]
+fn what_went_wrong_is_put_over_the_page_that_asks_too() {
+    let scratch = support::Scratch::new("choosing-told");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.config_file_for_test(a_settings_file_with_two_mistakes(&scratch));
+    app.ask_about_these_projects_for_test(many_projects(2));
+    started(&mut app);
+    let dump = support::render(&mut app, 76, 26);
+    assert!(
+        support::text_block(&dump).contains("No setting is called `shrift`"),
+        "{dump}"
+    );
+    assert!(
+        dump.contains("-- cursor --\nnone"),
+        "a caret stands in a list nothing can be typed into:\n{dump}"
+    );
+
+    press(&mut app, KeyCode::Char('p'));
+    assert_eq!(
+        obelus_ui::Screen::choosing(&app).expect("asking").typed,
+        "",
+        "a letter went into the page under the list"
+    );
+
+    press(&mut app, KeyCode::Esc);
+    press(&mut app, KeyCode::Esc);
+    press(&mut app, KeyCode::Char('p'));
+    assert_eq!(
+        obelus_ui::Screen::choosing(&app).expect("asking").typed,
+        "p",
+        "the page did not have the keys back"
+    );
+}
+
+/// The screen that asks which project has no mark on it, so nothing on it
+/// moves and nothing wakes Obelus to draw it again.
+///
+/// Deliberate break: taking `self.chooser.is_none()` out of
+/// `wants_animating`, and the welcome screen's clock runs under a screen
+/// that has no sheen.
+#[test]
+fn asking_which_project_does_not_wake() {
+    let mut app = App::new(Vec::new());
+    app.ask_about_these_projects_for_test(Vec::new());
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert!(
+        !app.is_waking(),
+        "the welcome screen's clock is running under the question"
+    );
 }
 
 /// Naming a path puts a list of what could finish it over the welcome

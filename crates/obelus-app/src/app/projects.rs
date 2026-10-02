@@ -9,13 +9,13 @@
 //! file list walked the whole of `$HOME`, and the notes and the
 //! conversations were filed under a directory nobody works in.
 //!
-//! So the welcome screen asks, and this is what it offers: the projects
-//! this reader has had open, newest first. The same shape the
-//! conversations have and for the same reason -- what a reader did
-//! outlives the window.
+//! So Obelus asks, on a page of its own before the welcome screen, and
+//! this is what it offers: the projects this reader has had open, newest
+//! first. The same shape the conversations have and for the same reason
+//! -- what a reader did outlives the window.
 //!
 //! **A project is remembered however it was named.** By an argument, by
-//! the directory Obelus was started in, or by being chosen on the welcome
+//! the directory Obelus was started in, or by being chosen on that
 //! screen: all three are a reader saying where they work, and a list that
 //! held only the third would be empty for exactly the reader who works
 //! from a terminal and then reaches for the menu once. [`App::work_in`] is
@@ -36,11 +36,15 @@
 //! the reader standing in one of them. This list is about where to work,
 //! so it holds both.
 //!
-//! What is not here is anything about whether the directory is still
-//! there. A list of twenty projects is twenty paths, and asking the
-//! filesystem about each of them is twenty file reads on the way to a
-//! screen nobody has pressed a key on yet. A row says what it was; the
-//! answer to whether it still is comes from trying to open it.
+//! **A project whose directory has gone is forgotten.** Asked when the
+//! screen opens, which is the moment a view reads what it shows: twenty
+//! `stat`s, not twenty reads, and a row offering a place that is not
+//! there is a row whose one answer is a refusal. And taken out of the file
+//! as well as off the screen, which is a choice with a cost said out loud
+//! -- a disk that is not plugged in, or a share not mounted yet at the
+//! moment a launcher starts Obelus, looks exactly like a project that was
+//! deleted, and its row goes with it. A reader who opens it again has it
+//! back, because opening it is how anything gets onto the list.
 
 use std::path::{Path, PathBuf};
 
@@ -95,9 +99,9 @@ pub(super) struct Project {
 /// Three answers and not two, for the reason the conversations' table
 /// gives three: a file that will not read is not a file with nothing in
 /// it, and "nothing in it" is what [`remember`] would write back over it.
-/// A reader whose list is briefly unreadable gets an empty welcome screen
-/// and can type a path; one whose list is *replaced* by an empty one has
-/// lost every project they had.
+/// A reader whose list is briefly unreadable gets an empty list of
+/// projects and can type a path; one whose list is *replaced* by an empty
+/// one has lost every project they had.
 #[derive(Debug)]
 pub(super) enum Reading {
     /// There is none yet, which is where every machine starts. Also where
@@ -114,7 +118,7 @@ impl Reading {
     /// caller can live with.
     ///
     /// `None` for a file that would not read, which is the answer
-    /// [`remember`] needs and the welcome screen does not: a screen that
+    /// [`remember`] needs and the screen that asks does not: a screen that
     /// drew no rows because of a parse error would say the reader has
     /// never opened anything, and the one row that is always there is the
     /// way out of that.
@@ -187,6 +191,13 @@ pub(super) fn read() -> Reading {
 /// and the last one to write would otherwise put the list back as it was
 /// when it started.
 ///
+/// What it does not do is take a lock, and that is a choice rather than
+/// an oversight: two of these within the same fraction of a millisecond
+/// both read the list before either writes it, and what the second writes
+/// has no row for what the first remembered. That costs one project
+/// missing until it is next opened, which opening puts right -- and a lock
+/// is whole-file on Windows, which is what a claim's cost last time.
+///
 /// Answers whether anything was written, which is `false` for a directory
 /// that is not a worktree and for a list that would not read -- neither is
 /// a failure worth telling the reader about, and the caller uses it only
@@ -222,6 +233,56 @@ pub(super) fn remember(root: &Path, now: i64) -> bool {
         },
     );
     projects.truncate(KEPT);
+    write(&path, &projects)
+}
+
+/// Whether a remembered project has gone: nothing is there, or something
+/// other than a directory is standing where it was.
+///
+/// Not every way of failing to look, though. A directory that will not say
+/// what it is -- permission refused, a mount that has stopped answering, a
+/// disk that errs -- is a directory that is there, and the cost the reader
+/// accepted in forgetting is that a disk not plugged in looks deleted, not
+/// that a refusal does. `is_dir` answers `false` for all of them alike,
+/// which is why this asks for the error.
+fn gone(path: &Path) -> bool {
+    match std::fs::metadata(path) {
+        Ok(data) => !data.is_dir(),
+        Err(error) => matches!(
+            error.kind(),
+            std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+        ),
+    }
+}
+
+/// Takes these projects off the list, where their directories are still
+/// not there.
+///
+/// Asked again at the moment of writing rather than trusted from whoever
+/// looked: another Obelus may have just opened one of them -- a disk
+/// plugged back in -- and the row it wrote is a project that is there.
+/// Read-modify-write for the reason [`remember`] is.
+///
+/// Answers whether anything was written, which is `false` where nothing
+/// on the list had gone and where the list would not read.
+pub(super) fn forget(these: &[PathBuf]) -> bool {
+    let Some(path) = path() else {
+        return false;
+    };
+    let Some(mut projects) = read().projects() else {
+        tracing::warn!(path = %path.display(), "will not read, so no project is forgotten from it");
+        return false;
+    };
+    let before = projects.len();
+    projects.retain(|project| !these.contains(&project.path) || !gone(&project.path));
+    if projects.len() == before {
+        return false;
+    }
+    write(&path, &projects)
+}
+
+/// Writes the list, whole.
+fn write(path: &Path, projects: &[Project]) -> bool {
     if let Some(directory) = path.parent()
         && let Err(error) = std::fs::create_dir_all(directory)
     {
@@ -231,11 +292,18 @@ pub(super) fn remember(root: &Path, now: i64) -> bool {
     // Beside it and a rename, the way the conversations, the notes and the
     // settings are written: another Obelus writing this at the same moment
     // leaves one whole file or the other, never half of either.
-    let beside = path.with_extension("toml.writing");
+    // This process's own name beside it and not one every Obelus shares:
+    // two writing at once into one shared name truncate each other's
+    // half-written file, and the first rename takes the other's away.
+    let beside = path.with_extension(format!("toml.writing.{}", std::process::id()));
     if let Err(error) =
-        std::fs::write(&beside, to_toml(&projects)).and_then(|()| std::fs::rename(&beside, &path))
+        std::fs::write(&beside, to_toml(projects)).and_then(|()| std::fs::rename(&beside, path))
     {
-        tracing::warn!(%error, path = %path.display(), "the project was not remembered");
+        tracing::warn!(%error, path = %path.display(), "the list of projects was not written");
+        // And not left behind: the name is this process's own, so nobody
+        // else will ever write over it, and a failed rename would leave one
+        // more of them for every Obelus that failed.
+        let _ = std::fs::remove_file(&beside);
         return false;
     }
     true
@@ -273,8 +341,8 @@ impl super::App {
     pub(crate) fn ask_which_project(&mut self) {
         let reading = read();
         // What Obelus could not make of its own file goes where everything
-        // else that went wrong on the way up goes -- under the keys on the
-        // welcome screen -- rather than into a log nobody is going to
+        // else that went wrong on the way up goes -- the list put up over
+        // the page that asks -- rather than into a log nobody is going to
         // open. The list is empty behind it, which is honest: there is one
         // row either way and it is the one that opens a project.
         if let Reading::Unreadable(why) = &reading {
@@ -283,8 +351,15 @@ impl super::App {
             // reader never opens it.
             self.amiss(&format!("The list of projects would not read: {why}"));
         }
-        let known = reading
+        let (here, went): (Vec<_>, Vec<_>) = reading
             .rows()
+            .into_iter()
+            .partition(|project| !gone(&project.path));
+        if !went.is_empty() {
+            let went: Vec<PathBuf> = went.into_iter().map(|project| project.path).collect();
+            forget(&went);
+        }
+        let known = here
             .into_iter()
             .map(|project| obelus_component::chooser::Known {
                 shown: obelus_ui::with_home_as_tilde(&project.path),
@@ -326,11 +401,13 @@ impl super::App {
             self.note_what_the_box_names();
             return true;
         }
+        // What a page key moves by, which is what the page has room for.
+        let rows = self.chooser_rows();
         let Some(chooser) = &mut self.chooser else {
             return false;
         };
         let before = chooser.named();
-        let taken = match chooser.handle(*key, CHOOSER_ROWS) {
+        let taken = match chooser.handle(*key, rows) {
             obelus_component::chooser::Outcome::Taken => true,
             obelus_component::chooser::Outcome::Ignored => false,
             obelus_component::chooser::Outcome::Wants(directory) => {
@@ -635,9 +712,14 @@ impl super::App {
             // gone is dropped instead: it is not there to be offered any
             // more, and a row that vanishes under the reader is the
             // answer.
+            //
+            // And off the file, for the reason the screen forgets one
+            // when it opens: a path typed into the box is not on the list,
+            // and taking it off that is nothing written.
             if let Some(chooser) = &mut self.chooser {
                 chooser.forget(path);
             }
+            forget(std::slice::from_ref(&path.to_path_buf()));
             return;
         }
         let opening = crate::app::opening(std::slice::from_ref(&path.to_path_buf()));
@@ -679,7 +761,19 @@ impl super::App {
 }
 
 impl super::App {
-    /// What the welcome screen is asking, where it is asking.
+    /// How many projects the page has room for.
+    ///
+    /// Asked of the same function the page lays itself out with, so the
+    /// keys that page the list and the window over it are about the rows
+    /// the reader can see -- see `App::chat_key` for what two answers to
+    /// that cost.
+    pub(super) fn chooser_rows(&self) -> u16 {
+        self.what_is_being_chosen().map_or(1, |choosing| {
+            obelus_ui::projects::list_height(self.drawn_in(), &choosing, &self.keymap)
+        })
+    }
+
+    /// What is being asked, where Obelus is asking which project.
     ///
     /// The words are settled here and the room for them is not: a path is
     /// shortened with `~` because which directory is the reader's own is
@@ -705,6 +799,7 @@ impl super::App {
                 })
                 .collect(),
             at: chooser.at(),
+            top: chooser.top(),
             typed: chooser.typing().said(),
             caret: chooser.typing().caret().get(),
             naming: chooser.is_naming(),
@@ -713,14 +808,6 @@ impl super::App {
         })
     }
 }
-
-/// How many rows the chooser's list is paged by.
-///
-/// The screen's own height is what a page should be, and the view is the
-/// one that knows it. Until the key and the drawing take their room from
-/// the same place, this is the number the keys use -- see `App::chat_key`
-/// for why that is a thing worth being careful about.
-const CHOOSER_ROWS: u16 = 10;
 
 #[cfg(test)]
 mod tests {
@@ -945,10 +1032,227 @@ mod tests {
         assert_eq!(projects.len(), 2, "the two worktrees are one row");
     }
 
+    /// A list holding `root`, which is there, and a project that is not.
+    fn one_here_and_one_gone(root: &Path) -> PathBuf {
+        let gone = root.join("gone");
+        let path = path().expect("somewhere");
+        std::fs::create_dir_all(path.parent().expect("a directory")).expect("the directory");
+        std::fs::write(
+            &path,
+            to_toml(&[
+                Project {
+                    path: root.to_path_buf(),
+                    last: Some(20),
+                },
+                Project {
+                    path: gone.clone(),
+                    last: Some(10),
+                },
+            ]),
+        )
+        .expect("a list");
+        gone
+    }
+
+    /// A project whose directory has gone comes off the file.
+    ///
+    /// Broken deliberately by having `forget`'s `retain` keep every row:
+    /// the gone one is still in the list.
+    #[test]
+    fn a_project_that_has_gone_is_forgotten() {
+        let (root, _turn) = scratch("forgotten");
+        let gone = one_here_and_one_gone(&root);
+
+        assert!(forget(&[gone]), "nothing was written");
+        let projects = read().rows();
+        assert_eq!(projects.len(), 1, "the gone project is still listed");
+        assert_eq!(projects[0].path, root, "the wrong one was forgotten");
+    }
+
+    /// One that is there again by the time the file is written is kept:
+    /// another Obelus may have just opened it, off a disk plugged back in.
+    ///
+    /// Broken deliberately by taking the `is_dir` out of `forget`'s
+    /// `retain`: a project that is there is forgotten because somebody said
+    /// it had gone.
+    #[test]
+    fn a_project_that_is_back_is_not_forgotten() {
+        let (root, _turn) = scratch("back");
+        let _gone = one_here_and_one_gone(&root);
+
+        assert!(!forget(std::slice::from_ref(&root)), "it was written");
+        assert_eq!(read().rows().len(), 2, "a project that is there went");
+    }
+
+    /// A file standing where a project was is not somewhere to work, and
+    /// is forgotten the way nothing there is.
+    ///
+    /// Broken deliberately by having `gone` answer `false` for anything
+    /// that is there, whatever it is: the file is kept as a project.
+    #[test]
+    fn a_file_where_a_project_was_is_forgotten() {
+        let (root, _turn) = scratch("a-file");
+        let gone = one_here_and_one_gone(&root);
+        std::fs::write(&gone, "not a project").expect("a file");
+
+        assert!(forget(&[gone]), "nothing was written");
+        assert_eq!(read().rows().len(), 1, "a file is kept as a project");
+    }
+
+    /// A project behind a refusal is not a project that has gone.
+    ///
+    /// The directory above it will not be read, so asking after the project
+    /// fails -- and fails as permission denied, not as nothing there. What
+    /// the reader accepted losing is a disk that is not plugged in; a
+    /// refusal is a directory that is there and is not telling.
+    ///
+    /// Broken deliberately by having `gone` answer `!path.is_dir()`, which
+    /// is what it was: the project comes off the screen and out of the file.
+    #[cfg(unix)]
+    #[test]
+    fn a_project_behind_a_refusal_is_not_forgotten() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let (root, _turn) = scratch("refused");
+        let locked = root.join("locked");
+        let project = locked.join("project");
+        std::fs::create_dir_all(&project).expect("the project");
+        let path = path().expect("somewhere");
+        std::fs::create_dir_all(path.parent().expect("a directory")).expect("the directory");
+        std::fs::write(
+            &path,
+            to_toml(&[Project {
+                path: project.clone(),
+                last: Some(10),
+            }]),
+        )
+        .expect("a list");
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000))
+            .expect("refusing");
+        // Root reads through any mode, and then there is no refusal to
+        // test: say so rather than pass for the wrong reason.
+        let refused = std::fs::metadata(&project).is_err();
+
+        let mut app = super::super::App::new(Vec::new());
+        app.ask_which_project();
+        let offered = app.chooser.as_ref().expect("asking").rows().len();
+        let kept = read().rows().len();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755))
+            .expect("giving it back");
+
+        if !refused {
+            eprintln!("skipped: this user reads through a directory with no permissions");
+            return;
+        }
+        assert_eq!(offered, 1, "a project behind a refusal was not offered");
+        assert_eq!(kept, 1, "a project behind a refusal was forgotten");
+    }
+
+    /// Forgetting writes nothing over a list that will not read, for the
+    /// reason remembering does not.
+    ///
+    /// Two things keep it, and either is enough: the unreadable answer, and
+    /// writing nothing where nothing came off -- a list that will not read
+    /// has no rows to take any off. Broken deliberately by taking out both,
+    /// having `forget` use `read().rows()` and write whatever it has: the
+    /// unreadable file is written over with nothing. One at a time, it
+    /// stays green.
+    #[test]
+    fn forgetting_does_not_write_over_a_list_that_will_not_read() {
+        let (root, _turn) = scratch("forget-unreadable");
+        let path = path().expect("somewhere");
+        std::fs::create_dir_all(path.parent().expect("a directory")).expect("the directory");
+        std::fs::write(&path, "[[opened]]\npath = \"half of a").expect("half a file");
+
+        assert!(!forget(&[root.join("gone")]), "it was written over");
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("still there"),
+            "[[opened]]\npath = \"half of a",
+            "the file was changed"
+        );
+    }
+
+    /// The screen that asks does not offer a project that has gone, and
+    /// the file forgets it as the screen opens.
+    ///
+    /// Broken deliberately by having `ask_which_project` keep every row
+    /// (the first assertion) and by taking its `forget` out (the second).
+    #[test]
+    fn asking_neither_offers_nor_keeps_a_project_that_has_gone() {
+        let (root, _turn) = scratch("asking-gone");
+        let _gone = one_here_and_one_gone(&root);
+
+        let mut app = super::super::App::new(Vec::new());
+        app.ask_which_project();
+        let offered: Vec<PathBuf> = app
+            .chooser
+            .as_ref()
+            .expect("asking")
+            .rows()
+            .into_iter()
+            .map(|(known, _)| known.path.clone())
+            .collect();
+        assert_eq!(offered, vec![root.clone()], "a gone project is offered");
+        assert_eq!(
+            read().rows().len(),
+            1,
+            "the gone project is still in the file"
+        );
+    }
+
+    /// Another Obelus halfway through writing the list is left alone.
+    ///
+    /// Its file sits beside the list under the name every Obelus once
+    /// wrote through, and writing through that name again truncates it and
+    /// renames it away under the other's feet.
+    ///
+    /// Broken deliberately by writing beside the list as `toml.writing`
+    /// again, with no process number: the other's file is gone.
+    #[test]
+    fn another_obelus_writing_the_list_is_left_alone() {
+        let (root, _turn) = scratch("beside");
+        a_repository(&root);
+        let theirs = path().expect("somewhere").with_extension("toml.writing");
+        std::fs::create_dir_all(theirs.parent().expect("a directory")).expect("the directory");
+        std::fs::write(&theirs, "another Obelus is halfway through this").expect("theirs");
+
+        assert!(remember(&root, 10), "nothing was written");
+        assert_eq!(
+            std::fs::read_to_string(&theirs).ok().as_deref(),
+            Some("another Obelus is halfway through this"),
+            "the other Obelus's half-written list was taken"
+        );
+    }
+
+    /// A write that fails leaves nothing beside the list.
+    ///
+    /// The name it was written through is this process's own, so nobody
+    /// will write over it later; left, there would be one per Obelus that
+    /// ever failed. Asked of `write` and not of `remember`, because what
+    /// refuses a rename here -- a directory where the list goes -- is what
+    /// refuses the read before it.
+    ///
+    /// Broken deliberately by taking the `remove_file` out of `write`.
+    #[test]
+    fn a_write_that_fails_leaves_nothing_beside_the_list() {
+        let (root, _turn) = scratch("failed");
+        let target = root.join("projects.toml");
+        std::fs::create_dir_all(target.join("in the way")).expect("a directory where it goes");
+
+        assert!(!write(&target, &[]), "it was written");
+        let beside: Vec<_> = std::fs::read_dir(&root)
+            .expect("the directory")
+            .filter_map(Result::ok)
+            .map(|entry| entry.file_name())
+            .filter(|name| name != "projects.toml")
+            .collect();
+        assert!(beside.is_empty(), "it left {beside:?} behind");
+    }
+
     /// The list does not grow without end.
     ///
     /// Broken deliberately by taking the `truncate` out of `remember`:
-    /// the file grows for ever and the welcome screen's filter searches a
+    /// the file grows for ever and the screen's filter searches a
     /// list of every directory the reader has ever opened.
     #[test]
     fn the_list_stops_at_twenty() {
