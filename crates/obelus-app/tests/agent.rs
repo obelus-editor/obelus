@@ -4373,6 +4373,198 @@ fn a_conversation_with_the_readers_words_in_it_stays_open() {
     );
 }
 
+/// A turn the reader stopped is not the turn the agent meant to be the
+/// last one, so the conversation stays open.
+///
+/// Deliberate break: take the `!finished` out of
+/// `close_as_the_agent_asked`, and the stop closes the conversation.
+#[test]
+fn a_conversation_whose_closing_turn_was_stopped_stays_open() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    say_something(&mut app, &events);
+    support::type_text(&mut app, "take it slowly");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to start thinking", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+    assert_eq!(close_it(&mut app, 0), "it closes when this turn ends");
+
+    support::press(&mut app, KeyCode::Esc);
+    pump(&mut app, &events, "the turn to stop", |app| {
+        !is_open(app, 0) || said_in_transcript(app, "Stopped")
+    });
+    assert!(is_open(&app, 0), "the stop closed the conversation");
+}
+
+/// What the reader says while the closing turn runs keeps the conversation
+/// open, and goes to the agent the way anything waiting does.
+///
+/// The turn here ends as finished when the reader changes a setting, which
+/// is something they can do in the middle of one -- and not a stop, which
+/// Obelus ends itself, as stopped. So the turn ends the way a closing turn
+/// ends, and the only thing keeping the conversation open is the reader's
+/// words.
+///
+/// Deliberate break: take `|| talk.has_the_readers_words()` out of
+/// `close_as_the_agent_asked`, and the conversation closes with the
+/// reader's words waiting in it.
+#[test]
+fn words_said_into_the_closing_turn_keep_the_conversation_open() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the settings", |app| {
+        app.agent_settings().len() > 2
+    });
+    support::type_text(&mut app, "/ends-on-a-setting");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to start thinking", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+    assert_eq!(close_it(&mut app, 0), "it closes when this turn ends");
+    support::type_text(&mut app, "/blocks");
+    support::press(&mut app, KeyCode::Enter);
+
+    // Down to the row of settings, round to the switch at its end, and
+    // flipped -- which ends the turn.
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Left);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "what was waiting", |app| {
+        !is_open(app, 0) || said_in_transcript(app, "blocks=")
+    });
+    assert!(
+        is_open(&app, 0),
+        "closed with the reader's words waiting in it"
+    );
+}
+
+/// Choosing another agent while the closing turn runs takes the asking
+/// with it.
+///
+/// The connection that turn ran on is put down, and nothing it says is
+/// heard again -- so the end of that turn never arrives. The next turn to
+/// end is the reader's own, on an agent that counts its turns from one:
+/// closing then is closing a conversation the reader has just gone back
+/// to talking in.
+///
+/// Deliberate break: have `close_as_the_agent_asked` take any closing that
+/// was asked for, whatever turn it was asked in, and the conversation
+/// closes under the answer to the reader's next message.
+#[test]
+fn another_agent_takes_the_closing_with_the_one_it_replaced() {
+    let (mut app, events) = wired();
+    let root = agents_root_for("replaced-closing");
+    std::fs::create_dir_all(&root).expect("the root");
+    the_fixture_is_installed(&root);
+    app.agents_root_for_test(root);
+    the_fixture_is_listed(&mut app);
+    let config = obelus_config::Config {
+        agent: Some("fake".to_string()),
+        ..obelus_config::Config::default()
+    };
+    app.configure(config, Vec::new());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.new_conversation();
+    app.open_a_session_for_test();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // A turn of its own first, so the closing one is running on the
+    // agent's side rather than held here for a session on its way.
+    say_something(&mut app, &events);
+    support::type_text(&mut app, "take it slowly");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to start thinking", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+    assert_eq!(close_it(&mut app, 0), "it closes when this turn ends");
+
+    // Off and on again on the agents page, which puts that connection down
+    // and starts another.
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConfigOpen);
+    support::press(&mut app, KeyCode::BackTab);
+    support::press(&mut app, KeyCode::Enter);
+    assert_ne!(app.config().agent.as_deref(), Some("fake"), "not let go");
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.config().agent.as_deref(), Some("fake"), "not chosen");
+    support::press(&mut app, KeyCode::Esc);
+    assert!(app.chat().is_some(), "not back in the conversation");
+
+    support::type_text(&mut app, "/echo");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer", |app| {
+        !is_open(app, 0)
+            || (said_in_transcript(app, "heard you")
+                && app.talking() == obelus_agent::Talking::Ready)
+    });
+    assert!(
+        is_open(&app, 0),
+        "the conversation closed at the end of the reader's own turn"
+    );
+}
+
+/// A conversation an agent closes is named where Obelus says it closed,
+/// and goes from the list of what is open while that list is showing.
+///
+/// The name is the one that list gives it -- here the note it is about --
+/// because the reader may have been somewhere else, and "the conversation"
+/// is then one of several. And the list is a row of what is true now: a
+/// row for a conversation that has gone is a row whose enter does nothing.
+///
+/// Broken deliberately two ways. Saying "Closed the conversation" whatever
+/// the name fails the first assertion. Taking the call to
+/// `refresh_switching` out of `close_the_conversation` leaves the row in
+/// the list.
+#[test]
+fn a_conversation_an_agent_closes_is_named_and_leaves_the_list() {
+    let scratch = support::Scratch::new("agent-closed-named");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        "[[todo]]\nid = \"0123456S\"\nsaid = \"wire the counts up\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    talk_about_the_note(&mut app);
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // The notes are the first document and the conversation the second.
+    assert!(is_open(&app, 1), "no conversation about the note");
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentList);
+    assert_eq!(close_it(&mut app, 1), "closed");
+    assert_eq!(app.note(), Some("Closed wire the counts up"));
+    let listed = app
+        .picker()
+        .expect("the list of what is open")
+        .matches()
+        .any(|item| {
+            matches!(
+                item.value,
+                obelus_component::picker::PickerValue::Document(id)
+                    if id == obelus_buffer::DocumentId::new(1)
+            )
+        });
+    assert!(
+        !listed,
+        "the closed conversation is still a row of the list"
+    );
+}
+
 /// A project that has chosen a workflow says so in the first message -- and
 /// says only where to read it, because most conversations change nothing
 /// and the workflow is several paragraphs.

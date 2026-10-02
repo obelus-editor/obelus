@@ -1670,7 +1670,7 @@ async fn talk(
                 // runs, and asking twice would be two answers to keep alike.
                 // Where they are handed over to is each conversation's own,
                 // and comes with the ask.
-                let can =ready.agent_capabilities.mcp_capabilities.clone();
+                let can = ready.agent_capabilities.mcp_capabilities.clone();
                 // And how a conversation from a previous sitting is taken
                 // up, decided once for the same reason.
                 let again = taking_up(&ready.agent_capabilities);

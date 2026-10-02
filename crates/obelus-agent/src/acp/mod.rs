@@ -412,6 +412,16 @@ impl Talk {
             .is_some_and(|open| open.turn.is_some())
     }
 
+    /// The turn running in this conversation, by Obelus's own count, if one
+    /// is.
+    ///
+    /// Counted per connection, so a number is only a turn together with
+    /// [`Talk::connection`]: an agent started again counts from one.
+    #[must_use]
+    pub fn turn(&self, session: Option<&SessionId>) -> Option<Turn> {
+        self.session(session)?.turn
+    }
+
     /// Whether a conversation by this name is open on it.
     #[must_use]
     pub fn holds(&self, session: &SessionId) -> bool {

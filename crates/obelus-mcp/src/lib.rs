@@ -45,10 +45,14 @@
 //! one another, and that is answered once, in `obelus-app`.
 //!
 //! And one takes something off the screen: `close_conversation` closes the
-//! conversation it is called from. Closed and not ended -- the agent keeps
-//! it and the reader takes it up again from the list of conversations, so
-//! what goes is a document from what is open and nothing else, which is
-//! why an agent may do it at all once it has asked. It is the one tool
+//! conversation it is called from. Closed and not ended: what goes is a
+//! document from what is open and nothing else -- the session is not let
+//! go and the list of conversations still offers it -- which is why an
+//! agent may do it at all once it has asked. Whether taking it up again
+//! brings its words back is the agent's, so the description promises
+//! nothing about that: an agent that can only resume comes back to an
+//! empty page, and one that can do neither to a new conversation. It is
+//! the one tool
 //! that has to know *which* conversation is calling, and MCP has no word
 //! for that: every conversation is told an address of its own, the
 //! server's with the conversation's number on the end ([`address`]), and
@@ -379,8 +383,9 @@ impl Obelus {
         their screen and does not ask for you. It closes when this turn \
         ends, so make it the last thing you do and say whatever is left to \
         say before it; and it stays open if the reader has started writing \
-        in it. Nothing is lost: the conversation is kept, and the reader \
-        takes it up again from the list of conversations.")]
+        in it. It stays in the list of conversations, and is taken up again \
+        from there as fully as you can take a conversation up again -- so \
+        do not promise the reader it comes back as it was.")]
     async fn close_conversation(
         &self,
         Extension(parts): Extension<axum::http::request::Parts>,

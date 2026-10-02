@@ -1616,13 +1616,14 @@ impl App {
         // From inside a turn, which is the ordinary case: whatever the
         // agent says after this has to land somewhere the reader can see,
         // so the closing waits for the turn to end.
-        let thinking = self
-            .talker
-            .as_ref()
-            .is_some_and(|talker| talker.is_thinking(session.as_ref(), None));
-        if thinking {
+        let running = self.talker.as_ref().and_then(|talker| {
+            talker
+                .turn(session.as_ref())
+                .map(|turn| (talker.connection(), turn))
+        });
+        if let Some(running) = running {
             if let Some(talk) = self.talk_mut(Whose::One(id)) {
-                talk.closing = true;
+                talk.closing = Some(running);
             }
             return "it closes when this turn ends".to_string();
         }
@@ -1630,34 +1631,53 @@ impl App {
         "closed".to_string()
     }
 
-    /// Closes the conversation now that its turn is over, if the agent
-    /// asked for that, and says whether it did.
+    /// Closes the conversation now that a turn of it is over, if that is
+    /// the turn the agent asked for that at the end of, and says whether
+    /// it did.
     ///
     /// Only where the turn finished. One the reader stopped, or that went
     /// wrong, is not the turn that was meant to be the last one -- and
     /// where they have written something since, it is theirs to answer.
-    fn close_as_the_agent_asked(&mut self, whose: Whose, finished: bool) -> bool {
-        let Some(talk) = self.talk_mut(whose) else {
+    fn close_as_the_agent_asked(
+        &mut self,
+        id: DocumentId,
+        turn: acp::Turn,
+        finished: bool,
+    ) -> bool {
+        let connection = self.talker.as_ref().map(acp::Talk::connection);
+        let Some(talk) = self.talk_mut(Whose::One(id)) else {
             return false;
         };
-        if !std::mem::take(&mut talk.closing) || !finished || talk.has_the_readers_words() {
+        let asked = talk.closing.take().zip(connection).is_some_and(
+            |((asked_on, asked_at), connection)| asked_on == connection && asked_at == turn,
+        );
+        if !asked || !finished || talk.has_the_readers_words() {
             return false;
         }
-        let id = match whose {
-            Whose::One(id) => Some(id),
-            Whose::Whoever => self.current,
-        };
-        if let Some(id) = id {
-            self.close_the_conversation(id);
-        }
+        self.close_the_conversation(id);
         true
     }
 
-    /// Closes one conversation and says so, which is the difference from
-    /// the reader closing it: they know they did.
+    /// Closes one conversation and says which, which is the difference
+    /// from the reader closing it: they know they did.
     fn close_the_conversation(&mut self, id: DocumentId) {
+        // By the name the list of what is open gives it, read before it
+        // goes: the reader may have been somewhere else, and "the
+        // conversation" is then one of several.
+        let named = self.document(id).and_then(Document::chat).and_then(|talk| {
+            let notes = obelus_git::todo::read(&self.working_directory)
+                .notes()
+                .unwrap_or_default();
+            Self::conversation_name(talk, self.talker.as_ref(), &notes)
+        });
         self.close(id);
-        self.say("Closed the conversation".to_string());
+        self.say(match named {
+            Some(named) => format!("Closed {named}"),
+            None => "Closed the conversation".to_string(),
+        });
+        // And out of the list of what is open, where that is showing: a
+        // row for a conversation that has gone is a row that lies.
+        self.refresh_switching();
     }
 
     /// Asks the agent to stop what it is doing.
@@ -3186,7 +3206,9 @@ impl App {
                 | acp::Update::Settings(_)
                 | acp::Update::Used(_) => {}
             },
-            acp::Incoming::Ended { why: reason, .. } => {
+            acp::Incoming::Ended {
+                turn, why: reason, ..
+            } => {
                 let finished = matches!(reason.as_deref(), Ok("end_turn"));
                 // Only the ends that are not the ordinary one: a turn that
                 // finished has its answer above it, and "end turn" under
@@ -3203,7 +3225,11 @@ impl App {
                     Ok(other) => self.in_talk(whose, |chat| chat.note(other)),
                     Err(why) => self.in_talk(whose, |chat| chat.note(&format!("The agent: {why}"))),
                 }
-                if self.close_as_the_agent_asked(whose, finished) {
+                // Always one conversation: an end names the session it
+                // ends a turn of.
+                if let Whose::One(id) = whose
+                    && self.close_as_the_agent_asked(id, turn, finished)
+                {
                     return;
                 }
                 // And then whatever the reader said while it was running.

@@ -261,13 +261,19 @@ pub struct Conversation {
     /// reader's settings, which have not moved, and said again it is the
     /// same line down the page once for every visit.
     pub said_not_offered: std::collections::BTreeSet<(String, String)>,
-    /// Whether the agent has asked for it to be closed when this turn
-    /// ends.
+    /// The turn the agent asked for it to be closed at the end of, by the
+    /// connection it ran on and its number there.
     ///
     /// When the turn ends and not when it asks, because it asks from
     /// inside a turn and has usually something left to say: closed at
     /// once, that went to a conversation nobody could see.
-    pub closing: bool,
+    ///
+    /// That turn and no other. An agent that dies before it ends never
+    /// sends its end, and a flag would have closed the conversation at the
+    /// end of the reader's next turn instead -- with the agent started
+    /// again, counting its turns from one, so the number alone is not
+    /// enough either.
+    pub closing: Option<(acp::Connection, acp::Turn)>,
 }
 
 impl Conversation {

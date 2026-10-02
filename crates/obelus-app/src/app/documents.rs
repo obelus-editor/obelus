@@ -161,22 +161,13 @@ impl App {
         talker: Option<&obelus_agent::acp::Talk>,
         notes: &obelus_git::todo::Todo,
     ) -> PickerItem {
-        let about = match &talk.topic {
-            crate::conversation::Topic::Note(id) => notes
-                .notes
-                .iter()
-                .find(|note| note.id == *id)
-                .map(|note| note.title().to_string()),
-            crate::conversation::Topic::Loose => None,
-        };
+        let about = Self::conversation_about(talk, notes);
         let titled = talker.and_then(|talker| talker.title(talk.session.as_ref()));
         PickerItem {
             prose: true,
             marker: Self::conversation_mark(talk, talker),
             icon: obelus_icons::enabled().then_some(obelus_icons::ui::AGENT),
-            label: titled
-                .map(str::to_string)
-                .or_else(|| about.clone())
+            label: Self::conversation_name(talk, talker, notes)
                 .unwrap_or_else(|| "A conversation".to_string()),
             // The note it is about, under the name the agent gave it. Two
             // facts that are both worth having: what the reader meant to do,
@@ -196,6 +187,37 @@ impl App {
             kind: None,
             tab: None,
             section: None,
+        }
+    }
+
+    /// What a conversation is called: the agent's name for it, or the note
+    /// it is about, where it has either.
+    ///
+    /// The one answer, which the list of what is open and the line saying
+    /// one was closed both read, so the two cannot call it different things.
+    pub(super) fn conversation_name(
+        talk: &crate::conversation::Conversation,
+        talker: Option<&obelus_agent::acp::Talk>,
+        notes: &obelus_git::todo::Todo,
+    ) -> Option<String> {
+        talker
+            .and_then(|talker| talker.title(talk.session.as_ref()))
+            .map(str::to_string)
+            .or_else(|| Self::conversation_about(talk, notes))
+    }
+
+    /// The note a conversation is about, by its title.
+    fn conversation_about(
+        talk: &crate::conversation::Conversation,
+        notes: &obelus_git::todo::Todo,
+    ) -> Option<String> {
+        match &talk.topic {
+            crate::conversation::Topic::Note(id) => notes
+                .notes
+                .iter()
+                .find(|note| note.id == *id)
+                .map(|note| note.title().to_string()),
+            crate::conversation::Topic::Loose => None,
         }
     }
 
