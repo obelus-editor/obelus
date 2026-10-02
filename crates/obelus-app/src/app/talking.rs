@@ -2407,11 +2407,11 @@ impl App {
             self.settle_asking(whose);
             return;
         }
-        // What the card says it is about: the agent's own words the first
-        // time, and afterwards the field's own question -- by then the
-        // reader is in the middle of the form, and what they need to know
-        // is which part of it this is.
-        let about = match asking.given.is_empty() {
+        // What the card says it is about: the field's own question, and the
+        // first time the agent's own words over it -- afterwards the reader
+        // is in the middle of the form, and what they need to know is which
+        // part of it this is.
+        let message = match asking.given.is_empty() {
             true => asking.message.clone(),
             false => String::new(),
         };
@@ -2420,13 +2420,19 @@ impl App {
             Some(field) => card_of(field),
             None => Card::new(Vec::new(), false),
         };
-        let about = match (about.is_empty(), &choice, &words) {
-            (false, _, _) => about,
-            // A card with nothing but a box on it has nothing else to say
-            // what it is for, so the field's question goes above it.
-            (true, None, Some(field)) => question(field),
-            (true, Some(field), _) => question(field),
-            (true, None, None) => String::new(),
+        // Under the message only where the field says something of its own:
+        // an agent asking several things at once writes "answer these" there
+        // and each question in its field's description, which the message
+        // alone left on nothing but the transcript -- and a number says what
+        // it will take. Asking one thing, an agent writes the question in the
+        // message and the title is a label for it, which under the question
+        // would be a word on its own.
+        let about = match (message.is_empty(), choice.as_ref().or(words.as_ref())) {
+            (true, Some(field)) => question(field),
+            (false, Some(field)) if question(field) != field.title => {
+                format!("{message}\n\n{}", question(field))
+            }
+            (_, _) => message,
         };
         if !about.is_empty() {
             card.about(&about);

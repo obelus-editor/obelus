@@ -2282,6 +2282,10 @@ fn a_form_puts_its_answers_and_room_for_your_own_on_one_card() {
     let said = at("what would you like to do");
     let first = at("Write the weekly report");
     assert!(said < first, "it is not above the answers:\n{dump}");
+    // And the rule straight under it, rather than the field's title on a
+    // row of its own: the field has nothing but a title, and the question
+    // is the message. The deliberate break was putting the field's
+    // question under the message whatever the field said.
     assert!(
         asking[said + 1].contains('\u{2500}'),
         "nothing separates it from them:\n{dump}"
@@ -2346,6 +2350,99 @@ fn a_form_puts_its_answers_and_room_for_your_own_on_one_card() {
     assert!(
         text.contains("you picked review and nothing else"),
         "the chosen value or the omitted field went back wrong:\n{text}"
+    );
+}
+
+/// A form asking several things at once says the first of them on its card.
+///
+/// Claude's adapter writes "answer these" as the message and each question
+/// in its field, so the message alone left the first card a list of answers
+/// whose question was only in the transcript. The deliberate break was the
+/// first card taking the message alone, as it did: no question on it.
+#[test]
+fn a_form_of_several_questions_says_the_first_on_its_card() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/questions");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", App::is_asking);
+
+    // The agent's words, then the question, then the rule over its answers.
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let asking = rows(&dump);
+    let at = |needle: &str| {
+        asking
+            .iter()
+            .position(|row| row.contains(needle))
+            .unwrap_or_else(|| panic!("no {needle:?} on screen:\n{dump}"))
+    };
+    let said = at("Please answer the following questions.");
+    let asked = at("Approach \u{2014} should the window keep a state of its own");
+    let first = at("Keep a state");
+    assert!(
+        said < asked && asked < first,
+        "not message, question, answers:\n{dump}"
+    );
+    // A blank row between the two, because they are two things said: what
+    // the form is and what this card asks. The deliberate break was one
+    // newline between them rather than two.
+    assert!(
+        asked == said + 2
+            && asking[said + 1]
+                .split_once('|')
+                .is_some_and(|(_, row)| row.trim().is_empty()),
+        "the message runs into the question:\n{dump}"
+    );
+    assert!(
+        asking[asked + 1].contains('\u{2500}'),
+        "nothing separates the question from its answers:\n{dump}"
+    );
+
+    // And the next card says its own question, without the message again.
+    support::press(&mut app, KeyCode::Enter);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let asking = rows(&dump);
+    assert!(
+        asking
+            .iter()
+            .any(|row| row.contains("When \u{2014} should I start on it now")),
+        "the second question is not on its card:\n{dump}"
+    );
+    assert!(
+        !asking
+            .iter()
+            .any(|row| row.contains("Please answer the following questions.")),
+        "the message was said twice:\n{dump}"
+    );
+}
+
+/// A number asked on its own says what it will take on its first card.
+///
+/// The question is the agent's message and the field is a title and its
+/// bounds, so the bounds are what the field says of its own -- and a reader
+/// who types a number outside them otherwise finds out afterwards. The
+/// deliberate break was the first card taking the field's question only
+/// where the field had a description.
+#[test]
+fn a_number_asked_on_its_own_says_what_it_takes_on_its_first_card() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/count");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", App::is_asking);
+
+    let text = screen(&mut app);
+    assert!(
+        text.contains("how many times"),
+        "the question is not on the card:\n{text}"
+    );
+    assert!(
+        text.contains("Times: a whole number from 1 to 9"),
+        "the card does not say what it takes:\n{text}"
     );
 }
 

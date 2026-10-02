@@ -54,8 +54,9 @@
 //! **A question the reader did not start says what it is about.** The card
 //! carries an `about` -- prose above its answers, a rule under it -- and
 //! both questions an agent can ask fill it: a form puts its own message
-//! there, and a permission request what the agent is actually going to do
-//! (`reason_of` in `obelus-agent`'s `acp/link`, which says why not
+//! there and the question of the field on the card (`App::put_the_question`
+//! says when each), and a permission request what the agent is actually going
+//! to do (`reason_of` in `obelus-agent`'s `acp/link`, which says why not
 //! `raw_input`). "Allow" and "refuse" are answers, and a question with the
 //! words missing is not one a reader can answer. It is wrapped to the width
 //! and capped (`MOST_ABOUT`): it is somebody else's prose, and an agent
@@ -92,7 +93,8 @@ pub const UNDER: u16 = 2;
 /// A card is where an answer is given, not where a long thing is read. What
 /// a permission request is about is not put here at all when the call said
 /// it in words -- the transcript has it, whole -- so what is left for this
-/// to clamp is a form field's own question, which is a line or two.
+/// to clamp is a form field's own question, which is a line or two, and on
+/// a form's first card the agent's message and a blank row over it.
 const MOST_ABOUT: usize = 5;
 
 /// One named answer.
