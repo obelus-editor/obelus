@@ -2261,26 +2261,49 @@ fn trouble_row(
     trailing: String,
 ) -> PickerItem {
     PickerItem {
-        icon: obelus_icons::enabled().then(|| obelus_icons::for_kind(trouble.severity.kind())),
-        label: trouble.summary().to_string(),
         detail: trouble.source.clone(),
+        ..problem_row(
+            trouble.summary(),
+            trouble.severity,
+            Some(trailing),
+            PickerValue::Place {
+                path: path.to_path_buf(),
+                line: trouble.line,
+                character: trouble.character,
+                end_line: trouble.end_line,
+                end_character: trouble.end_character,
+            },
+        )
+    }
+}
+
+/// One problem as a row of a list: what is wrong, how bad, and where.
+///
+/// One piece for every list of problems, so that an error is drawn as an
+/// error wherever a list says one -- the mark in front where there is a
+/// font for it, and the words in the colour the severity is: the colour an
+/// error or a warning is in the file itself.
+pub(super) fn problem_row(
+    said: &str,
+    severity: obelus_lsp::trouble::Severity,
+    trailing: Option<String>,
+    value: PickerValue,
+) -> PickerItem {
+    PickerItem {
+        icon: obelus_icons::enabled().then(|| obelus_icons::for_kind(severity.kind())),
+        label: said.to_string(),
+        detail: None,
         prose: true,
         marker: None,
-        trailing: Some(trailing),
+        trailing,
         changed: None,
-        value: PickerValue::Place {
-            path: path.to_path_buf(),
-            line: trouble.line,
-            character: trouble.character,
-            end_line: trouble.end_line,
-            end_character: trouble.end_character,
-        },
+        value,
         depth: 0,
         opens: None,
         status: None,
         enabled: true,
         colours: None,
-        kind: Some(trouble.severity.kind()),
+        kind: Some(severity.kind()),
         tab: None,
         section: None,
     }

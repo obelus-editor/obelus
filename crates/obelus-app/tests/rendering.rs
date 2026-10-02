@@ -2546,6 +2546,92 @@ fn no_row_of_what_went_wrong_is_marked_as_the_readers() {
     }
 }
 
+/// The ink one cell of the dump is drawn in, at the first of `words`.
+fn ink_of(dump: &str, words: &str) -> String {
+    let text = support::text_block(dump);
+    let line = text
+        .lines()
+        .find(|line| line.contains(words))
+        .expect("the row");
+    let column = line
+        .split_once('|')
+        .map_or("", |(_, row)| row)
+        .find(words)
+        .expect("the words");
+    let column = line.split_once('|').map_or("", |(_, row)| row)[..column]
+        .chars()
+        .count();
+    let letter = styles_of_the_row_saying(dump, words)
+        .chars()
+        .nth(column)
+        .expect("a letter");
+    dump.split("-- legend --\n")
+        .nth(1)
+        .expect("the legend")
+        .lines()
+        .find(|entry| entry.starts_with(letter))
+        .and_then(|entry| entry.split_whitespace().nth(1))
+        .expect("an entry")
+        .to_string()
+}
+
+/// A colour as the dump writes one.
+fn written(colour: ratatui::style::Color) -> String {
+    let ratatui::style::Color::Rgb(red, green, blue) = colour else {
+        panic!("a theme in named colours");
+    };
+    format!("fg=#{red:02x}{green:02x}{blue:02x}")
+}
+
+/// An error and a warning are told apart the way a list of problems tells
+/// them apart: each in the colour it is in the file.
+///
+/// The error is a settings file that will not read, and the warning is
+/// something with no file to be about -- which goes on as a warning, since
+/// Obelus went on without it.
+///
+/// Deliberate break: building the rows without a `kind`, and both are in
+/// the page's own ink.
+#[test]
+fn an_error_and_a_warning_are_told_apart_by_their_colour() {
+    let scratch = support::Scratch::new("welcome-severities");
+    let file = scratch.join("config.toml");
+    std::fs::write(&file, "theme = \"dark\n").expect("half a settings file");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.config_file_for_test(file);
+    app.amiss("The wheel will not be reported, so it moves the cursor");
+    started(&mut app);
+    let dump = support::render(&mut app, 76, 26);
+    let theme = obelus_ui::Screen::theme(&app);
+    let error = written(theme.syntax.colour(obelus_text::kind::SyntaxKind::Error));
+    let warning = written(theme.syntax.colour(obelus_text::kind::SyntaxKind::Warning));
+
+    let said = support::text_block(&dump);
+    let wrong = said
+        .lines()
+        .find(|line| line.contains("config.toml:"))
+        .and_then(|line| line.split_once('|'))
+        .map(|(_, row)| {
+            row.trim()
+                .split("  ")
+                .next()
+                .unwrap_or_default()
+                .to_string()
+        })
+        .expect("the settings file's row");
+    assert_eq!(
+        ink_of(&dump, &wrong),
+        error,
+        "the error is not an error's colour:\n{dump}"
+    );
+    assert_eq!(
+        ink_of(&dump, "The wheel will not be reported"),
+        warning,
+        "the warning is not a warning's colour:\n{dump}"
+    );
+}
+
 /// And a start with nothing wrong puts nothing up.
 ///
 /// Almost every start is this one. A list saying nothing happened would be

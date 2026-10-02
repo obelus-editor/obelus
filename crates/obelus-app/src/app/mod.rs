@@ -1658,24 +1658,6 @@ impl App {
     /// are where it is gone to.
     #[must_use]
     pub fn what_went_wrong(&self) -> Vec<PickerItem> {
-        let row = |said: String, at: Option<String>| PickerItem {
-            prose: true,
-            marker: None,
-            icon: None,
-            label: said,
-            detail: None,
-            trailing: at,
-            changed: None,
-            value: PickerValue::Nothing,
-            enabled: true,
-            colours: None,
-            status: None,
-            depth: 0,
-            opens: None,
-            kind: None,
-            tab: None,
-            section: None,
-        };
         let mut rows = Vec::new();
         let mut paths: Vec<&PathBuf> = self.troubles.keys().collect();
         paths.sort();
@@ -1691,21 +1673,28 @@ impl App {
                     || path.display().to_string(),
                     |name| name.to_string_lossy().into_owned(),
                 );
-                rows.push(row(
+                rows.push(semantics::problem_row(
                     // The first line: what Obelus says about a file that
                     // will not read carries the parser's own words under
                     // its sentence, and a row is one line.
-                    trouble
-                        .message
-                        .lines()
-                        .next()
-                        .unwrap_or_default()
-                        .to_string(),
+                    trouble.message.lines().next().unwrap_or_default(),
+                    trouble.severity,
                     Some(format!("{name}:{}", trouble.span.line.get() + 1)),
+                    PickerValue::Nothing,
                 ));
             }
         }
-        rows.extend(self.amiss.iter().map(|said| row(said.clone(), None)));
+        // A warning, each of them: something did not start or would not
+        // read, and Obelus went on without it -- which is what a warning
+        // is, where an error is what stops the thing it is about.
+        rows.extend(self.amiss.iter().map(|said| {
+            semantics::problem_row(
+                said,
+                obelus_lsp::trouble::Severity::Warning,
+                None,
+                PickerValue::Nothing,
+            )
+        }));
         rows
     }
 
