@@ -56,6 +56,7 @@
 
   <nav class="contents" aria-label="Contents">
     <ol>
+      <li><a href="#how"><span>我怎么用它</span></a></li>
       <li><a href="#start"><span>上手</span></a></li>
       <li><a href="#why"><span>为什么写它</span></a></li>
       <li><a href="#highlights"><span>几个亮点</span></a></li>
@@ -79,7 +80,7 @@
 
       <div class="buttons">
         <a class="button primary" href="#start"><span>开始使用</span></a>
-        <a class="button" href="#tenets"><span>读读设计理念</span></a>
+        <a class="button" href="#how"><span>看看我怎么用它</span></a>
         <a class="button" href="https://github.com/obelus-editor/obelus">GitHub</a>
       </div>
 
@@ -90,8 +91,76 @@
       </figure>
     </div>
 
+    <section id="how">
+      <h2><span class="num">01</span><span>我怎么用它</span></h2>
+
+      <p>现在用 AI 写代码，我经常同时推进好几个项目：开着一堆 claude code、codex，一个编辑器，外加一份 todo 用来计划下一步做什么。同一个仓库我也常常开很多个 worktree，各自完善不同的部分。Obelus 是照着这个样子长的：它不分屏，而是假定你同时开着好几个，并<a href="#many">为此做了准备</a>。那份 todo 也是我把<a href="#notes">笔记</a>做进 Obelus 的原因：计划下一步这件事发生在读代码的中间，而不是发生在另一个应用里。</p>
+
+      <p>所以我的一天是这样的：读到一行存疑的代码，到它变成一个已经合进去的改动——中间我正在读的那份 checkout 一直没动过，我也没敲过一条 git 命令。</p>
+
+      <ol class="tenets">
+        <li>
+          <span class="no">01</span>
+          <div>
+            <p class="claim">把存疑的地方记下来。</p>
+            <p class="why">在那一行上按 <kbd>Alt+t</kbd>，写一句话。它进了这个项目的笔记，同一个仓库的每个 worktree 看到的都是这一份；文件再怎么改，它也还指着那一行。</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">02</span>
+          <div>
+            <p class="claim">和 agent 把它聊清楚。</p>
+            <p class="why">在笔记上按 <kbd>Alt+a</kbd>，开一段关于它的对话，agent 会被告知笔记写的是什么。我们一起想要做成它需要什么，我同意的步骤写在<a href="#planning">这条笔记底下</a>。</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">03</span>
+          <div>
+            <p class="claim">它在自己的分支上改代码。</p>
+            <p class="why">动手之前，它在 <code>.worktree/</code> 底下开一个 worktree，分支按这次改动起名，先让它能编译、把测试跑一遍——这样之后测试挂了，就知道是这次改动的事。我正在读的那份 checkout 不动；对话的标题行写着它的改动在哪个分支上。</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">04</span>
+          <div>
+            <p class="claim">它告诉我去哪试，我就过去。</p>
+            <p class="why">改完它会再跑一遍测试，告诉我目录和分支、跑了什么、结果是什么——而不是「应该没问题」。<kbd>F2</kbd> 再按 <kbd>Tab</kbd> 就是这个仓库的<a href="#worktrees">所有 worktree</a>：选中那一个，开着它的窗口就会跳到前面来，没开就新开一个；在那边，这次改动和别的改动一样画在边栏上。</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">05</span>
+          <div>
+            <p class="claim">我没点头，什么都不会离开那个分支。</p>
+            <p class="why">我试满意了，它先问要不要审一遍——换一个干净的上下文，只给它 diff、这次改动为了什么、以及那条笔记——再把发现的问题按轻重列出来，让我勾要修哪些。然后问这次改动怎么回去：直接合并，开 pull request，还是先留在分支上以后再说。</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">06</span>
+          <div>
+            <p class="claim">pull request 它跟到底。</p>
+            <p class="why">它用 <code>gh</code> 开 PR，盯着 checks，哪个挂了说清楚为什么，我同意就回 worktree 里修，全过了再合并。机器上没装 <code>gh</code> 或者没登录，它就把分支推上去、把链接交给我，并说明剩下的归我。</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">07</span>
+          <div>
+            <p class="claim">最后收拾干净，也是问过再做。</p>
+            <p class="why">合进去以后：要不要把我的 checkout 跟上去——只做快进，别的不做——要不要删掉那个 worktree。笔记做完了：要不要打勾，要不要关掉这段对话。</p>
+          </div>
+        </li>
+      </ol>
+
+      <p>上面每一个问题都是对话里的一张卡片，用我手上本来就按着的那几个键回答。没有哪一次推送、合并、删除或打勾，是因为 agent 觉得「该做了」。</p>
+
+      <h4>怎么打开</h4>
+      <p>这就是 <code>feature-branch</code> 这个 workflow，它只是一个设置——<kbd>Ctrl+p</kbd> → <code>open-settings</code> → <code>Workflow</code>，或者在文件里写一行：</p>
+      <pre><code># ~/.config/obelus/config.toml，或者项目自己的 .obelus/config.toml
+workflow = "feature-branch"</code></pre>
+      <p>项目可以替自己设，因为改动走不走 pull request 本来就是项目自己的规矩。不设的话，agent 按它自己的方式改，通常就是直接改在你正在读的那份 checkout 里。Obelus 自己仍然不跑任何 git：workflow 是 agent 要动手改东西时、通过 Obelus 的 <code>read_workflow</code> 拿到的那几段步骤，里面每一条命令都是 agent 的，和它跑别的命令一样跑。</p>
+    </section>
+
     <section id="start">
-      <h2><span class="num">01</span><span>上手</span></h2>
+      <h2><span class="num">02</span><span>上手</span></h2>
 
       <h3>装它</h3>
       <p>一个 shell 一个脚本，你在哪个 shell 里就用哪个。两个都是取最新的 release，拿这次 release 自带的 <code>SHA256SUMS</code> 核对下载下来的东西，然后把 <code>obg</code> 放到 PATH 上——在自己窗口里的那个 Obelus。</p>
@@ -152,22 +221,20 @@ ob src/main.rs       # 同一个文件，改在终端里读</code></pre>
       </ol>
     </section>
     <section id="why">
-      <h2><span class="num">02</span>为什么写它</h2>
+      <h2><span class="num">03</span>为什么写它</h2>
 
       <p><strong>说实话：它首先是写给我自己用的。</strong>每一个取舍先回答的是「我用着顺不顺手」，而不是「会不会有人因为缺某个功能而不用」。</p>
 
       <p>vim 那套用法我一直不习惯。模式、<code>hjkl</code>、冒号命令——它们对习惯的人来说是肌肉记忆，对我来说是每次进终端都要重新想一遍的东西。我想要的是：<em>打开就能读</em>，方向键就是方向键，<kbd>Ctrl+c</kbd> 就是复制，不用先按 <kbd>Esc</kbd> 想一想自己在哪个模式里。</p>
 
-      <p>另一半原因是这几年读代码的方式真的变了。AI 写走了很多行，我坐在终端前面做的事越来越偏向「读、确认、标出存疑的地方、问一下 agent」，而不是「敲」。终端里好用的编辑器不少，但它们都是<em>编辑器</em>：功能表按编辑器的清单展开——多光标、宏、补全、片段。我要的东西在另一条线上：语法树、git 的时间线、语言服务器，以及和 agent 的对话——全部围着「读」这一件事组织。</p>
-
-      <h3>我平时是什么样子</h3>
-      <p>现在用 AI 写代码，我经常同时推进好几个项目：开着一堆 claude code、codex，一个编辑器，外加一份 todo 用来计划下一步做什么。同一个仓库我也常常开很多个 worktree，各自完善不同的部分。Obelus 是照着这个样子长的：它不分屏，而是假定你同时开着好几个，并<a href="#many">为此做了准备</a>。</p>
-      <p>那份 todo 也是我把<a href="#notes">笔记</a>做进 Obelus 的原因：计划下一步这件事发生在读代码的中间，而不是发生在另一个应用里。</p>
+      <p>另一半原因是这几年读代码的方式真的变了。AI 写走了很多行，我坐在终端前面做的事越来越偏向「读、确认、标出存疑的地方、问一下 agent」，而不是「敲」。终端里好用的编辑器不少，但它们都是<em>编辑器</em>：功能表按编辑器的清单展开——多光标、宏、补全、片段。我要的东西在另一条线上：语法树、git 的时间线、语言服务器，以及和 agent 的对话——全部围着「读」这一件事组织——也就是<a href="#how">我怎么用它</a>。</p>
     </section>
     <section id="highlights">
-      <h2><span class="num">03</span>几个亮点</h2>
+      <h2><span class="num">04</span>几个亮点</h2>
 
       <ul class="beats">
+        <li><span>agent 在自己的 worktree 分支上改代码，任何东西离开那个分支之前都先问你</span><a class="where" href="#how">我怎么用它 ›</a></li>
+        <li><span>同一个仓库的每个 worktree 都只隔着 <kbd>F2</kbd> 和 <kbd>Tab</kbd>，各在自己的窗口里</span><a class="where" href="#worktrees">多窗口 ›</a></li>
         <li><span>每条笔记都能有自己的对话，明天回来它还在</span><a class="where" href="#agent">和 agent 对话 ›</a></li>
         <li><span>就着一条笔记和 agent 聊，它会把下一步写在那条笔记底下——先问过你</span><a class="where" href="#planning">笔记 ›</a></li>
         <li><span>上周写在某一行旁边的笔记，靠 git 还指着当初那一行</span><a class="where" href="#notes">笔记 ›</a></li>
@@ -178,7 +245,7 @@ ob src/main.rs       # 同一个文件，改在终端里读</code></pre>
       </ul>
     </section>
     <section id="tenets">
-      <h2><span class="num">04</span><span>设计理念</span></h2>
+      <h2><span class="num">05</span><span>设计理念</span></h2>
 
       <p>这些不是事后总结的口号，是遇到每个取舍时反复拿来做决定的那几句话。大多是踩过一次才写下来的。</p>
 
@@ -221,7 +288,7 @@ ob src/main.rs       # 同一个文件，改在终端里读</code></pre>
       </ol>
     </section>
     <section id="what">
-      <h2><span class="num">05</span><span>读代码</span></h2>
+      <h2><span class="num">06</span><span>读代码</span></h2>
 
       <div class="cards">
         <div class="card">
@@ -267,7 +334,7 @@ ob src/main.rs       # 同一个文件，改在终端里读</code></pre>
       </div>
     </section>
     <section id="notes">
-      <h2><span class="num">06</span><span>笔记</span></h2>
+      <h2><span class="num">07</span><span>笔记</span></h2>
 
       <blockquote><p><em>obelus</em> 是学者在手稿边上标「此处存疑」的那个记号。笔记就是把那个记号写下来。</p></blockquote>
 
@@ -301,7 +368,7 @@ ob src/main.rs       # 同一个文件，改在终端里读</code></pre>
       <p>在 Obelus 自己的目录里，按<strong>项目</strong>存，而不是按某一个 checkout 存。所以同一个仓库的几个 worktree 打开的是同一份清单；它们是你自己的笔记，不会进到项目的提交里去。</p>
     </section>
     <section id="agent">
-      <h2><span class="num">07</span><span>和 agent 对话</span></h2>
+      <h2><span class="num">08</span><span>和 agent 对话</span></h2>
 
       <p>Obelus 不实现任何人的模型，它只和你已经有的那个说话——用 <strong>ACP</strong>（Agent Client Protocol），和语言服务器一样的形状：另一个程序，走它自己的标准输入输出。</p>
 
@@ -323,12 +390,16 @@ ob src/main.rs       # 同一个文件，改在终端里读</code></pre>
       <p>已经改完的：那就是工作区和上一次提交的差别，去文件里看——对话里只是一行 <code>+12 -4</code>。还没改、正在<em>请求</em>你同意的：那些行既不在文件里也不在上一次提交里，所以它们画在对话里，就画在那次调用底下，敞着；而且事后也留在那儿——这就是你以后翻回去确认「我当初同意了什么」的地方。画法和文件里展开的 hunk 一模一样，因为它们说的是同一件事。</p>
     </section>
     <section id="many">
-      <h2><span class="num">08</span><span>多窗口、多 worktree</span></h2>
+      <h2><span class="num">09</span><span>多窗口、多 worktree</span></h2>
 
       <p>Obelus 不分屏，所以「同一个项目上同时跑着好几个 Obelus」不是边缘情况，而是设计前提。下面这些是它为此给的保证。</p>
 
       <h4>一个仓库和它的 worktree 是同一个项目</h4>
       <p>你为同一个仓库开了三个 worktree，它们打开的是<em>同一份</em>笔记，也共用同一份「哪个对话正被人用着」。你开着三个 worktree，想回头看的本来就是一张清单，而不是三张。</p>
+
+      <h4 id="worktrees">去另一个 worktree</h4>
+      <p>在窗口里，<kbd>F2</kbd> 有第二个 tab，按 <kbd>Tab</kbd> 过去：这个仓库所有的 checkout 都在里面，有 Obelus 开着的会标出来。选一个，开着它的那个窗口就跳到前面来，没开就在那棵树上新开一个；你所在的这一棵也列着，选它只是关掉列表。在 git 背后被删掉的树写着 <code>Missing</code>，选不了。一个窗口底下的树被删掉——比如 PR 合进去以后 <code>git worktree remove</code>——窗口留着，里面开着的东西也留着，只是项目变灰。</p>
+      <p class="quiet small">只有 <code>obg</code> 列这些。去另一个地方，要么是启动一个 Obelus，要么是把一个带到前面来，而终端两样都做不到：它所在的窗口是终端的，你想在哪个终端里开新的 Obelus，Obelus 也没法知道。所以 <code>ob</code> 里没有这个 tab，<code>switch-worktree</code> 也是灰的。</p>
 
       <h4>两个窗口同时记笔记，不会互相抹掉</h4>
       <p>每一次改动都以磁盘上当下的内容为准，而不是以这个窗口开着的时候看到的那份为准。所以另一个窗口刚记下的东西不会因为你这边后保存就消失——而且中途被杀掉也不会留下半个文件。</p>
@@ -343,7 +414,7 @@ ob src/main.rs       # 同一个文件，改在终端里读</code></pre>
       <p>另一个窗口、agent 或者格式化工具可能已经改过这个文件。这个问题是在你按下保存的那一刻去问磁盘的，而不是靠「刚才好像没收到通知」来猜。</p>
     </section>
     <section id="keys">
-      <h2><span class="num">09</span><span>按键与命令</span></h2>
+      <h2><span class="num">10</span><span>按键与命令</span></h2>
 
       <p>没有模式，所以下面每个键什么时候按都是它写的那个意思——这是 VS Code、Emacs 的路子，不是 vim、helix 的。三个家族，好记的地方在家族本身。这里列的是默认表——每个都能改，见 <a href="#config">配置</a>。</p>
 
@@ -359,7 +430,7 @@ ob src/main.rs       # 同一个文件，改在终端里读</code></pre>
         </tr></thead>
         <tbody>
           <tr><td><kbd>F1</kbd></td><td><code>open-file</code></td><td>在这棵树里挑一个文件打开（在弹出的视图里，<kbd>F1</kbd> 是「列出所有键」）</td></tr>
-          <tr><td><kbd>F2</kbd></td><td><code>switch-document</code></td><td>在已经打开的文档之间挑</td></tr>
+          <tr><td><kbd>F2</kbd></td><td><code>switch-document</code></td><td>在已经打开的文档之间挑——在窗口里还有 worktree</td></tr>
           <tr><td><kbd>F3</kbd></td><td><code>open-changed-file</code></td><td>挑一个自上次提交以来改过的文件</td></tr>
           <tr><td><kbd>F4</kbd></td><td><code>choose-conversation</code></td><td>和 agent 的哪个对话：开一个新的，或挑一个以前的接着说</td></tr>
           <tr><td><kbd>F5</kbd></td><td><code>search-file</code></td><td>在正在读的这个文件里搜</td></tr>
@@ -438,7 +509,7 @@ ob src/main.rs       # 同一个文件，改在终端里读</code></pre>
         <tbody>
           <tr>
             <td>Files</td>
-            <td><code>open-file</code> <code>open-changed-file</code> <code>save-file</code> <code>reload-file</code> <code>switch-document</code> <code>close-document</code> <code>rename-file</code> <code>toggle-preview</code> <code>count-lines</code> <code>todo</code> <code>todo-add</code></td>
+            <td><code>open-file</code> <code>open-changed-file</code> <code>save-file</code> <code>reload-file</code> <code>switch-document</code> <code>switch-worktree</code> <code>close-document</code> <code>rename-file</code> <code>toggle-preview</code> <code>count-lines</code> <code>todo</code> <code>todo-add</code></td>
           </tr>
           <tr>
             <td>Search</td>
@@ -465,7 +536,7 @@ ob src/main.rs       # 同一个文件，改在终端里读</code></pre>
       </div>
     </section>
     <section id="config">
-      <h2><span class="num">10</span><span>配置与主题</span></h2>
+      <h2><span class="num">11</span><span>配置与主题</span></h2>
 
       <h3>两个文件</h3>
       <div class="table-wrap">
@@ -508,6 +579,7 @@ ob src/main.rs       # 同一个文件，改在终端里读</code></pre>
           <tr><td><code>inlay_hints</code></td><td><code>true</code></td><td>画不画服务器推导出来的类型和参数名。它们不在文件里——关掉之后每一列都回到文件本来的位置</td></tr>
           <tr><td><code>diagnostics</code></td><td><code>true</code></td><td>把服务器的意见展开在光标这一行底下。标记本身一直都在，不额外占行；这一项管的是那些<em>字</em></td></tr>
           <tr><td><code>ignored_files</code></td><td><code>false</code></td><td>文件列表里要不要也给出项目忽略掉的文件</td></tr>
+          <tr><td><code>workflow</code></td><td><code>"none"</code></td><td>agent 怎么改这个项目。<code>none</code> 是按它自己的方式；<code>feature-branch</code> 是在自己的 worktree 分支上改——见<a href="#how">我怎么用它</a>。项目可以设</td></tr>
         </tbody>
       </table>
       </div>

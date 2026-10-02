@@ -56,6 +56,7 @@
 
   <nav class="contents" aria-label="Contents">
     <ol>
+      <li><a href="#how"><span>How I use it</span></a></li>
       <li><a href="#start"><span>Getting started</span></a></li>
       <li><a href="#why"><span>Why it exists</span></a></li>
       <li><a href="#highlights"><span>Highlights</span></a></li>
@@ -79,7 +80,7 @@
 
       <div class="buttons">
         <a class="button primary" href="#start"><span>Get started</span></a>
-        <a class="button" href="#tenets"><span>Read the principles</span></a>
+        <a class="button" href="#how"><span>See how I use it</span></a>
         <a class="button" href="https://github.com/obelus-editor/obelus">GitHub</a>
       </div>
 
@@ -90,8 +91,76 @@
       </figure>
     </div>
 
+    <section id="how">
+      <h2><span class="num">01</span><span>How I use it</span></h2>
+
+      <p>Working with AI, I usually have several projects going at once: a pile of claude code and codex sessions, an editor, and a todo list for planning what comes next. I also keep several worktrees of one repository, each carrying a different part of the work. Obelus is shaped for that: it does not split, and assumes instead that you are running several, which it is <a href="#many">prepared for</a>. That todo list is also why the <a href="#notes">notes</a> are in Obelus at all: planning the next step happens in the middle of reading code, not in another application.</p>
+
+      <p>So this is a day with it: a line I doubt, turned into a change that has merged — without the checkout I am reading moving under me, and without my typing a git command.</p>
+
+      <ol class="tenets">
+        <li>
+          <span class="no">01</span>
+          <div>
+            <p class="claim">I write down what I doubt.</p>
+            <p class="why"><kbd>Alt+t</kbd> on the line, and a sentence. It goes in the project's notes, which every worktree of the repository shares, and it keeps pointing at that line as the file moves.</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">02</span>
+          <div>
+            <p class="claim">I talk it through with an agent.</p>
+            <p class="why"><kbd>Alt+a</kbd> on the note opens a conversation about it, and the agent is told what it says. We work out what it would take, and the steps I agree to go <a href="#planning">under the note</a>.</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">03</span>
+          <div>
+            <p class="claim">It changes the code on a branch of its own.</p>
+            <p class="why">Before its first change it makes a worktree under <code>.worktree/</code> on a branch named after the change, gets it building and runs the tests once — so a failure afterwards is known to be the change's. The checkout I am reading does not move, and the conversation's header says which branch its changes are on.</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">04</span>
+          <div>
+            <p class="claim">It tells me where to try it, and I go there.</p>
+            <p class="why">When the change is made it runs the tests again and says the directory and the branch, what it ran and what that showed — not that it should work. <kbd>F2</kbd> and <kbd>Tab</kbd> is <a href="#worktrees">every worktree</a> of the repository: choosing that one brings its window forward, or opens one on it, and there the change is in the margin like any other.</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">05</span>
+          <div>
+            <p class="claim">Nothing leaves before I have said so.</p>
+            <p class="why">Once I am satisfied, it asks whether to review the change first — in a fresh context, given only the diff, what it is for and the note — and lists what it found by how much it matters, for me to tick which to fix. Then whether it goes back as a merge, as a pull request, or waits on its branch for later.</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">06</span>
+          <div>
+            <p class="claim">A pull request is followed to the end.</p>
+            <p class="why">It opens one with <code>gh</code>, follows the checks, says why one failed and fixes it in the worktree if I ask, and merges once they pass. Where <code>gh</code> is not installed and signed in, it pushes the branch and hands me the link, and says the rest is mine.</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">07</span>
+          <div>
+            <p class="claim">And it tidies up, asking.</p>
+            <p class="why">Once it has merged: whether to bring my checkout up to it — a fast-forward and nothing else — and whether to remove the worktree. Once the note is done: whether to tick it off and close the conversation.</p>
+          </div>
+        </li>
+      </ol>
+
+      <p>Every one of those questions is a card in the conversation, answered with the keys I am already holding. Nothing is pushed, merged, deleted or ticked off because the agent thought it was time.</p>
+
+      <h4>Turning it on</h4>
+      <p>That is the <code>feature-branch</code> workflow, and it is one setting — <kbd>Ctrl+p</kbd> → <code>open-settings</code> → <code>Workflow</code>, or a line in the file:</p>
+      <pre><code># ~/.config/obelus/config.toml, or the project's own .obelus/config.toml
+workflow = "feature-branch"</code></pre>
+      <p>A project may set it for itself, because whether its changes go through pull requests is the project's own rule. Without it the agent goes about a change its own way, which is usually straight in the checkout you are reading. Obelus itself still runs no git: the workflow is what the agent is handed when it is about to change something, through Obelus's own <code>read_workflow</code>, and every command in it is the agent's, run the way it runs anything else.</p>
+    </section>
+
     <section id="start">
-      <h2><span class="num">01</span><span>Getting started</span></h2>
+      <h2><span class="num">02</span><span>Getting started</span></h2>
 
       <h3>Install</h3>
       <p>One script per shell, and which you want is which shell you are in. Either one takes the latest release, checks what it downloaded against the release's own <code>SHA256SUMS</code>, and puts <code>obg</code> on your PATH — Obelus in a window of its own.</p>
@@ -152,22 +221,20 @@ ob src/main.rs       # the same file, in the terminal instead</code></pre>
       </ol>
     </section>
     <section id="why">
-      <h2><span class="num">02</span>Why it exists</h2>
+      <h2><span class="num">03</span>Why it exists</h2>
 
       <p><strong>Honestly: it was written for me first.</strong> Every trade-off answers "does this work for me" before it answers "will somebody else refuse to use it without feature X".</p>
 
       <p>I never got comfortable with the way vim is used. Modes, <code>hjkl</code>, colon commands — muscle memory for the people who have it, and for me something to work out again every time I open a terminal. What I wanted was: <em>open it and read</em>. Arrow keys are arrow keys, <kbd>Ctrl+c</kbd> copies, and nothing has to be escaped out of first.</p>
 
-      <p>The other half is that reading code has genuinely changed. A lot of the lines are written by something else now, and what I do in front of a terminal is read, check, mark what looks doubtful, and ask an agent about it — rather than type. There are good editors in a terminal, but they are <em>editors</em>: the feature list is an editor's list, with multiple cursors and macros and snippets on it. What I wanted sits on another line entirely — the syntax tree, the git timeline, the language server and the agent, all organised around reading.</p>
-
-      <h3>How I actually work</h3>
-      <p>Working with AI, I usually have several projects going at once: a pile of claude code and codex sessions, an editor, and a todo list for planning what comes next. I also keep several worktrees of one repository, each carrying a different part of the work. Obelus is shaped for that: it does not split, and assumes instead that you are running several, which it is <a href="#many">prepared for</a>.</p>
-      <p>That todo list is also why the <a href="#notes">notes</a> are in Obelus at all: planning the next step happens in the middle of reading code, not in another application.</p>
+      <p>The other half is that reading code has genuinely changed. A lot of the lines are written by something else now, and what I do in front of a terminal is read, check, mark what looks doubtful, and ask an agent about it — rather than type. There are good editors in a terminal, but they are <em>editors</em>: the feature list is an editor's list, with multiple cursors and macros and snippets on it. What I wanted sits on another line entirely — the syntax tree, the git timeline, the language server and the agent, all organised around reading — which is <a href="#how">how I use it</a>.</p>
     </section>
     <section id="highlights">
-      <h2><span class="num">03</span>Highlights</h2>
+      <h2><span class="num">04</span>Highlights</h2>
 
       <ul class="beats">
+        <li><span>An agent changes the code on a branch in a worktree of its own, and asks before anything leaves it</span><a class="where" href="#how">How I use it ›</a></li>
+        <li><span>Every worktree of the repository is <kbd>F2</kbd> and <kbd>Tab</kbd> away, each in a window of its own</span><a class="where" href="#worktrees">Many windows ›</a></li>
         <li><span>Every note can have its own conversation, and it is still there tomorrow</span><a class="where" href="#agent">Talking to an agent ›</a></li>
         <li><span>Talk to an agent about a note and it writes the next steps under it — asking you first</span><a class="where" href="#planning">Notes ›</a></li>
         <li><span>A note written last week still points at the line it was written about</span><a class="where" href="#notes">Notes ›</a></li>
@@ -178,7 +245,7 @@ ob src/main.rs       # the same file, in the terminal instead</code></pre>
       </ul>
     </section>
     <section id="tenets">
-      <h2><span class="num">04</span><span>Principles</span></h2>
+      <h2><span class="num">05</span><span>Principles</span></h2>
 
       <p>These are not slogans written afterwards. They are the sentences the trade-offs actually get decided against, and most of them were written down after getting it wrong once.</p>
 
@@ -221,7 +288,7 @@ ob src/main.rs       # the same file, in the terminal instead</code></pre>
       </ol>
     </section>
     <section id="what">
-      <h2><span class="num">05</span><span>Reading code</span></h2>
+      <h2><span class="num">06</span><span>Reading code</span></h2>
 
       <div class="cards">
         <div class="card">
@@ -267,7 +334,7 @@ ob src/main.rs       # the same file, in the terminal instead</code></pre>
       </div>
     </section>
     <section id="notes">
-      <h2><span class="num">06</span><span>Notes</span></h2>
+      <h2><span class="num">07</span><span>Notes</span></h2>
 
       <blockquote><p>An <em>obelus</em> is the mark a scholar put beside a line they doubted. This is that mark, written down.</p></blockquote>
 
@@ -301,7 +368,7 @@ ob src/main.rs       # the same file, in the terminal instead</code></pre>
       <p>In Obelus's own directory, kept per <strong>project</strong> rather than per checkout — so several worktrees of one repository open the same list. They are your notes, and they do not end up in the project's commits.</p>
     </section>
     <section id="agent">
-      <h2><span class="num">07</span><span>Talking to an agent</span></h2>
+      <h2><span class="num">08</span><span>Talking to an agent</span></h2>
 
       <p>Obelus implements nobody's model. It talks to whatever you already have, over <strong>ACP</strong> (the Agent Client Protocol) — the same shape as a language server: another program, over its own standard input and output.</p>
 
@@ -323,12 +390,16 @@ ob src/main.rs       # the same file, in the terminal instead</code></pre>
       <p>A change that has been made is a row with <code>+12 -4</code> on it, and the file is where it is read. A change it is <em>asking</em> to make is the opposite: those lines are in neither the file nor the last commit, so they go in the transcript, under the call's own row, open — and they stay there afterwards, which is how you find out later what you agreed to. Drawn the way an opened hunk is drawn in a file, because it is the same thing being said.</p>
     </section>
     <section id="many">
-      <h2><span class="num">08</span><span>Many windows, many worktrees</span></h2>
+      <h2><span class="num">09</span><span>Many windows, many worktrees</span></h2>
 
       <p>Obelus has no splits, so several Obelus on one project is not an edge case but the premise. These are the promises it makes because of it.</p>
 
       <h4>A repository and its worktrees are one project</h4>
       <p>Three worktrees of one repository open <em>one</em> set of notes, and share one record of which conversations are in use. With three of them open, you mean to come back to one list rather than three.</p>
+
+      <h4 id="worktrees">Going to another worktree</h4>
+      <p>In a window, <kbd>F2</kbd> has a second tab, and <kbd>Tab</kbd> goes to it: every checkout the repository has, with the ones an Obelus is open on marked. Choosing one brings that window forward, or starts a new one on the tree; the one you are in is listed too, and choosing it only closes the list. A tree deleted behind git's back says <code>Missing</code> and cannot be chosen. And a tree removed under a window — <code>git worktree remove</code>, once its pull request merged — leaves the window with what was open in it, and the project dim.</p>
+      <p class="quiet small">Only <code>obg</code> lists them. Going somewhere is starting an Obelus or bringing one forward, and a terminal can do neither: the window it is drawn in is the terminal's, and which terminal you would want a new Obelus started in is not something Obelus can know. So <code>ob</code> has no such tab, and <code>switch-worktree</code> is dim there.</p>
 
       <h4>Two windows writing notes do not erase each other</h4>
       <p>Every change is made against what is on disk at that moment, not against what this window happened to be holding. So a note the other window just wrote does not vanish because you saved second — and being killed halfway through never leaves half a file.</p>
@@ -343,7 +414,7 @@ ob src/main.rs       # the same file, in the terminal instead</code></pre>
       <p>Another window, an agent or a formatter may have changed the file since you opened it. That question is asked of disk at the moment you save, rather than guessed from whether a notification happened to arrive.</p>
     </section>
     <section id="keys">
-      <h2><span class="num">09</span><span>Keys &amp; commands</span></h2>
+      <h2><span class="num">10</span><span>Keys &amp; commands</span></h2>
 
       <p>No modes, so every key below means what it says whenever it is pressed — the VS Code and Emacs way, not the vim and helix one. Three families, and the family is the memorable part. This is the default table; every one of them can be moved — see <a href="#config">config</a>.</p>
 
@@ -359,7 +430,7 @@ ob src/main.rs       # the same file, in the terminal instead</code></pre>
         </tr></thead>
         <tbody>
           <tr><td><kbd>F1</kbd></td><td><code>open-file</code></td><td>Choose a file under the project and open it</td></tr>
-          <tr><td><kbd>F2</kbd></td><td><code>switch-document</code></td><td>Choose among the documents already open</td></tr>
+          <tr><td><kbd>F2</kbd></td><td><code>switch-document</code></td><td>Choose among the documents already open — and, in a window, the worktrees</td></tr>
           <tr><td><kbd>F3</kbd></td><td><code>open-changed-file</code></td><td>One of the files that changed since the last commit</td></tr>
           <tr><td><kbd>F4</kbd></td><td><code>choose-conversation</code></td><td>Which conversation with the agent: a new one, or one to take up again</td></tr>
           <tr><td><kbd>F5</kbd></td><td><code>search-file</code></td><td>Search the file being read</td></tr>
@@ -438,7 +509,7 @@ ob src/main.rs       # the same file, in the terminal instead</code></pre>
         <tbody>
           <tr>
             <td>Files</td>
-            <td><code>open-file</code> <code>open-changed-file</code> <code>save-file</code> <code>reload-file</code> <code>switch-document</code> <code>close-document</code> <code>rename-file</code> <code>toggle-preview</code> <code>count-lines</code> <code>todo</code> <code>todo-add</code></td>
+            <td><code>open-file</code> <code>open-changed-file</code> <code>save-file</code> <code>reload-file</code> <code>switch-document</code> <code>switch-worktree</code> <code>close-document</code> <code>rename-file</code> <code>toggle-preview</code> <code>count-lines</code> <code>todo</code> <code>todo-add</code></td>
           </tr>
           <tr>
             <td>Search</td>
@@ -465,7 +536,7 @@ ob src/main.rs       # the same file, in the terminal instead</code></pre>
       </div>
     </section>
     <section id="config">
-      <h2><span class="num">10</span><span>Config &amp; themes</span></h2>
+      <h2><span class="num">11</span><span>Config &amp; themes</span></h2>
 
       <h3>Two files</h3>
       <div class="table-wrap">
@@ -508,6 +579,7 @@ ob src/main.rs       # the same file, in the terminal instead</code></pre>
           <tr><td><code>inlay_hints</code></td><td><code>true</code></td><td>Draw the types and parameter names a server infers. They are not in the file: turning this off puts every column back where the file has it</td></tr>
           <tr><td><code>diagnostics</code></td><td><code>true</code></td><td>Open the words under the line the caret is on. What is wrong is underlined either way; this is the <em>words</em>, which cost that line a row</td></tr>
           <tr><td><code>ignored_files</code></td><td><code>false</code></td><td>Whether the file list offers the files a project has said to ignore</td></tr>
+          <tr><td><code>workflow</code></td><td><code>"none"</code></td><td>How an agent goes about changing the project. <code>none</code> is its own way; <code>feature-branch</code> is a branch in a worktree of its own — see <a href="#how">how I use it</a>. A project may set it</td></tr>
         </tbody>
       </table>
       </div>
