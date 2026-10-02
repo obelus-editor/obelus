@@ -807,12 +807,12 @@ fn what_was_waiting_goes_as_one_prompt() {
         "both should be waiting"
     );
 
+    // On what goes when the turn ends, rather than on anything the turn
+    // shows: the command's output is Obelus's own and is on the page while
+    // the agent is still reading it, which on Windows is long enough to
+    // outlast the wait below.
     pump(&mut app, &events, "the first turn to end", |app| {
-        app.chat().is_some_and(|chat| {
-            chat.rows(WIDTH)
-                .iter()
-                .any(|row| row.text().contains("obelus-ran-this"))
-        })
+        app.chat().is_some_and(|chat| chat.unsent().is_empty())
     });
     // Long enough for an answer to either of them to have arrived.
     settle(&mut app, &events, Duration::from_millis(500));
@@ -827,11 +827,6 @@ fn what_was_waiting_goes_as_one_prompt() {
         app.talking(),
         obelus_agent::Talking::Thinking,
         "nothing was sent at all:\n{text}"
-    );
-    assert_eq!(
-        app.chat().map(|chat| chat.unsent()),
-        Some(Vec::new()),
-        "they are still marked as waiting"
     );
 }
 
