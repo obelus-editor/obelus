@@ -419,6 +419,9 @@ main { min-width: 0; }
   color: var(--t-text);
   margin: 0 0 1rem;
 }
+/* The half of it that is the reader's, in the brand colour: the sentence is
+   already the page's heaviest, so weight cannot be what picks it out. */
+.hero .lede strong { color: var(--t-brand); }
 .hero .sub { color: var(--t-text-muted); margin: 0 0 1.8rem; }
 
 /* One screen, photographed. Two of them, because the page has a theme

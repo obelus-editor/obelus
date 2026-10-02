@@ -96,7 +96,7 @@
 
       <ul class="beats">
         <li><span>An agent changes the code on a branch of its own, and asks before anything leaves it</span><a class="where" href="#how">How I use it ›</a></li>
-        <li><span>Every worktree is <kbd>F2</kbd> and <kbd>Tab</kbd> away, each in a window of its own</span><a class="where" href="#worktrees">Many windows ›</a></li>
+        <li><span>Every worktree is <kbd>F2</kbd> and <kbd>Tab</kbd> away, each in a window of its own — in <code>obg</code></span><a class="where" href="#worktrees">Many windows ›</a></li>
         <li><span>A conversation for every note, and it is still there tomorrow</span><a class="where" href="#agent">Talking to an agent ›</a></li>
         <li><span>A note keeps pointing at its line, however the file moves</span><a class="where" href="#notes">Notes ›</a></li>
         <li><span>What changed opens in place, beside the code it changed</span><a class="where" href="#what">Reading code ›</a></li>
@@ -163,11 +163,11 @@
 
       <p>Every one of those questions is a card in the conversation, answered with the keys I am already holding. Nothing is pushed, merged, deleted or ticked off because the agent thought it was time.</p>
 
-      <h4>Turning it on</h4>
-      <p>That is the <code>feature-branch</code> workflow, and it is one setting — <kbd>Ctrl+p</kbd> → <code>open-settings</code> → <code>Workflow</code>, or a line in the file:</p>
+      <h4>It is on unless you say otherwise</h4>
+      <p>That is the <code>feature-branch</code> workflow, and it is what Obelus asks of an agent from the start. Turning it off is one setting — <kbd>Ctrl+p</kbd> → <code>open-settings</code> → <code>Workflow</code>, or a line in the file:</p>
       <pre><code># ~/.config/obelus/config.toml, or the project's own .obelus/config.toml
-workflow = "feature-branch"</code></pre>
-      <p>A project may set it for itself: whether its changes go through pull requests is the project's own rule. Without it, the agent changes things its own way — usually straight in the checkout you are reading. Obelus itself runs no git. The workflow is what the agent is handed, through Obelus's own <code>read_workflow</code>, when it is about to change something; every command in it is the agent's.</p>
+workflow = "none"</code></pre>
+      <p>With <code>none</code> the agent changes things its own way — usually straight in the checkout you are reading. A project may choose for itself, because whether its changes go through pull requests is the project's own rule; and a project that is not a git repository has no branch to work on, so the agent changes the files where they are and says so. Obelus itself runs no git. The workflow is what the agent is handed, through Obelus's own <code>read_workflow</code>, when it is about to change something; every command in it is the agent's.</p>
     </section>
     <section id="many">
       <h2><span class="num">03</span><span>Many windows, many worktrees</span></h2>
@@ -175,8 +175,8 @@ workflow = "feature-branch"</code></pre>
       <p>Obelus has no splits. Two files side by side is two Obelus — so several on one project, each on its own worktree, is the premise rather than an edge case, and these are the promises that come with it.</p>
 
       <h4 id="worktrees">Every worktree is one key away</h4>
-      <p>In a window, <kbd>F2</kbd> has a second tab, and <kbd>Tab</kbd> goes to it: every worktree git knows of for this repository, wherever it is — beside the main checkout, inside it under <code>.worktree/</code>, or anywhere else on the disk — with the ones an Obelus has open marked. Choosing one brings its window forward, or opens a new one on it.</p>
-      <p>Each is named from the directory the main checkout sits in: a tree beside it by its own name, one inside it by the way down (<code>tally/.worktree/fix</code>), and one anywhere else by its whole path. A tree deleted behind git's back says <code>Missing</code> and cannot be chosen; one removed under a window — <code>git worktree remove</code>, once its pull request merged — leaves that window with what was open in it, and the project dim.</p>
+      <p>In a window, <kbd>F2</kbd> has a second tab, and <kbd>Tab</kbd> goes to it: every worktree git knows of for this repository, wherever it is — beside the main checkout, inside it under <code>.worktree/</code>, or anywhere else on the disk — with the ones an Obelus has open marked. Choosing one brings its window forward, or opens a new one on it; the one you are in is listed too, and choosing it only closes the list.</p>
+      <p>Each is named from the directory the main checkout sits in: a tree beside it by its own name, one inside it by the way down (<code>tally/.worktree/fix</code>), and one elsewhere under that directory by the way to it from there; a tree outside it is said in full. A tree deleted behind git's back says <code>Missing</code> and cannot be chosen; one removed under a window — <code>git worktree remove</code>, once its pull request merged — leaves that window with what was open in it, and the project dim.</p>
       <figure class="shot">
         <img class="dark" src="worktrees-dark.png" width="1500" height="286" alt="The Worktrees tab of the list of open documents: tally on main, and tally/.worktree/stable-tie-order on stable-tie-order, both marked as having a window open, the second marked This window.">
         <img class="light" src="worktrees-light.png" width="1500" height="286" alt="The same list in Obelus's light theme.">
@@ -205,7 +205,7 @@ workflow = "feature-branch"</code></pre>
       <p>Obelus implements nobody's model. It talks to whatever you already have, over <strong>ACP</strong> (the Agent Client Protocol) — the same shape as a language server: another program, over its own standard input and output.</p>
 
       <h4>Installing one</h4>
-      <p>Which agents exist is not Obelus's to decide: it reads the registry the protocol's own authors keep — forty of them, each with how to install it. <kbd>F4</kbd>, a new conversation, the agents page, and install one. One agent at a time, because two would mean every question having to say which agent it was for.</p>
+      <p>Which agents exist is not Obelus's to decide: it reads the registry the protocol's own authors keep — forty of them, each with how to install it. <kbd>F4</kbd>, a new conversation, the agents page, and install one; a terminal that can draw pictures shows each agent's own mark. One agent at a time, because two would mean every question having to say which agent it was for.</p>
 
       <h4>A conversation is a document</h4>
       <p>It sits in the list of open documents (<kbd>F2</kbd>). Leaving one is going somewhere else rather than closing it: what was said is still there when you come back. <kbd>Enter</kbd> sends, <kbd>Alt+Enter</kbd> makes a line (and <kbd>Shift+Enter</kbd> where the terminal reports it). The status row is the agent's own session options — mode, model, reasoning effort — walked and changed there, with <kbd>Shift+Tab</kbd> going the other way as it always does. Obelus translates none of them: which options exist is the agent's business.</p>
@@ -225,6 +225,8 @@ workflow = "feature-branch"</code></pre>
       <h2><span class="num">05</span><span>Notes</span></h2>
 
       <blockquote><p>An <em>obelus</em> is the mark a scholar put beside a line they doubted. This is that mark, written down.</p></blockquote>
+
+      <p>They are here because of how I work: a pile of claude code and codex sessions, and a todo list for what comes next. Planning the next step happens in the middle of reading code, not in another application.</p>
 
       <p><kbd>Alt+t</kbd> while reading opens the notes with one started against the line under the cursor; <code>todo</code> opens them all. The page is always being written: the caret is in it when it opens, a letter is a letter, <kbd>Enter</kbd> starts another note and <kbd>Shift+Enter</kbd> a line inside one. What acts on a note <em>as</em> a note is under <kbd>Alt</kbd>: tick it, go to what it is about, move it, take it away. The keys are along the bottom.</p>
 
@@ -259,8 +261,8 @@ workflow = "feature-branch"</code></pre>
       <h2><span class="num">06</span><span>Reading code</span></h2>
 
       <figure class="shot">
-        <img class="dark" src="screen-dark.png" width="1500" height="1084" alt="Obelus reading a Rust source file. Line 59 has changed, and the hunk is opened underneath it showing the line as the last commit had it; the changes elsewhere in the file are marked beside the scrollbar, and the status row names the file, the language server and the cursor's position.">
-        <img class="light" src="screen-light.png" width="1500" height="1084" alt="The same screen in Obelus's light theme.">
+        <img class="dark" src="screen-dark.png" width="1500" height="1084" loading="lazy" alt="Obelus reading a Rust source file. Line 59 has changed, and the hunk is opened underneath it showing the line as the last commit had it; the changes elsewhere in the file are marked beside the scrollbar, and the status row names the file, the language server and the cursor's position.">
+        <img class="light" src="screen-light.png" width="1500" height="1084" loading="lazy" alt="The same screen in Obelus's light theme.">
         <figcaption class="caption"><code>obg</code>, reading its own source. Line 59 changed, and <kbd>Alt+d</kbd> has opened the hunk in place, with the line as the last commit had it above the one that replaced it; the marks beside the scrollbar are the rest of the file's changes. Obelus's own <code>dark</code> and <code>light</code>, following whichever this page is in.</figcaption>
       </figure>
 
@@ -293,7 +295,7 @@ workflow = "feature-branch"</code></pre>
             <li>Markdown laid out as prose (<kbd>Ctrl+t</kbd>), a log put in columns — decided by what the lines look like, not by the file's name</li>
             <li>The code in a markdown fence and the script in an HTML page are each highlighted as what they are</li>
             <li>Long lines break the way their language does: Chinese between characters, an English word never cut in half, continuation rows keeping the indentation</li>
-            <li>And the ordinary things: twenty-five languages, folding, soft wrap</li>
+            <li>And the ordinary things: twenty-three languages, folding, soft wrap</li>
           </ul>
         </div>
 
@@ -363,7 +365,7 @@ workflow = "feature-branch"</code></pre>
       <h2><span class="num">09</span><span>Getting started</span></h2>
 
       <h3>Install</h3>
-      <p>One script per shell, and which you want is which shell you are in. Either one takes the latest release, checks what it downloaded against the release's own <code>SHA256SUMS</code>, and puts <code>obg</code> on your PATH — Obelus in a window of its own.</p>
+      <p>One script per shell, and which you want is which shell you are in. Either one takes the latest release, checks what it downloaded against the release's own <code>SHA256SUMS</code>, and puts <code>obg</code> where your PATH can find it — Obelus in a window of its own.</p>
 
       <h4>Linux and macOS</h4>
       <pre><code>curl -fsSL https://raw.githubusercontent.com/obelus-editor/obelus/master/contrib/install.sh | sh</code></pre>
@@ -382,8 +384,8 @@ workflow = "feature-branch"</code></pre>
       <ul>
         <li><code>--bin ob</code> is the terminal one on its own, <code>--dir</code> says where to put it, and <code>--help</code> lists the rest.</li>
         <li><a href="https://github.com/obelus-editor/obelus/releases">The releases</a> carry an archive for every platform, and a <code>.deb</code>, an <code>.rpm</code>, an AppImage and a macOS <code>.app</code>.</li>
-        <li>On Windows the script puts Obelus in the Start menu as well as on your PATH; <code>-NoShortcut</code> leaves the menu alone. On Linux it adds a desktop entry for each of <code>obg</code> and <code>ob</code>, and an icon, under <code>~/.local/share</code> — which every launcher reads, omarchy's <code>Apps</code> menu among them; <code>--no-desktop</code> leaves them out.</li>
-        <li><code>-Uninstall</code> and <code>--uninstall</code> take back everything the scripts put there — the binaries, the PATH, the menu and desktop entries, and on omarchy the theme template. Neither touches your settings.</li>
+        <li>On Windows the script adds its directory to your PATH and puts Obelus in the Start menu; <code>-NoShortcut</code> leaves the menu alone. The shell script says which line to add if the directory is not on your PATH already, and on Linux it adds a desktop entry for each of <code>obg</code> and <code>ob</code> that it installed — <code>ob</code>'s opens in a terminal — and an icon, under <code>~/.local/share</code>, which every launcher reads, omarchy's <code>Apps</code> menu among them; <code>--no-desktop</code> leaves them out.</li>
+        <li><code>-Uninstall</code> takes back the binaries and the Start menu entry, and the directory and its PATH entry where nothing else is left in it. <code>--uninstall</code>, with the same <code>--dir</code> it was installed with, takes back the binaries, the desktop entries and their icon, and on omarchy the theme template — and leaves the PATH, which it never changed. Neither touches your settings.</li>
         <li>On musl there is no <code>obg</code>: the window finds Vulkan, Wayland and X11 by <code>dlopen</code>, which a static binary cannot do, so the script says so and installs <code>ob</code>.</li>
       </ul>
 
@@ -592,7 +594,9 @@ ob src/main.rs       # the same file, in the terminal instead</code></pre>
           <tr><td><code>inlay_hints</code></td><td><code>true</code></td><td>Draw the types and parameter names a server infers. They are not in the file: turning this off puts every column back where the file has it</td></tr>
           <tr><td><code>diagnostics</code></td><td><code>true</code></td><td>Open the words under the line the caret is on. What is wrong is underlined either way; this is the <em>words</em>, which cost that line a row</td></tr>
           <tr><td><code>ignored_files</code></td><td><code>false</code></td><td>Whether the file list offers the files a project has said to ignore</td></tr>
-          <tr><td><code>workflow</code></td><td><code>"none"</code></td><td>How an agent goes about changing the project. <code>none</code> is its own way; <code>feature-branch</code> is a branch in a worktree of its own — see <a href="#how">how I use it</a>. A project may set it</td></tr>
+          <tr><td><code>hidden_files</code></td><td><code>false</code></td><td>Whether the file list offers hidden files too — a name beginning with a dot, and on Windows the attribute as well</td></tr>
+          <tr><td><code>new_versions</code></td><td><code>true</code></td><td>Ask GitHub once a day whether a newer Obelus is out, and say so on the welcome screen</td></tr>
+          <tr><td><code>workflow</code></td><td><code>"feature-branch"</code></td><td>How an agent goes about changing the project. <code>feature-branch</code> is a branch in a worktree of its own; <code>none</code> is the agent's own way — see <a href="#how">how I use it</a>. A project may set it</td></tr>
         </tbody>
       </table>
       </div>

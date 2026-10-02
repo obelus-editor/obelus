@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Obelus — agent 写，你来读</title>
+<title>Obelus — agent 来写，你来读</title>
 <meta name="description" content="Obelus 是一个代码阅读器，在它自己的窗口里，或者在终端里。agent 在自己的分支上改代码；你来读、在另一个窗口里试，你点头了它才离开那个分支。">
 <link rel="icon" href="../obelus.svg">
 <link rel="alternate" hreflang="en" href="../">
@@ -96,7 +96,7 @@
 
       <ul class="beats">
         <li><span>agent 在自己的分支上改代码，任何东西离开那个分支之前都先问你</span><a class="where" href="#how">我怎么用它 ›</a></li>
-        <li><span>每个 worktree 都只隔着 <kbd>F2</kbd> 和 <kbd>Tab</kbd>，各在自己的窗口里</span><a class="where" href="#worktrees">多窗口 ›</a></li>
+        <li><span>每个 worktree 都只隔着 <kbd>F2</kbd> 和 <kbd>Tab</kbd>，各在自己的窗口里——在 <code>obg</code> 里</span><a class="where" href="#worktrees">多窗口 ›</a></li>
         <li><span>每条笔记都有自己的对话，明天回来它还在</span><a class="where" href="#agent">和 agent 对话 ›</a></li>
         <li><span>文件再怎么改，笔记还指着当初那一行</span><a class="where" href="#notes">笔记 ›</a></li>
         <li><span>改了什么就地展开，就在被改的代码旁边</span><a class="where" href="#what">读代码 ›</a></li>
@@ -163,11 +163,11 @@
 
       <p>上面每一个问题都是对话里的一张卡片，用我手上本来就按着的那几个键回答。没有哪一次推送、合并、删除或打勾，是因为 agent 觉得「该做了」。</p>
 
-      <h4>怎么打开</h4>
-      <p>这就是 <code>feature-branch</code> 这个 workflow，它只是一个设置——<kbd>Ctrl+p</kbd> → <code>open-settings</code> → <code>Workflow</code>，或者在文件里写一行：</p>
+      <h4>默认就开着</h4>
+      <p>这就是 <code>feature-branch</code> 这个 workflow，Obelus 一开始就这样要求 agent。想关掉，只是一个设置——<kbd>Ctrl+p</kbd> → <code>open-settings</code> → <code>Workflow</code>，或者在文件里写一行：</p>
       <pre><code># ~/.config/obelus/config.toml，或者项目自己的 .obelus/config.toml
-workflow = "feature-branch"</code></pre>
-      <p>项目可以替自己设：改动走不走 pull request，本来就是项目自己的规矩。不设的话，agent 按它自己的方式改，通常就是直接改在你正在读的那份 checkout 里。Obelus 自己不跑任何 git。workflow 是 agent 要动手改东西时，通过 Obelus 的 <code>read_workflow</code> 拿到的步骤；里面每一条命令都是 agent 的。</p>
+workflow = "none"</code></pre>
+      <p>设成 <code>none</code>，agent 就按它自己的方式改，通常就是直接改在你正在读的那份 checkout 里。项目可以替自己选，因为改动走不走 pull request 本来就是项目自己的规矩；不是 git 仓库的项目没有分支可开，agent 就在原地改，并说一声。Obelus 自己不跑任何 git。workflow 是 agent 要动手改东西时，通过 Obelus 的 <code>read_workflow</code> 拿到的步骤；里面每一条命令都是 agent 的。</p>
     </section>
     <section id="many">
       <h2><span class="num">03</span><span>多窗口、多 worktree</span></h2>
@@ -175,8 +175,8 @@ workflow = "feature-branch"</code></pre>
       <p>Obelus 不分屏。想并排看两个文件，就是开两个 Obelus——所以同一个项目上开着好几个、各在自己的 worktree 上，不是边缘情况，而是前提。下面是它为此给的保证。</p>
 
       <h4 id="worktrees">每个 worktree 都只隔着一个键</h4>
-      <p>在窗口里，<kbd>F2</kbd> 有第二个 tab，按 <kbd>Tab</kbd> 过去：git 知道的这个仓库的每一个 worktree 都在里面，不管它在哪儿——主 checkout 旁边、它里面的 <code>.worktree/</code>，还是磁盘上别的地方——有 Obelus 开着的会标出来。选一个，开着它的那个窗口就跳到前面来，没开就在那棵树上新开一个。</p>
-      <p>名字从主 checkout 所在的目录算起：在它旁边的叫它自己的名字，在它里面的叫往下走的那条路（<code>tally/.worktree/fix</code>），别处的写完整路径。在 git 背后被删掉的树写着 <code>Missing</code>，选不了；一个窗口底下的树被删掉——比如 PR 合进去以后 <code>git worktree remove</code>——窗口留着，里面开着的东西也留着，只是项目变灰。</p>
+      <p>在窗口里，<kbd>F2</kbd> 有第二个 tab，按 <kbd>Tab</kbd> 过去：git 知道的这个仓库的每一个 worktree 都在里面，不管它在哪儿——主 checkout 旁边、它里面的 <code>.worktree/</code>，还是磁盘上别的地方——有 Obelus 开着的会标出来。选一个，开着它的那个窗口就跳到前面来，没开就在那棵树上新开一个；你所在的这一棵也列着，选它只是关掉列表。</p>
+      <p>名字从主 checkout 所在的目录算起：在它旁边的叫它自己的名字，在它里面的叫往下走的那条路（<code>tally/.worktree/fix</code>），在那个目录底下别处的，写从那里往下走的路；在它之外的写完整路径。在 git 背后被删掉的树写着 <code>Missing</code>，选不了；一个窗口底下的树被删掉——比如 PR 合进去以后 <code>git worktree remove</code>——窗口留着，里面开着的东西也留着，只是项目变灰。</p>
       <figure class="shot">
         <img class="dark" src="../worktrees-dark.png" width="1500" height="286" alt="打开的文档列表里的 Worktrees 标签页：tally 在 main 上，tally/.worktree/stable-tie-order 在 stable-tie-order 上，两棵都标着有窗口开着，第二棵标着 This window。">
         <img class="light" src="../worktrees-light.png" width="1500" height="286" alt="同一个列表，Obelus 的浅色主题。">
@@ -205,7 +205,7 @@ workflow = "feature-branch"</code></pre>
       <p>Obelus 不实现任何人的模型，它只和你已经有的那个说话——用 <strong>ACP</strong>（Agent Client Protocol），和语言服务器一样的形状：另一个程序，走它自己的标准输入输出。</p>
 
       <h4>装一个</h4>
-      <p>哪些 agent 存在不是 Obelus 说了算：它读协议作者维护的那份注册表——四十来个，每个都写着怎么装。<kbd>F4</kbd> → New conversation（或 <code>Ctrl+p</code> → <code>new-conversation</code>），在 agents 页里挑一个装。同一时刻只有一个 agent，因为两个就意味着每次提问都要先说「问哪个」。</p>
+      <p>哪些 agent 存在不是 Obelus 说了算：它读协议作者维护的那份注册表——四十来个，每个都写着怎么装。<kbd>F4</kbd> → New conversation（或 <code>Ctrl+p</code> → <code>new-conversation</code>），在 agents 页里挑一个装；能画图的终端会显示每个 agent 自己的 logo。同一时刻只有一个 agent，因为两个就意味着每次提问都要先说「问哪个」。</p>
 
       <h4>对话是一份文档</h4>
       <p>它就在 <kbd>F2</kbd> 的那份列表里。走开是「去了别处」，不是「关掉了」——回来的时候，说过的话都还在。<kbd>Enter</kbd> 发送，<kbd>Alt+Enter</kbd>（终端支持的话 <kbd>Shift+Enter</kbd> 也行）换行。状态栏那一行是这个 agent 自己声明的会话选项——模式、模型、推理强度之类——就地走、就地改；<kbd>Shift+Tab</kbd> 一直是反着走的那一个。Obelus 一个字也不翻译：哪些选项存在是 agent 的事。</p>
@@ -225,6 +225,8 @@ workflow = "feature-branch"</code></pre>
       <h2><span class="num">05</span><span>笔记</span></h2>
 
       <blockquote><p><em>obelus</em> 是学者在手稿边上标「此处存疑」的那个记号。笔记就是把那个记号写下来。</p></blockquote>
+
+      <p>它们在这里，是因为我平时就是这样干活的：开着一堆 claude code、codex，外加一份 todo 计划下一步。计划下一步这件事发生在读代码的中间，而不是在另一个应用里。</p>
 
       <p>读到一半按 <kbd>Alt+t</kbd>，笔记页打开，第一条就已经就着光标那一行起好了头；命令 <code>todo</code> 打开全部。这一页<em>一直在被写</em>：打开时光标就在里面，敲一个字母就是一个字母，<kbd>Enter</kbd> 起下一条，<kbd>Shift+Enter</kbd> 在同一条里换行。把一条笔记<em>当笔记</em>来操作的键都在 <kbd>Alt</kbd> 底下：打勾、跳到它说的那一行、挪位置、拿掉。底下那行列着当下能用的键，<kbd>Ctrl+k</kbd> 给全部。</p>
 
@@ -259,8 +261,8 @@ workflow = "feature-branch"</code></pre>
       <h2><span class="num">06</span><span>读代码</span></h2>
 
       <figure class="shot">
-        <img class="dark" src="../screen-dark.png" width="1500" height="1084" alt="Obelus 正在读一个 Rust 源文件。第 59 行改过，它下面就地展开了这一处 hunk，显示上一次提交里这行是什么样子；文件里其余的改动标在滚动条旁边，状态行写着文件名、语言服务器和光标位置。">
-        <img class="light" src="../screen-light.png" width="1500" height="1084" alt="同一屏，Obelus 的浅色主题。">
+        <img class="dark" src="../screen-dark.png" width="1500" height="1084" loading="lazy" alt="Obelus 正在读一个 Rust 源文件。第 59 行改过，它下面就地展开了这一处 hunk，显示上一次提交里这行是什么样子；文件里其余的改动标在滚动条旁边，状态行写着文件名、语言服务器和光标位置。">
+        <img class="light" src="../screen-light.png" width="1500" height="1084" loading="lazy" alt="同一屏，Obelus 的浅色主题。">
         <figcaption class="caption"><code>obg</code> 在读它自己的源码。第 59 行改过，<kbd>Alt+d</kbd> 把这一处 hunk 就地展开，把上一次提交里的那行放在替换它的那行上面；滚动条旁边的标记是这个文件其余的改动。用的是 Obelus 内置的 <code>dark</code> 和 <code>light</code>，跟着本页当前的主题。</figcaption>
       </figure>
 
@@ -293,7 +295,7 @@ workflow = "feature-branch"</code></pre>
             <li>markdown 排成文章（<kbd>Ctrl+t</kbd>）、日志排成列——按内容判断，不是按文件名</li>
             <li>markdown 里的代码块、HTML 里的脚本，各按各自的语言上色</li>
             <li>长行按各自语言的规矩折：中文按字断，英文单词不会被拦腰切开，续行保持缩进</li>
-            <li>还有那些寻常的：15 门语言、折叠、软换行</li>
+            <li>还有那些寻常的：23 门语言、折叠、软换行</li>
           </ul>
         </div>
 
@@ -363,7 +365,7 @@ workflow = "feature-branch"</code></pre>
       <h2><span class="num">09</span><span>上手</span></h2>
 
       <h3>装它</h3>
-      <p>一个 shell 一个脚本，你在哪个 shell 里就用哪个。两个都是取最新的 release，拿这次 release 自带的 <code>SHA256SUMS</code> 核对下载下来的东西，然后把 <code>obg</code> 放到 PATH 上——在自己窗口里的那个 Obelus。</p>
+      <p>一个 shell 一个脚本，你在哪个 shell 里就用哪个。两个都是取最新的 release，拿这次 release 自带的 <code>SHA256SUMS</code> 核对下载下来的东西，然后把 <code>obg</code> 放到 PATH 找得到的地方——在自己窗口里的那个 Obelus。</p>
 
       <h4>Linux 和 macOS</h4>
       <pre><code>curl -fsSL https://raw.githubusercontent.com/obelus-editor/obelus/master/contrib/install.sh | sh</code></pre>
@@ -382,8 +384,8 @@ workflow = "feature-branch"</code></pre>
       <ul>
         <li><code>--bin ob</code> 是只装终端版，<code>--dir</code> 说放到哪儿，<code>--help</code> 列出其余的。</li>
         <li><a href="https://github.com/obelus-editor/obelus/releases">Releases 页</a>上每个平台都有一份归档，另外还有 <code>.deb</code>、<code>.rpm</code>、AppImage 和 macOS 的 <code>.app</code>。</li>
-        <li>Windows 上脚本除了放进 PATH，还会在开始菜单里建一个条目，<code>-NoShortcut</code> 让它不碰开始菜单。Linux 上它在 <code>~/.local/share</code> 下给 <code>obg</code> 和 <code>ob</code> 各建一个 desktop entry 和图标，所有启动器都读它们——omarchy 菜单里的 <code>Apps</code> 也是；<code>--no-desktop</code> 让它不装这些。</li>
-        <li><code>-Uninstall</code> 和 <code>--uninstall</code> 把脚本放进去的东西都收回去——二进制、PATH、开始菜单和 desktop entry，在 omarchy 上还有主题模板。两边都不碰你的设置。</li>
+        <li>Windows 上脚本会把它的目录加进 PATH，并在开始菜单里建一个条目，<code>-NoShortcut</code> 让它不碰开始菜单。shell 脚本在目录还不在 PATH 上时，会告诉你该加哪一行；Linux 上它在 <code>~/.local/share</code> 下，给装了的 <code>obg</code> 和 <code>ob</code> 各建一个 desktop entry（<code>ob</code> 的会在终端里打开）和一个图标，所有启动器都读它们——omarchy 菜单里的 <code>Apps</code> 也是；<code>--no-desktop</code> 让它不装这些。</li>
+        <li><code>-Uninstall</code> 收回二进制和开始菜单的条目；目录里再没别的东西时，连目录和 PATH 里那一项一起收回。<code>--uninstall</code> 要带上安装时的那个 <code>--dir</code>，收回二进制、desktop entry 和图标，在 omarchy 上还有主题模板；PATH 它从来没改过，也就不碰。两边都不碰你的设置。</li>
         <li>musl 上没有 <code>obg</code>：窗口要靠 <code>dlopen</code> 找 Vulkan、Wayland 和 X11，静态二进制做不到，脚本会直接说出来，然后装 <code>ob</code>。</li>
       </ul>
 
@@ -442,7 +444,7 @@ ob src/main.rs       # 同一个文件，改在终端里读</code></pre>
           <th><span>做什么</span></th>
         </tr></thead>
         <tbody>
-          <tr><td><kbd>F1</kbd></td><td><code>open-file</code></td><td>在这棵树里挑一个文件打开（在弹出的视图里，<kbd>F1</kbd> 是「列出所有键」）</td></tr>
+          <tr><td><kbd>F1</kbd></td><td><code>open-file</code></td><td>在这棵树里挑一个文件打开</td></tr>
           <tr><td><kbd>F2</kbd></td><td><code>switch-document</code></td><td>在已经打开的文档之间挑——在窗口里还有 worktree</td></tr>
           <tr><td><kbd>F3</kbd></td><td><code>open-changed-file</code></td><td>挑一个自上次提交以来改过的文件</td></tr>
           <tr><td><kbd>F4</kbd></td><td><code>choose-conversation</code></td><td>和 agent 的哪个对话：开一个新的，或挑一个以前的接着说</td></tr>
@@ -507,7 +509,7 @@ ob src/main.rs       # 同一个文件，改在终端里读</code></pre>
 
       <h3>移动，和列表里</h3>
       <p>移动不是命令，所以它不在上面那些表里：方向键、<kbd>PageUp</kbd>/<kbd>PageDown</kbd>、<kbd>Home</kbd>/<kbd>End</kbd>（行首行尾）、<kbd>Ctrl+Home</kbd>/<kbd>Ctrl+End</kbd>（文件两端）。上下是按<em>视觉行</em>走的，所以换行之后它仍然是你看到的那一行。<kbd>Shift</kbd> 从不命名任何命令，它只做一件事：扩展选区。</p>
-      <p>列表里（任何一个 picker、设置页、统计页、笔记页）：打字就是筛选，<kbd>↑</kbd><kbd>↓</kbd> 选，<kbd>PageUp</kbd>/<kbd>PageDown</kbd> 快速翻，<kbd>Home</kbd>/<kbd>End</kbd> 到两端，<kbd>Enter</kbd> 作用于光标所在那一行，<kbd>Esc</kbd> 取消，<kbd>F1</kbd> 列出全部的键。</p>
+      <p>列表里（任何一个 picker、设置页、统计页、笔记页）：打字就是筛选，<kbd>↑</kbd><kbd>↓</kbd> 选，<kbd>PageUp</kbd>/<kbd>PageDown</kbd> 快速翻，<kbd>Home</kbd>/<kbd>End</kbd> 到两端，<kbd>Enter</kbd> 作用于光标所在那一行，<kbd>Esc</kbd> 取消，<kbd>Ctrl+k</kbd> 列出全部的键。</p>
 
       <h3 id="commands">命令</h3>
 
@@ -592,7 +594,9 @@ ob src/main.rs       # 同一个文件，改在终端里读</code></pre>
           <tr><td><code>inlay_hints</code></td><td><code>true</code></td><td>画不画服务器推导出来的类型和参数名。它们不在文件里——关掉之后每一列都回到文件本来的位置</td></tr>
           <tr><td><code>diagnostics</code></td><td><code>true</code></td><td>把服务器的意见展开在光标这一行底下。标记本身一直都在，不额外占行；这一项管的是那些<em>字</em></td></tr>
           <tr><td><code>ignored_files</code></td><td><code>false</code></td><td>文件列表里要不要也给出项目忽略掉的文件</td></tr>
-          <tr><td><code>workflow</code></td><td><code>"none"</code></td><td>agent 怎么改这个项目。<code>none</code> 是按它自己的方式；<code>feature-branch</code> 是在自己的 worktree 分支上改——见<a href="#how">我怎么用它</a>。项目可以设</td></tr>
+          <tr><td><code>hidden_files</code></td><td><code>false</code></td><td>文件列表里要不要也给出隐藏文件——名字以点开头的，Windows 上还有带隐藏属性的</td></tr>
+          <tr><td><code>new_versions</code></td><td><code>true</code></td><td>每天问一次 GitHub 有没有更新的 Obelus，有的话在欢迎页上说一声</td></tr>
+          <tr><td><code>workflow</code></td><td><code>"feature-branch"</code></td><td>agent 怎么改这个项目。<code>feature-branch</code> 是在自己的 worktree 分支上改；<code>none</code> 是按它自己的方式——见<a href="#how">我怎么用它</a>。项目可以设</td></tr>
         </tbody>
       </table>
       </div>
