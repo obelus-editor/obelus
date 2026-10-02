@@ -487,25 +487,41 @@ impl App {
         if let Some(talk) = self.talk_mut(whose) {
             talk.asked_while_shown = true;
         }
+        let tools = self.tools_for(whose);
         let Some(talker) = self.talker.as_mut() else {
             return;
         };
         match had {
             Some(session) => {
-                let asking = talker.reopen(&session);
+                let asking = talker.reopen(&session, tools);
                 if let Some(talk) = self.talk_mut(whose) {
                     talk.asked_for = Some(obelus_agent::acp::SessionId::new(session));
                     talk.requested = Some(asking);
                 }
             }
             None => {
-                let asking = talker.open();
+                let asking = talker.open(tools);
                 if let Some(talk) = self.talk_mut(whose) {
                     talk.opening = true;
                     talk.requested = Some(asking);
                 }
             }
         }
+    }
+
+    /// Where the conversation `whose` names reaches Obelus's own tools.
+    ///
+    /// Its own address rather than the server's, and asked every time a
+    /// session is, because the server's port is this process's: a
+    /// conversation taken up again is told where it is now. The number is
+    /// the document's, which names this conversation and nothing else for
+    /// as long as the process runs -- a closed slot is never filled again.
+    fn tools_for(&self, whose: Whose) -> Option<String> {
+        let id = match whose {
+            Whose::One(id) => id,
+            Whose::Whoever => self.current?,
+        };
+        Some(obelus_mcp::address(self.tools_url.as_deref()?, id.get()))
     }
 
     /// The project's table of conversations, as Obelus last read it.
@@ -1577,6 +1593,71 @@ impl App {
             parts.extend(said);
         }
         self.say_in(whose, &parts, true);
+    }
+
+    /// Closes a conversation, because its agent asked to -- having asked
+    /// the reader, which is the agent's to do.
+    ///
+    /// The number is the one the conversation's tools address carries,
+    /// which is its document's. What comes back is said to the agent, which
+    /// is waiting on an answer: closed, closing when the turn ends, or why
+    /// not.
+    pub(super) fn close_for_an_agent(&mut self, conversation: Option<usize>) -> String {
+        let Some(id) = conversation.map(DocumentId::new) else {
+            return "this address names no conversation, so there is nothing to close".to_string();
+        };
+        let session = match self.document(id).and_then(Document::chat) {
+            Some(talk) if talk.has_the_readers_words() => {
+                return "the reader has started writing in it, so it stays open".to_string();
+            }
+            Some(talk) => talk.session.clone(),
+            None => return "this conversation is not open any more".to_string(),
+        };
+        // From inside a turn, which is the ordinary case: whatever the
+        // agent says after this has to land somewhere the reader can see,
+        // so the closing waits for the turn to end.
+        let thinking = self
+            .talker
+            .as_ref()
+            .is_some_and(|talker| talker.is_thinking(session.as_ref(), None));
+        if thinking {
+            if let Some(talk) = self.talk_mut(Whose::One(id)) {
+                talk.closing = true;
+            }
+            return "it closes when this turn ends".to_string();
+        }
+        self.close_the_conversation(id);
+        "closed".to_string()
+    }
+
+    /// Closes the conversation now that its turn is over, if the agent
+    /// asked for that, and says whether it did.
+    ///
+    /// Only where the turn finished. One the reader stopped, or that went
+    /// wrong, is not the turn that was meant to be the last one -- and
+    /// where they have written something since, it is theirs to answer.
+    fn close_as_the_agent_asked(&mut self, whose: Whose, finished: bool) -> bool {
+        let Some(talk) = self.talk_mut(whose) else {
+            return false;
+        };
+        if !std::mem::take(&mut talk.closing) || !finished || talk.has_the_readers_words() {
+            return false;
+        }
+        let id = match whose {
+            Whose::One(id) => Some(id),
+            Whose::Whoever => self.current,
+        };
+        if let Some(id) = id {
+            self.close_the_conversation(id);
+        }
+        true
+    }
+
+    /// Closes one conversation and says so, which is the difference from
+    /// the reader closing it: they know they did.
+    fn close_the_conversation(&mut self, id: DocumentId) {
+        self.close(id);
+        self.say("Closed the conversation".to_string());
     }
 
     /// Asks the agent to stop what it is doing.
@@ -3106,6 +3187,7 @@ impl App {
                 | acp::Update::Used(_) => {}
             },
             acp::Incoming::Ended { why: reason, .. } => {
+                let finished = matches!(reason.as_deref(), Ok("end_turn"));
                 // Only the ends that are not the ordinary one: a turn that
                 // finished has its answer above it, and "end turn" under
                 // every answer is noise.
@@ -3120,6 +3202,9 @@ impl App {
                     }
                     Ok(other) => self.in_talk(whose, |chat| chat.note(other)),
                     Err(why) => self.in_talk(whose, |chat| chat.note(&format!("The agent: {why}"))),
+                }
+                if self.close_as_the_agent_asked(whose, finished) {
+                    return;
                 }
                 // And then whatever the reader said while it was running.
                 // After the line above and not before it, so that the
@@ -3270,17 +3355,11 @@ impl App {
         // Nothing to fail here: the process is started on the thread, and
         // an agent that will not run says so as the conversation ending
         // with a reason -- which is the same path as one that dies later.
-        // What Obelus offers the agent back, if it could take a socket.
-        // Started once and kept for as long as Obelus runs: the address is
-        // what each agent is told, so a second one started later reaches the
-        // same tools.
-        let tools = self.tools_url.clone();
         self.talker = Some(acp::Talk::start(
             id,
             command,
             arguments,
             &self.working_directory,
-            tools,
             sender,
         ));
     }

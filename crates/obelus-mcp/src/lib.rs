@@ -44,6 +44,16 @@
 //! file here, because which workflow is chosen is the settings laid over
 //! one another, and that is answered once, in `obelus-app`.
 //!
+//! And one takes something off the screen: `close_conversation` closes the
+//! conversation it is called from. Closed and not ended -- the agent keeps
+//! it and the reader takes it up again from the list of conversations, so
+//! what goes is a document from what is open and nothing else, which is
+//! why an agent may do it at all once it has asked. It is the one tool
+//! that has to know *which* conversation is calling, and MCP has no word
+//! for that: every conversation is told an address of its own, the
+//! server's with the conversation's number on the end ([`address`]), and
+//! the tool reads the number back off the request it came on.
+//!
 //! None of them takes a note away. `done` is how a list keeps what was
 //! decided against, so ticking loses nothing and an agent has no need of
 //! the one act that leaves nothing behind.
@@ -70,7 +80,7 @@ use obelus_git::todo;
 use obelus_sink::Sink;
 use rmcp::{
     ErrorData, ServerHandler,
-    handler::server::{router::tool::ToolRouter, wrapper::Parameters},
+    handler::server::{router::tool::ToolRouter, tool::Extension, wrapper::Parameters},
     model::{CallToolResult, ContentBlock, InitializeResult, ServerCapabilities},
     tool, tool_handler, tool_router,
 };
@@ -94,11 +104,12 @@ pub struct Asked {
 
 /// What an agent asked Obelus to do.
 ///
-/// Three kinds, and the difference is worth the enum: three of the tools
-/// write the reader's notes, one of them puts a file on their screen, and
-/// one asks what the settings say. The notes are a file Obelus is the only
-/// writer of; the file is the reader's own attention; the workflow is a
-/// question only the loop can answer.
+/// Four kinds, and the difference is worth the enum: three of the tools
+/// write the reader's notes, one of them puts a file on their screen, one
+/// asks what the settings say, and one closes a conversation. The notes are
+/// a file Obelus is the only writer of; the file is the reader's own
+/// attention; the workflow is a question only the loop can answer; and
+/// what is open is the loop's.
 #[derive(Debug)]
 pub enum Wanted {
     /// A change to the notes.
@@ -115,6 +126,15 @@ pub enum Wanted {
     },
     /// How this project has chosen to have its files changed.
     Workflow,
+    /// The conversation that asked, closed.
+    Close {
+        /// Which one, by the number its address carries.
+        ///
+        /// `None` where the address carried none, which is an agent that
+        /// was told the tools by some other way than a conversation: there
+        /// is nothing it could be asking to close.
+        conversation: Option<usize>,
+    },
 }
 
 /// Obelus, as an agent can reach it.
@@ -348,6 +368,28 @@ impl Obelus {
         Ok(said(self.told(Wanted::Workflow).await))
     }
 
+    /// Closes the conversation it is called from.
+    ///
+    /// Which one is read off the address the request came to, because
+    /// nothing in the call says: see the module's note on why every
+    /// conversation has an address of its own.
+    #[tool(description = "\
+        Close this conversation, once the work it was opened for is done. \
+        Ask the reader first, with `elicitation/create` -- this takes it off \
+        their screen and does not ask for you. It closes when this turn \
+        ends, so make it the last thing you do and say whatever is left to \
+        say before it; and it stays open if the reader has started writing \
+        in it. Nothing is lost: the conversation is kept, and the reader \
+        takes it up again from the list of conversations.")]
+    async fn close_conversation(
+        &self,
+        Extension(parts): Extension<axum::http::request::Parts>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let conversation = conversation_in(parts.uri.path());
+        tracing::info!(conversation, "an agent is closing its conversation");
+        Ok(said(self.told(Wanted::Close { conversation }).await))
+    }
+
     /// Ticks a note off.
     #[tool(description = "\
         Tick a note off, once its work is done. Ask the reader first -- \
@@ -478,10 +520,10 @@ fn said(what: Option<String>) -> CallToolResult {
 impl ServerHandler for Obelus {
     fn get_info(&self) -> InitializeResult {
         let mut info = InitializeResult::default();
-        // Nothing about `open_file`. When to offer it is said in the
-        // opening every conversation begins with, and how in the tool's own
-        // description, so a paragraph here was the same thing told a third
-        // time -- and a story told twice drifts.
+        // Nothing about `open_file` or `close_conversation`. When to offer
+        // either is said in the opening every conversation begins with, and
+        // how in the tool's own description, so a paragraph here was the
+        // same thing told a third time -- and a story told twice drifts.
         info.instructions = Some(
             "Obelus, the reader this conversation is happening inside. It \
              keeps this project's notes.\n\n\
@@ -520,6 +562,9 @@ impl ServerHandler for Obelus {
 ///
 /// Where the socket cannot be taken, which is a machine with no loopback --
 /// Obelus goes on without the tools and says so.
+///
+/// What comes back is where the server is and not where to reach it:
+/// a conversation is offered the tools at its own [`address`] under it.
 pub fn serve(root: &std::path::Path, events: Arc<dyn Sink<Asked>>) -> std::io::Result<String> {
     use rmcp::transport::streamable_http_server::{
         StreamableHttpService, session::local::LocalSessionManager,
@@ -535,7 +580,7 @@ pub fn serve(root: &std::path::Path, events: Arc<dyn Sink<Asked>>) -> std::io::R
         Arc::new(LocalSessionManager::default()),
         rmcp::transport::streamable_http_server::StreamableHttpServerConfig::default(),
     );
-    let router = axum::Router::new().route_service("/mcp", service);
+    let router = axum::Router::new().route_service("/mcp/{conversation}", service);
 
     // A task on the one runtime, which is what it was already: a thread
     // whose whole job was to own a runtime of its own, because there was
@@ -554,4 +599,37 @@ pub fn serve(root: &std::path::Path, events: Arc<dyn Sink<Asked>>) -> std::io::R
     });
 
     Ok(format!("http://{address}/mcp"))
+}
+
+/// Where one conversation reaches the tools: the server's address, with
+/// the conversation's number on the end.
+///
+/// Written here beside [`conversation_in`], which reads it back, so that
+/// the two cannot come to disagree about the shape.
+#[must_use]
+pub fn address(server: &str, conversation: usize) -> String {
+    format!("{server}/{conversation}")
+}
+
+/// Which conversation an address names, read off the path a request came
+/// to.
+fn conversation_in(path: &str) -> Option<usize> {
+    path.strip_prefix("/mcp/")?.parse().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    /// What `address` writes, `conversation_in` reads.
+    ///
+    /// Deliberate break: have `address` put the number in a query rather
+    /// than the path, and the number read back is `None`.
+    #[test]
+    fn the_number_an_address_carries_is_the_number_read_off_it() {
+        let written = super::address("http://127.0.0.1:4000/mcp", 7);
+        let path = written
+            .strip_prefix("http://127.0.0.1:4000")
+            .expect("the server's own address");
+        assert_eq!(super::conversation_in(path), Some(7));
+        assert_eq!(super::conversation_in("/mcp"), None);
+    }
 }

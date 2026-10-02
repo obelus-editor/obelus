@@ -200,6 +200,13 @@ while IFS= read -r line; do
         if [ -n "$method" ]; then
             printf '%s %s\n' "$method" "$named" >>"$log"
         fi
+        # And where it was told Obelus's own tools are, on a line of its
+        # own: each conversation is told an address of its own, and which
+        # one is the whole of how a tool knows who is calling.
+        url=$(printf '%s' "$line" | sed -n 's/.*"mcpServers":\[[^]]*"url":"\([^"]*\)".*/\1/p')
+        if [ -n "$url" ]; then
+            printf 'tools %s\n' "$url" >>"$log"
+        fi
     fi
     case "$line" in
         *'"method":"initialize"'*)

@@ -4227,6 +4227,152 @@ fn choose_workflow(app: &mut App, workflow: &str) {
     app.configure(config, vec!["workflow"]);
 }
 
+/// Asks Obelus to close a conversation, the way its tool does, and says
+/// what the agent is told.
+fn close_it(app: &mut App, conversation: usize) -> String {
+    let (answer, mut said) = futures::channel::oneshot::channel();
+    app.handle(Event::Tools(obelus_mcp::Asked {
+        wanted: obelus_mcp::Wanted::Close {
+            conversation: Some(conversation),
+        },
+        answer,
+    }));
+    said.try_recv()
+        .ok()
+        .flatten()
+        .expect("the tool answered nothing")
+}
+
+/// Whether the conversation in that slot is still open.
+fn is_open(app: &App, conversation: usize) -> bool {
+    app.document(obelus_buffer::DocumentId::new(conversation))
+        .and_then(obelus_app::app::document::Document::chat)
+        .is_some()
+}
+
+/// Says something in the conversation on screen and waits for the answer,
+/// so that it is not the blank one a new conversation would go back to.
+fn say_something(app: &mut App, events: &Receiver<Event>) {
+    support::type_text(app, "/cost");
+    support::press(app, KeyCode::Enter);
+    pump(app, events, "the answer", |app| {
+        said_in_transcript(app, "ran cost") && app.talking() == obelus_agent::Talking::Ready
+    });
+}
+
+/// Each conversation is told an address of its own for Obelus's tools,
+/// and the number on the end is its document's.
+///
+/// Which is the whole of how `close_conversation` knows which conversation
+/// is calling: MCP says nothing about who is on the other end, and one
+/// address for all of them made "this conversation" a guess.
+///
+/// Deliberate break: have `tools_for` hand out `self.tools_url` as it is,
+/// and both conversations are told `.../mcp` -- the wait for `/mcp/0`
+/// gives up.
+#[test]
+fn every_conversation_is_told_an_address_of_its_own() {
+    let root = agents_root_for("addresses");
+    std::fs::create_dir_all(&root).expect("the root");
+    let log = root.join("asked.log");
+    let _ = std::fs::remove_file(&log);
+    let (mut app, events) = wired();
+    app.tools_url_for_test("http://127.0.0.1:9/mcp");
+    let arguments = vec![
+        "tests/fixtures/fake-agent.sh".to_string(),
+        format!("log={}", log.display()),
+    ];
+    app.talk_to("fake", Path::new("sh"), &arguments);
+    app.new_conversation();
+    app.open_a_session_for_test();
+    asked(&mut app, &events, &log, "tools http://127.0.0.1:9/mcp/0\n");
+    say_something(&mut app, &events);
+    app.new_conversation();
+    app.open_a_session_for_test();
+    asked(&mut app, &events, &log, "tools http://127.0.0.1:9/mcp/1\n");
+}
+
+/// An agent that closes its conversation from inside a turn has it closed
+/// when the turn ends, and not before.
+///
+/// From inside a turn is the only way it can: the tool is called while
+/// the agent is working, and it usually has something left to say after
+/// it. Closed at once, that went to a conversation nobody could see.
+///
+/// Broken deliberately two ways. Dropping the `thinking` check in
+/// `close_for_an_agent` closes it at once, and the conversation is gone
+/// while the question is still up. Dropping the call to
+/// `close_as_the_agent_asked` in the `Ended` arm leaves it open for good,
+/// and the wait for it to close gives up.
+#[test]
+fn a_conversation_an_agent_closes_closes_when_its_turn_ends() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "what is this file");
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        &events,
+        "the permission request",
+        App::is_asking_permission,
+    );
+
+    assert_eq!(close_it(&mut app, 0), "it closes when this turn ends");
+    assert!(is_open(&app, 0), "closed in the middle of its own turn");
+
+    // Allowed, and the turn finishes.
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the conversation to close", |app| {
+        !is_open(app, 0)
+    });
+}
+
+/// A conversation the reader has started writing in stays open, whatever
+/// the agent asks -- and closing one leaves the reader where they are.
+///
+/// A box is the reader's once they have put something in it, and closing
+/// the conversation would take it with it. The other half is that the
+/// number names one conversation and not the one on screen.
+///
+/// Broken deliberately two ways. Dropping the `has_the_readers_words`
+/// check in `close_for_an_agent` closes the one with words in its box.
+/// Closing `self.current` in place of the document the number names closes
+/// the second conversation rather than the first.
+#[test]
+fn a_conversation_with_the_readers_words_in_it_stays_open() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    say_something(&mut app, &events);
+    support::type_text(&mut app, "one more thing");
+    assert_eq!(
+        close_it(&mut app, 0),
+        "the reader has started writing in it, so it stays open"
+    );
+    assert!(is_open(&app, 0), "closed with the reader's words in it");
+
+    // The box emptied again, and a second conversation the reader is now
+    // in: the first is the one asked about.
+    for _ in 0.."one more thing".len() {
+        support::press(&mut app, KeyCode::Backspace);
+    }
+    app.new_conversation();
+    app.open_a_session_for_test();
+    assert_eq!(close_it(&mut app, 0), "closed");
+    assert!(
+        !is_open(&app, 0),
+        "the conversation that asked is still open"
+    );
+    assert!(is_open(&app, 1), "the other conversation went");
+    assert!(
+        app.chat().is_some(),
+        "the reader was taken off the conversation they were in"
+    );
+}
+
 /// A project that has chosen a workflow says so in the first message -- and
 /// says only where to read it, because most conversations change nothing
 /// and the workflow is several paragraphs.

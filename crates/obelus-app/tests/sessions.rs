@@ -37,16 +37,16 @@ fn talking() -> (Talk, Receiver<Event>) {
         Path::new("sh"),
         &["tests/fixtures/fake-agent.sh".to_string()],
         Path::new("."),
-        // No tools offered: what these tests are about is the sessions, and
-        // an agent told about a server nobody is running would be an agent
-        // spending its first moments failing to reach one.
-        None,
         sender,
     );
     // Asked for, because nothing is opened on the way up any more: a
     // conversation minted before anybody said what they wanted is one the
     // agent does not keep and nobody owns.
-    talk.open();
+    //
+    // No tools offered: what these tests are about is the sessions, and
+    // an agent told about a server nobody is running would be an agent
+    // spending its first moments failing to reach one.
+    talk.open(None);
     (talk, events)
 }
 
@@ -116,10 +116,9 @@ fn a_prompt_waiting_for_a_conversation_says_it_is_thinking() {
         Path::new("sh"),
         &["tests/fixtures/fake-agent.sh".to_string()],
         Path::new("."),
-        None,
         sender,
     );
-    let asking = talk.open();
+    let asking = talk.open(None);
     assert!(
         !talk.is_thinking(None, Some(asking)),
         "it says something is happening before anything was said"
@@ -161,11 +160,10 @@ fn a_prompt_held_for_the_second_of_two_goes_out_in_the_second() {
         Path::new("sh"),
         &["tests/fixtures/fake-agent.sh".to_string()],
         Path::new("."),
-        None,
         sender,
     );
-    let one = talk.open();
-    let two = talk.open();
+    let one = talk.open(None);
+    let two = talk.open(None);
     talk.say(
         None,
         Some(two),
@@ -225,7 +223,6 @@ fn a_conversation_is_opened_only_when_one_is_asked_for() {
         Path::new("sh"),
         &["tests/fixtures/fake-agent.sh".to_string()],
         Path::new("."),
-        None,
         sender,
     );
     // Up and talking -- the handshake has landed, which is what the name
@@ -262,7 +259,7 @@ fn a_conversation_is_opened_only_when_one_is_asked_for() {
     }
 
     // And one when one is asked for.
-    talk.open();
+    talk.open(None);
     let _ = opened(&mut talk, &events);
 }
 
@@ -272,7 +269,7 @@ fn a_second_conversation_opens_on_the_same_agent() {
     let (mut talk, events) = talking();
     let first = opened(&mut talk, &events);
 
-    talk.open();
+    talk.open(None);
     let second = opened(&mut talk, &events);
 
     assert_ne!(
@@ -291,7 +288,7 @@ fn a_second_conversation_opens_on_the_same_agent() {
 fn an_answer_comes_back_in_the_conversation_it_was_asked_in() {
     let (mut talk, events) = talking();
     let first = opened(&mut talk, &events);
-    talk.open();
+    talk.open(None);
     let second = opened(&mut talk, &events);
 
     talk.say(
@@ -335,7 +332,7 @@ fn an_answer_comes_back_in_the_conversation_it_was_asked_in() {
 fn interrupting_one_conversation_does_not_swallow_the_others_answer() {
     let (mut talk, events) = talking();
     let first = opened(&mut talk, &events);
-    talk.open();
+    talk.open(None);
     let second = opened(&mut talk, &events);
 
     // A turn that stays in flight: the agent says nothing at all about this

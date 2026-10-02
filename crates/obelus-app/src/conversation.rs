@@ -261,9 +261,28 @@ pub struct Conversation {
     /// reader's settings, which have not moved, and said again it is the
     /// same line down the page once for every visit.
     pub said_not_offered: std::collections::BTreeSet<(String, String)>,
+    /// Whether the agent has asked for it to be closed when this turn
+    /// ends.
+    ///
+    /// When the turn ends and not when it asks, because it asks from
+    /// inside a turn and has usually something left to say: closed at
+    /// once, that went to a conversation nobody could see.
+    pub closing: bool,
 }
 
 impl Conversation {
+    /// Whether the reader has words in it that have not been answered:
+    /// something in the box, or something said that waits for the turn.
+    ///
+    /// Which is what keeps a conversation open that the agent has asked
+    /// to close. A box is the reader's once they have put something in
+    /// it, and closing the conversation would take it with it.
+    #[must_use]
+    pub fn has_the_readers_words(&self) -> bool {
+        let writing = self.chat.writing();
+        !writing.is_blank() || writing.has_pictures() || !self.chat.unsent().is_empty()
+    }
+
     /// Whether the agent is waiting on the reader in this one.
     #[must_use]
     pub fn is_waiting_on_the_reader(&self) -> bool {

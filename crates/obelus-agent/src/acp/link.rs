@@ -170,7 +170,13 @@ pub enum Ask {
     /// One process, several sessions: an agent holds a project's worth of
     /// context and starting a second of them to talk about a second note
     /// would pay for all of it twice.
-    Open,
+    Open {
+        /// Where this conversation reaches Obelus's own tools, if it does.
+        ///
+        /// Its own address and not the server's: one tool has to know
+        /// which conversation is calling it, and MCP has no word for that.
+        tools: Option<String>,
+    },
     /// Let one go, because the note it was about has gone.
     ///
     /// Told to the agent rather than only forgotten here, because an agent
@@ -187,6 +193,8 @@ pub enum Ask {
     Reopen {
         /// The name Obelus wrote down last time.
         session: SessionId,
+        /// Where it reaches Obelus's own tools, as [`Ask::Open`] has it.
+        tools: Option<String>,
     },
     /// Say this, in that conversation.
     Say {
@@ -1048,7 +1056,6 @@ pub fn start(
     command: &std::path::Path,
     arguments: &[String],
     root: &std::path::Path,
-    tools: Option<String>,
     events: impl Sink<Event> + Clone,
 ) -> mpsc::UnboundedSender<Ask> {
     let (asks, taken) = mpsc::unbounded();
@@ -1068,7 +1075,7 @@ pub fn start(
     // The channels stay `futures`': that is what the protocol's own crate
     // speaks, and a channel is runtime-agnostic anyway.
     obelus_runtime::handle().spawn(async move {
-        let reason = talk(config, root, tools, told.clone(), taken).await;
+        let reason = talk(config, root, told.clone(), taken).await;
         let _ = told.send(Event::Acp(Incoming::Gone(reason)));
     });
     asks
@@ -1218,7 +1225,6 @@ async fn open_session(
 async fn talk(
     config: AcpAgentConfig,
     root: PathBuf,
-    tools: Option<String>,
     events: impl Sink<Event> + Clone,
     mut asks: mpsc::UnboundedReceiver<Ask>,
 ) -> Option<String> {
@@ -1662,8 +1668,9 @@ async fn talk(
                 // what the agent said it takes rather than guessed afresh
                 // per session: the answer cannot change while the agent
                 // runs, and asking twice would be two answers to keep alike.
-                let offered =
-                    offering(tools.as_deref(), &ready.agent_capabilities.mcp_capabilities);
+                // Where they are handed over to is each conversation's own,
+                // and comes with the ask.
+                let can =ready.agent_capabilities.mcp_capabilities.clone();
                 // And how a conversation from a previous sitting is taken
                 // up, decided once for the same reason.
                 let again = taking_up(&ready.agent_capabilities);
@@ -1680,7 +1687,8 @@ async fn talk(
                 // wants, and waits the one round trip that costs.
                 while let Some(ask) = asks.next().await {
                     match ask {
-                        Ask::Open => {
+                        Ask::Open { tools } => {
+                            let offered = offering(tools.as_deref(), &can);
                             open_session(&connection, &root, offered.as_ref(), &events).await?;
                         }
                         // A conversation opened to read one thing off it
@@ -1754,7 +1762,8 @@ async fn talk(
                         // asked for a new one instead, and the reader is
                         // told what happened rather than left looking at an
                         // empty screen that used to have something in it.
-                        Ask::Reopen { session } => {
+                        Ask::Reopen { session, tools } => {
+                            let offered = offering(tools.as_deref(), &can);
                             // The fullest way this agent offers, and only
                             // that one: the two answers carry the same two
                             // things, and which was asked is the difference
