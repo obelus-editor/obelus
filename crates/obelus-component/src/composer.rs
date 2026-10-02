@@ -398,6 +398,22 @@ impl Composer {
             .extend_to(obelus_editing::Motion::Right, &(), u16::MAX);
     }
 
+    /// Up one row, holding what it passes over.
+    ///
+    /// No answer at the ends, unlike [`Self::up`]: a selection is the box's
+    /// and cannot be carried out of it, so the press stays here whether or
+    /// not the caret had a row to go to.
+    pub fn hold_up(&mut self, width: u16) {
+        self.writing
+            .extend_to(obelus_editing::Motion::Up, &(), width.max(1));
+    }
+
+    /// The same, downwards.
+    pub fn hold_down(&mut self, width: u16) {
+        self.writing
+            .extend_to(obelus_editing::Motion::Down, &(), width.max(1));
+    }
+
     /// To the start of the row the caret is on, or the end of it.
     pub fn home(&mut self, width: u16) {
         self.writing
