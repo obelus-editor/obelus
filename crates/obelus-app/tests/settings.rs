@@ -1952,11 +1952,7 @@ fn a_key_that_could_never_fire_is_refused() {
         (KeyCode::Char('z'), KeyModifiers::NONE, "Typing"),
         // The front of the reason, which is what a row this narrow has
         // room for once the key is spelled out rather than drawn.
-        (
-            KeyCode::Tab,
-            KeyModifiers::NONE,
-            "every list and box takes this",
-        ),
+        (KeyCode::Tab, KeyModifiers::NONE, "every list and box takes"),
     ] {
         app.handle(Event::Key(KeyEvent::new(code, modifiers)));
         let dump = support::render(&mut app, 66, 12);
@@ -3697,7 +3693,7 @@ fn what_a_project_may_not_set_is_marked_on_the_projects_file() {
 /// Broken deliberately four ways: the choices with no detail, which
 /// leaves neither on screen; the list not wrapping, which leaves one row of
 /// each; the list without `details_whole`, which loses the last words; and
-/// the list at the ordinary height, which leaves `feature-branch` off it.
+/// the list at the ordinary height, which leaves `Feature branch` off it.
 #[test]
 fn each_workflow_says_what_it_does_where_it_is_chosen() {
     let _turn = SETTINGS
@@ -3724,9 +3720,80 @@ fn each_workflow_says_what_it_does_where_it_is_chosen() {
         "straight in the checkout you are reading.",
         "The agent works on a branch",
         "taken away only when you say so.",
+        "No workflow",
+        "Feature branch",
     ] {
         assert!(text.contains(said), "{said:?} is not on the list:\n{dump}");
     }
+}
+
+/// A workflow is called by its title wherever it is drawn, and written
+/// down by its name.
+///
+/// The name is the setting's word, and a word like `feature-branch` is a
+/// name and not copy: the list says the title, so the row it goes back to
+/// says it too, and the list opens again on the title of the one in force.
+///
+/// Broken deliberately four ways: the list's label back to the name,
+/// which leaves no `Feature branch` on the list; the settings row's
+/// `value_of` handing back the word, which leaves `feature-branch` on the
+/// page; `prefer` given the word, which opens the list on the first row
+/// rather than on the one chosen; and `CONTROL_WIDTH` at 14, which puts
+/// the arrow against the title and the title against the edge.
+#[test]
+fn a_workflow_is_called_by_its_title_and_written_by_its_name() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("workflow-titles");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+    support::type_text(&mut app, "workflow");
+    support::press(&mut app, KeyCode::Enter);
+    let labels: Vec<String> = app
+        .picker()
+        .expect("the workflows did not open")
+        .matches()
+        .map(|item| item.label.clone())
+        .collect();
+    assert_eq!(labels, ["No workflow", "Feature branch"]);
+
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_none(), "choosing did not close the list");
+    assert_eq!(app.config().workflow, "feature-branch");
+    let written = std::fs::read_to_string(&file).expect("the file was written");
+    assert!(
+        written.contains("workflow = \"feature-branch\""),
+        "the file does not say so by name: {written:?}"
+    );
+
+    let dump = support::render(&mut app, 100, 24);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("Feature branch"),
+        "the row does not say the title:\n{dump}"
+    );
+    assert!(
+        !text.contains("feature-branch"),
+        "the row says the name:\n{dump}"
+    );
+    // Room before the arrow and after it: a title as wide as the column
+    // put the arrow against the word and the word against the edge.
+    assert!(
+        text.lines()
+            .any(|row| row.ends_with("Feature branch \u{25b8} ")),
+        "the row has no room round its arrow:\n{dump}"
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.picker()
+            .and_then(|picker| picker.selected_item())
+            .map(|item| item.label.as_str()),
+        Some("Feature branch"),
+        "the list did not open on the one in force"
+    );
 }
 
 /// A workflow nothing answers to is marked on the line that names it.
@@ -3754,10 +3821,7 @@ fn a_workflow_nothing_answers_to_is_marked() {
 
     let problems: Vec<_> = app.problems().collect();
     assert_eq!(problems.len(), 1, "{problems:?}");
-    assert_eq!(
-        problems[0].message,
-        "No workflow is called `feature_branch`"
-    );
+    assert_eq!(problems[0].message, "Nothing answers to `feature_branch`");
     assert_eq!(problems[0].span.line.get(), 0);
     assert_eq!(app.config().workflow, "none", "the word was taken anyway");
 }
@@ -3781,7 +3845,7 @@ fn a_workflow_nothing_answers_to_is_said_on_the_welcome_screen() {
     support::lay_out(&mut app, 100, 30);
     let dump = support::render(&mut app, 100, 30);
     assert!(
-        support::text_block(&dump).contains("No workflow is called `feature_branch`"),
+        support::text_block(&dump).contains("Nothing answers to `feature_branch`"),
         "the welcome screen does not say so:\n{dump}"
     );
 }

@@ -4369,6 +4369,9 @@ impl Screen for App {
     fn agent_offering(&self) -> Option<obelus_component::settings::Offering> {
         App::agent_offering(self)
     }
+    fn called(&self, key: &str, word: &str) -> Option<&'static str> {
+        App::called(self, key, word)
+    }
     fn agent_usage(&self) -> Option<&acp::Usage> {
         App::agent_usage(self)
     }

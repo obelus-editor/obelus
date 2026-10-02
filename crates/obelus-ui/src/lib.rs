@@ -287,6 +287,12 @@ pub trait Screen {
     fn config(&self) -> &obelus_config::Config;
     /// The line counts, while they are showing.
     fn counts(&self) -> Option<&Counts>;
+    /// What one of a setting's words is called on screen, where it is
+    /// called something other than the word.
+    ///
+    /// Asked of the application because the workflows' titles are written
+    /// in the files beside what each one hands an agent, which are its.
+    fn called(&self, key: &str, word: &str) -> Option<&'static str>;
     /// The document being read, if any is open.
     fn current_buffer(&self) -> Option<&Buffer>;
     /// What is drawn in the file being read that the file does not contain.

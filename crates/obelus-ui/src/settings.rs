@@ -27,8 +27,11 @@ use crate::{
 ///
 /// Fixed, so the controls line up down the screen: a column of `on` and
 /// `off` and theme names at ragged left edges is three columns pretending to
-/// be one.
-const CONTROL_WIDTH: u16 = 12;
+/// be one. Wide enough for `Feature branch` with a gap before its arrow and
+/// one after it, because a word and an arrow up against the page's edge
+/// read as cut off; what is longer than that -- a theme the reader named,
+/// the machine's own face -- is cut off the way it always was.
+const CONTROL_WIDTH: u16 = 16;
 
 /// Where the arrow beside a value goes: after it, and never past the
 /// column's own last cell.
@@ -97,6 +100,9 @@ pub struct SettingsView<'a> {
     project: Option<String>,
     /// Which frame the mark beside an install that is running is on.
     phase: u32,
+    /// What each setting's words are called on screen, where that is
+    /// something other than the word: the setting, the word, and the title.
+    called: Vec<(&'static str, &'static str, &'static str)>,
 }
 
 impl<'a> SettingsView<'a> {
@@ -128,6 +134,17 @@ impl<'a> SettingsView<'a> {
                 .to_string()
             }),
             phase: app.phase(),
+            called: obelus_config::ALL
+                .iter()
+                .flat_map(|setting| {
+                    match setting.kind {
+                        Kind::Choice(words) => words,
+                        _ => &[],
+                    }
+                    .iter()
+                    .filter_map(|word| Some((setting.key, *word, app.called(setting.key, word)?)))
+                })
+                .collect(),
         })
     }
 }
@@ -475,6 +492,23 @@ impl SettingsView<'_> {
             .collect()
     }
 
+    /// What a setting's control says it is set to.
+    ///
+    /// A word by its title where it has one: the list it is chosen from
+    /// says the title, and a row that went back to the word would be a
+    /// second name for the one choice.
+    fn value_of(&self, setting: &obelus_config::Setting) -> Value {
+        match Settings::value_of(setting, self.config) {
+            Value::Choice(word) => Value::Choice(
+                self.called
+                    .iter()
+                    .find(|(key, said, _)| *key == setting.key && *said == word)
+                    .map_or(word, |(.., title)| (*title).to_string()),
+            ),
+            value => value,
+        }
+    }
+
     /// One of them, without what is wrong with it.
     fn row(&self, shown: &Shown, width: u16) -> Row {
         match shown {
@@ -490,7 +524,7 @@ impl SettingsView<'_> {
                 // explain.
                 body: self.settings.wrapped(setting.about, width),
                 warning: Vec::new(),
-                aside: Aside::Control(setting.kind, Settings::value_of(setting, self.config)),
+                aside: Aside::Control(setting.kind, self.value_of(setting)),
                 // On the reader's page, the file that has this one
                 // instead of them. On the project's, nothing: a setting
                 // the project has is exactly what that page is for.

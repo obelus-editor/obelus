@@ -413,20 +413,24 @@ impl App {
         let choices: Vec<(String, Option<String>)> = match key {
             "theme" => self.themes().into_iter().map(|name| (name, None)).collect(),
             "workflow" => super::opening::workflows()
-                .map(|(name, about)| (name.to_string(), Some(about.to_string())))
+                .map(|(name, _, about)| (name.to_string(), Some(about.to_string())))
                 .collect(),
             _ => choices
                 .iter()
                 .map(|choice| ((*choice).to_string(), None))
                 .collect(),
         };
+        let label = |word: &str| self.called(key, word).unwrap_or(word).to_string();
+        // The one in force, as the list says it: it finds what to open on
+        // by the label rather than the word the file has.
+        let preferred = label(word);
         let items: Vec<PickerItem> = choices
             .into_iter()
             .map(|(choice, about)| PickerItem {
                 prose: false,
                 marker: None,
                 icon: None,
-                label: choice.clone(),
+                label: label(&choice),
                 detail: about,
                 trailing: None,
                 changed: None,
@@ -460,7 +464,7 @@ impl App {
         }
         // Opened on the one in force, so the list starts by saying which
         // that is.
-        picker.prefer(word.to_string());
+        picker.prefer(preferred);
         // What the theme was, for the same reason the theme list keeps it:
         // walking this list wears each colour in turn, and the one that was
         // on is only in the running program.
@@ -613,6 +617,24 @@ impl App {
             .as_deref()
             .and_then(obelus_theme::written::beside);
         project.into_iter().chain(readers).collect()
+    }
+
+    /// What one of a setting's words is called on screen, where it is
+    /// called something other than the word.
+    ///
+    /// The one answer the list a word is chosen from and the settings row
+    /// it goes back to both read, so the two cannot call one choice by two
+    /// names. Only the workflows have titles: a word like `feature-branch`
+    /// is the setting's, written in the reader's file, and a name rather
+    /// than copy.
+    #[must_use]
+    pub fn called(&self, key: &str, word: &str) -> Option<&'static str> {
+        match key {
+            "workflow" => super::opening::workflows()
+                .find(|(name, ..)| *name == word)
+                .map(|(_, title, _)| title),
+            _ => None,
+        }
     }
 
     /// Every theme there is to choose from, nearest first and without
@@ -1127,7 +1149,7 @@ impl App {
                 // and what they will look for in the file, and among the
                 // words around it a name like `wrap` reads as one of them.
                 // Not the setting where it names the kind of thing the word
-                // was meant to be -- `No workflow is called` -- which is the
+                // was meant to be -- `No theme is called` -- which is the
                 // sentence's own noun.
                 obelus_config::Why::NoSuchSetting => {
                     format!("No setting is called `{}`", one.key)
@@ -1141,8 +1163,11 @@ impl App {
                         one.key
                     )
                 }
+                // Not "No workflow is called ...", which opens on the title
+                // of one of the workflows. Which setting it is goes without
+                // saying: the mark is on the line that sets it.
                 obelus_config::Why::NoSuchChoice(word) => {
-                    format!("No {} is called `{word}`", one.key)
+                    format!("Nothing answers to `{word}`")
                 }
             };
             self.obelus_says(path, one.at, obelus_lsp::trouble::Severity::Warning, &said);
