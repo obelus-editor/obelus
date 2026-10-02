@@ -256,7 +256,7 @@ const PATH_AT_LEAST: usize = 8;
 /// branch checked out and no tree at all are two different things, and a
 /// row silent about both tells a reader neither.
 #[must_use]
-fn branch_badge(head: Option<&obelus_git::Head>) -> String {
+pub(crate) fn branch_badge(head: Option<&obelus_git::Head>) -> String {
     let Some(head) = head else {
         return String::new();
     };

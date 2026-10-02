@@ -1402,6 +1402,28 @@ impl Chat {
         }
     }
 
+    /// The file the call with this id changed, once it has.
+    ///
+    /// Asked of the row rather than of the update, because an update says
+    /// only what changed: the kind and the place arrive with the call, and
+    /// that it is done arrives later on its own. Done and not asked: a
+    /// change put to the reader for permission has not happened, and may
+    /// not.
+    #[must_use]
+    pub fn wrote(&self, id: &str) -> Option<&std::path::Path> {
+        let said = self
+            .said
+            .iter()
+            .rev()
+            .find(|said| said.tag.as_deref() == Some(id))?;
+        let changes =
+            matches!(said.kind.as_str(), "edit" | "delete" | "move") || !said.change.is_empty();
+        (changes && said.state.as_deref() == Some("completed"))
+            .then(|| said.places.first())
+            .flatten()
+            .map(|place| place.path.as_path())
+    }
+
     /// Everything said, as rows wrapped to a width.
     ///
     /// A blank row between one speaker and the next: a transcript with no

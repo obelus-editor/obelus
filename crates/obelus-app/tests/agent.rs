@@ -210,6 +210,11 @@ fn the_claims_changed(app: &mut App, root: &Path, which: &obelus_agent::chats::C
 
 /// Writes down a conversation about one of the project's notes.
 fn remember_a_note_conversation(scratch: &support::Scratch, note: &str, session: &str) {
+    remember_telling(scratch, note, session, None);
+}
+
+/// The same, with the agent already told what the note said.
+fn remember_telling(scratch: &support::Scratch, note: &str, session: &str, told: Option<&str>) {
     obelus_agent::acp::sessions::change(scratch.path(), None, |remembered| {
         remembered.put(
             &obelus_agent::chats::ChatId::Note(
@@ -220,7 +225,7 @@ fn remember_a_note_conversation(scratch: &support::Scratch, note: &str, session:
             obelus_agent::acp::sessions::Kept {
                 session: session.to_string(),
                 title: None,
-                told: None,
+                told: told.map(str::to_string),
                 introduced: false,
                 last: Some(1_700_000_000),
             },
@@ -4415,9 +4420,8 @@ fn a_note_taken_away_elsewhere_leaves_the_conversation_standing() {
         said_in_transcript(&app, "first"),
         "nothing was said, so there is no conversation to lose"
     );
-    assert_eq!(
-        app.what_this_conversation_is_about().as_deref(),
-        Some("a note"),
+    assert!(
+        app.is_about_a_note(),
         "the conversation is not about the note, so this proves nothing"
     );
 
@@ -4429,10 +4433,10 @@ fn a_note_taken_away_elsewhere_leaves_the_conversation_standing() {
     }));
     let dump = support::render(&mut app, WIDTH, HEIGHT);
 
-    // Heard, rather than ignored: the header has stopped naming the note,
-    // which is the one thing the view can honestly say about it.
+    // Heard, rather than ignored: the conversation has stopped naming the
+    // note, which is the one thing the view can honestly say about it.
     assert!(
-        app.what_this_conversation_is_about().is_none(),
+        !app.is_about_a_note(),
         "the write was never heard, so standing still proves nothing:\n{dump}"
     );
     assert!(
@@ -4555,7 +4559,7 @@ fn a_note_can_be_offered_in_a_conversation_about_nothing() {
         app.talking() == obelus_agent::Talking::Ready
     });
     assert!(
-        app.what_this_conversation_is_about().is_none(),
+        !app.is_about_a_note(),
         "this conversation is about a note, so it proves nothing"
     );
 
@@ -9181,26 +9185,24 @@ fn the_notes_hear_a_conversation_written_down_by_another_window() {
     );
 }
 
-/// The conversation's header follows the note being rewritten in another
-/// window.
+/// A note rewritten in another window is offered to the agent again.
 ///
-/// What a conversation is about is the note's own words, and a header is
-/// drawn on every frame -- twice, for the editor and for the status row.
-/// Reading the notes file there is 29us for one note and 225us for twenty,
-/// so the words are kept; and a kept copy with nothing to refresh it is a
-/// header saying what the note used to say, which is the reason the read
-/// was there in the first place. What makes keeping it honest is that
-/// every way a note changes -- this page, the reader's own editor, a
-/// second Obelus -- writes the file, and a write is something a watcher
-/// hears.
+/// The box asks on every frame whether the agent has been told what the
+/// note says now, and offers to ask about it where it has not -- twice a
+/// frame, for the editor and for the status row. Reading the notes file
+/// there is 29us for one note and 225us for twenty, so the words are kept;
+/// and a kept copy with nothing to refresh it is a box comparing against
+/// what the note used to say. What makes keeping it honest is that every
+/// way a note changes -- this page, the reader's own editor, a second
+/// Obelus -- writes the file, and a write is something a watcher hears.
 ///
 /// Broken deliberately two ways. Taking the `reread_the_notes_kept` out of
-/// the watcher's arm leaves the header on the old words for the rest of
-/// the session. Taking the one in `settle_the_watches` out leaves it with
-/// no words at all until somebody writes the file, because a watch says
-/// what happens next and not what was already there.
+/// the watcher's arm never offers the rewritten note. Taking the one out of
+/// the key that opens the conversation leaves it with no note at all until
+/// somebody writes the file, because a watch says what happens next and
+/// not what was already there.
 #[test]
-fn the_header_follows_the_note_being_rewritten_elsewhere() {
+fn a_note_rewritten_elsewhere_is_offered_again() {
     let scratch = support::Scratch::new("agent-note-header-follows");
     support::make_room_for_notes(scratch.path());
     let notes = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
@@ -9209,6 +9211,13 @@ fn the_header_follows_the_note_being_rewritten_elsewhere() {
         "[[todo]]\nid = \"0123456W\"\nsaid = \"what it said on Monday\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");
+    // The agent was told it already, so there is nothing to offer yet.
+    remember_telling(
+        &scratch,
+        "0123456W",
+        "s-kept",
+        Some("what it said on Monday"),
+    );
 
     let (mut app, _events) = wired();
     app.working_directory_for_test(scratch.path().to_path_buf());
@@ -9219,13 +9228,25 @@ fn the_header_follows_the_note_being_rewritten_elsewhere() {
         },
         Vec::new(),
     );
+    // Running, because what the agent was told is written down against
+    // the agent that was told it.
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
     support::press_alt(&mut app, 'a');
     assert!(app.chat().is_some(), "no conversation about the note");
-    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let _ = support::render(&mut app, WIDTH, HEIGHT);
     assert!(
-        dump.contains("what it said on Monday"),
-        "the header does not say what the conversation is about:\n{dump}"
+        app.is_about_a_note(),
+        "the conversation has no note to compare against"
+    );
+    assert_eq!(
+        app.chat().and_then(|chat| chat.suggestion()),
+        None,
+        "the box offered a note the agent has already been told"
     );
 
     // The other window rewrites it, and this one hears the file.
@@ -9237,10 +9258,202 @@ fn the_header_follows_the_note_being_rewritten_elsewhere() {
     app.handle(obelus_app::event::Event::Watched(obelus_watch::Changed {
         path: notes,
     }));
-    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let _ = support::render(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        app.chat().and_then(|chat| chat.suggestion()),
+        Some("Look into this"),
+        "the box went on comparing against what the note used to say"
+    );
+}
+
+/// The header says which branch the agent's changes are on, once it has
+/// made one -- found from where the change landed, not from anything it
+/// said.
+///
+/// A real repository with a linked worktree beside it, which is what an
+/// agent following the project's workflow makes, and a second repository
+/// that has nothing to do with this one. The calls are delivered by hand
+/// because the fake agent's own edit is of a file in this checkout, and
+/// what is being asked is which tree a path is in.
+///
+/// Each change is asked about with its kind and its file, and finished by
+/// an update that carries its id and its state and nothing else, which is
+/// how an agent says it: whatever an update leaves out is what it said
+/// before.
+///
+/// Broken deliberately seven ways, and each fails here: taking the state
+/// out of `Chat::wrote` names the branch while the change is still being
+/// asked about; reading the kind and the file off the update rather than
+/// the row never names one; taking the project out of
+/// `hear_where_it_wrote` names the other repository's branch; taking the
+/// call to it out of the tool arm never names one; leaving the branch out
+/// of `header` never draws it; and taking the conversations out of
+/// `forget_what_git_said` keeps the branch the checkout has moved off;
+/// and asking a tree that has gone without looking names the reader's.
+#[test]
+fn the_header_says_which_branch_the_agent_changed_files_on() {
+    let scratch = support::Scratch::new("agent-header-branch");
+    let git = |directory: &Path, arguments: &[&str]| {
+        let outcome = std::process::Command::new("git")
+            .arg("-C")
+            .arg(directory)
+            .args(arguments)
+            .env("GIT_AUTHOR_NAME", "obelus")
+            .env("GIT_AUTHOR_EMAIL", "obelus@example.invalid")
+            .env("GIT_COMMITTER_NAME", "obelus")
+            .env("GIT_COMMITTER_EMAIL", "obelus@example.invalid")
+            .output()
+            .expect("running git");
+        assert!(
+            outcome.status.success(),
+            "git {arguments:?} failed: {}",
+            String::from_utf8_lossy(&outcome.stderr)
+        );
+    };
+    let (main, elsewhere) = (scratch.join("main"), scratch.join("elsewhere"));
+    for (tree, branch) in [(&main, "master"), (&elsewhere, "theirs")] {
+        std::fs::create_dir_all(tree).expect("a checkout");
+        git(
+            tree,
+            &["init", "--quiet", &format!("--initial-branch={branch}")],
+        );
+        std::fs::write(tree.join("file.rs"), "fn main() {}\n").expect("a file");
+        git(tree, &["add", "file.rs"]);
+        git(tree, &["commit", "--quiet", "-m", "committed"]);
+    }
+    // Inside the main checkout, where the workflow puts it.
+    let feature = main.join(".worktree").join("feature");
+    git(
+        &main,
+        &[
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            "feature",
+            feature.to_str().expect("a path"),
+        ],
+    );
+
+    let (mut app, events) = wired();
+    app.working_directory_for_test(main.clone());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.new_conversation();
+    app.open_a_session_for_test();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    let said = |app: &mut App, call: obelus_agent::acp::Call, status: &str| {
+        app.handle(Event::Agent(obelus_agent::Event::Acp(
+            obelus_agent::acp::Incoming::Update {
+                session: obelus_agent::acp::SessionId::new("s-1"),
+                update: obelus_agent::acp::Update::Tool {
+                    call: Box::new(call),
+                    status: status.to_string(),
+                },
+            },
+        )));
+    };
+    let asked = |app: &mut App, id: &str, tree: &Path| {
+        let call = obelus_agent::acp::Call {
+            id: id.to_string(),
+            title: "Edit file.rs".to_string(),
+            kind: "edit".to_string(),
+            places: vec![obelus_agent::acp::Place {
+                path: tree.join("file.rs"),
+                line: None,
+            }],
+            ..obelus_agent::acp::Call::default()
+        };
+        said(app, call, "pending");
+    };
+    let done = |app: &mut App, id: &str| {
+        let call = obelus_agent::acp::Call {
+            id: id.to_string(),
+            ..obelus_agent::acp::Call::default()
+        };
+        said(app, call, "completed");
+    };
+    // The header's own row, so that a branch said anywhere else on the
+    // screen is not taken for it.
+    let header = |app: &mut App| {
+        screen(app)
+            .lines()
+            .find(|line| !line.trim().is_empty())
+            .unwrap_or_default()
+            .to_string()
+    };
+
+    // Asked about, not made: there is no branch to speak of yet.
+    asked(&mut app, "c-1", &feature);
+    assert_eq!(
+        app.branch_this_conversation_works_on(),
+        None,
+        "a change still waiting on the reader named a branch"
+    );
+
+    done(&mut app, "c-1");
+    let row = header(&mut app);
+    assert_eq!(
+        app.branch_this_conversation_works_on(),
+        Some(&obelus_git::Head::Branch("feature".to_string())),
+        "the change in the worktree named no branch:\n{row}"
+    );
     assert!(
-        dump.contains("what it says on Tuesday"),
-        "the header went on saying what the note used to say:\n{dump}"
+        row.contains("feature"),
+        "the header does not say the branch:\n{row}"
+    );
+
+    // Another repository is not this work.
+    asked(&mut app, "c-2", &elsewhere);
+    done(&mut app, "c-2");
+    assert_eq!(
+        app.branch_this_conversation_works_on(),
+        Some(&obelus_git::Head::Branch("feature".to_string())),
+        "a change in another repository took the header"
+    );
+
+    // And the reader's own checkout is, and is the one most worth seeing.
+    asked(&mut app, "c-3", &main);
+    done(&mut app, "c-3");
+    assert_eq!(
+        app.branch_this_conversation_works_on(),
+        Some(&obelus_git::Head::Branch("master".to_string())),
+        "a change in the reader's checkout did not move the header"
+    );
+
+    // The reader moves their checkout in a shell, and the watch on it says
+    // so: the header follows the status row rather than keeping the branch
+    // the change was made on.
+    git(&main, &["switch", "--quiet", "-c", "fix"]);
+    app.handle(Event::Watched(obelus_watch::Changed {
+        path: main.join(".git").join("HEAD"),
+    }));
+    assert_eq!(
+        app.branch_this_conversation_works_on(),
+        Some(&obelus_git::Head::Branch("fix".to_string())),
+        "the header kept a branch the checkout has moved off"
+    );
+
+    // And a worktree taken away says nothing, rather than the branch of
+    // the checkout it was inside.
+    asked(&mut app, "c-4", &feature);
+    done(&mut app, "c-4");
+    git(
+        &main,
+        &["worktree", "remove", feature.to_str().expect("a path")],
+    );
+    app.handle(Event::Watched(obelus_watch::Changed {
+        path: main.join(".git").join("HEAD"),
+    }));
+    assert_eq!(
+        app.branch_this_conversation_works_on(),
+        None,
+        "a worktree that has gone was named by the checkout around it"
     );
 }
 
@@ -9379,13 +9592,15 @@ fn the_notes_hear_the_table_through_a_watch_they_took_themselves() {
 /// the page that usually holds one may never have been opened.
 ///
 /// Reached from the list of conversations rather than from the notes, which
-/// is the way in that leaves that page shut: the header is drawn from a
-/// kept copy of the notes, and without a watch of its own that copy would
-/// be whatever the file said when the conversation opened, for ever.
+/// is the way in that leaves that page shut: the box offers a rewritten
+/// note again from a kept copy of the notes, and without a watch of its own
+/// that copy would be whatever the file said when the conversation opened,
+/// for ever.
 ///
 /// Broken deliberately by taking the notes out of `settle_the_watches` --
-/// the header stops following -- or by leaving the `reread_the_notes_kept`
-/// out of it, which leaves the header with no words at all.
+/// the rewritten note is never offered -- or by taking the
+/// `reread_the_notes_kept` out of the list's way in, which leaves the
+/// conversation with no note at all.
 #[test]
 fn a_conversation_about_a_note_watches_the_notes_without_the_page() {
     let scratch = support::Scratch::new("agent-header-real-watch");
@@ -9396,7 +9611,12 @@ fn a_conversation_about_a_note_watches_the_notes_without_the_page() {
         "[[todo]]\nid = \"0123456Z\"\nsaid = \"what it said on Monday\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");
-    remember_a_note_conversation(&scratch, "0123456Z", "s-kept");
+    remember_telling(
+        &scratch,
+        "0123456Z",
+        "s-kept",
+        Some("what it said on Monday"),
+    );
 
     let (sender, events) = std::sync::mpsc::channel();
     let mut app = App::new(Vec::new());
@@ -9410,6 +9630,13 @@ fn a_conversation_about_a_note_watches_the_notes_without_the_page() {
         Vec::new(),
     );
     app.start(sender);
+    // Running, because what the agent was told is written down against
+    // the agent that was told it.
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
     support::lay_out(&mut app, WIDTH, HEIGHT);
 
     // In through the list, so the notes page is never opened and never
@@ -9418,10 +9645,15 @@ fn a_conversation_about_a_note_watches_the_notes_without_the_page() {
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);
     assert!(app.notes().is_none(), "the notes page is open after all");
-    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let _ = support::render(&mut app, WIDTH, HEIGHT);
     assert!(
-        dump.contains("what it said on Monday"),
-        "the header does not say what the conversation is about:\n{dump}"
+        app.is_about_a_note(),
+        "the conversation has no note to compare against"
+    );
+    assert_eq!(
+        app.chat().and_then(|chat| chat.suggestion()),
+        None,
+        "the box offered a note the agent has already been told"
     );
 
     std::fs::write(
@@ -9430,8 +9662,7 @@ fn a_conversation_about_a_note_watches_the_notes_without_the_page() {
     )
     .expect("the notes again");
     pump(&mut app, &events, "the note being rewritten", |app| {
-        app.what_this_conversation_is_about()
-            .is_some_and(|said| said.contains("Tuesday"))
+        app.chat().and_then(|chat| chat.suggestion()).is_some()
     });
 }
 

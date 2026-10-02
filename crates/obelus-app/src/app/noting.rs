@@ -424,12 +424,11 @@ impl App {
     /// nothing is not written to the file at all.
     ///
     /// The same rule a file deleted in another window follows: the document
-    /// keeps what it has and says what it can -- the header stops naming
-    /// the note, and the key back to it goes with it -- and whether to
-    /// close it is the reader's. What is swept against the names the file
-    /// has is the *table* of conversations, which is
-    /// `obelus_agent::acp::sessions::change`'s own business and happens
-    /// wherever that is written.
+    /// keeps what it has and says what it can -- the key back to the note
+    /// goes with it -- and whether to close it is the reader's. What is
+    /// swept against the names the file has is the *table* of
+    /// conversations, which is `obelus_agent::acp::sessions::change`'s own
+    /// business and happens wherever that is written.
     fn the_notes_are_now(
         &mut self,
         todo: Todo,
