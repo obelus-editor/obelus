@@ -237,6 +237,25 @@ pub(super) fn remember(root: &Path, now: i64) -> bool {
     write(&path, &projects)
 }
 
+/// Whether a remembered project has gone: nothing is there, or something
+/// other than a directory is standing where it was.
+///
+/// Not every way of failing to look, though. A directory that will not say
+/// what it is -- permission refused, a mount that has stopped answering, a
+/// disk that errs -- is a directory that is there, and the cost the reader
+/// accepted in forgetting is that a disk not plugged in looks deleted, not
+/// that a refusal does. `is_dir` answers `false` for all of them alike,
+/// which is why this asks for the error.
+fn gone(path: &Path) -> bool {
+    match std::fs::metadata(path) {
+        Ok(data) => !data.is_dir(),
+        Err(error) => matches!(
+            error.kind(),
+            std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+        ),
+    }
+}
+
 /// Takes these projects off the list, where their directories are still
 /// not there.
 ///
@@ -247,7 +266,7 @@ pub(super) fn remember(root: &Path, now: i64) -> bool {
 ///
 /// Answers whether anything was written, which is `false` where nothing
 /// on the list had gone and where the list would not read.
-pub(super) fn forget(gone: &[PathBuf]) -> bool {
+pub(super) fn forget(these: &[PathBuf]) -> bool {
     let Some(path) = path() else {
         return false;
     };
@@ -256,7 +275,7 @@ pub(super) fn forget(gone: &[PathBuf]) -> bool {
         return false;
     };
     let before = projects.len();
-    projects.retain(|project| !gone.contains(&project.path) || project.path.is_dir());
+    projects.retain(|project| !these.contains(&project.path) || !gone(&project.path));
     if projects.len() == before {
         return false;
     }
@@ -329,15 +348,13 @@ impl super::App {
             // reader never opens it.
             self.amiss(&format!("The list of projects would not read: {why}"));
         }
-        // A directory and not merely a path: a file standing where a
-        // project was is not somewhere to work either.
-        let (here, gone): (Vec<_>, Vec<_>) = reading
+        let (here, went): (Vec<_>, Vec<_>) = reading
             .rows()
             .into_iter()
-            .partition(|project| project.path.is_dir());
-        if !gone.is_empty() {
-            let gone: Vec<PathBuf> = gone.into_iter().map(|project| project.path).collect();
-            forget(&gone);
+            .partition(|project| !gone(&project.path));
+        if !went.is_empty() {
+            let went: Vec<PathBuf> = went.into_iter().map(|project| project.path).collect();
+            forget(&went);
         }
         let known = here
             .into_iter()
@@ -1066,6 +1083,70 @@ mod tests {
 
         assert!(!forget(std::slice::from_ref(&root)), "it was written");
         assert_eq!(read().rows().len(), 2, "a project that is there went");
+    }
+
+    /// A file standing where a project was is not somewhere to work, and
+    /// is forgotten the way nothing there is.
+    ///
+    /// Broken deliberately by having `gone` answer `false` for anything
+    /// that is there, whatever it is: the file is kept as a project.
+    #[test]
+    fn a_file_where_a_project_was_is_forgotten() {
+        let (root, _turn) = scratch("a-file");
+        let gone = one_here_and_one_gone(&root);
+        std::fs::write(&gone, "not a project").expect("a file");
+
+        assert!(forget(&[gone]), "nothing was written");
+        assert_eq!(read().rows().len(), 1, "a file is kept as a project");
+    }
+
+    /// A project behind a refusal is not a project that has gone.
+    ///
+    /// The directory above it will not be read, so asking after the project
+    /// fails -- and fails as permission denied, not as nothing there. What
+    /// the reader accepted losing is a disk that is not plugged in; a
+    /// refusal is a directory that is there and is not telling.
+    ///
+    /// Broken deliberately by having `gone` answer `!path.is_dir()`, which
+    /// is what it was: the project comes off the screen and out of the file.
+    #[cfg(unix)]
+    #[test]
+    fn a_project_behind_a_refusal_is_not_forgotten() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let (root, _turn) = scratch("refused");
+        let locked = root.join("locked");
+        let project = locked.join("project");
+        std::fs::create_dir_all(&project).expect("the project");
+        let path = path().expect("somewhere");
+        std::fs::create_dir_all(path.parent().expect("a directory")).expect("the directory");
+        std::fs::write(
+            &path,
+            to_toml(&[Project {
+                path: project.clone(),
+                last: Some(10),
+            }]),
+        )
+        .expect("a list");
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000))
+            .expect("refusing");
+        // Root reads through any mode, and then there is no refusal to
+        // test: say so rather than pass for the wrong reason.
+        let refused = std::fs::metadata(&project).is_err();
+
+        let mut app = super::super::App::new(Vec::new());
+        app.ask_which_project();
+        let offered = app.chooser.as_ref().expect("asking").rows().len();
+        let kept = read().rows().len();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755))
+            .expect("giving it back");
+
+        if !refused {
+            eprintln!("skipped: this user reads through a directory with no permissions");
+            return;
+        }
+        assert_eq!(offered, 1, "a project behind a refusal was not offered");
+        assert_eq!(kept, 1, "a project behind a refusal was forgotten");
     }
 
     /// Forgetting writes nothing over a list that will not read, for the
