@@ -3821,7 +3821,7 @@ fn a_workflow_nothing_answers_to_is_marked() {
 
     let problems: Vec<_> = app.problems().collect();
     assert_eq!(problems.len(), 1, "{problems:?}");
-    assert_eq!(problems[0].message, "No workflow is called feature_branch");
+    assert_eq!(problems[0].message, "Nothing answers to feature_branch");
     assert_eq!(problems[0].span.line.get(), 0);
     assert_eq!(app.config().workflow, "none", "the word was taken anyway");
 }
@@ -3842,7 +3842,7 @@ fn a_workflow_nothing_answers_to_is_said_on_the_welcome_screen() {
     support::lay_out(&mut app, 100, 30);
     let dump = support::render(&mut app, 100, 30);
     assert!(
-        support::text_block(&dump).contains("No workflow is called feature_branch"),
+        support::text_block(&dump).contains("Nothing answers to feature_branch"),
         "the welcome screen does not say so:\n{dump}"
     );
 }

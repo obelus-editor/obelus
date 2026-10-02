@@ -1151,8 +1151,11 @@ impl App {
                 obelus_config::Why::NotATable => {
                     format!("What {} is set to is not a table of its settings", one.key)
                 }
+                // Not "No workflow is called ...", which opens on the title
+                // of one of the workflows. Which setting it is goes without
+                // saying: the mark is on the line that sets it.
                 obelus_config::Why::NoSuchChoice(word) => {
-                    format!("No {} is called {word}", one.key)
+                    format!("Nothing answers to {word}")
                 }
             };
             self.obelus_says(path, one.at, obelus_lsp::trouble::Severity::Warning, &said);
