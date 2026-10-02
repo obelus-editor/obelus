@@ -361,6 +361,12 @@ pub struct Block {
     /// from "one empty line was removed": both join to the empty string.
     /// An added hunk is the first of those, and it has no rows at all.
     lines: usize,
+    /// Whether a rule is drawn under it.
+    ///
+    /// Settled when it is opened, from what it is and what is under it: a
+    /// message's rule says where the message stops and the file starts, and
+    /// a message with no file under it has nowhere for one to start.
+    ruled: bool,
     /// How many rows it takes at a width, worked out once for that width.
     ///
     /// The viewport's arithmetic asks for this inside loops -- it is the
@@ -413,7 +419,7 @@ impl Block {
         let rows: usize = (0..text.line_count())
             .map(|line| text.row_count(LineNumber::new(line), width))
             .sum();
-        let rows = rows + usize::from(self.kind == Held::Message);
+        let rows = rows + usize::from(self.ruled);
         self.rows.set(Some((width, rows)));
         rows
     }
@@ -424,7 +430,7 @@ impl Block {
     /// [`Block::rows`] counted cannot come apart.
     #[must_use]
     pub const fn ruled(&self) -> bool {
-        matches!(self.kind, Held::Message)
+        self.ruled
     }
 
     /// How many rows come before one of its lines.
@@ -601,6 +607,15 @@ pub struct Buffer {
     /// because none of that can be answered from lines the file does not
     /// have.
     in_block: Option<LineNumber>,
+    /// Whether the message hanging over the first line is all there is.
+    ///
+    /// A commit is not a file, so [`Buffer::from_message`] hangs what it
+    /// said over a text that is empty -- and an empty text still has one
+    /// line, which was drawn under the message as a line `1` of nothing,
+    /// below a rule saying a file started there. Said here rather than
+    /// guessed from the empty text, because an empty file is a file and
+    /// has a first line to stand on.
+    message_alone: bool,
     /// What was on disk when this was last read or written.
     ///
     /// Nothing was kept about a file before, because nothing ever had to ask
@@ -691,6 +706,7 @@ impl Buffer {
             },
             blocks: Vec::new(),
             in_block: None,
+            message_alone: false,
             undo: undo::Undo::default(),
             disk: Disk::Unchanged,
             dirty: false,
@@ -795,6 +811,7 @@ impl Buffer {
     #[must_use]
     pub fn from_message(said: &[String]) -> Self {
         let mut buffer = Self::from_text(Path::new(""), "");
+        buffer.message_alone = true;
         buffer.open_held(LineNumber::new(0), said, Held::Message);
         buffer.enter_block(LineNumber::new(0));
         buffer
@@ -837,6 +854,7 @@ impl Buffer {
             },
             blocks: Vec::new(),
             in_block: None,
+            message_alone: false,
             undo: undo::Undo::default(),
             seen: None,
             disk: Disk::Unchanged,
@@ -879,6 +897,7 @@ impl Buffer {
             full: lines.to_vec(),
             changed: None,
             lines: lines.len(),
+            ruled: kind == Held::Message && !self.message_alone,
             rows: std::cell::Cell::new(None),
         };
         // Kept in the order they are drawn in, which is the order they are
@@ -1017,6 +1036,13 @@ impl Buffer {
     #[must_use]
     pub const fn content(&self) -> &Content {
         &self.content
+    }
+
+    /// Whether this is a commit's message with no file under it, so that
+    /// its text has no lines to draw.
+    #[must_use]
+    pub const fn is_message_alone(&self) -> bool {
+        self.message_alone
     }
 
     /// How it is being shown.
