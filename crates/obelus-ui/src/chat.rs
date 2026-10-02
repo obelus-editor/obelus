@@ -490,7 +490,7 @@ impl<'a> ChatView<'a> {
             root: app.working_directory(),
             phase: app.phase(),
             branch: app.branch_this_conversation_works_on(),
-            about_a_note: app.what_this_conversation_is_about().is_some(),
+            about_a_note: app.is_about_a_note(),
             note: app.note(),
             note_is_wrong: app.note_is_wrong(),
             usage: app.agent_usage(),

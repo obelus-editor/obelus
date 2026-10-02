@@ -897,8 +897,14 @@ impl App {
         }
     }
 
-    /// The note the conversation being read is about, in the words the
-    /// reader wrote.
+    /// Whether the conversation being read is about a note that is still
+    /// there, which is whether there is a note for its key to go back to.
+    #[must_use]
+    pub fn is_about_a_note(&self) -> bool {
+        self.the_note_this_is_about().is_some()
+    }
+
+    /// The note the conversation being read is about, as the file last said.
     ///
     /// Kept rather than parsed here, and heard rather than polled: the
     /// reader can change what a note says from the notes page, from their
@@ -911,8 +917,7 @@ impl App {
     /// twenty -- and a conversation builds its view twice a frame, for the
     /// editor and for the status row, so that was the bill twice on every
     /// keystroke of every conversation about a note.
-    #[must_use]
-    pub fn what_this_conversation_is_about(&self) -> Option<String> {
+    fn the_note_this_is_about(&self) -> Option<&obelus_git::todo::Note> {
         let Topic::Note(id) = &self.conversation()?.topic else {
             return None;
         };
@@ -921,14 +926,37 @@ impl App {
             .notes
             .iter()
             .find(|note| note.id == *id)
-            .map(|note| note.title().to_string())
     }
 
     /// The branch the conversation being read is working on, once its agent
     /// has changed something.
     #[must_use]
     pub fn branch_this_conversation_works_on(&self) -> Option<&obelus_git::Head> {
-        self.conversation()?.working_on.as_ref()
+        self.conversation()?
+            .working_in
+            .as_ref()
+            .map(|(_, head)| head)
+    }
+
+    /// Asks every conversation's checkout which branch it is on again,
+    /// because the repository moved.
+    ///
+    /// A tree that has gone answers nothing rather than being asked: git
+    /// would look upwards from where it was and answer for whatever
+    /// repository is above it, which for a worktree under `.worktree` is
+    /// the reader's own.
+    pub(super) fn ask_the_conversations_their_branch(&mut self) {
+        for document in &mut self.documents {
+            let Some(talk) = document.as_mut().and_then(Document::chat_mut) else {
+                continue;
+            };
+            talk.working_in = talk.working_in.take().and_then(|(tree, _)| {
+                if obelus_git::is_gone(&tree) {
+                    return None;
+                }
+                obelus_git::head_of_the_tree(&tree).map(|head| (tree, head))
+            });
+        }
     }
 
     /// Notes the branch a call changed a file on, if this update finished
@@ -956,7 +984,7 @@ impl App {
         }
         let head = obelus_git::head_of_the_tree(&tree);
         if let Some(talk) = self.talk_mut(whose) {
-            talk.working_on = head;
+            talk.working_in = head.map(|head| (tree, head));
         }
     }
 
@@ -964,9 +992,9 @@ impl App {
     ///
     /// What the box of a conversation about a note asks, on every frame,
     /// to know whether the agent has been told what the note says now. The
-    /// page has its own
-    /// copy and does not use this one: what is on the page is the reader's,
-    /// edits and all, and is ahead of the file rather than behind it.
+    /// page has its own copy and does not use this one: what is on the page
+    /// is the reader's, edits and all, and is ahead of the file rather than
+    /// behind it.
     pub(super) fn reread_the_notes_kept(&mut self) {
         self.notes_kept = obelus_git::todo::read(&self.working_directory).notes();
     }
@@ -2580,16 +2608,7 @@ impl App {
         // it again, and one already told does not. From the kept copy of
         // the notes, because this is asked every frame.
         let suggested = self.conversation().and_then(|talk| {
-            let Topic::Note(id) = &talk.topic else {
-                return None;
-            };
-            let note = self
-                .notes_kept
-                .as_ref()?
-                .notes
-                .iter()
-                .find(|note| note.id == *id)?;
-            let now = super::opening::what_the_note_says(note);
+            let now = super::opening::what_the_note_says(self.the_note_this_is_about()?);
             (talk.told.as_deref() != Some(now.as_str())).then_some(super::opening::LOOK)
         });
         if let Some(talk) = self.conversation_mut() {

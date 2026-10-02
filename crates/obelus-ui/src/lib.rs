@@ -422,9 +422,9 @@ pub trait Screen {
     fn project_config(&self) -> Option<&Path>;
     /// What the server says is wrong with the file being read.
     fn troubles(&self) -> &[obelus_lsp::trouble::Trouble];
-    /// The note the conversation being read is about, in the words the
-    /// reader wrote.
-    fn what_this_conversation_is_about(&self) -> Option<String>;
+    /// Whether the conversation being read is about a note that is still
+    /// there.
+    fn is_about_a_note(&self) -> bool;
     /// The branch the conversation being read is working on, once its
     /// agent has changed a file.
     fn branch_this_conversation_works_on(&self) -> Option<&obelus_git::Head>;

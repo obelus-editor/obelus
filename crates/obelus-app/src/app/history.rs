@@ -265,6 +265,10 @@ impl App {
         // ref costs nothing, and what the history guards against on that
         // event is throwing away a *walk*.
         self.head = obelus_git::head_of_the_tree(&self.working_directory);
+        // And the conversations', which may be about the same tree: the
+        // header naming one branch and the status row another is two
+        // answers about one checkout on one screen.
+        self.ask_the_conversations_their_branch();
         self.changes = None;
         self.committed = None;
         self.blames.clear();

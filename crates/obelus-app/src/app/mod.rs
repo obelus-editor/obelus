@@ -4568,8 +4568,8 @@ impl Screen for App {
     fn troubles(&self) -> &[obelus_lsp::trouble::Trouble] {
         App::troubles(self)
     }
-    fn what_this_conversation_is_about(&self) -> Option<String> {
-        App::what_this_conversation_is_about(self)
+    fn is_about_a_note(&self) -> bool {
+        App::is_about_a_note(self)
     }
     fn branch_this_conversation_works_on(&self) -> Option<&obelus_git::Head> {
         App::branch_this_conversation_works_on(self)
