@@ -37,11 +37,15 @@
 //! the reader standing in one of them. This list is about where to work,
 //! so it holds both.
 //!
-//! What is not here is anything about whether the directory is still
-//! there. A list of twenty projects is twenty paths, and asking the
-//! filesystem about each of them is twenty file reads on the way to a
-//! screen nobody has pressed a key on yet. A row says what it was; the
-//! answer to whether it still is comes from trying to open it.
+//! **A project whose directory has gone is forgotten.** Asked when the
+//! screen opens, which is the moment a view reads what it shows: twenty
+//! `stat`s, not twenty reads, and a row offering a place that is not
+//! there is a row whose one answer is a refusal. And taken out of the file
+//! as well as off the screen, which is a choice with a cost said out loud
+//! -- a disk that is not plugged in, or a share not mounted yet at the
+//! moment a launcher starts Obelus, looks exactly like a project that was
+//! deleted, and its row goes with it. A reader who opens it again has it
+//! back, because opening it is how anything gets onto the list.
 
 use std::path::{Path, PathBuf};
 
@@ -223,6 +227,37 @@ pub(super) fn remember(root: &Path, now: i64) -> bool {
         },
     );
     projects.truncate(KEPT);
+    write(&path, &projects)
+}
+
+/// Takes these projects off the list, where their directories are still
+/// not there.
+///
+/// Asked again at the moment of writing rather than trusted from whoever
+/// looked: another Obelus may have just opened one of them -- a disk
+/// plugged back in -- and the row it wrote is a project that is there.
+/// Read-modify-write for the reason [`remember`] is.
+///
+/// Answers whether anything was written, which is `false` where nothing
+/// on the list had gone and where the list would not read.
+pub(super) fn forget(gone: &[PathBuf]) -> bool {
+    let Some(path) = path() else {
+        return false;
+    };
+    let Some(mut projects) = read().projects() else {
+        tracing::warn!(path = %path.display(), "will not read, so no project is forgotten from it");
+        return false;
+    };
+    let before = projects.len();
+    projects.retain(|project| !gone.contains(&project.path) || project.path.is_dir());
+    if projects.len() == before {
+        return false;
+    }
+    write(&path, &projects)
+}
+
+/// Writes the list, whole.
+fn write(path: &Path, projects: &[Project]) -> bool {
     if let Some(directory) = path.parent()
         && let Err(error) = std::fs::create_dir_all(directory)
     {
@@ -234,9 +269,9 @@ pub(super) fn remember(root: &Path, now: i64) -> bool {
     // leaves one whole file or the other, never half of either.
     let beside = path.with_extension("toml.writing");
     if let Err(error) =
-        std::fs::write(&beside, to_toml(&projects)).and_then(|()| std::fs::rename(&beside, &path))
+        std::fs::write(&beside, to_toml(projects)).and_then(|()| std::fs::rename(&beside, path))
     {
-        tracing::warn!(%error, path = %path.display(), "the project was not remembered");
+        tracing::warn!(%error, path = %path.display(), "the list of projects was not written");
         return false;
     }
     true
@@ -284,8 +319,17 @@ impl super::App {
             // reader never opens it.
             self.amiss(&format!("The list of projects would not read: {why}"));
         }
-        let known = reading
+        // A directory and not merely a path: a file standing where a
+        // project was is not somewhere to work either.
+        let (here, gone): (Vec<_>, Vec<_>) = reading
             .rows()
+            .into_iter()
+            .partition(|project| project.path.is_dir());
+        if !gone.is_empty() {
+            let gone: Vec<PathBuf> = gone.into_iter().map(|project| project.path).collect();
+            forget(&gone);
+        }
+        let known = here
             .into_iter()
             .map(|project| obelus_component::chooser::Known {
                 shown: obelus_ui::with_home_as_tilde(&project.path),
@@ -638,9 +682,13 @@ impl super::App {
             // gone is dropped instead: it is not there to be offered any
             // more, and a row that vanishes under the reader is the
             // answer.
+            // And off the file, for the reason the screen forgets one
+            // when it opens: a path typed into the box is not on the list,
+            // and taking it off that is nothing written.
             if let Some(chooser) = &mut self.chooser {
                 chooser.forget(path);
             }
+            forget(std::slice::from_ref(&path.to_path_buf()));
             return;
         }
         let opening = crate::app::opening(std::slice::from_ref(&path.to_path_buf()));
@@ -956,6 +1004,110 @@ mod tests {
 
         let projects = read().rows();
         assert_eq!(projects.len(), 2, "the two worktrees are one row");
+    }
+
+    /// A list holding `root`, which is there, and a project that is not.
+    fn one_here_and_one_gone(root: &Path) -> PathBuf {
+        let gone = root.join("gone");
+        let path = path().expect("somewhere");
+        std::fs::create_dir_all(path.parent().expect("a directory")).expect("the directory");
+        std::fs::write(
+            &path,
+            to_toml(&[
+                Project {
+                    path: root.to_path_buf(),
+                    last: Some(20),
+                },
+                Project {
+                    path: gone.clone(),
+                    last: Some(10),
+                },
+            ]),
+        )
+        .expect("a list");
+        gone
+    }
+
+    /// A project whose directory has gone comes off the file.
+    ///
+    /// Broken deliberately by having `forget`'s `retain` keep every row:
+    /// the gone one is still in the list.
+    #[test]
+    fn a_project_that_has_gone_is_forgotten() {
+        let (root, _turn) = scratch("forgotten");
+        let gone = one_here_and_one_gone(&root);
+
+        assert!(forget(&[gone]), "nothing was written");
+        let projects = read().rows();
+        assert_eq!(projects.len(), 1, "the gone project is still listed");
+        assert_eq!(projects[0].path, root, "the wrong one was forgotten");
+    }
+
+    /// One that is there again by the time the file is written is kept:
+    /// another Obelus may have just opened it, off a disk plugged back in.
+    ///
+    /// Broken deliberately by taking the `is_dir` out of `forget`'s
+    /// `retain`: a project that is there is forgotten because somebody said
+    /// it had gone.
+    #[test]
+    fn a_project_that_is_back_is_not_forgotten() {
+        let (root, _turn) = scratch("back");
+        let _gone = one_here_and_one_gone(&root);
+
+        assert!(!forget(std::slice::from_ref(&root)), "it was written");
+        assert_eq!(read().rows().len(), 2, "a project that is there went");
+    }
+
+    /// Forgetting writes nothing over a list that will not read, for the
+    /// reason remembering does not.
+    ///
+    /// Two things keep it, and either is enough: the unreadable answer, and
+    /// writing nothing where nothing came off -- a list that will not read
+    /// has no rows to take any off. Broken deliberately by taking out both,
+    /// having `forget` use `read().rows()` and write whatever it has: the
+    /// unreadable file is written over with nothing. One at a time, it
+    /// stays green.
+    #[test]
+    fn forgetting_does_not_write_over_a_list_that_will_not_read() {
+        let (root, _turn) = scratch("forget-unreadable");
+        let path = path().expect("somewhere");
+        std::fs::create_dir_all(path.parent().expect("a directory")).expect("the directory");
+        std::fs::write(&path, "[[opened]]\npath = \"half of a").expect("half a file");
+
+        assert!(!forget(&[root.join("gone")]), "it was written over");
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("still there"),
+            "[[opened]]\npath = \"half of a",
+            "the file was changed"
+        );
+    }
+
+    /// The screen that asks does not offer a project that has gone, and
+    /// the file forgets it as the screen opens.
+    ///
+    /// Broken deliberately by having `ask_which_project` keep every row
+    /// (the first assertion) and by taking its `forget` out (the second).
+    #[test]
+    fn asking_neither_offers_nor_keeps_a_project_that_has_gone() {
+        let (root, _turn) = scratch("asking-gone");
+        let _gone = one_here_and_one_gone(&root);
+
+        let mut app = super::super::App::new(Vec::new());
+        app.ask_which_project();
+        let offered: Vec<PathBuf> = app
+            .chooser
+            .as_ref()
+            .expect("asking")
+            .rows()
+            .into_iter()
+            .map(|(known, _)| known.path.clone())
+            .collect();
+        assert_eq!(offered, vec![root.clone()], "a gone project is offered");
+        assert_eq!(
+            read().rows().len(),
+            1,
+            "the gone project is still in the file"
+        );
     }
 
     /// The list does not grow without end.
