@@ -513,12 +513,14 @@ impl App {
             Whose::Preview => {
                 if let Some(preview) = self.preview.as_mut() {
                     // Kept as rows from its line, which is how the keys
-                    // move it -- and the viewport moved now as well, so a
-                    // second move before the next frame is measured from
-                    // where this one left it.
+                    // move it: so the viewport is moved now, clamped where
+                    // the file ends, and what is kept is how far it went --
+                    // which also makes a second move before the next frame
+                    // measured from where this one left it.
                     let text = preview.text;
-                    preview.scrolled += preview.buffer.rows_to_shown(top, text);
+                    let from = preview.buffer.viewport();
                     preview.buffer.scroll_to_shown(top, text);
+                    preview.scrolled += preview.buffer.rows_since(from, text);
                 }
             }
             Whose::Conversation => {
@@ -557,8 +559,13 @@ impl App {
                 }
             }
             Whose::Counts => {
+                let Some(counts) = self.counts.as_ref() else {
+                    return;
+                };
+                // Settled here rather than once a frame, as its keys are.
+                let height = obelus_ui::counts::list_height(self.screen_area, counts);
                 if let Some(counts) = self.counts.as_mut() {
-                    counts.drag_to(top);
+                    counts.drag_to(top, height);
                 }
             }
             Whose::Names => {

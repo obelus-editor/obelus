@@ -99,24 +99,41 @@ impl Drawn {
         }
     }
 
-    /// Which item belongs at the top for the mark to be under the pointer.
+    /// Which item belongs at the top for the mark to be under the pointer,
+    /// or `None` where it is under it already.
     ///
     /// In the window's items, which for most bars are its rows: see
     /// `starts`.
+    ///
+    /// `None` on the row the mark was drawn on, because the mark is drawn
+    /// rounded and this would come back rounded the other way: a press on
+    /// the mark that did not move it moved the view, by up to a screenful's
+    /// share of the file. And at the foot of the track it asks for the end
+    /// rather than a top: whatever rows are under it -- a card taller than
+    /// a row, a line wrapped onto several -- the thing beside the bar knows
+    /// where its last screenful starts and the bar does not, so each one's
+    /// own clamp says.
     #[must_use]
-    pub fn top_for(&self, y: u16, grip: u16) -> usize {
+    pub fn top_for(&self, y: u16, grip: u16) -> Option<usize> {
         // Signed, because a pointer dragged above the track is still
         // dragging, and what it says is "the top".
         let row = i32::from(y) - i32::from(self.bar.area.y) - i32::from(grip);
-        let mark = u16::try_from(row.max(0)).unwrap_or(u16::MAX);
-        let top = crate::bar_top(self.bar.area.height, mark, self.total);
+        let travel = self.bar.area.height.saturating_sub(self.bar.thumb);
+        let mark = u16::try_from(row.max(0)).unwrap_or(u16::MAX).min(travel);
+        let top = match mark {
+            _ if travel > 0 && mark == travel => self.total,
+            _ if mark == self.bar.mark => return None,
+            _ => crate::bar_top(self.bar.area.height, mark, self.total),
+        };
         if self.starts.is_empty() {
-            return top;
+            return Some(top);
         }
         // The item that row is in: the last to start at or before it.
-        self.starts
-            .partition_point(|start| *start <= top)
-            .saturating_sub(1)
+        Some(
+            self.starts
+                .partition_point(|start| *start <= top)
+                .saturating_sub(1),
+        )
     }
 }
 
@@ -185,9 +202,18 @@ pub(crate) fn said(bar: Bar, total: usize) {
 }
 
 /// And the bar just drawn measures items as tall as these.
-pub(crate) fn in_items(heights: &[u16]) {
+///
+/// Handed the bar `scrollbar` handed back, and attached only to that one:
+/// a bar with no room is not drawn and not said, and the items would go
+/// on whichever bar was said before it -- the file's, say.
+pub(crate) fn in_items(bar: Option<Bar>, heights: &[u16]) {
     SAID.with(|said| {
-        if let Some(last) = said.borrow_mut().as_mut().and_then(|said| said.last_mut()) {
+        if let Some(last) = said
+            .borrow_mut()
+            .as_mut()
+            .and_then(|said| said.last_mut())
+            .filter(|last| Some(last.bar) == bar)
+        {
             last.starts = heights
                 .iter()
                 .scan(0, |start, height| {
@@ -236,34 +262,90 @@ mod tests {
         assert_eq!(bar.grip(2), 2, "above it, by its middle");
     }
 
-    /// The mark lands under the pointer, all the way to both ends.
+    /// The mark lands under the pointer, and the foot of the track is the
+    /// end.
     ///
     /// Deliberate break: scale the mark by the total over the height in
     /// `bar_top`, rather than by how far the top can travel over how far
-    /// the mark can. The foot of the track then asks for a top past the
-    /// last screenful -- which happens to be the same number when the
-    /// total is a multiple of the height, so this one is not.
+    /// the mark can. A row of the track then puts the mark on the row
+    /// below it -- which happens to be the same number when the total is a
+    /// multiple of the height, so this one is not.
     #[test]
     fn the_mark_lands_under_the_pointer() {
         let bar = drawn(10, 0, 1, 57);
-        for row in 0..=9u16 {
-            let top = bar.top_for(2 + row, 0);
+        for row in 1..9u16 {
+            let top = bar.top_for(2 + row, 0).expect("a move");
             assert_eq!(crate::bar_mark(10, top, 57), row, "row {row}");
         }
-        assert_eq!(bar.top_for(2 + 9, 0), 47, "the last screenful");
-        assert_eq!(bar.top_for(0, 0), 0, "dragged off the top");
-        assert_eq!(bar.top_for(40, 0), 47, "and off the foot");
+        assert_eq!(bar.top_for(2 + 9, 0), Some(57), "the foot is the end");
+        assert_eq!(bar.top_for(40, 0), Some(57), "and off the foot");
     }
 
-    /// Where items are taller than a row, the top is the item the row is in.
+    /// A press on the mark where it is drawn moves nothing.
     ///
-    /// Deliberate break: leave `starts` out of `top_for`. A drag to the
-    /// foot then asks for the ninetieth item of a list of thirty.
+    /// Deliberate break: drop the `None` for the row the mark is on. The
+    /// mark on row one of a file scrolled to its fifteenth line comes back
+    /// as line twenty-one, and a press that did not move the pointer
+    /// scrolls six lines.
+    #[test]
+    fn a_press_on_the_mark_moves_nothing() {
+        let top = 15;
+        let mark = crate::bar_mark(10, top, 200);
+        let bar = drawn(10, mark, 1, 200);
+        assert_eq!(bar.top_for(2 + mark, 0), None);
+        assert_eq!(
+            drawn(10, 0, 1, 200).top_for(0, 0),
+            None,
+            "dragged off the top of a mark already there"
+        );
+    }
+
+    /// Where items are taller than a row, the top is the item the row is
+    /// in, and the foot is the last item -- the window's settling says
+    /// which of them its last screenful starts at.
+    ///
+    /// Deliberate break: leave `starts` out of `top_for`. A drag half way
+    /// then asks for the forty-fourth item of a list of thirty.
     #[test]
     fn items_taller_than_a_row_are_moved_by_the_item() {
         let mut bar = drawn(10, 0, 1, 90);
         bar.starts = (0..30).map(|item| item * 3).collect();
-        assert_eq!(bar.top_for(2 + 9, 0), 26, "the last screenful, in items");
-        assert_eq!(bar.top_for(2, 0), 0);
+        assert_eq!(bar.top_for(2 + 5, 0), Some(14), "half way, in items");
+        assert_eq!(bar.top_for(2 + 9, 0), Some(29), "the foot is the last");
+    }
+
+    /// Items go on the bar that was drawn for them, and on no other.
+    ///
+    /// Deliberate break: attach to the last bar said whatever `bar` is. A
+    /// list with no room to draw its bar then puts its items on the file's.
+    #[test]
+    fn items_go_on_their_own_bar() {
+        let mut cells = CellBuffer::empty(Rect::new(0, 0, 10, 10));
+        let drawn = collect(&mut cells, |cells| {
+            of(Whose::Document, || {
+                crate::scrollbar(
+                    cells,
+                    Rect::new(0, 0, 10, 10),
+                    0,
+                    50,
+                    &obelus_theme::builtin::DARK,
+                )
+            });
+            of(Whose::Picker, || {
+                let bar = crate::scrollbar(
+                    cells,
+                    Rect::new(0, 0, 0, 0),
+                    0,
+                    50,
+                    &obelus_theme::builtin::DARK,
+                );
+                in_items(bar, &[2, 2, 2]);
+            });
+        });
+        assert_eq!(drawn.len(), 1, "a bar with no room was said");
+        assert!(
+            drawn[0].starts.is_empty(),
+            "the list's items went on the file's bar"
+        );
     }
 }

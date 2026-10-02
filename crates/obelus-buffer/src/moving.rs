@@ -517,27 +517,33 @@ impl Buffer {
         self.detached = true;
     }
 
-    /// How many rows of the screen the `shown`-th line starts below the top.
+    /// How many rows of the screen the viewport has moved since it was
+    /// `from`: down is positive.
     ///
     /// For a view that keeps its place as rows scrolled from somewhere --
     /// the preview, which is centred on its line and then moved -- rather
     /// than as a top it can be handed.
     #[must_use]
-    pub fn rows_to_shown(&self, shown: usize, area: TextArea) -> isize {
-        let (top, top_row) = (self.viewport.top, self.viewport.top_row);
-        let line = self
-            .folds
-            .nth_shown(shown)
-            .min(self.editing.text().last_line());
-        let count = |from: LineNumber, to: LineNumber| -> usize {
-            (from.get()..to.get())
-                .map(|at| self.screen_rows_of(LineNumber::new(at), area))
-                .sum()
+    pub fn rows_since(&self, from: Viewport, area: TextArea) -> isize {
+        let (was, now) = (
+            (from.top, from.top_row),
+            (self.viewport.top, self.viewport.top_row),
+        );
+        let ((upper, upper_row), (lower, lower_row)) = match was <= now {
+            true => (was, now),
+            false => (now, was),
         };
-        let signed = |rows: usize| isize::try_from(rows).unwrap_or(isize::MAX);
-        match line >= top {
-            true => signed(count(top, line)) - signed(top_row),
-            false => -signed(count(line, top)) - signed(top_row),
+        let rows: usize = (upper.get()..lower.get())
+            .map(|at| self.screen_rows_of(LineNumber::new(at), area))
+            .sum::<usize>()
+            + lower_row;
+        // Never short: the rows before `upper_row` are the upper line's own,
+        // which the sum above counted.
+        let rows = rows.saturating_sub(upper_row);
+        let rows = isize::try_from(rows).unwrap_or(isize::MAX);
+        match was <= now {
+            true => rows,
+            false => -rows,
         }
     }
 

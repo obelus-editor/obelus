@@ -144,15 +144,21 @@ impl Window {
     }
 
     /// Puts the focus on a row.
+    ///
+    /// A choice, so a window dragged away from the focus comes back to it
+    /// -- even to the row it was on, which is what a list that starts over
+    /// at the top means. A caller that says the same focus again once a
+    /// frame has to ask whether it moved first, or no drag lasts a frame.
     pub fn set_focus(&mut self, at: usize) {
-        let at = at.min(self.count.saturating_sub(1));
-        // Only where it moves: a list that says where its focus is once a
-        // frame says it again over a drag, and that is not the reader
-        // choosing anything.
-        if at != self.focus {
-            self.left_the_focus = false;
-        }
-        self.focus = at;
+        self.focus = at.min(self.count.saturating_sub(1));
+        self.left_the_focus = false;
+    }
+
+    /// Brings a window dragged away from the focus back to it, without
+    /// choosing anything: for what the reader typed, which changes what
+    /// the rows are and leaves the choice where it was.
+    pub const fn back_to_the_focus(&mut self) {
+        self.left_the_focus = false;
     }
 
     /// Which row is drawn first.
@@ -436,6 +442,16 @@ mod tests {
         window.step(1, Wrap::No);
         window.settle(10);
         assert_eq!(window.top(), 1, "a key did not bring the focus back");
+        // And choosing the row it is already on is a choice too -- a list
+        // starting over at the top -- which brings it back as well.
+        //
+        // Deliberate break: clear `left_the_focus` in `set_focus` only
+        // where the focus moves. This stays at the foot of the list.
+        window.drag_to(30);
+        window.settle(10);
+        window.set_focus(1);
+        window.settle(10);
+        assert_eq!(window.top(), 1, "choosing the same row left it dragged");
     }
 
     /// The six keys, from one table.

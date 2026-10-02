@@ -604,7 +604,7 @@ impl PickerView<'_> {
                 let bar = crate::scrollbar(cells, list, above, total, self.theme);
                 // A row of the bar is a row of the screen, and what the
                 // window is moved by is a whole item.
-                crate::bars::in_items(&heights);
+                crate::bars::in_items(bar, &heights);
                 bar
             })
             .flatten();

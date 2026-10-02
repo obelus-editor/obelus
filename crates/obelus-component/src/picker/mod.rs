@@ -1514,7 +1514,11 @@ impl Picker {
         self.items = Arc::new(items);
         self.listings += 1;
         self.refilter();
-        self.select_row(selected);
+        // Only where the batch moved it: choosing the same row again is a
+        // choice, and would put a window the reader dragged back on it.
+        if self.window.focus() != selected {
+            self.select_row(selected);
+        }
     }
 
     /// Moves the selection by rows, stopping at the ends.
@@ -2324,6 +2328,9 @@ impl Picker {
     /// a fact about the order the items are in and not about any row on
     /// its own.
     fn refilter_typed(&mut self) {
+        // What was typed is a different list, and the reader is looking at
+        // the box rather than at where they dragged the window to.
+        self.window.back_to_the_focus();
         let said = self.query.said();
         let narrows = !said.is_empty()
             && !self.filtered_on.is_empty()
@@ -2526,7 +2533,13 @@ impl Picker {
         // A query can narrow the list to rows that cannot be chosen, or move
         // one under the selection: whatever else happens, the selection is
         // on a row a reader can press Enter on if there is one.
-        if let Some(choosable) = self.choosable(self.window.focus(), true) {
+        //
+        // Only where that moves it: rows arrive here from a walk still
+        // under way, and a window the reader has dragged would otherwise
+        // be put back on the selection by every batch.
+        if let Some(choosable) = self.choosable(self.window.focus(), true)
+            && choosable != self.window.focus()
+        {
             self.window.set_focus(choosable);
         }
 
@@ -2537,6 +2550,7 @@ impl Picker {
                 .iter()
                 .position(|(index, _)| self.items[*index].label == label)
             && self.can_choose(row)
+            && row != self.window.focus()
         {
             self.window.set_focus(row);
         }
@@ -2546,6 +2560,29 @@ impl Picker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A batch landing in a list the reader has dragged leaves it where
+    /// they dragged it.
+    ///
+    /// Deliberate breaks, each failing this on its own: choose the row
+    /// again in `relist` whether or not the batch moved it; and drop the
+    /// "only where that moves it" from `settled`. Either one puts the
+    /// window back on the selection with every batch of a history still
+    /// arriving, so the drag lasts until the next one.
+    #[test]
+    fn a_batch_arriving_leaves_a_dragged_list_where_it_was() {
+        let rows = |count: usize| (0..count).map(|n| named(&n.to_string())).collect();
+        let mut picker = Picker::new(rows(30), PickerLayout::Compact { rows: 10 });
+        picker.refresh_indices(10, 40);
+        picker.drag_to(15);
+        picker.refresh_indices(10, 40);
+        assert_eq!(picker.window().top(), 15, "the drag did not move the list");
+
+        picker.relist(rows(40));
+        picker.refresh_indices(10, 40);
+        assert_eq!(picker.window().top(), 15, "the batch undid the drag");
+        assert_eq!(picker.selected(), 0, "the batch chose something");
+    }
 
     /// A list that is only read is moved, not chosen in.
     ///

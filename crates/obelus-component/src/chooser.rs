@@ -222,7 +222,12 @@ impl Chooser {
     pub fn settle(&mut self, height: u16) {
         let rows = self.rows().len();
         self.window.set_count(rows);
-        self.window.set_focus(self.at.min(rows.saturating_sub(1)));
+        // Only where it moved, because this is once a frame: see
+        // `Window::set_focus`.
+        let at = self.at.min(rows.saturating_sub(1));
+        if at != self.window.focus() {
+            self.window.set_focus(at);
+        }
         self.window.settle(height);
     }
 

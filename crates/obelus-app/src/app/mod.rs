@@ -3751,6 +3751,33 @@ impl App {
         }
     }
 
+    /// Whether a press may take hold of this bar, with what is showing.
+    ///
+    /// What is showing owns the pointer as it owns the keys: with a list or
+    /// a page over the document, a bar of the document's left in sight above
+    /// it is still the document's, and the list puts the document back where
+    /// its selection is on the next frame -- so the drag would be undone as
+    /// it was made.
+    fn reaches(&self, whose: obelus_ui::bars::Whose) -> bool {
+        use obelus_ui::bars::Whose;
+
+        match whose {
+            Whose::Document | Whose::Conversation | Whose::Notes | Whose::Projects => {
+                !self.layers().covering()
+            }
+            Whose::Picker
+            | Whose::Naming
+            | Whose::Commands
+            | Whose::Preview
+            | Whose::Settings
+            | Whose::Counts
+            | Whose::Names
+            | Whose::Completion
+            | Whose::Documentation
+            | Whose::Hover => true,
+        }
+    }
+
     /// What the pointer did to a scrollbar, if it did anything to one.
     ///
     /// The bars are the ones the last frame left on the page, nearest the
@@ -3764,13 +3791,23 @@ impl App {
             Pointer::Moved => false,
             Pointer::Released => self.holding.take().is_some(),
             Pointer::Pressed => {
-                let Some(bar) = self.bars.iter().rev().find(|bar| bar.under(x, y)) else {
+                // A release can go missing -- let go outside the window --
+                // and a press is a fresh start whatever it lands on.
+                self.holding = None;
+                let Some(bar) = self
+                    .bars
+                    .iter()
+                    .rev()
+                    .find(|bar| bar.under(x, y) && self.reaches(bar.whose))
+                else {
                     return false;
                 };
                 let grip = bar.grip(y);
                 let (whose, top) = (bar.whose, bar.top_for(y, grip));
                 self.holding = Some((whose, grip));
-                self.drag_bar(whose, top);
+                if let Some(top) = top {
+                    self.drag_bar(whose, top);
+                }
                 true
             }
             Pointer::Dragged => {
@@ -3779,17 +3816,13 @@ impl App {
                 };
                 // The bar as the latest frame drew it, which may be none:
                 // the list it was beside has closed under the pointer.
-                let Some(top) = self
-                    .bars
-                    .iter()
-                    .rev()
-                    .find(|bar| bar.whose == whose)
-                    .map(|bar| bar.top_for(y, grip))
-                else {
+                let Some(bar) = self.bars.iter().rev().find(|bar| bar.whose == whose) else {
                     self.holding = None;
                     return true;
                 };
-                self.drag_bar(whose, top);
+                if let Some(top) = bar.top_for(y, grip) {
+                    self.drag_bar(whose, top);
+                }
                 true
             }
         }
