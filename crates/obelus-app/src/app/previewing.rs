@@ -733,10 +733,6 @@ impl App {
                     (subject, Marked::on(&buffer.cursor()))
                 })
                 .or_else(|| self.reading_now()),
-            // A tree is a whole checkout and no one file of it, so what
-            // shows is what the reader was reading -- the list folded over
-            // it, as it is over a conversation's row.
-            PickerValue::Worktree(_) => self.reading_now(),
             PickerValue::Place { path, line, .. } if lines => {
                 Some((Subject::File(path.clone()), matched(*line)))
             }
@@ -758,6 +754,9 @@ impl App {
             // A directory has nothing to show: what it holds goes under it
             // in the list itself.
             PickerValue::Directory(_)
+            // A tree is a whole checkout and no one file of it, and its tab
+            // shows no preview -- see `refresh_switching`.
+            | PickerValue::Worktree(_)
             | PickerValue::Command(_)
             // A conversation has no path and no cursor, and this list is
             // compact anyway: there is no room under it to show one in.

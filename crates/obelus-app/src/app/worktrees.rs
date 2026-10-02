@@ -244,7 +244,6 @@ impl App {
             picker.with_scopes(&names);
             picker.go_to_tab(tabs.iter().position(|shown| *shown == tab).unwrap_or(0));
         }
-        picker.previews();
         self.show_list(picker);
         self.worktrees.tabs = tabs;
         self.refresh_switching();
@@ -281,6 +280,15 @@ impl App {
             return;
         };
         picker.replace(items);
+        // Per tab, because the two are lists of different things: an open
+        // document is somewhere to look, and a tree is a whole checkout and
+        // no one file of it. Previewing the file being read under the
+        // worktrees said nothing about any row, and halved the list to say
+        // it.
+        match tab {
+            Tab::Documents => picker.previews(),
+            Tab::Worktrees => picker.stops_previewing(),
+        }
         picker.when_empty(empty);
         picker.before_typing(typing);
         // By the row itself rather than by its label, which is what

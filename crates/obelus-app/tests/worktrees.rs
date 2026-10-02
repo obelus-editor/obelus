@@ -236,6 +236,56 @@ fn the_worktrees_are_a_tab_of_what_is_open() {
     );
 }
 
+/// The worktrees tab shows no preview, and the documents tab beside it
+/// still does.
+///
+/// A tree is a whole checkout and no one file of it, so the file being
+/// read under its rows said nothing about any of them.
+///
+/// Broken deliberately by leaving the list previewing whichever tab it is
+/// on: the list is cut in two by a rule with an empty pane under it. And
+/// by previewing a tree as the file being read as well, which draws that
+/// file there.
+#[test]
+fn the_worktrees_tab_previews_nothing() {
+    let scratch = Scratch::new("worktrees-no-preview");
+    let (main, _, _) = repository(&scratch);
+    let asked = Arc::new(Asked::default());
+    let (mut app, _events) = window_on(&main, &asked);
+    app.open_for_test(&main.join("file.rs"));
+
+    press_function(&mut app, 2);
+    let documents = support::render(&mut app, 80, 24);
+    assert!(
+        documents.contains("fn main() {}"),
+        "the documents tab does not preview what is open:\n{documents}"
+    );
+
+    press(&mut app, KeyCode::Tab);
+    assert_eq!(tabs(&app).1, 1, "tab did not walk to the worktrees");
+    let worktrees = support::render(&mut app, 80, 24);
+    assert!(
+        !worktrees.contains("fn main() {}"),
+        "the worktrees tab previews the file being read:\n{worktrees}"
+    );
+    // A preview is under a rule of its own, so a list that previews has one
+    // more row of rule across the screen than one that does not.
+    let ruled = |screen: &str| {
+        screen
+            .lines()
+            .filter(|line| {
+                line.split_once('|')
+                    .is_some_and(|(_, row)| !row.is_empty() && row.chars().all(|c| c == '─'))
+            })
+            .count()
+    };
+    assert_eq!(
+        ruled(&worktrees) + 1,
+        ruled(&documents),
+        "the worktrees tab is still cut in two for a preview:\n{worktrees}"
+    );
+}
+
 /// A tree inside the main checkout is named the way the ones beside it
 /// are: from the directory the main checkout sits in.
 ///
