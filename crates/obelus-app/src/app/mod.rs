@@ -799,6 +799,14 @@ pub struct App {
     /// and spends no column: a row that said something there would be
     /// saying it about a question that does not arise.
     head: Option<obelus_git::Head>,
+    /// Whether the tree Obelus was put on has gone from disk.
+    ///
+    /// For good: a tree made again at the same path is somebody else's
+    /// tree, and every watch Obelus had in this one went with it. What is
+    /// open stays open -- a document keeps what it has, and closing it is
+    /// the reader's -- and nothing about the project is asked or written
+    /// from here on. See [`App::the_tree_has_gone`].
+    gone: bool,
     /// Whether to open on the file list.
     ///
     /// A directory on the command line is a reader saying which project
@@ -966,6 +974,7 @@ impl App {
             // one without the other would be testing an application no
             // reader can have.
             head: None,
+            gone: false,
             list_at_start: false,
             should_quit: false,
         }
@@ -1161,6 +1170,45 @@ impl App {
     #[must_use]
     pub fn head(&self) -> Option<&obelus_git::Head> {
         self.head.as_ref()
+    }
+
+    /// Whether there is a project to do anything in.
+    ///
+    /// Not while the welcome screen is still asking for one, and not once
+    /// the one it was has gone. Both are known without doing any work,
+    /// which is what a requirement has to be.
+    #[must_use]
+    pub fn has_a_project(&self) -> bool {
+        self.chooser.is_none() && !self.gone
+    }
+
+    /// Whether the tree Obelus was put on has gone from disk.
+    #[must_use]
+    pub const fn tree_has_gone(&self) -> bool {
+        self.gone
+    }
+
+    /// The tree has gone from under this window.
+    ///
+    /// Heard from the watcher rather than looked for: the tree going is
+    /// its contents going, which are changes like any other, and every
+    /// change is asked first whether the tree is still there. Nothing is
+    /// polled, which leaves the platforms
+    /// whose watcher does not report a watched directory going with the
+    /// half that does not depend on it -- what keeps the project's things
+    /// from being written into a project that has gone is asked of the disk
+    /// at the moment of writing (`obelus_git::project`).
+    ///
+    /// The window stays, and what is open in it: a file with unsaved work
+    /// in it is somebody's work, and the reader is the one to say what
+    /// becomes of it. What goes is the project -- everything keyed by it
+    /// is dim (`has_a_project`), the watches drawn from it are given up
+    /// (`settle_the_watches`), and the branch it had is not a branch
+    /// anything is on any more.
+    pub(super) fn the_tree_has_gone(&mut self) {
+        tracing::warn!(tree = %self.working_directory.display(), "the tree Obelus is on has gone");
+        self.gone = true;
+        self.head = None;
     }
 
     /// Says to open on the file list rather than on a file.
@@ -2606,6 +2654,23 @@ impl App {
                 }
             }
             Event::Watched(obelus_watch::Changed { path }) => {
+                // Whether the tree has gone, asked of every change and
+                // before anything else is made of it. A tree going is a
+                // change to everything in it, in whatever order the kernel
+                // and the debouncing leave them -- and the tree's own going
+                // is not reliably among them: measured on Linux, an
+                // `rm -rf` arrived as the files and directories inside it
+                // and nothing for the root. Taken one at a time, the
+                // project's settings file going is the reader taking the
+                // project's settings away, and git's `HEAD` going is a
+                // branch moving. One `stat` per change, which is a change
+                // somebody made.
+                if self.has_a_project() && obelus_git::is_gone(&self.working_directory) {
+                    self.the_tree_has_gone();
+                }
+                // And from here, nothing that changed is news about the
+                // project when there is no project for it to be about.
+                let ours = self.has_a_project();
                 // The settings, by either of their names: the watcher
                 // reports whichever path the change arrived on, and a
                 // change that came from a repository arrives on the file
@@ -2627,7 +2692,8 @@ impl App {
                 // order -- whoever made the directory may have written the
                 // file into it before the watch was attached, and a watch
                 // says what happens next rather than what already has.
-                let appeared = path.parent() == Some(self.working_directory.as_path())
+                let appeared = ours
+                    && path.parent() == Some(self.working_directory.as_path())
                     && project.parent() == Some(path.as_path());
                 if appeared {
                     self.watch_the_projects_settings();
@@ -2638,7 +2704,7 @@ impl App {
                 // writes the file into it, and the two arrive together --
                 // so by the time the watch is attached the file is there
                 // and its own event has been and gone.
-                let project = path == project || appeared;
+                let project = ours && (path == project || appeared);
                 if readers || project {
                     self.reread_config();
                 } else if self.is_a_theme(&path) {
@@ -2646,19 +2712,19 @@ impl App {
                     // the name in the settings has not moved, and what it
                     // stands for has.
                     self.reread_theme();
-                } else if self.is_a_claim(&path) {
+                } else if ours && self.is_a_claim(&path) {
                     // A conversation taken up or let go in another window
                     // -- including one let go by that window dying, which
                     // is a file closed by a writer and nothing else.
                     self.reread_who_holds_what();
-                } else if self.is_the_sessions_file(&path) {
+                } else if ours && self.is_the_sessions_file(&path) {
                     // Which of the project's notes has a conversation,
                     // written by another Obelus -- or by this one, which
                     // hears its own writes like anybody else's and has
                     // already kept what it wrote. Reading it again costs
                     // one parse and keeps the two windows in step.
                     self.reread_the_sessions();
-                } else if self.is_the_notes_file(&path) {
+                } else if ours && self.is_the_notes_file(&path) {
                     // What the project means to come back to, written by
                     // another Obelus, the reader's own editor -- or by this
                     // Obelus, which hears its own writes like anybody
@@ -2673,7 +2739,7 @@ impl App {
                     // open: a reader talking about a note has usually
                     // walked away from the list of them.
                     self.reread_the_notes_kept();
-                } else if obelus_git::state_moved(&path) {
+                } else if ours && obelus_git::state_moved(&path) {
                     self.forget_what_git_said();
                 } else {
                     self.reload_path(&path);
@@ -4499,6 +4565,9 @@ impl Screen for App {
     }
     fn head(&self) -> Option<&obelus_git::Head> {
         App::head(self)
+    }
+    fn tree_has_gone(&self) -> bool {
+        App::tree_has_gone(self)
     }
     fn working_directory(&self) -> &Path {
         App::working_directory(self)

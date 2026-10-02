@@ -502,7 +502,7 @@ pub(crate) fn state_of_its_own() {
 /// project, so a test that writes a file of them has to ask where that is
 /// -- and make the directory, which Obelus itself makes on its way past.
 pub(crate) fn make_room_for_notes(root: &std::path::Path) {
-    let path = obelus_git::todo::path(root);
+    let path = obelus_git::todo::path(root).expect("a tree that is there");
     let directory = path.parent().expect("the notes are in a directory");
     std::fs::create_dir_all(directory).expect("the directory");
 }

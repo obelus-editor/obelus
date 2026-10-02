@@ -282,7 +282,9 @@ impl App {
         let todo = match obelus_git::todo::read(&self.working_directory) {
             obelus_git::todo::Reading::Nothing => return Some(Todo::default()),
             obelus_git::todo::Reading::Notes(todo) => {
-                self.nothing_wrong_with(&obelus_git::todo::path(&self.working_directory));
+                if let Some(path) = obelus_git::todo::path(&self.working_directory) {
+                    self.nothing_wrong_with(&path);
+                }
                 todo
             }
             // Nothing is shown and nothing is written. An empty page is not
@@ -297,14 +299,15 @@ impl App {
                 // hand -- so being told the whole list will not read
                 // without being told which line is a reader reading it
                 // all.
-                let path = obelus_git::todo::path(&self.working_directory);
-                self.nothing_wrong_with(&path);
-                self.obelus_says(
-                    &path,
-                    at,
-                    obelus_lsp::trouble::Severity::Error,
-                    &format!("The notes will not read\n{why}"),
-                );
+                if let Some(path) = obelus_git::todo::path(&self.working_directory) {
+                    self.nothing_wrong_with(&path);
+                    self.obelus_says(
+                        &path,
+                        at,
+                        obelus_lsp::trouble::Severity::Error,
+                        &format!("The notes will not read\n{why}"),
+                    );
+                }
                 return None;
             }
         };
@@ -362,7 +365,7 @@ impl App {
     /// Whether a path that changed is the file the notes are kept in.
     #[must_use]
     pub(super) fn is_the_notes_file(&self, path: &std::path::Path) -> bool {
-        path == obelus_git::todo::path(&self.working_directory)
+        obelus_git::todo::path(&self.working_directory).is_some_and(|notes| path == notes)
     }
 
     /// Takes the file again, because somebody else wrote it.

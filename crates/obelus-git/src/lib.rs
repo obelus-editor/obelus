@@ -151,28 +151,54 @@ fn in_repository(repository: &gix::Repository, path: &Path) -> Option<PathBuf> {
 /// it: `canonicalize` goes through `GetFinalPathNameByHandle`, so the
 /// spelling the reader typed comes back as the one the disk has. Elsewhere
 /// it resolves the symlinks that would otherwise keep two paths to one
-/// directory apart. A path that will not canonicalise -- it has gone, or
-/// cannot be opened -- is taken as it came, because a name Obelus cannot
-/// work out is worse than one that is merely long.
+/// directory apart. A path that will not canonicalise because it cannot be
+/// opened is taken as it came, because a name Obelus cannot work out is
+/// worse than one that is merely long.
+///
+/// **A tree that has gone names no project.** It used to be taken as it
+/// came, like the one that cannot be opened, and that answer was a
+/// different project: what says a linked worktree belongs to its
+/// repository is git, and git cannot be asked about a checkout that is not
+/// there -- so the name fell back to the tree's own path, the notes page
+/// came up empty, and the next note was written into a second file nobody
+/// would ever find again. Nothing is the honest answer, and every caller
+/// already has one for it: it is what a machine with nowhere to keep state
+/// says.
 ///
 /// Not a path: a file name. Every character a file name cannot safely carry
 /// becomes `_`, which is many-to-one and does not matter -- what is wanted
 /// is that one project is one name, not that the name can be read back.
 #[must_use]
-pub fn project(root: &Path) -> String {
+pub fn project(root: &Path) -> Option<String> {
+    if is_gone(root) {
+        return None;
+    }
     let named = main_checkout(root).unwrap_or_else(|| root.to_path_buf());
     let named = named
         .canonicalize()
         .or_else(|_| std::path::absolute(&named))
         .unwrap_or(named);
-    named
-        .to_string_lossy()
-        .chars()
-        .map(|character| match character {
-            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '.' => character,
-            _ => '_',
-        })
-        .collect()
+    Some(
+        named
+            .to_string_lossy()
+            .chars()
+            .map(|character| match character {
+                'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '.' => character,
+                _ => '_',
+            })
+            .collect(),
+    )
+}
+
+/// Whether a path is certainly not there any more.
+///
+/// Certainly: an answer the filesystem would not give -- a directory that
+/// cannot be read, a disk that did not answer -- is not the same as one
+/// that says the path has gone, and only the second is a reason to stop
+/// treating it as somewhere.
+#[must_use]
+pub fn is_gone(path: &Path) -> bool {
+    path.try_exists().is_ok_and(|there| !there)
 }
 
 /// The working tree a path is in, where it is in one.

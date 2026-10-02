@@ -195,7 +195,7 @@ pub fn path(root: &Path) -> Option<PathBuf> {
     Some(
         obelus_logging::state_directory()?
             .join("sessions")
-            .join(format!("{}.toml", obelus_git::project(root))),
+            .join(format!("{}.toml", obelus_git::project(root)?)),
     )
 }
 

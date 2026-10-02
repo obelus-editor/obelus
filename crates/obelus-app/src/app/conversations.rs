@@ -694,11 +694,16 @@ impl App {
     /// one key and talked about with the next, and two keys can be drained
     /// before a frame is drawn between them.
     pub(super) fn settle_the_watches(&mut self) {
-        let notes = self.notes_document().is_some();
-        let listing = !self.conversing.agents.is_empty() && self.picker.is_some();
-        let about_a_note = self
-            .conversation()
-            .is_some_and(|talk| matches!(&talk.topic, Topic::Note(_)));
+        // All three are the project's, and are given up with it: a page
+        // left open on a tree that has gone is a page of what the tree
+        // had, and nothing will be written to it from here.
+        let project = self.has_a_project();
+        let notes = project && self.notes_document().is_some();
+        let listing = project && !self.conversing.agents.is_empty() && self.picker.is_some();
+        let about_a_note = project
+            && self
+                .conversation()
+                .is_some_and(|talk| matches!(&talk.topic, Topic::Note(_)));
 
         // A directory rather than a file: a claim is a file appearing and
         // going again, so there is nothing here to watch by name. Wanted by
@@ -721,9 +726,12 @@ impl App {
         // And the notes themselves: the page reads them, and so does the
         // header of a conversation about one -- which is usually open with
         // that page shut.
-        self.settle_a_watch(NOTES, notes || about_a_note, How::File, |root| {
-            Some(obelus_git::todo::path(root))
-        });
+        self.settle_a_watch(
+            NOTES,
+            notes || about_a_note,
+            How::File,
+            obelus_git::todo::path,
+        );
     }
 
     /// Takes or gives up one of them, so that what is watched matches what

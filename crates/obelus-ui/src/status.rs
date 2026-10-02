@@ -106,6 +106,8 @@ pub struct StatusView<'a> {
     /// -- a row saying something there would be answering a question that
     /// does not arise.
     head: Option<&'a obelus_git::Head>,
+    /// Whether that tree has gone, which is said where the branch would be.
+    gone: bool,
 }
 
 impl<'a> StatusView<'a> {
@@ -130,6 +132,7 @@ impl<'a> StatusView<'a> {
             theme: app.theme(),
             working_directory: app.working_directory(),
             head: app.head(),
+            gone: app.tree_has_gone(),
         }
     }
 }
@@ -264,6 +267,20 @@ fn branch_badge(head: Option<&obelus_git::Head>) -> String {
     match obelus_icons::enabled() {
         true => format!("{}  {said}  ", obelus_icons::ui::BRANCH),
         false => format!("{said}  "),
+    }
+}
+
+/// What stands where the branch would, for a tree that has gone from disk.
+///
+/// Where the branch is, because it is the same kind of fact: what the path
+/// beside it is a path *of*. With the mark a file that has gone wears, and
+/// in words that say which of them it is -- the file beside it says
+/// `Deleted` for itself.
+#[must_use]
+fn gone_badge() -> String {
+    match obelus_icons::enabled() {
+        true => format!("{}  Tree gone  ", obelus_icons::ui::STALE),
+        false => "[Tree gone]  ".to_string(),
     }
 }
 
@@ -745,7 +762,10 @@ impl StatusView<'_> {
         // hold both -- the rule the rest of this row follows, and the right
         // way round, because the path is what the reader is looking at and
         // half a branch name is worse than none.
-        let branch = branch_badge(self.head);
+        let branch = match self.gone {
+            true => gone_badge(),
+            false => branch_badge(self.head),
+        };
         let branch_width = text_width(&branch);
 
         // One column of padding at each end, at least one between the two
@@ -795,7 +815,14 @@ impl StatusView<'_> {
                 // `master  src/app/mod.rs` as a path with a first
                 // component -- and the branch is a thing a reader looks at
                 // deliberately rather than one that should catch the eye.
-                style.fg(self.theme.gutter),
+                //
+                // A tree that has gone is the other way round: it is the
+                // one thing on the row a reader must not miss, in the ink
+                // a file that has gone is marked in.
+                style.fg(match self.gone {
+                    true => self.theme.status_stale,
+                    false => self.theme.gutter,
+                }),
             );
         }
         if let Ok(offset) = u16::try_from(1usize.saturating_add(branch_width)) {

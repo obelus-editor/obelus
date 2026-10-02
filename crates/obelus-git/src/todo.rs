@@ -38,8 +38,13 @@ use obelus_text::coordinates::LineNumber;
 /// gitignore -- Obelus's own repository is one of them -- so the notes were
 /// one reader's own already. Being one reader's own, they were also one
 /// *checkout's*, which is the half of it that was actually wrong.
+///
+/// `None` for a tree that has gone, which names no project -- see
+/// [`crate::project`]. Beside a checkout as well: a file there is a file in
+/// a directory that is not there, and making it would make the checkout
+/// again around it.
 #[must_use]
-pub fn path(root: &Path) -> PathBuf {
+pub fn path(root: &Path) -> Option<PathBuf> {
     let Some(state) = obelus_logging::state_directory() else {
         // Nowhere of this machine's own to keep them, so the checkout is
         // the only thing left to keep them beside. A reader on such a
@@ -47,18 +52,31 @@ pub fn path(root: &Path) -> PathBuf {
         // the most that can be said there.
         return beside_a_checkout(root);
     };
-    state
-        .join("todo")
-        .join(format!("{}.toml", crate::project(root)))
+    Some(
+        state
+            .join("todo")
+            .join(format!("{}.toml", crate::project(root)?)),
+    )
 }
 
 /// Where they go on a machine with nowhere of its own to keep state.
 ///
 /// A checkout's rather than a project's, because a checkout is the only
 /// thing there is to name them after here.
-fn beside_a_checkout(root: &Path) -> PathBuf {
-    root.join(".obelus").join("todo.toml")
+fn beside_a_checkout(root: &Path) -> Option<PathBuf> {
+    (!crate::is_gone(root)).then(|| root.join(".obelus").join("todo.toml"))
 }
+
+/// [`GONE`], as the error a write fails with.
+fn gone() -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::NotFound, GONE)
+}
+
+/// What reading or writing the notes of a tree that has gone says.
+///
+/// Not "there are none": they are where they always were, under the name
+/// of a project this path can no longer be shown to belong to.
+const GONE: &str = "The tree these notes belong to has gone";
 
 /// The place a note is about, as it was written down.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -455,7 +473,9 @@ impl Reading {
 /// What is in a project's file.
 #[must_use]
 pub fn read(root: &Path) -> Reading {
-    let path = path(root);
+    let Some(path) = path(root) else {
+        return Reading::Unreadable(GONE.to_string(), None);
+    };
     let text = match std::fs::read_to_string(&path) {
         Ok(text) => text,
         // Not there yet is the ordinary case and not a failure: the file is
@@ -821,7 +841,7 @@ impl Todo {
     /// spent a while having, and an outside caller holding one is exactly
     /// how it came back.
     fn write(&self, root: &Path) -> std::io::Result<()> {
-        let path = path(root);
+        let path = path(root).ok_or_else(gone)?;
         if let Some(directory) = path.parent() {
             std::fs::create_dir_all(directory)?;
         }
@@ -899,7 +919,7 @@ const WAIT_FOR_THE_OTHER: std::time::Duration = std::time::Duration::from_millis
 pub fn change<T>(root: &Path, what: impl FnOnce(&mut Todo) -> T) -> Result<(Todo, T), NotChanged> {
     use std::io::Write as _;
 
-    let path = path(root);
+    let path = path(root).ok_or_else(|| NotChanged::Unwritable(gone()))?;
     if let Some(directory) = path.parent() {
         std::fs::create_dir_all(directory).map_err(NotChanged::Unwritable)?;
     }
@@ -1297,7 +1317,7 @@ mod tests {
             "a project with no notes file is not a project that starts empty"
         );
 
-        let path = path(&scratch);
+        let path = path(&scratch).expect("a tree that is there");
         std::fs::create_dir_all(path.parent().expect("the directory")).expect("the directory");
         std::fs::write(&path, "[[todo]]\nsaid = \"a note\"\n").expect("the notes");
         let Reading::Notes(todo) = read(&scratch) else {
@@ -1328,7 +1348,8 @@ mod tests {
             std::env::temp_dir().join(format!("obelus-todo-guard-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&scratch);
         state_of_its_own();
-        let path = path(&scratch);
+        std::fs::create_dir_all(&scratch).expect("the tree");
+        let path = path(&scratch).expect("a tree that is there");
         std::fs::create_dir_all(path.parent().expect("the directory")).expect("the directory");
         let half = "[[todo]]\nid = \"0123456A\"\nsaid = \"half a no";
         std::fs::write(&path, half).expect("the half-written notes");
@@ -1353,6 +1374,55 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&scratch);
+    }
+
+    /// The notes of a tree that has gone are neither read nor written, and
+    /// nothing is made where the tree was.
+    ///
+    /// They are not nothing -- they are where they always were, under a
+    /// project this path can no longer be shown to be -- so a page asking
+    /// is told they will not read, which is the answer that is never
+    /// written over.
+    ///
+    /// Broken deliberately by letting `project` take a path that has gone
+    /// as it came, which is what it did: the notes read back as though
+    /// the tree were still there, and the note written next goes into the
+    /// file of a project nobody will open again.
+    #[test]
+    fn the_notes_of_a_tree_that_has_gone_are_left_alone() {
+        let scratch = std::env::temp_dir().join(format!("obelus-todo-gone-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&scratch);
+        state_of_its_own();
+        std::fs::create_dir_all(&scratch).expect("the tree");
+        let file = path(&scratch).expect("a tree that is there");
+        change(&scratch, |todo| {
+            todo.notes.push(note("written while it was there"))
+        })
+        .expect("a note written down");
+        let written = std::fs::read_to_string(&file).expect("the notes");
+
+        std::fs::remove_dir_all(&scratch).expect("the tree going");
+        assert!(
+            matches!(read(&scratch), Reading::Unreadable(..)),
+            "the notes of a tree that has gone read as if it were there"
+        );
+        assert!(
+            matches!(
+                change(&scratch, |todo| todo.notes.push(note("written after"))),
+                Err(NotChanged::Unwritable(_))
+            ),
+            "a note was written down for a tree that has gone"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&file).expect("the notes"),
+            written,
+            "the notes the tree had were changed after it went"
+        );
+        assert!(
+            !scratch.exists(),
+            "the tree was made again around its notes"
+        );
+        let _ = std::fs::remove_file(&file);
     }
 
     /// A note that says nothing is not a note.

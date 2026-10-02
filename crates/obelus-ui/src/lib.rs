@@ -429,6 +429,8 @@ pub trait Screen {
     fn working_directory(&self) -> &Path;
     /// Which branch that tree has checked out, where it is a repository.
     fn head(&self) -> Option<&obelus_git::Head>;
+    /// Whether that tree has gone from disk.
+    fn tree_has_gone(&self) -> bool;
 }
 
 pub mod card;
