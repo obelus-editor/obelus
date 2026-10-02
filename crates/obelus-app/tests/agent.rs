@@ -10321,3 +10321,36 @@ fn a_question_taken_back_comes_off_the_card() {
         screen(&mut app)
     );
 }
+
+/// A list opened over a question and closed again leaves the question.
+///
+/// The question is a card in the conversation, not the list: walking away
+/// from a list used to refuse whatever the conversation on screen was
+/// asking, which was right when questions were lists and answered "no" for
+/// a reader who had only looked at what else was open.
+///
+/// Deliberate break: refuse the permission in `leave(Layer::Picker)` again.
+/// The question is gone once the list closes.
+#[test]
+fn a_list_closed_over_a_question_leaves_it_asked() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/edit");
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", App::is_asking_permission);
+
+    support::press(&mut app, KeyCode::F(2));
+    assert!(
+        app.picker().is_some(),
+        "F2 opened no list over the question"
+    );
+    support::press(&mut app, KeyCode::Esc);
+    assert!(app.picker().is_none(), "escape left the list open");
+    assert!(
+        app.is_asking_permission(),
+        "closing a list refused the question under it"
+    );
+}

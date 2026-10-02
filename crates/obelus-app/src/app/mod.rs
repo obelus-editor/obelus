@@ -2123,8 +2123,7 @@ impl App {
     ///
     /// The same door escape goes through, so a view cannot be left one way
     /// and not the other: the notes are written down however the reader
-    /// leaves them, and a list that was an agent's question is answered on
-    /// the way out however it goes.
+    /// leaves them.
     pub(crate) fn leave(&mut self, layer: Layer) {
         match layer {
             Layer::Picker => {
@@ -2141,18 +2140,11 @@ impl App {
                 // indexes into. A row is chosen by its position, so offers
                 // outliving their list are offers pointing at nothing.
                 self.code_actions.clear();
-                // A list that was an agent's question has to be answered
-                // even when the reader walks away from it: an agent whose
-                // permission request goes unanswered waits for ever.
-                if self.is_asking_permission() {
-                    self.refuse_permission();
-                }
-                // And so does a form: a field left unanswered is the whole
-                // form declined, because the agent is waiting on all of it.
-                if self.is_asking() {
-                    self.refuse_asking();
-                }
-                self.ask_the_next(talking::Whose::Whoever);
+                // Nothing about the agent's question: that is a card in the
+                // conversation, not a list, and a list opened over it and
+                // closed again -- or one that took the reader to another
+                // conversation -- was never the question. Refusing it here
+                // answered "no" for a reader who had only looked at F2.
                 // A theme previewed but not chosen, and the file a
                 // question about leaving took the reader to. The two
                 // things a picker changes about the application while it
