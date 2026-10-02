@@ -352,8 +352,9 @@ impl App {
         // `.worktree/name` -- where the feature-branch workflow puts one --
         // leaves it inside, and called by the way down to it from there.
         // Naming the second by its whole path while the first had a word
-        // made the main checkout a name and the others addresses. A tree
-        // anywhere else is said in full, because nothing shorter is true.
+        // made the main checkout a name and the others addresses. Anything
+        // under that directory is called by the way down to it, and a tree
+        // outside it is said in full, because nothing shorter is true.
         // Resolved, because git hands the main checkout back resolved and
         // the linked ones as they were added -- which on a mac, whose
         // temporary directory is a link, are two spellings of one place.
@@ -361,7 +362,7 @@ impl App {
             .worktrees
             .listed
             .first()
-            .and_then(|first| first.tree.path.parent().map(resolved));
+            .and_then(|first| named_from(&first.tree.path));
         self.worktrees
             .listed
             .iter()
@@ -513,6 +514,17 @@ fn same_tree(one: &Path, other: &Path) -> bool {
 /// A path with its links followed, or as it was written where it has gone.
 fn resolved(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// The directory rows are named from: the one the main checkout sits in.
+///
+/// Not the root of the disk. A main checkout at `/repo` sits in `/`, and
+/// every path there is under it -- so a tree at `/tmp/x` would have been
+/// called `tmp/x`, a path with its first character taken off.
+fn named_from(main: &Path) -> Option<PathBuf> {
+    main.parent()
+        .filter(|parent| parent.parent().is_some())
+        .map(resolved)
 }
 
 /// A path with its links followed as far as it is still there, and the
@@ -745,4 +757,26 @@ fn a_key() -> String {
         hasher.finish()
     };
     format!("{:016x}{:016x}", half(), half())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A main checkout at the root of a disk names nothing from where it
+    /// sits, and one anywhere else names from its parent.
+    ///
+    /// Deliberate break: drop the filter in `named_from`, and `/repo`
+    /// names every row from `/`.
+    #[test]
+    fn rows_are_not_named_from_the_root() {
+        let root = std::env::temp_dir()
+            .ancestors()
+            .last()
+            .expect("a path has a root")
+            .to_path_buf();
+        assert_eq!(named_from(&root.join("repo")), None);
+        let deeper = root.join("nowhere-obelus-made").join("repo");
+        assert_eq!(named_from(&deeper), Some(root.join("nowhere-obelus-made")));
+    }
 }
