@@ -46,13 +46,15 @@
 //! page is what the reader said, and Obelus adds to their half of it rather
 //! than rewriting it.
 //!
-//! Stopping the turn releases them. Escape means "stop what the agent is
-//! doing", not "unsay what I said" -- it used to mean both, because the
-//! words had been taken off the page into a queue and Obelus sending them
-//! unasked would have been Obelus speaking for them. They are on the page
-//! now, and taking one back is a key on the row it is about. They still go
-//! in the order they were typed: a queue that let a later message overtake
-//! an earlier one would put their own words to the agent back to front.
+//! Stopping the turn puts them back in the box, all of them, joined the way
+//! they would have gone. It released them for a while, on the grounds that
+//! escape means "stop what the agent is doing" and not "unsay what I said":
+//! so one press stopped the turn and started the next, the mark went on
+//! turning under `Stopped`, and the second press -- which every reader made
+//! -- stopped their own words. In the box they are neither unsaid nor said
+//! for them, and enter is the one key that sends. They still go in the
+//! order they were typed: a queue that let a later message overtake an
+//! earlier one would put their own words to the agent back to front.
 
 use obelus_agent::acp;
 use obelus_component::{card::Card, chat::Chat, picker::Picker};
