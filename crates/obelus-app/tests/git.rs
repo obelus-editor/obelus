@@ -5615,6 +5615,80 @@ fn a_worktree_and_its_repository_are_one_project() {
     );
 }
 
+/// Every checkout a repository has, asked from any of them: the main one
+/// first, what each has checked out, and whether it is still there.
+///
+/// Three linked trees, because each says something the others cannot: one
+/// on a branch, one on a bare commit, and one deleted without git being
+/// told -- which git goes on listing, and which is the one the reader can
+/// do nothing with.
+///
+/// Broken deliberately three ways, one at a time: `there` answered `true`
+/// for every tree, the main checkout left out of the chain, and the linked
+/// trees' `HEAD` read from the repository the question was asked in rather
+/// than from each tree's own -- each fails its own line below.
+#[test]
+fn every_worktree_is_listed_with_what_it_has_and_whether_it_is_there() {
+    let repository = Repository::new("worktrees", "fn main() {}\n");
+    let beside = |name: &str| {
+        let path = repository
+            .directory()
+            .with_file_name(format!("obelus-worktrees-{}-{name}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        path
+    };
+    let (branched, detached, deleted) = (beside("branched"), beside("detached"), beside("deleted"));
+    let add = |path: &std::path::Path, how: &[&str]| {
+        let mut arguments = vec!["worktree", "add", "--quiet"];
+        arguments.extend_from_slice(how);
+        arguments.push(path.to_str().expect("a path"));
+        repository.run(&arguments);
+    };
+    add(&branched, &["-b", "elsewhere"]);
+    add(&detached, &["--detach"]);
+    add(&deleted, &["-b", "doomed"]);
+    std::fs::remove_dir_all(&deleted).expect("deleting a worktree behind git's back");
+
+    let listed = obelus_git::worktrees(&branched);
+    let said: Vec<(String, obelus_git::Head, bool)> = listed
+        .iter()
+        .map(|tree| {
+            let name = tree.path.file_name().expect("a name").to_string_lossy();
+            (name.to_string(), tree.head.clone(), tree.there)
+        })
+        .collect();
+    let named = |path: &std::path::Path| {
+        path.file_name()
+            .expect("a name")
+            .to_string_lossy()
+            .to_string()
+    };
+    let branch = |name: &str| obelus_git::Head::Branch(name.to_string());
+    assert_eq!(
+        said.first(),
+        Some(&(named(&repository.directory()), branch("master"), true)),
+        "the main checkout is not first"
+    );
+    for expected in [
+        (named(&branched), branch("elsewhere"), true),
+        (named(&detached), obelus_git::Head::Detached, true),
+        (named(&deleted), branch("doomed"), false),
+    ] {
+        assert!(said.contains(&expected), "{expected:?} is not in {said:?}");
+    }
+    assert_eq!(said.len(), 4, "{said:?}");
+    assert!(obelus_git::has_another_worktree(&repository.directory()));
+
+    // And one alone has nowhere else to go.
+    let alone = Repository::new("worktree-alone", "fn main() {}\n");
+    assert_eq!(obelus_git::worktrees(&alone.directory()).len(), 1);
+    assert!(!obelus_git::has_another_worktree(&alone.directory()));
+
+    for path in [branched, detached] {
+        let _ = std::fs::remove_dir_all(path);
+    }
+}
+
 /// The pairs the history sweep turned up, kept so the question has an answer
 /// that does not move.
 ///

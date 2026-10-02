@@ -784,6 +784,11 @@ impl App {
     /// would be a second key, a second thing to learn, and two answers to
     /// "where was I".
     pub fn open_document_picker(&mut self) {
+        self.open_switching(super::worktrees::Tab::Documents);
+    }
+
+    /// The rows of what is already open.
+    pub(super) fn document_rows(&mut self) -> Vec<PickerItem> {
         // Before the buffers are borrowed to build the rows.
         self.gather_statuses();
         // In the order they were opened, which is the order the slots are
@@ -806,41 +811,14 @@ impl App {
         let notes = obelus_git::todo::read(&self.working_directory)
             .notes()
             .unwrap_or_default();
-        let items = open
-            .map(|(index, document)| match document {
-                Document::Chat(talk) => self.conversation_row(index, talk, talker, &notes),
-                Document::File(buffer) => {
-                    Self::file_row(index, buffer, statuses, &self.working_directory)
-                }
-                Document::Notes(notes) => Self::notes_row(index, notes),
-            })
-            .collect();
-        let mut picker = Picker::new(items, PickerLayout::FullArea);
-        // Reachable with nothing open at all, which is how Obelus starts --
-        // and was not, for as long as the command asked for a file.
-        picker.when_empty("Nothing is open");
-        picker.before_typing("Filter open documents");
-        picker.previews();
-        // Opened on whatever is being read, conversation or file: a list
-        // that started somewhere arbitrary would make the reader find where
-        // they are before they can leave it.
-        //
-        // By the row itself rather than by its label, which is what `prefer`
-        // is keyed on: two conversations nobody has named yet are both
-        // called the same thing, and a list keyed on what a row *says* would
-        // open on the first of them. The file list has to prefer by label
-        // because its rows arrive in batches and the one worth starting on
-        // is usually not there yet; every row of this list is here already,
-        // so it can be pointed at outright.
-        let here = self.current.and_then(|here| {
-            picker
-                .matches()
-                .position(|item| matches!(item.value, PickerValue::Document(id) if id == here))
-        });
-        if let Some(row) = here {
-            picker.select_row(row);
-        }
-        self.show_list(picker);
+        open.map(|(index, document)| match document {
+            Document::Chat(talk) => self.conversation_row(index, talk, talker, &notes),
+            Document::File(buffer) => {
+                Self::file_row(index, buffer, statuses, &self.working_directory)
+            }
+            Document::Notes(notes) => Self::notes_row(index, notes),
+        })
+        .collect()
     }
 
     /// Stops showing whatever is being read.

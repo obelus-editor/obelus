@@ -26,6 +26,7 @@
 
 mod blink;
 mod clipboard;
+mod elsewhere;
 mod font;
 mod grid;
 mod keys;

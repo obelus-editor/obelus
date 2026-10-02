@@ -665,6 +665,7 @@ impl super::App {
         // opened, for the rest of the session.
         self.offer_the_tools();
         self.watch_the_project();
+        self.say_where_this_window_is();
         for file in &opening.files {
             self.open(file);
         }

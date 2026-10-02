@@ -160,6 +160,12 @@ pub mod ui {
     /// holds, and the reader's question about the row is whether the key
     /// will work on it.
     pub const ELSEWHERE: char = '\u{f033e}';
+    /// A worktree another Obelus has open in a window, which choosing goes
+    /// to rather than opening a second.
+    ///
+    /// A window, because that is what is there to go to: the lock beside a
+    /// conversation is a refusal, and this row is the opposite.
+    pub const WINDOW: char = '\u{f08c6}';
     /// A directory, on a row whose children are what it holds.
     ///
     /// The plain folder rather than [`TREE`]: that one is the whole of what
@@ -275,6 +281,9 @@ pub fn for_command(command: obelus_command::Command) -> char {
         // somewhere with a different name.
         Command::FileRename => '\u{f0770}',
         Command::DocumentList => '\u{f0222}',
+        // The project taken as a whole, which is what a worktree is: the
+        // same folder the counts hang their languages from.
+        Command::WorktreeList => ui::TREE,
         Command::DocumentClose => '\u{f0b98}',
         Command::PreviewToggle => '\u{f0354}',
         Command::ThemeSelect => '\u{f03d8}',

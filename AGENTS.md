@@ -540,7 +540,10 @@ crates/
                       names another whole view swaps rather than stacks, and a
                       view that bound the key beats the swap (app/switching); a
                       newer Obelus is asked about once a day, not once a start
-                      (app/releases); a
+                      (app/releases); only where Obelus draws its own window, a
+                      window on a tree is a claim held the way a
+                      conversation's is, a claim appears already held, and a
+                      tree that has gone is nowhere to go (app/worktrees); a
                       conversation takes one prompt turn at a time, what is
                       waiting waits where the reader's words live, and it goes
                       as one prompt (conversation); nothing but the animation
@@ -725,7 +728,9 @@ crates/
                       (font); a window owns the selection and hands the words
                       over on the way out (clipboard); a thread that borrows
                       somebody else's connection stops before the owner takes
-                      it back (clipboard/wayland)
+                      it back (clipboard/wayland); a window may not put itself
+                      in front of the reader, so whatever comes forward comes
+                      on the permission of the window they are in (elsewhere)
   */tests/          integration tests, most of them `obelus-app`'s, plus
                     obelus-app/tests/fixtures/*.txt golden grids
                     · why the fake agent is `sh`, and what it checks back

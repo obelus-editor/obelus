@@ -623,6 +623,10 @@ impl App {
                     (subject, Marked::on(&buffer.cursor()))
                 })
                 .or_else(|| self.reading_now()),
+            // A tree is a whole checkout and no one file of it, so what
+            // shows is what the reader was reading -- the list folded over
+            // it, as it is over a conversation's row.
+            PickerValue::Worktree(_) => self.reading_now(),
             PickerValue::Place { path, line, .. } if lines => {
                 Some((Subject::File(path.clone()), matched(*line)))
             }

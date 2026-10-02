@@ -161,6 +161,7 @@ impl App {
             // project while the welcome screen is still asking for one,
             // and none once the one it was has gone.
             Requires::AProject => self.has_a_project(),
+            Requires::AnotherWorktree => self.another_worktree(),
             Requires::SomethingOpenOrAProject => {
                 self.has_a_project() || self.documents.iter().any(Option::is_some)
             }
@@ -329,6 +330,7 @@ impl App {
         // and not before.
         self.troubling.clear();
         self.conversing = crate::app::conversations::Conversing::default();
+        self.worktrees.not_showing();
         // Where the reader is looking, before the list takes any of it.
         // Taken here rather than when the list first shows them somewhere,
         // because a list that sits on the status bar shortens the editor
@@ -382,6 +384,9 @@ impl App {
         // And a list of conversations is one answer per agent: the rows of
         // a tab are that agent's, fetched when the reader walks onto it.
         let conversing = !self.conversing.agents.is_empty();
+        // And the list of open documents, whose second tab is the
+        // repository's worktrees.
+        let switching = !self.worktrees.tabs.is_empty();
         let before = (picker.tab(), picker.query().to_string());
         // Where the tree is standing, read before the key can move it: a
         // typed letter filters the rows the list already has, so by the
@@ -429,6 +434,9 @@ impl App {
                 }
                 if conversing && after.0 != before.0 {
                     self.refresh_conversations();
+                }
+                if switching && after.0 != before.0 {
+                    self.refresh_switching();
                 }
                 true
             }
@@ -605,6 +613,7 @@ impl App {
             // Dealt with before the list is closed, for the reason a
             // directory is: choosing one may leave the list where it was.
             PickerValue::Conversation(_) => {}
+            PickerValue::Worktree(at) => self.go_to_worktree(at),
             PickerValue::Nothing => {}
         }
     }

@@ -92,12 +92,16 @@ const NOTCH: isize = 3;
 pub(crate) const SLOW: Duration = Duration::from_secs(1);
 
 /// What the window's loop is woken for.
-#[derive(Clone, Copy, Debug)]
-enum Waking {
+#[derive(Clone, Debug)]
+pub(crate) enum Waking {
     /// Obelus drew a frame, at this moment.
     Frame(Instant),
     /// Obelus's loop has ended, which is the window's reason to exist gone.
     Finished,
+    /// The reader chose somewhere to go in another window.
+    Going(crate::elsewhere::Going),
+    /// Another Obelus's reader asked to be brought to this window.
+    ComeForward(Option<String>),
 }
 
 /// Runs Obelus in a window until the reader leaves.
@@ -297,6 +301,13 @@ struct Showing {
     /// another monitor, and the setting changes when the reader -- or
     /// another Obelus -- says so.
     points: f32,
+    /// What this window brings others forward with, once there is one.
+    here: Option<crate::elsewhere::Here>,
+    /// Where the reader asked to go, by the token each is waiting on.
+    going: Vec<(
+        winit::event_loop::AsyncRequestSerial,
+        crate::elsewhere::Going,
+    )>,
 }
 
 impl Showing {
@@ -359,6 +370,8 @@ impl Showing {
             motion: Motion::new(Blink::asked()),
             asked: Cell::new(None),
             points,
+            here: None,
+            going: Vec::new(),
         }
     }
 
@@ -593,11 +606,16 @@ impl ApplicationHandler<Waking> for Showing {
         let Some(mut app) = self.starting.take() else {
             return;
         };
-        let attributes = crate::title::asked_for(marked(named(
-            Window::default_attributes()
-                .with_title("Obelus")
-                .with_inner_size(LogicalSize::new(1100.0, 720.0)),
-        )));
+        // With the permission to come forward, where another Obelus started
+        // this one for a reader who asked for it.
+        let attributes = crate::elsewhere::started_with(
+            events,
+            crate::title::asked_for(marked(named(
+                Window::default_attributes()
+                    .with_title("Obelus")
+                    .with_inner_size(LogicalSize::new(1100.0, 720.0)),
+            ))),
+        );
         let window = match events.create_window(attributes) {
             Ok(window) => Arc::new(window),
             Err(error) => {
@@ -622,6 +640,14 @@ impl ApplicationHandler<Waking> for Showing {
         // Once there is a window, which is the first moment there is a
         // display connection to adopt.
         crate::clipboard::take(events);
+        // And the other windows, for the same reason: what brings one
+        // forward is asked on this display.
+        let here = crate::elsewhere::Here::take(events);
+        app.windowed_by(Arc::new(crate::elsewhere::Elsewhere::new(
+            self.proxy.clone(),
+            here.can_bring(),
+        )));
+        self.here = Some(here);
         // Without this a window gets keys and nothing else, and there is
         // no way to type any language that is spelled before it is written.
         window.set_ime_allowed(true);
@@ -1023,6 +1049,27 @@ impl ApplicationHandler<Waking> for Showing {
                 obelus_clipboard::hand_over();
                 events.exit();
             }
+            Waking::Going(going) => {
+                let (Some(window), Some(here)) = (self.window.as_ref(), self.here.as_ref()) else {
+                    return;
+                };
+                // Asked now, while the key the reader pressed is the last
+                // thing this window was told: that is what the compositor
+                // gives the permission against. The going waits for it.
+                match here
+                    .wants_a_token(&going)
+                    .then(|| crate::elsewhere::ask(window))
+                    .flatten()
+                {
+                    Some(serial) => self.going.push((serial, going)),
+                    None => crate::elsewhere::go(going, None),
+                }
+            }
+            Waking::ComeForward(token) => {
+                if let (Some(window), Some(here)) = (self.window.as_ref(), self.here.as_ref()) {
+                    here.come_forward(window, token);
+                }
+            }
         }
     }
 
@@ -1035,6 +1082,12 @@ impl ApplicationHandler<Waking> for Showing {
     /// see `clipboard::let_go`.
     fn exiting(&mut self, _events: &ActiveEventLoop) {
         crate::clipboard::let_go();
+        // And what brings other windows forward, which holds the same
+        // display for the same reason. Let go of here rather than with the
+        // rest of the window: dropped afterwards, its connection destroyed
+        // its proxies on a display winit had already closed, and every way
+        // out of the window ended in a segfault.
+        self.here = None;
     }
 
     /// When to wake next, which is whatever the window is animating.
@@ -1075,6 +1128,12 @@ impl ApplicationHandler<Waking> for Showing {
             // here: Obelus is asked, and the window goes when Obelus says
             // it is done.
             WindowEvent::CloseRequested => self.tell(Event::Closed),
+            WindowEvent::ActivationTokenDone { serial, token } => {
+                if let Some(at) = self.going.iter().position(|(asked, _)| *asked == serial) {
+                    let (_, going) = self.going.remove(at);
+                    crate::elsewhere::go(going, Some(token.into_raw()));
+                }
+            }
             WindowEvent::RedrawRequested => {
                 if let Some(asked) = self.asked.take() {
                     let waited = asked.elapsed();

@@ -45,6 +45,7 @@ mod searching;
 mod semantics;
 mod switching;
 pub mod talking;
+mod worktrees;
 
 use std::{
     collections::{HashMap, HashSet},
@@ -101,6 +102,7 @@ use ratatui::{
     style::Color,
 };
 use semantics::{Asked, Question, named as server_named};
+pub use worktrees::{Door, Windows, knock};
 
 use crate::{
     event::{Event, Ticker},
@@ -578,8 +580,8 @@ pub struct App {
     /// not that one.
     conversing: conversations::Conversing,
     /// What Obelus is watching for the views drawn from it, by the places
-    /// in `conversations`: the claims, the table of conversations, and the
-    /// notes.
+    /// in `conversations`: the claims, the table of conversations, the
+    /// notes, and the other windows on the repository.
     ///
     /// Which of them are wanted is worked out from what is open, every
     /// frame, by `App::settle_the_watches` -- rather than taken at each
@@ -807,6 +809,9 @@ pub struct App {
     /// the reader's -- and nothing about the project is asked or written
     /// from here on. See [`App::the_tree_has_gone`].
     gone: bool,
+    /// What this window knows about the others on the repository, and the
+    /// list of worktrees while it is showing.
+    worktrees: worktrees::Worktrees,
     /// Whether to open on the file list.
     ///
     /// A directory on the command line is a reader saying which project
@@ -975,6 +980,7 @@ impl App {
             // reader can have.
             head: None,
             gone: false,
+            worktrees: worktrees::Worktrees::default(),
             list_at_start: false,
             should_quit: false,
         }
@@ -1209,6 +1215,7 @@ impl App {
         tracing::warn!(tree = %self.working_directory.display(), "the tree Obelus is on has gone");
         self.gone = true;
         self.head = None;
+        self.worktrees.tree_has_gone();
     }
 
     /// Says to open on the file list rather than on a file.
@@ -1315,6 +1322,7 @@ impl App {
         if self.chooser.is_none() {
             self.offer_the_tools();
             self.watch_the_project();
+            self.say_where_this_window_is();
         }
         for index in 0..self.documents.len() {
             self.serve(index);
@@ -2637,6 +2645,7 @@ impl App {
             // no handling of its own beyond waking the loop.
             Event::Resize => {}
             Event::Closed => self.request_quit(),
+            Event::Summoned(token) => self.summoned(token),
             Event::Fonts { here, otherwise } => {
                 tracing::info!(
                     faces = here.len(),
@@ -2712,6 +2721,11 @@ impl App {
                     // the name in the settings has not moved, and what it
                     // stands for has.
                     self.reread_theme();
+                } else if ours && self.is_a_window(&path) {
+                    // Another window on the repository opened, closed, or
+                    // moved to another tree -- which the list of worktrees
+                    // draws while it is up.
+                    self.reread_the_windows();
                 } else if ours && self.is_a_claim(&path) {
                     // A conversation taken up or let go in another window
                     // -- including one let go by that window dying, which
