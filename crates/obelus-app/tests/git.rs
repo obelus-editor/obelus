@@ -3061,6 +3061,79 @@ fn a_commit_alone_says_what_it_did_to_everything() {
     );
 }
 
+/// A commit chosen from the project's history is a message with no file
+/// under it, and the preview is the message and nothing else. It used to
+/// end in a rule and a line `1` of an empty file -- the text the message is
+/// hung over -- which read as a second preview with nothing in it.
+///
+/// Checked by letting the editor go on past the message to the line under
+/// it, and by ruling a message alone the way one over a file is ruled: each
+/// fails here.
+#[test]
+fn a_commit_alone_has_nothing_under_its_message() {
+    let repository = Repository::new("history-alone", "one\n");
+    repository.write("one\ntwo\n");
+    repository.commit_all("Say two");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 60, 24);
+    support::press_function(&mut app, 10);
+    support::read_history(&mut app, &events);
+
+    let dump = support::render(&mut app, 60, 24);
+    let shown = support::previewed(&dump);
+    // Without the dump's own row numbers, which no row is blank of.
+    let rows: Vec<&str> = shown
+        .lines()
+        .map(|row| row.split_once('|').map_or(row, |(_, cells)| cells))
+        .collect();
+    let last = rows
+        .iter()
+        .rposition(|row| !row.trim().is_empty())
+        .expect("the preview is empty");
+    assert!(
+        rows[last].contains("Say two"),
+        "something is drawn under the message:\n{shown}"
+    );
+    assert!(
+        !shown.contains('\u{2500}'),
+        "a rule under the message, with no file for it to start:\n{shown}"
+    );
+}
+
+/// With nothing under the message, the bar asks whether the message itself
+/// goes on past the screen -- it is the only thing there is more of.
+///
+/// Checked by answering `false` for a message alone: the bar went.
+#[test]
+fn a_long_message_alone_still_has_a_bar() {
+    let repository = Repository::new("history-alone-long", "one\n");
+    repository.write("one\ntwo\n");
+    let mut message = String::from("Say two\n\n");
+    for line in 0..40 {
+        message.push_str(&format!("Because of reason {line}.\n"));
+    }
+    repository.commit_all(&message);
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 60, 24);
+    support::press_function(&mut app, 10);
+    support::read_history(&mut app, &events);
+
+    let dump = support::render(&mut app, 60, 24);
+    let shown = support::previewed(&dump);
+    assert!(
+        shown
+            .lines()
+            .any(|row| row.trim_end().ends_with(['\u{2502}', '\u{2588}'])),
+        "a message taller than the preview has no bar:\n{shown}"
+    );
+}
+
 /// Beside who wrote it: what it did to *this* file. The message hangs over
 /// one file, and the question there is what this commit did to that -- not
 /// what it did to the project, which is a number about a diff the reader is

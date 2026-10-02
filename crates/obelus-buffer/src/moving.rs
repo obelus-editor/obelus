@@ -757,9 +757,15 @@ impl Buffer {
         if self.folds.hides(line) {
             return 0;
         }
-        self.rows_above(line, area.wrap_width())
-            + self.editing.text().row_count(line, area.wrap_width())
-            + self.rows_below(line, area.wrap_width())
+        // The empty line a message alone hangs over is not drawn, so it
+        // is not counted either: a row the arithmetic had and the drawing
+        // did not is a blank one the view can be scrolled onto.
+        let own = if self.message_alone {
+            0
+        } else {
+            self.editing.text().row_count(line, area.wrap_width())
+        };
+        self.rows_above(line, area.wrap_width()) + own + self.rows_below(line, area.wrap_width())
     }
 
     /// The next line with rows of its own, in either direction.

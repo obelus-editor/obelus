@@ -775,6 +775,8 @@ impl Widget for EditorView<'_> {
         // own way. Gathered rather than said row by row, because a hunk of
         // six lines is one bar with two rounded ends -- see `say_strokes`.
         let mut marked: Vec<(u16, About, Color)> = Vec::new();
+        // Whether the screen ran out in the middle of a block.
+        let mut cut = false;
         while screen_row < area.height && line.get() <= text.line_count() {
             let past = line.get() == text.line_count();
             if !past {
@@ -815,6 +817,7 @@ impl Widget for EditorView<'_> {
                             continue;
                         }
                         if screen_row >= area.height {
+                            cut = true;
                             break 'block;
                         }
                         let y = area.y + screen_row;
@@ -1001,7 +1004,9 @@ impl Widget for EditorView<'_> {
                 }
             }
 
-            if past {
+            // A commit's message with no file under it is all there is:
+            // the line it hangs over is only somewhere to hang it.
+            if past || buffer.is_message_alone() {
                 break;
             }
 
@@ -1204,7 +1209,13 @@ impl Widget for EditorView<'_> {
         // before the screen does, or the screen before the file, and with
         // wrapping on neither follows from the number of lines. A track
         // with no thumb on it is a control that does not work.
-        let more_below = buffer.folds().first_shown(line).get() < text.line_count();
+        // A message alone has no line after it to ask about, so what is
+        // below is whatever of the message the screen had no room for.
+        let more_below = if buffer.is_message_alone() {
+            cut
+        } else {
+            buffer.folds().first_shown(line).get() < text.line_count()
+        };
         let scrolled = viewport.top.get() > 0 || viewport.top_row > 0;
         let drawn = (bar > 0 && (more_below || scrolled))
             // The region's whole width, so the bar is in the last column
