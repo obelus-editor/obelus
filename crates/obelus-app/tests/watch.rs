@@ -901,6 +901,9 @@ fn a_tree_deleted_from_under_obelus_is_heard() {
 }
 
 /// Hands the application whatever starting it stirred, until it is quiet.
+///
+/// The one test that wants it is Linux's, and so is this.
+#[cfg(target_os = "linux")]
 fn settled_into(events: &Receiver<Event>, app: &mut obelus_app::app::App) {
     while let Ok(event) = events.recv_timeout(Duration::from_millis(200)) {
         app.handle(event);
