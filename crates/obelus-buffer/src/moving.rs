@@ -495,6 +495,52 @@ impl Buffer {
         self.detached = true;
     }
 
+    /// Puts the `shown`-th line on top, leaving the cursor where it is.
+    ///
+    /// For a bar the reader has hold of, which counts in the lines that are
+    /// shown: the wheel's glance rather than a move, so the next cursor
+    /// move brings the screen back. Set rather than stepped to, because a
+    /// drag from one end of a long file to the other would otherwise walk
+    /// every row between them on every move of the pointer.
+    pub fn scroll_to_shown(&mut self, shown: usize, area: TextArea) {
+        let line = self
+            .folds
+            .nth_shown(shown)
+            .min(self.editing.text().last_line());
+        self.viewport.top = line;
+        self.viewport.top_row = 0;
+        let limit = self.last_top(area);
+        if (self.viewport.top, self.viewport.top_row) > limit {
+            self.viewport.top = limit.0;
+            self.viewport.top_row = limit.1;
+        }
+        self.detached = true;
+    }
+
+    /// How many rows of the screen the `shown`-th line starts below the top.
+    ///
+    /// For a view that keeps its place as rows scrolled from somewhere --
+    /// the preview, which is centred on its line and then moved -- rather
+    /// than as a top it can be handed.
+    #[must_use]
+    pub fn rows_to_shown(&self, shown: usize, area: TextArea) -> isize {
+        let (top, top_row) = (self.viewport.top, self.viewport.top_row);
+        let line = self
+            .folds
+            .nth_shown(shown)
+            .min(self.editing.text().last_line());
+        let count = |from: LineNumber, to: LineNumber| -> usize {
+            (from.get()..to.get())
+                .map(|at| self.screen_rows_of(LineNumber::new(at), area))
+                .sum()
+        };
+        let signed = |rows: usize| isize::try_from(rows).unwrap_or(isize::MAX);
+        match line >= top {
+            true => signed(count(top, line)) - signed(top_row),
+            false => -signed(count(line, top)) - signed(top_row),
+        }
+    }
+
     /// The viewport arithmetic both of them share.
     fn move_viewport(&mut self, rows: isize, area: TextArea) {
         self.scroll_rows(rows, area);

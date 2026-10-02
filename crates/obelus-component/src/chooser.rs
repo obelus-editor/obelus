@@ -226,6 +226,11 @@ impl Chooser {
         self.window.settle(height);
     }
 
+    /// Puts this row at the top, for a bar the reader has hold of.
+    pub fn drag_to(&mut self, top: usize) {
+        self.window.drag_to(top);
+    }
+
     /// Whether the reader is on the row that opens a project not in the
     /// list.
     ///

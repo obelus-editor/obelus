@@ -423,6 +423,15 @@ pub struct App {
     /// the edge and waited would wait for ever: the selection they are
     /// making stops where the screen does.
     dragging: Option<Dragging>,
+    /// The bars the last frame left on the page, which is where a press on
+    /// one lands: see `obelus_ui::bars`.
+    bars: Vec<obelus_ui::bars::Drawn>,
+    /// Which bar the pointer has hold of, and where on its mark.
+    ///
+    /// Whose rather than the bar itself: the frames go on being drawn while
+    /// it is held, and what the next move is measured against is the bar
+    /// as the latest of them drew it.
+    holding: Option<(obelus_ui::bars::Whose, u16)>,
     /// What this machine's faces are called, as whatever is drawing
     /// Obelus reported them.
     ///
@@ -889,6 +898,8 @@ impl App {
             ticker: None,
             waking: false,
             dragging: None,
+            bars: Vec::new(),
+            holding: None,
             fonts_here: Vec::new(),
             monospace_here: None,
             names: None,
@@ -2591,7 +2602,7 @@ impl App {
     pub fn draw_into(&mut self, cells: &mut CellBuffer, area: Rect) -> Option<Position> {
         self.screen_area = area;
         self.prepare(obelus_ui::editor_room(area, self));
-        obelus_ui::draw(cells, area, self);
+        self.bars = obelus_ui::draw(cells, area, self);
         // With the frame rather than with the key that changed it: what
         // the caret is doing depends on where it ended up, which is not
         // known until the frame has been laid out.
@@ -3740,6 +3751,50 @@ impl App {
         }
     }
 
+    /// What the pointer did to a scrollbar, if it did anything to one.
+    ///
+    /// The bars are the ones the last frame left on the page, nearest the
+    /// reader last -- so the last one under the pointer is the one they can
+    /// see. A press off the mark brings the mark to it and goes on holding,
+    /// which is one gesture wherever on the track it started.
+    fn pointer_on_a_bar(&mut self, kind: crate::event::Pointer, x: u16, y: u16) -> bool {
+        use crate::event::Pointer;
+
+        match kind {
+            Pointer::Moved => false,
+            Pointer::Released => self.holding.take().is_some(),
+            Pointer::Pressed => {
+                let Some(bar) = self.bars.iter().rev().find(|bar| bar.under(x, y)) else {
+                    return false;
+                };
+                let grip = bar.grip(y);
+                let (whose, top) = (bar.whose, bar.top_for(y, grip));
+                self.holding = Some((whose, grip));
+                self.drag_bar(whose, top);
+                true
+            }
+            Pointer::Dragged => {
+                let Some((whose, grip)) = self.holding else {
+                    return false;
+                };
+                // The bar as the latest frame drew it, which may be none:
+                // the list it was beside has closed under the pointer.
+                let Some(top) = self
+                    .bars
+                    .iter()
+                    .rev()
+                    .find(|bar| bar.whose == whose)
+                    .map(|bar| bar.top_for(y, grip))
+                else {
+                    self.holding = None;
+                    return true;
+                };
+                self.drag_bar(whose, top);
+                true
+            }
+        }
+    }
+
     /// What the pointer did to the file being read.
     ///
     /// Only over the text, and only with nothing else open: a list, the
@@ -3748,6 +3803,15 @@ impl App {
     /// nobody can see.
     fn on_pointer(&mut self, kind: crate::event::Pointer, x: u16, y: u16) {
         use crate::event::Pointer;
+
+        // A bar first, and whatever it is beside: a press on one is about
+        // the bar and nothing under it, and while it is held every move is
+        // the bar's -- wherever the pointer has wandered, the way a bar
+        // held anywhere else behaves.
+        if self.pointer_on_a_bar(kind, x, y) {
+            self.dragging = None;
+            return;
+        }
 
         // Whether the pointer is being held past the edge of what it is
         // selecting in, which nothing else will say again until it moves:

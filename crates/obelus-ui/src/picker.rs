@@ -600,7 +600,13 @@ impl PickerView<'_> {
             .map(usize::from)
             .sum();
         let bar = (total > usize::from(list.height))
-            .then(|| crate::scrollbar(cells, list, above, total, self.theme))
+            .then(|| {
+                let bar = crate::scrollbar(cells, list, above, total, self.theme);
+                // A row of the bar is a row of the screen, and what the
+                // window is moved by is a whole item.
+                crate::bars::in_items(&heights);
+                bar
+            })
             .flatten();
         if let Ok(top) = i64::try_from(above) {
             crate::shapes::scrolled(rows, top, bar);

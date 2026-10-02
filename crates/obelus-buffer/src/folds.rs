@@ -597,6 +597,24 @@ impl Folds {
         self.hidden.iter().map(|(from, to)| to + 1 - from).sum()
     }
 
+    /// Which line is the `shown`-th of those not folded away, counting from
+    /// nought.
+    ///
+    /// [`Folds::hidden_before`] the other way round, for the scrollbar: it
+    /// counts in shown lines, and a pointer dragging its mark asks which
+    /// line that many shown lines down is.
+    #[must_use]
+    pub fn nth_shown(&self, shown: usize) -> LineNumber {
+        let mut line = shown;
+        for (from, to) in &self.hidden {
+            if *from > line {
+                break;
+            }
+            line += to + 1 - from;
+        }
+        LineNumber::new(line)
+    }
+
     /// The first line at or after this one that is not hidden.
     ///
     /// Past the end of the file for a fold reaching the last line, which
@@ -759,6 +777,28 @@ mod tests {
             "a\n    \n    b\n",
         ] {
             agrees(source);
+        }
+    }
+
+    /// Counting shown lines skips what is folded, and is `hidden_before`
+    /// read backwards.
+    ///
+    /// Deliberate break: start counting from the shown line and never add
+    /// the runs. Below a closed run the answer is then a line inside it,
+    /// and a bar dragged past one puts a hidden line on top.
+    #[test]
+    fn the_shown_lines_are_counted_past_what_is_folded() {
+        let text = Text::from_string("a:\n    b\n    c\nd:\n    e\nf\n");
+        let mut folds = Folds::default();
+        folds.offer(of(&text));
+        assert!(folds.toggle(LineNumber::new(0)), "nothing folded at a:");
+        assert!(folds.toggle(LineNumber::new(3)), "nothing folded at d:");
+        // a: d: f, and the end.
+        let shown: Vec<usize> = (0..3).map(|at| folds.nth_shown(at).get()).collect();
+        assert_eq!(shown, [0, 3, 5]);
+        for at in shown {
+            let line = LineNumber::new(at);
+            assert_eq!(folds.nth_shown(at - folds.hidden_before(line)), line);
         }
     }
 

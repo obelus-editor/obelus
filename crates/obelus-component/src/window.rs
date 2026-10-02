@@ -87,6 +87,14 @@ pub struct Window {
     /// Only meaningful with `follow`: it is what keeps a streaming answer
     /// from dragging the view out from under somebody reading it.
     left_the_end: bool,
+    /// Whether the reader has dragged the window away from the focus.
+    ///
+    /// The one way the window leaves the focus behind on a list that is
+    /// chosen from: a bar taken hold of moves what is on screen and not
+    /// what is chosen. Without this the next frame's settling would put
+    /// the window straight back where the focus is, and the drag would
+    /// have moved nothing. Anything that moves the focus puts it back.
+    left_the_focus: bool,
 }
 
 impl Window {
@@ -99,6 +107,7 @@ impl Window {
             top: 0,
             follow: false,
             left_the_end: false,
+            left_the_focus: false,
         }
     }
 
@@ -111,6 +120,7 @@ impl Window {
             top: 0,
             follow: true,
             left_the_end: false,
+            left_the_focus: false,
         }
     }
 
@@ -135,7 +145,14 @@ impl Window {
 
     /// Puts the focus on a row.
     pub fn set_focus(&mut self, at: usize) {
-        self.focus = at.min(self.count.saturating_sub(1));
+        let at = at.min(self.count.saturating_sub(1));
+        // Only where it moves: a list that says where its focus is once a
+        // frame says it again over a drag, and that is not the reader
+        // choosing anything.
+        if at != self.focus {
+            self.left_the_focus = false;
+        }
+        self.focus = at;
     }
 
     /// Which row is drawn first.
@@ -146,6 +163,7 @@ impl Window {
 
     /// Moves the focus by rows, and says where it landed.
     pub fn step(&mut self, by: isize, wrap: Wrap) -> usize {
+        self.left_the_focus = false;
         if self.count == 0 {
             self.focus = 0;
             return 0;
@@ -170,12 +188,14 @@ impl Window {
         self.focus = 0;
         self.top = 0;
         self.left_the_end = true;
+        self.left_the_focus = false;
     }
 
     /// To the last.
     pub fn end(&mut self) {
         self.focus = self.count.saturating_sub(1);
         self.left_the_end = false;
+        self.left_the_focus = false;
     }
 
     /// Moves the focus the way a key said to.
@@ -228,6 +248,24 @@ impl Window {
         }
     }
 
+    /// Puts this row at the top, for a bar the reader has hold of.
+    ///
+    /// The window and not the focus, on a list that is chosen from as
+    /// well as on a transcript: what is under the pointer is a picture of
+    /// where the window is, so it is the window that goes where it is
+    /// dragged. The focus stays chosen until a key moves it, and then the
+    /// window goes back to it -- the way the wheel leaves the caret in a
+    /// file. How far is `settle`'s, which knows how many rows fit.
+    pub fn drag_to(&mut self, top: usize) {
+        self.top = top;
+        match self.follow {
+            // Back at the end is noticed by `settle`, as it is for the
+            // wheel.
+            true => self.left_the_end = true,
+            false => self.left_the_focus = true,
+        }
+    }
+
     /// Moves the window if it has to, and no further.
     ///
     /// Once a frame, with the rows the list really has: where the window
@@ -251,6 +289,9 @@ impl Window {
         // a query narrowing the list -- would otherwise leave it showing
         // the last row and a screen of nothing.
         self.top = self.top.min(last);
+        if self.left_the_focus {
+            return;
+        }
         if self.focus < self.top {
             self.top = self.focus;
         } else if self.focus >= self.top + height {
@@ -280,6 +321,10 @@ impl Window {
         while filled > 0 && taken.saturating_add(heights[filled - 1]) <= room {
             filled -= 1;
             taken = taken.saturating_add(heights[filled]);
+        }
+        if self.left_the_focus {
+            self.top = self.top.min(filled);
+            return;
         }
         self.top = self.top.min(self.focus).min(filled);
         while self.top < self.focus {
@@ -364,6 +409,33 @@ mod tests {
         window.step(-1, Wrap::No);
         window.settle(10);
         assert_eq!(window.top(), 0);
+    }
+
+    /// A bar dragged moves the window off the focus, and it stays there
+    /// until a key moves the focus -- which brings the window back to it.
+    ///
+    /// Deliberate break: leave `settle` chasing the focus whatever
+    /// `left_the_focus` says. The drag is then undone by the next frame and
+    /// the window is back at the top.
+    #[test]
+    fn a_dragged_window_leaves_the_focus_until_a_key_moves_it() {
+        let mut window = Window::new();
+        window.set_count(50);
+        window.settle(10);
+
+        window.drag_to(30);
+        window.settle(10);
+        assert_eq!(window.top(), 30, "the drag was undone by settling");
+        assert_eq!(window.focus(), 0, "dragging the bar chose something");
+
+        // Never past the last screenful, dragged or not.
+        window.drag_to(45);
+        window.settle(10);
+        assert_eq!(window.top(), 40);
+
+        window.step(1, Wrap::No);
+        window.settle(10);
+        assert_eq!(window.top(), 1, "a key did not bring the focus back");
     }
 
     /// The six keys, from one table.

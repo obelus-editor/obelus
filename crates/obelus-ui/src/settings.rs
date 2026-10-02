@@ -1216,7 +1216,12 @@ impl SettingsView<'_> {
         let total = rows(&heights);
         let top = rows(&heights[..first]);
         let bar = (total > usize::from(area.height))
-            .then(|| crate::scrollbar(cells, area, top, total, self.theme))
+            .then(|| {
+                let bar = crate::scrollbar(cells, area, top, total, self.theme);
+                // And what the window is moved by is the card.
+                crate::bars::in_items(&heights);
+                bar
+            })
             .flatten();
         // And where the page of cards has got to, in the same rows the
         // bar is measured in.

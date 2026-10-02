@@ -120,6 +120,12 @@ impl Hover {
         self.scrolled = self.scrolled.saturating_add_signed(rows);
     }
 
+    /// Puts this row at the top, for a bar the reader has hold of. How
+    /// far it can go is the settling's, as it is for the wheel.
+    pub fn drag_to(&mut self, top: usize) {
+        self.scrolled = top;
+    }
+
     /// Moves a screenful of it.
     ///
     /// How far it can go is the settling's, as it is for the wheel: one

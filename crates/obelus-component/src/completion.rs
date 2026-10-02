@@ -442,6 +442,19 @@ impl Completion {
         self.settle_focus();
     }
 
+    /// Puts this candidate at the top, for a bar the reader has hold of.
+    ///
+    /// The window and not the choice, unlike the wheel: what the reader
+    /// took hold of is a picture of where the window is.
+    pub fn drag_to(&mut self, top: usize) {
+        self.window.drag_to(top);
+    }
+
+    /// And this row of the documentation, for the bar beside it.
+    pub fn drag_documentation_to(&mut self, top: usize) {
+        self.scrolled = top;
+    }
+
     /// A row of documentation for a new candidate is a different document.
     fn settle_focus(&mut self) {
         self.scrolled = 0;

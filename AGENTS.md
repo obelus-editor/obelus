@@ -70,7 +70,8 @@ writing a view, look for the piece that already does it:
     ui::status::typed  the glyph and the words on a row that is typed into
     ui::nothing        what a list says when it has nothing in it
     ui::rule           a boundary between two things
-    ui::scrollbar      how much of something longer than the screen is above
+    ui::scrollbar      how much of something longer than the screen is above,
+                       and where a press takes hold of it (ui::bars)
     component::window  which rows are on screen, and when that changes
     component::window::Move  the six keys that move about a list
     ui::editor         a document with a gutter: the file being read, and a
@@ -401,7 +402,9 @@ a screenful, with the view following it. Two gestures, two jobs: a reader
 spinning a wheel is looking around, and one pressing a key is going
 somewhere. A list is the exception that proves it: there a notch steps the
 selection, because a list's view *is* its selection and there is nothing
-else in it to scroll.
+else in it to scroll. A bar taken hold of is not the exception: it is a
+picture of where the view is, so dragging one moves the window and leaves
+the selection chosen until a key moves it (`component::window`).
 
 **Wherever enter means something else, a line is `shift+enter` *and*
 `alt+enter`.** Both, every time: `shift+enter` arrives only from a terminal

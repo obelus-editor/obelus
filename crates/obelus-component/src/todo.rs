@@ -805,6 +805,11 @@ impl TodoView {
         &self.window
     }
 
+    /// Puts this row at the top, for a bar the reader has hold of.
+    pub fn drag_to(&mut self, top: usize) {
+        self.window.drag_to(top);
+    }
+
     /// The note being written, if one is.
     #[must_use]
     pub fn writing(&self) -> Option<&Composer> {

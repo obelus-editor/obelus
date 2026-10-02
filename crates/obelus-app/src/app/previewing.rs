@@ -481,6 +481,109 @@ impl App {
         }
     }
 
+    /// What a bar the reader has hold of moves: the thing it is beside, to
+    /// put `top` first.
+    ///
+    /// The view and never the choice, for a list as for a file: the bar is
+    /// a picture of where the view is. So a document leaves its cursor
+    /// where the wheel would, and a list its selection where the reader
+    /// put it, until a key moves that and the view goes back to it.
+    pub(super) fn drag_bar(&mut self, whose: obelus_ui::bars::Whose, top: usize) {
+        use obelus_ui::bars::Whose;
+
+        match whose {
+            Whose::Document => {
+                let height = self.editor_area.height;
+                if let Some(rows) = self.rendered_rows()
+                    && let Some(buffer) = self.current_buffer_mut()
+                {
+                    // A reading counts in its own rows, one to a row of the
+                    // screen, which is what this scrolls by.
+                    let now = buffer.viewport().top.get();
+                    let by = isize::try_from(top).unwrap_or(isize::MAX)
+                        - isize::try_from(now).unwrap_or(isize::MAX);
+                    buffer.scroll_rendering(by, rows, height);
+                    return;
+                }
+                let area = self.text_area();
+                if let Some(buffer) = self.current_buffer_mut() {
+                    buffer.scroll_to_shown(top, area);
+                }
+            }
+            Whose::Preview => {
+                if let Some(preview) = self.preview.as_mut() {
+                    // Kept as rows from its line, which is how the keys
+                    // move it -- and the viewport moved now as well, so a
+                    // second move before the next frame is measured from
+                    // where this one left it.
+                    let text = preview.text;
+                    preview.scrolled += preview.buffer.rows_to_shown(top, text);
+                    preview.buffer.scroll_to_shown(top, text);
+                }
+            }
+            Whose::Conversation => {
+                if let Some(talk) = self.conversation_mut() {
+                    talk.chat.drag_to(top);
+                }
+            }
+            Whose::Notes => {
+                if let Some(notes) = self.notes_mut() {
+                    notes.drag_to(top);
+                }
+            }
+            Whose::Projects => {
+                if let Some(chooser) = self.chooser.as_mut() {
+                    chooser.drag_to(top);
+                }
+            }
+            Whose::Picker => {
+                if let Some(picker) = self.picker.as_mut() {
+                    picker.drag_to(top);
+                }
+            }
+            Whose::Naming => {
+                if let Some(list) = self.naming_list.as_mut() {
+                    list.drag_to(top);
+                }
+            }
+            Whose::Commands => {
+                if let Some(slash) = self.conversation_mut().and_then(|talk| talk.slash.as_mut()) {
+                    slash.drag_to(top);
+                }
+            }
+            Whose::Settings => {
+                if let Some(settings) = self.settings.as_mut() {
+                    settings.drag_to(top);
+                }
+            }
+            Whose::Counts => {
+                if let Some(counts) = self.counts.as_mut() {
+                    counts.drag_to(top);
+                }
+            }
+            Whose::Names => {
+                if let Some((_, names)) = self.names.as_mut() {
+                    names.window_mut().drag_to(top);
+                }
+            }
+            Whose::Completion => {
+                if let Some(completion) = self.completion.as_mut() {
+                    completion.drag_to(top);
+                }
+            }
+            Whose::Documentation => {
+                if let Some(completion) = self.completion.as_mut() {
+                    completion.drag_documentation_to(top);
+                }
+            }
+            Whose::Hover => {
+                if let Some(hover) = self.hover.as_mut() {
+                    hover.drag_to(top);
+                }
+            }
+        }
+    }
+
     /// Pages the preview, if that is what the key does and there is one to
     /// page.
     ///

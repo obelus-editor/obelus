@@ -1893,6 +1893,11 @@ impl Picker {
         &self.window
     }
 
+    /// Puts this row at the top, for a bar the reader has hold of.
+    pub fn drag_to(&mut self, top: usize) {
+        self.window.drag_to(top);
+    }
+
     /// Where the query matched in one row, worked out now.
     ///
     /// [`Picker::indices_at`] answers the same question from what the last
