@@ -152,11 +152,9 @@ pub fn reading_width(area: Rect) -> u16 {
 /// commands is the one row that must stay visible, because the list is a
 /// list of what is being typed there.
 ///
-/// Through [`bands`], which is the one answer to where that boundary is.
-/// This worked the box's rows out for itself, and a card is taller than a
-/// box: a list over a conversation waiting on an answer was given rows the
-/// card was already drawn in and painted over the top of it, which is the
-/// half of a card that says what is being asked.
+/// Through [`bands`], which is the one answer to where that boundary is:
+/// a card is taller than a box, and rows for the box worked out here
+/// alone would put the foot of the list inside the card.
 #[must_use]
 pub fn above_writing(area: Rect, chat: &Chat, card: Option<&Card>) -> Rect {
     let writing = bands(area, chat, card).writing;
