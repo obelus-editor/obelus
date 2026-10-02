@@ -33,6 +33,8 @@
 #                            each answer was
 #   session/prompt "/takeback"
 #                         -> asks permission and takes the question back
+#   session/prompt "/secondback"
+#                         -> asks permission twice and takes the second back
 #   session/prompt "/ask" -> asks the reader three things through
 #                            `elicitation/create` -- one of a list, a switch,
 #                            and a number -- and says what came back
@@ -533,6 +535,25 @@ while IFS= read -r line; do
             if [ "$which" = 'second' ]; then
                 printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             fi
+            ;;
+        *'"method":"session/prompt"'*'"text":"/secondback'*)
+            # Two questions at once, and the second -- the one waiting
+            # behind the card -- taken back before it was put.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","id":943,"method":"session/request_permission","params":{"sessionId":"%s","toolCall":{"toolCallId":"q3","title":"Read the third file","kind":"read"},"options":[{"optionId":"once","name":"Allow once","kind":"allow_once"},{"optionId":"never","name":"Reject","kind":"reject_once"}]}}\n' "$session"
+            printf '{"jsonrpc":"2.0","id":944,"method":"session/request_permission","params":{"sessionId":"%s","toolCall":{"toolCallId":"q4","title":"Delete the cache","kind":"delete"},"options":[{"optionId":"once","name":"Allow once","kind":"allow_once"},{"optionId":"never","name":"Reject","kind":"reject_once"}]}}\n' "$session"
+            sleep 0.3
+            printf '{"jsonrpc":"2.0","method":"$/cancel_request","params":{"requestId":944}}\n'
+            ;;
+        *'"id":944'*)
+            case "$line" in
+                *'"error"'*) said='the waiting one was taken back and I was told' ;;
+                *) said='the waiting one was answered after all' ;;
+            esac
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s "}}}}\n' "$said"
+            ;;
+        *'"id":943'*)
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
         *'"method":"session/prompt"'*'"text":"/takeback'*)
             # A question asked and then taken back before anybody answered

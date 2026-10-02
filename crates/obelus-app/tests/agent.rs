@@ -10390,3 +10390,54 @@ fn refusing_a_question_puts_up_the_next() {
         "the second question never went up after the first was refused"
     );
 }
+
+/// A question taken back while it waits behind the card is never put, and
+/// its call says it stopped.
+///
+/// It is not on the card, so nothing comes down; what the reader has of it
+/// is the call in the transcript, put there waiting when it was asked, and
+/// nothing else would ever say that it is not waiting any more.
+///
+/// Deliberate breaks: mark the call but keep the question in the queue in
+/// `take_back` -- it goes up once the first is answered, a question nobody
+/// is asking; and drop it without marking the call -- its row still says
+/// it is waiting.
+#[test]
+fn a_question_taken_back_while_it_waits_is_never_put() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/secondback");
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        &events,
+        "the agent to hear it was taken back",
+        |app| said_in_transcript(app, "the waiting one was taken back and I was told"),
+    );
+    assert!(
+        app.is_asking_permission(),
+        "the question that was not taken back came off the card"
+    );
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let row = rows(&dump)
+        .into_iter()
+        .find(|row| row.contains("Delete the cache"))
+        .unwrap_or_else(|| panic!("the waiting call is not in the transcript:\n{dump}"))
+        .to_string();
+    assert!(
+        row.contains("Stopped"),
+        "the call taken back still says it is waiting:\n{dump}"
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the end of the turn", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    assert!(
+        !app.is_asking_permission(),
+        "a question taken back was put after all"
+    );
+}

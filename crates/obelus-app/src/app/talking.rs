@@ -2053,7 +2053,18 @@ impl App {
         let Some(talk) = self.talk_mut(whose) else {
             return;
         };
-        talk.queued.retain(|question| !taken_back(question));
+        let (gone, kept) = std::mem::take(&mut talk.queued)
+            .into_iter()
+            .partition(taken_back);
+        talk.queued = kept;
+        // A call waiting behind the card was put in the transcript as
+        // waiting, and nothing else will say it stopped: the agent took the
+        // question back, not necessarily the call.
+        for question in gone {
+            if let acp::Incoming::Permission { call, .. } = question {
+                talk.chat.tool(&call, "cancelled");
+            }
+        }
         let up = talk
             .permission
             .as_ref()
