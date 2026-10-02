@@ -98,6 +98,12 @@
 
       <p>所以我的一天是这样的：从一条笔记——一行存疑的代码，或者只是接下来想做的事——到它变成一个已经合进去的改动——中间我正在读的那份 checkout 一直没动过，我也没敲过一条 git 命令。</p>
 
+      <figure class="shot">
+        <img class="dark" src="../workflow-dark.png" width="1500" height="1086" alt="Obelus 里一段关于一条笔记的对话。标题行写着分支 stable-top-ties。记录里是 agent 在 .worktree 底下为这个分支开 worktree、在那里跑测试，改 worktree 里的 src/lib.rs，再跑测试、提交；下面一张卡片问这次改动要不要先审一遍，读者停在「Yes, review it」那一行。">
+        <img class="light" src="../workflow-light.png" width="1500" height="1086" alt="同一段对话，Obelus 的浅色主题。">
+        <figcaption class="caption"><code>feature-branch</code> 真跑一遍的样子，项目是编的。标题行写着改动在哪个分支上；agent 已经开好 worktree、改之前和改之后各跑了一遍测试、在那里提交了——卡片是它在问要不要审，而不是自己审了起来。</figcaption>
+      </figure>
+
       <ol class="tenets">
         <li>
           <span class="no">01</span>
@@ -124,7 +130,7 @@
           <span class="no">04</span>
           <div>
             <p class="claim">它告诉我去哪试，我就过去。</p>
-            <p class="why">改完它会再跑一遍测试，告诉我目录和分支、跑了什么、结果是什么——而不是「应该没问题」。<kbd>F2</kbd> 再按 <kbd>Tab</kbd> 就是这个仓库的<a href="#worktrees">所有 worktree</a>：选中那一个，开着它的窗口就会跳到前面来，没开就新开一个；在那边，这次改动和别的改动一样画在边栏上。</p>
+            <p class="why">改完它会再跑一遍测试，告诉我目录和分支、跑了什么、结果是什么——而不是「应该没问题」。<kbd>F2</kbd> 再按 <kbd>Tab</kbd> 就是这个仓库的<a href="#worktrees">所有 worktree</a>：选中那一个，开着它的窗口就会跳到前面来，没开就新开一个；在那边，这次改动就是这个分支上最新的那个提交——在它写的某一行上按 <kbd>F11</kbd>，就打开那个提交，标着它比上一个提交改了什么。</p>
           </div>
         </li>
         <li>

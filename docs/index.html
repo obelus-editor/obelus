@@ -98,6 +98,12 @@
 
       <p>So this is a day with it: a note — a line I doubt, or just what I mean to do next — turned into a change that has merged — without the checkout I am reading moving under me, and without my typing a git command.</p>
 
+      <figure class="shot">
+        <img class="dark" src="workflow-dark.png" width="1500" height="1086" alt="A conversation in Obelus about a note. Its header names the branch stable-top-ties. The transcript shows the agent making a worktree under .worktree for that branch and running the tests there, editing src/lib.rs in the worktree, running the tests again and committing; below it a card asks whether the change should be reviewed before it goes anywhere, with Yes, review it on the row the reader is on.">
+        <img class="light" src="workflow-light.png" width="1500" height="1086" alt="The same conversation in Obelus's light theme.">
+        <figcaption class="caption">A real run of <code>feature-branch</code>, on a made-up project. The header says which branch the changes are on; the agent has made the worktree, run the tests before and after, and committed there — and the card is it asking about the review, rather than starting one.</figcaption>
+      </figure>
+
       <ol class="tenets">
         <li>
           <span class="no">01</span>
@@ -124,7 +130,7 @@
           <span class="no">04</span>
           <div>
             <p class="claim">It tells me where to try it, and I go there.</p>
-            <p class="why">When the change is made it runs the tests again and says the directory and the branch, what it ran and what that showed — not that it should work. <kbd>F2</kbd> and <kbd>Tab</kbd> is <a href="#worktrees">every worktree</a> of the repository: choosing that one brings its window forward, or opens one on it, and there the change is in the margin like any other.</p>
+            <p class="why">When the change is made it runs the tests again and says the directory and the branch, what it ran and what that showed — not that it should work. <kbd>F2</kbd> and <kbd>Tab</kbd> is <a href="#worktrees">every worktree</a> of the repository: choosing that one brings its window forward, or opens one on it, and there the change is the newest commit on the branch — <kbd>F11</kbd> on a line it wrote opens that commit, marked against the one before it.</p>
           </div>
         </li>
         <li>
