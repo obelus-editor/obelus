@@ -487,25 +487,41 @@ impl App {
         if let Some(talk) = self.talk_mut(whose) {
             talk.asked_while_shown = true;
         }
+        let tools = self.tools_for(whose);
         let Some(talker) = self.talker.as_mut() else {
             return;
         };
         match had {
             Some(session) => {
-                let asking = talker.reopen(&session);
+                let asking = talker.reopen(&session, tools);
                 if let Some(talk) = self.talk_mut(whose) {
                     talk.asked_for = Some(obelus_agent::acp::SessionId::new(session));
                     talk.requested = Some(asking);
                 }
             }
             None => {
-                let asking = talker.open();
+                let asking = talker.open(tools);
                 if let Some(talk) = self.talk_mut(whose) {
                     talk.opening = true;
                     talk.requested = Some(asking);
                 }
             }
         }
+    }
+
+    /// Where the conversation `whose` names reaches Obelus's own tools.
+    ///
+    /// Its own address rather than the server's, and asked every time a
+    /// session is, because the server's port is this process's: a
+    /// conversation taken up again is told where it is now. The number is
+    /// the document's, which names this conversation and nothing else for
+    /// as long as the process runs -- a closed slot is never filled again.
+    fn tools_for(&self, whose: Whose) -> Option<String> {
+        let id = match whose {
+            Whose::One(id) => id,
+            Whose::Whoever => self.current?,
+        };
+        Some(obelus_mcp::address(self.tools_url.as_deref()?, id.get()))
     }
 
     /// The project's table of conversations, as Obelus last read it.
@@ -1577,6 +1593,91 @@ impl App {
             parts.extend(said);
         }
         self.say_in(whose, &parts, true);
+    }
+
+    /// Closes a conversation, because its agent asked to -- having asked
+    /// the reader, which is the agent's to do.
+    ///
+    /// The number is the one the conversation's tools address carries,
+    /// which is its document's. What comes back is said to the agent, which
+    /// is waiting on an answer: closed, closing when the turn ends, or why
+    /// not.
+    pub(super) fn close_for_an_agent(&mut self, conversation: Option<usize>) -> String {
+        let Some(id) = conversation.map(DocumentId::new) else {
+            return "this address names no conversation, so there is nothing to close".to_string();
+        };
+        let session = match self.document(id).and_then(Document::chat) {
+            Some(talk) if talk.has_the_readers_words() => {
+                return "the reader has started writing in it, so it stays open".to_string();
+            }
+            Some(talk) => talk.session.clone(),
+            None => return "this conversation is not open any more".to_string(),
+        };
+        // From inside a turn, which is the ordinary case: whatever the
+        // agent says after this has to land somewhere the reader can see,
+        // so the closing waits for the turn to end.
+        let running = self.talker.as_ref().and_then(|talker| {
+            talker
+                .turn(session.as_ref())
+                .map(|turn| (talker.connection(), turn))
+        });
+        if let Some(running) = running {
+            if let Some(talk) = self.talk_mut(Whose::One(id)) {
+                talk.closing = Some(running);
+            }
+            return "it closes when this turn ends".to_string();
+        }
+        self.close_the_conversation(id);
+        "closed".to_string()
+    }
+
+    /// Closes the conversation now that a turn of it is over, if that is
+    /// the turn the agent asked for that at the end of, and says whether
+    /// it did.
+    ///
+    /// Only where the turn finished. One the reader stopped, or that went
+    /// wrong, is not the turn that was meant to be the last one -- and
+    /// where they have written something since, it is theirs to answer.
+    fn close_as_the_agent_asked(
+        &mut self,
+        id: DocumentId,
+        turn: acp::Turn,
+        finished: bool,
+    ) -> bool {
+        let connection = self.talker.as_ref().map(acp::Talk::connection);
+        let Some(talk) = self.talk_mut(Whose::One(id)) else {
+            return false;
+        };
+        let asked = talk.closing.take().zip(connection).is_some_and(
+            |((asked_on, asked_at), connection)| asked_on == connection && asked_at == turn,
+        );
+        if !asked || !finished || talk.has_the_readers_words() {
+            return false;
+        }
+        self.close_the_conversation(id);
+        true
+    }
+
+    /// Closes one conversation and says which, which is the difference
+    /// from the reader closing it: they know they did.
+    fn close_the_conversation(&mut self, id: DocumentId) {
+        // By the name the list of what is open gives it, read before it
+        // goes: the reader may have been somewhere else, and "the
+        // conversation" is then one of several.
+        let named = self.document(id).and_then(Document::chat).and_then(|talk| {
+            let notes = obelus_git::todo::read(&self.working_directory)
+                .notes()
+                .unwrap_or_default();
+            Self::conversation_name(talk, self.talker.as_ref(), &notes)
+        });
+        self.close(id);
+        self.say(match named {
+            Some(named) => format!("Closed {named}"),
+            None => "Closed the conversation".to_string(),
+        });
+        // And out of the list of what is open, where that is showing: a
+        // row for a conversation that has gone is a row that lies.
+        self.refresh_switching();
     }
 
     /// Asks the agent to stop what it is doing.
@@ -3105,7 +3206,10 @@ impl App {
                 | acp::Update::Settings(_)
                 | acp::Update::Used(_) => {}
             },
-            acp::Incoming::Ended { why: reason, .. } => {
+            acp::Incoming::Ended {
+                turn, why: reason, ..
+            } => {
+                let finished = matches!(reason.as_deref(), Ok("end_turn"));
                 // Only the ends that are not the ordinary one: a turn that
                 // finished has its answer above it, and "end turn" under
                 // every answer is noise.
@@ -3120,6 +3224,13 @@ impl App {
                     }
                     Ok(other) => self.in_talk(whose, |chat| chat.note(other)),
                     Err(why) => self.in_talk(whose, |chat| chat.note(&format!("The agent: {why}"))),
+                }
+                // Always one conversation: an end names the session it
+                // ends a turn of.
+                if let Whose::One(id) = whose
+                    && self.close_as_the_agent_asked(id, turn, finished)
+                {
+                    return;
                 }
                 // And then whatever the reader said while it was running.
                 // After the line above and not before it, so that the
@@ -3270,17 +3381,11 @@ impl App {
         // Nothing to fail here: the process is started on the thread, and
         // an agent that will not run says so as the conversation ending
         // with a reason -- which is the same path as one that dies later.
-        // What Obelus offers the agent back, if it could take a socket.
-        // Started once and kept for as long as Obelus runs: the address is
-        // what each agent is told, so a second one started later reaches the
-        // same tools.
-        let tools = self.tools_url.clone();
         self.talker = Some(acp::Talk::start(
             id,
             command,
             arguments,
             &self.working_directory,
-            tools,
             sender,
         ));
     }

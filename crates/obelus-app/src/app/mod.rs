@@ -458,9 +458,9 @@ pub struct App {
     statuses: std::collections::HashMap<PathBuf, obelus_git::Standing>,
     /// Where an agent reaches what Obelus offers it, if it could listen.
     ///
-    /// Taken once and kept: the address is what each agent is told, so a
-    /// second one started later reaches the same tools rather than a second
-    /// server nobody asked for.
+    /// Taken once and kept: every conversation is told an address under
+    /// this one, so a second agent started later reaches the same tools
+    /// rather than a second server nobody asked for.
     tools_url: Option<String>,
     /// The agent Obelus is talking to, once something has needed it.
     talker: Option<obelus_agent::acp::Talk>,
@@ -2858,6 +2858,9 @@ impl App {
                     obelus_mcp::Wanted::Notes(doing) => self.change_the_notes(doing),
                     obelus_mcp::Wanted::Open { path, line } => self.open_for_an_agent(&path, line),
                     obelus_mcp::Wanted::Workflow => self.workflow_for_an_agent(),
+                    obelus_mcp::Wanted::Close { conversation } => {
+                        self.close_for_an_agent(conversation)
+                    }
                 });
             }
             Event::Released(tag) => self.on_released(&tag),

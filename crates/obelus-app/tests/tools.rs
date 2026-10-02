@@ -10,6 +10,16 @@ mod support;
 
 use std::sync::mpsc::channel;
 
+/// Obelus listening on a tree, and where the first conversation reaches
+/// it -- which is the address an agent is told, not the server's own.
+fn served(
+    root: &std::path::Path,
+    sender: std::sync::mpsc::Sender<obelus_app::event::Event>,
+) -> String {
+    let server = obelus_mcp::serve(root, std::sync::Arc::new(sender)).expect("a socket");
+    obelus_mcp::address(&server, 0)
+}
+
 /// A tree with one note, and Obelus listening on it.
 fn listening(name: &str) -> (support::Scratch, String) {
     let scratch = support::Scratch::new(name);
@@ -25,7 +35,7 @@ fn listening(name: &str) -> (support::Scratch, String) {
     // answers a tool that asks the reader with "nobody is there", which is
     // not what these are about.
     std::mem::forget(events);
-    let url = obelus_mcp::serve(scratch.path(), std::sync::Arc::new(sender)).expect("a socket");
+    let url = served(scratch.path(), sender);
     (scratch, url)
 }
 
@@ -76,6 +86,7 @@ fn an_agent_is_told_what_obelus_can_do() {
         "todo_reword",
         "open_file",
         "read_workflow",
+        "close_conversation",
     ] {
         assert!(listed.contains(tool), "{tool} was not offered:\n{listed}");
     }
@@ -169,7 +180,7 @@ fn what_an_agent_writes_down_is_in_the_file() {
     .expect("the notes");
 
     let (sender, events) = channel::<obelus_app::event::Event>();
-    let url = obelus_mcp::serve(scratch.path(), std::sync::Arc::new(sender)).expect("a socket");
+    let url = served(scratch.path(), sender);
     let mut app = App::new(Vec::new());
     app.working_directory_for_test(scratch.path().to_path_buf());
 
@@ -254,7 +265,7 @@ fn a_note_of_several_lines_is_one_entry() {
 
     let (sender, events) = channel::<obelus_app::event::Event>();
     std::mem::forget(events);
-    let url = obelus_mcp::serve(scratch.path(), std::sync::Arc::new(sender)).expect("a socket");
+    let url = served(scratch.path(), sender);
     let (_, session) = ask(
         &url,
         None,
@@ -337,7 +348,7 @@ fn a_depth_nothing_could_hang_at_is_brought_up_before_it_is_written() {
     .expect("the notes");
 
     let (sender, events) = channel::<obelus_app::event::Event>();
-    let url = obelus_mcp::serve(scratch.path(), std::sync::Arc::new(sender)).expect("a socket");
+    let url = served(scratch.path(), sender);
     let mut app = App::new(Vec::new());
     app.working_directory_for_test(scratch.path().to_path_buf());
 
@@ -403,7 +414,7 @@ fn a_reworded_note_is_the_same_note() {
     .expect("the notes");
 
     let (sender, events) = channel::<obelus_app::event::Event>();
-    let url = obelus_mcp::serve(scratch.path(), std::sync::Arc::new(sender)).expect("a socket");
+    let url = served(scratch.path(), sender);
     let mut app = App::new(Vec::new());
     app.working_directory_for_test(scratch.path().to_path_buf());
 
@@ -484,7 +495,7 @@ fn a_note_cannot_be_reworded_into_nothing() {
     .expect("the notes");
 
     let (sender, events) = channel::<obelus_app::event::Event>();
-    let url = obelus_mcp::serve(scratch.path(), std::sync::Arc::new(sender)).expect("a socket");
+    let url = served(scratch.path(), sender);
     let mut app = App::new(Vec::new());
     app.working_directory_for_test(scratch.path().to_path_buf());
 
@@ -554,7 +565,7 @@ fn a_file_an_agent_offers_is_on_the_readers_screen() {
     std::fs::write(&other, "// somewhere else\n").expect("another file");
 
     let (sender, events) = channel::<obelus_app::event::Event>();
-    let url = obelus_mcp::serve(scratch.path(), std::sync::Arc::new(sender)).expect("a socket");
+    let url = served(scratch.path(), sender);
     // Open on the other file, so being taken to `sample.rs` is a move
     // rather than the only thing there is.
     let mut app = App::new(vec![
@@ -652,4 +663,62 @@ fn the_opening_names_the_tool_it_offers() {
         listed.contains("open_file"),
         "the opening names a tool nothing offers:\n{listed}"
     );
+    // And the other tool the opening offers in prose, by the same rule.
+    // Deliberate break: take the closing paragraph out of `always.txt`.
+    assert!(
+        always.contains("close_conversation"),
+        "the opening does not tell an agent it can close a conversation:\n{always}"
+    );
+    assert!(
+        listed.contains("close_conversation"),
+        "the opening names a tool nothing offers:\n{listed}"
+    );
+}
+
+/// A conversation an agent closes is the one whose address it called,
+/// read off the request it came on.
+///
+/// Over the wire, because the number is in the path and nowhere else: a
+/// test that handed the loop a number directly would say nothing about
+/// whether the server reads one.
+///
+/// Deliberate break: have `conversation_in` answer `None` whatever the
+/// path, and the agent is told its address names no conversation while
+/// the conversation stays open.
+#[test]
+fn an_agent_closes_the_conversation_whose_address_it_called() {
+    use obelus_app::app::App;
+
+    let scratch = support::Scratch::new("tools-closed");
+    support::make_room_for_notes(scratch.path());
+    let (sender, events) = channel::<obelus_app::event::Event>();
+    let url = served(scratch.path(), sender);
+    // The first document, so it is the conversation `/mcp/0` names.
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.new_conversation();
+    assert!(app.chat().is_some(), "no conversation to close");
+
+    let asking = std::thread::spawn(move || {
+        let (_, session) = ask(
+            &url,
+            None,
+            r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"a test","version":"0"}}}"#,
+        );
+        let session = session.expect("a session of its own");
+        let (closed, _) = ask(
+            &url,
+            Some(&session),
+            r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"close_conversation","arguments":{}}}"#,
+        );
+        closed
+    });
+    let event = events
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("the server asked the loop for something");
+    app.handle(event);
+    let closed = asking.join().expect("the agent's side");
+
+    assert!(closed.contains("closed"), "it did not say it had: {closed}");
+    assert!(app.chat().is_none(), "the conversation is still open");
 }

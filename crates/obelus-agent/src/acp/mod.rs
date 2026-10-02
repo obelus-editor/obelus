@@ -328,7 +328,6 @@ impl Talk {
         command: &Path,
         arguments: &[String],
         root: &Path,
-        tools: Option<String>,
         events: impl Sink<crate::Event> + Clone,
     ) -> Self {
         let connection = CONNECTIONS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
@@ -338,7 +337,7 @@ impl Talk {
         };
         Self {
             id: id.to_string(),
-            asks: link::start(command, arguments, root, tools, events),
+            asks: link::start(command, arguments, root, events),
             info: None,
             carries: None,
             gone: None,
@@ -413,6 +412,16 @@ impl Talk {
             .is_some_and(|open| open.turn.is_some())
     }
 
+    /// The turn running in this conversation, by Obelus's own count, if one
+    /// is.
+    ///
+    /// Counted per connection, so a number is only a turn together with
+    /// [`Talk::connection`]: an agent started again counts from one.
+    #[must_use]
+    pub fn turn(&self, session: Option<&SessionId>) -> Option<Turn> {
+        self.session(session)?.turn
+    }
+
     /// Whether a conversation by this name is open on it.
     #[must_use]
     pub fn holds(&self, session: &SessionId) -> bool {
@@ -435,9 +444,12 @@ impl Talk {
     ///
     /// One agent holds a project's worth of context, and a second process
     /// to talk about a second note would pay for all of it twice.
-    pub fn open(&mut self) -> Asking {
+    ///
+    /// `tools` is where this conversation reaches Obelus's own tools: its
+    /// own address, because one of them has to know who is calling.
+    pub fn open(&mut self, tools: Option<String>) -> Asking {
         let asking = self.waiting_for_one();
-        let _ = self.asks.unbounded_send(Ask::Open);
+        let _ = self.asks.unbounded_send(Ask::Open { tools });
         asking
     }
 
@@ -489,10 +501,11 @@ impl Talk {
     /// with the session it asked for, or -- where the agent will not --
     /// word that it has gone and then a new one, which is still the answer
     /// to this request.
-    pub fn reopen(&mut self, session: &str) -> Asking {
+    pub fn reopen(&mut self, session: &str, tools: Option<String>) -> Asking {
         let asking = self.waiting_for_one();
         let _ = self.asks.unbounded_send(Ask::Reopen {
             session: SessionId::new(session),
+            tools,
         });
         asking
     }

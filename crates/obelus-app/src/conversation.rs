@@ -261,9 +261,34 @@ pub struct Conversation {
     /// reader's settings, which have not moved, and said again it is the
     /// same line down the page once for every visit.
     pub said_not_offered: std::collections::BTreeSet<(String, String)>,
+    /// The turn the agent asked for it to be closed at the end of, by the
+    /// connection it ran on and its number there.
+    ///
+    /// When the turn ends and not when it asks, because it asks from
+    /// inside a turn and has usually something left to say: closed at
+    /// once, that went to a conversation nobody could see.
+    ///
+    /// That turn and no other. An agent that dies before it ends never
+    /// sends its end, and a flag would have closed the conversation at the
+    /// end of the reader's next turn instead -- with the agent started
+    /// again, counting its turns from one, so the number alone is not
+    /// enough either.
+    pub closing: Option<(acp::Connection, acp::Turn)>,
 }
 
 impl Conversation {
+    /// Whether the reader has words in it that have not been answered:
+    /// something in the box, or something said that waits for the turn.
+    ///
+    /// Which is what keeps a conversation open that the agent has asked
+    /// to close. A box is the reader's once they have put something in
+    /// it, and closing the conversation would take it with it.
+    #[must_use]
+    pub fn has_the_readers_words(&self) -> bool {
+        let writing = self.chat.writing();
+        !writing.is_blank() || writing.has_pictures() || !self.chat.unsent().is_empty()
+    }
+
     /// Whether the agent is waiting on the reader in this one.
     #[must_use]
     pub fn is_waiting_on_the_reader(&self) -> bool {
