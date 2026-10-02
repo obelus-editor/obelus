@@ -2290,7 +2290,7 @@ pub(super) fn problem_row(
     value: PickerValue,
 ) -> PickerItem {
     PickerItem {
-        icon: obelus_icons::enabled().then(|| obelus_icons::for_kind(severity.kind())),
+        icon: obelus_icons::enabled().then(|| obelus_icons::for_problem(severity.kind())),
         label: said.to_string(),
         detail: None,
         prose: true,
