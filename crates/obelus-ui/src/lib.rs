@@ -1222,6 +1222,10 @@ fn list_over(
     // Below the list, with a rule between them. The preview is drawn by the
     // editor's own view, which is what makes it look like the editor.
     if let Some(preview) = picker::preview_region(Some(list), room) {
+        // Inside the pane, and not glass: see `shapes::Shapes::paged`.
+        // The whole of the room it is given, shown or not, because an
+        // empty one is room set aside on the page as well.
+        shapes::paged(preview);
         rule(
             cells,
             Rect {

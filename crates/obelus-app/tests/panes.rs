@@ -35,6 +35,7 @@ struct Heard {
 enum Told {
     Band(Rect),
     Pane(Rect, Joined),
+    Page(Rect),
 }
 
 impl Heard {
@@ -52,6 +53,10 @@ impl obelus_ui::shapes::Shapes for Heard {
 
     fn scrolled(&self, area: Rect, _top: i64, _bar: Option<obelus_ui::shapes::Bar>) {
         self.told(Told::Band(area));
+    }
+
+    fn paged(&self, area: Rect) {
+        self.told(Told::Page(area));
     }
 
     fn ticked(&self, _area: Rect, _on: bool) {}
@@ -207,7 +212,7 @@ fn either_side_of_the_pane(told: &[Told]) -> (Rect, Joined, Vec<Rect>, Vec<Rect>
         told.iter()
             .filter_map(|told| match told {
                 Told::Band(area) => Some(*area),
-                Told::Pane(..) => None,
+                Told::Pane(..) | Told::Page(_) => None,
             })
             .collect()
     };
@@ -271,6 +276,43 @@ fn a_band_under_a_pane_is_said_before_it() {
     app.statuses_for_test(std::collections::HashMap::new());
     app.open_picker_for_test(items(&["alpha", "beta", "gamma"]), PickerLayout::FullArea);
     the_file_is_said_before_the_pane(&mut app, "alpha", true);
+}
+
+/// The preview under a list is a page of its own inside the list's pane,
+/// with the file it previews in it.
+///
+/// The pane's own colour is the page's too, and a window makes every cell
+/// of a pane wearing it glass -- so the preview was glass wherever it said
+/// nothing, and the file the list was opened over showed through behind
+/// the one it previewed.
+///
+/// Deliberate break: take `shapes::paged` out of `list_over`, and nothing
+/// says the preview is a page.
+#[test]
+fn a_preview_inside_a_pane_is_a_page_of_its_own() {
+    let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    app.statuses_for_test(std::collections::HashMap::new());
+    support::press_function(&mut app, 2);
+    let since = told_so_far();
+    let cells = support::cells_of(&mut app, 60, 24);
+    let told = told_since(since);
+
+    let (pane, _, _, _) = either_side_of_the_pane(&told);
+    let pages: Vec<Rect> = told
+        .iter()
+        .filter_map(|told| match told {
+            Told::Page(area) => Some(*area),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(pages.len(), 1, "one preview, one page: {told:?}");
+    let page = pages[0];
+    assert_eq!(pane.intersection(page), page, "inside the pane {pane:?}");
+    assert!(page.y > pane.y, "under the list's rows: {page:?}");
+    assert!(
+        shows(&[page], &cells, "fn before()"),
+        "the page is not where the preview is: {page:?}"
+    );
 }
 
 /// The settings, which take the whole screen.

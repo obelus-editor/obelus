@@ -40,6 +40,8 @@ struct Heard {
 }
 
 impl obelus_ui::shapes::Shapes for Heard {
+    fn paged(&self, _area: Rect) {}
+
     fn behind(
         &self,
         area: Rect,
