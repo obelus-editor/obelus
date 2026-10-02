@@ -260,10 +260,11 @@ impl Default for Config {
             // On, because a reader who installed Obelus from a release has
             // no other way to hear of the next one.
             new_versions: true,
-            // None: how an agent goes about a change is the agent's own
-            // until the reader says otherwise, which is what it was before
-            // there was a setting.
-            workflow: "none".to_string(),
+            // A branch of its own: an agent changing the checkout the
+            // reader is reading changes it under them, and a worktree is
+            // what lets them see the change arrive and decide what becomes
+            // of it.
+            workflow: "feature-branch".to_string(),
             // None until the reader installs one: Obelus does not choose an
             // agent for anybody.
             agent: None,
@@ -1867,13 +1868,15 @@ mod tests {
     /// through pull requests is the project's rule rather than the reader's.
     ///
     /// Broken deliberately by giving `workflow` `Reach::ReaderOnly`: the
-    /// project's line is ignored and the reader's `none` stands.
+    /// project's line is ignored and the default `feature-branch` stands.
+    /// Which is why the line chooses `none`: choosing the default would
+    /// pass with the line ignored.
     #[test]
     fn a_project_may_choose_its_workflow() {
         let mut config = Config::default();
-        let table: toml::Table = "workflow = \"feature-branch\"".parse().expect("toml");
+        let table: toml::Table = "workflow = \"none\"".parse().expect("toml");
         let applied = apply(&mut config, &table, Whose::Project);
-        assert_eq!(config.workflow, "feature-branch");
+        assert_eq!(config.workflow, "none");
         assert!(applied.ignored.is_empty(), "{:?}", applied.ignored);
     }
 
@@ -1888,7 +1891,7 @@ mod tests {
         let mut config = Config::default();
         let table: toml::Table = "workflow = \"feature_branch\"".parse().expect("toml");
         let applied = apply(&mut config, &table, Whose::Project);
-        assert_eq!(config.workflow, "none");
+        assert_eq!(config.workflow, Config::default().workflow);
         assert!(!applied.set.contains(&"workflow"), "{:?}", applied.set);
         assert_eq!(
             applied.ignored,
@@ -1922,7 +1925,7 @@ mod tests {
             ignored_files: true,
             hidden_files: true,
             new_versions: false,
-            workflow: "feature-branch".to_string(),
+            workflow: "none".to_string(),
             agent: Some("claude-acp".to_string()),
             // A key moved and a key taken away: both are decisions, and
             // both have to survive the file or the reader makes them again
