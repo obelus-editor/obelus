@@ -29,7 +29,7 @@
 
 use std::time::{Duration, Instant};
 
-use obelus_ui::shapes::Bar;
+use obelus_ui::shapes::{Bar, Joined};
 use ratatui::layout::{Position, Rect};
 
 use crate::blink::Blink;
@@ -859,6 +859,27 @@ impl Motion {
         self.pane.opened = None;
     }
 
+    /// The panes one frame laid, furthest first, against the frame before.
+    ///
+    /// The whole pile and not the one on top, because the top changing is
+    /// two different things: the palette going and the settings coming is
+    /// a pane arriving, and a setting's choices closing over the settings
+    /// is the settings having been there all along. Asked of the top alone,
+    /// the second slid the settings in again every time a choice was made.
+    /// So what arrives is a pile that is not what the one before it was
+    /// with something taken off the top.
+    pub(crate) fn panes_laid(&mut self, was: &[Joined], now: &[Joined], at: Instant) {
+        if now.is_empty() || (now.len() < was.len() && was.starts_with(now)) {
+            // Shut rather than left alone where one is uncovered: what is
+            // under a pane that went had arrived before it was covered, and
+            // a pane closed part way in would leave its arrival running on
+            // the one under it.
+            self.pane_shut();
+        } else if now != was {
+            self.pane_opened(at);
+        }
+    }
+
     /// A box with a frame round it opened over the page.
     ///
     /// The opening only, like a pane's: a box that is closed leaves
@@ -1491,6 +1512,34 @@ mod tests {
         motion.pane_shut();
         assert_eq!(motion.moving(base).pane, None);
         assert_eq!(motion.wake(base, true), None);
+    }
+
+    /// A pane that closes over another uncovers it, and what it uncovers
+    /// does not arrive again -- while one that takes another's place does.
+    ///
+    /// Break: judge by the top of the pile alone, as the window did --
+    /// `now.last() != was.last()` -- and choosing a font size slid the
+    /// settings in again when its list closed, which the first half
+    /// notices.
+    #[test]
+    fn a_pane_uncovered_is_not_one_arriving() {
+        let base = Instant::now();
+        let later = base + SLIDE * 2;
+        let settings = [Joined::Screen];
+        let a_choice = [Joined::Screen, Joined::Below];
+        let mut motion = Motion::new(None);
+        motion.panes_laid(&settings, &a_choice, base);
+        assert!(motion.moving(base).pane.is_some(), "a choice arrives");
+        motion.panes_laid(&a_choice, &settings, later);
+        assert_eq!(motion.moving(later).pane, None, "the settings were there");
+        // The palette going and the settings coming is one pane in
+        // another's place, and the settings are reached no other way.
+        motion.panes_laid(&[Joined::Below], &settings, later);
+        assert!(motion.moving(later).pane.is_some(), "the settings arrive");
+        // And the same pile again is nothing at all.
+        let much_later = later + SLIDE * 2;
+        motion.panes_laid(&settings, &settings, much_later);
+        assert_eq!(motion.moving(much_later).pane, None);
     }
 
     /// A band of rows, which is the area a list is drawn in.
