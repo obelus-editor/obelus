@@ -177,6 +177,11 @@ pub enum PickerValue {
     /// id, a claim, where it is already open -- and a list of rows is not
     /// where that belongs.
     Conversation(usize),
+    /// Go to one of the repository's worktrees, in a window of its own.
+    ///
+    /// By its place in the list, as a conversation is: which window has it
+    /// open, and how to reach that window, is the application's to know.
+    Worktree(usize),
     /// One of the ways out of a question Obelus stopped to ask.
     Answer(obelus_buffer::question::Answer),
     /// Nothing. A row that is there to say why the list is short.

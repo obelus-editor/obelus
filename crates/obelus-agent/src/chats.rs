@@ -323,7 +323,7 @@ impl Drop for Claim {
 /// microseconds wide, no worse than a message that is wrong until the reader
 /// presses the key again, and the alternative was losing a claim for real.
 #[cfg(unix)]
-pub(crate) fn held_by_somebody_else(file: &File) -> bool {
+pub fn held_by_somebody_else(file: &File) -> bool {
     use std::os::fd::AsRawFd as _;
 
     // Safety: `flock` takes a descriptor and a flag and reads nothing
@@ -347,7 +347,7 @@ pub(crate) fn held_by_somebody_else(file: &File) -> bool {
 /// `in another window` for a worktree it could have named. Only Windows
 /// shows it.
 #[cfg(windows)]
-pub(crate) fn held_by_somebody_else(file: &File) -> bool {
+pub fn held_by_somebody_else(file: &File) -> bool {
     use std::os::windows::io::AsRawHandle as _;
 
     use windows_sys::Win32::{

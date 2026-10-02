@@ -156,6 +156,9 @@ pub enum Event {
     Scanned(Box<obelus_component::picker::Scanned>),
     /// What the newest release of Obelus is called, as its tag says it.
     Released(String),
+    /// Another Obelus's reader asked to be brought to this window, with
+    /// what that window was given to let it come forward.
+    Summoned(Option<String>),
 }
 
 impl Event {
@@ -197,6 +200,7 @@ impl Event {
             Self::Watched(_) => "Watched",
             Self::Scanned(_) => "Scanned",
             Self::Released(_) => "Released",
+            Self::Summoned(_) => "Summoned",
         }
     }
 }

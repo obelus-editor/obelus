@@ -26,6 +26,9 @@ obelus-clipboard.workspace = true
 obelus-config.workspace = true
 obelus-icons.workspace = true
 obelus-logging.workspace = true
+# Starting another Obelus on another tree, as a task on the one runtime that
+# reaps it when it ends -- see `elsewhere`.
+obelus-runtime.workspace = true
 # How many cells a cell's text takes, which is the application's own answer
 # and has to be: the window draws the character where the application put
 # the one after it.
@@ -46,6 +49,7 @@ etagere.workspace = true
 image.workspace = true
 pollster.workspace = true
 ratatui.workspace = true
+tokio.workspace = true
 tracing.workspace = true
 wgpu.workspace = true
 winit.workspace = true
@@ -55,6 +59,9 @@ winit.workspace = true
 # clipboard has to be on the window's own.
 [target.'cfg(target_os = "linux")'.dependencies]
 wayland-client.workspace = true
+# And bringing a window forward, which is asked on that same connection for
+# the same reason: see `elsewhere/wayland.rs`.
+wayland-protocols.workspace = true
 x11rb.workspace = true
 
 # How tall the title bar is, which only AppKit can say. See `title.rs`.
