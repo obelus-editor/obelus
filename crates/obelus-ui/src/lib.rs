@@ -909,7 +909,7 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
                             cells,
                             app,
                             list,
-                            room_for_a_picker(app, regions.editor),
+                            room_for_a_picker(regions.editor),
                             regions.edge,
                             Some(regions.status),
                         );
@@ -918,7 +918,7 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
             }
             Layer::Names => {
                 if let Some(names) = app.names() {
-                    let room = room_for_a_picker(app, regions.editor);
+                    let room = room_for_a_picker(regions.editor);
                     let region = names::region(names, room);
                     // Standing on the row below it, like every list that
                     // leaves the page showing above it -- and its rule
@@ -1061,12 +1061,17 @@ fn room_for_the_commands(app: &impl Screen, editor: Rect) -> Rect {
 
 /// Where a list the reader opened goes, given what it is over.
 ///
-/// The whole region, less only a question the agent is waiting on an answer
-/// to. A picker is not part of the conversation the way the commands are --
-/// it took the keys and it took the status row -- so the conversation is
-/// behind it rather than beside it.
-fn room_for_a_picker(app: &impl Screen, editor: Rect) -> Rect {
-    chat::above_a_question(editor, app.card())
+/// The whole region, whatever it is over. A picker is not part of the
+/// conversation the way the commands are -- it took the keys and it took
+/// the status row -- so the conversation is behind it rather than beside
+/// it, and that includes a question the agent is waiting on. The card was
+/// once left showing under the list, so a reader who went to look
+/// something up would find the question still there; but it was a second
+/// thing on screen that no key reached, drawn sharp beside the glass, and
+/// the question is in the conversation either way -- it is the first thing
+/// there when the list goes.
+const fn room_for_a_picker(editor: Rect) -> Rect {
+    editor
 }
 
 /// A pane, and the rules either side of it that are its edges.

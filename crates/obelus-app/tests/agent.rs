@@ -4074,21 +4074,20 @@ fn at_row(screen: &[&str], needle: &str, dump: &str) -> usize {
         .unwrap_or_else(|| panic!("no {needle:?} on screen:\n{dump}"))
 }
 
-/// A list opened over a question is given the room above it.
+/// A list opened over a question covers it, and the question is there
+/// again when the list goes.
 ///
-/// A reader who has been asked something and wants to go and look before
-/// they answer reaches for the list of open documents, and the list is
-/// drawn over the conversation. It was given everything above the box a
-/// message is written in -- and a card is taller than a box, so the rows it
-/// was handed were rows the card had already been drawn in. It painted over
-/// the top of the card, which is the half that says what is being asked:
-/// the question went on the way to going and looking it up.
+/// The card used to be left showing under the list, so that a reader who
+/// went to look something up would find the question still on screen. It
+/// was a second thing there that no key reached, drawn sharp beside the
+/// glass the rest of the conversation was behind -- and the question was
+/// never anywhere but the conversation, which is what the list goes back
+/// to.
 ///
-/// Broken deliberately by working the box's rows out in `above_writing`
-/// again instead of asking `bands`, which puts the list back over the top
-/// of the card and takes the question off the screen.
+/// Broken deliberately by giving the picker fewer rows than the region in
+/// `room_for_a_picker`, which leaves the question showing under the list.
 #[test]
-fn a_list_over_a_question_does_not_paint_over_it() {
+fn a_list_over_a_question_covers_it_until_it_goes() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the session", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -4110,14 +4109,20 @@ fn a_list_over_a_question_does_not_paint_over_it() {
     );
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentList);
     let dump = support::render(&mut app, WIDTH, HEIGHT);
-    // The list is there, and so is the question it was opened in front of.
     assert!(
         rows(&dump).iter().any(|row| row.contains("A conversation")),
         "the list of open documents did not open:\n{dump}"
     );
     assert!(
-        rows(&dump).iter().any(|row| row.contains(asked)),
-        "the list painted over what the card was asking:\n{dump}"
+        !rows(&dump).iter().any(|row| row.contains(asked)),
+        "the question was left showing under the list:\n{dump}"
+    );
+
+    support::press(&mut app, KeyCode::Esc);
+    let after = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        rows(&after).iter().any(|row| row.contains(asked)),
+        "the question was not there when the list went:\n{after}"
     );
 }
 

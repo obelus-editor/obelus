@@ -1825,18 +1825,17 @@ impl App {
         self.completion.as_ref()
     }
 
-    /// The area a list is drawn in, which is not always the editor region.
+    /// The area a list is drawn in.
     ///
-    /// Over a conversation it is everything above a question the agent is
-    /// waiting on an answer to, and everything otherwise: the drawing's own
-    /// answer, which this has to be the same as or the rows a key moves
-    /// through are not the rows on screen.
+    /// The whole of the region, a question the agent is waiting on
+    /// included: the drawing's own answer, which this has to be the same as
+    /// or the rows a key moves through are not the rows on screen.
     ///
     /// An area and not a [`layers::Room`]: a room is how much of the screen
     /// a view declares it takes, and this is the rectangle that comes out of
     /// laying one out.
     fn picker_area(&self) -> Rect {
-        obelus_ui::chat::above_a_question(self.drawn_in(), self.card())
+        self.drawn_in()
     }
 
     /// The region a view drawn over the file is drawn in.
