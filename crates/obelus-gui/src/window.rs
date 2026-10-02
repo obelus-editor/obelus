@@ -272,6 +272,11 @@ struct Showing {
     behind: Option<Behind>,
     /// And on the frame being laid out.
     behinding: Option<Behind>,
+    /// Every pane on the frame being shown, by the edge it is joined
+    /// along, furthest first -- see `Motion::panes_laid`.
+    panes: Vec<Joined>,
+    /// And on the frame being laid out.
+    paning: Vec<Joined>,
     /// What is behind a box with a frame round it, on the frame being
     /// shown -- a second pane, over the first where there is one.
     cards: Vec<Behind>,
@@ -363,6 +368,8 @@ impl Showing {
             scrolling: Vec::new(),
             behind: None,
             behinding: None,
+            panes: Vec::new(),
+            paning: Vec::new(),
             cards: Vec::new(),
             carding: Vec::new(),
             // The blink is asked once, on the way up: it is a question
@@ -744,13 +751,13 @@ impl ApplicationHandler<Waking> for Showing {
                 // screens the reader is never meant to see.
                 let was = self.page.caret();
                 let whose_was = self.page.whose();
-                // Which pane, not whether there is one: see the match that
-                // reads this. The edge it is joined along and not its
-                // rectangle, because a rectangle changes when the reader
-                // drags the window's own edge, and a pane replaying its
-                // arrival on every pixel of a resize is worse than one that
-                // never arrives at all.
-                let was_a_pane = self.behind.as_ref().map(|behind| behind.joined);
+                // Which panes, not whether there is one: see
+                // `Motion::panes_laid`. The edge each is joined along and
+                // not its rectangle, because a rectangle changes when the
+                // reader drags the window's own edge, and a pane replaying
+                // its arrival on every pixel of a resize is worse than one
+                // that never arrives at all.
+                let were_panes = self.panes.clone();
                 let had_a_card = !self.cards.is_empty();
                 // Cloned rather than taken: a wake with no whole frame
                 // in it leaves what is on the screen alone, and a band
@@ -824,6 +831,7 @@ impl ApplicationHandler<Waking> for Showing {
                                 // along.
                                 Joined::Above | Joined::Below | Joined::Screen => {
                                     self.behinding = Some(behind);
+                                    self.paning.push(joined);
                                     self.carding.clear();
                                     for band in &mut self.scrolling {
                                         band.under = true;
@@ -902,6 +910,7 @@ impl ApplicationHandler<Waking> for Showing {
                                 .sheen_drawn(self.sheened.is_some(), Instant::now());
                             self.stroked = std::mem::take(&mut self.stroking);
                             self.behind = self.behinding.take();
+                            self.panes = std::mem::take(&mut self.paning);
                             self.cards = std::mem::take(&mut self.carding);
                             self.scrolled = std::mem::take(&mut self.scrolling);
                             drew = true;
@@ -942,15 +951,11 @@ impl ApplicationHandler<Waking> for Showing {
                 // only be reached through the palette could never arrive,
                 // because the palette is a pane and it was still counted as
                 // one. Obelus's own pages are all of them reached that way,
-                // which is every full-screen dialog there is.
-                match (was_a_pane, self.behind.as_ref().map(|behind| behind.joined)) {
-                    (None, Some(_)) => self.motion.pane_opened(Instant::now()),
-                    (Some(_), None) => self.motion.pane_shut(),
-                    (Some(before), Some(now)) if before != now => {
-                        self.motion.pane_opened(Instant::now());
-                    }
-                    _ => {}
-                }
+                // which is every full-screen dialog there is. And the whole
+                // pile rather than its top, because a pane closing over
+                // another changes the top too -- see `Motion::panes_laid`.
+                self.motion
+                    .panes_laid(&were_panes, &self.panes, Instant::now());
                 // And a box over the page, the same way and for the same
                 // reason. Whether there is one rather than which one:
                 // a completion list redrawn on every character the reader
