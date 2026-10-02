@@ -10354,3 +10354,39 @@ fn a_list_closed_over_a_question_leaves_it_asked() {
         "closing a list refused the question under it"
     );
 }
+
+/// Refusing the question up puts up the one waiting behind it.
+///
+/// Escape answers the card -- the protocol's cancelled -- and the agent is
+/// still waiting on the second question, so refusing is as much an end to
+/// the first as answering it.
+///
+/// Deliberate break: leave out `ask_the_next` after `CardOutcome::Cancelled`.
+/// The first is refused and nothing goes up after it.
+#[test]
+fn refusing_a_question_puts_up_the_next() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/pair");
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "both questions", |app| {
+        app.is_asking_permission() && said_in_transcript(app, "Read the second file")
+    });
+
+    support::press(&mut app, KeyCode::Esc);
+    pump(&mut app, &events, "the first answer", |app| {
+        said_in_transcript(app, "the first was")
+    });
+    assert!(
+        said_in_transcript(&app, "the first was [cancelled]"),
+        "escape did not refuse the first:\n{}",
+        screen(&mut app)
+    );
+    assert!(
+        app.is_asking_permission(),
+        "the second question never went up after the first was refused"
+    );
+}
