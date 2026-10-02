@@ -1090,10 +1090,10 @@ impl Chat {
     }
 
     /// Takes back everything the reader said that has not gone, joined the
-    /// way it would have gone, and puts the caret where they go.
+    /// way it would have gone.
     ///
-    /// The box and not the transcript, even for a reader standing in the
-    /// transcript: the rows they were on are the ones leaving it.
+    /// And lets go of whatever the transcript held: a hold is a place in
+    /// what was said, and with these out of it the place names other words.
     pub fn take_back_waiting(&mut self) -> Option<Vec<crate::composer::Part>> {
         if !self.said.iter().any(|said| said.unsent) {
             return None;
@@ -1103,9 +1103,7 @@ impl Chat {
             .into_iter()
             .partition(|said| said.unsent);
         self.said = kept;
-        if let Focus::Transcript(at) = self.focus {
-            self.leave_the_transcript(at);
-        }
+        self.let_go();
         let mut parts = Vec::new();
         for said in waiting {
             if !parts.is_empty() {
@@ -4404,8 +4402,9 @@ mod tests {
     /// It went back as the words the page spells it with, so a picture
     /// came back as `[Image 1]` -- words, which enter then sent as words.
     ///
-    /// Deliberate break: have `take_back_waiting` hand back each one's
-    /// `text` as words rather than its `parts`, and the picture is gone.
+    /// Deliberate breaks: have `take_back_waiting` hand back each one's
+    /// `text` as words rather than its `parts`, and the picture is gone;
+    /// take out its `let_go`, and the transcript is still holding.
     #[test]
     fn what_was_waiting_goes_back_with_its_pictures() {
         use crate::composer::{Attached, Part};
@@ -4420,9 +4419,22 @@ mod tests {
         ]);
         chat.will_say(&[Part::Words("and this".to_string())]);
         chat.put("half typed");
+        // Held across both, which do not survive it.
+        chat.hold_from(Spot {
+            said: 0,
+            source: Source::Text,
+            at: 0,
+        });
+        chat.hold_to(Spot {
+            said: 1,
+            source: Source::Text,
+            at: 3,
+        });
+        assert!(chat.holding(), "the transcript did not take hold");
 
         let parts = chat.take_back_waiting();
         assert!(chat.unsent().is_empty(), "it is still waiting on the page");
+        assert!(!chat.holding(), "the hold outlived the words it was on");
         chat.put_back(parts.expect("nothing came back"));
         assert_eq!(
             chat.writing().parts(),
