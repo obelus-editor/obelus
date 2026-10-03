@@ -20,6 +20,13 @@ fn turn() -> std::sync::MutexGuard<'static, ()> {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     secrets_of_its_own();
+    // And no threads from a test before: the table of which conversation
+    // is which thread is the process's, and a fake agent names its
+    // sessions from `s-1` in every test, so a thread one test opened is a
+    // thread the next one's conversation would be found to have already.
+    if let Some(state) = obelus_logging::state_directory() {
+        let _ = std::fs::remove_dir_all(state.join("remote"));
+    }
     turn
 }
 
@@ -504,7 +511,9 @@ fn in_thread(said: &[obelus_remote::model::Out], thread: &str, words: &str) -> b
 /// turn as it streamed rather than when it ended: the reply was split. Not
 /// reading a reply as the answer while a card is up: the permission was
 /// never given and the turn never ended. And dropping the line in front of
-/// words from afar: the agent's log had no "sent from Slack". The header
+/// words from afar: the agent's log had no "sent from Slack". The thread's
+/// head twice: never said again, it stayed as it opened; said again with
+/// the state it had, it never said `Waiting` or `Done`. The header
 /// twice more: drawn from no chat, it never said `Slack`; drawn whether or
 /// not there is a thread, it said so before there was one.
 #[test]
@@ -608,6 +617,18 @@ fn a_conversation_and_its_thread_say_the_same_things() {
         )),
         "the question did not call the reader: {said:#?}"
     );
+    // And the head says it is waiting on them.
+    let state = |said: &[obelus_remote::model::Out]| {
+        said.iter().rev().find_map(|out| match out {
+            obelus_remote::model::Out::Retitle { head, .. } => head.state,
+            _ => None,
+        })
+    };
+    assert_eq!(
+        state(&said),
+        Some(obelus_remote::model::Turning::Waiting),
+        "the head does not say it is waiting: {said:#?}"
+    );
 
     // A number from the chat answers it, and the rest of the turn follows.
     let _ = sink.send(obelus_remote::Event::Heard {
@@ -620,6 +641,11 @@ fn a_conversation_and_its_thread_say_the_same_things() {
         &events,
         "the end of the turn in the thread",
         |said| in_thread(said, "T1", "and I was allowed"),
+    );
+    assert_eq!(
+        state(&said),
+        Some(obelus_remote::model::Turning::Done),
+        "the head does not say the turn is over: {said:#?}"
     );
     assert!(
         said.iter()
@@ -654,6 +680,204 @@ fn a_conversation_and_its_thread_say_the_same_things() {
         }
         support::lay_out(&mut app, 76, 24);
     }
+}
+
+/// `new` at the top is a conversation of its own, whose thread opens once
+/// its session is there -- and which is still there to be talked in after
+/// frames that let go of conversations nothing was said in.
+///
+/// Broken deliberately by leaving `from_afar` out of what keeps a
+/// conversation: its session was let go on the next frame and its thread
+/// named nothing open.
+#[test]
+fn a_new_conversation_from_the_top_waits_for_its_first_words() {
+    let _turn = turn();
+    obelus_remote::platform::connect_for_test(fake_connect);
+    *FAKED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    let scratch = support::Scratch::new("remote-new");
+    std::fs::write(
+        scratch.join("config.toml"),
+        "remote = \"slack\"\n[remotes.slack]\npeople = [{ id = \"U1\", name = \"Sunli\" }]\n",
+    )
+    .expect("the settings");
+    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    let log = scratch.join("asked.log");
+    let mut app = App::new(Vec::new());
+    app.config_file_for_test(scratch.join("config.toml"));
+    let events = support::drive(&mut app);
+    app.agents_root_for_test(scratch.join("agents"));
+    support::lay_out(&mut app, 76, 24);
+    app.talk_to(
+        "fake",
+        std::path::Path::new("sh"),
+        &[
+            "tests/fixtures/fake-agent.sh".to_string(),
+            format!("log={}", log.display()),
+            "prompts".to_string(),
+        ],
+    );
+    until(&mut app, &events, "the connection", |app| {
+        app.remote_state_for_test() == obelus_remote::State::Connected
+    });
+    let sink = FAKED
+        .lock()
+        .ok()
+        .and_then(|faked| faked.as_ref().map(|faked| faked.sink.clone()))
+        .expect("connected");
+    let asked = 0;
+    let _ = sink.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        at: obelus_remote::model::Where::Top,
+        text: "new".to_string(),
+    });
+    let said = said_until(&mut app, &events, "the new conversation's thread", |said| {
+        said.iter().any(
+            |out| matches!(out, obelus_remote::model::Out::Open { asked: n, .. } if *n != asked),
+        )
+    });
+    let second = said
+        .iter()
+        .find_map(|out| match out {
+            obelus_remote::model::Out::Open { asked: n, .. } if *n != asked => Some(*n),
+            _ => None,
+        })
+        .expect("asked for");
+    let _ = sink.send(obelus_remote::Event::Opened {
+        asked: second,
+        thread: "T2".to_string(),
+        link: None,
+    });
+    for _ in 0..5 {
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(50)) {
+            app.handle(event);
+        }
+        support::lay_out(&mut app, 76, 24);
+    }
+    let _ = sink.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        at: obelus_remote::model::Where::Thread("T2".to_string()),
+        text: "first words".to_string(),
+    });
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        let logged = std::fs::read_to_string(&log).unwrap_or_default();
+        if logged.contains("first words") {
+            break;
+        }
+        let refused = said_since().into_iter().any(|out| {
+            matches!(
+                out,
+                obelus_remote::model::Out::Say { text, .. } if text.contains("not open")
+            )
+        });
+        assert!(
+            !refused,
+            "the new conversation was let go before anything was said in it"
+        );
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the first words never reached the agent:\n{logged}"
+        );
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(50)) {
+            app.handle(event);
+        }
+        support::lay_out(&mut app, 76, 24);
+    }
+}
+
+/// The name an agent gives its conversation is the name its thread goes
+/// by: the head is said again with it.
+///
+/// Broken deliberately by leaving the head alone when the agent names the
+/// conversation: the thread kept the name it opened with until the turn
+/// ended. And by not saying the head when the thread arrives: the turn had
+/// started before it did, and the thread never said so.
+#[test]
+fn the_name_an_agent_gives_is_the_threads() {
+    let _turn = turn();
+    obelus_remote::platform::connect_for_test(fake_connect);
+    *FAKED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    let scratch = support::Scratch::new("remote-titled");
+    std::fs::write(
+        scratch.join("config.toml"),
+        "remote = \"slack\"\n[remotes.slack]\npeople = [{ id = \"U1\", name = \"Sunli\" }]\n",
+    )
+    .expect("the settings");
+    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    let mut app = App::new(Vec::new());
+    app.config_file_for_test(scratch.join("config.toml"));
+    let events = support::drive(&mut app);
+    app.agents_root_for_test(scratch.join("agents"));
+    support::lay_out(&mut app, 76, 24);
+    app.talk_to(
+        "fake",
+        std::path::Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.new_conversation();
+    app.open_a_session_for_test();
+    let said = said_until(&mut app, &events, "a thread to be asked for", |said| {
+        said.iter()
+            .any(|out| matches!(out, obelus_remote::model::Out::Open { .. }))
+    });
+    let asked = said
+        .iter()
+        .find_map(|out| match out {
+            obelus_remote::model::Out::Open { asked, .. } => Some(*asked),
+            _ => None,
+        })
+        .expect("asked for");
+    let sink = FAKED
+        .lock()
+        .ok()
+        .and_then(|faked| faked.as_ref().map(|faked| faked.sink.clone()))
+        .expect("connected");
+    let _ = sink.send(obelus_remote::Event::Opened {
+        asked,
+        thread: "T1".to_string(),
+        link: None,
+    });
+    support::type_text(&mut app, "/titled");
+    support::press(&mut app, KeyCode::Enter);
+    let said = said_until(&mut app, &events, "the turn to end", |said| {
+        said.iter().any(|out| {
+            matches!(
+                out,
+                obelus_remote::model::Out::Retitle { head, .. }
+                    if head.state == Some(obelus_remote::model::Turning::Done)
+            )
+        })
+    });
+    // While the turn was still going: the end of a turn says the head again
+    // anyway, and a rename that waited for it would be a rename that a long
+    // turn kept from the reader for as long as it ran.
+    assert!(
+        said.iter().any(|out| matches!(
+            out,
+            obelus_remote::model::Out::Retitle { thread, head, .. }
+                if thread == "T1"
+                    && head.title == "Renamed by the agent"
+                    && head.state == Some(obelus_remote::model::Turning::Working)
+        )),
+        "the thread was not renamed when the agent named it: {said:#?}"
+    );
+    // And the turn's start, which happened before the platform had answered
+    // with the thread, said on it once it had.
+    assert!(
+        said.iter().any(|out| matches!(
+            out,
+            obelus_remote::model::Out::Retitle { head, .. }
+                if head.title == "A conversation"
+                    && head.state == Some(obelus_remote::model::Turning::Working)
+        )),
+        "the head moved before the thread was there, and the thread never heard: {said:#?}"
+    );
 }
 
 /// Feishu's page is made from what Feishu declares: an id written in the
@@ -696,4 +920,133 @@ fn feishu_is_set_up_from_what_it_declares() {
     to_the_row(&mut app, "Domain");
     support::press(&mut app, KeyCode::Enter);
     assert_eq!(app.config().remote_value("feishu", "domain"), Some("lark"));
+}
+
+/// Something said at the top by somebody on the list, and what came back
+/// at the top -- with everything else said meanwhile kept in `rest`.
+fn at_the_top(
+    app: &mut App,
+    events: &std::sync::mpsc::Receiver<Event>,
+    text: &str,
+    rest: &mut Vec<obelus_remote::model::Out>,
+) -> String {
+    let sink = FAKED
+        .lock()
+        .ok()
+        .and_then(|faked| faked.as_ref().map(|faked| faked.sink.clone()))
+        .expect("connected");
+    let _ = sink.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        at: obelus_remote::model::Where::Top,
+        text: text.to_string(),
+    });
+    let said = said_until(app, events, text, |said| {
+        said.iter().any(|out| {
+            matches!(
+                out,
+                obelus_remote::model::Out::Say {
+                    at: obelus_remote::model::Where::Top,
+                    ..
+                }
+            )
+        })
+    });
+    let mut answer = String::new();
+    for out in said {
+        match out {
+            obelus_remote::model::Out::Say {
+                at: obelus_remote::model::Where::Top,
+                text,
+                ..
+            } => answer = text,
+            out => rest.push(out),
+        }
+    }
+    answer
+}
+
+/// The top answers three words: the notes numbered, a number opening that
+/// note's conversation -- whose thread opens under a head saying what it
+/// is -- and a note written down; anything else is told what the three
+/// are, and is not a conversation.
+///
+/// Broken deliberately four ways. Listing the notes that are done as well:
+/// the list had three. Numbering from nought: `1` opened the second note.
+/// Starting a conversation for words the top did not know: one was open
+/// after `hello`. And writing the note's words with the command in front:
+/// the note began `note`.
+#[test]
+fn the_top_answers_three_words() {
+    let _turn = turn();
+    obelus_remote::platform::connect_for_test(fake_connect);
+    *FAKED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    let scratch = support::Scratch::new("remote-top");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        // With their names, the way Obelus writes them: a note read with
+        // none is given one, a new one each time it is read.
+        "[[todo]]\nid = \"AAAAAAA1\"\nsaid = \"wire the counts up\"\ndone = false\n\n[[todo]]\nid = \"AAAAAAA2\"\nsaid = \"settings in a directory\"\ndone = true\n\n[[todo]]\nid = \"AAAAAAA3\"\nsaid = \"themes are files\"\ndone = false\n",
+    )
+    .expect("the notes");
+    std::fs::write(
+        scratch.join("config.toml"),
+        "remote = \"slack\"\n[remotes.slack]\npeople = [{ id = \"U1\", name = \"Sunli\" }]\n",
+    )
+    .expect("the settings");
+    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.config_file_for_test(scratch.join("config.toml"));
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 76, 24);
+    until(&mut app, &events, "the connection", |app| {
+        app.remote_state_for_test() == obelus_remote::State::Connected
+    });
+
+    let mut rest = Vec::new();
+    let help = at_the_top(&mut app, &events, "hello", &mut rest);
+    assert!(help.contains("**notes**"), "{help}");
+    assert_eq!(
+        app.document_count_for_test(),
+        0,
+        "a stray word started a conversation"
+    );
+
+    let listed = at_the_top(&mut app, &events, "notes", &mut rest);
+    assert!(listed.contains("1. wire the counts up"), "{listed}");
+    assert!(listed.contains("2. themes are files"), "{listed}");
+    assert!(
+        !listed.contains("settings in a directory"),
+        "a done note was offered: {listed}"
+    );
+
+    let opened = at_the_top(&mut app, &events, "2", &mut rest);
+    assert!(opened.contains("Opening"), "{opened}");
+    let mut said = rest.clone();
+    said.extend(said_until(&mut app, &events, "its thread", |said| {
+        rest.iter()
+            .chain(said)
+            .any(|out| matches!(out, obelus_remote::model::Out::Open { .. }))
+    }));
+    let head = said
+        .iter()
+        .find_map(|out| match out {
+            obelus_remote::model::Out::Open { head, .. } => Some(head.clone()),
+            _ => None,
+        })
+        .expect("a head");
+    assert_eq!(
+        head.title, "themes are files",
+        "the wrong note's conversation opened"
+    );
+
+    let noted = at_the_top(&mut app, &events, "note  the thumb is quicker  ", &mut rest);
+    assert_eq!(noted, "Noted.");
+    let notes = std::fs::read_to_string(obelus_git::todo::path(scratch.path()).expect("there"))
+        .expect("the notes");
+    assert!(notes.contains("said = \"the thumb is quicker\""), "{notes}");
 }

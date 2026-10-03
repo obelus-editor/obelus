@@ -123,6 +123,13 @@ impl App {
         }
     }
 
+    /// Where this machine stands with its chat, for a test that drives a
+    /// window with no settings page open.
+    #[must_use]
+    pub fn remote_state_for_test(&self) -> State {
+        self.remote_state()
+    }
+
     /// What the remote page shows, from what this window knows.
     pub(super) fn reached(&self) -> Reached {
         let platform = self.platform();
@@ -374,9 +381,7 @@ impl App {
         }
         match at {
             obelus_remote::model::Where::Thread(thread) => self.heard_in_thread(thread, text),
-            obelus_remote::model::Where::Top => {
-                tracing::debug!("heard at the top, which is the next piece of this");
-            }
+            obelus_remote::model::Where::Top => self.heard_at_top(from, text),
         }
     }
 

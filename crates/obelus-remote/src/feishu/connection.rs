@@ -30,7 +30,7 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::{
     Event, State,
-    model::{Out, Where},
+    model::{Head, Out, Turning, Where},
 };
 
 /// Where the open API is, by the domain the reader chose.
@@ -234,6 +234,34 @@ fn rich(text: &str, call: Option<&str>) -> String {
     .to_string()
 }
 
+/// A thread's head as a card: its title with the state's mark, in the
+/// state's colour, and where it is under it.
+///
+/// A card rather than a rich message because a card can be said again as
+/// often as the turn moves -- a message may be edited twenty times, and a
+/// conversation has more turns than that -- for the fourteen days Feishu
+/// lets a card be updated.
+fn card(head: &Head) -> String {
+    let colour = match head.state {
+        Some(Turning::Working) => "blue",
+        Some(Turning::Waiting) => "orange",
+        Some(Turning::Done) => "green",
+        Some(Turning::Closed) | None => "grey",
+    };
+    json!({
+        "schema": "2.0",
+        "config": { "update_multi": true },
+        "header": {
+            "title": { "tag": "plain_text", "content": head.titled() },
+            "template": colour,
+        },
+        "body": {
+            "elements": [{ "tag": "markdown", "content": head.place }]
+        }
+    })
+    .to_string()
+}
+
 async fn run(
     api: Arc<Api>,
     sink: Arc<dyn Sink<Event>>,
@@ -298,15 +326,15 @@ async fn say(api: &Api, sink: &Arc<dyn Sink<Event>>, out: Out) -> Result<(), Ref
                 }
             }
         }
-        Out::Open { asked, to, text } => {
+        Out::Open { asked, to, head } => {
             let data = api
                 .call(
                     reqwest::Method::POST,
                     "/open-apis/im/v1/messages?receive_id_type=open_id",
                     Some(json!({
                         "receive_id": to,
-                        "msg_type": "post",
-                        "content": rich(&text, None),
+                        "msg_type": "interactive",
+                        "content": card(&head),
                     })),
                 )
                 .await?;
@@ -318,6 +346,15 @@ async fn say(api: &Api, sink: &Arc<dyn Sink<Event>>, out: Out) -> Result<(), Ref
                     link: None,
                 });
             }
+        }
+        // A card's content replaced whole: the head is the card.
+        Out::Retitle { thread, head, .. } => {
+            api.call(
+                reqwest::Method::PATCH,
+                &format!("/open-apis/im/v1/messages/{thread}"),
+                Some(json!({ "content": card(&head) })),
+            )
+            .await?;
         }
         Out::Name { id } => {
             // The name where the app may read it, and the id where it may

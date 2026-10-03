@@ -32,6 +32,7 @@ mod hovering;
 mod noting;
 mod opening;
 pub use history_view::About;
+mod control;
 mod keys;
 mod mirroring;
 mod moving;

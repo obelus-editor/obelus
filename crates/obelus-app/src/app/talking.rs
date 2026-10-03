@@ -238,6 +238,19 @@ impl App {
     /// says it.
     pub(super) fn talk_about(&mut self, note: &obelus_git::todo::NoteId) {
         self.make_room(Room::Region);
+        if let Some(at) = self.open_about(note) {
+            self.go_to_document(DocumentId::new(at));
+        }
+    }
+
+    /// The conversation about a note, opened where there is none: where it
+    /// is in the list of what is open, or nothing where another Obelus has
+    /// it.
+    ///
+    /// Without going to it, which is the caller's: from a chat there is
+    /// nobody at this screen, and the screen is not taken from whatever it
+    /// had.
+    pub(super) fn open_about(&mut self, note: &obelus_git::todo::NoteId) -> Option<usize> {
         let wanted = Topic::Note(note.clone());
         let at = self.documents.iter().position(|document| {
             document
@@ -262,7 +275,7 @@ impl App {
                     // while the reader is standing there. A note here
                     // would be a second answer to a question the page has
                     // answered.
-                    return;
+                    return None;
                 };
                 // What the note says, for the box: read as this opens,
                 // for the reason the notes page reads what it is drawn
@@ -281,7 +294,7 @@ impl App {
                 self.documents.len() - 1
             }
         };
-        self.go_to_document(DocumentId::new(at));
+        Some(at)
     }
 
     /// Asks for a session for the conversation on screen, and lets go of the
@@ -393,7 +406,7 @@ impl App {
                 continue;
             };
             talk.asked_while_shown = false;
-            if !talk.minted || talk.chat.anything_said() {
+            if !talk.minted || talk.chat.anything_said() || talk.from_afar {
                 continue;
             }
             let Some(session) = talk.session.take() else {
@@ -1016,6 +1029,8 @@ impl App {
         if let Some(talk) = self.talk_mut(whose) {
             talk.working_in = head.map(|head| (tree, head));
         }
+        // And its thread, whose head says the branch.
+        self.mirror_head(whose, None);
     }
 
     /// Reads the project's notes again, because there is a reason to.
@@ -1590,6 +1605,8 @@ impl App {
         // arrives -- opening and all, because the opening belongs to
         // whatever goes first.
         talker.say(session.as_ref(), asking, said_of(parts), opening.as_deref());
+        // A turn has started, which its thread says at the top of it.
+        self.mirror_head(whose, Some(obelus_remote::model::Turning::Working));
     }
 
     /// Says what the reader had waiting, now that the turn it was waiting
@@ -3305,7 +3322,10 @@ impl App {
                 // What the agent calls this conversation, which is the
                 // name it goes by in the list of open documents -- so it is
                 // written down rather than only shown.
-                acp::Update::Titled(_) => self.remember_the_conversations(),
+                acp::Update::Titled(_) => {
+                    self.remember_the_conversations();
+                    self.mirror_head(whose, None);
+                }
                 // Kept by the handle, which is where the view reads them:
                 // these are facts about the agent rather than things it
                 // said, and a transcript with them in it is a log. The

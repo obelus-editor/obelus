@@ -141,7 +141,8 @@ async fn run(
                     tracing::warn!(%error, "Slack would not take a message");
                 }
             }
-            Out::Open { asked, to, text } => {
+            Out::Open { asked, to, head } => {
+                let text = head.in_words();
                 let Some(channel) = direct(&session, &mut directs, &to).await else {
                     continue;
                 };
@@ -165,6 +166,25 @@ async fn run(
                         });
                     }
                     Err(error) => tracing::warn!(%error, "Slack would not start a thread"),
+                }
+            }
+            // Slack edits a message for as long as it is there, so the
+            // head is the first message's text, said again.
+            Out::Retitle { to, thread, head } => {
+                let Some(channel) = direct(&session, &mut directs, &to).await else {
+                    continue;
+                };
+                let mut content = SlackMessageContent::new();
+                content.markdown_text = Some(head.in_words());
+                if let Err(error) = session
+                    .chat_update(&SlackApiChatUpdateRequest::new(
+                        channel,
+                        content,
+                        SlackTs::new(thread),
+                    ))
+                    .await
+                {
+                    tracing::warn!(%error, "Slack would not say what a thread is again");
                 }
             }
             Out::Name { id } => {

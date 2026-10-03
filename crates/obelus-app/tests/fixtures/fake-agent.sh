@@ -28,6 +28,8 @@
 #                            Obelus, tries to write one (which Obelus
 #                            refuses), uses a tool, and asks permission; the
 #                            turn ends once the answer to that arrives
+#   session/prompt "/titled"
+#                         -> names the conversation, and ends the turn
 #   session/prompt "/pair"
 #                         -> asks permission twice at once, and says what
 #                            each answer was
@@ -806,6 +808,13 @@ while IFS= read -r line; do
             ;;
         *'"method":"session/prompt"'*'"text":"/broken'*)
             printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"nobody has signed in"}}\n' "$(id_of "$line")"
+            ;;
+        *'"method":"session/prompt"'*'"text":"/titled'*)
+            # It names the conversation, the way an agent does once it has
+            # worked out what the conversation is about.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"session_info_update","title":"Renamed by the agent"}}}\n'
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
         *'"method":"session/prompt"'*'"text":"/'*)
             # A command: the text starts with a slash, and everything after

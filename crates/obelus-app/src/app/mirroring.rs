@@ -27,7 +27,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use obelus_agent::chats::ChatId;
 use obelus_component::composer::Part;
-use obelus_remote::model::{Out, Where};
+use obelus_remote::model::{Head, Out, Turning, Where};
 
 use super::*;
 use crate::conversation::{Conversation, Topic};
@@ -54,6 +54,12 @@ pub(super) struct Mirror {
     /// Conversations whose words waiting for the turn to end came from the
     /// chat, so that they go to the agent saying so.
     from_afar: BTreeSet<String>,
+    /// What each thread was last said to be, so that it is said again only
+    /// when something on it has moved.
+    heads: BTreeMap<String, Head>,
+    /// The notes the top was last offered, in the order they were
+    /// numbered: a number sent back means the note that had it then.
+    pub(super) offered: Vec<obelus_git::todo::NoteId>,
 }
 
 /// One conversation's thread: what the platform calls it, and whose direct
@@ -195,25 +201,11 @@ impl App {
             let Some(talk) = self.talk_named(&chat) else {
                 continue;
             };
-            let title = Self::conversation_name(talk, self.talker.as_ref(), &notes)
-                .unwrap_or_else(|| "A conversation".to_string());
-            let project = self
-                .working_directory
-                .file_name()
-                .map(|name| name.to_string_lossy().to_string())
-                .unwrap_or_default();
-            let branch = talk.working_in.as_ref().map(|(_, head)| match head {
-                obelus_git::Head::Branch(name) => name.clone(),
-                obelus_git::Head::Detached => "Detached".to_string(),
-            });
-            // What the agent last said, under the name: a thread opened on a
+            let head = self.head_of(talk, &notes, None);
+            // What the agent last said, under the head: a thread opened on a
             // conversation that was already going would otherwise start
             // halfway through it with nothing to say where.
             let lately = talk.chat.lately();
-            let mut first = format!("**{title}**\n{project}");
-            if let Some(branch) = branch {
-                first.push_str(&format!(" \u{b7} {branch}"));
-            }
             self.mirror.asked += 1;
             let asked = self.mirror.asked;
             self.mirror.opening.insert(asked, chat.clone());
@@ -224,11 +216,76 @@ impl App {
                     .or_default()
                     .push((lately, false));
             }
+            self.mirror.heads.insert(chat.clone(), head.clone());
             self.say_to(Out::Open {
                 asked,
                 to: to.clone(),
-                text: first,
+                head,
             });
+        }
+    }
+
+    /// What a thread says it is: the conversation's name, the project and
+    /// the branch its agent works on, and where its turn has got to.
+    fn head_of(
+        &self,
+        talk: &Conversation,
+        notes: &obelus_git::todo::Todo,
+        state: Option<Turning>,
+    ) -> Head {
+        let title = Self::conversation_name(talk, self.talker.as_ref(), notes)
+            .unwrap_or_else(|| "A conversation".to_string());
+        let mut place = self
+            .working_directory
+            .file_name()
+            .map(|name| name.to_string_lossy().to_string())
+            .unwrap_or_default();
+        if let Some((_, branch)) = &talk.working_in {
+            place.push_str(" \u{b7} ");
+            place.push_str(match branch {
+                obelus_git::Head::Branch(name) => name,
+                obelus_git::Head::Detached => "Detached",
+            });
+        }
+        Head {
+            title,
+            place,
+            state,
+        }
+    }
+
+    /// Says what the thread of the conversation `whose` names is again,
+    /// where any of it has moved: `state` where the turn has, `None` to
+    /// keep the one it had -- a new name or a branch moves nothing else.
+    ///
+    /// Asked at the moments something moves rather than once a frame: the
+    /// name needs the notes, which are a file, and the moments are few --
+    /// a turn starting, a question, an answer, an end, a title, a branch.
+    pub(super) fn mirror_head(&mut self, whose: talking::Whose, state: Option<Turning>) {
+        if !self.remote_state().connected() {
+            return;
+        }
+        let Some(chat) = self.chat_named(whose) else {
+            return;
+        };
+        let Some(talk) = self.talk_of(whose) else {
+            return;
+        };
+        let notes = obelus_git::todo::read(&self.working_directory)
+            .notes()
+            .unwrap_or_default();
+        let kept = self.mirror.heads.get(&chat).and_then(|head| head.state);
+        let head = self.head_of(talk, &notes, state.or(kept));
+        if self.mirror.heads.get(&chat) == Some(&head) {
+            return;
+        }
+        self.mirror.heads.insert(chat.clone(), head.clone());
+        // Kept even where the thread is not there yet -- the reader's first
+        // words go out the moment they press enter, and the platform has
+        // not answered with the thread by then -- and said once it is: see
+        // `thread_opened`.
+        if let Some(Thread { thread, to }) = self.mirror.threads.get(&chat).cloned() {
+            self.say_to(Out::Retitle { to, thread, head });
         }
     }
 
@@ -287,6 +344,14 @@ impl App {
             .threads
             .insert(chat.clone(), Thread { thread, to });
         write_the_table(platform.key, &self.mirror.threads);
+        // What the head became while the thread was on its way -- a turn
+        // started, a name given -- said now there is one to say it on.
+        if let (Some(head), Some(Thread { thread, to })) = (
+            self.mirror.heads.get(&chat).cloned(),
+            self.mirror.threads.get(&chat).cloned(),
+        ) {
+            self.say_to(Out::Retitle { to, thread, head });
+        }
         for (text, notify) in self.mirror.held.remove(&chat).unwrap_or_default() {
             self.say_in_thread(&chat, text, notify);
         }
@@ -349,6 +414,7 @@ impl App {
         if !said.is_empty() {
             self.mirror_in(whose, said.to_string(), true);
         }
+        self.mirror_head(whose, Some(Turning::Done));
     }
 
     /// The question now up, in words, in the thread -- calling the reader,
@@ -361,10 +427,17 @@ impl App {
         else {
             return;
         };
-        // What it is waiting for goes out before the question does: an
-        // answer here would be to a question nobody there had read yet.
-        self.mirror_turn_over(whose);
+        // What it said before it asked goes out before the question does:
+        // an answer here would be to a question nobody there had read yet.
+        let chat = self.chat_named(whose);
+        let said = chat
+            .and_then(|chat| self.mirror.this_turn.remove(&chat))
+            .unwrap_or_default();
+        if !said.trim().is_empty() {
+            self.mirror_in(whose, said.trim().to_string(), false);
+        }
         self.mirror_in(whose, asked, true);
+        self.mirror_head(whose, Some(Turning::Waiting));
     }
 
     /// Says in the thread that a question was answered on this machine.
@@ -374,6 +447,7 @@ impl App {
             false => format!("\u{2714} Answered on this machine: {said}"),
         };
         self.mirror_in(whose, said, false);
+        self.mirror_head(whose, Some(Turning::Working));
     }
 
     /// Says in the thread that the agent stopped waiting.
@@ -403,6 +477,19 @@ impl App {
         }
         if let Some(chat) = chat_of(talk).map(|chat| chat.file_name()) {
             self.say_in_thread(&chat, "Closed.".to_string(), false);
+            // Said here rather than through `mirror_head`, which asks the
+            // conversation -- and by now the document has gone.
+            if let (Some(Thread { thread, to }), Some(head)) = (
+                self.mirror.threads.get(&chat).cloned(),
+                self.mirror.heads.get(&chat).cloned(),
+            ) {
+                let head = Head {
+                    state: Some(Turning::Closed),
+                    ..head
+                };
+                self.mirror.heads.insert(chat, head.clone());
+                self.say_to(Out::Retitle { to, thread, head });
+            }
         }
     }
 
@@ -439,7 +526,10 @@ impl App {
         // A card up is the conversation waiting on exactly this.
         if let Some(card) = self.talk_of(whose).and_then(|talk| talk.card.clone()) {
             match card.answered_by(text) {
-                Ok((chosen, words)) => self.answer_from_afar(whose, &chosen, words.as_deref()),
+                Ok((chosen, words)) => {
+                    self.answer_from_afar(whose, &chosen, words.as_deref());
+                    self.mirror_head(whose, Some(Turning::Working));
+                }
                 Err(why) => self.say_in_thread(&chat, why, false),
             }
             return;
