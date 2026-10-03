@@ -1323,6 +1323,9 @@ impl App {
     /// about what Obelus does on the way up has nothing else to call.
     pub fn start(&mut self, sender: std::sync::mpsc::Sender<Event>) {
         self.events = Some(sender.clone());
+        // Before anything else is started: the reader is looking at an empty
+        // screen until it arrives.
+        self.send_the_reopening();
         self.start_watching(sender);
         // Both of these are about the project, and on a start with
         // nothing to go on there is not one yet: they would be rooted at
@@ -1392,6 +1395,9 @@ impl App {
     /// ticker and a language server per open file.
     pub fn events_for_test(&mut self, sender: std::sync::mpsc::Sender<Event>) {
         self.events = Some(sender);
+        // What was open is read on a thread as soon as there is a channel to
+        // answer on, as `start` does it.
+        self.send_the_reopening();
     }
 
     /// The region the editor was last drawn in.
@@ -2924,6 +2930,7 @@ impl App {
                     picker.scan_arrived(*scanned);
                 }
             }
+            Event::Reopened(files) => self.take_up_what_was_open(files),
             Event::Search(obelus_search::Event::FilesFound {
                 generation,
                 paths,

@@ -107,7 +107,7 @@ impl App {
         // out again or reads its file again, what the selection goes back to
         // is the note the caret is in.
         if let Some(note) = about {
-            view.enter(&note);
+            view.put_caret_in(&note);
         }
         self.documents
             .push(Some(crate::app::document::Document::from(view)));

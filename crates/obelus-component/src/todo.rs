@@ -654,7 +654,7 @@ impl TodoView {
     /// in whatever note it was in: a view just opened has its caret in the
     /// first note, and the next time the rows are laid out the selection
     /// follows the caret back there.
-    pub fn enter(&mut self, to: &obelus_git::todo::NoteId) {
+    pub fn put_caret_in(&mut self, to: &obelus_git::todo::NoteId) {
         if let Some(at) = self.todo.notes.iter().position(|note| note.id == *to) {
             self.enter_note(at, false);
         }

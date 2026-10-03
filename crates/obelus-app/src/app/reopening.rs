@@ -24,12 +24,25 @@
 //! change, and the way out freshens them -- unless another window has
 //! written since, which is the one that changed something last.
 //!
-//! **Read once, when the tree is settled on.** What is passed over is what
-//! cannot come back: a file that has gone, a conversation another Obelus
-//! has open, and one there is nothing to come back to -- nothing was said
-//! in it, or it was had with an agent that is not the one in use now. The
-//! record is never read into what is written, so a record that will not
-//! read is not one this could make worse.
+//! **Read once, when the tree is settled on, and the files on a thread.**
+//! The record is a few lines; the files it names are what costs, and a
+//! start is when the reader is looking at an empty screen. So they are read
+//! elsewhere and put in the list when they arrive, in the record's order,
+//! with the notes and the conversations between them. Until then nothing is
+//! written: a record of what has arrived so far would take the place of
+//! the one being read. What is passed over is what cannot come back: a file
+//! that has gone, a conversation another Obelus has open, and one there is
+//! nothing to come back to -- nothing was said in it, or it was had with an
+//! agent that is not the one in use now. The record is never read into
+//! what is written, so a record that will not read is not one this could
+//! make worse.
+//!
+//! **A tree that has gone takes its record with it.** Looked for on the
+//! same thread on every start, which is a moment the records are being read
+//! anyway, and by the tree each one names: `git worktree remove` is done in
+//! a shell, with no Obelus on the tree to see it go. The cost is the one the
+//! list of projects accepts -- a disk not plugged in looks like a tree that
+//! was removed, and opening it again starts a record afresh.
 
 use std::path::{Path, PathBuf};
 
@@ -111,6 +124,11 @@ pub(super) struct Reopening {
     tree: PathBuf,
     /// What this window last wrote.
     written: Option<Record>,
+    /// The record being reopened, while its files are read.
+    waiting: Option<Record>,
+    /// Whether they have been sent for, which waits for a channel to answer
+    /// on: a start reads the record before there is one.
+    sent: bool,
 }
 
 /// Where a tree's record lives.
@@ -205,9 +223,11 @@ fn read(path: &Path) -> Option<Record> {
 ///
 /// By hand, the way the list of projects is: a few lines a document, and a
 /// reader who opens it should find it readable.
-fn to_toml(record: &Record) -> String {
+fn to_toml(tree: &Path, record: &Record) -> String {
     let quoted = |text: &str| toml::Value::String(text.to_string()).to_string();
-    let mut out = String::new();
+    // Which tree, for nothing but finding out it has gone: the file's name
+    // is many-to-one and cannot be read back.
+    let mut out = format!("tree = {}\n", quoted(&tree.to_string_lossy()));
     if let Some(current) = record.current {
         out.push_str(&format!("current = {current}\n"));
     }
@@ -238,7 +258,7 @@ fn to_toml(record: &Record) -> String {
 }
 
 /// Writes a record over whatever is there.
-fn write(path: &Path, record: &Record) {
+fn write(path: &Path, tree: &Path, record: &Record) {
     if let Some(directory) = path.parent()
         && let Err(error) = std::fs::create_dir_all(directory)
     {
@@ -250,10 +270,35 @@ fn write(path: &Path, record: &Record) {
     // the other.
     let beside = path.with_extension(format!("toml.writing.{}", std::process::id()));
     if let Err(error) =
-        std::fs::write(&beside, to_toml(record)).and_then(|()| std::fs::rename(&beside, path))
+        std::fs::write(&beside, to_toml(tree, record)).and_then(|()| std::fs::rename(&beside, path))
     {
         tracing::warn!(%error, path = %path.display(), "what was open was not written");
         let _ = std::fs::remove_file(&beside);
+    }
+}
+
+/// Takes away the record of every tree that has gone.
+///
+/// A record that names no tree, or will not read, is left alone: it is
+/// nothing this can say has gone.
+fn forget_the_trees_that_have_gone(directory: &Path) {
+    let Ok(entries) = std::fs::read_dir(directory) else {
+        return;
+    };
+    for path in entries.filter_map(Result::ok).map(|entry| entry.path()) {
+        if path.extension().is_none_or(|extension| extension != "toml") {
+            continue;
+        }
+        let tree = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|text| text.parse::<toml::Table>().ok())
+            .and_then(|table| table.get("tree")?.as_str().map(PathBuf::from));
+        if let Some(tree) = tree
+            && obelus_git::is_gone(&tree)
+        {
+            tracing::info!(tree = %tree.display(), "the tree has gone, so what it had open is forgotten");
+            let _ = std::fs::remove_file(&path);
+        }
     }
 }
 
@@ -281,7 +326,7 @@ impl App {
         self.reopening = Reopening {
             path,
             tree: tree.unwrap_or_default(),
-            written: None,
+            ..Reopening::default()
         };
     }
 
@@ -328,7 +373,8 @@ impl App {
     /// comparison of a handful of names, and the write happens only when
     /// the answer moved.
     pub(super) fn write_down_what_is_open(&mut self) {
-        if !self.settled.config.reopen || !self.has_a_project() {
+        if !self.settled.config.reopen || !self.has_a_project() || self.reopening.waiting.is_some()
+        {
             return;
         }
         let Some(path) = self.reopening.path.clone() else {
@@ -343,7 +389,7 @@ impl App {
         {
             return;
         }
-        write(&path, &now);
+        write(&path, &self.reopening.tree, &now);
         self.reopening.written = Some(now);
     }
 
@@ -354,7 +400,8 @@ impl App {
     /// that window changed what it had open after this one last changed
     /// anything, and the last to change is the one that wins.
     pub(super) fn write_down_what_is_open_on_leaving(&mut self) {
-        if !self.settled.config.reopen || !self.has_a_project() {
+        if !self.settled.config.reopen || !self.has_a_project() || self.reopening.waiting.is_some()
+        {
             return;
         }
         let Some(path) = self.reopening.path.clone() else {
@@ -365,7 +412,7 @@ impl App {
         {
             return;
         }
-        write(&path, &self.what_is_open());
+        write(&path, &self.reopening.tree, &self.what_is_open());
     }
 
     /// Opens again what was open the last time this tree was.
@@ -374,6 +421,10 @@ impl App {
     /// and the reader is left on what they named: `ob src/main.rs` is a
     /// reader saying what they want to look at, and not that they want to
     /// lose everything else.
+    ///
+    /// The record is read here and its files on a thread, as soon as there
+    /// is a channel to answer on; what it names goes in the list when they
+    /// arrive.
     pub fn reopen_what_was_open(&mut self) {
         if !self.settled.config.reopen {
             return;
@@ -381,7 +432,66 @@ impl App {
         let Some(path) = self.reopening.path.clone() else {
             return;
         };
-        let Some(record) = read(&path) else {
+        self.reopening.waiting = read(&path);
+        self.reopening.sent = false;
+        self.send_the_reopening();
+    }
+
+    /// Reads the files the record names on a thread, where there is a
+    /// record waiting and a channel to answer on.
+    pub(super) fn send_the_reopening(&mut self) {
+        let Some(record) = self.reopening.waiting.as_ref() else {
+            return;
+        };
+        let Some(sender) = self.events.clone() else {
+            return;
+        };
+        if std::mem::replace(&mut self.reopening.sent, true) {
+            return;
+        }
+        let files: Vec<PathBuf> = record
+            .open
+            .iter()
+            .filter_map(|open| match open {
+                Open::File { path, .. } => Some(self.reopening.tree.join(path)),
+                Open::Conversation(_) | Open::Notes { .. } => None,
+            })
+            .collect();
+        let records = self
+            .reopening
+            .path
+            .as_ref()
+            .and_then(|path| path.parent())
+            .map(Path::to_path_buf);
+        obelus_runtime::handle().spawn_blocking(move || {
+            let read = files
+                .into_iter()
+                .map(|path| {
+                    // A file that has gone does not open, and is passed over.
+                    let buffer = obelus_buffer::Buffer::open(&path)
+                        .inspect_err(|error| {
+                            tracing::info!(%error, path = %path.display(), "not opened again");
+                        })
+                        .ok();
+                    (path, buffer)
+                })
+                .collect();
+            // Before the answer rather than after, so that whatever is told
+            // the files have arrived is told the sweep is done too: a few
+            // small files, against the files the reader is waiting for.
+            if let Some(records) = records {
+                forget_the_trees_that_have_gone(&records);
+            }
+            let _ = sender.send(crate::event::Event::Reopened(read));
+        });
+    }
+
+    /// Puts what was open in the list, now that its files have been read.
+    pub(super) fn take_up_what_was_open(
+        &mut self,
+        mut files: Vec<(PathBuf, Option<obelus_buffer::Buffer>)>,
+    ) {
+        let Some(record) = self.reopening.waiting.take() else {
             return;
         };
         let tree = self.reopening.tree.clone();
@@ -403,7 +513,14 @@ impl App {
                     line,
                     column,
                     top,
-                } => self.reopen_file(&tree.join(path), line, column, top),
+                } => {
+                    let path = tree.join(path);
+                    let buffer = files
+                        .iter_mut()
+                        .find(|(read, _)| *read == path)
+                        .and_then(|(_, buffer)| buffer.take());
+                    self.reopen_file(&path, buffer, line, column, top)
+                }
                 Open::Conversation(which) => {
                     let kept = agent.as_deref().and_then(|agent| {
                         sessions
@@ -429,6 +546,8 @@ impl App {
             self.reread_the_notes_kept();
             self.reread_who_holds_what();
         }
+        // Only onto an empty screen: one with something on it is what the
+        // command line named, or where the reader went while this was read.
         if self.current.is_none()
             && let Some(id) = record
                 .current
@@ -439,16 +558,23 @@ impl App {
         }
     }
 
-    /// Opens a file again with the caret and the view where they were.
+    /// Puts a file read again in the list, with the caret and the view where
+    /// they were.
+    ///
+    /// Not over one already open: the reader named it, or opened it while
+    /// the rest was being read, and where its caret is now is theirs.
     fn reopen_file(
         &mut self,
         path: &Path,
+        buffer: Option<obelus_buffer::Buffer>,
         line: usize,
         column: usize,
         top: usize,
     ) -> Option<DocumentId> {
-        // A file that has gone does not open, and is passed over.
-        let at = self.open_quietly(path)?;
+        if let Some(at) = self.open_at(path) {
+            return Some(DocumentId::new(at));
+        }
+        let at = self.take_in(buffer?);
         let buffer = self.file_mut(DocumentId::new(at))?;
         buffer.place_cursor(LineNumber::new(line), CharColumn::new(column));
         // The view where it was, rather than wherever the caret pulls it:
@@ -531,7 +657,7 @@ mod tests {
         let directory =
             std::env::temp_dir().join(format!("obelus-reopening-{}", std::process::id()));
         let path = directory.join("record.toml");
-        write(&path, &record);
+        write(&path, Path::new("/somewhere"), &record);
         let back = read(&path);
         let _ = std::fs::remove_dir_all(&directory);
         assert_eq!(back, Some(record));

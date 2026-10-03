@@ -77,6 +77,29 @@ fn documents(app: &App) -> Vec<&Document> {
         .collect()
 }
 
+/// Starts on a tree that has a record, and waits for what it names to be
+/// read -- which happens on a thread, as soon as there is a channel.
+fn start_again(paths: &[std::path::PathBuf]) -> App {
+    let mut app = startup::start(paths, BUILT).expect("starting again");
+    arrive(&mut app);
+    app
+}
+
+/// Gives a window its channel and waits for the files it is reopening.
+fn arrive(app: &mut App) {
+    let events = support::drive(app);
+    loop {
+        let event = events
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .expect("what was open never arrived");
+        let reopened = matches!(event, obelus_app::event::Event::Reopened(_));
+        app.handle(event);
+        if reopened {
+            return;
+        }
+    }
+}
+
 /// Opens `b.rs`, walks five lines down it, and goes back to `a.rs`.
 ///
 /// Going back is a change of which document is on screen, so the frame
@@ -110,7 +133,7 @@ fn the_files_come_back_with_their_carets() {
 
     // The tree and nothing else: no file named, so what is on screen is
     // what was.
-    let mut second = startup::start(&[root.to_path_buf()], BUILT).expect("starting again");
+    let mut second = start_again(&[root.to_path_buf()]);
     assert_eq!(files(&second), ["a.rs", "b.rs"], "not what was open");
     assert_eq!(
         showing(&second).as_deref(),
@@ -140,7 +163,7 @@ fn a_file_named_is_where_the_reader_lands() {
     frame(&mut first);
     drop(first);
 
-    let second = startup::start(std::slice::from_ref(&c), BUILT).expect("starting again");
+    let second = start_again(std::slice::from_ref(&c));
     assert_eq!(
         showing(&second).as_deref(),
         Some("c.rs"),
@@ -187,7 +210,7 @@ fn the_notes_come_back_on_the_note_the_reader_was_on() {
     frame(&mut first);
     drop(first);
 
-    let mut second = startup::start(&[root.to_path_buf()], BUILT).expect("starting again");
+    let mut second = start_again(&[root.to_path_buf()]);
     frame(&mut second);
     second.handle(obelus_app::event::Event::Watched(obelus_watch::Changed {
         path: obelus_git::todo::path(root).expect("a tree that is there"),
@@ -203,6 +226,88 @@ fn the_notes_come_back_on_the_note_the_reader_was_on() {
         on.as_deref(),
         Some("0123456S"),
         "not on the note the reader was on"
+    );
+}
+
+/// The first screen does not wait for the files: they are read on a
+/// thread and put in the list when they arrive. Until then nothing is
+/// written, and a reader who has gone somewhere meanwhile is left there.
+///
+/// Broken deliberately three times: putting the files in the list as the
+/// record is read failed the first assertion; writing while they were being
+/// read wrote a record of `c.rs` alone, and the next start had nothing
+/// else; and going to the record's own document whatever the screen had on
+/// it took the reader off `c.rs`.
+#[test]
+fn the_files_are_read_after_the_first_screen() {
+    let scratch = tree("reopening-later", true);
+    let root = scratch.path();
+    let c = root.join("c.rs");
+    std::fs::write(&c, "fn c() {}\n").expect("writing c");
+
+    let mut first = startup::start(&[root.join("a.rs")], BUILT).expect("starting");
+    read_down_b(&mut first, root);
+    drop(first);
+
+    let mut second = startup::start(&[root.to_path_buf()], BUILT).expect("starting again");
+    assert!(
+        files(&second).is_empty(),
+        "the files were read before the first screen"
+    );
+    // The reader goes somewhere while they are read, and a frame is drawn.
+    second.open_for_test(&c);
+    frame(&mut second);
+    drop(second);
+
+    let third = start_again(&[root.to_path_buf()]);
+    assert_eq!(
+        files(&third),
+        ["a.rs", "b.rs"],
+        "a window that never had them wrote a record over them"
+    );
+    drop(third);
+    let mut fourth = startup::start(&[root.to_path_buf()], BUILT).expect("a fourth");
+    fourth.open_for_test(&c);
+    arrive(&mut fourth);
+    assert_eq!(
+        showing(&fourth).as_deref(),
+        Some("c.rs"),
+        "the reader was taken off where they went"
+    );
+}
+
+/// A tree that has gone takes its record with it, the next time any window
+/// starts -- `git worktree remove` is done in a shell, with nothing of
+/// Obelus's on the tree to see it go.
+///
+/// Broken deliberately by not sweeping after the files are read: the
+/// record of the removed tree was still there.
+#[test]
+fn a_tree_that_has_gone_takes_its_record_with_it() {
+    let gone = tree("reopening-removed", true);
+    let mut first = startup::start(&[gone.path().join("a.rs")], BUILT).expect("starting");
+    frame(&mut first);
+    drop(first);
+    let record = std::fs::read_dir(
+        obelus_logging::state_directory()
+            .expect("somewhere to keep state")
+            .join("open"),
+    )
+    .expect("the records")
+    .filter_map(Result::ok)
+    .map(|entry| entry.path())
+    .find(|path| path.to_string_lossy().contains("reopening-removed"))
+    .expect("the record of the tree");
+    std::fs::remove_dir_all(gone.path()).expect("removing the tree");
+
+    let here = tree("reopening-elsewhere", true);
+    let mut other = startup::start(&[here.path().join("a.rs")], BUILT).expect("starting");
+    frame(&mut other);
+    drop(other);
+    let _again = start_again(&[here.path().to_path_buf()]);
+    assert!(
+        !record.exists(),
+        "the record of a tree that has gone is still there"
     );
 }
 
@@ -245,7 +350,7 @@ fn leaving_says_where_the_caret_is() {
     leave(&mut first);
     drop(first);
 
-    let second = startup::start(&[root.to_path_buf()], BUILT).expect("starting again");
+    let second = start_again(&[root.to_path_buf()]);
     let caret = second.current_buffer().expect("a.rs").cursor();
     assert_eq!(
         caret.line.get(),
@@ -266,7 +371,7 @@ fn the_last_window_to_change_wins() {
 
     let mut one = startup::start(&[root.join("a.rs")], BUILT).expect("one");
     frame(&mut one);
-    let mut two = startup::start(&[root.join("b.rs")], BUILT).expect("two");
+    let mut two = start_again(&[root.join("b.rs")]);
     // Two came up with a.rs from one's record beside b.rs; it closes a.rs,
     // which is a change, after anything one did.
     two.open_for_test(&root.join("a.rs"));
@@ -280,7 +385,7 @@ fn the_last_window_to_change_wins() {
     leave(&mut one);
     drop(one);
 
-    let three = startup::start(&[root.to_path_buf()], BUILT).expect("three");
+    let three = start_again(&[root.to_path_buf()]);
     assert_eq!(files(&three), ["b.rs"], "the window that left last won");
 }
 
@@ -351,6 +456,7 @@ fn a_conversation_comes_back_unless_another_window_has_it() {
 
     let mut second = window();
     second.reopen_what_was_open();
+    arrive(&mut second);
     assert_eq!(
         about(&second),
         Some(obelus_app::conversation::Topic::Note(note.clone())),
@@ -367,6 +473,7 @@ fn a_conversation_comes_back_unless_another_window_has_it() {
     // conversation: it is one window's at a time.
     let mut third = window();
     third.reopen_what_was_open();
+    arrive(&mut third);
     assert!(
         documents(&third)
             .iter()
