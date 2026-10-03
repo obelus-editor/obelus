@@ -385,6 +385,7 @@ impl Widget for SettingsView<'_> {
             &self.settings.tabs(),
             self.settings.tab(),
             self.theme,
+            self.in_front,
         );
         // Which file a change on this page is written to, on the tab row
         // and kept there: it is the whole of what makes this page different

@@ -144,13 +144,14 @@ pub fn reading_width(area: Rect) -> u16 {
     area.width.saturating_sub(MARGIN + INDENT + 1).max(1)
 }
 
-/// The room a list opened over the conversation has.
+/// The room the list of an agent's commands has over the conversation.
 ///
 /// Everything above whatever is at the foot of it, and the rule over that.
 /// A compact list draws against the foot of what it is given, and the foot
-/// of the whole region is what is being written -- which for the list of
-/// commands is the one row that must stay visible, because the list is a
-/// list of what is being typed there.
+/// of the whole region is what is being written -- the one row that must
+/// stay visible, because the list is a list of what is being typed there.
+/// A list the reader opened is not given this: it covers the conversation,
+/// box and card and all.
 ///
 /// Through [`bands`], which is the one answer to where that boundary is:
 /// a card is taller than a box, and rows for the box worked out here

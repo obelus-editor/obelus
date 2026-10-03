@@ -504,6 +504,7 @@ impl Widget for PickerView<'_> {
                 self.picker.tabs(),
                 self.picker.tab(),
                 self.theme,
+                self.in_front,
             );
             crate::rule(
                 cells,

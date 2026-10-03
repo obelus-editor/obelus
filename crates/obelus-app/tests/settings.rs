@@ -62,13 +62,17 @@ fn shown() -> usize {
 /// the keys are.
 ///
 /// Broken deliberately by marking the page's row whatever is over it: the
-/// row stayed lit beside the list's own.
+/// row stayed lit beside the list's own. And the tab the same way, by
+/// handing `ui::tabs` true.
 #[test]
 fn the_row_under_a_list_is_not_marked() {
     let scratch = temporary("under-a-list");
     let mut app = open(&settings_file(&scratch));
     let dump = support::render(&mut app, 66, 12);
     let lit = support::drawn_in(&dump, "Theme");
+    // And the tab, which is the same mark across a row: the page's own name
+    // is the first word on the screen.
+    let tab = support::drawn_in(&dump, "Settings");
 
     // The theme's choices, narrowed so the row is not behind them -- and to
     // the theme in force, which the list previews: another theme's colours
@@ -82,6 +86,11 @@ fn the_row_under_a_list_is_not_marked() {
         lit,
         "the page's row is lit under the list:\n{dump}"
     );
+    assert_ne!(
+        support::drawn_in(&dump, "Settings"),
+        tab,
+        "the page's tab is lit under the list:\n{dump}"
+    );
 
     support::press(&mut app, KeyCode::Esc);
     let dump = support::render(&mut app, 66, 12);
@@ -89,6 +98,11 @@ fn the_row_under_a_list_is_not_marked() {
         support::drawn_in(&dump, "Theme"),
         lit,
         "the row did not take the mark back:\n{dump}"
+    );
+    assert_eq!(
+        support::drawn_in(&dump, "Settings"),
+        tab,
+        "the tab did not take the mark back:\n{dump}"
     );
 }
 

@@ -251,6 +251,9 @@ impl Layout {
 pub struct CountsView<'a> {
     counts: &'a Counts,
     theme: &'a Theme,
+    /// Whether nothing is over the counts, which is whether they may mark
+    /// the row and the tab the keys are on -- see [`crate::in_front`].
+    in_front: bool,
 }
 
 impl<'a> CountsView<'a> {
@@ -260,6 +263,7 @@ impl<'a> CountsView<'a> {
         Some(Self {
             counts: app.counts()?,
             theme: app.theme(),
+            in_front: crate::in_front(app, Some(crate::layers::Layer::Counts)),
         })
     }
 }
@@ -278,7 +282,14 @@ impl Widget for CountsView<'_> {
         }
 
         let tabs = self.counts.tabs();
-        crate::tabs(cells, area, &tabs, self.counts.tab(), self.theme);
+        crate::tabs(
+            cells,
+            area,
+            &tabs,
+            self.counts.tab(),
+            self.theme,
+            self.in_front,
+        );
         let under_tabs = Rect {
             y: area.y + 1,
             height: 1,
@@ -370,7 +381,7 @@ impl CountsView<'_> {
                 },
                 index,
                 layout,
-                index == window.focus(),
+                self.in_front && index == window.focus(),
             );
         }
 

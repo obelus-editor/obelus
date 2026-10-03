@@ -3214,6 +3214,56 @@ fn a_tool_call_in_the_transcript_opens_the_file_it_was_in() {
     );
 }
 
+/// The transcript's row under a list opened over it is drawn and not lit:
+/// the keys are the list's.
+///
+/// Deliberate break: light the row the cursor is on whatever is over the
+/// conversation -- the tool call wears the list's own mark beside it.
+#[test]
+fn the_transcript_s_row_under_a_list_is_not_lit() {
+    let (mut app, events) = talking();
+    support::type_text(&mut app, "what is this file");
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        &events,
+        "the permission request",
+        App::is_asking_permission,
+    );
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the end of the turn", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // To the file it read -- see the test above.
+    support::press(&mut app, KeyCode::Up);
+    support::press(&mut app, KeyCode::BackTab);
+    support::press(&mut app, KeyCode::BackTab);
+    let call = "Read the file";
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let lit = support::drawn_in(&dump, call);
+
+    // The themes narrowed to the one in force, which is short enough to
+    // leave the row in sight and previews nobody else's colours.
+    support::press_control(&mut app, 'p');
+    support::type_text(&mut app, "choose-theme");
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "dark");
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert_ne!(
+        support::drawn_in(&dump, call),
+        lit,
+        "the transcript's row is lit under the list:\n{dump}"
+    );
+
+    support::press(&mut app, KeyCode::Esc);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        support::drawn_in(&dump, call),
+        lit,
+        "the row did not take the mark back:\n{dump}"
+    );
+}
+
 /// A conversation with nothing said in it keeps the caret in the box.
 ///
 /// The arrows move the nearest thing that can still move. In a conversation

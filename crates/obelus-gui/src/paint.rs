@@ -176,10 +176,10 @@ pub(crate) struct Painter {
     /// What each pane's and each box's glass reads, furthest first: each
     /// is a picture of its own, because what one sees through itself is
     /// the glass of everything under it. Made as they are first wanted and
-    /// kept, so a window that has once had three things open draws a fourth
-    /// pass for nothing -- and the first is always there, because its
-    /// bindings are the ones the whole frame is drawn with, nothing else
-    /// reading a picture.
+    /// kept: a window that has once had three things open holds three
+    /// pictures from then on, though it draws into only as many as are open
+    /// -- and the first is always there, because its bindings are the ones
+    /// the whole frame is drawn with, nothing else reading a picture.
     levels: Vec<Seen>,
     /// Where a blur's first way is put, for the second to read, and the
     /// bindings that read it.

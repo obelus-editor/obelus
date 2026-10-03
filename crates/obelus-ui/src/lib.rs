@@ -1761,6 +1761,10 @@ pub fn write_marked(
 /// background means "this is the one you are on". Returns the column after
 /// the last tab.
 ///
+/// Only where the row is `in_front` -- see [`in_front`]. Under a list it
+/// keeps the ink that says which tab it is, and not the ground that says
+/// the keys are here.
+///
 /// The arrows are not a hint that can go stale: the keys are the arrows, and
 /// there is nowhere to rebind them to.
 pub fn tabs<Name>(
@@ -1769,6 +1773,7 @@ pub fn tabs<Name>(
     names: &[Name],
     current: usize,
     theme: &Theme,
+    in_front: bool,
 ) -> u16
 where
     Name: AsRef<str>,
@@ -1789,11 +1794,12 @@ where
     }
     let mut column = area.x + 1;
     for (index, x, _) in &placed.placed {
-        let style = match *index == current {
-            true => Style::new()
+        let style = match (*index == current, in_front) {
+            (true, true) => Style::new()
                 .fg(theme.foreground)
                 .bg(theme.selected_row_background),
-            false => dim,
+            (true, false) => dim.fg(theme.foreground),
+            (false, _) => dim,
         };
         column = write_marked(
             cells,
