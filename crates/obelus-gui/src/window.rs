@@ -122,8 +122,8 @@ pub(crate) fn show(app: App) -> Result<()> {
 /// which happened.
 #[derive(Clone, Debug)]
 struct Rolling {
-    /// The rows it is drawn in, which is also what says it is the same
-    /// band as the one on the frame before.
+    /// The rows it is drawn in, which with `under` is what says it is the
+    /// same band as the one on the frame before -- see [`Rolling::is`].
     room: Rect,
     /// How far down its list it has got.
     top: i64,
@@ -158,6 +158,20 @@ struct Rolling {
     /// full-screen dialog is over everything, so a transcript under one is
     /// as inside it as the dialog's own list.
     under: bool,
+}
+
+impl Rolling {
+    /// Whether this is the band `was` was, a frame on.
+    ///
+    /// Where it is and whether a pane is over it. Where alone is not
+    /// enough, because a dialog's list can sit exactly where the page under
+    /// it has one -- the settings over a conversation share its
+    /// transcript's rows -- and the first of the two was taken for both: the
+    /// settings, scrolled, were measured against a transcript at the top
+    /// every frame, and slid the difference again on every one of them.
+    fn is(&self, was: &Self) -> bool {
+        self.room == was.room && self.under == was.under
+    }
 }
 
 /// Everything the window has, and Obelus on the other side of it.
@@ -1046,7 +1060,7 @@ impl ApplicationHandler<Waking> for Showing {
                 // behind exist on one page, and that page is a screenful.
                 let now = Instant::now();
                 for band in &mut self.scrolled {
-                    let Some(was) = was_at.iter().find(|was| was.room == band.room) else {
+                    let Some(was) = was_at.iter().find(|was| band.is(was)) else {
                         continue;
                     };
                     // What it is already counting from, where it is in the
@@ -1514,8 +1528,42 @@ fn marked(attributes: winit::window::WindowAttributes) -> winit::window::WindowA
 mod tests {
     use std::time::Instant;
 
-    use super::{MARK, wants_a_frame};
+    use ratatui::layout::Rect;
+
+    use super::{MARK, Rolling, wants_a_frame};
     use crate::motion::{Motion, Wake};
+
+    /// A band is matched with the one it was, not with another in the same
+    /// rows: a dialog's list over a page's that happens to sit where it does
+    /// -- the settings over a conversation -- is two bands.
+    ///
+    /// Deliberate break: match on `room` alone in `Rolling::is`. The
+    /// settings' list is then taken for the transcript under it, which is at
+    /// its top while the list is not, and it slid on every frame.
+    #[test]
+    fn a_band_under_a_pane_is_not_the_pane_s() {
+        let band = |top, under| Rolling {
+            room: Rect::new(0, 2, 75, 18),
+            top,
+            before: None,
+            bar: None,
+            origin: None,
+            under,
+        };
+        let was = [band(0, true), band(4, false)];
+        let settings = band(4, false);
+        assert_eq!(
+            was.iter().find(|was| settings.is(was)).map(|was| was.top),
+            Some(4),
+            "the list was taken for the transcript under it"
+        );
+        let transcript = band(0, true);
+        assert_eq!(
+            was.iter().find(|was| transcript.is(was)).map(|was| was.top),
+            Some(0),
+            "the transcript was taken for the list over it"
+        );
+    }
 
     /// A pass that is about to poll asks for the frame it is polling for.
     ///
