@@ -150,20 +150,23 @@ struct Rolling {
     /// the mark sets out from somewhere it was never drawn and steps back
     /// to catch up.
     origin: Option<u16>,
-    /// Whether a pane was put over it, which is whether it was said before
-    /// the pane's backdrop: a view draws the page, then says what is
-    /// behind the pane, then draws the pane and its own rows.
+    /// How many panes were put over it, which is how many were said after
+    /// it: a view draws the page, then says what is behind the pane, then
+    /// draws the pane and its own rows.
     ///
     /// Said rather than worked out from where the two are, because a
     /// full-screen dialog is over everything, so a transcript under one is
-    /// as inside it as the dialog's own list.
-    under: bool,
+    /// as inside it as the dialog's own list. And a count rather than
+    /// whether, because with a list over the settings over a conversation
+    /// the transcript and the settings' list are both under something, in
+    /// the same rows -- see `Rolling::is`.
+    under: u8,
 }
 
 impl Rolling {
     /// Whether this is the band `was` was, a frame on.
     ///
-    /// Where it is and whether a pane is over it. Where alone is not
+    /// Where it is and how many panes are over it. Where alone is not
     /// enough, because a dialog's list can sit exactly where the page under
     /// it has one -- the settings over a conversation share its
     /// transcript's rows -- and the first of the two was taken for both: the
@@ -902,7 +905,7 @@ impl ApplicationHandler<Waking> for Showing {
                             if joined != Joined::Nowhere {
                                 self.paning.push(joined);
                                 for band in &mut self.scrolling {
-                                    band.under = true;
+                                    band.under = band.under.saturating_add(1);
                                 }
                             }
                             self.stacking.push(behind);
@@ -914,7 +917,7 @@ impl ApplicationHandler<Waking> for Showing {
                                 before: None,
                                 bar,
                                 origin: None,
-                                under: false,
+                                under: 0,
                             });
                         }
                         Update::Ticked { area, on } => {
@@ -1236,7 +1239,7 @@ impl ApplicationHandler<Waking> for Showing {
                         let (behind, since) = self.motion.band_shown(band.room, now)?;
                         Some(Rolled {
                             room: band.room,
-                            under: band.under,
+                            under: band.under > 0,
                             before: band.before.as_deref()?,
                             behind,
                             since,
@@ -1535,18 +1538,29 @@ mod tests {
             origin: None,
             under,
         };
-        let was = [band(0, true), band(4, false)];
-        let settings = band(4, false);
+        let was = [band(0, 1), band(4, 0)];
+        let settings = band(4, 0);
         assert_eq!(
             was.iter().find(|was| settings.is(was)).map(|was| was.top),
             Some(4),
             "the list was taken for the transcript under it"
         );
-        let transcript = band(0, true);
+        let transcript = band(0, 1);
         assert_eq!(
             was.iter().find(|was| transcript.is(was)).map(|was| was.top),
             Some(0),
             "the transcript was taken for the list over it"
+        );
+        // And with a setting's choices over the settings, both are under
+        // something: the transcript under two panes, the settings' list
+        // under one. Deliberate break: count whether, not how many -- the
+        // two are told apart by nothing again.
+        let was = [band(0, 2), band(4, 1)];
+        let settings = band(4, 1);
+        assert_eq!(
+            was.iter().find(|was| settings.is(was)).map(|was| was.top),
+            Some(4),
+            "under a list, the settings' list was taken for the transcript"
         );
     }
 

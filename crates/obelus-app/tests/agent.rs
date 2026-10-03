@@ -4362,6 +4362,70 @@ fn what_a_list_leaves_showing_of_a_conversation_is_not_marked() {
     );
 }
 
+/// The list of commands' bar under a list opened over the conversation is
+/// not the reader's to take hold of: the keys are the list's, and so is the
+/// pointer.
+///
+/// It was drawn over by every picker before, so nothing asked. Under a
+/// short one it is in plain sight. Deliberate break: answer `true` for
+/// `Whose::Commands` in `App::reaches` -- the press scrolls a list nothing
+/// else is talking to.
+#[test]
+fn the_list_of_commands_bar_is_not_taken_hold_of_under_a_list() {
+    use obelus_app::event::{Event, Pointer};
+    const SHORT: u16 = 16;
+    let first_row = |app: &mut App| {
+        rows(&support::render(app, WIDTH, SHORT))
+            .get(2)
+            .map(|row| (*row).to_string())
+            .unwrap_or_default()
+    };
+    let press = |app: &mut App| {
+        // The foot of the list's track, which is where it is still in
+        // sight under the list put over it.
+        app.handle(Event::Pointer {
+            kind: Pointer::Pressed,
+            x: WIDTH - 1,
+            y: 11,
+        });
+        app.handle(Event::Pointer {
+            kind: Pointer::Released,
+            x: WIDTH - 1,
+            y: 11,
+        });
+    };
+
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the commands", |app| {
+        !app.agent_orders().is_empty()
+    });
+    support::type_text(&mut app, "/");
+    let before = first_row(&mut app);
+    assert!(before.contains("/compact"), "not at the top:\n{before}");
+
+    support::press_control(&mut app, 'p');
+    support::type_text(&mut app, "choose-theme");
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "solarized-d");
+    let _ = support::render(&mut app, WIDTH, SHORT);
+    press(&mut app);
+    assert_eq!(
+        first_row(&mut app),
+        before,
+        "the list under the list scrolled"
+    );
+
+    // And with nothing over it, the same press is on its bar.
+    support::press(&mut app, KeyCode::Esc);
+    let _ = support::render(&mut app, WIDTH, SHORT);
+    press(&mut app);
+    assert_ne!(
+        first_row(&mut app),
+        before,
+        "the press is not on the list's bar at all"
+    );
+}
+
 /// A list the reader opened covers the conversation it is over.
 ///
 /// A picker has the keys and it has the status row, so what shows under it

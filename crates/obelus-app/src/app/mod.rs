@@ -3761,12 +3761,16 @@ impl App {
         use obelus_ui::bars::Whose;
 
         match whose {
-            Whose::Document | Whose::Conversation | Whose::Notes | Whose::Projects => {
-                !self.layers().covering()
-            }
-            Whose::Picker
+            // And the two lists that are not layers, which are drawn under
+            // every layer with the page they belong to: under a short list
+            // their bars are in plain sight and the keys are the list's.
+            Whose::Document
+            | Whose::Conversation
+            | Whose::Notes
+            | Whose::Projects
             | Whose::Naming
-            | Whose::Commands
+            | Whose::Commands => !self.layers().covering(),
+            Whose::Picker
             | Whose::Preview
             | Whose::Settings
             | Whose::Counts
