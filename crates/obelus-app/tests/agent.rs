@@ -6557,6 +6557,69 @@ fn a_tool_call_that_is_still_running_turns_at_the_front_of_its_row() {
     );
 }
 
+/// A command the agent has not said is running turns all the same, until a
+/// question is up about it.
+///
+/// Claude's adapter says `pending` when it asks for a command and nothing
+/// more until the command has finished, so a `git push` that took a minute
+/// sat under a still mark for all of it, and the reader took the agent for
+/// stuck. A call that is the subject of a card is the one that really is
+/// waiting -- on the reader -- and there a turning mark would say the agent
+/// is busy when it is them it is waiting for.
+///
+/// Broken deliberately by taking the `pending` arm out of
+/// `ChatView::turns`, which stood the pushed branch still; and by dropping
+/// its `card.is_none()`, which turned the call the card is about.
+#[test]
+fn a_command_the_agent_has_not_said_is_running_turns_all_the_same() {
+    let call = |app: &mut App, title: &str| {
+        let dump = support::render(app, WIDTH, HEIGHT);
+        rows(&dump)
+            .iter()
+            .find(|row| row.contains(title))
+            .unwrap_or_else(|| panic!("no row for the call:\n{dump}"))
+            .to_string()
+    };
+
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/quietly");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the call", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text().contains("Push the branch"))
+        })
+    });
+    assert_eq!(app.talking(), obelus_agent::Talking::Thinking);
+    let pushing = call(&mut app, "Push the branch");
+    assert!(
+        SPINNING.iter().any(|frame| pushing.contains(*frame)),
+        "a command still going is drawn as still as one that has stopped:\n{pushing}"
+    );
+
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/twice");
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        &events,
+        "the permission request",
+        App::is_asking_permission,
+    );
+    let asked = call(&mut app, "List crates and app crate sources");
+    assert!(
+        !SPINNING.iter().any(|frame| asked.contains(*frame)),
+        "a command waiting on the reader turns as if the agent were busy:\n{asked}"
+    );
+}
+
 /// Every frame of the mark that turns.
 ///
 /// Which frame is on screen depends on how many ticks have landed, and a

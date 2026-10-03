@@ -599,6 +599,14 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
+        *'"method":"session/prompt"'*'/quietly'*)
+            # A command run the way claude-agent-acp runs one that prints
+            # nothing as it goes: `pending` from the moment it is asked for,
+            # and nothing more until it has finished -- which this one has
+            # not, so the turn stays open under it.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"tool_call","toolCallId":"q1","title":"Push the branch","kind":"execute","status":"pending","rawInput":{"command":"git push"}}}}\n' "$session"
+            ;;
         *'"method":"session/prompt"'*'/twice'*)
             # A command put to the reader by an agent that sends the tool's
             # description as the call's title *and* as the call's content.
