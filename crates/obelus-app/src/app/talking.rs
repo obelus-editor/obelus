@@ -1623,6 +1623,12 @@ impl App {
     /// running where nobody can see it -- taken up again, it would still be
     /// thinking. What is lost is a sentence after the call, and the tool's
     /// description tells the agent there is nobody to say it to.
+    ///
+    /// Only a turn Obelus asked for can be stopped, because only that one
+    /// has a number here. One the agent started of its own accord, with no
+    /// prompt of Obelus's in flight, goes on in a session nothing shows --
+    /// as it did when the close waited, which closed at once in that case
+    /// too.
     pub(super) fn close_for_an_agent(&mut self, conversation: Option<usize>) -> String {
         let Some(id) = conversation.map(DocumentId::new) else {
             return "this address names no conversation, so there is nothing to close".to_string();
