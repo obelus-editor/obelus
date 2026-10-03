@@ -151,9 +151,8 @@ impl Runs {
         let _inside = obelus_runtime::handle().enter();
         let (shell, said_with) = shell();
         let mut process = Command::new(shell);
+        said_to(&mut process, said_with, &said);
         process
-            .arg(said_with)
-            .arg(&said)
             .current_dir(cwd.unwrap_or(root))
             // Nothing to type into. The protocol has no way to send a
             // key to one of these, and Obelus's own input is the reader's
@@ -621,6 +620,24 @@ fn shell() -> (String, &'static str) {
     }
 }
 
+/// Hands a command line to the shell that will run it, as it was written.
+///
+/// The standard library quotes an argument for a program that splits its
+/// own command line the C runtime's way, writing a `"` inside it as `\"`.
+/// `cmd` is not that program: it reads `\"` as a backslash and a quote, so
+/// `git commit -m "fix it"` reached git as two words with a quote on each,
+/// and a path in quotes was no path at all. So `cmd` is given the line
+/// itself, in the one spelling it reads back exactly: `/S /C "..."` takes off
+/// the outer pair of quotes and nothing inside them.
+fn said_to(process: &mut Command, said_with: &str, said: &str) {
+    #[cfg(windows)]
+    if said_with == "/C" {
+        process.raw_arg(format!("/S /C \"{said}\""));
+        return;
+    }
+    process.arg(said_with).arg(said);
+}
+
 /// How a process ended, as the protocol says it.
 fn ended_as(status: &std::process::ExitStatus) -> Ended {
     #[cfg(unix)]
@@ -796,6 +813,29 @@ mod tests {
         assert_eq!(text.len(), 64, "the limit was not kept to: {text:?}");
         assert!(truncated, "nothing said it was cut");
         assert!(text.starts_with('a'));
+    }
+
+    /// A quoted argument arrives as it was written.
+    ///
+    /// Only `cmd` could get this wrong, so only Windows asks it properly:
+    /// the standard library writes a quote inside an argument as `\"`,
+    /// which `cmd` passes on as a backslash and a quote. A POSIX shell is
+    /// handed the line as one argument and reads its own quotes.
+    ///
+    /// Broken deliberately by handing `cmd` the line with `arg`, as every
+    /// other shell is: `echo` says `\"a b\"` and this goes red on Windows.
+    #[test]
+    fn a_quoted_argument_arrives_as_it_was_written() {
+        let mut runs = Runs::default();
+        let (line, said) = match shell().1 {
+            "/C" => ("echo \"a b\"", "\"a b\""),
+            _ => ("printf '%s' \"a b\"", "a b"),
+        };
+        let id = runs
+            .start(line, &[], &[], None, std::path::Path::new("."), None)
+            .expect("the shell");
+        let (text, _, _) = finished(&mut runs, &id);
+        assert_eq!(text.trim(), said, "the quotes did not arrive as written");
     }
 
     /// A command that fails is an exit status, not an error.
