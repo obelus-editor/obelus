@@ -2,7 +2,7 @@
 name = "obelus-cli"
 # Its own, the way `obelus-gui`'s is: the workspace says what Obelus is,
 # and this is the half of it that lives in a terminal.
-description = "A terminal code reader. It doesn't want you to type."
+description = "A code editor in a terminal, with the agent built in."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

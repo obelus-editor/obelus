@@ -1,10 +1,12 @@
 # Obelus
 
-A code reader, in a window of its own or in a terminal. **It doesn't want
-you to type.**
+A code editor that fits how I work, **with the agent built in** — in a
+window of its own or in a terminal.
 
-In the AI era every line you read is a line you did not write. Reading is the
-product here; editing is incidental. The point is to join what a language server
+It is not trying to be a powerful editor: no multiple cursors, no macros.
+In the AI era most lines you read are lines you did not write, so much of
+the time in it is spent reading what an agent changed, beside the code it
+changed. The point is to join what a language server
 knows about the code to what git knows about its history — jump to a definition
 from inside a diff, ask for a symbol's history rather than a file's — which no
 terminal tool does today.
@@ -35,7 +37,7 @@ Either one takes the latest release, checks what it downloaded against the
 release's own `SHA256SUMS`, and puts **`obg`** on your PATH — Obelus in a
 window of its own.
 
-**`ob`, the same reader in a terminal**, is the other binary and is asked
+**`ob`, the same editor in a terminal**, is the other binary and is asked
 for by name. The two are gvim's relation to vim rather than two programs:
 the same grid, the same views and the same keys. What the window has is the
 presses a terminal flattens into one byte — `ctrl+i` apart from `Tab`,

@@ -1,13 +1,12 @@
 [Desktop Entry]
 Type=Application
 Name=Obelus
-# Not `TextEditor`, which is the category a program like this is usually
-# filed under: called an editor it gets measured by an editor's checklist,
-# and `Development` says what it is for without saying the wrong thing about
-# what it is.
+# `Development` and not `TextEditor`: it is an editor, but one for code, and
+# a launcher that offered it for every text file would be offering it for
+# a job it does not set out to do.
 Categories=Development;
-GenericName=Code Reader
-Comment=A code reader in a window. It doesn't want you to type.
+GenericName=Code Editor
+Comment=A code editor in a window, with the agent built in.
 Exec=obg %F
 Icon=obelus
 Terminal=false

@@ -5167,10 +5167,10 @@ fn a_project_that_asks_for_crlf_has_an_honest_margin() {
 /// Converting a blob the way a checkout would is what makes the margin
 /// honest, and it is also what runs a `filter.*` driver -- a program named
 /// by the repository's own config. `gix::discover` would call a checkout
-/// the reader happens to own fully trusted and run it. A code reader that
-/// executes a stranger's code because it was pointed at their clone is not
-/// a reader, so the trust level is Obelus's decision: reduced, which keeps
-/// the conversion and refuses the program.
+/// the reader happens to own fully trusted and run it. An editor that
+/// executes a stranger's code because it was pointed at their clone is one
+/// nobody can open a download in, so the trust level is Obelus's decision:
+/// reduced, which keeps the conversion and refuses the program.
 #[test]
 fn a_repository_does_not_get_to_run_a_program_because_obelus_read_it() {
     let repository = Repository::new("driver", "hello\n");

@@ -2,7 +2,7 @@
 name = "obelus-gui"
 # Its own, not the workspace's: that one says "terminal", and this is the
 # binary for readers who are not in one.
-description = "A code reader in a window. It doesn't want you to type."
+description = "A code editor in a window, with the agent built in."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -97,7 +97,7 @@ license-file = ["../../LICENSE", "0"]
 section = "devel"
 priority = "optional"
 extended-description = """\
-The same code reader as `obelus`, drawn in a window rather than in a \
+The same code editor as `obelus`, drawn in a window rather than in a \
 terminal: the presses a terminal cannot report arrive as themselves, and \
 the marks are compiled in rather than guessed at from the reader's font."""
 # Two spellings, and they are not a mistake. `target/release` is written

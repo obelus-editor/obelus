@@ -11,7 +11,7 @@ use anyhow::Result;
 use clap::Parser;
 use obelus_app::{app, event, startup};
 
-/// A terminal code reader. It doesn't want you to type.
+/// A code editor in a terminal, with the agent built in.
 #[derive(Parser)]
 // Named rather than left to the package: clap takes the name from
 // `CARGO_PKG_NAME`, which is the crate this binary is built from and not
