@@ -187,6 +187,12 @@ pub struct Conversation {
     /// worktree has none, and is asked again when the agent next changes
     /// something in it.
     pub working_in: Option<(std::path::PathBuf, obelus_git::Head)>,
+    /// The session to take up when it is first shown, for one about nothing
+    /// in particular that was open when the window last closed.
+    ///
+    /// Only for that one: a conversation about a note is found again by
+    /// the note, and nothing else names a loose one.
+    pub taken_up_as: Option<String>,
     /// What was said, and what is being typed.
     pub chat: Chat,
     /// The agent's own commands, while one is being typed in the box.

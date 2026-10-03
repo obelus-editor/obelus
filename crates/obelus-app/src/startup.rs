@@ -105,6 +105,9 @@ pub fn start(paths: &[PathBuf], built: &'static str) -> Result<App> {
     // Read here rather than in `App::new`, so that a test gets the defaults
     // rather than whatever the machine it runs on has in `~/.config`.
     app.load_config();
+    // After the settings, because whether to is one of them -- and a
+    // project's own file may say. Beside whatever the paths named.
+    app.reopen_what_was_open();
     Ok(app)
 }
 

@@ -40,6 +40,7 @@ mod projects;
 mod releases;
 mod renaming;
 mod renaming_files;
+mod reopening;
 mod saying;
 mod searching;
 mod semantics;
@@ -791,6 +792,8 @@ pub struct App {
     /// rule the palette follows for a command it will not run.
     named_is_there: bool,
     working_directory: PathBuf,
+    /// What this window knows about its tree's record of what was open.
+    reopening: reopening::Reopening,
     /// Which branch the tree Obelus was put on has checked out.
     ///
     /// Kept rather than asked for, and read at the three moments anything
@@ -975,6 +978,7 @@ impl App {
             naming_shut: false,
             named_is_there: false,
             working_directory: std::env::current_dir().unwrap_or_default(),
+            reopening: reopening::Reopening::default(),
             // Not read here. Which branch the tree is on is a fact about
             // the directory Obelus was *told* to work in, so it is read
             // where it is told -- `App::work_in`, which both the startup
@@ -1174,6 +1178,8 @@ impl App {
         // not a worktree, so a process that began in the home directory
         // writes nothing.
         projects::remember(&self.working_directory, jiff::Timestamp::now().as_second());
+        let root = self.working_directory.clone();
+        self.keep_what_is_open_for(&root);
     }
 
     /// Which branch the tree Obelus was put on has checked out.
@@ -2358,6 +2364,9 @@ impl App {
         // And the sessions, from the same question: which conversation is
         // on screen.
         self.settle_the_sessions();
+        // And what is open, written down where it has changed, for the
+        // same reason: there are a dozen ways a document opens or closes.
+        self.write_down_what_is_open();
         // The notes are laid out against the room they have: a terminal is
         // resized and a setting is changed while they are open, and the rows
         // they are made of depend on both.
@@ -4431,6 +4440,10 @@ where
     // arrives in that moment is let go; what does not stays with the
     // agent, which is where it would have been anyway.
     app.let_go_of_what_nothing_was_said_in(None);
+    // And what was open, with the carets where they are now: the frames
+    // wrote it down as it changed, and the way out is the last chance to
+    // say where in each file the reader was.
+    app.write_down_what_is_open_on_leaving();
 
     Ok(())
 }

@@ -159,6 +159,13 @@ pub struct Config {
     /// directory of files, and an exception carved out here would be
     /// Obelus deciding which of the reader's hidden files they meant.
     pub hidden_files: bool,
+    /// Whether a tree opens again on what was open the last time it was,
+    /// with the caret where it was in each.
+    ///
+    /// On, because a reader who left in the middle of something comes back
+    /// to the middle of it -- and one who would rather begin on an empty
+    /// screen each time can say so here.
+    pub reopen: bool,
     /// How long the pointer has to rest on a word before Obelus asks what
     /// it is, in milliseconds.
     ///
@@ -252,6 +259,7 @@ impl Default for Config {
             // can find anything in.
             ignored_files: false,
             hidden_files: false,
+            reopen: true,
             // Long enough that crossing a line of code does not ask about
             // every word on the way, short enough that a reader who has
             // stopped does not wonder whether Obelus noticed. The figure
@@ -691,6 +699,15 @@ pub const ALL: &[Setting] = &[
         drawn: Drawn::Anywhere,
     },
     Setting {
+        key: "reopen",
+        name: "Reopen",
+        about: "Open what was open the last time this tree was, with the caret where it was in each",
+        group: Group::Files,
+        reach: Reach::Anywhere,
+        kind: Kind::Switch,
+        drawn: Drawn::Anywhere,
+    },
+    Setting {
         key: "workflow",
         name: "Workflow",
         about: "How an agent goes about changing this project",
@@ -728,6 +745,7 @@ impl Config {
             "diagnostics" => Some(Value::Switch(self.diagnostics)),
             "ignored_files" => Some(Value::Switch(self.ignored_files)),
             "hidden_files" => Some(Value::Switch(self.hidden_files)),
+            "reopen" => Some(Value::Switch(self.reopen)),
             "new_versions" => Some(Value::Switch(self.new_versions)),
             "workflow" => Some(Value::Choice(self.workflow.clone())),
             "agent" => Some(Value::Choice(self.agent.clone().unwrap_or_default())),
@@ -755,6 +773,7 @@ impl Config {
             ("diagnostics", Value::Switch(on)) => self.diagnostics = *on,
             ("ignored_files", Value::Switch(on)) => self.ignored_files = *on,
             ("hidden_files", Value::Switch(on)) => self.hidden_files = *on,
+            ("reopen", Value::Switch(on)) => self.reopen = *on,
             ("new_versions", Value::Switch(on)) => self.new_versions = *on,
             ("workflow", Value::Choice(word)) => self.workflow = word.clone(),
             // An empty word is nobody, which is how a reader stops talking
@@ -1223,6 +1242,11 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
     {
         config.hidden_files = on;
     }
+    if let Some(on) = table.get("reopen").and_then(toml::Value::as_bool)
+        && allowed("reopen")
+    {
+        config.reopen = on;
+    }
     if let Some(on) = table.get("new_versions").and_then(toml::Value::as_bool)
         && allowed("new_versions")
     {
@@ -1470,6 +1494,11 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
         "hidden_files",
         config.hidden_files != default.hidden_files,
         toml_edit::value(config.hidden_files),
+    );
+    put(
+        "reopen",
+        config.reopen != default.reopen,
+        toml_edit::value(config.reopen),
     );
     put(
         "new_versions",
@@ -1924,6 +1953,7 @@ mod tests {
             diagnostics: true,
             ignored_files: true,
             hidden_files: true,
+            reopen: false,
             new_versions: false,
             workflow: "none".to_string(),
             agent: Some("claude-acp".to_string()),

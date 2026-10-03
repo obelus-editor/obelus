@@ -355,11 +355,14 @@ impl App {
             self.stop_agent();
             self.start_agent();
         }
-        let note = match self.talk(whose).map(|talk| &talk.topic) {
-            Some(Topic::Note(note)) => Some(note.clone()),
-            Some(Topic::Loose) | None => None,
+        let had = match self
+            .talk(whose)
+            .map(|talk| (&talk.topic, &talk.taken_up_as))
+        {
+            Some((Topic::Note(note), _)) => self.remembered_session(&note.clone()),
+            Some((Topic::Loose, taken_up_as)) => taken_up_as.clone(),
+            None => None,
         };
-        let had = note.as_ref().and_then(|note| self.remembered_session(note));
         self.ask_for_a_session(whose, had);
     }
 
