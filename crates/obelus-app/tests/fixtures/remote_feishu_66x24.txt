@@ -21,7 +21,7 @@ screen 66x24  editor 66x22  status 66x1
 18|                                                                  
 19|   Pair                                           ▸               
 20|──────────────────────────────────────────────────────────────────
-21|   Enter  Change    type  To filter                 Ctrl+k  Keys  
+21|   Enter  Change                                    Ctrl+k  Keys  
 22|──────────────────────────────────────────────────────────────────
 23| > Filter remote settings                                         
 -- style --
@@ -46,7 +46,7 @@ screen 66x24  editor 66x22  status 66x1
 18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 19|ccccccccccccccccccccccccccccccccccccccccccccccccccaccccccccccccccc
 20|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-21|ccfffffffcaaaaaacccffffffcaaaaaaaaaccccccccccccccccffffffffcaaaacc
+21|ccfffffffcaaaaaacccccccccccccccccccccccccccccccccccffffffffcaaaacc
 22|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 23|dddaaaaaaaaaaaaaaaaaaaaaaddddddddddddddddddddddddddddddddddddddddd
 -- legend --

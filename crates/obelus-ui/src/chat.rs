@@ -1924,6 +1924,7 @@ mod tests {
                 note: None,
                 note_is_wrong: false,
                 usage: None,
+                mirrored: None,
             };
             let mut cells = ratatui::buffer::Buffer::empty(area);
             ratatui::widgets::Widget::render(view, area, &mut cells);

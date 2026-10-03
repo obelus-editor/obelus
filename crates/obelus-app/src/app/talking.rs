@@ -2931,12 +2931,11 @@ impl App {
     /// turn it is in the middle of is over -- the way the reader's own wait
     /// on the page.
     pub(super) fn say_from_afar(&mut self, whose: Whose, parts: &[Part]) {
-        let session = self.talk(whose).and_then(|talk| talk.session.clone());
-        let running = self
-            .talker
-            .as_ref()
-            .and_then(|talker| talker.turn(session.as_ref()))
-            .is_some();
+        let running = self.talk(whose).is_some_and(|talk| {
+            self.talker
+                .as_ref()
+                .is_some_and(|talker| talker.is_thinking(talk.session.as_ref(), talk.requested))
+        });
         if running {
             if let Some(talk) = self.talk_mut(whose) {
                 talk.chat.will_say(parts);

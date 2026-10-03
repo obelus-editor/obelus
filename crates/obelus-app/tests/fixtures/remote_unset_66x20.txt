@@ -17,7 +17,7 @@ screen 66x20  editor 66x18  status 66x1
 14|     Who may talk to this machine through it                      
 15|                                                                  
 16|──────────────────────────────────────────────────────────────────
-17|   Enter  Change    type  To filter                 Ctrl+k  Keys  
+17|   Enter  Change                                    Ctrl+k  Keys  
 18|──────────────────────────────────────────────────────────────────
 19| > Filter remote settings                                         
 -- style --
@@ -38,7 +38,7 @@ screen 66x20  editor 66x18  status 66x1
 14|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccc
 15|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 16|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-17|ccfffffffcaaaaaacccffffffcaaaaaaaaaccccccccccccccccffffffffcaaaacc
+17|ccfffffffcaaaaaacccccccccccccccccccccccccccccccccccffffffffcaaaacc
 18|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 19|dddaaaaaaaaaaaaaaaaaaaaaaddddddddddddddddddddddddddddddddddddddddd
 -- legend --
