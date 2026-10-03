@@ -238,6 +238,19 @@ impl App {
     /// says it.
     pub(super) fn talk_about(&mut self, note: &obelus_git::todo::NoteId) {
         self.make_room(Room::Region);
+        if let Some(at) = self.open_about(note) {
+            self.go_to_document(DocumentId::new(at));
+        }
+    }
+
+    /// The conversation about a note, opened where there is none: where it
+    /// is in the list of what is open, or nothing where another Obelus has
+    /// it.
+    ///
+    /// Without going to it, which is the caller's: from a chat there is
+    /// nobody at this screen, and the screen is not taken from whatever it
+    /// had.
+    pub(super) fn open_about(&mut self, note: &obelus_git::todo::NoteId) -> Option<usize> {
         let wanted = Topic::Note(note.clone());
         let at = self.documents.iter().position(|document| {
             document
@@ -262,7 +275,7 @@ impl App {
                     // while the reader is standing there. A note here
                     // would be a second answer to a question the page has
                     // answered.
-                    return;
+                    return None;
                 };
                 // What the note says, for the box: read as this opens,
                 // for the reason the notes page reads what it is drawn
@@ -281,7 +294,7 @@ impl App {
                 self.documents.len() - 1
             }
         };
-        self.go_to_document(DocumentId::new(at));
+        Some(at)
     }
 
     /// Asks for a session for the conversation on screen, and lets go of the
@@ -393,7 +406,7 @@ impl App {
                 continue;
             };
             talk.asked_while_shown = false;
-            if !talk.minted || talk.chat.anything_said() {
+            if !talk.minted || talk.chat.anything_said() || talk.from_afar {
                 continue;
             }
             let Some(session) = talk.session.take() else {
@@ -1016,6 +1029,8 @@ impl App {
         if let Some(talk) = self.talk_mut(whose) {
             talk.working_in = head.map(|head| (tree, head));
         }
+        // And its thread, whose head says the branch.
+        self.mirror_head(whose, None);
     }
 
     /// Reads the project's notes again, because there is a reason to.
@@ -1525,6 +1540,17 @@ impl App {
             }
         }
         let opening = opening.map(|opening| opening.words);
+        // Words that came from a chat carry a line saying so, for the
+        // agent; the reader's own here go to the chat, so that the thread
+        // has both halves.
+        let afar = self.afar_for(whose);
+        if afar.is_none() {
+            self.mirror_typed_here(whose, parts);
+        }
+        let opening = match (opening, afar) {
+            (Some(opening), Some(afar)) => Some(format!("{opening}{afar}")),
+            (opening, afar) => opening.or(afar),
+        };
         // There is something to come back to now, which is the moment a
         // conversation becomes worth writing down against its note. The
         // other moment is the session arriving, and both are needed: a
@@ -1579,6 +1605,8 @@ impl App {
         // arrives -- opening and all, because the opening belongs to
         // whatever goes first.
         talker.say(session.as_ref(), asking, said_of(parts), opening.as_deref());
+        // A turn has started, which its thread says at the top of it.
+        self.mirror_head(whose, Some(obelus_remote::model::Turning::Working));
     }
 
     /// Says what the reader had waiting, now that the turn it was waiting
@@ -2119,15 +2147,30 @@ impl App {
             // Escape gives up on the nearest thing, and while a question is
             // on screen the nearest thing is the question.
             CardOutcome::Cancelled => {
+                self.mirror_answered_here(Whose::Whoever, "Not answered");
                 match self.is_asking_permission() {
-                    true => self.refuse_permission(),
-                    false => self.refuse_asking(),
+                    true => self.refuse_permission(Whose::Whoever),
+                    false => self.refuse_asking(Whose::Whoever),
                 }
                 self.ask_the_next(Whose::Whoever);
                 true
             }
             CardOutcome::Answered { chosen, words } => {
-                self.answer_card(&chosen, words.as_deref());
+                // What was answered, the way the thread can say it: the
+                // names of what was chosen and the words written.
+                let said = self
+                    .conversation()
+                    .and_then(|talk| talk.card.as_ref())
+                    .map(|card| {
+                        chosen
+                            .iter()
+                            .map(|id| card.name_of(id).unwrap_or(id).to_string())
+                            .chain(words.iter().cloned())
+                            .collect::<Vec<String>>()
+                            .join(", ")
+                    });
+                self.mirror_answered_here(Whose::Whoever, &said.unwrap_or_default());
+                self.answer_card(Whose::Whoever, &chosen, words.as_deref());
                 self.ask_the_next(Whose::Whoever);
                 true
             }
@@ -2270,6 +2313,7 @@ impl App {
         talk.going = None;
         talk.card = None;
         talk.chat.note("It stopped waiting for an answer");
+        self.mirror_withdrawn(whose);
         self.ask_the_next(whose);
     }
 
@@ -2366,12 +2410,12 @@ impl App {
     /// watches the far end itself. Holding the answer until a sign-in
     /// finished would hold a turn open for as long as somebody takes to
     /// find their password.
-    fn answer_going(&mut self, chosen: Option<&str>) {
-        let Some(going) = self.conversation_mut().and_then(|talk| talk.going.take()) else {
+    fn answer_going(&mut self, whose: Whose, chosen: Option<&str>) {
+        let Some(going) = self.talk_mut(whose).and_then(|talk| talk.going.take()) else {
             return;
         };
         if chosen != Some("open") {
-            if let Some(talk) = self.conversation_mut() {
+            if let Some(talk) = self.talk_mut(whose) {
                 talk.card = None;
                 talk.chat.note("Not opened");
             }
@@ -2384,13 +2428,13 @@ impl App {
             // sent anywhere. The card stays, with the URL still on it --
             // which on a machine with no browser is the only way they will
             // get it.
-            if let Some(talk) = self.conversation_mut() {
+            if let Some(talk) = self.talk_mut(whose) {
                 talk.chat.note("Nothing here opens links");
                 talk.going = Some(going);
             }
             return;
         }
-        if let Some(talk) = self.conversation_mut() {
+        if let Some(talk) = self.talk_mut(whose) {
             talk.card = None;
             // A row rather than the card kept open: the agent is no longer
             // waiting on Obelus -- it was told they went -- so the box has
@@ -2467,6 +2511,7 @@ impl App {
         if let Some(talk) = self.talk_mut(whose) {
             talk.card = Some(card);
         }
+        self.mirror_asked(whose);
     }
 
     /// The fields the card on screen is answering: the one it puts the
@@ -2501,27 +2546,30 @@ impl App {
     }
 
     /// Takes what the reader put on the card.
-    pub(super) fn answer_card(&mut self, chosen: &[String], words: Option<&str>) {
+    pub(super) fn answer_card(&mut self, whose: Whose, chosen: &[String], words: Option<&str>) {
         // Somewhere to go is neither a form nor a permission: nothing was
         // filled in, and what the answer decides is whether Obelus opens
         // something.
-        if self.conversation().is_some_and(|talk| talk.going.is_some()) {
-            self.answer_going(chosen.first().map(String::as_str));
+        if self.talk(whose).is_some_and(|talk| talk.going.is_some()) {
+            self.answer_going(whose, chosen.first().map(String::as_str));
             return;
         }
         // A permission request is named answers and nothing else, so the
         // one they chose is the answer.
-        if self.is_asking_permission() {
-            if let Some(talk) = self.conversation_mut() {
+        if self
+            .talk(whose)
+            .is_some_and(|talk| talk.permission.is_some())
+        {
+            if let Some(talk) = self.talk_mut(whose) {
                 talk.card = None;
             }
             match chosen.first() {
-                Some(option) => self.allow(option),
-                None => self.refuse_permission(),
+                Some(option) => self.allow(whose, option),
+                None => self.refuse_permission(whose),
             }
             return;
         }
-        let (choice, asked) = self.asked_now(Whose::Whoever);
+        let (choice, asked) = self.asked_now(whose);
         let mut given: Vec<(String, acp::Reply)> = Vec::new();
         let mut said: Vec<String> = Vec::new();
         if let Some(field) = &choice {
@@ -2574,7 +2622,8 @@ impl App {
                 // asked for is Obelus insisting on its own behalf.
                 acp::Takes::Number { .. } if text.is_empty() && !field.required => {}
                 acp::Takes::Number { whole, least, most } => {
-                    let Some(reply) = self.number_of(field, &text, *whole, *least, *most) else {
+                    let Some(reply) = self.number_of(whose, field, &text, *whole, *least, *most)
+                    else {
                         // The reader's slip, so it is said and the card
                         // stays: an answer nobody can give is worse than a
                         // question asked twice.
@@ -2601,28 +2650,29 @@ impl App {
         }
         asking.given.extend(given);
         for line in said {
-            if let Some(talk) = self.conversation_mut() {
+            if let Some(talk) = self.talk_mut(whose) {
                 talk.chat.note(&line);
             }
         }
         // Theirs, in the transcript, because that is what they said -- the
         // agent asked in words and this is the answer in words.
         if let Some(text) = words
-            && let Some(talk) = self.conversation_mut()
+            && let Some(talk) = self.talk_mut(whose)
         {
             // A card's answer is words and never a picture, so it is one
             // part and the page says the same as before.
             talk.chat.asked(&[Part::Words(text.to_string())]);
         }
-        if let Some(talk) = self.conversation_mut() {
+        if let Some(talk) = self.talk_mut(whose) {
             talk.card = None;
         }
-        self.put_the_question(Whose::Whoever);
+        self.put_the_question(whose);
     }
 
     /// A number the reader typed, if it is one the field will take.
     fn number_of(
         &mut self,
+        whose: Whose,
         field: &acp::Field,
         text: &str,
         whole: bool,
@@ -2631,12 +2681,14 @@ impl App {
     ) -> Option<acp::Reply> {
         let Ok(number) = text.parse::<f64>() else {
             let title = field.title.clone();
-            self.in_transcript(|chat| chat.note(&format!("{title} takes a number, not {text:?}")));
+            self.in_talk(whose, |chat| {
+                chat.note(&format!("{title} takes a number, not {text:?}"))
+            });
             return None;
         };
         if least.is_some_and(|least| number < least) || most.is_some_and(|most| number > most) {
             let asked = question(field);
-            self.in_transcript(|chat| chat.note(&format!("That is outside {asked}")));
+            self.in_talk(whose, |chat| chat.note(&format!("That is outside {asked}")));
             return None;
         }
         Some(match whole {
@@ -2660,23 +2712,23 @@ impl App {
     }
 
     /// Says no to the form, whichever field the reader was on.
-    pub(super) fn refuse_asking(&mut self) {
-        if let Some(talk) = self.conversation_mut() {
+    pub(super) fn refuse_asking(&mut self, whose: Whose) {
+        if let Some(talk) = self.talk_mut(whose) {
             talk.card = None;
         }
         // Somewhere to go, given up on: the channel going away without an
         // answer is what the agent hears as a cancellation, so there is
         // nothing to send.
-        if let Some(talk) = self.conversation_mut()
+        if let Some(talk) = self.talk_mut(whose)
             && talk.going.take().is_some()
         {
             talk.chat.note("Not opened");
             return;
         }
-        let Some(asking) = self.conversation_mut().and_then(|talk| talk.asking.take()) else {
+        let Some(asking) = self.talk_mut(whose).and_then(|talk| talk.asking.take()) else {
             return;
         };
-        if let Some(talk) = self.conversation_mut() {
+        if let Some(talk) = self.talk_mut(whose) {
             talk.chat.note("Not answered");
         }
         let _ = asking.answer.send(None);
@@ -2842,6 +2894,55 @@ impl App {
             Whose::Whoever => true,
             Whose::One(id) => self.current == Some(id),
         }
+    }
+
+    /// The conversation `whose` names, for the rest of the application.
+    pub(super) fn talk_of(&self, whose: Whose) -> Option<&crate::conversation::Conversation> {
+        self.talk(whose)
+    }
+
+    /// Answers the question up in a conversation with what was replied from
+    /// a chat, and puts up whatever was waiting behind it.
+    pub(super) fn answer_from_afar(
+        &mut self,
+        whose: Whose,
+        chosen: &[String],
+        words: Option<&str>,
+    ) {
+        match self
+            .talk(whose)
+            .is_some_and(|talk| talk.permission.is_some())
+        {
+            true => {
+                if let Some(talk) = self.talk_mut(whose) {
+                    talk.card = None;
+                }
+                match chosen.first() {
+                    Some(option) => self.allow(whose, option),
+                    None => self.refuse_permission(whose),
+                }
+            }
+            false => self.answer_card(whose, chosen, words),
+        }
+        self.ask_the_next(whose);
+    }
+
+    /// Says words that came from a chat in a conversation: now, or when the
+    /// turn it is in the middle of is over -- the way the reader's own wait
+    /// on the page.
+    pub(super) fn say_from_afar(&mut self, whose: Whose, parts: &[Part]) {
+        let running = self.talk(whose).is_some_and(|talk| {
+            self.talker
+                .as_ref()
+                .is_some_and(|talker| talker.is_thinking(talk.session.as_ref(), talk.requested))
+        });
+        if running {
+            if let Some(talk) = self.talk_mut(whose) {
+                talk.chat.will_say(parts);
+            }
+            return;
+        }
+        self.say_in(whose, parts, false);
     }
 
     /// The conversation `whose` names.
@@ -3197,7 +3298,8 @@ impl App {
         match incoming {
             acp::Incoming::Update { update, .. } => match update {
                 acp::Update::Said(text) => {
-                    self.in_talk(whose, |chat| chat.chunk(Speaker::Agent, &text))
+                    self.mirror_said(whose, &text);
+                    self.in_talk(whose, |chat| chat.chunk(Speaker::Agent, &text));
                 }
                 acp::Update::Thought(text) => {
                     self.in_talk(whose, |chat| chat.chunk(Speaker::Thought, &text))
@@ -3219,7 +3321,10 @@ impl App {
                 // What the agent calls this conversation, which is the
                 // name it goes by in the list of open documents -- so it is
                 // written down rather than only shown.
-                acp::Update::Titled(_) => self.remember_the_conversations(),
+                acp::Update::Titled(_) => {
+                    self.remember_the_conversations();
+                    self.mirror_head(whose, None);
+                }
                 // Kept by the handle, which is where the view reads them:
                 // these are facts about the agent rather than things it
                 // said, and a transcript with them in it is a log. The
@@ -3246,6 +3351,9 @@ impl App {
                     Ok(other) => self.in_talk(whose, |chat| chat.note(other)),
                     Err(why) => self.in_talk(whose, |chat| chat.note(&format!("The agent: {why}"))),
                 }
+                // What it said goes to its thread, if it has one, before
+                // anything else happens to the conversation.
+                self.mirror_turn_over(whose);
                 // And then whatever the reader said while it was running.
                 // After the line above and not before it, so that the
                 // transcript reads in the order the things happened.
@@ -3524,10 +3632,11 @@ impl App {
             });
             talk.card = Some(card);
         }
+        self.mirror_asked(whose);
     }
 
     /// Answers the permission request the reader chose an option for.
-    pub(super) fn allow(&mut self, option: &str) {
+    pub(super) fn allow(&mut self, whose: Whose, option: &str) {
         let Some(answer) = self
             .conversation_mut()
             .and_then(|talk| talk.permission.take())
@@ -3536,7 +3645,7 @@ impl App {
             return;
         };
         if answer.send(Some(option.to_string())).is_err() {
-            self.in_transcript(|chat| chat.note("It stopped waiting for an answer"));
+            self.in_talk(whose, |chat| chat.note("It stopped waiting for an answer"));
         }
     }
 
@@ -3545,8 +3654,8 @@ impl App {
     /// The protocol has an outcome for it, and it matters: an agent whose
     /// request is never answered waits for ever, and one that is told it
     /// was cancelled ends the turn and says so.
-    pub(super) fn refuse_permission(&mut self) {
-        if let Some(talk) = self.conversation_mut() {
+    pub(super) fn refuse_permission(&mut self, whose: Whose) {
+        if let Some(talk) = self.talk_mut(whose) {
             talk.card = None;
         }
         let Some(answer) = self
@@ -3557,7 +3666,7 @@ impl App {
             return;
         };
         let _ = answer.send(None);
-        if let Some(talk) = self.conversation_mut() {
+        if let Some(talk) = self.talk_mut(whose) {
             talk.chat.note("Not answered");
         }
     }

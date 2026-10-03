@@ -1,0 +1,52 @@
+screen 66x20  editor 66x18  status 66x1
+-- text --
+ 0|  Settings  Keys  Remote  Agents                              ⇤ ⇥ 
+ 1|──────────────────────────────────────────────────────────────────
+ 2| Remote                                                       Off 
+ 3|                                                                  
+ 4|   Platform                                      Off ▸            
+ 5|     Which chat a note can be worked on from                      
+ 6|                                                                  
+ 7|                                                                  
+ 8|                                                                  
+ 9|                                                                  
+10|                                                                  
+11|                                                                  
+12|                                                                  
+13|                                                                  
+14|                                                                  
+15|                                                                  
+16|──────────────────────────────────────────────────────────────────
+17|   Enter  Change                                    Ctrl+k  Keys  
+18|──────────────────────────────────────────────────────────────────
+19| > Filter remote settings                                         
+-- style --
+ 0|aaaaaaaaaaaaaaaaabbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 2|cddddddcccccccccccccccccccccccccccccccccccccccccccccccccccccccaaac
+ 3|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbebbbbbbbbbbbb
+ 5|bbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebbbbbbbbbbbbbbbbbbbbbb
+ 6|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 7|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 8|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 9|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+11|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+12|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+13|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+14|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+15|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+16|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+17|ccfffffffcaaaaaacccccccccccccccccccccccccccccccccccffffffffcaaaacc
+18|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+19|dddaaaaaaaaaaaaaaaaaaaaaaddddddddddddddddddddddddddddddddddddddddd
+-- legend --
+a fg=#52525b bg=#18181b
+b fg=#e4e4e7 bg=#27272a
+c fg=#e4e4e7 bg=#18181b
+d fg=#d4d4d8 bg=#18181b
+e fg=#52525b bg=#27272a
+f fg=#a1a1aa bg=#27272a
+-- cursor --
+none

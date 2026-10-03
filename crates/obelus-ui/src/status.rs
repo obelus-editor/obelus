@@ -57,6 +57,13 @@ pub struct StatusView<'a> {
     busy: bool,
     /// Where the animation has got to, for that mark.
     phase: u32,
+    /// The chat this machine can be reached from, and where it stands.
+    ///
+    /// On the row for the reason the server is: it is a fact about the
+    /// whole window that stays true while the reader reads, and the
+    /// question it answers -- will a reply from my phone get here -- is
+    /// asked when one has not.
+    remote: Option<(&'static str, obelus_remote::State)>,
     /// When a question is being asked, the row is the question.
     ///
     /// The one dialog that is still kept here, because it is the one whose
@@ -117,6 +124,7 @@ impl<'a> StatusView<'a> {
             server: app.server_state(),
             busy: app.server_busy(),
             phase: app.phase(),
+            remote: app.remote(),
             troubles: app.troubles(),
             prompt: app.prompt(),
             making_in: app.making_in(),
@@ -292,6 +300,24 @@ fn server_badge(server: Option<(&'static str, ServerState)>, busy: Option<u32>) 
             }
         })
         .unwrap_or_default()
+}
+
+/// The chat this machine can be reached from, by name, and a mark for
+/// where it stands: the mark a server gets for the same three answers.
+///
+/// Which of the wrong things it is goes unsaid: the remote page says that,
+/// and this is the one cell that says to go and look.
+#[must_use]
+fn remote_badge(remote: Option<(&'static str, obelus_remote::State)>) -> String {
+    let Some((name, state)) = remote else {
+        return String::new();
+    };
+    let mark = match state {
+        state if state.connected() => '\u{25cf}',
+        state if state.wrong() => '\u{2715}',
+        _ => '\u{25cb}',
+    };
+    format!("{mark} {name}  ")
 }
 
 /// How many things are wrong with the file, by kind.
@@ -599,7 +625,7 @@ pub fn filter_caret(query: &str, at: usize) -> u16 {
 /// The same, in front of a question's answer.
 #[must_use]
 pub fn answer_inset(prompt: &obelus_component::prompt::Prompt) -> u16 {
-    let inset = 1usize.saturating_add(text_width(prompt.kind().label()));
+    let inset = 1usize.saturating_add(text_width(&prompt.kind().label()));
     u16::try_from(inset).unwrap_or(u16::MAX)
 }
 
@@ -614,7 +640,7 @@ pub fn answer_caret(prompt: &obelus_component::prompt::Prompt) -> u16 {
     // one a reader edits, and the caret goes where they put it.
     let said = prompt.text();
     let before: String = said.chars().take(prompt.caret()).collect();
-    let caret = 1usize.saturating_add(text_width(prompt.kind().label()) + text_width(&before));
+    let caret = 1usize.saturating_add(text_width(&prompt.kind().label()) + text_width(&before));
     u16::try_from(caret).unwrap_or(u16::MAX)
 }
 
@@ -753,6 +779,8 @@ impl StatusView<'_> {
 
         let badge = server_badge(self.server, self.busy.then_some(self.phase));
         let badge_width = text_width(&badge);
+        let remote = remote_badge(self.remote);
+        let remote_width = text_width(&remote);
 
         // What is wrong with the file, as a count of each kind: a reader
         // who has not looked at the list still has to know there is one.
@@ -798,6 +826,7 @@ impl StatusView<'_> {
             .saturating_add(marker_width)
             .saturating_add(working_width)
             .saturating_add(badge_width)
+            .saturating_add(remote_width)
             .saturating_add(wrong_width);
         // The file's own glyph, the same one the pickers give it, so a row in
         // a list and the file on screen are recognizably the same thing.
@@ -876,7 +905,22 @@ impl StatusView<'_> {
             write(cells, area.x + offset, area.y, &badge, style.fg(colour));
         }
 
-        let wrong_start = badge_start.saturating_sub(wrong_width);
+        // The chat beside the server, and for the same reason: both say
+        // whether something outside this window is listening.
+        let remote_start = badge_start.saturating_sub(remote_width);
+        if let Some((_, state)) = self.remote
+            && let Ok(offset) = u16::try_from(remote_start)
+            && remote_start > after_path + marker_width
+        {
+            let colour = match state {
+                state if state.connected() => self.theme.status_foreground,
+                state if state.wrong() => self.theme.status_stale,
+                _ => self.theme.gutter,
+            };
+            write(cells, area.x + offset, area.y, &remote, style.fg(colour));
+        }
+
+        let wrong_start = remote_start.saturating_sub(wrong_width);
         if !wrong.is_empty()
             && let Ok(offset) = u16::try_from(wrong_start)
             && wrong_start > after_path + marker_width

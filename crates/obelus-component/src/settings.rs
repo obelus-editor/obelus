@@ -50,6 +50,7 @@ use obelus_agent::{Listed as Agent, Status, acp::Setting as Offer};
 use obelus_command::Command;
 use obelus_config::{Config, Group, Kind, Setting, Value, Whose};
 use obelus_editing::keymap::{KeyChord, Keymap};
+use obelus_remote::platform::{Description, Field as Told, Setup};
 
 use crate::{
     field::Field,
@@ -113,8 +114,73 @@ pub enum SettingsOutcome {
     /// out. Here what is left is not a default of Obelus's but the agent's
     /// own answer, which is the third state every one of these rows has.
     UnsetForAgent(String),
+    /// Something on the remote page wants doing.
+    Remote(Reaching),
     /// The reader is done with the view.
     Cancelled,
+}
+
+/// What a row of the remote page asks for.
+///
+/// Asked, not done: what each of these means -- a keyring to write, a code
+/// to make, a list to open -- is the application's, and the page only knows
+/// which row the reader is on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Reaching {
+    /// Choose which chat, or none.
+    Platform,
+    /// Say what one of the platform's fields is.
+    Edit(&'static Told),
+    /// Forget what one of them was.
+    Forget(&'static Told),
+    /// The people who may talk to this machine.
+    People,
+    /// Make a code to pair somebody with.
+    Pair,
+    /// What the platform's side is made from: a copy, or a page of steps.
+    Setup,
+}
+
+/// One row of the remote page.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RemoteRow {
+    /// Which chat, or none.
+    Platform,
+    /// One of the platform's fields.
+    Field(&'static Told),
+    /// Who may talk to this machine.
+    People,
+    /// Pairing somebody.
+    Pair,
+    /// How the platform's side is made.
+    Setup(&'static Setup),
+}
+
+/// What the remote page shows, as the application knows it.
+///
+/// Handed in, the way the agent's offering is: whether a token is kept, who
+/// is paired and whether a code is waiting are the application's to know,
+/// and a page that went and found out would be a second place they live.
+/// Kept on the page rather than passed with every key, because what it
+/// changes is which rows there are and how tall each is -- the window asks
+/// that between keys -- and the application hands a new one whenever any
+/// of it moves.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Reached {
+    /// Which chat is set, where one is.
+    pub platform: Option<&'static Description>,
+    /// Where this machine stands with it.
+    pub state: obelus_remote::State,
+    /// What each field's control says, by the field's key: the start and
+    /// end of a secret, the whole of anything else. A field that is not here
+    /// has not been set.
+    pub kept: std::collections::BTreeMap<&'static str, String>,
+    /// What is wrong with a field, by its key, where something is.
+    pub troubles: std::collections::BTreeMap<&'static str, String>,
+    /// Who may talk to this machine, by name.
+    pub people: Vec<String>,
+    /// The code waiting to be sent to the bot, while there is one.
+    pub pairing: Option<String>,
 }
 
 /// Why the key a reader pressed would not do.
@@ -169,10 +235,14 @@ const MOST_DESCRIPTION_ROWS: usize = 3;
 
 /// Which of the settings' pages is showing.
 ///
-/// Three, because there are three *shapes* of page here and not because
-/// there are three kinds of setting: a column of settings with a control
-/// each, a table of commands and the key each is on, and a shelf of cards
-/// from a registry that changes while it is being looked at.
+/// Three *shapes* of page, and not three kinds of setting: a column of
+/// settings with a control each, a table of commands and the key each is on,
+/// and a shelf of cards from a registry that changes while it is being looked
+/// at. The fourth tab is the first shape again, and a tab all the same because
+/// it is somewhere else to go: which chat can reach this machine, and what is
+/// kept for it, is about a place outside Obelus rather than about how Obelus
+/// behaves -- and half of it is in the keyring rather than the file every
+/// other row writes to.
 ///
 /// Which group a setting belongs to is a heading down the first of those
 /// rather than a tab of its own. A tab is for somewhere else to go; a
@@ -187,11 +257,13 @@ pub enum Page {
     Keys,
     /// The agents Obelus can install.
     Agents,
+    /// Which chat a note can be worked on from.
+    Remote,
 }
 
 impl Page {
     /// Every page, in the order their tabs sit in.
-    pub const ALL: [Self; 3] = [Self::Settings, Self::Keys, Self::Agents];
+    pub const ALL: [Self; 4] = [Self::Settings, Self::Keys, Self::Remote, Self::Agents];
 
     /// The pages one file's settings have.
     ///
@@ -222,6 +294,7 @@ impl Page {
             Self::Settings => "Settings",
             Self::Keys => "Keys",
             Self::Agents => "Agents",
+            Self::Remote => "Remote",
         }
     }
 }
@@ -290,6 +363,14 @@ pub enum Shown<'a> {
         /// Which agent it is, by the name the heading uses.
         agent: &'a str,
     },
+    /// One row of the remote page.
+    Remote {
+        /// Which.
+        row: RemoteRow,
+        /// The heading it opens -- the platform's name, or Obelus's word for
+        /// none -- where it is the first row.
+        opens: Option<&'static str>,
+    },
     /// The agent's group, with nothing in it but the reason why.
     ///
     /// A row so that the window, the heights and the headings are the ones
@@ -311,7 +392,7 @@ impl Shown<'_> {
     pub const fn setting(&self) -> Option<&'static Setting> {
         match self {
             Self::Obelus { setting, .. } => Some(*setting),
-            Self::Agent { .. } | Self::Silent { .. } => None,
+            Self::Agent { .. } | Self::Silent { .. } | Self::Remote { .. } => None,
         }
     }
 
@@ -322,6 +403,13 @@ impl Shown<'_> {
             Self::Obelus { setting, .. } => setting.name,
             Self::Agent { offer, .. } => &offer.name,
             Self::Silent { .. } => "",
+            Self::Remote { row, .. } => match row {
+                RemoteRow::Platform => "Platform",
+                RemoteRow::Field(field) => field.name,
+                RemoteRow::People => "People",
+                RemoteRow::Pair => "Pair",
+                RemoteRow::Setup(setup) => setup.name(),
+            },
         }
     }
 
@@ -332,6 +420,13 @@ impl Shown<'_> {
             Self::Obelus { setting, .. } => setting.about,
             Self::Agent { offer, .. } => offer.about.as_deref().unwrap_or_default(),
             Self::Silent { saying, .. } => saying,
+            Self::Remote { row, .. } => match row {
+                RemoteRow::Platform => "Which chat a note can be worked on from",
+                RemoteRow::Field(field) => field.about,
+                RemoteRow::People => "Who may talk to this machine through it",
+                RemoteRow::Pair => "A code to send the bot from your own account",
+                RemoteRow::Setup(setup) => setup.about(),
+            },
         }
     }
 
@@ -348,7 +443,7 @@ impl Shown<'_> {
     #[must_use]
     pub fn warning(&self) -> Option<String> {
         match self {
-            Self::Obelus { .. } | Self::Silent { .. } => None,
+            Self::Obelus { .. } | Self::Silent { .. } | Self::Remote { .. } => None,
             // A choice the agent has stopped offering is a line in the
             // settings file that does nothing: a new conversation is left
             // on whatever the agent opens on.
@@ -405,6 +500,8 @@ pub struct Settings {
     /// this page scroll the way they do: by the least that puts the focused
     /// row back on screen, and no further.
     window: Window,
+    /// What the remote page shows -- see [`Reached`].
+    reached: Reached,
 }
 
 impl Default for Settings {
@@ -425,6 +522,7 @@ impl Settings {
             whose: Whose::Reader,
             page: 0,
             window: Window::new(),
+            reached: Reached::default(),
         }
     }
 
@@ -439,6 +537,7 @@ impl Settings {
             whose: Whose::Project,
             page: 0,
             window: Window::new(),
+            reached: Reached::default(),
         }
     }
 
@@ -493,10 +592,11 @@ impl Settings {
         if !self.query().is_empty() {
             return None;
         }
-        Some(match (self.on_keys(), self.on_agents()) {
-            (true, _) => "Filter keys",
-            (_, true) => "Filter agents",
-            _ => "Filter settings",
+        Some(match self.page() {
+            Page::Keys => "Filter keys",
+            Page::Agents => "Filter agents",
+            Page::Remote => "Filter remote settings",
+            Page::Settings => "Filter settings",
         })
     }
 
@@ -510,6 +610,89 @@ impl Settings {
     #[must_use]
     pub fn on_agents(&self) -> bool {
         self.page() == Page::Agents
+    }
+
+    /// Whether the page showing is the remote one.
+    #[must_use]
+    pub fn on_remote(&self) -> bool {
+        self.page() == Page::Remote
+    }
+
+    /// What the remote page shows.
+    #[must_use]
+    pub const fn reached(&self) -> &Reached {
+        &self.reached
+    }
+
+    /// Hands it a new account of the remote page, keeping the focus on a
+    /// row that is still there.
+    pub fn reach(&mut self, reached: Reached) {
+        if reached == self.reached {
+            return;
+        }
+        self.reached = reached;
+        if self.on_remote() {
+            self.window.set_count(self.row_count(None));
+        }
+    }
+
+    /// What is wrong with a row, where something is: the row's own answer,
+    /// or for one of the remote page's fields what the application said
+    /// about it.
+    ///
+    /// Asked here by the page and by the window both, for the reason
+    /// [`Shown::warning`] is one function: a row counted at one height and
+    /// drawn at another is a row the window walks past.
+    #[must_use]
+    pub fn warning_of(&self, shown: &Shown) -> Option<String> {
+        match shown {
+            Shown::Remote {
+                row: RemoteRow::Field(field),
+                ..
+            } => self.reached.troubles.get(field.key).cloned(),
+            shown => shown.warning(),
+        }
+    }
+
+    /// The rows of the remote page: which chat, and -- where one is set --
+    /// what it has to be told, who may talk, pairing, and how its side is
+    /// made, in the order a reader setting it up for the first time goes
+    /// down them.
+    fn remote_rows(&self) -> Vec<Shown<'static>> {
+        let opens = Some(
+            self.reached
+                .platform
+                .map_or("Remote", |platform| platform.name),
+        );
+        let mut rows = vec![RemoteRow::Platform];
+        if let Some(platform) = self.reached.platform {
+            rows.extend(platform.fields.iter().map(RemoteRow::Field));
+            rows.extend([
+                RemoteRow::People,
+                RemoteRow::Pair,
+                RemoteRow::Setup(&platform.setup),
+            ]);
+        }
+        // By name, the way the settings are narrowed, and each row opens the
+        // heading only if it is the first left.
+        let query = self.query.said().to_lowercase();
+        let mut opens = opens;
+        rows.into_iter()
+            .filter(|row| {
+                query.is_empty()
+                    || Shown::Remote {
+                        row: *row,
+                        opens: None,
+                    }
+                    .label()
+                    .to_lowercase()
+                    .contains(&query)
+            })
+            .map(|row| Shown::Remote {
+                row,
+                opens: opens.take(),
+            })
+            .collect()
     }
 
     /// The commands on show, with the key each is on: this page's rows.
@@ -687,6 +870,9 @@ impl Settings {
     pub fn rows<'a>(&self, offering: Option<&'a Offering>) -> Vec<Shown<'a>> {
         if self.on_agents() || self.on_keys() {
             return Vec::new();
+        }
+        if self.on_remote() {
+            return self.remote_rows();
         }
         let query = self.query.said().to_lowercase();
         let mut rows = Vec::new();
@@ -1063,6 +1249,18 @@ impl Settings {
                 self.refused = None;
                 SettingsOutcome::Consumed
             }
+            // A row of the remote page asks for what it is about, and the
+            // application does it.
+            KeyCode::Enter if bare && self.on_remote() => match rows.get(self.window.focus()) {
+                Some(Shown::Remote { row, .. }) => SettingsOutcome::Remote(match row {
+                    RemoteRow::Platform => Reaching::Platform,
+                    RemoteRow::Field(field) => Reaching::Edit(field),
+                    RemoteRow::People => Reaching::People,
+                    RemoteRow::Pair => Reaching::Pair,
+                    RemoteRow::Setup(_) => Reaching::Setup,
+                }),
+                _ => SettingsOutcome::Consumed,
+            },
             // The agent's rows are one thing before they are a switch or a
             // list: every one of them can also be left to the agent, which
             // is a third answer neither control has room for. So they all
@@ -1121,6 +1319,20 @@ impl Settings {
                     // the key means this here, and letting it fall through
                     // to the filter would put a character in it.
                     None => SettingsOutcome::Consumed,
+                }
+            }
+            // A field the reader set, forgotten: what `delete` means
+            // everywhere else on this page.
+            KeyCode::Delete
+                if bare
+                    && let Some(Shown::Remote {
+                        row: RemoteRow::Field(field),
+                        ..
+                    }) = rows.get(self.window.focus()) =>
+            {
+                match self.reached.kept.contains_key(field.key) {
+                    true => SettingsOutcome::Remote(Reaching::Forget(field)),
+                    false => SettingsOutcome::Consumed,
                 }
             }
             KeyCode::Delete
@@ -1215,8 +1427,8 @@ impl Settings {
     #[must_use]
     pub fn setting_rows(&self, shown: &Shown, width: u16) -> u16 {
         let about = u16::try_from(self.wrapped(shown.about(), width).len()).unwrap_or(0);
-        let warning = shown
-            .warning()
+        let warning = self
+            .warning_of(shown)
             .map_or(0, |warning| self.wrapped(&warning, width).len());
         let about = about + u16::try_from(warning).unwrap_or(0);
         // A heading is its word and the blank under it: the word alone, with
@@ -1228,6 +1440,7 @@ impl Settings {
             Shown::Obelus { opens, .. } => u16::from(opens.is_some()) * 2,
             Shown::Agent { opens, .. } => u16::from(opens.is_some()) * HEADING_ROWS,
             Shown::Silent { .. } => HEADING_ROWS,
+            Shown::Remote { opens, .. } => u16::from(opens.is_some()) * 2,
         };
         // A row with no name is its prose and the blank after it: there is
         // nothing to put a name on.

@@ -39,6 +39,13 @@ pub enum PromptKind {
     /// moves a file and the other makes one, and the row the reader
     /// answers on is the only place that says which.
     NewPath,
+    /// What one of a chat platform's fields is: a token, an id.
+    ///
+    /// A secret is drawn with its middle hidden. Not all of it: the start
+    /// says which token was pasted into which row -- the commonest way to
+    /// get this wrong -- and the end says whether it was the one meant; the
+    /// rest is the part a reader sharing their screen would not want shown.
+    Told(&'static obelus_remote::platform::Field),
 }
 
 impl PromptKind {
@@ -47,8 +54,9 @@ impl PromptKind {
     /// Part of the question: a bare caret on the status bar says something
     /// is being asked without saying what.
     #[must_use]
-    pub const fn label(self) -> &'static str {
-        match self {
+    pub fn label(self) -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(match self {
+            Self::Told(field) => return format!("{}: ", field.name).into(),
             Self::Line => "Line: ",
             Self::Name => "Rename to: ",
             // Not "Rename to: ", which is what a symbol's prompt says:
@@ -60,7 +68,7 @@ impl PromptKind {
             // one: both answers are a path, and only the words say
             // whether the file at the end of it is being moved or made.
             Self::NewPath => "New file: ",
-        }
+        })
     }
 
     /// Whether a character belongs in the answer.
@@ -86,6 +94,9 @@ impl PromptKind {
             // `My Notes.md` is a file, and a reader typing one is not
             // making a mistake. Only the key that answers is refused.
             Self::Path | Self::NewPath => character != '\n' && character != '\r',
+            // A token or an id is one word, and a paste that brought a
+            // newline or a space along with it should not keep them.
+            Self::Told(_) => !character.is_whitespace(),
         }
     }
 
@@ -99,8 +110,34 @@ impl PromptKind {
             Self::Line => |character| character.is_ascii_digit(),
             Self::Name => |character| !character.is_whitespace(),
             Self::Path | Self::NewPath => |character| character != '\n' && character != '\r',
+            Self::Told(_) => |character| !character.is_whitespace(),
         }
     }
+}
+
+/// A secret with its middle hidden: as much of its start as the platform's
+/// prefix is long, and its last four.
+///
+/// The start whether or not it is the prefix this row wants: a token's
+/// prefix says which kind it is and nothing else, and a bot token pasted
+/// into the app token's row is found by reading those few characters.
+///
+/// One `•` for every character hidden, so a row drawing it is as wide as a
+/// row drawing the secret, and a caret measured against either lands in the
+/// same place.
+#[must_use]
+pub fn hidden(said: &str, looks_like: &str) -> String {
+    let characters: Vec<char> = said.chars().collect();
+    let start = looks_like.chars().count().min(characters.len());
+    let end = characters.len().saturating_sub(4).max(start);
+    characters
+        .iter()
+        .enumerate()
+        .map(|(at, character)| match at >= start && at < end {
+            true => '\u{2022}',
+            false => *character,
+        })
+        .collect()
 }
 
 /// What came of a key.
@@ -202,7 +239,22 @@ impl Prompt {
     /// The whole row: the label and the answer so far.
     #[must_use]
     pub fn line(&self) -> String {
-        format!("{}{}", self.kind.label(), self.text.said())
+        format!("{}{}", self.kind.label(), self.shown())
+    }
+
+    /// What has been typed, as the row draws it: a secret with its middle
+    /// hidden, one hidden character for one typed so that the caret still
+    /// lands where it is.
+    #[must_use]
+    pub fn shown(&self) -> String {
+        let said = self.text.said();
+        let PromptKind::Told(field) = self.kind else {
+            return said;
+        };
+        let obelus_remote::platform::FieldKind::Secret { looks_like } = field.kind else {
+            return said;
+        };
+        hidden(&said, looks_like)
     }
 
     /// Handles a key.

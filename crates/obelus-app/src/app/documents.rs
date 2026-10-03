@@ -1044,6 +1044,11 @@ impl App {
                 relative(buffer.path(), &self.working_directory)
             ));
         }
+        // And a conversation's thread hears that it was, so that a reader
+        // there is not left talking to something nobody is listening for.
+        if let Some(talk) = document.chat() {
+            self.mirror_closed(talk);
+        }
         drop(document);
 
         // Whichever document is nearest, before the closed one for

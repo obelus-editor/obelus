@@ -1274,6 +1274,22 @@ impl Chat {
         }
     }
 
+    /// The last thing the agent said, whole, where it has said anything.
+    ///
+    /// For somewhere that cannot be shown the transcript -- a chat thread
+    /// opened on a conversation already going -- which wants the one
+    /// paragraph that says where things are, not the whole of how they got
+    /// there.
+    #[must_use]
+    pub fn lately(&self) -> Option<String> {
+        self.said
+            .iter()
+            .rev()
+            .find(|said| said.speaker == Speaker::Agent && said.tag.is_none())
+            .map(|said| said.text.trim().to_string())
+            .filter(|text| !text.is_empty())
+    }
+
     /// Says the reader was sent somewhere, and that what was to happen
     /// there has not happened yet.
     ///

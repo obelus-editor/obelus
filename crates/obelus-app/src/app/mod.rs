@@ -32,13 +32,16 @@ mod hovering;
 mod noting;
 mod opening;
 pub use history_view::About;
+mod control;
 mod keys;
+mod mirroring;
 mod moving;
 mod naming;
 mod preferences;
 mod previewing;
 mod projects;
 mod releases;
+mod remote;
 mod renaming;
 mod renaming_files;
 mod reopening;
@@ -822,6 +825,10 @@ pub struct App {
     /// What this window knows about the others on the repository, and the
     /// list of worktrees while it is showing.
     worktrees: worktrees::Worktrees,
+    /// What this window knows about the chat it can be reached from.
+    remote: remote::Remote,
+    /// Which of its conversations is which thread in that chat.
+    mirror: mirroring::Mirror,
     /// Whether to open on the file list.
     ///
     /// A directory on the command line is a reader saying which project
@@ -994,6 +1001,8 @@ impl App {
             head: None,
             gone: false,
             worktrees: worktrees::Worktrees::default(),
+            remote: remote::Remote::default(),
+            mirror: mirroring::Mirror::default(),
             list_at_start: false,
             should_quit: false,
         }
@@ -2481,6 +2490,14 @@ impl App {
         // lines down -- and a watch taken at the end of the frame is a view
         // that draws its first frame from whatever was there last time.
         self.settle_the_watches();
+        // And what the settings page says about the chat, which can move
+        // under it the way the settings can.
+        self.settle_the_remote_page();
+        // And the connection to that chat, from the same answer: which one
+        // is set.
+        self.settle_the_connection();
+        // And a thread for every conversation there that can be named.
+        self.settle_the_threads();
         // And the sessions, from the same question: which conversation is
         // on screen.
         self.settle_the_sessions();
@@ -2754,6 +2771,7 @@ impl App {
             Event::Resize => {}
             Event::Closed => self.request_quit(),
             Event::Summoned(token) => self.summoned(token),
+            Event::Remote(event) => self.remote_event(event),
             Event::Fonts { here, otherwise } => {
                 tracing::info!(
                     faces = here.len(),
@@ -4656,6 +4674,15 @@ impl Screen for App {
     fn server_working_on(&self) -> Option<&str> {
         App::server_working_on(self)
     }
+    fn mirrored_to(&self) -> Option<&'static str> {
+        self.conversation_mirrored_to()
+    }
+
+    fn remote(&self) -> Option<(&'static str, obelus_remote::State)> {
+        self.platform()
+            .map(|platform| (platform.name, self.remote_state()))
+    }
+
     fn server_busy(&self) -> bool {
         App::server_busy(self)
     }

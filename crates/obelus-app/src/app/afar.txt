@@ -1,0 +1,2 @@
+(Obelus: this message was sent from {platform}, not typed at the screen. The reader is away from the machine -- on a phone, often -- and reads your answer in a chat. Keep it short and lead with the conclusion. Do not offer to put files on their screen with `open_file`: there is nobody at it. Questions still go through `elicitation/create`; Obelus turns them into a numbered list they answer by replying.)
+
