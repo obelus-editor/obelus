@@ -557,7 +557,9 @@ crates/
                       not remembered (app/agents); a note that has gone takes
                       no conversation off the screen (app/noting); a key that
                       names another whole view swaps rather than stacks, and a
-                      view that bound the key beats the swap (app/switching); a
+                      view that bound the key beats the swap (app/switching);
+                      what is in front has the key, and nothing behind it is
+                      asked (app/hearing); a
                       newer Obelus is asked about once a day, not once a start
                       (app/releases); only where Obelus draws its own window, a
                       window on a tree is a claim held the way a

@@ -158,6 +158,11 @@ fn nothing_typed_over_a_layer_reaches_the_file() {
         ] {
             press(&mut app, code);
         }
+        // And the cut, which is bound in a dialog and so is not stopped by
+        // what stops a key: it asked a chain of the boxes that had a
+        // selection, the counts had none, and the line went out of the file.
+        // Broken deliberately by letting the cut go on past the counts.
+        support::press_control(&mut app, 'x');
 
         let after = app
             .current_buffer()
@@ -632,4 +637,154 @@ fn the_input_method_is_on_only_where_typing_goes() {
     app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
     support::lay_out(&mut app, WIDTH, HEIGHT);
     assert!(!app.takes_text(), "an empty screen takes text");
+}
+
+/// A reader on the notes, which are the document: three of them, on the
+/// first.
+fn on_the_notes(name: &str) -> (support::Scratch, App) {
+    let scratch = support::Scratch::new(&format!("layers-notes-{name}"));
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        "[[todo]]\nid = \"0123456A\"\nsaid = \"the first\"\ndone = false\n\n\
+         [[todo]]\nid = \"0123456B\"\nsaid = \"the second\"\ndone = false\n\n\
+         [[todo]]\nid = \"0123456C\"\nsaid = \"the third\"\ndone = false\n",
+    )
+    .expect("the notes");
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    dispatch::dispatch(&mut app, Command::TodoOpen);
+    (scratch, app)
+}
+
+/// The keys the notes take with a modifier, and the two that indent.
+///
+/// The ones a layer is likely to leave alone, which is the point: a key
+/// every layer takes for itself proves nothing about what is behind it.
+fn pressed_at_what_is_behind(app: &mut App) {
+    use crossterm::event::{KeyEvent, KeyModifiers};
+    for (code, modifiers) in [
+        (KeyCode::Down, KeyModifiers::ALT),
+        (KeyCode::Up, KeyModifiers::ALT),
+        (KeyCode::Char(' '), KeyModifiers::ALT),
+        (KeyCode::Char('a'), KeyModifiers::ALT),
+        (KeyCode::Char('o'), KeyModifiers::ALT),
+        (KeyCode::Delete, KeyModifiers::ALT),
+        (KeyCode::Backspace, KeyModifiers::ALT),
+        (KeyCode::Enter, KeyModifiers::ALT),
+        (KeyCode::Enter, KeyModifiers::SHIFT),
+        (KeyCode::Tab, KeyModifiers::NONE),
+        (KeyCode::BackTab, KeyModifiers::SHIFT),
+        (KeyCode::Char('x'), KeyModifiers::CONTROL),
+        (KeyCode::End, KeyModifiers::CONTROL),
+    ] {
+        app.handle(obelus_app::event::Event::Key(KeyEvent::new(
+            code, modifiers,
+        )));
+    }
+}
+
+/// No layer lets a key reach the notes behind it.
+///
+/// The notes stopped being a layer when they became a document, and a key a
+/// layer did not want fell past it to them: `f1` over the notes and then
+/// `alt+down` moved the note behind the list, and `alt+delete` took one
+/// away. The file had a guard against exactly this and the notes never got
+/// one -- which is why there is no guard now, only an order that stops at
+/// whatever is in front.
+///
+/// Broken deliberately by having a layer let through what it does not take
+/// (`Hearer::lets_through`), and the counts, the settings and a list each
+/// move, take away or talk about the note behind them.
+#[test]
+fn nothing_pressed_over_a_layer_reaches_the_notes() {
+    for layer in obelus_component::layers::STACK {
+        let (scratch, mut app) = on_the_notes(&format!("{layer:?}"));
+        let file = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
+        let standing = |app: &App| {
+            let notes = app.notes().expect("the notes are what is being read");
+            (
+                notes.places(),
+                notes.selected_note().cloned(),
+                notes
+                    .writing()
+                    .map(obelus_component::composer::Composer::text),
+            )
+        };
+        let before = standing(&app);
+        let written = std::fs::read_to_string(&file).expect("the notes");
+
+        open(&mut app, layer);
+        if app.layers().nearest() != Some(layer) {
+            // A question is about a file, and the notes are not one --
+            // said by name, so a layer that stops opening here is noticed
+            // rather than passed.
+            assert!(
+                matches!(layer, Layer::Prompt),
+                "{layer:?} did not open over the notes"
+            );
+            continue;
+        }
+        pressed_at_what_is_behind(&mut app);
+
+        // The page saying the tree has gone takes the notes' file with it,
+        // and the notes on screen are what is left of a tree that is not
+        // there: there is nothing on disk to compare.
+        if layer != Layer::Gone {
+            assert_eq!(
+                std::fs::read_to_string(&file).expect("the notes"),
+                written,
+                "{layer:?} let a key through to the notes file"
+            );
+        }
+        assert!(app.notes().is_some(), "{layer:?}: the notes went away");
+        assert_eq!(
+            standing(&app),
+            before,
+            "{layer:?} let a key through to the notes"
+        );
+    }
+}
+
+/// Nor to the conversation behind it.
+///
+/// Broken deliberately the same way, and `alt+enter` over a list or a page
+/// puts a line break in the box behind it; and again by letting the cut go
+/// on past the counts, which took the words out of the box.
+#[test]
+fn nothing_pressed_over_a_layer_reaches_the_conversation() {
+    for layer in obelus_component::layers::STACK {
+        let mut app = reading();
+        app.new_conversation();
+        support::type_text(&mut app, "half a thought");
+        let standing = |app: &App| {
+            let chat = app.chat().expect("the conversation is what is being read");
+            (chat.writing().text(), chat.writing().selected(), chat.top())
+        };
+        let before = standing(&app);
+
+        open(&mut app, layer);
+        if app.layers().nearest() != Some(layer) {
+            // A question is about a file, and a conversation is not one --
+            // said by name, so a layer that stops opening here is noticed
+            // rather than passed.
+            assert!(
+                matches!(layer, Layer::Prompt),
+                "{layer:?} did not open over the conversation"
+            );
+            continue;
+        }
+        pressed_at_what_is_behind(&mut app);
+
+        assert!(
+            app.chat().is_some(),
+            "{layer:?}: the conversation went away"
+        );
+        assert_eq!(
+            standing(&app),
+            before,
+            "{layer:?} let a key through to the conversation"
+        );
+    }
 }
