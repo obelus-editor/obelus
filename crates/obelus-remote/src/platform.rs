@@ -14,7 +14,21 @@
 //! of it -- and a settings page that would have to ask every platform what
 //! its values are.
 
-use crate::slack;
+use std::{collections::BTreeMap, sync::Arc};
+
+use obelus_sink::Sink;
+
+use crate::{Event, model::Out, slack};
+
+/// Everything a platform has been told, by field: the secrets read from the
+/// keyring and the rest from the settings, put together only on the way to
+/// connecting.
+pub type Told = BTreeMap<&'static str, String>;
+
+/// How a platform is connected to: what it has been told, and where what it
+/// hears goes. What it hands back is where to send what is to be said;
+/// dropping that is how it is stopped.
+pub type Connect = fn(Told, Arc<dyn Sink<Event>>) -> tokio::sync::mpsc::UnboundedSender<Out>;
 
 /// One platform, as the settings page and the relay know it.
 #[derive(Debug)]
@@ -29,6 +43,8 @@ pub struct Description {
     pub fields: &'static [Field],
     /// How a reader makes the app on the platform's side.
     pub setup: Setup,
+    /// How it is connected to.
+    pub connect: Connect,
 }
 
 impl Description {
@@ -126,6 +142,66 @@ macro_rules! the_same_one {
     )*};
 }
 the_same_one!(Description, Field, Setup);
+
+/// What connects instead of the platform's own, for a test: one that went
+/// out to Slack would be a test that needs Slack.
+static CONNECT_FOR_TEST: std::sync::Mutex<Option<Connect>> = std::sync::Mutex::new(None);
+
+/// Connects with this instead of any platform's own, for the rest of the
+/// process.
+pub fn connect_for_test(connect: Connect) {
+    if let Ok(mut set) = CONNECT_FOR_TEST.lock() {
+        *set = Some(connect);
+    }
+}
+
+/// Reads what a platform has been told and connects to it, on the runtime's
+/// blocking pool -- reading a secret may put up the keyring's own prompt.
+///
+/// What comes back comes through the sink: `Event::Started` with where to
+/// send things, or the state that says why not -- a field nobody has filled
+/// in, a keyring that would not open.
+pub fn reach(platform: &'static Description, settled: Told, sink: Arc<dyn Sink<Event>>) {
+    obelus_runtime::handle().spawn_blocking(move || {
+        let mut told = settled;
+        for field in platform.fields {
+            if let FieldKind::Secret { .. } = field.kind {
+                match crate::secrets::read(platform.key, field.key) {
+                    Ok(Some(secret)) => {
+                        told.insert(field.key, secret);
+                    }
+                    Ok(None) => {}
+                    Err(trouble) => {
+                        let _ = sink.send(Event::Connection(match trouble {
+                            crate::secrets::Trouble::NoKeyring => crate::State::NoKeyring,
+                            crate::secrets::Trouble::Locked => crate::State::Locked,
+                            crate::secrets::Trouble::Failed(_) => crate::State::Unreachable,
+                        }));
+                        return;
+                    }
+                }
+            }
+        }
+        if !platform
+            .fields
+            .iter()
+            .all(|field| told.contains_key(field.key))
+        {
+            let _ = sink.send(Event::Connection(crate::State::Unready));
+            return;
+        }
+        let connect = CONNECT_FOR_TEST
+            .lock()
+            .ok()
+            .and_then(|set| *set)
+            .unwrap_or(platform.connect);
+        let out = connect(told, sink.clone());
+        let _ = sink.send(Event::Started {
+            platform: platform.key,
+            out,
+        });
+    });
+}
 
 /// Every platform Obelus can be reached from, in the order they are offered.
 pub const ALL: &[&Description] = &[&slack::DESCRIPTION];

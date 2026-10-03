@@ -2488,6 +2488,9 @@ impl App {
         // And what the settings page says about the chat, which can move
         // under it the way the settings can.
         self.settle_the_remote_page();
+        // And the connection to that chat, from the same answer: which one
+        // is set.
+        self.settle_the_connection();
         // And the sessions, from the same question: which conversation is
         // on screen.
         self.settle_the_sessions();

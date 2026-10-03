@@ -47,6 +47,16 @@ pub enum Event {
     },
     /// Where the connection to a platform has got to.
     Connection(State),
+    /// A platform is being connected to, and this is where to send what is
+    /// to be said to it.
+    Started {
+        /// Which.
+        platform: &'static str,
+        /// Where to send things; dropped, it disconnects.
+        out: tokio::sync::mpsc::UnboundedSender<model::Out>,
+    },
+    /// The code to pair with has run out.
+    PairingOver,
     /// Somebody said something.
     Heard {
         /// Their id, which is what they are checked by.

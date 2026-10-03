@@ -49,6 +49,20 @@ pub(super) struct Remote {
     troubles: BTreeMap<&'static str, String>,
     /// The code waiting to be sent to the bot, while there is one.
     pairing: Option<String>,
+    /// The clock it runs out on. Dropped with the code, which stops it: a
+    /// new code is a new clock, and a used one needs none.
+    pairing_runs_out: Option<crate::event::Pause>,
+    /// Somebody who sent the code, while the platform is asked what they
+    /// are called.
+    naming: Option<String>,
+    /// Where to send what is to be said, while connected -- or connecting:
+    /// the platform takes what is sent before it is up and says it once it
+    /// is.
+    out: Option<tokio::sync::mpsc::UnboundedSender<obelus_remote::model::Out>>,
+    /// Which platform `out` is for, or is being asked for.
+    reaching: Option<&'static str>,
+    /// What the platform last said about the connection, for `reaching`.
+    connection: Option<State>,
 }
 
 /// What a secret is drawn as on its row: the platform's prefix where it
@@ -79,6 +93,13 @@ impl App {
         let Some(platform) = self.platform() else {
             return State::Off;
         };
+        // What the platform itself said comes first: it is the one that
+        // knows whether the tokens work.
+        if self.remote.reaching == Some(platform.key)
+            && let Some(state) = self.remote.connection
+        {
+            return state;
+        }
         match &self.remote.trouble {
             Some(Trouble::NoKeyring) => return State::NoKeyring,
             Some(Trouble::Locked) => return State::Locked,
@@ -203,6 +224,22 @@ impl App {
                 field,
                 read,
             } => self.kept(platform, field, read),
+            obelus_remote::Event::Started { platform, out } => {
+                if self.remote.reaching == Some(platform) {
+                    self.remote.out = Some(out);
+                }
+            }
+            obelus_remote::Event::Connection(state) => {
+                tracing::info!(?state, "the chat says where it has got to");
+                self.remote.connection = Some(state);
+            }
+            obelus_remote::Event::Heard { from, at, text } => self.heard(&from, &at, &text),
+            obelus_remote::Event::Named { id, name } => self.let_in(id, name),
+            obelus_remote::Event::Opened { .. } => {}
+            obelus_remote::Event::PairingOver => {
+                self.remote.pairing = None;
+                self.remote.pairing_runs_out = None;
+            }
             obelus_remote::Event::Written {
                 platform,
                 field,
@@ -215,6 +252,10 @@ impl App {
                             None => self.remote.kept.remove(field),
                         };
                         self.remote.trouble = None;
+                        // Connected again with what it has now: a token
+                        // changed under a connection is a connection made
+                        // with the old one.
+                        self.let_the_chat_go();
                     }
                 }
                 Err(trouble) => {
@@ -224,7 +265,132 @@ impl App {
                 }
             },
         }
+        self.settle_the_connection();
         self.settle_the_remote_page();
+    }
+
+    /// Connects to the chat that is set, or lets go of one that is not.
+    ///
+    /// Asked from what is true, once a frame and after anything that could
+    /// move it: which chat is set can change under this window -- the
+    /// reader's file, another window -- and a connection that was switched
+    /// on and off from the places that changed it would outlive its reason
+    /// the first time one of them forgot.
+    pub(super) fn settle_the_connection(&mut self) {
+        let wanted = self.platform();
+        if self.remote.reaching != wanted.map(|platform| platform.key) {
+            self.let_the_chat_go();
+        }
+        let Some(platform) = wanted else {
+            return;
+        };
+        if self.remote.reaching.is_some() {
+            return;
+        }
+        let Some(sender) = self.events.clone() else {
+            return;
+        };
+        self.remote.reaching = Some(platform.key);
+        let settled: obelus_remote::platform::Told = platform
+            .fields
+            .iter()
+            .filter_map(|field| {
+                Some((
+                    field.key,
+                    self.config()
+                        .remote_value(platform.key, field.key)?
+                        .to_string(),
+                ))
+            })
+            .collect();
+        tracing::info!(platform = platform.key, "reaching the chat");
+        obelus_remote::platform::reach(platform, settled, std::sync::Arc::new(sender));
+    }
+
+    /// Lets go of the connection, which is dropping where to send things.
+    fn let_the_chat_go(&mut self) {
+        if self.remote.reaching.is_some() {
+            tracing::info!(platform = ?self.remote.reaching, "letting the chat go");
+        }
+        self.remote.out = None;
+        self.remote.reaching = None;
+        self.remote.connection = None;
+        self.remote.pairing = None;
+        self.remote.pairing_runs_out = None;
+        self.remote.naming = None;
+    }
+
+    /// Says something in a chat.
+    fn say_to(&self, out: obelus_remote::model::Out) {
+        if let Some(sending) = &self.remote.out
+            && sending.send(out).is_err()
+        {
+            tracing::warn!("the chat has stopped listening");
+        }
+    }
+
+    /// Hears somebody in the chat.
+    ///
+    /// Nobody who is not on the list is answered -- not with "no", not with
+    /// anything: a bot that answers strangers is a bot that says it is
+    /// there. The one thing a stranger may say is the code, while there is
+    /// one.
+    fn heard(&mut self, from: &str, at: &obelus_remote::model::Where, text: &str) {
+        let Some(platform) = self.platform() else {
+            return;
+        };
+        let known = self
+            .config()
+            .remote_of(platform.key)
+            .is_some_and(|remote| remote.people.iter().any(|person| person.id == from));
+        if *at == obelus_remote::model::Where::Top
+            && let Some(code) = &self.remote.pairing
+            && same_code(code, text)
+        {
+            tracing::info!(platform = platform.key, "somebody sent the code");
+            self.remote.pairing = None;
+            self.remote.pairing_runs_out = None;
+            self.remote.naming = Some(from.to_string());
+            self.say_to(obelus_remote::model::Out::Name {
+                id: from.to_string(),
+            });
+            return;
+        }
+        if !known {
+            tracing::info!(
+                platform = platform.key,
+                "somebody not on the list, not answered"
+            );
+            return;
+        }
+        tracing::debug!(?at, "heard from somebody on the list");
+    }
+
+    /// Lets in somebody who sent the code, now that their name is known.
+    fn let_in(&mut self, id: String, name: String) {
+        if self.remote.naming.as_deref() != Some(id.as_str()) {
+            return;
+        }
+        let Some(platform) = self.platform() else {
+            return;
+        };
+        self.remote.naming = None;
+        self.change_remote(|config| {
+            config.add_person(
+                platform.key,
+                obelus_config::Person {
+                    id: id.clone(),
+                    name: name.clone(),
+                },
+            );
+        });
+        self.say(format!("Paired {name}"));
+        self.say_to(obelus_remote::model::Out::Say {
+            to: id,
+            at: obelus_remote::model::Where::Top,
+            text: "Paired. This machine takes notes from you now.".to_string(),
+            notify: false,
+        });
     }
 
     /// One secret's answer, read for a platform.
@@ -268,6 +434,14 @@ impl App {
 
     /// Does what a row of the remote page asked for.
     pub(super) fn reach(&mut self, reaching: Reaching) {
+        self.reach_for(reaching);
+        // And the page told at once: the next key may arrive before the
+        // next frame, and a code made by this one is what the reader is
+        // looking for on the row.
+        self.settle_the_remote_page();
+    }
+
+    fn reach_for(&mut self, reaching: Reaching) {
         match reaching {
             Reaching::Platform => self.choose_a_platform(),
             Reaching::Edit(field) => match field.kind {
@@ -416,12 +590,57 @@ impl App {
 
     /// Makes a code for somebody to pair with, where there is anything
     /// listening for it.
+    ///
+    /// Good for five minutes, and then it is gone: a code is the one thing a
+    /// stranger may send, so it is something that exists only while the
+    /// reader is waiting for it. Run out by a clock of its own rather than a
+    /// countdown on the row -- nothing on screen moves for it.
     fn pair(&mut self) {
         // Silent where there is nothing to send it to: the row is drawn dim
         // there, and a key does nothing where its row is dim.
         if !self.remote_state().connected() {
             return;
         }
-        tracing::debug!("pairing waits for the relay");
+        self.remote.pairing = Some(a_code());
+        self.remote.pairing_runs_out = self.come_back_in(
+            std::time::Duration::from_secs(5 * 60),
+            Event::Remote(obelus_remote::Event::PairingOver),
+        );
     }
+}
+
+/// A code to pair with: six characters nobody misreads, in two halves.
+///
+/// From the hasher std seeds with randomness, the way a window's key is: a
+/// code lasts five minutes and is tried by typing it, so what it has to be
+/// is unguessable by somebody who has not seen it, and that is plenty.
+fn a_code() -> String {
+    use std::hash::{BuildHasher as _, Hasher as _};
+
+    const LETTERS: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+    let mut hasher = std::hash::RandomState::new().build_hasher();
+    hasher.write_u32(std::process::id());
+    let mut drawn = hasher.finish();
+    let mut code = String::new();
+    for at in 0..6 {
+        if at == 3 {
+            code.push('-');
+        }
+        let index = usize::try_from(drawn % LETTERS.len() as u64).unwrap_or(0);
+        code.push(char::from(LETTERS[index]));
+        drawn /= LETTERS.len() as u64;
+    }
+    code
+}
+
+/// Whether what somebody sent is the code, however they typed it: in small
+/// letters, without the dash, with a space either side.
+fn same_code(code: &str, sent: &str) -> bool {
+    let plain = |said: &str| {
+        said.chars()
+            .filter(char::is_ascii_alphanumeric)
+            .map(|character| character.to_ascii_uppercase())
+            .collect::<String>()
+    };
+    plain(code) == plain(sent)
 }

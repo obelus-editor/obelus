@@ -4346,6 +4346,7 @@ dependencies = [
  "obelus-row",
  "obelus-runtime",
  "obelus-search",
+ "obelus-sink",
  "obelus-syntax",
  "obelus-text",
  "obelus-theme",

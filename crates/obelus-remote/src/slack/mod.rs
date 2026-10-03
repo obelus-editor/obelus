@@ -39,6 +39,10 @@ pub static DESCRIPTION: Description = Description {
         what: "the manifest",
         text: manifest,
     },
+    connect: |told, sink| {
+        let said = |key| told.get(key).cloned().unwrap_or_default();
+        connection::start(said("app_token"), said("bot_token"), sink)
+    },
 };
 
 /// The app Obelus needs, as Slack's "from a manifest" takes it.

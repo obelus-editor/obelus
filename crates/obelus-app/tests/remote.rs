@@ -14,6 +14,15 @@ use obelus_command::Command;
 /// settings are applied to process-wide state, so these take turns.
 static TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+/// A test's turn, with the secrets emptied for it.
+fn turn() -> std::sync::MutexGuard<'static, ()> {
+    let turn = TURN
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    secrets_of_its_own();
+    turn
+}
+
 /// Where this process keeps its secrets, emptied for the test about to use
 /// it -- never the reader's keyring, which a test has no business writing.
 fn secrets_of_its_own() {
@@ -25,7 +34,6 @@ fn secrets_of_its_own() {
 /// The settings, open on the remote tab, with a settings file of the test's
 /// own and a channel the keyring's answers come back on.
 fn on_the_remote_page(scratch: &support::Scratch) -> (App, std::sync::mpsc::Receiver<Event>) {
-    secrets_of_its_own();
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.config_file_for_test(scratch.join("config.toml"));
     let events = support::drive(&mut app);
@@ -97,9 +105,7 @@ fn to_the_row(app: &mut App, name: &str) {
 /// rows nobody could use, and the fixture changed under it.
 #[test]
 fn with_no_chat_the_page_is_one_row() {
-    let _turn = TURN
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = turn();
     let scratch = support::Scratch::new("remote-off");
     let (mut app, _events) = on_the_remote_page(&scratch);
     support::check("remote_off_66x20", &support::render(&mut app, 66, 20));
@@ -113,9 +119,7 @@ fn with_no_chat_the_page_is_one_row() {
 /// stayed `Off`.
 #[test]
 fn choosing_a_chat_shows_what_it_has_to_be_told() {
-    let _turn = TURN
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = turn();
     let scratch = support::Scratch::new("remote-chosen");
     let (mut app, events) = on_the_remote_page(&scratch);
     choose_slack(&mut app);
@@ -139,9 +143,7 @@ fn choosing_a_chat_shows_what_it_has_to_be_told() {
 /// row still showed the token afterwards.
 #[test]
 fn a_token_is_kept_drawn_by_its_ends_and_forgotten() {
-    let _turn = TURN
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = turn();
     let scratch = support::Scratch::new("remote-token");
     let (mut app, events) = on_the_remote_page(&scratch);
     choose_slack(&mut app);
@@ -229,9 +231,7 @@ fn a_token_is_kept_drawn_by_its_ends_and_forgotten() {
 /// still said it was copied, and the clipboard held no manifest.
 #[test]
 fn the_manifest_is_copied() {
-    let _turn = TURN
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = turn();
     let _clipboard = support::clipboard_turn();
     obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Kept);
     let scratch = support::Scratch::new("remote-manifest");
@@ -250,9 +250,7 @@ fn the_manifest_is_copied() {
 /// `Pair` on a chat nothing is connected to.
 #[test]
 fn pairing_waits_for_a_connection() {
-    let _turn = TURN
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _turn = turn();
     let scratch = support::Scratch::new("remote-pair");
     let (mut app, _events) = on_the_remote_page(&scratch);
     choose_slack(&mut app);
@@ -261,5 +259,185 @@ fn pairing_waits_for_a_connection() {
     assert!(
         !dump.contains("Enter  Pair"),
         "pairing is offered with nothing to pair with:\n{dump}"
+    );
+}
+
+/// What the fake platform was handed: where it reports what it hears, and
+/// what Obelus asked it to say.
+struct Faked {
+    told: obelus_remote::platform::Told,
+    sink: std::sync::Arc<dyn obelus_sink::Sink<obelus_remote::Event>>,
+    said: tokio::sync::mpsc::UnboundedReceiver<obelus_remote::model::Out>,
+}
+
+static FAKED: std::sync::Mutex<Option<Faked>> = std::sync::Mutex::new(None);
+
+/// A platform that connects at once and keeps what it is asked to say.
+fn fake_connect(
+    told: obelus_remote::platform::Told,
+    sink: std::sync::Arc<dyn obelus_sink::Sink<obelus_remote::Event>>,
+) -> tokio::sync::mpsc::UnboundedSender<obelus_remote::model::Out> {
+    let (out, said) = tokio::sync::mpsc::unbounded_channel();
+    let _ = sink.send(obelus_remote::Event::Connection(
+        obelus_remote::State::Connected,
+    ));
+    *FAKED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Faked { told, sink, said });
+    out
+}
+
+/// What the fake platform has been asked to say since the last look.
+fn said_since() -> Vec<obelus_remote::model::Out> {
+    let mut faked = FAKED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut said = Vec::new();
+    if let Some(faked) = faked.as_mut() {
+        while let Ok(out) = faked.said.try_recv() {
+            said.push(out);
+        }
+    }
+    said
+}
+
+/// Somebody saying something to the fake platform.
+fn somebody_says(from: &str, text: &str) {
+    let faked = FAKED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let faked = faked.as_ref().expect("connected");
+    let _ = faked.sink.send(obelus_remote::Event::Heard {
+        from: from.to_string(),
+        at: obelus_remote::model::Where::Top,
+        text: text.to_string(),
+    });
+}
+
+/// A window set to Slack with both tokens kept, connected to the fake.
+fn connected(scratch: &support::Scratch) -> (App, std::sync::mpsc::Receiver<Event>) {
+    obelus_remote::platform::connect_for_test(fake_connect);
+    *FAKED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    std::fs::write(scratch.join("config.toml"), "remote = \"slack\"\n").expect("the settings");
+    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    let (mut app, events) = on_the_remote_page(scratch);
+    until(&mut app, &events, "the connection", |app| {
+        app.settings()
+            .is_some_and(|settings| settings.reached().state == obelus_remote::State::Connected)
+    });
+    (app, events)
+}
+
+/// A window set to a chat connects to it with what it was told -- the
+/// secrets out of the keyring -- and says so at the top of the page.
+///
+/// Broken deliberately by leaving the secrets out of what the platform is
+/// handed: it was given nothing, and the state stayed `Not set up`.
+#[test]
+fn a_chat_that_is_set_is_connected_to() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-connects");
+    let (mut app, _events) = connected(&scratch);
+    let faked = FAKED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let told = &faked.as_ref().expect("connected").told;
+    assert_eq!(
+        told.get("app_token").map(String::as_str),
+        Some("xapp-1-app")
+    );
+    assert_eq!(
+        told.get("bot_token").map(String::as_str),
+        Some("xoxb-1-bot")
+    );
+    drop(faked);
+    let dump = support::render(&mut app, 66, 20);
+    assert!(dump.contains("● Connected"), "{dump}");
+}
+
+/// Pairing: a code on the row, the code sent from the chat, the person on
+/// the list by the name the platform gives them, and a word back to them.
+/// A wrong code lets nobody in.
+///
+/// Broken deliberately twice. Comparing the code as it was typed: the code
+/// sent in small letters without its dash let nobody in. And taking any
+/// code: the stranger's wrong one was taken, and they were asked their
+/// name.
+#[test]
+fn pairing_lets_in_whoever_sends_the_code() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-pairs");
+    let (mut app, events) = connected(&scratch);
+    to_the_row(&mut app, "Pair");
+    support::press(&mut app, KeyCode::Enter);
+    let code = app
+        .settings()
+        .and_then(|settings| settings.reached().pairing.clone())
+        .expect("a code on the row");
+    let dump = support::render(&mut app, 66, 20);
+    assert!(dump.contains(&code), "the code is not on the row:\n{dump}");
+
+    somebody_says("U0STRANGER", "hello?");
+    somebody_says("U0STRANGER", "ABC-DEF");
+    let _ = support::render(&mut app, 66, 20);
+    while let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(200)) {
+        app.handle(event);
+    }
+    assert!(said_since().is_empty(), "a stranger was answered");
+
+    somebody_says(
+        "U04ABCDEF",
+        &format!("  {}  ", code.replace('-', "").to_lowercase()),
+    );
+    until(
+        &mut app,
+        &events,
+        "the platform to be asked their name",
+        |_| {
+            FAKED
+                .lock()
+                .ok()
+                .and_then(|faked| faked.as_ref().map(|faked| !faked.said.is_empty()))
+                .unwrap_or(false)
+        },
+    );
+    assert_eq!(
+        said_since(),
+        [obelus_remote::model::Out::Name {
+            id: "U04ABCDEF".to_string()
+        }]
+    );
+    let sink = FAKED
+        .lock()
+        .ok()
+        .and_then(|faked| faked.as_ref().map(|faked| faked.sink.clone()))
+        .expect("connected");
+    let _ = sink.send(obelus_remote::Event::Named {
+        id: "U04ABCDEF".to_string(),
+        name: "Sunli".to_string(),
+    });
+    until(&mut app, &events, "them to be let in", |app| {
+        app.config()
+            .remote_of("slack")
+            .is_some_and(|remote| remote.people.iter().any(|person| person.name == "Sunli"))
+    });
+    assert_eq!(app.note(), Some("Paired Sunli"));
+    assert!(
+        matches!(
+            said_since().as_slice(),
+            [obelus_remote::model::Out::Say { to, .. }] if to == "U04ABCDEF"
+        ),
+        "they were not told"
+    );
+    let written = std::fs::read_to_string(scratch.join("config.toml")).expect("the file");
+    assert!(written.contains("U04ABCDEF"), "{written}");
+    assert!(
+        app.settings()
+            .and_then(|settings| settings.reached().pairing.clone())
+            .is_none(),
+        "the code outlived its use"
     );
 }

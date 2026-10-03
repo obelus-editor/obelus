@@ -242,6 +242,7 @@ from_worker! {
     obelus_agent::Event => Agent,
     obelus_lsp::Message => Lsp,
     obelus_mcp::Asked => Tools,
+    obelus_remote::Event => Remote,
     Box<obelus_search::counts::Counted> => Counted,
     obelus_watch::Changed => Watched,
 }

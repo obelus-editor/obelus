@@ -58,5 +58,8 @@ unicode-width.workspace = true
 # else, which is all Obelus wants and is not enough for a test that has
 # to explain why a platform woke the loop -- see `watch.rs`.
 notify.workspace = true
+# For the remote tests, which stand in for a chat platform and have to be
+# handed what one is handed.
+obelus-sink.workspace = true
 obelus-ui.workspace = true
 ureq.workspace = true
