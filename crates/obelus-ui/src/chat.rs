@@ -83,13 +83,16 @@ fn mark(speaker: Speaker) -> &'static str {
 
 /// What a tool call's state says while it is still running.
 ///
-/// The protocol's own word, named because three places in this file have
-/// to agree about it: the mark at the front of a row, which turns while a
-/// call is in this state; the mark after the title, which stays away while
-/// it is; and [`ChatView::state_of`], which says what each of the four
-/// states looks like. Three spellings of one string is two chances for the
-/// row to say a call is running and still at once.
+/// The protocol's own word, named because two places in this file have to
+/// agree about it: [`ChatView::turns`], which the mark at the front of a
+/// row and the mark after its title both ask, and [`ChatView::state_said`],
+/// which says what each state looks like. Two spellings of one string is a
+/// chance for the row to say a call is running and still at once.
 const UNDER_WAY: &str = "in_progress";
+
+/// The protocol's word for a call that has not started, which a call that
+/// has may wear too -- see [`ChatView::turns`].
+const WAITING: &str = "pending";
 
 /// The rows that are there whatever is written: the header and two rules.
 ///
@@ -990,10 +993,12 @@ impl ChatView<'_> {
                 // kind goes while the call runs and comes back when it
                 // ends: what sort of call it is is written along the row
                 // beside it, and which of ten calls is the live one is
-                // written nowhere else.
-                let turning =
-                    row.speaker == Speaker::Doing || row.state.as_deref() == Some(UNDER_WAY);
-                if turning {
+                // written nowhere else -- as nearly as the agent says. One
+                // that sends every call of a message as waiting and runs
+                // them one at a time has two turning where one is running,
+                // and that is the price of not leaving the one that is
+                // running still (see `turns`).
+                if self.turns(row) {
                     put(
                         cells,
                         at,
@@ -1650,18 +1655,37 @@ impl ChatView<'_> {
         // whose end says how it went.
         if let Some(state) = &row.state
             && row.speaker != Speaker::Step
-            && state != UNDER_WAY
+            && !self.turns(row)
         {
             tail.push(self.state_said(state, dim));
         }
         tail
     }
 
+    /// Whether the mark at the front of a row turns.
+    ///
+    /// A call waiting turns as well as one running, while the turn is going
+    /// and no card is up. The protocol's `pending` is a call that has not
+    /// started, but Claude's adapter sends nothing else until the call has
+    /// finished -- `in_progress` only on a beat of progress, which a quiet
+    /// command never makes -- so a `git push` that took a minute sat still
+    /// for all of it, wearing what a call that stopped wears. A card up is
+    /// the one time a waiting call is really waiting, and then on the
+    /// reader, where a turning mark would say the agent is busy.
+    fn turns(&self, row: &Row) -> bool {
+        match row.state.as_deref() {
+            _ if row.speaker == Speaker::Doing => true,
+            Some(UNDER_WAY) => true,
+            Some(WAITING) => self.state == Talking::Thinking && self.card.is_none(),
+            _ => false,
+        }
+    }
+
     /// How far a tool call has got: the gap before it, what to write, and
     /// the colour.
     fn state_said(&self, state: &str, dim: Style) -> (u16, String, Style) {
         let (glyph, word, colour) = match state {
-            "pending" => (obelus_icons::ui::WAITING, "Waiting", self.theme.gutter),
+            WAITING => (obelus_icons::ui::WAITING, "Waiting", self.theme.gutter),
             UNDER_WAY => (
                 obelus_icons::ui::RUNNING,
                 "Running",
@@ -1825,6 +1849,96 @@ mod tests {
         for mark in marks {
             assert_eq!(mark.chars().count(), 1, "{mark:?} is not one column");
         }
+    }
+
+    /// A call the agent has not said is running turns while the turn goes,
+    /// unless a card is up.
+    ///
+    /// Claude's adapter sends `pending` for a command from the moment it is
+    /// asked for until it has finished, so a still mark there was a still
+    /// mark on every command it ran. With a card up the call is waiting on
+    /// the reader, and with the turn over nothing is running it.
+    ///
+    /// Broken deliberately by taking the `pending` arm out of `turns`, which
+    /// stops the first case turning; by dropping its `card.is_none()`, which
+    /// turns the second; and by dropping its `Talking::Thinking`, which turns
+    /// the third.
+    #[test]
+    fn a_waiting_call_turns_while_the_turn_goes() {
+        let area = ratatui::layout::Rect::new(0, 0, 76, 24);
+        let mut chat = obelus_component::chat::Chat::new();
+        chat.tool(
+            &obelus_agent::acp::Call {
+                id: "c1".to_string(),
+                title: "git push origin --delete gone".to_string(),
+                kind: "execute".to_string(),
+                said: Vec::new(),
+                places: Vec::new(),
+                change: None,
+                ran: None,
+            },
+            "pending",
+        );
+        let card = obelus_component::card::Card::new(
+            vec![obelus_component::card::Choice {
+                id: "allow".to_string(),
+                name: "Allow".to_string(),
+                about: None,
+                icon: None,
+                chosen: false,
+            }],
+            false,
+        );
+        let drawn = |state: obelus_agent::Talking, card: Option<&obelus_component::card::Card>| {
+            let view = super::ChatView {
+                chat: &chat,
+                theme: &obelus_theme::builtin::DARK,
+                state,
+                name: None,
+                settings: &[],
+                focus: obelus_component::chat::Focus::Writing,
+                card,
+                in_front: true,
+                root: std::path::Path::new("/"),
+                phase: 0,
+                branch: None,
+                about_a_note: false,
+                note: None,
+                note_is_wrong: false,
+                usage: None,
+            };
+            let mut cells = ratatui::buffer::Buffer::empty(area);
+            ratatui::widgets::Widget::render(view, area, &mut cells);
+            let row = (area.y..area.bottom())
+                .map(|y| {
+                    (area.x..area.right())
+                        .map(|x| cells[(x, y)].symbol().to_string())
+                        .collect::<String>()
+                })
+                .find(|row| row.contains("git push"))
+                .expect("the call is on the screen");
+            // The front of the row turning, and the end of it saying the
+            // call is waiting: the two answers a row may give, and never
+            // both, because a still mark beside a turning one is a row
+            // saying the call is running and stopped at once.
+            let turning = row.contains(crate::spinning(0));
+            let still = row.contains(obelus_icons::ui::WAITING) || row.contains("Waiting");
+            assert_ne!(turning, still, "{row:?} says both or neither");
+            turning
+        };
+
+        assert!(
+            drawn(obelus_agent::Talking::Thinking, None),
+            "a command running in a turn that is going stood still"
+        );
+        assert!(
+            !drawn(obelus_agent::Talking::Thinking, Some(&card)),
+            "a call waiting on the reader's answer turned as if the agent were busy"
+        );
+        assert!(
+            !drawn(obelus_agent::Talking::Ready, None),
+            "a call left waiting by a turn that has ended turned"
+        );
     }
 }
 

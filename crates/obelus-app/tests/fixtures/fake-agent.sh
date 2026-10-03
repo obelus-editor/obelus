@@ -581,6 +581,16 @@ while IFS= read -r line; do
         *'"id":943'*)
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
+        *'"method":"session/prompt"'*'"text":"/abandon'*)
+            # The same, with the turn going on after it and nothing said
+            # about the call: which is a call left waiting in a turn that
+            # is still going, the one kind of row that turns without the
+            # agent having said it runs.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","id":945,"method":"session/request_permission","params":{"sessionId":"%s","toolCall":{"toolCallId":"k2","title":"Delete the logs","kind":"delete"},"options":[{"optionId":"once","name":"Allow once","kind":"allow_once"},{"optionId":"never","name":"Reject","kind":"reject_once"}]}}\n' "$session"
+            sleep 0.3
+            printf '{"jsonrpc":"2.0","method":"$/cancel_request","params":{"requestId":945}}\n'
+            ;;
         *'"method":"session/prompt"'*'"text":"/takeback'*)
             # A question asked and then taken back before anybody answered
             # it -- the tool call it was about overtaken, the turn moving
@@ -598,6 +608,14 @@ while IFS= read -r line; do
             esac
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
+        *'"method":"session/prompt"'*'/quietly'*)
+            # A command run the way claude-agent-acp runs one that prints
+            # nothing as it goes: `pending` from the moment it is asked for,
+            # and nothing more until it has finished -- which this one has
+            # not, so the turn stays open under it.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"tool_call","toolCallId":"q1","title":"Push the branch","kind":"execute","status":"pending","rawInput":{"command":"git push"}}}}\n' "$session"
             ;;
         *'"method":"session/prompt"'*'/twice'*)
             # A command put to the reader by an agent that sends the tool's
