@@ -274,6 +274,10 @@ pub struct PickerView<'a> {
     /// from this list, because that is where a reader who is not looking at
     /// it would see it.
     phase: u32,
+    /// Whether nothing is over it, which is whether it may mark the row the
+    /// keys are on: only what is nearest the reader does -- see
+    /// [`crate::in_front`].
+    in_front: bool,
 }
 
 impl<'a> PickerView<'a> {
@@ -286,11 +290,12 @@ impl<'a> PickerView<'a> {
     /// the same thing to a reader: rows, one of them chosen, what matched
     /// marked.
     #[must_use]
-    pub const fn new(picker: &'a Picker, theme: &'a Theme, phase: u32) -> Self {
+    pub const fn new(picker: &'a Picker, theme: &'a Theme, phase: u32, in_front: bool) -> Self {
         Self {
             picker,
             theme,
             phase,
+            in_front,
         }
     }
 }
@@ -550,8 +555,9 @@ impl Widget for PickerView<'_> {
         }
 
         // No row is the reader's in a list that is only read, so none is
-        // marked as theirs.
-        let selected = (!self.picker.is_only_read()).then(|| self.picker.selected());
+        // marked as theirs -- nor in one something else is over.
+        let selected =
+            (self.in_front && !self.picker.is_only_read()).then(|| self.picker.selected());
         for (row, (index, item)) in self
             .picker
             .matches()
@@ -682,10 +688,11 @@ impl PickerView<'_> {
             return;
         }
         let matched = self.picker.indices_at(place);
-        let background = match place == self.picker.selected() && !self.picker.is_only_read() {
-            true => self.theme.selected_row_background,
-            false => self.theme.background,
-        };
+        let background =
+            match self.in_front && place == self.picker.selected() && !self.picker.is_only_read() {
+                true => self.theme.selected_row_background,
+                false => self.theme.background,
+            };
         // Dim where it cannot be chosen, and the whole of it: a dim row with
         // a bright name in it reads as available.
         let style = match item.enabled {

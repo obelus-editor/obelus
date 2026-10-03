@@ -384,6 +384,9 @@ pub struct TodoUi<'a> {
     /// list, because that is where a reader who is not watching the
     /// conversation would see it.
     phase: u32,
+    /// Whether nothing is over the notes, which is whether they may mark
+    /// the note the keys are on -- see [`crate::in_front`].
+    in_front: bool,
 }
 
 impl<'a> TodoUi<'a> {
@@ -395,6 +398,7 @@ impl<'a> TodoUi<'a> {
             theme: app.theme(),
             talked: app.talked_about(),
             phase: app.phase(),
+            in_front: crate::in_front(app, None),
         })
     }
 }
@@ -465,7 +469,7 @@ impl Widget for TodoUi<'_> {
                 });
                 continue;
             }
-            let selected = Some(row.note) == on;
+            let selected = self.in_front && Some(row.note) == on;
             self.row(cells, at_row, row, selected);
             if selected {
                 let (top, _) = *marked.get_or_insert((at_row.y, at_row.y));

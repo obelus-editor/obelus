@@ -179,6 +179,38 @@ pub(crate) fn legend_block(dump: &str) -> &str {
     section(dump, "-- legend --", "-- cursor --")
 }
 
+/// What some words on screen are drawn in: the legend's line for the cell
+/// their first character is in.
+///
+/// Read out of the dump's own legend, so that a test compares two of these
+/// rather than naming a colour -- what it asks is whether a row is marked
+/// the way it was a moment ago, not which grey the mark is.
+pub(crate) fn drawn_in(dump: &str, needle: &str) -> String {
+    let split = |row: &str| -> Option<(u16, String)> {
+        let (number, rest) = row.split_once('|')?;
+        Some((number.trim().parse().ok()?, rest.to_string()))
+    };
+    let (at, column) = text_block(dump)
+        .lines()
+        .filter_map(split)
+        .find_map(|(at, text)| {
+            text.find(needle)
+                .map(|index| (at, text[..index].chars().count()))
+        })
+        .unwrap_or_else(|| panic!("no {needle:?} on screen:\n{dump}"));
+    let letter = style_block(dump)
+        .lines()
+        .filter_map(split)
+        .find(|(row, _)| *row == at)
+        .and_then(|(_, marks)| marks.chars().nth(column))
+        .unwrap_or_else(|| panic!("no style under {needle:?}:\n{dump}"));
+    legend_block(dump)
+        .lines()
+        .find(|line| line.starts_with(&format!("{letter} ")))
+        .map(|line| line[2..].to_string())
+        .unwrap_or_else(|| panic!("no legend for {letter}:\n{dump}"))
+}
+
 fn section<'a>(dump: &'a str, from: &str, to: &str) -> &'a str {
     let start = dump.find(from).map_or(0, |index| index + from.len());
     let end = dump[start..]

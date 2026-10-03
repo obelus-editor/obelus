@@ -4290,6 +4290,78 @@ fn a_list_over_a_question_covers_it_until_it_goes() {
     );
 }
 
+/// What a short list leaves showing of a conversation is drawn and not
+/// marked: the card's row and the list of commands' row are where they were,
+/// and neither says the keys are on it while the list has them.
+///
+/// Broken deliberately twice: marking the card's row whatever is over it,
+/// and drawing the list of commands as nearest whatever is -- each left its
+/// row lit beside the list's own.
+#[test]
+fn what_a_list_leaves_showing_of_a_conversation_is_not_marked() {
+    // The themes, narrowed to a few so what is under them is not behind
+    // them -- and to the ones named like the theme in force, because the
+    // list shows the one it is on: a test narrowed to another theme is a
+    // screen in another theme's colours, where every row differs from
+    // what it was and nothing is learnt from one that does.
+    fn a_short_list(app: &mut App) {
+        support::press_control(app, 'p');
+        support::type_text(app, "choose-theme");
+        support::press(app, KeyCode::Enter);
+        support::type_text(app, "dark");
+    }
+
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the commands", |app| {
+        !app.agent_orders().is_empty()
+    });
+    // Every command, so the list is taller than the one put over it.
+    support::type_text(&mut app, "/");
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let lit = support::drawn_in(&dump, "/compact");
+    a_short_list(&mut app);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert_ne!(
+        support::drawn_in(&dump, "/compact"),
+        lit,
+        "the list of commands is lit under the list:\n{dump}"
+    );
+    support::press(&mut app, KeyCode::Esc);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        support::drawn_in(&dump, "/compact"),
+        lit,
+        "the list of commands did not take the mark back:\n{dump}"
+    );
+
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/pick");
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", App::is_asking);
+    let answer = "Write the weekly report";
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let lit = support::drawn_in(&dump, answer);
+    a_short_list(&mut app);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert_ne!(
+        support::drawn_in(&dump, answer),
+        lit,
+        "the card is lit under the list:\n{dump}"
+    );
+    support::press(&mut app, KeyCode::Esc);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        support::drawn_in(&dump, answer),
+        lit,
+        "the card did not take the mark back:\n{dump}"
+    );
+}
+
 /// A list the reader opened covers the conversation it is over.
 ///
 /// A picker has the keys and it has the status row, so what shows under it

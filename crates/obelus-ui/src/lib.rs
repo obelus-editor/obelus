@@ -749,6 +749,18 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) -> Vec<bars::
     bars::collect(cells, |cells| draw_the_frame(cells, area, app))
 }
 
+/// Whether what is drawn for `layer` -- or for the document, where that is
+/// `None` -- is nearest the reader.
+///
+/// Every view on screen is drawn, however many are stacked; only the nearest
+/// marks where the keys are. A row lit under a list, in the colour the list
+/// lights its own, is two places saying the keys are here, and the reader
+/// cannot tell from either which one is lying. The caret is the same answer
+/// from the other side: it goes where `layers().nearest()` says.
+pub(crate) fn in_front(app: &impl Screen, layer: Option<Layer>) -> bool {
+    app.layers().nearest() == layer
+}
+
 /// What [`draw`] draws.
 fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     let regions = regions(area);
@@ -818,7 +830,7 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
         // reader opened, and it goes where any compact list goes.
         if let Some(list) = app.naming_list() {
             bars::of(Whose::Naming, || {
-                list_over(cells, app, list, regions.editor, regions.edge, None);
+                list_over(cells, app, list, None, regions.editor, regions.edge, None);
             });
         }
     }
@@ -836,6 +848,7 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
                 cells,
                 app,
                 list,
+                None,
                 room_for_the_commands(app, regions.editor),
                 regions.edge,
                 // Not a layer, so it never took the row: the conversation's
@@ -931,6 +944,7 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
                             cells,
                             app,
                             list,
+                            Some(Layer::Picker),
                             room_for_a_picker(regions.editor),
                             regions.edge,
                             Some(regions.status),
@@ -1110,6 +1124,7 @@ fn list_over(
     cells: &mut CellBuffer,
     app: &impl Screen,
     list: &Picker,
+    whose: Option<Layer>,
     room: Rect,
     edge: Rect,
     own_row: Option<Rect>,
@@ -1158,7 +1173,8 @@ fn list_over(
         None => pane,
     };
     shapes::behind(pane, joined, app.theme().background, cells);
-    picker::PickerView::new(list, app.theme(), app.phase()).render(region, cells);
+    picker::PickerView::new(list, app.theme(), app.phase(), in_front(app, whose))
+        .render(region, cells);
     if let Some(row) = own_row {
         let style = Style::new()
             .bg(app.theme().background)

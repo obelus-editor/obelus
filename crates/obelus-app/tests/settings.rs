@@ -57,6 +57,41 @@ fn shown() -> usize {
         .count()
 }
 
+/// A list opened over the settings has the keys, so the row the page was
+/// on is drawn and not marked: only what is nearest the reader says where
+/// the keys are.
+///
+/// Broken deliberately by marking the page's row whatever is over it: the
+/// row stayed lit beside the list's own.
+#[test]
+fn the_row_under_a_list_is_not_marked() {
+    let scratch = temporary("under-a-list");
+    let mut app = open(&settings_file(&scratch));
+    let dump = support::render(&mut app, 66, 12);
+    let lit = support::drawn_in(&dump, "Theme");
+
+    // The theme's choices, narrowed so the row is not behind them -- and to
+    // the theme in force, which the list previews: another theme's colours
+    // would make every row differ from what it was.
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "dark");
+    let dump = support::render(&mut app, 66, 12);
+    assert!(app.picker().is_some(), "the choices did not open:\n{dump}");
+    assert_ne!(
+        support::drawn_in(&dump, "Theme"),
+        lit,
+        "the page's row is lit under the list:\n{dump}"
+    );
+
+    support::press(&mut app, KeyCode::Esc);
+    let dump = support::render(&mut app, 66, 12);
+    assert_eq!(
+        support::drawn_in(&dump, "Theme"),
+        lit,
+        "the row did not take the mark back:\n{dump}"
+    );
+}
+
 /// The settings are a dialog: nothing of Obelus's own opens over them.
 ///
 /// `ctrl+q` used to be among the keys pressed here, and it is not any more:

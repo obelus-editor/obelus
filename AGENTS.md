@@ -392,6 +392,11 @@ the things laid out across a row rather than down a column. Where there is a
 caret there is no background: a box is marked by the caret sitting in it,
 and two marks for one fact is one too many.
 
+And only the nearest thing on screen wears it. A page or a list under
+another is drawn as it was, rows and all, but its row is not marked: two
+lit rows are two places saying the keys are here (`ui::in_front`, which
+every view that marks a row asks).
+
 Whether a row can be *used* is said in the ink, never by taking the
 background away. A card's `submit` row did the latter while it was short of
 what the agent asked for, so the reader stood on a row that had stopped
