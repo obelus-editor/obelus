@@ -287,6 +287,37 @@ impl Placed {
     }
 }
 
+/// The stack less every pane a later pane is over the whole of.
+///
+/// What such a pane was is in the picture of the one over it already --
+/// its cells were on the page when that one was said -- so it is no glass
+/// of its own. Left in, it was a level nobody could see that still acted
+/// like one: the list of an agent's commands, drawn under the settings
+/// opened over the conversation, cast its shadow across the settings, put
+/// them on the tint of glass over glass, and made them a level whose
+/// picture leaves out the bars and caps.
+fn uncovered(stack: Vec<&Behind>) -> Vec<&Behind> {
+    let covered = |at: usize| {
+        !stack[at].is_a_box()
+            && stack[at + 1..].iter().any(|later| {
+                !later.is_a_box() && later.area.intersection(stack[at].area) == stack[at].area
+            })
+    };
+    (0..stack.len())
+        .filter(|&at| !covered(at))
+        .map(|at| stack[at])
+        .collect()
+}
+
+/// Whether a pane casts its shadow: only where nothing said after it is
+/// over any of it. A shadow is drawn over everything, so one under a later
+/// pane fell across that pane rather than behind it.
+fn casts(stack: &[&Behind], at: usize) -> bool {
+    !stack[at + 1..]
+        .iter()
+        .any(|later| later.area.intersects(stack[at].area))
+}
+
 /// Which pictures a run of quads is drawn with.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Reads {
@@ -1069,11 +1100,12 @@ impl Painter {
         // Every pane and box, furthest first, each over the glass of those
         // before it. A box is one only while its frame is still there to
         // hold it -- see `Behind::framed` -- which four passes ask about.
-        let stack: Vec<&Behind> = said
-            .stack
-            .iter()
-            .filter(|over| !over.is_a_box() || over.framed(page))
-            .collect();
+        let stack = uncovered(
+            said.stack
+                .iter()
+                .filter(|over| !over.is_a_box() || over.framed(page))
+                .collect(),
+        );
         // First of everything, because the first of these is what the
         // first picture draws and it draws the front of the buffer.
         for (at, over) in stack.iter().enumerate() {
@@ -1251,8 +1283,12 @@ impl Painter {
             // The pane's cells rather than its glass, which starts half
             // way down the rule over it: the half row above the line,
             // slid, would be filled from inside the list.
-            let over = first.map(|first| box_of(first.area, cell));
-            self.catching_up(said.bands, over, fonts);
+            let panes: Vec<[f32; 4]> = stack
+                .iter()
+                .filter(|over| !over.is_a_box())
+                .map(|over| box_of(over.area, cell))
+                .collect();
+            self.catching_up(said.bands, &panes, fonts);
         }
         // Last, because none of it is drawn on the screen: the blurs are
         // passes of their own, before any of the above.
@@ -1776,7 +1812,7 @@ impl Painter {
     /// with it -- every line an agent wrote behind a list was the list
     /// coming up again. A band the pane's own view drew is the list, and
     /// moves.
-    fn catching_up(&mut self, bands: &[Rolled<'_>], pane: Option<[f32; 4]>, fonts: &mut Fonts) {
+    fn catching_up(&mut self, bands: &[Rolled<'_>], panes: &[[f32; 4]], fonts: &mut Fonts) {
         let cell = fonts.cell();
         for band in bands {
             let room = band.room;
@@ -1807,7 +1843,7 @@ impl Painter {
         let moving: Vec<[f32; 4]> = bands
             .iter()
             .zip(&rooms)
-            .flat_map(|(band, room)| sliding(*room, pane, band.under))
+            .flat_map(|(band, room)| sliding(*room, panes, band.under))
             .collect();
         self.covering(&moving);
         for (at, (band, room)) in bands.iter().zip(&rooms).enumerate() {
@@ -1820,7 +1856,7 @@ impl Painter {
                 .filter(|&(other, _)| other != at)
                 .map(|(_, room)| *room)
                 .collect();
-            for part in sliding(*room, pane, band.under) {
+            for part in sliding(*room, panes, band.under) {
                 for piece in tiles(part, &others) {
                     self.slid_piece(piece, *room, band.behind * cell.height, 1.0);
                 }
@@ -2814,6 +2850,7 @@ impl Painter {
                     boxes,
                 );
             } else if sliding != Some(at)
+                && casts(stack, at)
                 && let Some(joined) = casting(over.joined)
             {
                 let glass = self.placed.levels[at].rect;
@@ -4146,8 +4183,8 @@ fn box_of(room: Rect, cell: CellSize) -> [f32; 4] {
 /// for everything -- so a transcript scrolling on under the settings or
 /// a full list slid the whole dialog with it, a shudder on every line an
 /// agent wrote.
-fn sliding(room: [f32; 4], pane: Option<[f32; 4]>, under: bool) -> Vec<[f32; 4]> {
-    tiles(room, pane.filter(|_| under).as_slice())
+fn sliding(room: [f32; 4], panes: &[[f32; 4]], under: bool) -> Vec<[f32; 4]> {
+    tiles(room, if under { panes } else { &[] })
 }
 
 /// The part of a band's room a pane is over, where the band is under the
@@ -4156,7 +4193,7 @@ fn sliding(room: [f32; 4], pane: Option<[f32; 4]>, under: bool) -> Vec<[f32; 4]>
 /// The other half of `sliding`: what that leaves out on the screen is
 /// what slides behind the glass instead.
 fn beneath(room: [f32; 4], pane: [f32; 4], under: bool) -> Option<[f32; 4]> {
-    if sliding(room, Some(pane), under) == [room] {
+    if sliding(room, &[pane], under) == [room] {
         return None;
     }
     Some([
@@ -4429,7 +4466,51 @@ mod tests {
     use super::mark_behind;
 
     mod stacked {
-        use super::super::{Level, Placed, Reads, on_the_screen, put_over};
+        use ratatui::{layout::Rect, style::Color};
+
+        use super::super::{Level, Placed, Reads, casts, on_the_screen, put_over, uncovered};
+        use crate::grid::Behind;
+
+        fn pane(area: Rect, joined: obelus_ui::shapes::Joined) -> Behind {
+            Behind {
+                area,
+                joined,
+                ground: Color::Reset,
+                cells: Vec::new(),
+            }
+        }
+
+        /// A pane a later pane is over the whole of is no level of its
+        /// own, and one it is over part of still is.
+        ///
+        /// The list of an agent's commands is drawn under every layer, so
+        /// the settings opened over a conversation with one up were said
+        /// over it -- and it stayed a level: its shadow fell across the
+        /// settings and put them on the tint of glass over glass.
+        /// Deliberate break: keep every pane in `uncovered`.
+        #[test]
+        fn a_pane_covered_whole_is_no_level() {
+            use obelus_ui::shapes::Joined;
+            let commands = pane(Rect::new(0, 9, 76, 11), Joined::Below);
+            let settings = pane(Rect::new(0, 0, 76, 24), Joined::Screen);
+            let choices = pane(Rect::new(0, 18, 76, 6), Joined::Below);
+            let kept = uncovered(vec![&commands, &settings, &choices]);
+            let areas: Vec<Rect> = kept.iter().map(|over| over.area).collect();
+            assert_eq!(areas, vec![settings.area, choices.area]);
+        }
+
+        /// Only a pane nothing is over casts a shadow: it is drawn over
+        /// everything, so one under a later pane fell across that pane.
+        /// Deliberate break: let every pane cast.
+        #[test]
+        fn a_pane_something_is_over_casts_nothing() {
+            use obelus_ui::shapes::Joined;
+            let list = pane(Rect::new(0, 10, 76, 14), Joined::Below);
+            let card = pane(Rect::new(20, 12, 30, 6), Joined::Nowhere);
+            let stack = [&list, &card];
+            assert!(!casts(&stack, 0), "the list cast across the card over it");
+            assert!(casts(&stack, 1), "the card on top cast nothing");
+        }
 
         /// Three things open at once -- the settings, a setting's choices
         /// over them, and the card of every key over those -- each with
@@ -4826,19 +4907,29 @@ mod tests {
     fn a_band_under_a_pane_moves_only_where_the_pane_is_not() {
         let pane = [0.0, 60.0, 100.0, 100.0];
         let transcript = [0.0, 0.0, 100.0, 90.0];
-        let moving = sliding(transcript, Some(pane), true);
+        let moving = sliding(transcript, &[pane], true);
         assert_eq!(moving, vec![[0.0, 0.0, 100.0, 60.0]], "{moving:?}");
         let list = [0.0, 70.0, 98.0, 90.0];
-        assert_eq!(sliding(list, Some(pane), false), vec![list]);
+        assert_eq!(sliding(list, &[pane], false), vec![list]);
         // And with no pane, a band is all of it.
-        assert_eq!(sliding(transcript, None, true), vec![transcript]);
+        assert_eq!(sliding(transcript, &[], true), vec![transcript]);
+        // And under two, less both: the list of an agent's commands stood
+        // first, and the band slid the list over it along with it. The
+        // deliberate break was cutting out the first pane alone.
+        let commands = [0.0, 40.0, 100.0, 50.0];
+        let moving = sliding(transcript, &[commands, pane], true);
+        assert_eq!(
+            moving,
+            vec![[0.0, 0.0, 100.0, 40.0], [0.0, 50.0, 100.0, 60.0]],
+            "{moving:?}"
+        );
         // A full-screen dialog: the transcript is inside it, and still
         // nothing of it moves on the screen, while the dialog's own list,
         // inside it as well, moves whole.
         let screen = [0.0, 0.0, 100.0, 100.0];
-        let moving = sliding(transcript, Some(screen), true);
+        let moving = sliding(transcript, &[screen], true);
         assert!(moving.is_empty(), "{moving:?}");
-        assert_eq!(sliding(list, Some(screen), false), vec![list]);
+        assert_eq!(sliding(list, &[screen], false), vec![list]);
     }
 
     /// What slides behind the glass is the part of a band the pane is
