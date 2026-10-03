@@ -42,9 +42,6 @@
 #                            faster model and says so, unasked
 #   session/prompt        -> with "slowly" in it: nothing at all, so the turn
 #                            stays in flight until it is cancelled
-#   session/prompt "/ends-on-a-setting"
-#                         -> nothing, until a setting is changed: then the
-#                            turn ends as finished
 #   session/cancel       -> the turn ends, cancelled
 #
 # Every reply's id is read out of the request rather than assumed, because
@@ -104,10 +101,6 @@ set_turn() {
 }
 
 forms=''
-# Whether the turn running ends when a setting is changed: set by the prompt
-# that asks for it, and read by `session/set_config_option`.
-ends_on_a_setting=''
-
 # Whether it offers its mode the new way as well as the old.
 #
 # A real agent part-way through the protocol's change does exactly this: a
@@ -292,12 +285,6 @@ while IFS= read -r line; do
                 way) way=$(printf '%s' "$got" | tr -d '"') ;;
             esac
             printf '{"jsonrpc":"2.0","id":%s,"result":{"configOptions":%s}}\n' "$(id_of "$line")" "$(options)"
-            pending="$(turn_of "$session")"
-            if [ -n "$ends_on_a_setting" ] && [ -n "$pending" ]; then
-                printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$pending"
-                set_turn "$session" ''
-                ends_on_a_setting=''
-            fi
             ;;
         *'"method":"session/set_mode"'*)
             if [ -n "$refuses" ]; then
@@ -450,14 +437,6 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"it said %s and ended %s"}}}}\n' "$session" "$out" "$code"
             printf '{"jsonrpc":"2.0","id":923,"method":"terminal/release","params":{"sessionId":"%s","terminalId":"%s"}}\n' "$session" "$term"
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
-            ;;
-        *'"method":"session/prompt"'*'/ends-on-a-setting'*)
-            # A turn that says nothing until the reader changes a setting,
-            # and then ends as finished -- see `session/set_config_option`.
-            # Something the reader can do in the middle of a turn, and the
-            # one that is not a stop: Obelus ends a stopped turn itself.
-            set_turn "$session" "$(id_of "$line")"
-            ends_on_a_setting='yes'
             ;;
         *'"method":"session/prompt"'*'/forever'*)
             # A command that does not end on its own, for the key that

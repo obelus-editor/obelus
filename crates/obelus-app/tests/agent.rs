@@ -4746,40 +4746,45 @@ fn every_conversation_is_told_an_address_of_its_own() {
 }
 
 /// An agent that closes its conversation from inside a turn has it closed
-/// when the turn ends, and not before.
+/// at once, and the turn it asked from stopped with it.
 ///
-/// From inside a turn is the only way it can: the tool is called while
-/// the agent is working, and it usually has something left to say after
-/// it. Closed at once, that went to a conversation nobody could see.
+/// It used to wait for the turn to end, so that what the agent said after
+/// the call landed somewhere the reader could see -- and a turn the agent
+/// never ends kept the conversation open for good, saying it was thinking.
+/// Claude's adapter does that to a prompt that arrives while it is
+/// answering a background task's notification. "Slowly" is this agent's
+/// way of never ending one.
 ///
-/// Broken deliberately two ways. Dropping the `thinking` check in
-/// `close_for_an_agent` closes it at once, and the conversation is gone
-/// while the question is still up. Dropping the call to
-/// `close_as_the_agent_asked` in the `Ended` arm leaves it open for good,
-/// and the wait for it to close gives up.
+/// Broken deliberately two ways. Putting back the wait -- closing only
+/// where no turn is running -- leaves it open, and the first assertion
+/// fails. Dropping the call to `interrupt_agent` in `close_for_an_agent`
+/// closes it with the agent never told, and the wait for `session/cancel`
+/// gives up.
 #[test]
-fn a_conversation_an_agent_closes_closes_when_its_turn_ends() {
-    let (mut app, events) = talking();
+fn a_conversation_an_agent_closes_closes_at_once_and_stops_its_turn() {
+    let root = agents_root_for("closing-stops");
+    std::fs::create_dir_all(&root).expect("the root");
+    let log = root.join("asked.log");
+    let _ = std::fs::remove_file(&log);
+    let (mut app, events) = playing(&[&format!("log={}", log.display())]);
     pump(&mut app, &events, "the handshake", |app| {
         app.talking() == obelus_agent::Talking::Ready
     });
-    support::type_text(&mut app, "what is this file");
+    // A turn of its own first, so the closing one is running on the
+    // agent's side rather than held here for a session on its way.
+    say_something(&mut app, &events);
+    support::type_text(&mut app, "take it slowly");
     support::press(&mut app, KeyCode::Enter);
-    pump(
-        &mut app,
-        &events,
-        "the permission request",
-        App::is_asking_permission,
-    );
-
-    assert_eq!(close_it(&mut app, 0), "it closes when this turn ends");
-    assert!(is_open(&app, 0), "closed in the middle of its own turn");
-
-    // Allowed, and the turn finishes.
-    support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "the conversation to close", |app| {
-        !is_open(app, 0)
+    pump(&mut app, &events, "it to start thinking", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
     });
+
+    assert_eq!(close_it(&mut app, 0), "closed");
+    assert!(
+        !is_open(&app, 0),
+        "still open in the middle of its own turn"
+    );
+    asked(&mut app, &events, &log, "session/cancel ");
 }
 
 /// A conversation the reader has started writing in stays open, whatever
@@ -4826,13 +4831,18 @@ fn a_conversation_with_the_readers_words_in_it_stays_open() {
     );
 }
 
-/// A turn the reader stopped is not the turn the agent meant to be the
-/// last one, so the conversation stays open.
+/// What the reader has said into a running turn, waiting for it to end,
+/// keeps the conversation open as much as words in the box do -- and the
+/// turn goes on, because nothing has been closed.
 ///
-/// Deliberate break: take the `!finished` out of
-/// `close_as_the_agent_asked`, and the stop closes the conversation.
+/// Broken deliberately two ways. Taking `|| !self.chat.unsent().is_empty()`
+/// out of `has_the_readers_words` closes the conversation with the reader's
+/// words waiting in it. Moving the call to `interrupt_agent` in
+/// `close_for_an_agent` above the refusal stops the turn, and once the end
+/// Obelus writes for it has arrived the conversation is ready rather than
+/// thinking.
 #[test]
-fn a_conversation_whose_closing_turn_was_stopped_stays_open() {
+fn words_waiting_on_the_turn_keep_the_conversation_open() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the handshake", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -4843,123 +4853,53 @@ fn a_conversation_whose_closing_turn_was_stopped_stays_open() {
     pump(&mut app, &events, "it to start thinking", |app| {
         app.talking() == obelus_agent::Talking::Thinking
     });
-    assert_eq!(close_it(&mut app, 0), "it closes when this turn ends");
-
-    support::press(&mut app, KeyCode::Esc);
-    pump(&mut app, &events, "the turn to stop", |app| {
-        !is_open(app, 0) || said_in_transcript(app, "Stopped")
-    });
-    assert!(is_open(&app, 0), "the stop closed the conversation");
-}
-
-/// What the reader says while the closing turn runs keeps the conversation
-/// open, and goes to the agent the way anything waiting does.
-///
-/// The turn here ends as finished when the reader changes a setting, which
-/// is something they can do in the middle of one -- and not a stop, which
-/// Obelus ends itself, as stopped. So the turn ends the way a closing turn
-/// ends, and the only thing keeping the conversation open is the reader's
-/// words.
-///
-/// Deliberate break: take `|| talk.has_the_readers_words()` out of
-/// `close_as_the_agent_asked`, and the conversation closes with the
-/// reader's words waiting in it.
-#[test]
-fn words_said_into_the_closing_turn_keep_the_conversation_open() {
-    let (mut app, events) = talking();
-    pump(&mut app, &events, "the settings", |app| {
-        app.agent_settings().len() > 2
-    });
-    support::type_text(&mut app, "/ends-on-a-setting");
-    support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "it to start thinking", |app| {
-        app.talking() == obelus_agent::Talking::Thinking
-    });
-    assert_eq!(close_it(&mut app, 0), "it closes when this turn ends");
-    support::type_text(&mut app, "/blocks");
+    support::type_text(&mut app, "/echo");
     support::press(&mut app, KeyCode::Enter);
 
-    // Down to the row of settings, round to the switch at its end, and
-    // flipped -- which ends the turn.
-    support::press(&mut app, KeyCode::Down);
-    support::press(&mut app, KeyCode::Left);
-    support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "what was waiting", |app| {
-        !is_open(app, 0) || said_in_transcript(app, "blocks=")
-    });
+    assert_eq!(
+        close_it(&mut app, 0),
+        "the reader has started writing in it, so it stays open"
+    );
     assert!(
         is_open(&app, 0),
         "closed with the reader's words waiting in it"
     );
+    // A stop is asked for and its end comes back as an event, so the
+    // answer is not in until whatever came of the asking has arrived.
+    settle(&mut app, &events, Duration::from_millis(300));
+    assert_eq!(
+        app.talking(),
+        obelus_agent::Talking::Thinking,
+        "the turn was stopped though nothing was closed"
+    );
 }
 
-/// Choosing another agent while the closing turn runs takes the asking
-/// with it.
+/// A question the agent still has up in a conversation keeps it open: closed,
+/// the card would go with it unanswered.
 ///
-/// The connection that turn ran on is put down, and nothing it says is
-/// heard again -- so the end of that turn never arrives. The next turn to
-/// end is the reader's own, on an agent that counts its turns from one:
-/// closing then is closing a conversation the reader has just gone back
-/// to talking in.
-///
-/// Deliberate break: have `close_as_the_agent_asked` take any closing that
-/// was asked for, whatever turn it was asked in, and the conversation
-/// closes under the answer to the reader's next message.
+/// Deliberate break: take the `is_waiting_on_the_reader` arm out of
+/// `close_for_an_agent`, and the conversation closes under the permission
+/// request.
 #[test]
-fn another_agent_takes_the_closing_with_the_one_it_replaced() {
-    let (mut app, events) = wired();
-    let root = agents_root_for("replaced-closing");
-    std::fs::create_dir_all(&root).expect("the root");
-    the_fixture_is_installed(&root);
-    app.agents_root_for_test(root);
-    the_fixture_is_listed(&mut app);
-    let config = obelus_config::Config {
-        agent: Some("fake".to_string()),
-        ..obelus_config::Config::default()
-    };
-    app.configure(config, Vec::new());
-    app.talk_to(
-        "fake",
-        Path::new("sh"),
-        &["tests/fixtures/fake-agent.sh".to_string()],
-    );
-    app.new_conversation();
-    app.open_a_session_for_test();
+fn a_question_still_up_keeps_the_conversation_open() {
+    let (mut app, events) = talking();
     pump(&mut app, &events, "the handshake", |app| {
         app.talking() == obelus_agent::Talking::Ready
     });
-    // A turn of its own first, so the closing one is running on the
-    // agent's side rather than held here for a session on its way.
-    say_something(&mut app, &events);
-    support::type_text(&mut app, "take it slowly");
+    support::type_text(&mut app, "what is this file");
     support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "it to start thinking", |app| {
-        app.talking() == obelus_agent::Talking::Thinking
-    });
-    assert_eq!(close_it(&mut app, 0), "it closes when this turn ends");
-
-    // Off and on again on the agents page, which puts that connection down
-    // and starts another.
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConfigOpen);
-    support::press(&mut app, KeyCode::BackTab);
-    support::press(&mut app, KeyCode::Enter);
-    assert_ne!(app.config().agent.as_deref(), Some("fake"), "not let go");
-    support::press(&mut app, KeyCode::Enter);
-    assert_eq!(app.config().agent.as_deref(), Some("fake"), "not chosen");
-    support::press(&mut app, KeyCode::Esc);
-    assert!(app.chat().is_some(), "not back in the conversation");
-
-    support::type_text(&mut app, "/echo");
-    support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "the answer", |app| {
-        !is_open(app, 0)
-            || (said_in_transcript(app, "heard you")
-                && app.talking() == obelus_agent::Talking::Ready)
-    });
-    assert!(
-        is_open(&app, 0),
-        "the conversation closed at the end of the reader's own turn"
+    pump(
+        &mut app,
+        &events,
+        "the permission request",
+        App::is_asking_permission,
     );
+
+    assert_eq!(
+        close_it(&mut app, 0),
+        "the reader has a question of yours open in it, so it stays open"
+    );
+    assert!(is_open(&app, 0), "closed with a question up in it");
 }
 
 /// A conversation an agent closes is named where Obelus says it closed,
