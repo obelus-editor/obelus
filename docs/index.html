@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Obelus — the agent writes, you read</title>
-<meta name="description" content="Obelus is a code reader, in a window of its own or in a terminal. An agent changes the code on a branch of its own; you read it, try it in another window, and say when it goes.">
+<title>Obelus — an editor for how I work, with the agent built in</title>
+<meta name="description" content="Obelus is a code editor that fits how I work, with an agent built in, in a window of its own or in a terminal. Not a powerful editor: the agent changes the code on a branch of its own, and you read it, try it and say when it goes.">
 <link rel="icon" href="obelus.svg">
 <link rel="alternate" hreflang="zh-Hans" href="zh/">
 <!-- The page is set in the two families omarchy's web rules name: the mono
@@ -44,7 +44,7 @@
   <a class="wordmark" href="#top">
     <span class="obelus">÷</span>
     <span>Obelus</span>
-    <span class="tag">a code reader</span>
+    <span class="tag">a code editor</span>
   </a>
   <span class="spacer"></span>
   <a class="switch" href="zh/" title="切换到中文" hreflang="zh-Hans">中文</a>
@@ -75,8 +75,8 @@
     <div class="hero">
       <div class="mark">÷</div>
       <h1>Obelus</h1>
-      <p class="lede">The agent writes. <strong>You read.</strong></p>
-      <p class="sub">Obelus is a code <strong>reader</strong>, in a window of its own or in a terminal. An agent changes the code on a branch of its own; you read what it did, try it in the window next door, and nothing leaves the branch until you say so. An <em>obelus</em> (÷, †) is the mark a scholar put beside a line they doubted.</p>
+      <p class="lede">An editor for how I work, <strong>with the agent built in.</strong></p>
+      <p class="sub">Obelus is a code editor, in a window of its own or in a terminal. It does not try to be a powerful one — no multiple cursors, no macros — but one that fits my own habits: open it and read, and arrow keys are arrow keys. The agent is part of it: it changes the code on a branch of its own while you read what it did, and nothing leaves the branch until you say so. An <em>obelus</em> (÷, †) is the mark a scholar put beside a line they doubted.</p>
 
       <div class="buttons">
         <a class="button primary" href="#start"><span>Get started</span></a>
@@ -101,7 +101,7 @@
         <li><span>A note keeps pointing at its line, however the file moves</span><a class="where" href="#notes">Notes ›</a></li>
         <li><span>What changed opens in place, beside the code it changed</span><a class="where" href="#what">Reading code ›</a></li>
         <li><span>No modes: keys work the way they do in VS Code or Emacs, not in vim or helix</span><a class="where" href="#keys">Keys ›</a></li>
-        <li><span>One reader, in a window of its own or in a terminal</span><a class="where" href="#what">Reading code ›</a></li>
+        <li><span>One editor, in a window of its own or in a terminal</span><a class="where" href="#what">Reading code ›</a></li>
       </ul>
     </section>
     <section id="how">
@@ -318,8 +318,8 @@ workflow = "none"</code></pre>
         <li>
           <span class="no">01</span>
           <div>
-            <p class="claim">Reading is the product; editing is incidental.</p>
-            <p class="why">Called an editor, it gets measured by an editor's checklist — multiple cursors? macros? snippets? — none of which it wants. There is basic editing, for the line you fix on the way past.</p>
+            <p class="claim">Not a powerful editor: one that fits how I work.</p>
+            <p class="why">An editor is usually measured by a checklist — multiple cursors? macros? snippets? — and none of those is here, on purpose. What is here is what I reach for: the editing a line needs, and everything around reading what an agent wrote.</p>
           </div>
         </li>
         <li>
@@ -359,7 +359,7 @@ workflow = "none"</code></pre>
 
       <p>I never got comfortable with vim. Modes, <code>hjkl</code>, colon commands — muscle memory for the people who have it, and for me something to work out again every time. What I wanted was to <em>open it and read</em>: arrow keys are arrow keys, <kbd>Ctrl+c</kbd> copies, and nothing has to be escaped out of first.</p>
 
-      <p>And reading code has changed. Much of it is written by something else now, and what I do in front of a terminal is read, check, mark what looks doubtful and ask an agent about it — not type. The good tools in a terminal are <em>editors</em>, measured by an editor's list: multiple cursors, macros, snippets. What I wanted is on another line entirely — the syntax tree, the git timeline, the language server and the agent, organised around reading. That is <a href="#how">how I use it</a>.</p>
+      <p>And reading code has changed. Much of it is written by something else now, and what I do in front of a terminal is read, check, mark what looks doubtful and ask an agent about it — not type. The editors in a terminal compete on an editor's list: multiple cursors, macros, snippets. Obelus is an editor too, but on another line entirely — the syntax tree, the git timeline, the language server and the agent, arranged the way I work. That is <a href="#how">how I use it</a>.</p>
     </section>
     <section id="start">
       <h2><span class="num">09</span><span>Getting started</span></h2>
@@ -398,7 +398,7 @@ cd obelus
 # installs as `obg` into ~/.cargo/bin: Obelus in a window of its own
 cargo install --path crates/obelus-gui
 
-# installs as `ob`: the same reader, in the terminal
+# installs as `ob`: the same editor, in the terminal
 cargo install --path crates/obelus-cli
 
 # or just build them: target/release/obg and target/release/ob
@@ -563,7 +563,7 @@ ob src/main.rs       # the same file, in the terminal instead</code></pre>
         </tbody>
       </table>
       </div>
-      <p class="quiet small">A missing file means the defaults, and so does a line Obelus does not recognise: a typo should leave you with Obelus, not with an error message where your reader was. A file it cannot <em>read</em> is the one thing it treats differently — it stops writing to that file rather than saving over settings it never saw, says so, and starts again the moment the file parses.</p>
+      <p class="quiet small">A missing file means the defaults, and so does a line Obelus does not recognise: a typo should leave you with Obelus, not with an error message where your editor was. A file it cannot <em>read</em> is the one thing it treats differently — it stops writing to that file rather than saving over settings it never saw, says so, and starts again the moment the file parses.</p>
       <p class="quiet small">And it tells you <em>where</em>. A settings file that will not parse, a key that binds nothing, a setting a project is not allowed to set, a theme named that no file answers to — each is marked on its own line, in the same list a language server's problems go in, so <kbd>Alt+e</kbd> and <kbd>Alt+[</kbd> <kbd>Alt+]</kbd> walk them like any other. Obelus writes the file, so Obelus has to be able to say which line it could not read.</p>
 
       <div class="aside">

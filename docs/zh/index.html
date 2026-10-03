@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Obelus — agent 来写，你来读</title>
-<meta name="description" content="Obelus 是一个代码阅读器，在它自己的窗口里，或者在终端里。agent 在自己的分支上改代码；你来读、在另一个窗口里试，你点头了它才离开那个分支。">
+<title>Obelus — 按我自己习惯来的编辑器，agent 就在里面</title>
+<meta name="description" content="Obelus 是一个按我自己习惯来的代码编辑器，agent 就在里面，在它自己的窗口里，或者在终端里。它不追求强大：agent 在自己的分支上改代码，你来读、来试，你点头了它才离开那个分支。">
 <link rel="icon" href="../obelus.svg">
 <link rel="alternate" hreflang="en" href="../">
 <!-- The page is set in the two families omarchy's web rules name: the mono
@@ -44,7 +44,7 @@
   <a class="wordmark" href="#top">
     <span class="obelus">÷</span>
     <span>Obelus</span>
-    <span class="tag">代码阅读器</span>
+    <span class="tag">代码编辑器</span>
   </a>
   <span class="spacer"></span>
   <a class="switch" href="../" title="Switch to English" hreflang="en">English</a>
@@ -75,8 +75,8 @@
     <div class="hero">
       <div class="mark">÷</div>
       <h1>Obelus</h1>
-      <p class="lede">agent 来写，<strong>你来读。</strong></p>
-      <p class="sub">Obelus 是一个代码<strong>阅读器</strong>，在它自己的窗口里，或者在终端里。agent 在自己的分支上改代码；你读它改了什么，在旁边的窗口里试，你不点头，什么都不会离开那个分支。<em>obelus</em>（÷、†）是古代学者在手稿边上标记「此处存疑」的记号。</p>
+      <p class="lede">按我自己习惯来的编辑器，<strong>agent 就在里面。</strong></p>
+      <p class="sub">Obelus 是一个代码编辑器，在它自己的窗口里，或者在终端里。它不追求强大——没有多光标、没有宏那一套——而是合我自己的习惯：打开就能读，方向键就是方向键。agent 也是它的一部分：它在自己的分支上改代码，你读它改了什么，你不点头，什么都不会离开那个分支。<em>obelus</em>（÷、†）是古代学者在手稿边上标记「此处存疑」的记号。</p>
 
       <div class="buttons">
         <a class="button primary" href="#start"><span>开始使用</span></a>
@@ -101,7 +101,7 @@
         <li><span>文件再怎么改，笔记还指着当初那一行</span><a class="where" href="#notes">笔记 ›</a></li>
         <li><span>改了什么就地展开，就在被改的代码旁边</span><a class="where" href="#what">读代码 ›</a></li>
         <li><span>没有模式：按键像 VS Code、Emacs 那样按了就生效，不是 vim、helix 那一套</span><a class="where" href="#keys">按键 ›</a></li>
-        <li><span>同一个阅读器，在自己的窗口里，也在终端里</span><a class="where" href="#what">读代码 ›</a></li>
+        <li><span>同一个编辑器，在自己的窗口里，也在终端里</span><a class="where" href="#what">读代码 ›</a></li>
       </ul>
     </section>
     <section id="how">
@@ -318,8 +318,8 @@ workflow = "none"</code></pre>
         <li>
           <span class="no">01</span>
           <div>
-            <p class="claim">读是主角，编辑是顺带的。</p>
-            <p class="why">叫它「编辑器」，它就会被按编辑器的清单去量：多光标？宏？片段？——那些它一个都不想要。有基本的编辑，是为了读到一半顺手改一行。</p>
+            <p class="claim">不追求强大的编辑器，只要合我自己的习惯。</p>
+            <p class="why">编辑器通常按一张清单来量：多光标？宏？片段？——这里一样都没有，是故意的。有的是我自己会用到的：改一行需要的编辑，以及围着「读 agent 写的代码」的一切。</p>
           </div>
         </li>
         <li>
@@ -359,7 +359,7 @@ workflow = "none"</code></pre>
 
       <p>vim 那套我一直不习惯。模式、<code>hjkl</code>、冒号命令——对习惯的人是肌肉记忆，对我是每次都要重新想一遍的东西。我想要的是<em>打开就能读</em>：方向键就是方向键，<kbd>Ctrl+c</kbd> 就是复制，不用先退出什么。</p>
 
-      <p>而且读代码的方式真的变了。很多行是别的东西写的，我坐在终端前面做的是读、确认、标出存疑的地方、问一下 agent，而不是敲。终端里好用的工具都是<em>编辑器</em>，按编辑器的清单来比：多光标、宏、片段。我要的东西在另一条线上——语法树、git 的时间线、语言服务器和 agent，全部围着「读」组织。也就是<a href="#how">我怎么用它</a>。</p>
+      <p>而且读代码的方式真的变了。很多行是别的东西写的，我坐在终端前面做的是读、确认、标出存疑的地方、问一下 agent，而不是敲。终端里的编辑器都在比编辑器的清单：多光标、宏、片段。Obelus 也是编辑器，但在另一条线上——语法树、git 的时间线、语言服务器和 agent，按我干活的方式排好。也就是<a href="#how">我怎么用它</a>。</p>
     </section>
     <section id="start">
       <h2><span class="num">09</span><span>上手</span></h2>
@@ -398,7 +398,7 @@ cd obelus
 # 装到 ~/.cargo/bin，命令叫 obg：在自己窗口里的 Obelus
 cargo install --path crates/obelus-gui
 
-# 装成 `ob`：同一个 reader，跑在终端里
+# 装成 `ob`：同一个编辑器，跑在终端里
 cargo install --path crates/obelus-cli
 
 # 或者只构建：target/release/obg 和 target/release/ob
@@ -563,7 +563,7 @@ ob src/main.rs       # 同一个文件，改在终端里读</code></pre>
         </tbody>
       </table>
       </div>
-      <p class="quiet small">文件不在，就是用默认值；里面有一行 Obelus 不认识，也是用默认值——配置里有个笔误，你该得到的是一个照常开起来的 Obelus，而不是在本该是阅读器的地方得到一条错误信息。只有一种情况不一样：文件<em>读不出来</em>。那时 Obelus 不再往这个文件里写，而不是拿它没见过的设置去覆盖你写的东西；它会说出来，并且在文件能解析的那一刻自己恢复。</p>
+      <p class="quiet small">文件不在，就是用默认值；里面有一行 Obelus 不认识，也是用默认值——配置里有个笔误，你该得到的是一个照常开起来的 Obelus，而不是在本该是编辑器的地方得到一条错误信息。只有一种情况不一样：文件<em>读不出来</em>。那时 Obelus 不再往这个文件里写，而不是拿它没见过的设置去覆盖你写的东西；它会说出来，并且在文件能解析的那一刻自己恢复。</p>
       <p class="quiet small">而且它会说清楚是<em>哪一行</em>。配置文件解析不了、某个键绑不上、某一项项目无权设、主题名字没有文件对应——每一条都标在它自己那一行上，进的是语言服务器的诊断同一个列表，所以 <kbd>Alt+e</kbd> 和 <kbd>Alt+[</kbd> <kbd>Alt+]</kbd> 照常能走它们。文件是 Obelus 写的，那它就得说得出自己哪一行读不懂。</p>
 
       <div class="aside">

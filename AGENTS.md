@@ -1,14 +1,17 @@
 # Obelus
 
-A terminal code **reader**. In the AI era every line you read is a line you did
-not write, so browsing is the product and editing is incidental. The eventual
-point is to join the LSP semantic graph to the git timeline — jump to a
-definition from inside a diff, symbol-level history — which no terminal tool
-does today.
+A code **editor** shaped to one person's habits, with an agent built in. In
+the AI era most lines you read are lines you did not write, so much of the
+time in it is spent reading what an agent changed, beside the code it changed.
+The eventual point is to join the LSP semantic graph to the git timeline —
+jump to a definition from inside a diff, symbol-level history — which no
+terminal tool does today.
 
-Say *code reader*, never *editor*. Called an editor, it gets measured by an
-editor's checklist (multiple cursors? macros? completion?), none of which it
-wants.
+It is an editor, and not a powerful one, on purpose. What it has is measured
+against how its author works, not against an editor's checklist (multiple
+cursors? macros? completion?) — none of which it wants. Say so wherever it is
+described: an editor that fits one person's way of working, with the agent
+part of it, rather than one competing on features.
 
 ## Commands
 
