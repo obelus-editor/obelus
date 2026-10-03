@@ -811,6 +811,11 @@ fn a_block_of_code_is_drawn_in_a_box() {
 /// back a run spanning a join, so the two ways agree on everything here.
 /// The breaking is kept because it is what makes the claim true whatever
 /// the layout does, and it is written down here that no test holds it up.
+///
+/// Nor does it catch a run that points at nothing when it should point
+/// somewhere, because it steps over every such run -- which is how the
+/// line after a soft break went unselectable under it. That half is
+/// `the_line_after_a_soft_break_says_where_it_came_from`.
 #[test]
 fn a_run_that_says_where_it_came_from_came_from_there() {
     let source = "## What I would do\n\n\
@@ -846,6 +851,41 @@ fn a_run_that_says_where_it_came_from_came_from_there() {
             "at width {width}, hardly anything says where it came from: {checked}"
         );
     }
+}
+
+/// What somebody wrote says where it came from, after a soft break too.
+///
+/// The space a soft break becomes is the one character of a paragraph that
+/// is in nobody's source. A run that started on it said nowhere for all of
+/// the words that followed, so the rest of that row could not be selected
+/// -- an agent's `**2. Make the app**` on a line of its own, with the step
+/// under it, left the whole step out of reach. Both ways a break is met
+/// are here: where the look changes at it, and where it does not.
+///
+/// Broken deliberately by letting a run go on from a character with no
+/// source, as `split` did: the second line's words then come back as one
+/// run that points at nothing.
+#[test]
+fn the_line_after_a_soft_break_says_where_it_came_from() {
+    let source = "**2. Make the app**\nopen the page\n\nfirst line\nsecond line\n";
+    let rows = render(source, 80);
+    let mut checked = 0;
+    for span in rows.iter().flat_map(|row| &row.spans) {
+        match span.from.clone() {
+            Some(from) => {
+                checked += 1;
+                assert_eq!(&source[from], span.text, "{span:?}");
+            }
+            None => assert!(
+                span.text.trim().is_empty(),
+                "words somebody wrote say they came from nowhere: {span:?}"
+            ),
+        }
+    }
+    assert!(
+        checked >= 4,
+        "hardly anything says where it came from: {rows:?}"
+    );
 }
 
 /// The marks a reading adds itself point at nothing.

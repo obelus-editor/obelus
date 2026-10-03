@@ -4007,6 +4007,31 @@ mod tests {
         );
     }
 
+    /// A row that a soft break joined is held whole.
+    ///
+    /// The space a soft break becomes is in nobody's words, and the run
+    /// that started on it pointed at nothing for the rest of the row: the
+    /// second line of an agent's paragraph could be neither dragged across
+    /// nor held with the keys, so a selection stopped at the break.
+    ///
+    /// Broken deliberately by letting the reading's run go on from that
+    /// space into the words after it: this then copies `Two` alone.
+    #[test]
+    fn a_row_joined_by_a_soft_break_is_held_whole() {
+        let mut chat = Chat::new();
+        chat.chunk(Speaker::Agent, "**Two**\nopen the page and press it\n");
+        chat.settle(chat.rows(ROOM.reading).len(), ROOM.transcript);
+
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Home), false, ROOM, &[]);
+        chat.handle_key(&shifted(KeyCode::End), false, ROOM, &[]);
+        assert_eq!(
+            chat.copied(ROOM.reading),
+            ("Two open the page and press it".to_string(), "selection"),
+            "the words after the soft break could not be held"
+        );
+    }
+
     /// A run folds itself, and only the reader opens it.
     ///
     /// Calls of one kind stop being a story and become a log once there are
