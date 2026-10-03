@@ -130,7 +130,8 @@ const ATLAS: u32 = 1024;
 /// Two, because one is not an array everywhere: wgpu's GL backend makes a
 /// texture of one layer a plain two-dimensional one, and a shader reading
 /// that as an array reads nothing from it -- no error, and no text. Seen on
-/// Mesa's software GL, where the same texture read on Vulkan was right.
+/// Mesa's software GL, where the same texture read on Vulkan was right. The
+/// same backend has a second count it does this at -- see `Room::open`.
 const LAYERS: u32 = 2;
 
 /// What Obelus draws on.
@@ -3715,7 +3716,7 @@ impl Layers {
         }
     }
 
-    /// One layer more, with what was in the others still where it was.
+    /// Another layer, with what was in the others still where it was.
     ///
     /// A texture cannot be made bigger, so this is a new one with the old
     /// one copied into it -- and every place already handed out, in this
@@ -3728,7 +3729,13 @@ impl Layers {
             reason = "a device allows a few hundred layers"
         )]
         let had = self.room.layers.len() as u32;
-        let texture = layered(device, self.format, had + 1);
+        self.room.open();
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a device allows a few hundred layers"
+        )]
+        let has = self.room.layers.len() as u32;
+        let texture = layered(device, self.format, has);
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("obelus glyphs"),
         });
@@ -3744,8 +3751,7 @@ impl Layers {
         queue.submit([encoder.finish()]);
         self.view = array_of(&texture);
         self.texture = texture;
-        self.room.open();
-        tracing::debug!(layers = had + 1, format = ?self.format, "a glyph texture took another layer");
+        tracing::debug!(layers = has, format = ?self.format, "a glyph texture took another layer");
     }
 }
 
@@ -3782,17 +3788,29 @@ impl Room {
             })
     }
 
-    /// One layer more, with nothing in it.
+    /// Another layer, with nothing in it -- or two, where one would make the
+    /// count a multiple of six.
+    ///
+    /// Which wgpu's GL backend takes a square texture of to be a cube map,
+    /// and a shader reading a cube map as an array reads nothing from it:
+    /// on Mesa's software GL, six layers and twelve read nothing where five
+    /// and seven were right. A layer nothing is put in yet is the cheaper
+    /// way out than layers that are not square.
     fn open(&mut self) {
-        #[expect(
-            clippy::cast_possible_wrap,
-            reason = "a layer is a thousand pixels across"
-        )]
-        self.layers
-            .push(etagere::AtlasAllocator::new(etagere::size2(
-                ATLAS as i32,
-                ATLAS as i32,
-            )));
+        loop {
+            #[expect(
+                clippy::cast_possible_wrap,
+                reason = "a layer is a thousand pixels across"
+            )]
+            self.layers
+                .push(etagere::AtlasAllocator::new(etagere::size2(
+                    ATLAS as i32,
+                    ATLAS as i32,
+                )));
+            if !self.layers.len().is_multiple_of(6) {
+                return;
+            }
+        }
     }
 }
 
