@@ -403,7 +403,11 @@ main { min-width: 0; }
    grid, so the stack takes the height of one picture and nothing below it
    moves when the front one changes. `main.js` says how deep each one is,
    and walks them on a clock until a visitor picks one. */
-.screens { max-width: 64rem; margin: 2.6rem auto 0; }
+/* 1050px exactly: the screens are photographed at twice that, so on a
+   screen of twice the density each of their pixels is one of the screen's.
+   Any other width resamples them, and a monospaced letter is the first
+   thing to go soft. */
+.screens { max-width: 1050px; margin: 2.6rem auto 0; }
 .screens .tabs { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; margin-bottom: 1rem; }
 .screens .tabs .switch[aria-selected="true"] {
   background: var(--t-surface-2);
