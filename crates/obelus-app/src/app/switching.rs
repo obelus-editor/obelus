@@ -36,7 +36,7 @@ impl App {
     /// a key in it is about the list.
     pub(super) fn in_a_whole_view(&self) -> bool {
         match self.layers().nearest() {
-            Some(Layer::Settings | Layer::Counts) => true,
+            Some(Layer::Settings | Layer::Counts | Layer::Gone) => true,
             // A list is a band of the screen by its room, whichever layout it
             // was given, so the layout is what says it is a whole view.
             Some(Layer::Picker) => self

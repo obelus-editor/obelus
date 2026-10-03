@@ -836,16 +836,17 @@ fn a_tree_that_has_gone(name: &str) -> (Scratch, obelus_app::app::App) {
     (scratch, app)
 }
 
-/// A tree that goes from under Obelus takes the project with it and
-/// everything that was open in it, and the page that is left says so.
+/// A tree that goes from under Obelus is said over the whole screen, on
+/// top of what the reader was in, and nothing under it answers a key.
 ///
 /// Broken deliberately, one at a time: the question about the tree taken
-/// out of the handler (nothing goes dim), the documents left open when the
-/// tree goes (one is still open), the project's settings kept over the
-/// reader's (the setting stays), and the page left out of the frame (the
-/// words are not on screen) -- each fails its own line below.
+/// out of the handler (nothing goes dim), the page left out of the frame
+/// (the words are not on screen), its own ground left unfilled (the file
+/// shows through in a terminal), and its key handler letting what it does
+/// not want fall through (`ctrl+x` is bound in a dialog, and cuts a line
+/// out of the file under it) -- each fails its own line below.
 #[test]
-fn a_tree_that_goes_takes_the_project_and_everything_open_in_it() {
+fn a_tree_that_goes_is_said_over_everything() {
     let (scratch, mut app) = a_tree_that_has_gone("tree-gone");
 
     assert!(
@@ -869,6 +870,59 @@ fn a_tree_that_goes_takes_the_project_and_everything_open_in_it() {
             command.name()
         );
     }
+    let dump = support::render(&mut app, 80, 12);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("The project has gone") && text.contains("Nothing is left at"),
+        "the page does not say so:\n{dump}"
+    );
+    assert!(
+        !text.contains("fn one"),
+        "the file shows through the page:\n{dump}"
+    );
+
+    let first = |app: &obelus_app::app::App| {
+        app.current_buffer().map(|buffer| {
+            buffer
+                .text()
+                .line(obelus_text::coordinates::LineNumber::new(0))
+                .to_string()
+        })
+    };
+    let before = first(&app);
+    support::type_text(&mut app, "y");
+    support::press_control(&mut app, 'x');
+    support::press_control(&mut app, 'p');
+    assert_eq!(
+        first(&app),
+        before,
+        "a key went past the page into the file under it"
+    );
+    assert!(
+        !app.layers().has(obelus_component::layers::Layer::Picker),
+        "a key other than enter opened something under the page"
+    );
+    assert!(!scratch.directory.exists(), "the tree was made again");
+}
+
+/// Enter on that page lets go of everything the project was, and asks
+/// which project next.
+///
+/// Broken deliberately, one at a time: enter left unanswered (the page
+/// that asks never comes), the documents carried over the reset (one is
+/// still open), and the project's settings kept over the reader's (the
+/// setting stays).
+#[test]
+fn enter_lets_the_project_go_and_asks_which_is_next() {
+    let (_scratch, mut app) = a_tree_that_has_gone("tree-gone-enter");
+    support::state_of_its_own();
+
+    support::press(&mut app, crossterm::event::KeyCode::Enter);
+    let dump = support::render(&mut app, 80, 8);
+    assert!(
+        dump.contains("Open a project") && !dump.contains("The project has gone"),
+        "enter did not ask which project:\n{dump}"
+    );
     assert_eq!(
         app.document_count_for_test(),
         0,
@@ -878,45 +932,14 @@ fn a_tree_that_goes_takes_the_project_and_everything_open_in_it() {
         app.config().blame_margin,
         "the settings of a project that has gone are still in force"
     );
-    let dump = support::render(&mut app, 80, 8);
-    assert!(
-        dump.contains("The project has gone") && dump.contains("Nothing is left at"),
-        "the page does not say so:\n{dump}"
-    );
-    assert!(!scratch.directory.exists(), "the tree was made again");
-}
-
-/// Enter on that page asks which project, and nothing else there does
-/// anything but leave.
-///
-/// Broken deliberately twice: enter left to fall through (the page that
-/// asks never comes), and the page left in the file's context rather than
-/// a dialog's (the palette opens over it).
-#[test]
-fn enter_asks_which_project_once_the_tree_has_gone() {
-    let (_scratch, mut app) = a_tree_that_has_gone("tree-gone-enter");
-    support::state_of_its_own();
-
-    support::press_control(&mut app, 'p');
-    assert!(
-        !app.is_showing_dialog(),
-        "a key other than enter opened something over the page"
-    );
-
-    support::press(&mut app, crossterm::event::KeyCode::Enter);
-    let dump = support::render(&mut app, 80, 8);
-    assert!(
-        dump.contains("Open a project") && !dump.contains("The project has gone"),
-        "enter did not ask which project:\n{dump}"
-    );
     assert!(!app.should_quit(), "enter left Obelus");
 }
 
 /// And the key that leaves leaves, without asking about what was
 /// unwritten: there is nowhere left to write it.
 ///
-/// Broken deliberately by keeping the documents open, which puts the
-/// question about unsaved work in the way.
+/// Broken deliberately by taking the early answer out of `request_quit`,
+/// which puts the question about unsaved work in the way.
 #[test]
 fn leaving_once_the_tree_has_gone_asks_nothing() {
     let (_scratch, mut app) = a_tree_that_has_gone("tree-gone-leaving");
@@ -972,8 +995,8 @@ fn listening_at(url: &str) -> String {
         .to_string()
 }
 
-/// A window whose tree went stops what was about it, and starts again on
-/// whatever project the reader names next.
+/// A window whose tree went stops what was about it once the reader has
+/// read so, and starts again on whatever project they name next.
 ///
 /// The tools are what this watches, because an address is a thing a test
 /// can knock on: a server left listening answers for a tree that is not
@@ -983,8 +1006,8 @@ fn listening_at(url: &str) -> String {
 ///
 /// Broken deliberately twice: the server's task left running when what
 /// holds it goes (`Listening` without its `Drop`), and the old address
-/// still answers; and `the_page_saying_it_has_gone` leaving `gone` set,
-/// and the project chosen afterwards offers nothing.
+/// still answers; and `let_go_of_the_project` carrying `gone` over, and
+/// the project chosen afterwards offers nothing.
 #[test]
 #[cfg(target_os = "linux")]
 fn a_window_whose_tree_went_starts_again_on_another() {
@@ -1010,6 +1033,9 @@ fn a_window_whose_tree_went_starts_again_on_another() {
         app.tree_has_gone(),
         "the tree went and Obelus did not hear it"
     );
+
+    support::state_of_its_own();
+    support::press(&mut app, crossterm::event::KeyCode::Enter);
     assert!(
         app.tools_url().is_none(),
         "an agent is still told about the tools of a tree that has gone"
@@ -1023,8 +1049,6 @@ fn a_window_whose_tree_went_starts_again_on_another() {
         "the tools of a tree that has gone are still listening"
     );
 
-    support::state_of_its_own();
-    support::press(&mut app, crossterm::event::KeyCode::Enter);
     support::press(&mut app, crossterm::event::KeyCode::End);
     support::press(&mut app, crossterm::event::KeyCode::Enter);
     support::type_text(&mut app, &next.directory.display().to_string());

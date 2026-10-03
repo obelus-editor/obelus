@@ -422,6 +422,9 @@ impl App {
             // the wheel. Saying so is the point: the next view added has to
             // answer here rather than being quietly left out.
             Layer::Prompt | Layer::Settings => false,
+            // Taken and spent: what is under the page is what the reader
+            // was looking at when the project went, and it stays as it was.
+            Layer::Gone => true,
         }
     }
 

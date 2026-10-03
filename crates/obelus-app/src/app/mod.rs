@@ -812,9 +812,9 @@ pub struct App {
     /// Whether the tree Obelus was put on has gone from disk.
     ///
     /// For good: a tree made again at the same path is somebody else's
-    /// tree, and every watch Obelus had in this one went with it. What was
-    /// open is closed, and until the reader asks for another project
-    /// nothing about one is asked or written. See [`App::the_tree_has_gone`].
+    /// tree, and every watch Obelus had in this one went with it. Nothing
+    /// about the project is asked or written from here on, and what was
+    /// open goes once the reader has read so. See [`App::the_tree_has_gone`].
     gone: bool,
     /// What this window knows about the others on the repository, and the
     /// list of worktrees while it is showing.
@@ -1004,6 +1004,12 @@ impl App {
 
     /// Asks the loop to stop after this iteration.
     pub fn request_quit(&mut self) {
+        // Nothing is asked once the project has gone: what is unwritten
+        // has nowhere to be written, and neither have the notes.
+        if self.gone {
+            self.should_quit = true;
+            return;
+        }
         // The notes first, and without asking. A buffer that is unwritten
         // is a decision the reader has to make -- their change, or the file
         // on disk -- and there is no such decision here: a note lives
@@ -1217,12 +1223,37 @@ impl App {
     /// from being written into a project that has gone is asked of the disk
     /// at the moment of writing (`obelus_git::project`).
     ///
-    /// Everything the project was goes with it, and the window is left
-    /// saying so and nothing else (`ui::gone`): enter asks which project
-    /// next, and the one other key is the one that leaves. What was open is
-    /// closed without asking, unsaved work and all -- a file in a tree that
-    /// has gone has nowhere to be written, and Obelus does not make the
-    /// tree again to write it.
+    /// Said over the whole screen, on top of whatever the reader was in
+    /// (`ui::gone`), and answered with one of two keys: enter asks which
+    /// project next, and the key that leaves leaves. Everything else that
+    /// was over the page goes first, because the page covers the screen
+    /// and a page covers what shares its room.
+    pub(super) fn the_tree_has_gone(&mut self) {
+        tracing::warn!(tree = %self.working_directory.display(), "the tree Obelus is on has gone");
+        self.make_room(layers::Room::Screen);
+        self.gone = true;
+        self.head = None;
+        self.worktrees.tree_has_gone();
+    }
+
+    /// The page saying the tree has gone, answered -- or not, and then
+    /// nothing else hears the key either: what is under the page is about
+    /// a project that is not there.
+    pub(super) fn the_page_saying_it_has_gone(&mut self, key: &KeyEvent) -> bool {
+        if key.code == KeyCode::Enter && key.modifiers == KeyModifiers::NONE {
+            self.let_go_of_the_project();
+            self.ask_which_project();
+        } else if self.keymap.lookup(key, Context::Dialog) == Some(Command::Quit) {
+            self.request_quit();
+        }
+        true
+    }
+
+    /// Lets go of everything the project that went was.
+    ///
+    /// What was open is closed without asking, unsaved work and all -- a
+    /// file in a tree that has gone has nowhere to be written, and Obelus
+    /// does not make the tree again to write it.
     ///
     /// **A window that starts again, without starting again.** What is
     /// kept is what belongs to the process and not to the project -- the
@@ -1230,8 +1261,7 @@ impl App {
     /// and everything else is a new [`App`]'s. Kept by name rather than
     /// cleared by name, so that a field nobody thought of here is one that
     /// starts empty, and not one still holding the last project's answer.
-    pub(super) fn the_tree_has_gone(&mut self) {
-        tracing::warn!(tree = %self.working_directory.display(), "the tree Obelus is on has gone");
+    fn let_go_of_the_project(&mut self) {
         // The sessions nothing was said in, as on the way out: an agent
         // keeps what it is not told to let go of.
         self.let_go_of_what_nothing_was_said_in(None);
@@ -1241,7 +1271,6 @@ impl App {
         self.walk_generation.next();
         self.history_generation.next();
         self.search_generation.next();
-        self.worktrees.tree_has_gone();
         self.worktrees.not_showing();
 
         let was = std::mem::replace(self, Self::new(Vec::new()));
@@ -1274,7 +1303,6 @@ impl App {
             .filter(|(path, _)| !path.starts_with(&root))
             .collect();
         self.working_directory = root;
-        self.gone = true;
         // A watcher of its own as well, on what is left -- the settings and
         // the theme. Started again rather than kept and given things back
         // one at a time: a watch is a count on the watcher it was taken on,
@@ -1292,20 +1320,6 @@ impl App {
         // The reader's settings without the project's over them, which
         // are in a file that is not there.
         self.apply_project();
-    }
-
-    /// The page saying the tree has gone, answered.
-    ///
-    /// Enter asks which project, the way a start with nothing to go on
-    /// does; nothing else is taken, and what falls through finds a dialog
-    /// and so only the key that leaves.
-    pub(super) fn the_page_saying_it_has_gone(&mut self, key: &KeyEvent) -> bool {
-        if !(key.code == KeyCode::Enter && key.modifiers == KeyModifiers::NONE) {
-            return false;
-        }
-        self.gone = false;
-        self.ask_which_project();
-        true
     }
 
     /// Says to open on the file list rather than on a file.
@@ -1970,11 +1984,10 @@ impl App {
         // ramp they were last drawn with, which is that sheen at one
         // moment and as true as any other frame of it.
         //
-        // Nor while Obelus is asking which project, or saying the one it
-        // was on has gone: neither is the welcome screen, and neither has
-        // a mark to run a sheen across.
+        // Nor while Obelus is asking which project: that screen is not the
+        // welcome screen and has no mark to run a sheen across.
         (self.current.is_none()
-            && self.has_a_project()
+            && self.chooser.is_none()
             && !self.layers().filling()
             && !obelus_config::in_a_window())
             // An agent at work in the conversation being read.
@@ -2150,11 +2163,7 @@ impl App {
         // act on what the reader has hold of -- a box they can select in
         // and not paste into is half a box. Everything else in Obelus is
         // about a project, and `Requires::AProject` is what refuses it.
-        //
-        // And so is being told the project has gone, which offers less
-        // still: enter is the page's own, and the rest is the key that
-        // leaves.
-        if self.chooser.is_some() || self.gone {
+        if self.chooser.is_some() {
             return Context::Dialog;
         }
         // A list whose rows are open files is the list of open files, and
@@ -2186,6 +2195,7 @@ impl App {
             layers::Layer::Names => self.names.is_some(),
             layers::Layer::Picker => self.picker.is_some(),
             layers::Layer::Prompt => self.prompt.is_some(),
+            layers::Layer::Gone => self.gone,
         })
     }
 
@@ -2217,6 +2227,11 @@ impl App {
     /// leaves them.
     pub(crate) fn leave(&mut self, layer: Layer) {
         match layer {
+            // Not left: answered. Escape gives up on the nearest thing,
+            // and here there is nothing nearer to give up on and nothing
+            // behind it to give up to -- what is behind it is the project
+            // that went.
+            Layer::Gone => {}
             Layer::Picker => {
                 self.picker = None;
                 // Back to where they were looking from. The other way out
@@ -3109,12 +3124,6 @@ impl App {
         {
             return;
         }
-        // And the page saying the project has gone, for the same reason:
-        // it is what is there instead of one.
-        if self.gone && self.layers().nearest().is_none() && self.the_page_saying_it_has_gone(&key)
-        {
-            return;
-        }
 
         // Except the paging keys, while a preview is on screen: a screenful
         // is what the thing being *read* is moved by, and the list above it
@@ -3144,6 +3153,7 @@ impl App {
                 Layer::Picker => self.picker_key(&key),
                 Layer::Settings => self.settings_key(&key),
                 Layer::Counts => self.counts_key(&key),
+                Layer::Gone => self.the_page_saying_it_has_gone(&key),
             };
             if taken {
                 return;
@@ -3451,6 +3461,8 @@ impl App {
             obelus_component::layers::Layer::Names => {}
             obelus_component::layers::Layer::Counts => self.press_in_counts(x, y),
             obelus_component::layers::Layer::Settings => self.press_in_settings(x, y),
+            // Two keys, and nothing to point at.
+            obelus_component::layers::Layer::Gone => {}
         }
     }
 

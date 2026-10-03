@@ -690,6 +690,9 @@ pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
         // file behind them kept its own, blinking in a view it is not part
         // of.
         Some(Layer::Counts) => return None,
+        // Nor into the page saying the project has gone, which is answered
+        // with a key and has no box.
+        Some(Layer::Gone) => return None,
         // Nothing over the document, so the caret is the document's own.
         None => {
             // A conversation is written into, and its caret is in the box
@@ -820,17 +823,10 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     // Or, where there is no project yet, the question of which: a screen
     // of its own rather than the welcome screen, because every key the
     // welcome screen names is about a project.
-    //
-    // Or, where the project has gone, that it has: what it was is closed,
-    // and the welcome screen's keys would be about it.
     if app.reading_nothing() && !layers.filling() {
-        if let Some(view) = gone::GoneView::new(app) {
-            view.render(regions.editor, cells);
-        } else {
-            match projects::ProjectsView::new(app) {
-                Some(view) => bars::of(Whose::Projects, || view.render(regions.editor, cells)),
-                None => welcome::WelcomeView::new(app).render(regions.editor, cells),
-            }
+        match projects::ProjectsView::new(app) {
+            Some(view) => bars::of(Whose::Projects, || view.render(regions.editor, cells)),
+            None => welcome::WelcomeView::new(app).render(regions.editor, cells),
         }
         // What could finish the path being named, which is not a layer
         // for the reason the agent's own commands are not one: the list
@@ -939,6 +935,15 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
                 if let Some(view) = counts::CountsView::new(app) {
                     shapes::behind(area, shapes::Joined::Screen, app.theme().background, cells);
                     bars::of(Whose::Counts, || view.render(area, cells));
+                }
+            }
+            // The screen, like the counts, over whatever the reader was in
+            // when the project went: a window draws it as glass over that,
+            // and a terminal, which has no glass, as the page alone.
+            Layer::Gone => {
+                if let Some(view) = gone::GoneView::new(app) {
+                    shapes::behind(area, shapes::Joined::Screen, app.theme().background, cells);
+                    view.render(area, cells);
                 }
             }
             Layer::Picker => {

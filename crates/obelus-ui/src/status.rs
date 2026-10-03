@@ -104,10 +104,6 @@ pub struct StatusView<'a> {
     /// -- a row saying something there would be answering a question that
     /// does not arise.
     head: Option<&'a obelus_git::Head>,
-    /// Whether the tree has gone, which leaves the row nothing to say:
-    /// the page above it says that, and the project the row would name is
-    /// the one that has gone.
-    gone: bool,
 }
 
 impl<'a> StatusView<'a> {
@@ -132,7 +128,6 @@ impl<'a> StatusView<'a> {
             theme: app.theme(),
             working_directory: app.working_directory(),
             head: app.head(),
-            gone: app.tree_has_gone(),
         }
     }
 }
@@ -223,7 +218,7 @@ impl Widget for StatusView<'_> {
                         &truncate_from_right(note, usize::from(area.width).saturating_sub(2)),
                         self.wrong_ink().map_or(style, |ink| style.fg(ink)),
                     );
-                } else if !self.gone {
+                } else {
                     self.render_project(area, cells, style);
                 }
             }

@@ -45,6 +45,14 @@ pub enum Layer {
     Picker,
     /// A question on the status bar.
     Prompt,
+    /// That the project has gone, over whatever the reader was in when it
+    /// went.
+    ///
+    /// Answered rather than left: enter asks which project next, and the
+    /// key that leaves leaves. What is under it stays drawn until then,
+    /// because what was on screen is what the reader was looking at when
+    /// the ground went from under it.
+    Gone,
 }
 
 /// Every layer there is, furthest from the reader first.
@@ -56,7 +64,7 @@ pub enum Layer {
 /// the notes and the settings -- cannot be open together, so their order among
 /// themselves is never observed; it is declared anyway, because an order nobody
 /// wrote down is an order every reader of the code guesses at.
-pub const STACK: [Layer; 5] = [
+pub const STACK: [Layer; 6] = [
     Layer::Counts,
     Layer::Settings,
     // Over the settings, because that is what opens it, and under a
@@ -64,6 +72,8 @@ pub const STACK: [Layer; 5] = [
     Layer::Names,
     Layer::Picker,
     Layer::Prompt,
+    // Over everything: nothing under it is about anything any more.
+    Layer::Gone,
 ];
 
 /// How much of the screen a view takes.
@@ -119,6 +129,7 @@ impl Layer {
             // being changed is written.
             Self::Names | Self::Picker => Room::Band,
             Self::Prompt => Room::Row,
+            Self::Gone => Room::Screen,
         }
     }
 
@@ -314,7 +325,13 @@ mod tests {
     #[test]
     fn only_a_row_leaves_the_global_keys_alone() {
         assert_eq!(Layer::Prompt.context(), Context::Normal);
-        for layer in [Layer::Counts, Layer::Settings, Layer::Names, Layer::Picker] {
+        for layer in [
+            Layer::Counts,
+            Layer::Settings,
+            Layer::Names,
+            Layer::Picker,
+            Layer::Gone,
+        ] {
             assert_eq!(layer.context(), Context::Dialog, "{layer:?}");
         }
     }
