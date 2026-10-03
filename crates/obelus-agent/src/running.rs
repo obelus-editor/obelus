@@ -49,6 +49,8 @@ struct Running {
     said: String,
     /// The process, until it is reaped.
     child: Option<Child>,
+    /// Everything the process has started, for stopping all of it.
+    group: Group,
     /// What it has written, both streams in the order they arrived.
     ///
     /// One buffer rather than two: what a reader wants to see is what the
@@ -149,9 +151,8 @@ impl Runs {
         let _inside = obelus_runtime::handle().enter();
         let (shell, said_with) = shell();
         let mut process = Command::new(shell);
+        said_to(&mut process, said_with, &said);
         process
-            .arg(said_with)
-            .arg(&said)
             .current_dir(cwd.unwrap_or(root))
             // Nothing to type into. The protocol has no way to send a
             // key to one of these, and Obelus's own input is the reader's
@@ -171,8 +172,13 @@ impl Runs {
         // Nor anything that draws to a terminal it does not have.
         process.env("TERM", "dumb");
         process.env("NO_COLOR", "1");
+        // A group of its own, so that a stop reaches what the shell started
+        // as well as the shell -- see `Group`.
+        #[cfg(unix)]
+        process.process_group(0);
 
         let mut child = process.spawn()?;
+        let group = Group::of(&child);
         let streams: Vec<Stream> = [
             child.stdout.take().map(Stream::Out),
             child.stderr.take().map(Stream::Err),
@@ -196,6 +202,7 @@ impl Runs {
             Running {
                 said,
                 child: Some(child),
+                group,
                 said_so_far: output,
                 ended: None,
             },
@@ -241,7 +248,7 @@ impl Runs {
             return None;
         }
         let child = run.child.as_mut()?;
-        let status = child.try_wait().ok()??;
+        let status = run.group.try_wait(child)?;
         run.child = None;
         let ended = ended_as(&status);
         run.ended = Some(ended);
@@ -260,6 +267,10 @@ impl Runs {
     /// How it ended is written down rather than read back. Obelus killed
     /// it, so `KILL` is the truth whatever the wait would later say, and
     /// the answer is owed to whoever asked now rather than a frame later.
+    ///
+    /// The group before the shell, and only while the shell is unreaped:
+    /// its number is the group's, and a number nobody holds any more is one
+    /// the system may give to somebody else's process.
     pub fn stop(&mut self, id: &str) {
         let Some(run) = self.running.get_mut(id) else {
             return;
@@ -267,6 +278,7 @@ impl Runs {
         let Some(mut child) = run.child.take() else {
             return;
         };
+        run.group.stop();
         let _ = child.start_kill();
         run.ended = Some(Ended {
             code: None,
@@ -311,6 +323,236 @@ impl Drop for Runs {
     fn drop(&mut self) {
         self.release_all();
     }
+}
+
+/// What a command started, held so that stopping it stops all of it.
+///
+/// The shell is the one process Obelus has a handle on, and an agent's
+/// command line is seldom one program: `cargo build && cargo test` is a
+/// shell waiting on a cargo that is running rustcs, and a kill sent to the
+/// shell is not passed on to any of them. So a stop that killed only the
+/// shell left the build the reader had just stopped running, with nothing
+/// on screen that could stop it.
+///
+/// Two ways of saying "everything under this", and neither platform is made
+/// to carry the other's. On Unix the shell leads a process group of its own
+/// and the group is killed; what leaves the group on purpose -- a daemon
+/// calling `setsid` -- has said it is not part of the command. On Windows
+/// the shell goes into a job, which whatever it starts is in as well. It is
+/// put there just after it starts rather than before, because the standard
+/// library will not start a process suspended and hand back its thread, so
+/// a command fast enough to start something in that moment would leave it
+/// out: `cmd` takes a good deal longer than that to read its own line.
+///
+/// A group of its own is also a group the terminal does not hang up on.
+/// When the reader closes the terminal Obelus was started from -- `ob`, or
+/// an `obg` started from a shell -- the hangup goes to Obelus's group, and
+/// that used to take the commands with it because they were in it. So
+/// Obelus passes it on (`stop_on_hangup`). Windows has no such thing to
+/// lose: a console being closed is told to everything attached to it, and
+/// a job does not detach anything.
+///
+/// Nor is it the terminal's foreground, so a command that reads the
+/// terminal -- a password prompt -- is stopped by the system where it would
+/// have taken the reader's keys out of the page. It waits, on the page,
+/// until escape.
+///
+/// What the shell leaves running when it ends -- `npm run dev &` -- is
+/// reached by neither a stop nor a hangup: the group is let go of with the
+/// shell, because its number is then the system's to give to somebody
+/// else. A hangup used to reach it, when it was in Obelus's group.
+#[derive(Debug)]
+struct Group {
+    /// The group's number, which is the shell's, until the shell is reaped
+    /// and the number is the system's to give to somebody else.
+    #[cfg(unix)]
+    leader: Option<libc::pid_t>,
+    /// The job, closed when this goes. `None` where the system would not
+    /// make one, and then the shell alone is what a stop reaches.
+    #[cfg(windows)]
+    job: Option<std::os::windows::io::OwnedHandle>,
+}
+
+impl Group {
+    /// The group a process that has just started leads.
+    #[cfg(unix)]
+    fn of(child: &Child) -> Self {
+        let leader = child.id().and_then(|it| libc::pid_t::try_from(it).ok());
+        if let Some(leader) = leader {
+            leaders().push(leader);
+            stop_on_hangup();
+        }
+        Self { leader }
+    }
+
+    /// A job, with a process that has just started in it.
+    #[cfg(windows)]
+    fn of(child: &Child) -> Self {
+        use std::os::windows::io::{FromRawHandle as _, OwnedHandle};
+
+        use windows_sys::Win32::{
+            Foundation::CloseHandle,
+            System::JobObjects::{AssignProcessToJobObject, CreateJobObjectW},
+        };
+
+        let Some(process) = child.raw_handle() else {
+            return Self { job: None };
+        };
+        // Safety: both handles are live for the length of the calls -- the
+        // job because it was just made and is closed only on the failure
+        // path, the process because `child` holds it -- and no pointer is
+        // read through but the two nulls, which mean "the defaults".
+        let job = unsafe {
+            let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+            if job.is_null() {
+                None
+            } else if AssignProcessToJobObject(job, process) == 0 {
+                CloseHandle(job);
+                None
+            } else {
+                Some(OwnedHandle::from_raw_handle(job))
+            }
+        };
+        Self { job }
+    }
+
+    /// Kills everything in it. What has gone already is not an error.
+    #[cfg(unix)]
+    fn stop(&mut self) {
+        let Some(leader) = self.leader else {
+            return;
+        };
+        // Safety: `killpg` takes two numbers and reads nothing through a
+        // pointer.
+        unsafe {
+            libc::killpg(leader, libc::SIGKILL);
+        }
+        self.leader = None;
+        leaders().retain(|it| *it != leader);
+    }
+
+    /// Reaps the shell if it has ended, and lets go of its number.
+    ///
+    /// Both under the one lock the hangup holds while it kills: between
+    /// the reaping and the letting go, the number is the system's to give
+    /// away and still on the list.
+    #[cfg(unix)]
+    fn try_wait(&mut self, child: &mut Child) -> Option<std::process::ExitStatus> {
+        let mut leaders = leaders();
+        let status = child.try_wait().ok()??;
+        if let Some(leader) = self.leader.take() {
+            leaders.retain(|it| *it != leader);
+        }
+        Some(status)
+    }
+
+    /// Kills everything in it. What has gone already is not an error.
+    #[cfg(windows)]
+    fn stop(&mut self) {
+        use std::os::windows::io::AsRawHandle as _;
+
+        use windows_sys::Win32::System::JobObjects::TerminateJobObject;
+
+        let Some(job) = &self.job else {
+            return;
+        };
+        // Safety: the handle is the job's and outlives the call.
+        unsafe {
+            TerminateJobObject(job.as_raw_handle(), 1);
+        }
+    }
+
+    /// Reaps the shell if it has ended. Nothing to let go of: a job is not
+    /// a number anybody else is given.
+    #[cfg(windows)]
+    fn try_wait(&mut self, child: &mut Child) -> Option<std::process::ExitStatus> {
+        child.try_wait().ok()?
+    }
+}
+
+/// Every group this process has running, for a hangup to stop.
+///
+/// The whole process's rather than one `Runs`'s, because a signal is the
+/// whole process's.
+#[cfg(unix)]
+static LEADERS: Mutex<Vec<libc::pid_t>> = Mutex::new(Vec::new());
+
+/// The list, poisoned or not: only a push, a retain and a walk are ever
+/// done under it, and a hangup that killed nothing for a panic somewhere
+/// else would be the one answer that is wrong.
+#[cfg(unix)]
+fn leaders() -> std::sync::MutexGuard<'static, Vec<libc::pid_t>> {
+    LEADERS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Hangs up on every command still running when the terminal hangs up, and
+/// then goes the way the hangup would have taken it.
+///
+/// A hangup and not a kill, because a hangup is what the commands got when
+/// they were in Obelus's group, and a program that hears one tidies up: git
+/// takes its `index.lock` away, where a kill leaves it behind for the
+/// reader's next commit to trip over. And a `CONT` after it, which is what
+/// the system sends a group it has hung up on, so that a command stopped
+/// for reading the terminal hears the hangup at all.
+///
+/// Gone the same way so that nothing else about a hangup changes: whoever
+/// started Obelus sees it end on `HUP` as it always did, and the language
+/// servers and the agent, which are still in Obelus's group, were hung up on
+/// with it already. `Drop` on the runs is not reached either way, which is
+/// why this is a list of numbers rather than a walk of them.
+///
+/// Listened for from the first command on, not from the start: an Obelus
+/// that never runs one keeps the disposition it was given. And not at all
+/// where that disposition is to ignore it -- `nohup obg &` -- because a
+/// listener is installed over whatever was there, and an ignored hangup
+/// would become one that takes the window and its unwritten buffers with
+/// it. The commands inherit the ignoring, so they outlive the terminal as
+/// Obelus does, which is what was asked for.
+#[cfg(unix)]
+fn stop_on_hangup() {
+    use tokio::signal::unix::{SignalKind, signal};
+
+    static LISTENING: std::sync::Once = std::sync::Once::new();
+    LISTENING.call_once(|| {
+        // Safety: a null new action asks only for the old one, which is
+        // written into this frame's own struct.
+        let ignored = unsafe {
+            let mut was: libc::sigaction = std::mem::zeroed();
+            libc::sigaction(libc::SIGHUP, std::ptr::null(), &raw mut was) == 0
+                && was.sa_sigaction == libc::SIG_IGN
+        };
+        if ignored {
+            return;
+        }
+        let _inside = obelus_runtime::handle().enter();
+        let mut hangup = match signal(SignalKind::hangup()) {
+            Ok(hangup) => hangup,
+            Err(error) => {
+                tracing::warn!(%error, "not listening for the terminal hanging up");
+                return;
+            }
+        };
+        obelus_runtime::handle().spawn(async move {
+            hangup.recv().await;
+            // Held to the end, which is this process's: a command started
+            // meanwhile waits rather than going unkilled, and a shell
+            // reaped meanwhile cannot give its number away first.
+            let leaders = leaders();
+            // Safety: `killpg`, `signal` and `raise` take numbers and read
+            // nothing through a pointer; `SIG_DFL` is a disposition, not an
+            // address anything calls.
+            unsafe {
+                for &leader in leaders.iter() {
+                    libc::killpg(leader, libc::SIGHUP);
+                    libc::killpg(leader, libc::SIGCONT);
+                }
+                libc::signal(libc::SIGHUP, libc::SIG_DFL);
+                libc::raise(libc::SIGHUP);
+            }
+        });
+    });
 }
 
 /// Which end of a process a reader is on.
@@ -376,6 +618,24 @@ fn shell() -> (String, &'static str) {
         ),
         false => ("/bin/sh".to_string(), "-c"),
     }
+}
+
+/// Hands a command line to the shell that will run it, as it was written.
+///
+/// The standard library quotes an argument for a program that splits its
+/// own command line the C runtime's way, writing a `"` inside it as `\"`.
+/// `cmd` is not that program: it reads `\"` as a backslash and a quote, so
+/// `git commit -m "fix it"` reached git as two words with a quote on each,
+/// and a path in quotes was no path at all. So `cmd` is given the line
+/// itself, in the one spelling it reads back exactly: `/S /C "..."` takes off
+/// the outer pair of quotes and nothing inside them.
+fn said_to(process: &mut Command, said_with: &str, said: &str) {
+    #[cfg(windows)]
+    if said_with == "/C" {
+        process.raw_arg(format!("/S /C \"{said}\""));
+        return;
+    }
+    process.arg(said_with).arg(said);
 }
 
 /// How a process ended, as the protocol says it.
@@ -555,6 +815,29 @@ mod tests {
         assert!(text.starts_with('a'));
     }
 
+    /// A quoted argument arrives as it was written.
+    ///
+    /// Only `cmd` could get this wrong, so only Windows asks it properly:
+    /// the standard library writes a quote inside an argument as `\"`,
+    /// which `cmd` passes on as a backslash and a quote. A POSIX shell is
+    /// handed the line as one argument and reads its own quotes.
+    ///
+    /// Broken deliberately by handing `cmd` the line with `arg`, as every
+    /// other shell is: `echo` says `\"a b\"` and this goes red on Windows.
+    #[test]
+    fn a_quoted_argument_arrives_as_it_was_written() {
+        let mut runs = Runs::default();
+        let (line, said) = match shell().1 {
+            "/C" => ("echo \"a b\"", "\"a b\""),
+            _ => ("printf '%s' \"a b\"", "a b"),
+        };
+        let id = runs
+            .start(line, &[], &[], None, std::path::Path::new("."), None)
+            .expect("the shell");
+        let (text, _, _) = finished(&mut runs, &id);
+        assert_eq!(text.trim(), said, "the quotes did not arrive as written");
+    }
+
     /// A command that fails is an exit status, not an error.
     ///
     /// Only the shell failing to start is an error: a command that does
@@ -717,5 +1000,213 @@ mod tests {
         // `terminal/release` means.
         runs.release(&id);
         assert!(runs.output(&id).is_none());
+    }
+
+    /// Waits for a command to say it has started, and fails if it never
+    /// does.
+    ///
+    /// Fails rather than carrying on, because a stop that lands before the
+    /// shell has got as far as the command stops everything there is, so a
+    /// test that went on regardless would pass on a slow machine whether or
+    /// not the stop reached anything -- a test that cannot go red. Ten
+    /// seconds, which costs nothing where the command is quick.
+    ///
+    /// Broken deliberately by having the command say something else: the
+    /// test fails here, ten seconds on, rather than passing.
+    fn has_started(runs: &mut Runs, id: &str) {
+        for _ in 0..2_000 {
+            if runs
+                .output(id)
+                .is_some_and(|(text, ..)| text.contains("started"))
+            {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        panic!("the command never said it had started");
+    }
+
+    /// Stopping one stops what it started, not only the shell.
+    ///
+    /// The shell is the one process Obelus has a handle on, and an agent's
+    /// command line is seldom one program: `cargo build && cargo test`
+    /// is the shell waiting on a cargo, and that cargo is running rustcs.
+    /// A kill sent to the shell alone is not passed on, so the build the
+    /// reader just stopped carried on without anything on screen that
+    /// could stop it. Here the program is a subshell's, which no shell
+    /// can `exec` its way out of.
+    ///
+    /// Broken deliberately by taking the `group.stop()` out of `stop`: the
+    /// shell dies, the subshell under it leaves its mark, and this goes red.
+    #[test]
+    fn a_command_that_is_stopped_takes_what_it_started_with_it() {
+        let mut runs = Runs::default();
+        let mark = std::env::temp_dir().join(format!("obelus-group-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&mark);
+        let (line, wait) = a_mark_left_in_a_moment(&mark);
+        // One level down, in each shell's own spelling: a POSIX shell
+        // forks for a parenthesis, and `cmd` is started again, with `^`
+        // keeping the `&` and the `>` for the inner one to read. And it
+        // says it has started, because a kill that lands before the shell
+        // has got as far as starting it stops everything there is, and the
+        // test passed that way with nothing but the shell being killed.
+        let line = match shell().1 {
+            "/C" => format!(
+                "cmd /C echo started {}",
+                format!("& {line}").replace('&', "^&").replace('>', "^>")
+            ),
+            _ => format!("(echo started; {line}); true"),
+        };
+        let id = runs
+            .start(&line, &[], &[], None, std::path::Path::new("."), None)
+            .expect("the shell");
+        has_started(&mut runs, &id);
+        runs.stop(&id);
+        std::thread::sleep(wait);
+        assert!(!mark.exists(), "what a stopped command started ran on");
+    }
+
+    /// Closing the terminal takes the commands with it.
+    ///
+    /// They lead groups of their own, so the hangup that goes to `ob`'s
+    /// group does not reach them, and `ob` dies of it without running a
+    /// `Drop`. Asked of a process of its own -- this test binary again,
+    /// running the one below -- because a hangup is the whole process's,
+    /// and it has to be seen to die of it.
+    ///
+    /// And hung up on rather than killed, so that it can tidy up the way
+    /// it could when it was in `ob`'s group: the command traps the hangup
+    /// and leaves a second mark saying it heard it.
+    ///
+    /// Broken deliberately by taking the `stop_on_hangup()` out of
+    /// `Group::of`: the hangup kills the process and nothing else, the
+    /// command leaves its mark, and this goes red. By taking out the
+    /// `raise`: the process outlives the hangup, and this goes red on how
+    /// it ended. And by sending `SIGKILL` in place of the hangup: the
+    /// command never hears it, and this goes red on the tidying.
+    #[cfg(unix)]
+    #[test]
+    fn a_hangup_takes_the_commands_with_it() {
+        use std::os::unix::process::ExitStatusExt as _;
+
+        let mark = std::env::temp_dir().join(format!("obelus-hangup-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&mark);
+        let status = hang_up_in_a_process_of_its_own(&mark, false);
+        assert_eq!(
+            status.signal(),
+            Some(libc::SIGHUP),
+            "it did not die of the hangup"
+        );
+        std::thread::sleep(a_mark_left_in_a_moment(&mark).1);
+        assert!(
+            !mark.exists(),
+            "a command outlived the terminal it was run from"
+        );
+        let cleaned = cleaned_up(&mark);
+        assert!(
+            cleaned.exists(),
+            "a command was given no chance to tidy up after itself"
+        );
+        let _ = std::fs::remove_dir_all(&cleaned);
+    }
+
+    /// Where the command the hangup tests run says it heard the hangup.
+    #[cfg(unix)]
+    fn cleaned_up(mark: &std::path::Path) -> std::path::PathBuf {
+        let mut cleaned = mark.as_os_str().to_owned();
+        cleaned.push("-cleaned");
+        cleaned.into()
+    }
+
+    /// A hangup that was being ignored is still ignored once a command has
+    /// run.
+    ///
+    /// `nohup obg &` is a window that was asked to outlive its terminal, and
+    /// listening for the hangup replaces the ignoring: the window went when
+    /// the terminal did, with whatever it had not written.
+    ///
+    /// Broken deliberately by taking the `ignored` check out of
+    /// `stop_on_hangup`: the listener goes in over the ignoring, the hangup
+    /// takes the process, and this goes red on how it ended.
+    #[cfg(unix)]
+    #[test]
+    fn a_hangup_that_was_ignored_is_still_ignored() {
+        let mark = std::env::temp_dir().join(format!("obelus-nohup-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&mark);
+        let status = hang_up_in_a_process_of_its_own(&mark, true);
+        let _ = std::fs::remove_dir_all(&mark);
+        let _ = std::fs::remove_dir_all(cleaned_up(&mark));
+        assert!(status.success(), "an ignored hangup ended it: {status:?}");
+    }
+
+    /// Runs the test below in a process of its own, hanging up on it with
+    /// the hangup ignored or not, and says how that process ended.
+    #[cfg(unix)]
+    fn hang_up_in_a_process_of_its_own(
+        mark: &std::path::Path,
+        ignored: bool,
+    ) -> std::process::ExitStatus {
+        let mut process = std::process::Command::new(std::env::current_exe().expect("this test"));
+        process
+            .args([
+                "--exact",
+                "running::tests::hang_up_on_a_running_command",
+                "--ignored",
+            ])
+            .env("OBELUS_HANGUP_MARK", mark)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        if ignored {
+            process.env("OBELUS_HANGUP_IGNORED", "1");
+        }
+        process.status().expect("this test, again")
+    }
+
+    /// The other half of the tests above, which they run in a process of
+    /// its own. Ignored, because run anywhere else it hangs up on the test
+    /// binary; and it does nothing without the mark it is given.
+    #[cfg(unix)]
+    #[test]
+    #[ignore = "run by the hangup tests, in a process of its own"]
+    fn hang_up_on_a_running_command() {
+        let Some(mark) = std::env::var_os("OBELUS_HANGUP_MARK") else {
+            return;
+        };
+        // Set either way, rather than inherited: a `nohup cargo test` would
+        // otherwise hand the ignoring to a test that is about not ignoring.
+        let disposition = match std::env::var_os("OBELUS_HANGUP_IGNORED") {
+            Some(_) => libc::SIG_IGN,
+            None => libc::SIG_DFL,
+        };
+        // Safety: `signal` takes two numbers, and the second is a
+        // disposition rather than an address anything calls.
+        unsafe {
+            libc::signal(libc::SIGHUP, disposition);
+        }
+        let mut runs = Runs::default();
+        let mark = std::path::Path::new(&mark);
+        let wait = a_mark_left_in_a_moment(mark).1;
+        // Not `a_mark_left_in_a_moment`'s line, because the shell has to be
+        // listening while the moment passes: a shell running `sleep` in the
+        // foreground hears a trapped signal only once the sleep is over,
+        // and `wait` is interrupted by one.
+        let line = format!(
+            "trap 'mkdir \"{}\"; exit' HUP; echo started; sleep 0.4 & wait; mkdir \"{}\"",
+            cleaned_up(mark).display(),
+            mark.display()
+        );
+        let id = runs
+            .start(&line, &[], &[], None, std::path::Path::new("."), None)
+            .expect("the shell");
+        has_started(&mut runs, &id);
+        // Safety: `raise` takes a number.
+        unsafe {
+            libc::raise(libc::SIGHUP);
+        }
+        // Past the end of the command, so that a hangup nobody acted on
+        // is one this process outlives -- and `forget` rather than letting
+        // `runs` drop, which would stop the command and pass for the fix.
+        std::thread::sleep(wait * 3);
+        std::mem::forget(runs);
     }
 }
