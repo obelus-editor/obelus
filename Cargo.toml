@@ -441,6 +441,30 @@ objc2-foundation = { version = "0.3", features = [
     "NSURL",
 ] }
 
+# Where a chat's tokens are kept: the system's own keyring, through the core
+# of `keyring` and the one store each system has -- the Keychain, the
+# Credential Manager, and on the rest the Secret Service, which gnome-keyring,
+# KWallet and KeePassXC all answer to. The Secret Service is spoken over
+# D-Bus through `zbus` on the runtime Obelus already has, with the crypto in
+# Rust rather than in a system OpenSSL.
+keyring-core = "1"
+apple-native-keyring-store = { version = "1", features = ["keychain"] }
+windows-native-keyring-store = "1"
+zbus-secret-service-keyring-store = { version = "1", features = ["rt-tokio-crypto-rust"] }
+# Slack: Socket Mode, which is a websocket out to Slack rather than an address
+# Slack calls in on -- the machine Obelus runs on has none -- and the Web API
+# for what is said back. The `hyper` connector, on the runtime Obelus already
+# has; rustls, as everything else here is.
+slack-morphism = { version = "2.29", features = ["hyper"] }
+# Feishu: its long connection is protobuf frames over a websocket, and these
+# are the frames' definitions as Feishu's own SDKs have them, generated and
+# published without needing `protoc`. `prost` at the version they were
+# generated for, and the websocket the Slack crate already brings, with the
+# same TLS.
+lark-websocket-protobuf = "0.1"
+prost = "0.13"
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"] }
+
 # Nothing but cargo's own defaults.
 #
 # Link-time optimisation and a single codegen unit were here, for a real
@@ -467,29 +491,6 @@ objc2-foundation = { version = "0.3", features = [
 # and a panic in a stripped binary names no function at all -- there is no
 # debug info in a release build to begin with, so the symbol table is the
 # whole of what a backtrace has to read.
-# Where a chat's tokens are kept: the system's own keyring, through the core
-# of `keyring` and the one store each system has -- the Keychain, the
-# Credential Manager, and on the rest the Secret Service, which gnome-keyring,
-# KWallet and KeePassXC all answer to. The Secret Service is spoken over
-# D-Bus through `zbus` on the runtime Obelus already has, with the crypto in
-# Rust rather than in a system OpenSSL.
-keyring-core = "1"
-apple-native-keyring-store = { version = "1", features = ["keychain"] }
-windows-native-keyring-store = "1"
-zbus-secret-service-keyring-store = { version = "1", features = ["rt-tokio-crypto-rust"] }
-# Slack: Socket Mode, which is a websocket out to Slack rather than an address
-# Slack calls in on -- the machine Obelus runs on has none -- and the Web API
-# for what is said back. The `hyper` connector, on the runtime Obelus already
-# has; rustls, as everything else here is.
-slack-morphism = { version = "2.29", features = ["hyper"] }
-# Feishu: its long connection is protobuf frames over a websocket, and these
-# are the frames' definitions as Feishu's own SDKs have them, generated and
-# published without needing `protoc`. `prost` at the version they were
-# generated for, and the websocket the Slack crate already brings, with the
-# same TLS.
-lark-websocket-protobuf = "0.1"
-prost = "0.13"
-tokio-tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"] }
 
 [profile.dist]
 inherits = "release"

@@ -4608,7 +4608,7 @@ dependencies = [
 
 [[package]]
 name = "obelus-remote"
-version = "0.9.2"
+version = "0.9.3"
 dependencies = [
  "apple-native-keyring-store",
  "futures",
