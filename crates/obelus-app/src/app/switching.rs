@@ -36,7 +36,7 @@ impl App {
     /// a key in it is about the list.
     pub(super) fn in_a_whole_view(&self) -> bool {
         match self.layers().nearest() {
-            Some(Layer::Settings | Layer::Counts | Layer::Gone) => true,
+            Some(Layer::Settings | Layer::Counts) => true,
             // A list is a band of the screen by its room, whichever layout it
             // was given, so the layout is what says it is a whole view.
             Some(Layer::Picker) => self
@@ -46,6 +46,9 @@ impl App {
             // A band, like a compact list: the page that opened it is
             // still behind it.
             Some(Layer::Names) | Some(Layer::Prompt) | None => false,
+            // Never asked: the page saying the project has gone takes every
+            // key before a swap is looked for, and swaps with nothing.
+            Some(Layer::Gone) => false,
         }
     }
 

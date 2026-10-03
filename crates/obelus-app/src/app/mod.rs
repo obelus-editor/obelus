@@ -468,9 +468,10 @@ pub struct App {
     statuses: std::collections::HashMap<PathBuf, obelus_git::Standing>,
     /// Where an agent reaches what Obelus offers it, if it could listen.
     ///
-    /// Taken once and kept: every conversation is told an address under
-    /// this one, so a second agent started later reaches the same tools
-    /// rather than a second server nobody asked for.
+    /// Taken once per project and kept: every conversation is told an
+    /// address under this one, so a second agent started later reaches the
+    /// same tools rather than a second server nobody asked for. Taken again
+    /// only when the project is, because the tools are about one tree.
     tools_url: Option<String>,
     /// The server at that address, which stops listening when this goes.
     listening: Option<obelus_mcp::Listening>,
@@ -754,13 +755,14 @@ pub struct App {
     travelled: i64,
     /// The question "which project", while nobody has answered it.
     ///
-    /// `Some` only on a start with nothing to go on: no argument, and a
+    /// `Some` on a start with nothing to go on: no argument, and a
     /// directory git has never heard of -- a desktop launcher, which
-    /// begins the process in the home directory. It is the whole screen
-    /// until it is answered, and `None` ever after: a reader who has
-    /// settled on a project does not go back to being asked, and the way
-    /// to another one is a second Obelus, which is how Obelus is used
-    /// anyway.
+    /// begins the process in the home directory. And once more after the
+    /// project has gone and the reader has said so, which leaves the window
+    /// where such a start began. It is the whole screen until it is
+    /// answered, and `None` otherwise: a reader on a project does not go
+    /// back to being asked, and the way to another one is a second Obelus,
+    /// which is how Obelus is used anyway.
     chooser: Option<obelus_component::chooser::Chooser>,
     /// What could finish the path being named, while one is.
     ///
@@ -1295,12 +1297,22 @@ impl App {
         self.looking = was.looking;
         self.outside = was.outside;
         // What Obelus could not make of its own files, which are not the
-        // project's: the reader's settings and their theme.
+        // project's: the reader's settings, which nothing reads again here.
+        // Obelus's own marks and none of a server's -- the server that said
+        // those has gone with the project, and nothing would ever take what
+        // it said away.
         let root = was.working_directory;
-        self.reported = was
-            .reported
+        self.troubles = was
+            .troubles
             .into_iter()
             .filter(|(path, _)| !path.starts_with(&root))
+            .filter_map(|(path, troubles)| {
+                let ours: Vec<_> = troubles
+                    .into_iter()
+                    .filter(|trouble| trouble.source.as_deref() == Some(semantics::OBELUS))
+                    .collect();
+                (!ours.is_empty()).then_some((path, ours))
+            })
             .collect();
         self.working_directory = root;
         // A watcher of its own as well, on what is left -- the settings and
@@ -3996,18 +4008,20 @@ impl App {
         if self.pointer_on_status(kind, x, y) {
             return;
         }
+        // Covering rather than merely open: a question on the status bar
+        // leaves every line of the file where the reader can see it, and a
+        // line they can see is a line they can point at. Before the notes,
+        // which are a document like the file: a page over them took the
+        // press here, and it ticked off a note nobody could see.
+        if self.layers().covering() {
+            self.pointer_in_a_layer(kind, x, y);
+            return;
+        }
         // The notes, which are a page with a box on it: the box takes the
         // pointer the way the file does, and the rest of the page takes
         // nothing rather than letting it through to the code behind.
         if self.notes().is_some() {
             self.pointer_in_notes(kind, x, y);
-            return;
-        }
-        // Covering rather than merely open: a question on the status bar
-        // leaves every line of the file where the reader can see it, and a
-        // line they can see is a line they can point at.
-        if self.layers().covering() {
-            self.pointer_in_a_layer(kind, x, y);
             return;
         }
         // A conversation is what is being read rather than something over

@@ -935,6 +935,59 @@ fn enter_lets_the_project_go_and_asks_which_is_next() {
     assert!(!app.should_quit(), "enter left Obelus");
 }
 
+/// What Obelus said about its own files outlives the project, and what a
+/// server said about any file goes with it.
+///
+/// Both about paths outside the tree, which are the ones a reset could
+/// keep: the reader's settings are marked by Obelus, and a server reports
+/// on a dependency beside the project as readily as on the project.
+///
+/// Broken deliberately twice: keeping the server's list and dropping
+/// Obelus's, which is what the reset first did, and the first line fails;
+/// keeping both, and the second does.
+#[test]
+fn enter_keeps_what_obelus_said_and_not_what_a_server_did() {
+    let (scratch, mut app) = a_tree_that_has_gone("tree-gone-marks");
+    support::state_of_its_own();
+    let settings = scratch.directory.with_extension("settings.toml");
+    let beside = scratch.directory.with_extension("beside.rs");
+    app.obelus_says_for_test(
+        &settings,
+        obelus_text::coordinates::Span {
+            line: obelus_text::coordinates::LineNumber::new(0),
+            column: obelus_text::coordinates::CharColumn::new(0),
+            end_line: obelus_text::coordinates::LineNumber::new(0),
+            end_column: obelus_text::coordinates::CharColumn::new(2),
+        },
+        obelus_lsp::trouble::Severity::Warning,
+        "Nothing is bound to this",
+    );
+    app.publish_for_test(serde_json::json!({
+        "uri": support::uri_for(&beside),
+        "diagnostics": [{
+            "range": { "start": { "line": 0, "character": 0 },
+                       "end": { "line": 0, "character": 2 } },
+            "severity": 2,
+            "source": "rustc",
+            "message": "unused"
+        }]
+    }));
+    assert_eq!(app.marks_on_for_test(&settings), (1, 0), "nothing to keep");
+    assert_eq!(app.marks_on_for_test(&beside), (0, 1), "nothing to drop");
+
+    support::press(&mut app, crossterm::event::KeyCode::Enter);
+    assert_eq!(
+        app.marks_on_for_test(&settings).0,
+        1,
+        "what Obelus said about the reader's settings went with the project"
+    );
+    assert_eq!(
+        app.marks_on_for_test(&beside).1,
+        0,
+        "what a server that has gone said is still in the list"
+    );
+}
+
 /// And the key that leaves leaves, without asking about what was
 /// unwritten: there is nowhere left to write it.
 ///

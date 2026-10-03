@@ -563,6 +563,8 @@ crates/
                       window on a tree is a claim held the way a
                       conversation's is, a claim appears already held, and a
                       tree that has gone is nowhere to go (app/worktrees); a
+                      window whose project went starts again without starting
+                      again (app/mod); a
                       conversation takes one prompt turn at a time, what is
                       waiting waits where the reader's words live, and it goes
                       as one prompt (conversation); nothing but the animation
@@ -679,6 +681,8 @@ crates/
                       numbers its own turns (acp/mod)
   obelus-mcp/       the tools Obelus offers an agent -- and why none of them
                     asks the reader anything itself
+                    · a server is about one tree, and stops listening when
+                      what holds it goes (lib)
   obelus-ui/        editor, status bar, picker, settings, chat, welcome,
                     which project, a project that has gone, images, shapes,
                     shared cell writers
@@ -691,7 +695,8 @@ crates/
                       named is not said after it (chat); a list open over
                       anything owns the status row (status); asking which
                       project is a page of its own, and the welcome screen
-                      comes after (projects); a
+                      comes after (projects); the project going is said over
+                      the whole screen, in the middle of it (gone); a
                       window draws the marks itself, and the view does not
                       know the difference (image); a view says
                       what a region *is* and the front end says what that looks

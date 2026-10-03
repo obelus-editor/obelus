@@ -1862,6 +1862,21 @@ impl App {
         self.obelus_says(path, Some(span), severity, said);
     }
 
+    /// How many marks Obelus has made against a file, and how many a
+    /// server has, for a test about which of them outlive something.
+    #[must_use]
+    pub fn marks_on_for_test(&self, path: &Path) -> (usize, usize) {
+        (
+            self.troubles.get(path).map_or(0, |troubles| {
+                troubles
+                    .iter()
+                    .filter(|trouble| trouble.source.as_deref() == Some(OBELUS))
+                    .count()
+            }),
+            self.reported.get(path).map_or(0, Vec::len),
+        )
+    }
+
     /// Hands the application what a server would have published.
     ///
     /// The whole path a real notification takes -- the uri, the ranges,

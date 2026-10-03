@@ -101,7 +101,8 @@ fn escape_from_anywhere_comes_back_to_the_file() {
         // is in the project that went, and there is nothing to come back
         // to. The page that asks which project is the same, and is not a
         // layer. Broken deliberately by having the page's own key handler
-        // take escape as leaving, which is where every other layer takes it.
+        // put `gone` back to false on escape -- where every other layer
+        // takes escape as leaving -- and this fails.
         if layer == Layer::Gone {
             assert_eq!(
                 app.layers().nearest(),
