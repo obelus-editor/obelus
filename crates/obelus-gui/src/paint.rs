@@ -448,6 +448,11 @@ const BLUR: u32 = 1024;
 /// from `HELD_TURNS`, and a flag inside that run would be read as a turn.
 const WEDGE: u32 = 2_097_152;
 
+/// The face of a held run, which is frosted, as against the rim under
+/// it, which is not -- see `grain` in the shader. Past the turns for the
+/// same reason the wedge is.
+const FROSTED: u32 = 4_194_304;
+
 /// A letter the light on the welcome screen's mark runs across.
 ///
 /// Set on the glyphs rather than on a rectangle over them, because what is
@@ -675,7 +680,19 @@ struct Screen {
     sheen: [f32; 4],
     /// And the colour it carries the mark to.
     glow: [f32; 4],
+    /// How many pixels a point is, which is what a hold's grain is
+    /// measured in -- see `GRAIN_SIZE` in the shader.
+    scale: f32,
+    /// The hardware reads a uniform in sixteens; nothing reads these.
+    padding: [f32; 3],
 }
+
+// A field added without its padding is otherwise found by wgpu, at the
+// first frame, as a uniform shorter than the shader's.
+const _: () = assert!(
+    std::mem::size_of::<Screen>().is_multiple_of(16),
+    "the uniform is read in sixteens"
+);
 
 /// Where every glyph drawn this session is kept.
 struct Atlas {
@@ -1434,13 +1451,18 @@ impl Painter {
         };
         #[expect(
             clippy::cast_precision_loss,
-            reason = "a window is thousands of pixels, not millions"
+            clippy::cast_possible_truncation,
+            reason = "a window is thousands of pixels, not millions, and a scale factor is a small number"
         )]
         let screen = Screen {
             size: [self.configured.width as f32, self.configured.height as f32],
             origin: margin,
             sheen,
             glow,
+            // Asked every frame rather than kept: a window dragged to
+            // another screen changes it.
+            scale: self.window.scale_factor() as f32,
+            padding: [0.0; 3],
         };
         self.queue
             .write_buffer(&self.uniforms, 0, bytemuck::bytes_of(&screen));
@@ -1776,7 +1798,7 @@ impl Painter {
                         .copied()
                 };
                 let turns = Turn::corners(start, end, beside(true), beside(false), cut);
-                self.plate([left, top, wide, cell.height], corner, edge, turns);
+                self.plate([left, top, wide, cell.height], corner, edge, turns, 0);
                 // The face, inside the rim where there is one. No inset
                 // where the hold carries on: an edge there is a seam
                 // across the middle of one thing.
@@ -1793,6 +1815,7 @@ impl Painter {
                     (corner - rim).max(0.0),
                     mixed(under, ink, HELD),
                     turns,
+                    FROSTED,
                 );
             }
         }
@@ -1852,14 +1875,14 @@ impl Painter {
     /// The quad reaches a radius past the block on each side, because a
     /// corner bent the other way is drawn out there: the shader takes
     /// that much off again to find the block itself.
-    fn plate(&mut self, rect: [f32; 4], radius: f32, colour: [f32; 4], turns: u32) {
+    fn plate(&mut self, rect: [f32; 4], radius: f32, colour: [f32; 4], turns: u32, frosted: u32) {
         let [left, top, width, height] = rect;
         let radius = radius.max(0.0).min(width.min(height) / 2.0);
         self.quads.push(Quad {
             rect: [left - radius, top, radius.mul_add(2.0, width), height],
             uv: self.atlas.white,
             colour,
-            flags: SOLID | ROUNDED | HELD_PLATE | (turns << HELD_TURNS),
+            flags: SOLID | ROUNDED | HELD_PLATE | (turns << HELD_TURNS) | frosted,
             radius,
             layer: 0,
             padding: 0,
@@ -4971,6 +4994,17 @@ mod tests {
             let [next, _, _, _] = snapped(place(column + 1), cell, full);
             assert!((left + wide - next).abs() < f32::EPSILON, "column {column}");
         }
+    }
+
+    /// A face says it is frosted in a bit the shader does not read as
+    /// one of the four turns, nor as the wedge.
+    ///
+    /// Deliberate break: put `FROSTED` at `1 << 14`, inside the turns,
+    /// and every face is read as a plate whose top right corner bends.
+    #[test]
+    fn frosted_is_none_of_the_turns() {
+        assert_eq!(FROSTED & (255 << HELD_TURNS), 0);
+        assert_eq!(FROSTED & WEDGE, 0);
     }
 
     /// Which way a hold's corner turns is a fact about the row beside it.

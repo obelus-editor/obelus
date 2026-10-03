@@ -21,6 +21,8 @@ struct Screen {
     sheen: vec4<f32>,
     // And the colour it carries the mark to.
     glow: vec4<f32>,
+    // How many pixels a point is.
+    scale: f32,
 };
 
 @group(0) @binding(0) var<uniform> screen: Screen;
@@ -242,6 +244,51 @@ const RIM_SHARP: f32 = 0.45;
 // direction every raised thing in every interface is lit from.
 const LIGHT: vec2<f32> = vec2<f32>(-0.42, -1.0);
 
+// How far a hold's grain moves a pixel either way, toward white or toward
+// black. Small: what is written on a hold has to be read through it, and a
+// grain that can be seen as dots from where the reader sits is noise on
+// the words rather than a surface under them.
+const GRAIN: f32 = 0.04;
+// And how big a grain is, in points, so that it is the same size to the
+// eye on a screen drawn at twice its own pixels as on one that is not. A
+// pixel each was tried, and on a screen drawn at twice its pixels that is
+// half of anything the eye can pick out: a grain that fine is a flat
+// colour again.
+const GRAIN_SIZE: f32 = 1.5;
+
+// A number between -1 and 1 for a place on the grid, the same every frame
+// for the same place. From the place on the grid rather than in the run,
+// so a hold that runs across several quads -- a row each, and the rim
+// under the face -- is one grain and not a seam where each begins. And on
+// the grid rather than the window, because the grid moves in the window by
+// a part of a pixel at every step of a resize, and a grain that stayed
+// where it was would crawl under a hold that had not moved.
+//
+// Smoothed between the corners of a square a grain wide, because a grain
+// bigger than a pixel that is not smoothed is a square, and a field of
+// squares is a mosaic rather than frost.
+fn grain(at: vec2<f32>) -> f32 {
+    let place = at / max(GRAIN_SIZE * screen.scale, 1.0);
+    let corner = floor(place);
+    let along = place - corner;
+    let eased = along * along * (vec2<f32>(3.0) - 2.0 * along);
+    let at_corner = vec2<u32>(corner);
+    let top = mix(speck(at_corner), speck(at_corner + vec2<u32>(1u, 0u)), eased.x);
+    let low = mix(speck(at_corner + vec2<u32>(0u, 1u)), speck(at_corner + vec2<u32>(1u, 1u)), eased.x);
+    return mix(top, low, eased.y);
+}
+
+// A number between -1 and 1 for one corner of that square. An integer
+// hash (PCG), because one made of a sine falls into bands far from the
+// origin on hardware with a short sine.
+fn speck(corner: vec2<u32>) -> f32 {
+    var state = corner.x * 1973u + corner.y * 9277u + 26699u;
+    state = state * 747796405u + 2891336453u;
+    var word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    word = (word >> 22u) ^ word;
+    return f32(word) / 4294967295.0 * 2.0 - 1.0;
+}
+
 // How much a Gaussian of the frost's spread weighs a pixel this far out.
 fn gauss(far: f32) -> f32 {
     return exp(-far * far / (2.0 * FROST * FROST));
@@ -456,13 +503,27 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
     }
     // A run the reader has hold of, whose corners do not all turn the
     // same way. Before the plain rounded solid, which it also is.
+    //
+    // Frosted: a grain over the colour, a little lighter and a little
+    // darker pixel by pixel, which is what a flat colour does not have and
+    // glass does. Not lit and not shaded -- light on a hold read as a key
+    // standing up off the page -- and grey, and as much lighter as darker,
+    // so that it averages out to the colour the theme chose and moves none
+    // of its hue.
     if ((in.flags & 4096u) != 0u) {
         // The quad reaches a radius past the run either side, because a
         // corner that bends the other way is drawn out there.
         let room = in.half_size - vec2<f32>(in.radius, 0.0);
         let distance = held(in.middle, room, in.radius, (in.flags >> 13u) & 255u);
         let covered = clamp(0.5 - distance, 0.0, 1.0);
-        return vec4<f32>(in.colour.rgb, in.colour.a * covered);
+        // The face only: the rim is the line a reader finds the shape
+        // by, and a line that wanders lighter and darker along its length
+        // is not a clean one.
+        var colour = in.colour.rgb;
+        if ((in.flags & 4194304u) != 0u) {
+            colour = clamp(colour + vec3<f32>(grain(in.position.xy - screen.origin) * GRAIN), vec3<f32>(0.0), vec3<f32>(1.0));
+        }
+        return vec4<f32>(colour, in.colour.a * covered);
     }
     // Before the plain solid, because a rounded one is a solid as well.
     if ((in.flags & 4u) != 0u) {
