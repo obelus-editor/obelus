@@ -497,6 +497,12 @@ mod tests {
     ///
     /// Broken deliberately by asking only whether the process has exited
     /// in `ended`: the end arrives with nothing written.
+    ///
+    /// Not on Windows, where the shell is `cmd`: it has no way to leave a
+    /// child holding the pipe, and reads the line as arguments to `sleep`.
+    /// The race there is the one `a_command_line_is_run_by_a_shell` lost on
+    /// a slow runner, and that test no longer waits on a clock to win it.
+    #[cfg(unix)]
     #[test]
     fn a_command_has_not_ended_until_what_it_wrote_has_been_read() {
         let mut runs = Runs::default();
