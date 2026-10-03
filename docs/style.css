@@ -549,13 +549,14 @@ section > p, section > ul, section > ol { max-width: var(--measure); }
   align-items: center;
   margin: 2.6rem 0;
 }
+.feature.flip { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
 .feature.flip > .text { order: 2; }
 .feature > .text > h3:first-child { margin-top: 0; }
 .feature > .text > :last-child { margin-bottom: 0; }
 .feature .shot { margin: 0; }
 .feature .shot a { display: block; }
 @media (max-width: 1100px) {
-  .feature { grid-template-columns: minmax(0, 1fr); gap: 1.2rem; }
+  .feature, .feature.flip { grid-template-columns: minmax(0, 1fr); gap: 1.2rem; }
   .feature.flip > .text { order: 0; }
 }
 

@@ -296,7 +296,7 @@
       </div>
 
       <h3 id="modeless">没有模式的按键，在窗口里也在终端里</h3>
-      <p>每个键什么时候按都是它字面上的意思——VS Code、Emacs 那样，不是 vim、helix 那样。功能键打开一样东西来看，<kbd>Ctrl</kbd> 对眼前的文件做点什么，<kbd>Alt</kbd> 问光标底下是什么。<kbd>Ctrl+p</kbd> 按名字找任何命令，<kbd>Ctrl+k</kbd> 列出眼前这个视图的所有键。完整的表在<a href="reference.html#keys">参考</a>里。</p>
+      <p>每个键什么时候按都是它字面上的意思——VS Code、Emacs 那样，不是 vim、helix 那样。功能键打开一样东西来看，<kbd>Ctrl</kbd> 对眼前的文件做点什么，<kbd>Alt</kbd> 问光标底下是什么。<kbd>Ctrl+p</kbd> 按名字找任何命令；底部有一行按键提示的列表或页面里，<kbd>Ctrl+k</kbd> 列出它的所有键。完整的表在<a href="reference.html#keys">参考</a>里。</p>
     </section>
 
     <section id="not">
@@ -305,7 +305,7 @@
       <p>是故意的，不是还没来得及做。</p>
 
       <ul class="beats">
-        <li><span><strong>没有多光标、宏、片段。</strong>大块的改动现在是 agent 的活；这里有的，是读到一半顺手改一行需要的那些。</span></li>
+        <li><span><strong>没有多光标，也没有宏。</strong>大块的改动现在是 agent 的活；这里有的，是读到一半顺手改一行需要的那些。</span></li>
         <li><span><strong>不分屏。</strong>并排看两个文件就是两个窗口；终端或者窗口管理器排布得比编辑器从里面排得好。</span></li>
         <li><span><strong>没有模式。</strong>没有 vim、helix 的键位，也没有打开它们的开关。</span></li>
         <li><span><strong>自己不写 git。</strong>Obelus 只读 git、从不写。改动要去哪儿的时候，跑 git 的是 agent——而且先问过你。</span></li>
@@ -422,7 +422,7 @@ ob src/main.rs       # 同一个文件，改在终端里读</code></pre>
       <h3>头五分钟</h3>
       <ol>
         <li><kbd>F1</kbd> 打开文件。输入就是筛选，<kbd>↑</kbd><kbd>↓</kbd> 选，<kbd>Enter</kbd> 确认，<kbd>Esc</kbd> 取消。</li>
-        <li>不知道某个视图有哪些键？按 <kbd>Ctrl+k</kbd>。底下那行只列<em>当下能用的</em>，<kbd>Ctrl+k</kbd> 弹出全部（用不了的会灰掉）。</li>
+        <li>底部有一行按键提示的列表或页面，那行只列<em>当下能用的</em>；<kbd>Ctrl+k</kbd> 弹出全部（用不了的会灰掉）。</li>
         <li><kbd>Ctrl+p</kbd> 是命令面板：记不住键的，都能按名字找到。</li>
         <li>把光标放到一个改动上按 <kbd>Alt+d</kbd>：这个 hunk 会<em>就地</em>展开，改之前是什么样就写在那儿。</li>
         <li>看到一行可疑的，<kbd>Alt+t</kbd>，写一句。它记在这个项目的笔记里，下次 <code>todo</code> 还能找回来。</li>

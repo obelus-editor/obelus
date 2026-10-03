@@ -296,7 +296,7 @@
       </div>
 
       <h3 id="modeless">Keys without modes, in a window or a terminal</h3>
-      <p>Every key means what it says whenever it is pressed — the VS Code and Emacs way, not the vim and helix one. Function keys open something to look at, <kbd>Ctrl</kbd> does something to the file in front of you, and <kbd>Alt</kbd> asks about the cursor. <kbd>Ctrl+p</kbd> finds any command by name, and <kbd>Ctrl+k</kbd> lists every key the view in front of you takes. The full table is in the <a href="reference.html#keys">reference</a>.</p>
+      <p>Every key means what it says whenever it is pressed — the VS Code and Emacs way, not the vim and helix one. Function keys open something to look at, <kbd>Ctrl</kbd> does something to the file in front of you, and <kbd>Alt</kbd> asks about the cursor. <kbd>Ctrl+p</kbd> finds any command by name, and where a list or a page has a row of keys along its foot, <kbd>Ctrl+k</kbd> lists all of them. The full table is in the <a href="reference.html#keys">reference</a>.</p>
     </section>
 
     <section id="not">
@@ -305,7 +305,7 @@
       <p>On purpose, and not for want of getting to it.</p>
 
       <ul class="beats">
-        <li><span><strong>No multiple cursors, macros or snippets.</strong> Large edits are the agent's job now; what is here is what fixing a line on the way past needs.</span></li>
+        <li><span><strong>No multiple cursors, no macros.</strong> Large edits are the agent's job now; what is here is what fixing a line on the way past needs.</span></li>
         <li><span><strong>No splits.</strong> Two files side by side is two windows; your terminal or window manager tiles better than an editor can from the inside.</span></li>
         <li><span><strong>No modes.</strong> No vim or helix keys, and no switch to turn them on.</span></li>
         <li><span><strong>No git writes of its own.</strong> Obelus reads git and never writes it. When a change goes somewhere, it is the agent running git — after asking you.</span></li>
@@ -422,7 +422,7 @@ ob src/main.rs       # the same file, in the terminal instead</code></pre>
       <h3>The first five minutes</h3>
       <ol>
         <li><kbd>F1</kbd> opens a file. Type to narrow, <kbd>↑</kbd><kbd>↓</kbd> to choose, <kbd>Enter</kbd> to accept, <kbd>Esc</kbd> to cancel.</li>
-        <li>Not sure which keys a view takes? Press <kbd>Ctrl+k</kbd>. The row at the foot lists what is available <em>now</em>; <kbd>Ctrl+k</kbd> opens all of them, with the rest greyed out.</li>
+        <li>A list or a page with a row of keys along its foot lists what is available <em>now</em>; <kbd>Ctrl+k</kbd> opens all of them, with the rest greyed out.</li>
         <li><kbd>Ctrl+p</kbd> is the command palette: anything you cannot remember a key for is findable by name.</li>
         <li>Put the cursor on a change and press <kbd>Alt+d</kbd>: the hunk opens <em>in place</em>, with what was there before it.</li>
         <li>See a line you doubt: <kbd>Alt+t</kbd>, and write a sentence. It goes in this project's notes, and <code>todo</code> brings them all back.</li>

@@ -9,7 +9,7 @@ terminal tool does today.
 
 It is an editor, and not a powerful one, on purpose. What it has is measured
 against how its author works, not against an editor's checklist (multiple
-cursors? macros? completion?) — none of which it wants. Say so wherever it is
+cursors? macros?) — none of which it wants. Say so wherever it is
 described: an editor that fits one person's way of working, with the agent
 part of it, rather than one competing on features.
 
