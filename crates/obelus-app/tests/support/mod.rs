@@ -528,6 +528,35 @@ pub(crate) fn state_of_its_own() {
     );
 }
 
+/// The record of what a scratch tree had open, which a window on it writes
+/// on its first frame.
+///
+/// Found by the scratch's name rather than worked out the way Obelus names
+/// it: a test that worked it out would be asking the rule under test where
+/// the file is.
+#[allow(dead_code)]
+pub(crate) fn record_of_what_was_open(scratch: &Scratch) -> std::path::PathBuf {
+    std::fs::read_dir(
+        obelus_logging::state_directory()
+            .expect("somewhere to keep state")
+            .join("open"),
+    )
+    .expect("the records")
+    .filter_map(Result::ok)
+    .map(|entry| entry.path())
+    .find(|path| {
+        // The whole of the directory's name, which carries the process's
+        // number: a scratch's own name may be the start of another's.
+        let named = scratch
+            .path()
+            .file_name()
+            .expect("a directory")
+            .to_string_lossy();
+        path.to_string_lossy().contains(named.as_ref())
+    })
+    .expect("the record a window on the tree wrote")
+}
+
 /// Makes the directory a project's notes are written into.
 ///
 /// They are kept in Obelus's state directory now rather than beside the

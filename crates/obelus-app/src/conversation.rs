@@ -192,7 +192,7 @@ pub struct Conversation {
     ///
     /// Only for that one: a conversation about a note is found again by
     /// the note, and nothing else names a loose one.
-    pub taken_up_as: Option<String>,
+    pub to_take_up: Option<String>,
     /// What was said, and what is being typed.
     pub chat: Chat,
     /// The agent's own commands, while one is being typed in the box.
@@ -283,6 +283,28 @@ pub struct Conversation {
 }
 
 impl Conversation {
+    /// What claims it, which is also what names it wherever it is written
+    /// down.
+    ///
+    /// One about nothing in particular is named by its session, because
+    /// nothing else names it: a note is a thing in the project that outlives
+    /// the conversation, and this one has only the agent's word for it that
+    /// it exists. So one that has no session yet -- none had, none asked
+    /// for, none waiting to be taken up -- has no name.
+    #[must_use]
+    pub fn which(&self) -> Option<obelus_agent::chats::ChatId> {
+        match &self.topic {
+            Topic::Note(note) => Some(obelus_agent::chats::ChatId::Note(note.clone())),
+            Topic::Loose => self
+                .session
+                .as_ref()
+                .or(self.asked_for.as_ref())
+                .map(|session| session.0.to_string())
+                .or_else(|| self.to_take_up.clone())
+                .map(obelus_agent::chats::ChatId::Loose),
+        }
+    }
+
     /// Whether the reader has words in it that have not been answered:
     /// something in the box, or something said that waits for the turn.
     ///

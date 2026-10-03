@@ -288,16 +288,7 @@ fn a_tree_that_has_gone_takes_its_record_with_it() {
     let mut first = startup::start(&[gone.path().join("a.rs")], BUILT).expect("starting");
     frame(&mut first);
     drop(first);
-    let record = std::fs::read_dir(
-        obelus_logging::state_directory()
-            .expect("somewhere to keep state")
-            .join("open"),
-    )
-    .expect("the records")
-    .filter_map(Result::ok)
-    .map(|entry| entry.path())
-    .find(|path| path.to_string_lossy().contains("reopening-removed"))
-    .expect("the record of the tree");
+    let record = support::record_of_what_was_open(&gone);
     std::fs::remove_dir_all(gone.path()).expect("removing the tree");
 
     let here = tree("reopening-elsewhere", true);

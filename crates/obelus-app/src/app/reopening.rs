@@ -125,10 +125,10 @@ pub(super) struct Reopening {
     /// What this window last wrote.
     written: Option<Record>,
     /// The record being reopened, while its files are read.
+    ///
+    /// Taken when they arrive, so that an answer nobody is waiting for --
+    /// one sent for twice -- puts nothing in the list.
     waiting: Option<Record>,
-    /// Whether they have been sent for, which waits for a channel to answer
-    /// on: a start reads the record before there is one.
-    sent: bool,
 }
 
 /// Where a tree's record lives.
@@ -139,19 +139,8 @@ pub(super) struct Reopening {
 /// directory filling with places nobody works.
 fn path_for(root: &Path) -> Option<(PathBuf, PathBuf)> {
     let tree = obelus_git::worktree(root)?;
-    // Canonical, so that one tree reached by two spellings is one record;
-    // and written as a file name the way `obelus_git::project` writes one --
-    // many-to-one and not meant to be read back.
-    let named: String = tree
-        .canonicalize()
-        .unwrap_or_else(|_| tree.clone())
-        .to_string_lossy()
-        .chars()
-        .map(|character| match character {
-            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '.' => character,
-            _ => '_',
-        })
-        .collect();
+    // Canonical, so that one tree reached by two spellings is one record.
+    let named = obelus_git::file_name_of(&tree.canonicalize().unwrap_or_else(|_| tree.clone()));
     let path = obelus_logging::state_directory()?
         .join("open")
         .join(format!("{named}.toml"));
@@ -302,23 +291,6 @@ fn forget_the_trees_that_have_gone(directory: &Path) {
     }
 }
 
-/// What claims a conversation, which is also what names it in the record.
-///
-/// A loose one by its session, which is the only name it has: one that has
-/// none yet has nothing to come back to.
-fn claimed_as(talk: &crate::conversation::Conversation) -> Option<ChatId> {
-    match &talk.topic {
-        Topic::Note(note) => Some(ChatId::Note(note.clone())),
-        Topic::Loose => talk
-            .session
-            .as_ref()
-            .or(talk.asked_for.as_ref())
-            .map(|session| session.0.to_string())
-            .or_else(|| talk.taken_up_as.clone())
-            .map(ChatId::Loose),
-    }
-}
-
 impl App {
     /// Says which tree's record this window keeps, as it is put on one.
     pub(super) fn keep_what_is_open_for(&mut self, root: &Path) {
@@ -348,7 +320,7 @@ impl App {
                         top: buffer.viewport().top.get(),
                     })
                 }
-                Some(Document::Chat(talk)) => claimed_as(talk).map(Open::Conversation),
+                Some(Document::Chat(talk)) => talk.which().map(Open::Conversation),
                 Some(Document::Notes(notes)) => Some(Open::Notes {
                     on: notes.selected_note().map(|note| note.id.clone()),
                 }),
@@ -364,6 +336,16 @@ impl App {
         record
     }
 
+    /// Where this window's record is, where it may write it now.
+    ///
+    /// Not while the record is still being read: what has arrived so far
+    /// would take the place of the one being read.
+    fn where_to_write(&self) -> Option<PathBuf> {
+        let may =
+            self.settled.config.reopen && self.has_a_project() && self.reopening.waiting.is_none();
+        may.then(|| self.reopening.path.clone()).flatten()
+    }
+
     /// Writes down what is open, where it has changed since this window
     /// last did.
     ///
@@ -373,11 +355,7 @@ impl App {
     /// comparison of a handful of names, and the write happens only when
     /// the answer moved.
     pub(super) fn write_down_what_is_open(&mut self) {
-        if !self.settled.config.reopen || !self.has_a_project() || self.reopening.waiting.is_some()
-        {
-            return;
-        }
-        let Some(path) = self.reopening.path.clone() else {
+        let Some(path) = self.where_to_write() else {
             return;
         };
         let now = self.what_is_open();
@@ -400,11 +378,7 @@ impl App {
     /// that window changed what it had open after this one last changed
     /// anything, and the last to change is the one that wins.
     pub(super) fn write_down_what_is_open_on_leaving(&mut self) {
-        if !self.settled.config.reopen || !self.has_a_project() || self.reopening.waiting.is_some()
-        {
-            return;
-        }
-        let Some(path) = self.reopening.path.clone() else {
+        let Some(path) = self.where_to_write() else {
             return;
         };
         if let Some(written) = &self.reopening.written
@@ -433,12 +407,12 @@ impl App {
             return;
         };
         self.reopening.waiting = read(&path);
-        self.reopening.sent = false;
         self.send_the_reopening();
     }
 
     /// Reads the files the record names on a thread, where there is a
-    /// record waiting and a channel to answer on.
+    /// record waiting and a channel to answer on -- which a start does not
+    /// have yet when it reads the record, so it asks again once it does.
     pub(super) fn send_the_reopening(&mut self) {
         let Some(record) = self.reopening.waiting.as_ref() else {
             return;
@@ -446,9 +420,6 @@ impl App {
         let Some(sender) = self.events.clone() else {
             return;
         };
-        if std::mem::replace(&mut self.reopening.sent, true) {
-            return;
-        }
         let files: Vec<PathBuf> = record
             .open
             .iter()
@@ -602,14 +573,14 @@ impl App {
             document
                 .as_ref()
                 .and_then(Document::chat)
-                .and_then(claimed_as)
+                .and_then(crate::conversation::Conversation::which)
                 .is_some_and(|open| open == which)
         });
         if let Some(at) = open {
             return Some(DocumentId::new(at));
         }
         let claim = obelus_agent::chats::claim(&self.working_directory, &which)?;
-        let (topic, taken_up_as) = match &which {
+        let (topic, to_take_up) = match &which {
             ChatId::Note(note) => (Topic::Note(note.clone()), None),
             ChatId::Loose(session) => (Topic::Loose, Some(session.clone())),
         };
@@ -618,7 +589,7 @@ impl App {
             introduced: kept.introduced,
             topic,
             claim: Some(claim),
-            taken_up_as,
+            to_take_up,
             ..crate::conversation::Conversation::default()
         };
         self.documents.push(Some(talk.into()));

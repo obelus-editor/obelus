@@ -635,7 +635,7 @@ impl TodoView {
     /// By name rather than by position, which is the whole reason a note has
     /// one: the list is read from the file every time it opens, and a note
     /// inserted above moves every position below it.
-    pub fn focus(&mut self, to: &obelus_git::todo::NoteId) {
+    fn focus(&mut self, to: &obelus_git::todo::NoteId) {
         let Some(at) = self.todo.notes.iter().position(|note| note.id == *to) else {
             return;
         };

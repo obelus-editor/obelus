@@ -11506,24 +11506,8 @@ fn reopened_on(scratch: &support::Scratch, conversation: &str) -> (App, Receiver
     app.config_file_for_test(file);
     app.working_directory_for_test(scratch.path().to_path_buf());
     support::lay_out(&mut app, WIDTH, HEIGHT);
-    let name = scratch
-        .path()
-        .file_name()
-        .expect("a name")
-        .to_string_lossy()
-        .into_owned();
-    let record = std::fs::read_dir(
-        obelus_logging::state_directory()
-            .expect("somewhere to keep state")
-            .join("open"),
-    )
-    .expect("the records")
-    .filter_map(Result::ok)
-    .map(|entry| entry.path())
-    .find(|path| path.to_string_lossy().contains(&name))
-    .expect("the record the first frame wrote");
     std::fs::write(
-        &record,
+        support::record_of_what_was_open(scratch),
         format!("current = 0\n\n[[open]]\nconversation = \"{conversation}\"\n"),
     )
     .expect("the record");
@@ -11566,7 +11550,7 @@ fn a_conversation_that_comes_back_takes_up_the_one_it_was() {
 /// once, and not again after its agent stops: by then its claim has gone
 /// with its session, and another window may have taken the old one up.
 ///
-/// Broken deliberately by reading `taken_up_as` in `settle_the_sessions`
+/// Broken deliberately by reading `to_take_up` in `settle_the_sessions`
 /// rather than taking it: coming back after the agent stopped asked for
 /// `s-old` again.
 #[test]
