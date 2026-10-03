@@ -1,4 +1,7 @@
-//! Slack: what it has to be told, and the app a reader makes on its side.
+//! Slack: what it has to be told, the app a reader makes on its side, and
+//! the connection to it.
+
+pub mod connection;
 
 use crate::platform::{Description, Field, FieldKind, Setup};
 

@@ -94,6 +94,39 @@ pub enum Setup {
     },
 }
 
+impl Setup {
+    /// What its row is called.
+    #[must_use]
+    pub const fn name(&self) -> &'static str {
+        match self {
+            Self::Copy { name, .. } | Self::Steps { name, .. } => name,
+        }
+    }
+
+    /// What it says under the name.
+    #[must_use]
+    pub const fn about(&self) -> &'static str {
+        match self {
+            Self::Copy { about, .. } | Self::Steps { about, .. } => about,
+        }
+    }
+}
+
+/// Each of these is a static, made once and never copied, so two are the
+/// same one exactly when they are at the same address -- which is a question
+/// asked about a row on the page, never about what the rows say.
+macro_rules! the_same_one {
+    ($($kind:ty),*) => {$(
+        impl PartialEq for $kind {
+            fn eq(&self, other: &Self) -> bool {
+                std::ptr::eq(self, other)
+            }
+        }
+        impl Eq for $kind {}
+    )*};
+}
+the_same_one!(Description, Field, Setup);
+
 /// Every platform Obelus can be reached from, in the order they are offered.
 pub const ALL: &[&Description] = &[&slack::DESCRIPTION];
 

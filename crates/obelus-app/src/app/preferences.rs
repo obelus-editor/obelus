@@ -264,6 +264,11 @@ impl App {
         if self.settings.is_none() {
             return false;
         }
+        // What the remote page says, before a key is judged against its
+        // rows: two keys can arrive between frames -- a chat chosen, then
+        // the arrow down to its first field -- and the second would walk the
+        // rows the page had before the first.
+        self.settle_the_remote_page();
         // The agents the page would show, worked out before the component
         // is borrowed: it needs them to know what enter means on a card,
         // and it is not the thing that knows them.
@@ -330,6 +335,10 @@ impl App {
             }
             SettingsOutcome::UnsetForAgent(setting) => {
                 self.set_agent_default(&setting, None);
+                true
+            }
+            SettingsOutcome::Remote(reaching) => {
+                self.reach(reaching);
                 true
             }
             SettingsOutcome::Ignored => false,
@@ -414,6 +423,16 @@ impl App {
             "theme" => self.themes().into_iter().map(|name| (name, None)).collect(),
             "workflow" => super::opening::workflows()
                 .map(|(name, _, about)| (name.to_string(), Some(about.to_string())))
+                .collect(),
+            // The chats Obelus can be reached from, after none: which there
+            // are is the remote crate's list, not a row of the table.
+            "remote" => std::iter::once(String::new())
+                .chain(
+                    obelus_remote::platform::ALL
+                        .iter()
+                        .map(|platform| platform.key.to_string()),
+                )
+                .map(|key| (key, None))
                 .collect(),
             _ => choices
                 .iter()
@@ -633,6 +652,11 @@ impl App {
             "workflow" => super::opening::workflows()
                 .find(|(name, ..)| *name == word)
                 .map(|(_, title, _)| title),
+            // A platform by its name, and none by the page's word for it.
+            "remote" => match word {
+                "" => Some("Off"),
+                key => obelus_remote::platform::named(key).map(|platform| platform.name),
+            },
             _ => None,
         }
     }

@@ -14,6 +14,7 @@ obelus-agent.workspace = true
 obelus-buffer.workspace = true
 obelus-command.workspace = true
 obelus-config.workspace = true
+obelus-remote.workspace = true
 obelus-editing.workspace = true
 obelus-git.workspace = true
 obelus-icons.workspace = true

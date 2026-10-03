@@ -167,6 +167,8 @@ pub enum Event {
     /// Another Obelus's reader asked to be brought to this window, with
     /// what that window was given to let it come forward.
     Summoned(Option<String>),
+    /// Something about the chat this machine can be reached from.
+    Remote(obelus_remote::Event),
 }
 
 impl Event {
@@ -210,6 +212,7 @@ impl Event {
             Self::Reopened(_) => "Reopened",
             Self::Released(_) => "Released",
             Self::Summoned(_) => "Summoned",
+            Self::Remote(_) => "Remote",
         }
     }
 }

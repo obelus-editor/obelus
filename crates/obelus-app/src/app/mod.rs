@@ -39,6 +39,7 @@ mod preferences;
 mod previewing;
 mod projects;
 mod releases;
+mod remote;
 mod renaming;
 mod renaming_files;
 mod reopening;
@@ -822,6 +823,8 @@ pub struct App {
     /// What this window knows about the others on the repository, and the
     /// list of worktrees while it is showing.
     worktrees: worktrees::Worktrees,
+    /// What this window knows about the chat it can be reached from.
+    remote: remote::Remote,
     /// Whether to open on the file list.
     ///
     /// A directory on the command line is a reader saying which project
@@ -994,6 +997,7 @@ impl App {
             head: None,
             gone: false,
             worktrees: worktrees::Worktrees::default(),
+            remote: remote::Remote::default(),
             list_at_start: false,
             should_quit: false,
         }
@@ -2481,6 +2485,9 @@ impl App {
         // lines down -- and a watch taken at the end of the frame is a view
         // that draws its first frame from whatever was there last time.
         self.settle_the_watches();
+        // And what the settings page says about the chat, which can move
+        // under it the way the settings can.
+        self.settle_the_remote_page();
         // And the sessions, from the same question: which conversation is
         // on screen.
         self.settle_the_sessions();
@@ -2754,6 +2761,7 @@ impl App {
             Event::Resize => {}
             Event::Closed => self.request_quit(),
             Event::Summoned(token) => self.summoned(token),
+            Event::Remote(event) => self.remote_event(event),
             Event::Fonts { here, otherwise } => {
                 tracing::info!(
                     faces = here.len(),

@@ -1,6 +1,6 @@
 screen 60x16  editor 60x14  status 60x1
 -- text --
- 0|  Settings  Keys  Agents                                ⇤ ⇥ 
+ 0|  Settings  Keys  Remote  Agents                        ⇤ ⇥ 
  1|────────────────────────────────────────────────────────────
  2| Appearance                                                █
  3|                                                           █

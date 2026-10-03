@@ -599,7 +599,7 @@ pub fn filter_caret(query: &str, at: usize) -> u16 {
 /// The same, in front of a question's answer.
 #[must_use]
 pub fn answer_inset(prompt: &obelus_component::prompt::Prompt) -> u16 {
-    let inset = 1usize.saturating_add(text_width(prompt.kind().label()));
+    let inset = 1usize.saturating_add(text_width(&prompt.kind().label()));
     u16::try_from(inset).unwrap_or(u16::MAX)
 }
 
@@ -614,7 +614,7 @@ pub fn answer_caret(prompt: &obelus_component::prompt::Prompt) -> u16 {
     // one a reader edits, and the caret goes where they put it.
     let said = prompt.text();
     let before: String = said.chars().take(prompt.caret()).collect();
-    let caret = 1usize.saturating_add(text_width(prompt.kind().label()) + text_width(&before));
+    let caret = 1usize.saturating_add(text_width(&prompt.kind().label()) + text_width(&before));
     u16::try_from(caret).unwrap_or(u16::MAX)
 }
 

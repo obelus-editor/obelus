@@ -149,7 +149,7 @@ fn a_list_that_is_a_question_says_the_question() {
     );
 }
 
-/// The settings page says it too, and says which of its three lists.
+/// The settings page says it too, and says which of its four lists.
 ///
 /// The foot already says a key filters; this says what it would filter, on
 /// the row the reader would type into. Which is not the same sentence: a
@@ -166,6 +166,9 @@ fn the_settings_page_says_which_of_its_lists_is_filtered() {
 
     support::press(&mut app, KeyCode::BackTab);
     assert_eq!(row(&mut app), "> Filter agents");
+
+    support::press(&mut app, KeyCode::BackTab);
+    assert_eq!(row(&mut app), "> Filter remote settings");
 
     support::press(&mut app, KeyCode::BackTab);
     assert_eq!(row(&mut app), "> Filter keys");

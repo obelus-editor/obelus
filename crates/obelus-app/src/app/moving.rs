@@ -795,6 +795,8 @@ impl App {
             // is consumed and this is never reached with nothing in it. A
             // second answer here would be an unreachable one.
             PromptKind::NewPath => self.make_file(std::path::Path::new(text.trim())),
+            // What one of a chat's fields is, from the remote page.
+            PromptKind::Told(field) => self.tell_the_remote(field, Some(text)),
             PromptKind::Line => {
                 let Ok(line) = text.trim().parse::<usize>() else {
                     self.wrong(format!("{text:?} is not a line number"));

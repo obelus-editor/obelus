@@ -477,6 +477,11 @@ keyring-core = "1"
 apple-native-keyring-store = { version = "1", features = ["keychain"] }
 windows-native-keyring-store = "1"
 zbus-secret-service-keyring-store = { version = "1", features = ["rt-tokio-crypto-rust"] }
+# Slack: Socket Mode, which is a websocket out to Slack rather than an address
+# Slack calls in on -- the machine Obelus runs on has none -- and the Web API
+# for what is said back. The `hyper` connector, on the runtime Obelus already
+# has; rustls, as everything else here is.
+slack-morphism = { version = "2.29", features = ["hyper"] }
 
 [profile.dist]
 inherits = "release"
