@@ -648,6 +648,18 @@ impl TodoView {
         }
     }
 
+    /// Puts the caret in the note with this name, if it is still there.
+    ///
+    /// Not [`Self::focus`], which moves the selection and leaves the caret
+    /// in whatever note it was in: a view just opened has its caret in the
+    /// first note, and the next time the rows are laid out the selection
+    /// follows the caret back there.
+    pub fn enter(&mut self, to: &obelus_git::todo::NoteId) {
+        if let Some(at) = self.todo.notes.iter().position(|note| note.id == *to) {
+            self.enter_note(at, false);
+        }
+    }
+
     /// Opens the view over what a tree has, with where each note points
     /// worked out.
     #[must_use]

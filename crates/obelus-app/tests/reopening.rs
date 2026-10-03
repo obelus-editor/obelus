@@ -157,8 +157,14 @@ fn a_file_named_is_where_the_reader_lands() {
 
 /// The notes come back on the note the reader was on.
 ///
-/// Broken deliberately by reopening the notes with `put_the_notes_up(None)`:
-/// they came back on the first note.
+/// And still there once the page has read its file again, which a window
+/// does as soon as its watcher is up: reading again puts the selection back
+/// on the note the caret is in, so a note only selected and not entered
+/// went back to the first.
+///
+/// Broken deliberately twice: not entering the note left it on the first,
+/// and selecting it with `focus` instead left it on the first after the
+/// file was read again.
 #[test]
 fn the_notes_come_back_on_the_note_the_reader_was_on() {
     let scratch = tree("reopening-notes", true);
@@ -167,7 +173,8 @@ fn the_notes_come_back_on_the_note_the_reader_was_on() {
     std::fs::write(
         obelus_git::todo::path(root).expect("a tree that is there"),
         "[[todo]]\nid = \"0123456R\"\nsaid = \"the first\"\ndone = false\ndepth = 0\n\n\
-         [[todo]]\nid = \"0123456S\"\nsaid = \"the second\"\ndone = false\ndepth = 0\n",
+         [[todo]]\nid = \"0123456S\"\nsaid = \"the second\"\ndone = false\ndepth = 0\n\n\
+         [[todo]]\nid = \"0123456T\"\nsaid = \"the third\"\ndone = false\ndepth = 0\n",
     )
     .expect("the notes");
 
@@ -180,7 +187,12 @@ fn the_notes_come_back_on_the_note_the_reader_was_on() {
     frame(&mut first);
     drop(first);
 
-    let second = startup::start(&[root.to_path_buf()], BUILT).expect("starting again");
+    let mut second = startup::start(&[root.to_path_buf()], BUILT).expect("starting again");
+    frame(&mut second);
+    second.handle(obelus_app::event::Event::Watched(obelus_watch::Changed {
+        path: obelus_git::todo::path(root).expect("a tree that is there"),
+    }));
+    frame(&mut second);
     let on = documents(&second)
         .into_iter()
         .find_map(Document::notes)
