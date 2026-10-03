@@ -2488,9 +2488,10 @@ fn a_note_being_started_stays_where_it_is_when_the_file_is_read_again() {
 /// In the selection's own colour, because the page has one idea of what is
 /// picked out: a mark beside the words and a ground under them cannot be
 /// taken for each other, and a third colour would be a third thing to
-/// learn. Read off the cell's ground rather than its glyph -- the mark is
-/// half a cell of that ground with the other half masked, so the glyph
-/// says nothing about whether the mark is there.
+/// learn. Read off the cell's ink, which is what a window draws the
+/// mark's stroke in: the mark was once the page's colour masking half a
+/// ground of the selection's, which a terminal draws the same and a window
+/// drew as a stroke the colour of the page.
 ///
 /// Broken deliberately by filling the row with `selected_row_background`
 /// again, or by marking only `at == window.focus()`: the first leaves a
@@ -2549,7 +2550,7 @@ fn the_note_the_keys_are_on_is_marked_down_its_edge() {
                 .split_once('|')
                 .and_then(|(_, cells)| cells.chars().next())
                 .is_some_and(|letter| {
-                    support::legend_of(&dump, letter).contains(&format!("bg={held}"))
+                    support::legend_of(&dump, letter).contains(&format!(" fg={held} "))
                 })
         })
         .map(|(_, row)| *row)

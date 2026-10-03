@@ -241,18 +241,17 @@ pub fn row_at(area: Rect, notes: &Notes, x: u16, y: u16) -> Option<(usize, Colum
     Some((at, column))
 }
 
-/// The glyph that leaves half a cell of ground showing.
+/// The half cell that says the keys are here.
 ///
-/// The colour is the cell's *background* and this is drawn over the half
-/// of it that should not show, in the page's own colour. Drawn the other
-/// way round -- a half block inked in the selection's colour -- the mark
-/// is 1.4:1 against the page and a reader has to look for it: a ground
-/// carries that colour everywhere else because there are bright words on
-/// it, and a lone stroke has nothing to help it.
+/// The left half, so what shows is against the edge of the page rather
+/// than against the box beside it.
 ///
-/// The right half is masked, so what shows is against the edge of the
-/// page rather than against the box beside it.
-const HALF: char = '\u{2590}';
+/// Inked in the selection's colour on the page's, and not the other way
+/// round -- the right half in the page's colour on a ground of the
+/// selection's, which is what this was. A terminal draws the two as the
+/// same pixels; a window draws a change mark as a stroke in the cell's
+/// *ink*, and that one's ink was the page.
+const HALF: char = '\u{258c}';
 
 /// Which column a note's own text starts in: a blank, the box, and the blank
 /// after it.
@@ -420,6 +419,9 @@ impl Widget for TodoUi<'_> {
         // and a mark beside one row of it would say the reader was holding
         // a line, which is not something this list has.
         let on = self.notes.rows().get(window.focus()).map(|row| row.note);
+        // The rows of it that are on screen, which a note's rows are next
+        // to each other to be.
+        let mut marked: Option<(u16, u16)> = None;
         for (at, row) in self
             .notes
             .rows()
@@ -456,7 +458,27 @@ impl Widget for TodoUi<'_> {
                 });
                 continue;
             }
-            self.row(cells, at_row, row, Some(row.note) == on);
+            let selected = Some(row.note) == on;
+            self.row(cells, at_row, row, selected);
+            if selected {
+                let (top, _) = *marked.get_or_insert((at_row.y, at_row.y));
+                marked = Some((top, at_row.y));
+            }
+        }
+        // One stroke for the note rather than one per row, the way a hunk
+        // is one in the editor's margin: what the mark says is about the
+        // note, and a column of beads would be the reader holding lines.
+        if let Some((top, bottom)) = marked {
+            crate::shapes::stroked(crate::shapes::Stroke {
+                area: Rect {
+                    x: list.x,
+                    y: top,
+                    width: 1,
+                    height: bottom - top + 1,
+                },
+                side: crate::shapes::Side::Left,
+                about: crate::shapes::About::Rows,
+            });
         }
 
         // Only where there is somewhere to scroll: a track with no thumb on
@@ -515,17 +537,13 @@ impl TodoUi<'_> {
         // what is picked out and should say it once. A third colour here
         // would be a third thing to learn, and the obvious alternative --
         // the colour the editor's gutter marks the current line in -- is
-        // exactly that. A filled cell rather than a `\u{258c}` stroke in
-        // that colour, which is what this first was: a ground carries the
-        // selection's colour everywhere else because there are bright
-        // words on it, and the same colour drawn as a lone stroke on the
-        // page's own background is 1.4:1 against it -- a mark a reader has
-        // to go looking for.
+        // exactly that.
         //
         // Half a cell of it, and the half at the edge: a whole column of
         // colour is heavier than the claim, and against the edge it does
         // not touch the box beside it -- two marks with no gap read as one
-        // wide one.
+        // wide one. A window draws the note's run of them as one stroke,
+        // the figure the editor's margin is drawn in -- see `render`.
         if selected {
             put(
                 cells,
@@ -533,8 +551,8 @@ impl TodoUi<'_> {
                 area.y,
                 HALF,
                 Style::new()
-                    .fg(background)
-                    .bg(self.theme.selection_background),
+                    .fg(self.theme.selection_background)
+                    .bg(background),
             );
         }
         // A note that is done is said in the ink, never by taking it away: a
