@@ -138,7 +138,7 @@ body {
   background: var(--t-bg);
   color: var(--t-text-secondary);
   font-family: var(--font-mono);
-  font-size: 15px;
+  font-size: 17px;
   line-height: 1.65;
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
@@ -240,7 +240,7 @@ a:hover { text-decoration-color: var(--t-brand); }
    wide tracking, the accent. The left padding is the tracking back again,
    so the trailing letter-space does not push the line off its centre. */
 .top .wordmark .tag {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
   letter-spacing: 0.18em;
   padding-left: 0.18em;
@@ -281,16 +281,16 @@ a:hover { text-decoration-color: var(--t-brand); }
 .switch {
   height: 32px;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: 14px;
 }
 .switch:hover { background: var(--t-surface-2); }
 
-/* default: 40 tall, 16 of padding, 14px text. Outline unless it is the
+/* default: 40 tall, 16 of padding, 15px text. Outline unless it is the
    page's primary action. */
 .button {
   height: 40px;
   padding: 0 16px;
-  font-size: 14px;
+  font-size: 15px;
   background: var(--t-surface);
   border-color: var(--t-border-strong);
 }
@@ -342,7 +342,7 @@ a:hover { text-decoration-color: var(--t-brand); }
   max-height: calc(100vh - var(--nav-h) - 3rem);
   overflow-y: auto;
   padding-top: 3.2rem;
-  font-size: 13px;
+  font-size: 14px;
 }
 .contents ol { list-style: none; margin: 0; padding: 0; }
 .contents li { margin: 0; }
@@ -433,7 +433,7 @@ main { min-width: 0; }
 .shot .caption { margin: 0.6rem 0 0; }
 
 .caption {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--t-text-muted);
   margin: 0 0 1rem;
   max-width: var(--measure);
@@ -522,7 +522,7 @@ pre {
   box-shadow: var(--t-ring);
   border-radius: var(--round);
   overflow-x: auto;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
   color: var(--t-text);
 }
@@ -542,7 +542,7 @@ pre code { background: none; padding: 0; font-size: inherit; }
 }
 .tenets > li:hover { background: var(--t-surface); border-left-color: var(--t-brand); }
 .tenets .no {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--t-text-muted);
   text-align: right;
   padding-top: 0.15rem;
@@ -565,7 +565,7 @@ pre code { background: none; padding: 0; font-size: inherit; }
 .beats li:hover { background: var(--t-surface); border-left-color: var(--t-brand); }
 .beats .where {
   flex: none;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--t-text-muted);
   white-space: nowrap;
   transition: color 150ms ease-out;
@@ -605,7 +605,7 @@ th, td {
   vertical-align: top;
 }
 th {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--t-text-muted);
   font-weight: 600;
   white-space: nowrap;
@@ -639,7 +639,7 @@ footer {
   border-top: 1px solid var(--t-border-subtle);
   margin-top: 4rem;
   padding: 1rem var(--gutter-width) 2.5rem;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--t-text-muted);
 }
 footer p { max-width: none; margin: 0; }
