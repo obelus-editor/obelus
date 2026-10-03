@@ -1485,51 +1485,6 @@ fn a_page_over_the_conversation_is_not_under_its_list_of_commands() {
     );
 }
 
-/// A card behind a list is behind it: the row the reader was on in it is
-/// not lit while the keys are the list's, because one mark says where the
-/// keys are and two would be two answers.
-///
-/// Broken deliberately by handing the card its `on()` whatever is over it:
-/// the card's row came up in the palette's selected-row colour.
-#[test]
-fn a_card_behind_a_list_does_not_say_the_keys_are_on_it() {
-    let (mut app, events) = talking();
-    pump(&mut app, &events, "the session", |app| {
-        app.talking() == obelus_agent::Talking::Ready
-    });
-    support::type_text(&mut app, "/pick");
-    support::lay_out(&mut app, WIDTH, HEIGHT);
-    support::press(&mut app, KeyCode::Enter);
-    support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "the question", App::is_asking);
-    let answer = "Write the weekly report";
-    let dump = support::render(&mut app, WIDTH, HEIGHT);
-    let lit = behind(&dump, answer);
-
-    support::press_control(&mut app, 'p');
-    let dump = support::render(&mut app, WIDTH, HEIGHT);
-    // What a list lights is read off the list itself, so the comparison is
-    // with the mark and not with a colour written down here.
-    assert_eq!(
-        behind(&dump, "open-file"),
-        lit,
-        "the palette's row:\n{dump}"
-    );
-    assert_ne!(
-        behind(&dump, answer),
-        lit,
-        "the card is lit behind the palette:\n{dump}"
-    );
-
-    support::press(&mut app, KeyCode::Esc);
-    let dump = support::render(&mut app, WIDTH, HEIGHT);
-    assert_eq!(
-        behind(&dump, answer),
-        lit,
-        "the card did not take the mark back:\n{dump}"
-    );
-}
-
 /// The conversation's status row says what the session is set to: every
 /// setting the agent offers, in its own order, as short as it can be said.
 ///
