@@ -1,6 +1,6 @@
 screen 76x24  editor 76x22  status 76x1
 -- text --
- 0|▐? *  □ talked about                                                        
+ 0|▌? *  □ talked about                                                        
  1|                                                                            
  2|      □ never mentioned                                                     
  3|                                                                            
@@ -50,7 +50,7 @@ screen 76x24  editor 76x22  status 76x1
 22|dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 23|ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 -- legend --
-a fg=#18181b bg=#312e81
+a fg=#312e81 bg=#18181b
 b fg=#f87171 bg=#18181b
 c fg=#e4e4e7 bg=#18181b
 d fg=#52525b bg=#18181b

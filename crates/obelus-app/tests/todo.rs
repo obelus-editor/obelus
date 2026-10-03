@@ -2488,9 +2488,10 @@ fn a_note_being_started_stays_where_it_is_when_the_file_is_read_again() {
 /// In the selection's own colour, because the page has one idea of what is
 /// picked out: a mark beside the words and a ground under them cannot be
 /// taken for each other, and a third colour would be a third thing to
-/// learn. Read off the cell's ground rather than its glyph -- the mark is
-/// half a cell of that ground with the other half masked, so the glyph
-/// says nothing about whether the mark is there.
+/// learn. Read off the cell's ink, which is what a window draws the
+/// mark's stroke in: the mark was once the page's colour masking half a
+/// ground of the selection's, and a window took that ground for something
+/// the reader was holding.
 ///
 /// Broken deliberately by filling the row with `selected_row_background`
 /// again, or by marking only `at == window.focus()`: the first leaves a
@@ -2549,7 +2550,7 @@ fn the_note_the_keys_are_on_is_marked_down_its_edge() {
                 .split_once('|')
                 .and_then(|(_, cells)| cells.chars().next())
                 .is_some_and(|letter| {
-                    support::legend_of(&dump, letter).contains(&format!("bg={held}"))
+                    support::legend_of(&dump, letter).contains(&format!(" fg={held} "))
                 })
         })
         .map(|(_, row)| *row)
@@ -3198,5 +3199,54 @@ fn a_list_of_notes_taller_than_the_screen_scrolls_under_the_caret() {
         (window.top(), window.focus()),
         (0, 0),
         "walking back up left the page where it was:\n{up}"
+    );
+}
+
+/// The input method is on in a note being written, and off in one somebody
+/// else is talking about -- which is read here and not changed, so what is
+/// typed at it goes nowhere.
+///
+/// Deliberate break: answering the notes with `true` in `App::takes_text`,
+/// and the locked note goes red; with `false`, and the note being written
+/// does.
+#[test]
+fn the_input_method_is_on_in_a_note_and_off_in_one_somebody_else_has() {
+    let scratch = tree(
+        "typing",
+        "[[todo]]\nid = \"0123456W\"\nsaid = \"mine\"\ndone = false\ndepth = 0\n\
+         \n[[todo]]\nid = \"0123456X\"\nsaid = \"theirs\"\ndone = false\ndepth = 0\n",
+    );
+    let theirs = obelus_git::todo::NoteId::read("0123456X").expect("a name");
+    let _held =
+        obelus_agent::chats::claim(scratch.path(), &obelus_agent::chats::ChatId::Note(theirs))
+            .expect("their claim");
+
+    let mut app = open(&scratch, 76, 18);
+    support::render(&mut app, 76, 18);
+    assert!(app.takes_text(), "the note being written takes nothing");
+
+    press(&mut app, KeyCode::Down);
+    let dump = support::render(&mut app, 76, 18);
+    assert_eq!(
+        app.notes()
+            .and_then(obelus_component::todo::TodoView::selected_note)
+            .map(|note| note.said.as_str()),
+        Some("theirs"),
+        "not on the locked note:\n{dump}"
+    );
+    assert!(
+        app.notes()
+            .is_some_and(obelus_component::todo::TodoView::selected_is_elsewhere),
+        "the note is not somebody else's, so this proves nothing:\n{dump}"
+    );
+    assert!(!app.takes_text(), "a note somebody else has takes text");
+    support::type_text(&mut app, "x");
+    assert!(
+        support::render(&mut app, 76, 18).contains("theirs"),
+        "the locked note was typed into"
+    );
+    assert!(
+        !support::render(&mut app, 76, 18).contains("xtheirs"),
+        "the locked note was typed into"
     );
 }

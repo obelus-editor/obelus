@@ -113,6 +113,8 @@ pub(crate) enum Update {
         shape: Caret,
         /// What it belongs to, and `None` for the document's own.
         whose: Option<Layer>,
+        /// Whether a character typed now goes into any text.
+        typing: bool,
     },
     /// A mark the window may be asked to draw, and what it is drawn from.
     ///
@@ -170,7 +172,7 @@ pub(crate) enum Update {
         /// starts.
         bar: Bar,
     },
-    /// A run of rows in a one-cell column that is a change mark.
+    /// A run of rows in a one-cell column that is marked.
     ///
     /// What a terminal draws as half a block per row, and a window draws
     /// as one shape however many rows it covers. No colours, for a bar's
@@ -256,7 +258,7 @@ pub(crate) struct Said<'a> {
     /// And which rows begin something new, with nowhere to say so but the
     /// pixel between two rows.
     pub(crate) parted: &'a [Parted],
-    /// And which runs of a one-cell column are change marks.
+    /// And which runs of a one-cell column are marked.
     pub(crate) stroked: &'a [Stroked],
     /// And what is under the pane, where there is one.
     pub(crate) behind: Option<&'a Behind>,
@@ -596,7 +598,7 @@ impl Ruled {
     }
 }
 
-/// Where a change mark is in the frame being drawn.
+/// Where a marked run of rows is in the frame being drawn.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Stroked {
     /// Which rows, which edge of the column, and what it is about.
@@ -924,13 +926,14 @@ impl obelus_app::app::Drawing for Telling {
         (self.wake)();
     }
 
-    fn caret_is(&self, caret: Caret, whose: Option<Layer>) {
+    fn caret_is(&self, caret: Caret, whose: Option<Layer>, typing: bool) {
         // No wake: this arrives while a frame is being laid out, and the
         // frame's own end wakes the window a moment later. Waking here as
         // well would be a second wake for one screen.
         let _ = self.updates.send(Update::CaretIs {
             shape: caret,
             whose,
+            typing,
         });
     }
 }
@@ -1131,6 +1134,7 @@ pub(crate) struct Page {
     caret: Option<Position>,
     shape: Caret,
     whose: Option<Layer>,
+    typing: bool,
 }
 
 impl Default for Page {
@@ -1144,6 +1148,8 @@ impl Default for Page {
             // first frame: a bar is what it is anywhere a reader types.
             shape: Caret::Bar,
             whose: None,
+            // And nothing is typed into a screen with nothing on it.
+            typing: false,
         }
     }
 }
@@ -1262,6 +1268,11 @@ impl Page {
         self.shape
     }
 
+    /// Whether a character typed now goes into any text.
+    pub(crate) const fn typing(&self) -> bool {
+        self.typing
+    }
+
     /// Makes room for a screen this size, and empties it.
     ///
     /// Emptied rather than kept: the cells that were here were at other
@@ -1341,9 +1352,14 @@ impl Page {
                 self.caret = caret;
                 false
             }
-            Update::CaretIs { shape, whose } => {
+            Update::CaretIs {
+                shape,
+                whose,
+                typing,
+            } => {
                 self.shape = shape;
                 self.whose = whose;
+                self.typing = typing;
                 false
             }
             // Neither is a cell: the window takes both out of the queue

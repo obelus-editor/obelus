@@ -69,6 +69,8 @@ struct Output {
     /// How much may be kept. `None` is everything the command writes,
     /// which is what the protocol means by leaving the limit out.
     limit: Option<usize>,
+    /// How many of its streams are still being read.
+    open: usize,
 }
 
 impl Output {
@@ -171,17 +173,19 @@ impl Runs {
         process.env("NO_COLOR", "1");
 
         let mut child = process.spawn()?;
-        let output = Arc::new(Mutex::new(Output {
-            limit,
-            ..Output::default()
-        }));
-        for stream in [
+        let streams: Vec<Stream> = [
             child.stdout.take().map(Stream::Out),
             child.stderr.take().map(Stream::Err),
         ]
         .into_iter()
         .flatten()
-        {
+        .collect();
+        let output = Arc::new(Mutex::new(Output {
+            limit,
+            open: streams.len(),
+            ..Output::default()
+        }));
+        for stream in streams {
             read_into(stream, Arc::clone(&output));
         }
 
@@ -220,10 +224,21 @@ impl Runs {
     /// Asked of the operating system rather than remembered, the way the
     /// language servers are: a process that ended has to be reaped by
     /// somebody, and the somebody is whoever asks first.
+    ///
+    /// And not before everything it wrote has been read, which is a later
+    /// moment than the exit: the streams are read on the runtime, and the
+    /// last of them can still be in the pipe when the process is gone. An
+    /// agent told a command had ended asked for its output next and got
+    /// the front of it -- or, on a slow machine, none. Whatever the process
+    /// started and left holding the pipe keeps it running too, which is
+    /// what `Command::output` means by a command finishing as well.
     pub fn ended(&mut self, id: &str) -> Option<Ended> {
         let run = self.running.get_mut(id)?;
         if let Some(ended) = run.ended {
             return Some(ended);
+        }
+        if run.said_so_far.lock().ok()?.open > 0 {
+            return None;
         }
         let child = run.child.as_mut()?;
         let status = child.try_wait().ok()??;
@@ -318,7 +333,12 @@ fn read_into(stream: Stream, into: Arc<Mutex<Output>>) {
         let mut buffer = [0u8; 4096];
         loop {
             let read = match reader.read(&mut buffer).await {
-                Ok(0) | Err(_) => return,
+                Ok(0) | Err(_) => {
+                    if let Ok(mut output) = into.lock() {
+                        output.open -= 1;
+                    }
+                    return;
+                }
                 Ok(read) => read,
             };
             // Lossily, because a command's output is bytes and Obelus
@@ -397,11 +417,11 @@ mod tests {
 
     /// What a command wrote, once it has finished writing it.
     fn finished(runs: &mut Runs, id: &str) -> (String, bool, Option<Ended>) {
+        // No pause after the end for the last of the output to land: a
+        // command has not ended until all of it has. The pause that was
+        // here was twenty milliseconds, which a Windows runner outran.
         for _ in 0..200 {
             if runs.ended(id).is_some() {
-                // The streams are read on threads of their own, so the
-                // last of the output can land just after the exit.
-                std::thread::sleep(std::time::Duration::from_millis(20));
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(20));
@@ -466,6 +486,39 @@ mod tests {
         let (text, _, ended) = finished(&mut runs, &id);
         assert_eq!(text.trim(), "c");
         assert_eq!(ended.and_then(|it| it.code), Some(0));
+    }
+
+    /// A command has not ended until what it wrote has been read.
+    ///
+    /// The process exiting is not that moment. Here the shell is gone at
+    /// once and what it started holds the pipe a second longer -- which is
+    /// the race a slow machine runs for every command, made certain: the
+    /// end was reported while the last of the output was still in the pipe.
+    ///
+    /// Broken deliberately by asking only whether the process has exited
+    /// in `ended`: the end arrives with nothing written.
+    ///
+    /// Not on Windows, where the shell is `cmd`: it has no way to leave a
+    /// child holding the pipe, and reads the line as arguments to `sleep`.
+    /// The race there is the one `a_command_line_is_run_by_a_shell` lost on
+    /// a slow runner, and that test no longer waits on a clock to win it.
+    #[cfg(unix)]
+    #[test]
+    fn a_command_has_not_ended_until_what_it_wrote_has_been_read() {
+        let mut runs = Runs::default();
+        let id = runs
+            .start(
+                "(sleep 1; echo late) &",
+                &[],
+                &[],
+                None,
+                std::path::Path::new("."),
+                None,
+            )
+            .expect("the shell");
+        let (text, _, ended) = finished(&mut runs, &id);
+        assert!(ended.is_some(), "it never ended");
+        assert_eq!(text.trim(), "late");
     }
 
     /// The first of a long answer is kept, and it says it was cut.

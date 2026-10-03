@@ -349,6 +349,25 @@ impl Chooser {
         }
     }
 
+    /// Puts pasted text in whichever box is showing.
+    ///
+    /// Which is also what an input method commits: a path with a directory
+    /// in it named in Chinese is typed as a paste.
+    pub fn paste(&mut self, said: &str) -> Outcome {
+        match &mut self.doing {
+            Doing::Choosing => {
+                self.filter.put(said);
+                // Back to the top, as a key that narrowed the rows goes.
+                self.at = 0;
+                Outcome::Taken
+            }
+            Doing::Naming(naming) => {
+                naming.typed.put(said);
+                self.wants()
+            }
+        }
+    }
+
     /// Puts a chosen candidate in the box.
     ///
     /// A directory takes a separator with it, so that the next level's

@@ -2606,7 +2606,7 @@ impl App {
         // the caret is doing depends on where it ended up, which is not
         // known until the frame has been laid out.
         if let Some(drawing) = self.drawing.as_ref() {
-            drawing.caret_is(self.caret(), self.layers().nearest());
+            drawing.caret_is(self.caret(), self.layers().nearest(), self.takes_text());
         }
         obelus_ui::cursor_position(area, self)
     }
@@ -4140,7 +4140,14 @@ pub trait Drawing: std::fmt::Debug + Send + Sync {
     /// took the two for one would walk it down the screen -- from where
     /// the reader was reading to where the list came up. `None` is the
     /// document's own.
-    fn caret_is(&self, caret: Caret, whose: Option<Layer>);
+    ///
+    /// And whether a character typed now goes into any text, which is not
+    /// whether there is a caret -- see [`App::takes_text`]. A window turns
+    /// its input method off where it does not, so that spelling a word
+    /// does not swallow keys that are not going to be a word. With the
+    /// caret rather than on its own because it is the same kind of fact,
+    /// about where the keys are going, and known at the same moment.
+    fn caret_is(&self, caret: Caret, whose: Option<Layer>, typing: bool);
 
     /// Things arrive where they are going, or are simply there.
     ///

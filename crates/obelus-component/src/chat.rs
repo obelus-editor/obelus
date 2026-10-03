@@ -945,7 +945,21 @@ impl Chat {
     /// Into the box and nowhere else: a transcript is what was said, and the
     /// one place in a conversation that takes text is the half of it the
     /// reader is writing.
+    ///
+    /// And it takes the keys back with it, the way a character typed in the
+    /// transcript or on the row of settings does -- because what an input
+    /// method commits arrives as a paste, and the letters that spelled it
+    /// never reached the keys that would have taken the focus back. Left
+    /// where it was, the word went into a box the caret was not in.
     pub fn paste(&mut self, what: &str, width: u16) {
+        match self.focus {
+            Focus::Transcript(at) => {
+                self.let_go();
+                self.leave_the_transcript(at);
+            }
+            Focus::Settings(_) => self.focus = Focus::Writing,
+            Focus::Writing => {}
+        }
         self.input.write_in(what, width);
     }
 
@@ -3440,6 +3454,26 @@ mod tests {
     /// the tool call at the end of a paragraph -- and, because the key then
     /// falls through to the box behind, stepping the agent's way of working
     /// on the way.
+    #[test]
+    fn a_paste_off_the_box_takes_the_keys_back_to_it() {
+        // What an input method commits arrives as a paste, and the letters
+        // that spelled it never reached the keys that take the focus back.
+        //
+        // Deliberate break: taking either arm out of the match in `paste`,
+        // and the word is in a box the focus is not in.
+        let mut chat = walked();
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        assert!(matches!(chat.focus(), Focus::Transcript(_)));
+        chat.paste("你好", ROOM.writing);
+        assert_eq!(chat.focus(), Focus::Writing, "the transcript kept the keys");
+        assert_eq!(chat.writing().text(), "你好");
+
+        let mut chat = walked();
+        chat.focus = Focus::Settings(0);
+        chat.paste("你好", ROOM.writing);
+        assert_eq!(chat.focus(), Focus::Writing, "the row kept the keys");
+    }
+
     #[test]
     fn the_cursor_walks_the_words_and_tab_goes_to_what_acts() {
         let mut chat = walked();
