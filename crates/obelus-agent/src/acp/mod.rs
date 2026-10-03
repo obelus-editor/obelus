@@ -541,7 +541,9 @@ impl Talk {
         self.session(session)?.mode()
     }
 
-    /// What the agent calls this conversation, once it has said.
+    /// What the agent calls this conversation, once it has said -- or, for
+    /// one taken up again, what it was called when Obelus wrote it down,
+    /// until the agent says otherwise.
     #[must_use]
     pub fn title(&self, session: Option<&SessionId>) -> Option<&str> {
         self.session(session)?.title.as_deref()
@@ -937,6 +939,12 @@ impl Talk {
                 self.gone = Some(why.clone());
                 Some(Incoming::Gone(why))
             }
+            Incoming::Lost { session, why } => {
+                // Refused, so the name it was asked under is nobody's: the
+                // one opened in its place arrives under another.
+                self.named.remove(&session);
+                Some(Incoming::Lost { session, why })
+            }
             other => Some(other),
         }
     }
@@ -1082,5 +1090,32 @@ mod tests {
             "what it said it can be set to, late, was not its answer"
         );
         assert!(!talk.holds(&thrown), "what it offered late is held");
+    }
+
+    /// The name an agent gives a conversation while replaying it beats the
+    /// one Obelus wrote down.
+    ///
+    /// The replay arrives before the answer that says the session is taken
+    /// up, so the agent's word is already here when the written-down one
+    /// would go in -- and it is the newer of the two.
+    ///
+    /// Deliberate break: have `Started` put the written-down name in with
+    /// `open.title = Some(title)` rather than `get_or_insert`, and the
+    /// agent's new name is replaced by the old one.
+    #[test]
+    fn a_name_the_agent_gives_while_replaying_beats_the_one_written_down() {
+        let mut talk = detached();
+        let session = SessionId::new("s-1");
+        talk.reopen("s-1", Some("old".to_string()), None);
+        talk.on(Incoming::Update {
+            session: session.clone(),
+            update: Update::Titled("new".to_string()),
+        });
+        talk.on(Incoming::Started {
+            session: session.clone(),
+            mode: None,
+            asking: None,
+        });
+        assert_eq!(talk.title(Some(&session)), Some("new"));
     }
 }
