@@ -54,6 +54,61 @@ said = "settings live in a directory now"
 done = true
 "#;
 
+/// A list opened over the notes has the keys, so the note the page was on
+/// is drawn and not marked.
+///
+/// Broken deliberately by marking the note whatever is over it: its edge
+/// stayed lit beside the list's own row.
+#[test]
+fn the_note_under_a_list_is_not_marked() {
+    let scratch = tree("under-a-list", THREE);
+    let mut app = open(&scratch, 60, 24);
+    let note = "wire the counts tree";
+    let dump = support::render(&mut app, 60, 24);
+    let lit = support::drawn_in(&dump, note);
+    // Where the mark is: the cell the edge of the note is in, not its words.
+    let edge = |dump: &str| {
+        let row = support::text_block(dump)
+            .lines()
+            .find(|row| row.contains(note))
+            .and_then(|row| row.split_once('|'))
+            .map(|(number, _)| number.to_string())
+            .expect("the note");
+        let letter = support::style_block(dump)
+            .lines()
+            .find(|line| line.split_once('|').is_some_and(|(at, _)| at == row))
+            .and_then(|line| line.split_once('|'))
+            .and_then(|(_, marks)| marks.chars().next())
+            .expect("its styles");
+        support::legend_block(dump)
+            .lines()
+            .find(|line| line.starts_with(&format!("{letter} ")))
+            .expect("its legend")
+            .to_string()
+    };
+    let marked = edge(&dump);
+    assert_ne!(marked, lit, "the note is not marked to begin with:\n{dump}");
+
+    support::press_control(&mut app, 'p');
+    support::type_text(&mut app, "choose-theme");
+    press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "dark");
+    let dump = support::render(&mut app, 60, 24);
+    assert_ne!(
+        edge(&dump),
+        marked,
+        "the note is marked under the list:\n{dump}"
+    );
+
+    press(&mut app, KeyCode::Esc);
+    let dump = support::render(&mut app, 60, 24);
+    assert_eq!(
+        edge(&dump),
+        marked,
+        "the note did not take the mark back:\n{dump}"
+    );
+}
+
 /// Every line of every note, always: nothing is folded away.
 ///
 /// Broken deliberately by putting only a note's first line on the page: a

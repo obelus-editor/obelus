@@ -392,6 +392,11 @@ the things laid out across a row rather than down a column. Where there is a
 caret there is no background: a box is marked by the caret sitting in it,
 and two marks for one fact is one too many.
 
+And only the nearest thing on screen wears it. A page or a list under
+another is drawn as it was, rows and all, but its row is not marked: two
+lit rows are two places saying the keys are here (`ui::in_front`, which
+every view that marks a row asks).
+
 Whether a row can be *used* is said in the ink, never by taking the
 background away. A card's `submit` row did the latter while it was short of
 what the agent asked for, so the reader stood on a row that had stopped
@@ -729,8 +734,10 @@ crates/
                       one edge and so no corners while a box joined to nothing
                       has four, a line is drawn where its glyph would be and
                       the glass starts at the line, glass is a bend and a light
-                      before it is a blur, and a region of the frame is put
-                      back somewhere else rather than drawn again (paint); a
+                      before it is a blur, a region of the frame is put
+                      back somewhere else rather than drawn again, and every
+                      pane and every box is glass over everything said
+                      before it (paint); a
                       mark is one cell here and two in a terminal, so a column
                       asks which front end it is for, and a key's cap is the
                       one place the grid is not what a cell is measured in

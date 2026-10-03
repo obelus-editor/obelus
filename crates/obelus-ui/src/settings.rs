@@ -100,6 +100,9 @@ pub struct SettingsView<'a> {
     project: Option<String>,
     /// Which frame the mark beside an install that is running is on.
     phase: u32,
+    /// Whether nothing is over the page, which is whether it may mark the
+    /// row the keys are on -- see [`crate::in_front`].
+    in_front: bool,
     /// What each setting's words are called on screen, where that is
     /// something other than the word: the setting, the word, and the title.
     called: Vec<(&'static str, &'static str, &'static str)>,
@@ -134,6 +137,7 @@ impl<'a> SettingsView<'a> {
                 .to_string()
             }),
             phase: app.phase(),
+            in_front: crate::in_front(app, Some(crate::layers::Layer::Settings)),
             called: obelus_config::ALL
                 .iter()
                 .flat_map(|setting| {
@@ -381,6 +385,7 @@ impl Widget for SettingsView<'_> {
             &self.settings.tabs(),
             self.settings.tab(),
             self.theme,
+            self.in_front,
         );
         // Which file a change on this page is written to, on the tab row
         // and kept there: it is the whole of what makes this page different
@@ -804,7 +809,7 @@ impl SettingsView<'_> {
         for at in placed(region, rows, window, self.settings.on_keys()) {
             let (index, row) = (at.at, &rows[at.at]);
             let y = at.area.y;
-            let focused = index == self.settings.focus();
+            let focused = self.in_front && index == self.settings.focus();
             let background = if focused {
                 self.theme.selected_row_background
             } else {
@@ -1268,7 +1273,7 @@ impl SettingsView<'_> {
                     ..area
                 },
                 agent,
-                index == focus,
+                self.in_front && index == focus,
             );
             y += heights[index];
         }

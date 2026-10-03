@@ -176,6 +176,9 @@ pub struct ProjectsView<'a> {
     choosing: crate::Choosing,
     keymap: &'a Keymap,
     theme: &'a Theme,
+    /// Whether nothing is over the page, which is whether it may mark the
+    /// row the keys are on -- see [`crate::in_front`].
+    in_front: bool,
 }
 
 impl<'a> ProjectsView<'a> {
@@ -186,6 +189,7 @@ impl<'a> ProjectsView<'a> {
             choosing: app.choosing()?,
             keymap: app.keymap(),
             theme: app.theme(),
+            in_front: crate::in_front(app, None),
         })
     }
 }
@@ -229,7 +233,7 @@ impl ProjectsView<'_> {
     /// same colour behind the row the reader is on that every list, page
     /// and card in Obelus puts there.
     fn row_style(&self, cells: &mut CellBuffer, row: Rect, on: bool) -> Style {
-        match on {
+        match on && self.in_front {
             true => {
                 let selected = Style::new().bg(self.theme.selected_row_background);
                 fill(cells, row, selected);

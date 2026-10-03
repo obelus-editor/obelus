@@ -749,6 +749,18 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, app: &impl Screen) -> Vec<bars::
     bars::collect(cells, |cells| draw_the_frame(cells, area, app))
 }
 
+/// Whether what is drawn for `layer` -- or for the document, where that is
+/// `None` -- is nearest the reader.
+///
+/// Every view on screen is drawn, however many are stacked; only the nearest
+/// marks where the keys are. A row lit under a list, in the colour the list
+/// lights its own, is two places saying the keys are here, and the reader
+/// cannot tell from either which one is lying. The caret is the same answer
+/// from the other side: it goes where `layers().nearest()` says.
+pub(crate) fn in_front(app: &impl Screen, layer: Option<Layer>) -> bool {
+    app.layers().nearest() == layer
+}
+
 /// What [`draw`] draws.
 fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     let regions = regions(area);
@@ -818,9 +830,32 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
         // reader opened, and it goes where any compact list goes.
         if let Some(list) = app.naming_list() {
             bars::of(Whose::Naming, || {
-                list_over(cells, app, list, regions.editor, regions.edge, None);
+                list_over(cells, app, list, None, regions.editor, regions.edge, None);
             });
         }
+    }
+
+    // The agent's own commands, which are not a layer: the list follows
+    // what is being typed in the box rather than being something the
+    // reader opened, and it goes where any compact list goes. So it is
+    // part of the conversation and is drawn with it, under every layer:
+    // a page opened over the conversation covers it, and a list opened
+    // over it lies over it, and neither puts it away -- it is still there
+    // when they go, because what is in the box is still a name.
+    if let Some(list) = app.slash() {
+        bars::of(Whose::Commands, || {
+            list_over(
+                cells,
+                app,
+                list,
+                None,
+                room_for_the_commands(app, regions.editor),
+                regions.edge,
+                // Not a layer, so it never took the row: the conversation's
+                // own row is still the conversation's while this is showing.
+                None,
+            );
+        });
     }
 
     // And then whatever is over it, furthest from the reader first, which
@@ -909,6 +944,7 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
                             cells,
                             app,
                             list,
+                            Some(Layer::Picker),
                             room_for_a_picker(regions.editor),
                             regions.edge,
                             Some(regions.status),
@@ -957,28 +993,6 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
             Layer::Prompt => {}
         }
     }
-    // The agent's own commands, which are not a layer: the list follows
-    // what is being typed in the box rather than being something the
-    // reader opened, and it goes where any compact list goes. A picker
-    // over the same conversation wins, because that one is a question the
-    // agent is waiting on an answer to.
-    if !layers.has(Layer::Picker)
-        && let Some(list) = app.slash()
-    {
-        bars::of(Whose::Commands, || {
-            list_over(
-                cells,
-                app,
-                list,
-                room_for_the_commands(app, regions.editor),
-                regions.edge,
-                // Not a layer, so it never took the row: the conversation's
-                // own row is still the conversation's while this is showing.
-                None,
-            );
-        });
-    }
-
     // The three panels that belong to a place in the file. Each is empty
     // while anything is over the file -- they are settled that way once a
     // frame -- so nothing here has to ask a second time.
@@ -1110,6 +1124,7 @@ fn list_over(
     cells: &mut CellBuffer,
     app: &impl Screen,
     list: &Picker,
+    whose: Option<Layer>,
     room: Rect,
     edge: Rect,
     own_row: Option<Rect>,
@@ -1158,7 +1173,8 @@ fn list_over(
         None => pane,
     };
     shapes::behind(pane, joined, app.theme().background, cells);
-    picker::PickerView::new(list, app.theme(), app.phase()).render(region, cells);
+    picker::PickerView::new(list, app.theme(), app.phase(), in_front(app, whose))
+        .render(region, cells);
     if let Some(row) = own_row {
         let style = Style::new()
             .bg(app.theme().background)
@@ -1745,6 +1761,10 @@ pub fn write_marked(
 /// background means "this is the one you are on". Returns the column after
 /// the last tab.
 ///
+/// Only where the row is `in_front` -- see [`in_front`]. Under a list it
+/// keeps the ink that says which tab it is, and not the ground that says
+/// the keys are here.
+///
 /// The arrows are not a hint that can go stale: the keys are the arrows, and
 /// there is nowhere to rebind them to.
 pub fn tabs<Name>(
@@ -1753,6 +1773,7 @@ pub fn tabs<Name>(
     names: &[Name],
     current: usize,
     theme: &Theme,
+    in_front: bool,
 ) -> u16
 where
     Name: AsRef<str>,
@@ -1773,11 +1794,12 @@ where
     }
     let mut column = area.x + 1;
     for (index, x, _) in &placed.placed {
-        let style = match *index == current {
-            true => Style::new()
+        let style = match (*index == current, in_front) {
+            (true, true) => Style::new()
                 .fg(theme.foreground)
                 .bg(theme.selected_row_background),
-            false => dim,
+            (true, false) => dim.fg(theme.foreground),
+            (false, _) => dim,
         };
         column = write_marked(
             cells,

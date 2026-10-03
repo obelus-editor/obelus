@@ -108,6 +108,39 @@ fn leaving_is_still_offered() {
     }
 }
 
+/// The row the reader is on is not lit under a list opened over the page:
+/// the keys are the list's.
+///
+/// Deliberate break: light the page's row whatever is over it -- the
+/// project wears the list's own mark beside it.
+#[test]
+fn the_row_under_a_list_is_not_lit() {
+    let mut app = asking();
+    let row = "alpha";
+    let dump = support::render(&mut app, 60, 20);
+    let lit = support::drawn_in(&dump, row);
+
+    // The themes, narrowed to the one in force: short enough to leave the
+    // row in sight, and nobody else's colours.
+    obelus_app::app::dispatch::dispatch(&mut app, Command::ThemeSelect);
+    support::type_text(&mut app, "dark");
+    let dump = support::render(&mut app, 60, 20);
+    assert!(app.picker().is_some(), "the themes did not open:\n{dump}");
+    assert_ne!(
+        support::drawn_in(&dump, row),
+        lit,
+        "the project is lit under the list:\n{dump}"
+    );
+
+    press(&mut app, KeyCode::Esc);
+    let dump = support::render(&mut app, 60, 20);
+    assert_eq!(
+        support::drawn_in(&dump, row),
+        lit,
+        "the row did not take the mark back:\n{dump}"
+    );
+}
+
 /// The reader starts on the newest project, so enter alone takes them
 /// back to where they were last.
 ///

@@ -144,13 +144,14 @@ pub fn reading_width(area: Rect) -> u16 {
     area.width.saturating_sub(MARGIN + INDENT + 1).max(1)
 }
 
-/// The room a list opened over the conversation has.
+/// The room the list of an agent's commands has over the conversation.
 ///
 /// Everything above whatever is at the foot of it, and the rule over that.
 /// A compact list draws against the foot of what it is given, and the foot
-/// of the whole region is what is being written -- which for the list of
-/// commands is the one row that must stay visible, because the list is a
-/// list of what is being typed there.
+/// of the whole region is what is being written -- the one row that must
+/// stay visible, because the list is a list of what is being typed there.
+/// A list the reader opened is not given this: it covers the conversation,
+/// box and card and all.
 ///
 /// Through [`bands`], which is the one answer to where that boundary is:
 /// a card is taller than a box, and rows for the box worked out here
@@ -415,6 +416,9 @@ pub struct ChatView<'a> {
     focus: Focus,
     /// The card an agent's question is on, while it is waiting on one.
     card: Option<&'a Card>,
+    /// Whether nothing is over it, which is whether it may mark where the
+    /// keys are -- see [`crate::in_front`].
+    in_front: bool,
     /// The project Obelus was opened on, for writing the paths an agent names
     /// the way a reader writes them.
     root: &'a Path,
@@ -459,6 +463,7 @@ impl<'a> ChatView<'a> {
             settings: app.agent_settings(),
             focus: app.chat()?.focus(),
             card: app.card(),
+            in_front: crate::in_front(app, None),
             root: app.working_directory(),
             phase: app.phase(),
             branch: app.branch_this_conversation_works_on(),
@@ -766,7 +771,13 @@ impl Widget for ChatView<'_> {
         // an answer there is no message to send, so the row the reader
         // would type it in is the room the question needs.
         match self.card {
-            Some(card) => super::card::draw(cells, regions.writing, card, self.theme),
+            Some(card) => super::card::draw(
+                cells,
+                regions.writing,
+                card,
+                self.in_front.then(|| card.on()),
+                self.theme,
+            ),
             None => self.writing(cells, regions.writing, &rows, plain, dim),
         }
     }
@@ -864,8 +875,9 @@ impl ChatView<'_> {
             // a promise kept on one row in twenty; two marks saying two
             // different things is the honest way round.
             let at = first + usize::from(offset);
-            let here =
-                row.acts() && matches!(self.focus, Focus::Transcript(place) if place.row == at);
+            let here = self.in_front
+                && row.acts()
+                && matches!(self.focus, Focus::Transcript(place) if place.row == at);
             let (glyph, style) = self.voice(row, plain, dim);
             // What has not gone yet is said in the ink: the reader's own
             // words, dim, until the turn in front of them ends. Not by
@@ -1900,6 +1912,7 @@ mod caret {
                             },
                         ),
                         card: None,
+                        in_front: true,
                         root: std::path::Path::new("/"),
                         phase: 0,
                         branch: None,

@@ -189,7 +189,12 @@ pub fn caret(area: Rect, card: &Card) -> Option<ratatui::layout::Position> {
 }
 
 /// Draws the card into the band it was given.
-pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, theme: &Theme) {
+///
+/// `on` is the row the keys are on, and `None` while something is over the
+/// conversation and has them: the card is still on screen behind a list,
+/// and a row lit on it as well as the list's would be two places saying
+/// the keys are here.
+pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, on: Option<On>, theme: &Theme) {
     let plain = Style::new().fg(theme.foreground).bg(theme.background);
     let dim = plain.fg(theme.gutter);
     fill(cells, area, plain);
@@ -239,7 +244,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, theme: &Theme) {
         if y >= parts.choices.bottom() {
             break;
         }
-        let focused = card.on() == On::Choice(index);
+        let focused = on == Some(On::Choice(index));
         let background = match focused {
             true => theme.selected_row_background,
             false => theme.background,
@@ -293,7 +298,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, theme: &Theme) {
     // a card where one row means something else is a card with two ways of
     // saying yes on it.
     if let Some(row) = parts.tick {
-        let focused = card.on() == On::Tick;
+        let focused = on == Some(On::Tick);
         let style = match focused {
             true => plain.bg(theme.selected_row_background),
             false => plain,
@@ -359,7 +364,7 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, theme: &Theme) {
         // being unusable would leave the reader with no way to see where
         // they are -- pressing enter, getting nothing, and nothing on
         // screen saying which row refused.
-        let ground = match card.on() == On::Submit {
+        let ground = match on == Some(On::Submit) {
             true => theme.selected_row_background,
             false => theme.background,
         };

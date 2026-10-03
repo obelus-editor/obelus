@@ -1440,6 +1440,51 @@ fn escape_shuts_the_list_of_commands_and_leaves_the_words() {
     );
 }
 
+/// The list of commands is part of the conversation, so a page opened over
+/// the conversation from the palette covers it.
+///
+/// It did not. The list is not a layer and was drawn after all of them,
+/// kept off only by a picker -- which the palette is until enter, and then
+/// the settings are up and nothing stood in the way. Broken deliberately
+/// by drawing it after the layers again: the list's rows came up over the
+/// settings'.
+///
+/// What this cannot see is a list *under* a list rather than hidden: the
+/// cells over it are the picker's either way, and the difference is the
+/// glass a window draws the picker on.
+#[test]
+fn a_page_over_the_conversation_is_not_under_its_list_of_commands() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the commands", |app| {
+        !app.agent_orders().is_empty()
+    });
+    support::type_text(&mut app, "/c");
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(dump.contains("/compact"), "no list to begin with:\n{dump}");
+
+    support::press_control(&mut app, 'p');
+    support::type_text(&mut app, "open-settings");
+    support::press(&mut app, KeyCode::Enter);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        dump.contains("Filter settings"),
+        "the settings did not open:\n{dump}"
+    );
+    assert!(
+        !dump.contains("/compact"),
+        "the list of commands is over the settings:\n{dump}"
+    );
+
+    // And still there once the page has gone, because what the reader
+    // typed is still a name.
+    support::press(&mut app, KeyCode::Esc);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        dump.contains("/compact"),
+        "the list did not come back:\n{dump}"
+    );
+}
+
 /// The conversation's status row says what the session is set to: every
 /// setting the agent offers, in its own order, as short as it can be said.
 ///
@@ -3124,6 +3169,56 @@ fn a_tool_call_in_the_transcript_opens_the_file_it_was_in() {
     );
 }
 
+/// The transcript's row under a list opened over it is drawn and not lit:
+/// the keys are the list's.
+///
+/// Deliberate break: light the row the cursor is on whatever is over the
+/// conversation -- the tool call wears the list's own mark beside it.
+#[test]
+fn the_transcript_s_row_under_a_list_is_not_lit() {
+    let (mut app, events) = talking();
+    support::type_text(&mut app, "what is this file");
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        &events,
+        "the permission request",
+        App::is_asking_permission,
+    );
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the end of the turn", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // To the file it read -- see the test above.
+    support::press(&mut app, KeyCode::Up);
+    support::press(&mut app, KeyCode::BackTab);
+    support::press(&mut app, KeyCode::BackTab);
+    let call = "Read the file";
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let lit = support::drawn_in(&dump, call);
+
+    // The themes narrowed to the one in force, which is short enough to
+    // leave the row in sight and previews nobody else's colours.
+    support::press_control(&mut app, 'p');
+    support::type_text(&mut app, "choose-theme");
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "dark");
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert_ne!(
+        support::drawn_in(&dump, call),
+        lit,
+        "the transcript's row is lit under the list:\n{dump}"
+    );
+
+    support::press(&mut app, KeyCode::Esc);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        support::drawn_in(&dump, call),
+        lit,
+        "the row did not take the mark back:\n{dump}"
+    );
+}
+
 /// A conversation with nothing said in it keeps the caret in the box.
 ///
 /// The arrows move the nearest thing that can still move. In a conversation
@@ -4197,6 +4292,142 @@ fn a_list_over_a_question_covers_it_until_it_goes() {
     assert!(
         rows(&after).iter().any(|row| row.contains(asked)),
         "the question was not there when the list went:\n{after}"
+    );
+}
+
+/// What a short list leaves showing of a conversation is drawn and not
+/// marked: the card's row and the list of commands' row are where they were,
+/// and neither says the keys are on it while the list has them.
+///
+/// Broken deliberately twice: marking the card's row whatever is over it,
+/// and drawing the list of commands as nearest whatever is -- each left its
+/// row lit beside the list's own.
+#[test]
+fn what_a_list_leaves_showing_of_a_conversation_is_not_marked() {
+    // The themes, narrowed to a few so what is under them is not behind
+    // them -- and to the ones named like the theme in force, because the
+    // list shows the one it is on: a test narrowed to another theme is a
+    // screen in another theme's colours, where every row differs from
+    // what it was and nothing is learnt from one that does.
+    fn a_short_list(app: &mut App) {
+        support::press_control(app, 'p');
+        support::type_text(app, "choose-theme");
+        support::press(app, KeyCode::Enter);
+        support::type_text(app, "dark");
+    }
+
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the commands", |app| {
+        !app.agent_orders().is_empty()
+    });
+    // Every command, so the list is taller than the one put over it.
+    support::type_text(&mut app, "/");
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let lit = support::drawn_in(&dump, "/compact");
+    a_short_list(&mut app);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert_ne!(
+        support::drawn_in(&dump, "/compact"),
+        lit,
+        "the list of commands is lit under the list:\n{dump}"
+    );
+    support::press(&mut app, KeyCode::Esc);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        support::drawn_in(&dump, "/compact"),
+        lit,
+        "the list of commands did not take the mark back:\n{dump}"
+    );
+
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/pick");
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", App::is_asking);
+    let answer = "Write the weekly report";
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let lit = support::drawn_in(&dump, answer);
+    a_short_list(&mut app);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert_ne!(
+        support::drawn_in(&dump, answer),
+        lit,
+        "the card is lit under the list:\n{dump}"
+    );
+    support::press(&mut app, KeyCode::Esc);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        support::drawn_in(&dump, answer),
+        lit,
+        "the card did not take the mark back:\n{dump}"
+    );
+}
+
+/// The list of commands' bar under a list opened over the conversation is
+/// not the reader's to take hold of: the keys are the list's, and so is the
+/// pointer.
+///
+/// It was drawn over by every picker before, so nothing asked. Under a
+/// short one it is in plain sight. Deliberate break: answer `true` for
+/// `Whose::Commands` in `App::reaches` -- the press scrolls a list nothing
+/// else is talking to.
+#[test]
+fn the_list_of_commands_bar_is_not_taken_hold_of_under_a_list() {
+    use obelus_app::event::{Event, Pointer};
+    const SHORT: u16 = 16;
+    let first_row = |app: &mut App| {
+        rows(&support::render(app, WIDTH, SHORT))
+            .get(2)
+            .map(|row| (*row).to_string())
+            .unwrap_or_default()
+    };
+    let press = |app: &mut App| {
+        // The foot of the list's track, which is where it is still in
+        // sight under the list put over it.
+        app.handle(Event::Pointer {
+            kind: Pointer::Pressed,
+            x: WIDTH - 1,
+            y: 11,
+        });
+        app.handle(Event::Pointer {
+            kind: Pointer::Released,
+            x: WIDTH - 1,
+            y: 11,
+        });
+    };
+
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the commands", |app| {
+        !app.agent_orders().is_empty()
+    });
+    support::type_text(&mut app, "/");
+    let before = first_row(&mut app);
+    assert!(before.contains("/compact"), "not at the top:\n{before}");
+
+    support::press_control(&mut app, 'p');
+    support::type_text(&mut app, "choose-theme");
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "solarized-d");
+    let _ = support::render(&mut app, WIDTH, SHORT);
+    press(&mut app);
+    assert_eq!(
+        first_row(&mut app),
+        before,
+        "the list under the list scrolled"
+    );
+
+    // And with nothing over it, the same press is on its bar.
+    support::press(&mut app, KeyCode::Esc);
+    let _ = support::render(&mut app, WIDTH, SHORT);
+    press(&mut app);
+    assert_ne!(
+        first_row(&mut app),
+        before,
+        "the press is not on the list's bar at all"
     );
 }
 

@@ -122,8 +122,8 @@ pub(crate) fn show(app: App) -> Result<()> {
 /// which happened.
 #[derive(Clone, Debug)]
 struct Rolling {
-    /// The rows it is drawn in, which is also what says it is the same
-    /// band as the one on the frame before.
+    /// The rows it is drawn in, which with `under` is what says it is the
+    /// same band as the one on the frame before -- see [`Rolling::is`].
     room: Rect,
     /// How far down its list it has got.
     top: i64,
@@ -150,14 +150,31 @@ struct Rolling {
     /// the mark sets out from somewhere it was never drawn and steps back
     /// to catch up.
     origin: Option<u16>,
-    /// Whether a pane was put over it, which is whether it was said before
-    /// the pane's backdrop: a view draws the page, then says what is
-    /// behind the pane, then draws the pane and its own rows.
+    /// How many panes were put over it, which is how many were said after
+    /// it: a view draws the page, then says what is behind the pane, then
+    /// draws the pane and its own rows.
     ///
     /// Said rather than worked out from where the two are, because a
     /// full-screen dialog is over everything, so a transcript under one is
-    /// as inside it as the dialog's own list.
-    under: bool,
+    /// as inside it as the dialog's own list. And a count rather than
+    /// whether, because with a list over the settings over a conversation
+    /// the transcript and the settings' list are both under something, in
+    /// the same rows -- see `Rolling::is`.
+    under: u8,
+}
+
+impl Rolling {
+    /// Whether this is the band `was` was, a frame on.
+    ///
+    /// Where it is and how many panes are over it. Where alone is not
+    /// enough, because a dialog's list can sit exactly where the page under
+    /// it has one -- the settings over a conversation share its
+    /// transcript's rows -- and the first of the two was taken for both: the
+    /// settings, scrolled, were measured against a transcript at the top
+    /// every frame, and slid the difference again on every one of them.
+    fn is(&self, was: &Self) -> bool {
+        self.room == was.room && self.under == was.under
+    }
 }
 
 /// Everything the window has, and Obelus on the other side of it.
@@ -272,21 +289,17 @@ struct Showing {
     scrolled: Vec<Rolling>,
     /// And on the frame being laid out.
     scrolling: Vec<Rolling>,
-    /// What is under the pane on the frame being shown, where there is
-    /// one.
-    behind: Option<Behind>,
+    /// What is under each pane and each box on the frame being shown,
+    /// furthest first: each is glass over everything said before it, so
+    /// the order they were said in is the order they are stacked in.
+    stack: Vec<Behind>,
     /// And on the frame being laid out.
-    behinding: Option<Behind>,
+    stacking: Vec<Behind>,
     /// Every pane on the frame being shown, by the edge it is joined
     /// along, furthest first -- see `Motion::panes_laid`.
     panes: Vec<Joined>,
     /// And on the frame being laid out.
     paning: Vec<Joined>,
-    /// What is behind a box with a frame round it, on the frame being
-    /// shown -- a second pane, over the first where there is one.
-    cards: Vec<Behind>,
-    /// And on the one being laid out.
-    carding: Vec<Behind>,
     /// And the ones the frame being laid out has asked for so far.
     ///
     /// Two lists because a frame is drawn from what it said, not from what
@@ -373,12 +386,10 @@ impl Showing {
             ruling: Vec::new(),
             scrolled: Vec::new(),
             scrolling: Vec::new(),
-            behind: None,
-            behinding: None,
+            stack: Vec::new(),
+            stacking: Vec::new(),
             panes: Vec::new(),
             paning: Vec::new(),
-            cards: Vec::new(),
-            carding: Vec::new(),
             // The blink is asked once, on the way up: it is a question
             // about the system rather than about this window.
             motion: Motion::new(Blink::asked()),
@@ -825,7 +836,7 @@ impl ApplicationHandler<Waking> for Showing {
                 // its arrival on every pixel of a resize is worse than one
                 // that never arrives at all.
                 let were_panes = self.panes.clone();
-                let had_a_card = !self.cards.is_empty();
+                let had_a_card = self.stack.iter().any(Behind::is_a_box);
                 // Cloned rather than taken: a wake with no whole frame
                 // in it leaves what is on the screen alone, and a band
                 // that had been emptied here would be one the next frame
@@ -868,18 +879,14 @@ impl ApplicationHandler<Waking> for Showing {
                         Update::Marked { id, focused, x, y } => {
                             self.marking.push(Marked { id, focused, x, y })
                         }
-                        // The last one said wins, which is the pane
-                        // nearest the reader: a setting's choices open
-                        // over the settings, and what the reader sees
-                        // through is the one on top.
-                        //
-                        // A box with a frame is kept beside that rather
-                        // than in its place, because it is put over one:
-                        // the card of every key opens over a list, the
-                        // settings and the counts, all of which are glass.
-                        // A sheet said after one was drawn over it, so a
-                        // box is nearer the reader than the sheet or it is
-                        // not kept at all.
+                        // Every one said is kept, in the order it was
+                        // said, which is the order they are stacked in: a
+                        // setting's choices open over the settings, and
+                        // the card of every key over those. Each is glass,
+                        // and what the reader sees through one is
+                        // everything said before it -- the settings kept
+                        // their glass under a list once there was more
+                        // than one place to keep a pane.
                         Update::Behind {
                             area,
                             joined,
@@ -892,19 +899,16 @@ impl ApplicationHandler<Waking> for Showing {
                                 ground,
                                 cells,
                             };
-                            match joined {
-                                Joined::Nowhere => self.carding.push(behind),
-                                // A pane, however many edges it is joined
-                                // along.
-                                Joined::Above | Joined::Below | Joined::Screen => {
-                                    self.behinding = Some(behind);
-                                    self.paning.push(joined);
-                                    self.carding.clear();
-                                    for band in &mut self.scrolling {
-                                        band.under = true;
-                                    }
+                            // A pane, however many edges it is joined
+                            // along. A box goes on the pile too, and what
+                            // was said before either is under it.
+                            if joined != Joined::Nowhere {
+                                self.paning.push(joined);
+                                for band in &mut self.scrolling {
+                                    band.under = band.under.saturating_add(1);
                                 }
                             }
+                            self.stacking.push(behind);
                         }
                         Update::Scrolled { area, top, bar } => {
                             self.scrolling.push(Rolling {
@@ -913,7 +917,7 @@ impl ApplicationHandler<Waking> for Showing {
                                 before: None,
                                 bar,
                                 origin: None,
-                                under: false,
+                                under: 0,
                             });
                         }
                         Update::Ticked { area, on } => {
@@ -976,9 +980,8 @@ impl ApplicationHandler<Waking> for Showing {
                             self.motion
                                 .sheen_drawn(self.sheened.is_some(), Instant::now());
                             self.stroked = std::mem::take(&mut self.stroking);
-                            self.behind = self.behinding.take();
+                            self.stack = std::mem::take(&mut self.stacking);
                             self.panes = std::mem::take(&mut self.paning);
-                            self.cards = std::mem::take(&mut self.carding);
                             self.scrolled = std::mem::take(&mut self.scrolling);
                             drew = true;
                         }
@@ -1028,7 +1031,7 @@ impl ApplicationHandler<Waking> for Showing {
                 // a completion list redrawn on every character the reader
                 // types is the same box, and one that came up again on
                 // each of them would be a flicker under their hands.
-                match (had_a_card, self.cards.is_empty()) {
+                match (had_a_card, !self.stack.iter().any(Behind::is_a_box)) {
                     (false, false) => self.motion.card_opened(Instant::now()),
                     (true, true) => self.motion.card_shut(),
                     _ => {}
@@ -1046,7 +1049,7 @@ impl ApplicationHandler<Waking> for Showing {
                 // behind exist on one page, and that page is a screenful.
                 let now = Instant::now();
                 for band in &mut self.scrolled {
-                    let Some(was) = was_at.iter().find(|was| was.room == band.room) else {
+                    let Some(was) = was_at.iter().find(|was| band.is(was)) else {
                         continue;
                     };
                     // What it is already counting from, where it is in the
@@ -1236,7 +1239,7 @@ impl ApplicationHandler<Waking> for Showing {
                         let (behind, since) = self.motion.band_shown(band.room, now)?;
                         Some(Rolled {
                             room: band.room,
-                            under: band.under,
+                            under: band.under > 0,
                             before: band.before.as_deref()?,
                             behind,
                             since,
@@ -1269,8 +1272,7 @@ impl ApplicationHandler<Waking> for Showing {
                         sheened: self.sheened.as_ref(),
                         parted: &self.parted,
                         stroked: &self.stroked,
-                        behind: self.behind.as_ref(),
-                        cards: &self.cards,
+                        stack: &self.stack,
                         bands: &rolled,
                     },
                 ) {
@@ -1514,8 +1516,53 @@ fn marked(attributes: winit::window::WindowAttributes) -> winit::window::WindowA
 mod tests {
     use std::time::Instant;
 
-    use super::{MARK, wants_a_frame};
+    use ratatui::layout::Rect;
+
+    use super::{MARK, Rolling, wants_a_frame};
     use crate::motion::{Motion, Wake};
+
+    /// A band is matched with the one it was, not with another in the same
+    /// rows: a dialog's list over a page's that happens to sit where it does
+    /// -- the settings over a conversation -- is two bands.
+    ///
+    /// Deliberate break: match on `room` alone in `Rolling::is`. The
+    /// settings' list is then taken for the transcript under it, which is at
+    /// its top while the list is not, and it slid on every frame.
+    #[test]
+    fn a_band_under_a_pane_is_not_the_pane_s() {
+        let band = |top, under| Rolling {
+            room: Rect::new(0, 2, 75, 18),
+            top,
+            before: None,
+            bar: None,
+            origin: None,
+            under,
+        };
+        let was = [band(0, 1), band(4, 0)];
+        let settings = band(4, 0);
+        assert_eq!(
+            was.iter().find(|was| settings.is(was)).map(|was| was.top),
+            Some(4),
+            "the list was taken for the transcript under it"
+        );
+        let transcript = band(0, 1);
+        assert_eq!(
+            was.iter().find(|was| transcript.is(was)).map(|was| was.top),
+            Some(0),
+            "the transcript was taken for the list over it"
+        );
+        // And with a setting's choices over the settings, both are under
+        // something: the transcript under two panes, the settings' list
+        // under one. Deliberate break: count whether, not how many -- the
+        // two are told apart by nothing again.
+        let was = [band(0, 2), band(4, 1)];
+        let settings = band(4, 1);
+        assert_eq!(
+            was.iter().find(|was| settings.is(was)).map(|was| was.top),
+            Some(4),
+            "under a list, the settings' list was taken for the transcript"
+        );
+    }
 
     /// A pass that is about to poll asks for the frame it is polling for.
     ///
