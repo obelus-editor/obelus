@@ -33,6 +33,7 @@ mod noting;
 mod opening;
 pub use history_view::About;
 mod keys;
+mod mirroring;
 mod moving;
 mod naming;
 mod preferences;
@@ -825,6 +826,8 @@ pub struct App {
     worktrees: worktrees::Worktrees,
     /// What this window knows about the chat it can be reached from.
     remote: remote::Remote,
+    /// Which of its conversations is which thread in that chat.
+    mirror: mirroring::Mirror,
     /// Whether to open on the file list.
     ///
     /// A directory on the command line is a reader saying which project
@@ -998,6 +1001,7 @@ impl App {
             gone: false,
             worktrees: worktrees::Worktrees::default(),
             remote: remote::Remote::default(),
+            mirror: mirroring::Mirror::default(),
             list_at_start: false,
             should_quit: false,
         }
@@ -2491,6 +2495,8 @@ impl App {
         // And the connection to that chat, from the same answer: which one
         // is set.
         self.settle_the_connection();
+        // And a thread for every conversation there that can be named.
+        self.settle_the_threads();
         // And the sessions, from the same question: which conversation is
         // on screen.
         self.settle_the_sessions();
@@ -4667,6 +4673,15 @@ impl Screen for App {
     fn server_working_on(&self) -> Option<&str> {
         App::server_working_on(self)
     }
+    fn mirrored_to(&self) -> Option<&'static str> {
+        self.conversation_mirrored_to()
+    }
+
+    fn remote(&self) -> Option<(&'static str, obelus_remote::State)> {
+        self.platform()
+            .map(|platform| (platform.name, self.remote_state()))
+    }
+
     fn server_busy(&self) -> bool {
         App::server_busy(self)
     }

@@ -235,7 +235,7 @@ impl App {
             }
             obelus_remote::Event::Heard { from, at, text } => self.heard(&from, &at, &text),
             obelus_remote::Event::Named { id, name } => self.let_in(id, name),
-            obelus_remote::Event::Opened { .. } => {}
+            obelus_remote::Event::Opened { asked, thread, .. } => self.thread_opened(asked, thread),
             obelus_remote::Event::PairingOver => {
                 self.remote.pairing = None;
                 self.remote.pairing_runs_out = None;
@@ -321,7 +321,7 @@ impl App {
     }
 
     /// Says something in a chat.
-    fn say_to(&self, out: obelus_remote::model::Out) {
+    pub(super) fn say_to(&self, out: obelus_remote::model::Out) {
         if let Some(sending) = &self.remote.out
             && sending.send(out).is_err()
         {
@@ -363,7 +363,12 @@ impl App {
             );
             return;
         }
-        tracing::debug!(?at, "heard from somebody on the list");
+        match at {
+            obelus_remote::model::Where::Thread(thread) => self.heard_in_thread(thread, text),
+            obelus_remote::model::Where::Top => {
+                tracing::debug!("heard at the top, which is the next piece of this");
+            }
+        }
     }
 
     /// Lets in somebody who sent the code, now that their name is known.

@@ -335,7 +335,8 @@ fn connected(scratch: &support::Scratch) -> (App, std::sync::mpsc::Receiver<Even
 /// secrets out of the keyring -- and says so at the top of the page.
 ///
 /// Broken deliberately by leaving the secrets out of what the platform is
-/// handed: it was given nothing, and the state stayed `Not set up`.
+/// handed: it was given nothing, and the state stayed `Not set up`. And by
+/// handing the status row no chat: the row said nothing about it.
 #[test]
 fn a_chat_that_is_set_is_connected_to() {
     let _turn = turn();
@@ -356,6 +357,20 @@ fn a_chat_that_is_set_is_connected_to() {
     drop(faked);
     let dump = support::render(&mut app, 66, 20);
     assert!(dump.contains("● Connected"), "{dump}");
+
+    // And on the status row once the page is left, beside the server: the
+    // one place that says it while the reader reads.
+    support::press(&mut app, KeyCode::Esc);
+    let dump = support::render(&mut app, 66, 20);
+    let status = support::text_block(&dump)
+        .lines()
+        .last()
+        .unwrap_or_default()
+        .to_string();
+    assert!(
+        status.contains("● Slack"),
+        "the status row does not say so:\n{dump}"
+    );
 }
 
 /// Pairing: a code on the row, the code sent from the chat, the person on
@@ -440,4 +455,203 @@ fn pairing_lets_in_whoever_sends_the_code() {
             .is_none(),
         "the code outlived its use"
     );
+}
+
+/// Everything said to the fake platform from now until `done` holds,
+/// handling the window's events meanwhile.
+fn said_until(
+    app: &mut App,
+    events: &std::sync::mpsc::Receiver<Event>,
+    what: &str,
+    done: impl Fn(&[obelus_remote::model::Out]) -> bool,
+) -> Vec<obelus_remote::model::Out> {
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let mut said = Vec::new();
+    loop {
+        support::lay_out(app, 76, 24);
+        said.extend(said_since());
+        if done(&said) {
+            return said;
+        }
+        let left = until
+            .checked_duration_since(std::time::Instant::now())
+            .unwrap_or_else(|| panic!("gave up waiting for {what}; said: {said:#?}"));
+        if let Ok(event) = events.recv_timeout(left.min(std::time::Duration::from_millis(50))) {
+            app.handle(event);
+        }
+    }
+}
+
+/// Whether something was said in this thread with these words in it.
+fn in_thread(said: &[obelus_remote::model::Out], thread: &str, words: &str) -> bool {
+    said.iter().any(|out| {
+        matches!(
+            out,
+            obelus_remote::model::Out::Say { at: obelus_remote::model::Where::Thread(at), text, .. }
+                if at == thread && text.contains(words)
+        )
+    })
+}
+
+/// A conversation and its thread say the same things: a thread opened for
+/// it, the reader's words from here marked as from here, the agent's words
+/// when its turn is over, its question as numbered words -- answered by a
+/// number from the chat -- and words from the chat arriving with a line for
+/// the agent saying where they came from.
+///
+/// Broken deliberately five ways, each failing at its own step. Not opening
+/// threads: no `Open` came. Not echoing what was typed here. Posting the
+/// turn as it streamed rather than when it ended: the reply was split. Not
+/// reading a reply as the answer while a card is up: the permission was
+/// never given and the turn never ended. And dropping the line in front of
+/// words from afar: the agent's log had no "sent from Slack". The header
+/// twice more: drawn from no chat, it never said `Slack`; drawn whether or
+/// not there is a thread, it said so before there was one.
+#[test]
+fn a_conversation_and_its_thread_say_the_same_things() {
+    let _turn = turn();
+    obelus_remote::platform::connect_for_test(fake_connect);
+    *FAKED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    let scratch = support::Scratch::new("remote-mirror");
+    std::fs::write(
+        scratch.join("config.toml"),
+        "remote = \"slack\"\n[remotes.slack]\npeople = [{ id = \"U1\", name = \"Sunli\" }]\n",
+    )
+    .expect("the settings");
+    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+
+    let log = scratch.join("asked.log");
+    let mut app = App::new(Vec::new());
+    app.config_file_for_test(scratch.join("config.toml"));
+    let events = support::drive(&mut app);
+    app.agents_root_for_test(scratch.join("agents"));
+    support::lay_out(&mut app, 76, 24);
+    app.talk_to(
+        "fake",
+        std::path::Path::new("sh"),
+        &[
+            "tests/fixtures/fake-agent.sh".to_string(),
+            format!("log={}", log.display()),
+            "prompts".to_string(),
+        ],
+    );
+    app.new_conversation();
+    app.open_a_session_for_test();
+
+    // A thread for the conversation, in the reader's direct message.
+    let said = said_until(&mut app, &events, "a thread to be asked for", |said| {
+        said.iter()
+            .any(|out| matches!(out, obelus_remote::model::Out::Open { .. }))
+    });
+    let asked = said
+        .iter()
+        .find_map(|out| match out {
+            obelus_remote::model::Out::Open { asked, to, .. } if to == "U1" => Some(*asked),
+            _ => None,
+        })
+        .expect("a thread asked for in the reader's direct message");
+    let sink = FAKED
+        .lock()
+        .ok()
+        .and_then(|faked| faked.as_ref().map(|faked| faked.sink.clone()))
+        .expect("connected");
+    let _ = sink.send(obelus_remote::Event::Opened {
+        asked,
+        thread: "T1".to_string(),
+        link: None,
+    });
+    // The header says where else the conversation is, once it is there.
+    let header = |app: &mut App| {
+        let dump = support::render(app, 76, 24);
+        support::text_block(&dump)
+            .lines()
+            .find(|row| row.trim_start().starts_with("0|"))
+            .unwrap_or_default()
+            .to_string()
+    };
+    assert!(
+        !header(&mut app).contains("Slack"),
+        "the header said it before the thread was"
+    );
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while !header(&mut app).contains("Slack") {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the header does not say so: {}",
+            header(&mut app)
+        );
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(50)) {
+            app.handle(event);
+        }
+    }
+
+    // What the reader types here goes there, marked as said here.
+    support::type_text(&mut app, "what is this file");
+    support::press(&mut app, KeyCode::Enter);
+    let said = said_until(&mut app, &events, "the question in the thread", |said| {
+        in_thread(said, "T1", "Allow once")
+    });
+    assert!(
+        in_thread(&said, "T1", "On this machine:_ what is this file"),
+        "{said:#?}"
+    );
+    // And what the agent said before it asked, whole, ahead of the
+    // question.
+    assert!(in_thread(&said, "T1", "it is a rust file"), "{said:#?}");
+    assert!(
+        said.iter().any(|out| matches!(
+            out,
+            obelus_remote::model::Out::Say { text, notify: true, .. } if text.contains("1. Allow once")
+        )),
+        "the question did not call the reader: {said:#?}"
+    );
+
+    // A number from the chat answers it, and the rest of the turn follows.
+    let _ = sink.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        at: obelus_remote::model::Where::Thread("T1".to_string()),
+        text: "1".to_string(),
+    });
+    let said = said_until(
+        &mut app,
+        &events,
+        "the end of the turn in the thread",
+        |said| in_thread(said, "T1", "and I was allowed"),
+    );
+    assert!(
+        said.iter()
+            .filter(|out| matches!(out, obelus_remote::model::Out::Say { .. }))
+            .count()
+            == 1,
+        "the turn went out in pieces: {said:#?}"
+    );
+
+    // Words from the chat go to the agent with a line saying where from.
+    let _ = sink.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        at: obelus_remote::model::Where::Thread("T1".to_string()),
+        text: "and now?".to_string(),
+    });
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        let logged = std::fs::read_to_string(&log).unwrap_or_default();
+        if logged.contains("and now?") {
+            assert!(
+                logged.contains("sent from Slack"),
+                "the agent was not told where the words came from:\n{logged}"
+            );
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the words never reached the agent:\n{logged}"
+        );
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(50)) {
+            app.handle(event);
+        }
+        support::lay_out(&mut app, 76, 24);
+    }
 }

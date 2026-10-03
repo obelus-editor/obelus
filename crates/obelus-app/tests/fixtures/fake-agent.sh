@@ -143,6 +143,7 @@ later=''
 # outside otherwise, and some of what Obelus owes an agent is a request --
 # a session it no longer wants, let go -- or the absence of one.
 log=''
+prompts=''
 for word in "$@"; do
     case "$word" in
         mode-as-option) both_ways='yes' ;;
@@ -154,6 +155,7 @@ for word in "$@"; do
         tells-settings) tells='yes' ;;
         options-later) later='yes' ;;
         log=*) log="${word#log=}" ;;
+        prompts) prompts='yes' ;;
     esac
 done
 
@@ -205,6 +207,13 @@ while IFS= read -r line; do
         url=$(printf '%s' "$line" | sed -n 's/.*"mcpServers":\[[^]]*"url":"\([^"]*\)".*/\1/p')
         if [ -n "$url" ]; then
             printf 'tools %s\n' "$url" >>"$log"
+        fi
+        # And with `prompts`, a prompt's own words, whole, on the line
+        # after: what Obelus puts in front of the reader's words -- where
+        # they came from -- is never on the page, so this is the only place
+        # a test can see it.
+        if [ -n "$prompts" ] && [ "$method" = 'session/prompt' ]; then
+            printf '%s\n' "$line" >>"$log"
         fi
     fi
     case "$line" in
