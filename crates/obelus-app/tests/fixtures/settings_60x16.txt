@@ -13,7 +13,7 @@ screen 60x16  editor 60x14  status 60x1
 10|                                                           █
 11|   New versions                           ☑                █
 12|────────────────────────────────────────────────────────────
-13|   Enter  Change    type  To filter           Ctrl+k  Keys  
+13|   Enter  Change                              Ctrl+k  Keys  
 14|────────────────────────────────────────────────────────────
 15| > Filter settings                                          
 -- style --
@@ -30,7 +30,7 @@ screen 60x16  editor 60x14  status 60x1
 10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccg
 11|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccg
 12|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-13|cchhhhhhhcaaaaaaccchhhhhhcaaaaaaaaacccccccccchhhhhhhhcaaaacc
+13|cchhhhhhhcaaaaaaccccccccccccccccccccccccccccchhhhhhhhcaaaacc
 14|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 15|dddaaaaaaaaaaaaaaadddddddddddddddddddddddddddddddddddddddddd
 -- legend --

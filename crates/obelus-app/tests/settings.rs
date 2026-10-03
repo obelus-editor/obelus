@@ -2228,17 +2228,16 @@ fn writing_the_settings_keeps_what_obelus_does_not_recognise() {
     );
 }
 
-/// The settings say what their keys do, because two of them cannot be
-/// guessed: that the page is narrowed by typing at it, and that a setting
-/// the project has set can be taken out again.
+/// The settings say what their keys do, because one of them cannot be
+/// guessed: that a setting the project has set can be taken out again.
 ///
-/// The card is keys alone, though. Typing at a list is not a key -- it
-/// answers to every letter, which is why the foot writes it as the word
-/// `type` -- and a table of chords read down its left column has no row
-/// for one.
+/// Typing is not one of them. It answers to every letter, so it has no cap
+/// to draw -- and the row it goes into already says what it narrows,
+/// before anything has been typed there.
 ///
-/// Deliberate break: let `keys_card` take every hint and the card grows a
-/// row whose key is a word nobody can press.
+/// Deliberate breaks: put a "To filter" hint back on the foot, and it
+/// carries a cap nobody presses; let `what_is_filtered` say nothing, and
+/// the page no longer says anywhere that it can be typed at.
 #[test]
 fn the_settings_say_what_their_keys_do() {
     let _turn = SETTINGS
@@ -2251,12 +2250,19 @@ fn the_settings_say_what_their_keys_do() {
     dispatch::dispatch(&mut app, Command::ConfigProject);
 
     let text = support::text_block(&support::render(&mut app, 76, 16)).to_string();
-    // "type" is capped as the key and "to filter" is what it does, so the
-    // two are looked for apart. Escape is not here at all: it is on the
-    // card, because it means the same thing in every view Obelus has.
-    for word in ["Change", "type", "To filter", "Unset", "Keys"] {
+    // Escape is not here at all: it is on the card, because it means the
+    // same thing in every view Obelus has.
+    for word in ["Change", "Unset", "Keys"] {
         assert!(word_on(&text, word), "{word:?} is not at the foot:\n{text}");
     }
+    assert!(
+        !word_on(&text, "To filter"),
+        "typing is a cap at the foot:\n{text}"
+    );
+    assert!(
+        word_on(&text, "Filter settings"),
+        "the row typing goes into does not say what it narrows:\n{text}"
+    );
 
     // `ctrl+k` says all of them, at length.
     support::press_control(&mut app, 'k');
@@ -2266,10 +2272,6 @@ fn the_settings_say_what_their_keys_do() {
     assert!(
         text.contains("Take this setting out of the project's file"),
         "the card only has the foot's word for it:\n{dump}"
-    );
-    assert!(
-        !text.contains("Type to narrow the list"),
-        "the card of keys has a row that is not a key:\n{dump}"
     );
 
     // And escape closes the card before it leaves the page.

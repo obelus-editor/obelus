@@ -62,9 +62,10 @@ const WHEN_GAP: u16 = 2;
 
 /// The keys the foot says, and which of them do anything now.
 ///
-/// Not the arrows, which every list answers to. What is here is what a
-/// reader could not guess -- that the rows are narrowed by typing at them,
-/// what enter does on the row they are on -- and the way out, which on any
+/// Not the arrows, which every list answers to, and not typing, which the
+/// box at the foot says it takes before anything is in it. What is here is
+/// what a reader could not guess -- what enter does on the row they are
+/// on -- and the way out, which on any
 /// other page is escape and so goes unsaid. Here escape cannot leave:
 /// there is nothing nearer than this page to give up on, and nothing
 /// behind it to give up to. The one key that leaves is the one that leaves
@@ -74,18 +75,13 @@ pub fn hints(choosing: &crate::Choosing, keymap: &Keymap) -> Vec<Hint> {
     let bare = |code| KeyChord::new(code, KeyModifiers::NONE);
     let on_the_opening_row = choosing.at >= choosing.known.len();
     let mut hints = match choosing.naming {
-        false => vec![
-            Hint::common(
-                bare(KeyCode::Enter),
-                match on_the_opening_row {
-                    true => "Type a path",
-                    false => "Open",
-                },
-            ),
-            Hint::common(bare(KeyCode::Char('a')), "To filter")
-                .written("type")
-                .saying("Type to narrow the list"),
-        ],
+        false => vec![Hint::common(
+            bare(KeyCode::Enter),
+            match on_the_opening_row {
+                true => "Type a path",
+                false => "Open",
+            },
+        )],
         // What enter does to a path is what the row at the foot is already
         // saying in its ink, so it is offered only where it would do it:
         // a candidate taken into the box, or a path that is there.

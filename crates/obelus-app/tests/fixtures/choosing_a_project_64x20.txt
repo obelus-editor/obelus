@@ -17,7 +17,7 @@ screen 64x20  editor 64x18  status 64x1
 14|                                                                
 15|                                                                
 16|────────────────────────────────────────────────────────────────
-17|   Enter  Open    type  To filter    Ctrl+q  Leave              
+17|   Enter  Open    Ctrl+q  Leave                                 
 18|────────────────────────────────────────────────────────────────
 19| Filter  > Narrow the list                                      
 -- style --
@@ -38,7 +38,7 @@ screen 64x20  editor 64x18  status 64x1
 14|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 15|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 16|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
-17|aaeeeeeeeabbbbaaaeeeeeeabbbbbbbbbaaaeeeeeeeeabbbbbaaaaaaaaaaaaaa
+17|aaeeeeeeeabbbbaaaeeeeeeeeabbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 18|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 19|fffffffffffbbbbbbbbbbbbbbbffffffffffffffffffffffffffffffffffffff
 -- legend --

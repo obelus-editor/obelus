@@ -483,8 +483,7 @@ impl Settings {
     ///
     /// Per tab, because the page is three lists and the filter is about
     /// whichever is showing. Said on the row the reader would type into,
-    /// which the foot's `type  To filter` does not: a key's word at the
-    /// foot says a key exists, and the row says what it would do here.
+    /// and only there: typing is not a key, so the foot has no cap for it.
     ///
     /// `None` once something has been typed, because by then the reader
     /// knows -- and the row has their words in it, which is what this
