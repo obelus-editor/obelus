@@ -46,6 +46,7 @@ obelus-markdown = { path = "crates/obelus-markdown" }
 obelus-mcp = { path = "crates/obelus-mcp" }
 obelus-program = { path = "crates/obelus-program" }
 obelus-reading = { path = "crates/obelus-reading" }
+obelus-remote = { path = "crates/obelus-remote" }
 obelus-row = { path = "crates/obelus-row" }
 obelus-runtime = { path = "crates/obelus-runtime" }
 obelus-search = { path = "crates/obelus-search" }
@@ -466,7 +467,19 @@ objc2-foundation = { version = "0.3", features = [
 # and a panic in a stripped binary names no function at all -- there is no
 # debug info in a release build to begin with, so the symbol table is the
 # whole of what a backtrace has to read.
+# Where a chat's tokens are kept: the system's own keyring, through the core
+# of `keyring` and the one store each system has -- the Keychain, the
+# Credential Manager, and on the rest the Secret Service, which gnome-keyring,
+# KWallet and KeePassXC all answer to. The Secret Service is spoken over
+# D-Bus through `zbus` on the runtime Obelus already has, with the crypto in
+# Rust rather than in a system OpenSSL.
+keyring-core = "1"
+apple-native-keyring-store = { version = "1", features = ["keychain"] }
+windows-native-keyring-store = "1"
+zbus-secret-service-keyring-store = { version = "1", features = ["rt-tokio-crypto-rust"] }
+
 [profile.dist]
 inherits = "release"
 lto = "thin"
 codegen-units = 1
+

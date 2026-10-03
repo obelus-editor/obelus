@@ -990,7 +990,7 @@ impl App {
                 self.lines_that_did_nothing(&path, &ignored);
                 // After, because what the keymap would not take is worked
                 // out while the config is being applied.
-                self.configure(config, named);
+                self.configure(*config, named);
                 self.what_the_settings_could_not_use(&path, &spans);
             }
             obelus_config::Reading::Nothing | obelus_config::Reading::Nowhere => {
@@ -1106,9 +1106,9 @@ impl App {
                     tracing::info!(path = %path.display(), "the settings changed under us");
                     self.nothing_wrong_with(&path);
                     self.lines_that_did_nothing(&path, &ignored);
-                    self.settled.readers = config.clone();
+                    self.settled.readers = (*config).clone();
                     self.settled.named = named;
-                    self.settled.config = config;
+                    self.settled.config = *config;
                     self.apply_config();
                     self.what_the_settings_could_not_use(&path, &spans);
                     self.settled.readable = true;

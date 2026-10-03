@@ -1,0 +1,35 @@
+[package]
+name = "obelus-remote"
+description = "Working on notes from a chat: the platforms, their secrets, and the relay"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Cargo inherits nothing here on its own; every member says it.
+[lints]
+workspace = true
+
+[dependencies]
+obelus-config.workspace = true
+obelus-logging.workspace = true
+obelus-runtime.workspace = true
+obelus-sink.workspace = true
+keyring-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+toml.workspace = true
+tracing.workspace = true
+
+# The keyring, one store per platform: what each system calls the place a
+# secret is kept. Named here rather than through `keyring`'s own `v1`, which
+# its own documentation says is for programs that do not mind which store
+# they get -- and that would bring the other platforms' along on every one.
+[target.'cfg(target_os = "macos")'.dependencies]
+apple-native-keyring-store.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-native-keyring-store.workspace = true
+
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+zbus-secret-service-keyring-store.workspace = true
