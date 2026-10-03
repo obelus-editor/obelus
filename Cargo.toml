@@ -299,6 +299,9 @@ tokio = { version = "1.53.1", default-features = false, features = [
     "sync",
     "time",
     "macros",
+    # Hearing the terminal hang up, so that the commands an agent asked for
+    # go with it: see `obelus-agent`'s `running.rs`.
+    "signal",
 ] }
 access_log_parser = "0.11"
 
@@ -394,8 +397,12 @@ libc = "0.2.189"
 # member that names this crate needs between them.
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
+    "Win32_Security",
     "Win32_Storage_FileSystem",
     "Win32_System_IO",
+    # And a job, which is how a command an agent asked for is stopped with
+    # everything it started: see `obelus-agent`'s `running.rs`.
+    "Win32_System_JobObjects",
     "Win32_System_Threading",
     "Win32_UI_WindowsAndMessaging",
     # And the clipboard, which on Windows is a system service rather than a
