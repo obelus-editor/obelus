@@ -3629,7 +3629,9 @@ fn a_paste_goes_into_the_card_and_not_behind_it() {
 ///
 /// Deliberate break: asking `conversation_takes_text` instead, which says
 /// no off the box, and the row of settings goes red; answering the card
-/// with `true`, and the permission does.
+/// with `true`, and the permission does; putting `conversation_takes_text`
+/// back in front of `paste_into_conversation`, and the word committed on
+/// the row is dropped.
 #[test]
 fn a_conversation_takes_typing_except_under_a_card_without_a_box() {
     use obelus_component::chat::Focus;
@@ -3661,7 +3663,21 @@ fn a_conversation_takes_typing_except_under_a_card_without_a_box() {
         "a letter typed on the row did not reach the box"
     );
 
-    support::type_text(&mut app, "hat is this file");
+    // And a word an input method spelled there, which arrives as a paste
+    // and not as the letters that would have taken the keys back.
+    support::press(&mut app, KeyCode::Down);
+    assert_eq!(
+        app.chat().map(|chat| chat.focus()),
+        Some(Focus::Settings(0))
+    );
+    app.handle(Event::Paste("hat".to_string()));
+    assert_eq!(
+        app.chat().map(|chat| chat.writing().text()),
+        Some("what".to_string()),
+        "a word committed on the row was dropped"
+    );
+
+    support::type_text(&mut app, " is this file");
     support::press(&mut app, KeyCode::Enter);
     pump(
         &mut app,
