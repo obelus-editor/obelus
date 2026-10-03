@@ -415,6 +415,8 @@ pub struct ChatView<'a> {
     focus: Focus,
     /// The card an agent's question is on, while it is waiting on one.
     card: Option<&'a Card>,
+    /// Whether nothing is over the conversation, so the keys are its own.
+    in_front: bool,
     /// The project Obelus was opened on, for writing the paths an agent names
     /// the way a reader writes them.
     root: &'a Path,
@@ -459,6 +461,7 @@ impl<'a> ChatView<'a> {
             settings: app.agent_settings(),
             focus: app.chat()?.focus(),
             card: app.card(),
+            in_front: !app.layers().any(),
             root: app.working_directory(),
             phase: app.phase(),
             branch: app.branch_this_conversation_works_on(),
@@ -766,7 +769,13 @@ impl Widget for ChatView<'_> {
         // an answer there is no message to send, so the row the reader
         // would type it in is the room the question needs.
         match self.card {
-            Some(card) => super::card::draw(cells, regions.writing, card, self.theme),
+            Some(card) => super::card::draw(
+                cells,
+                regions.writing,
+                card,
+                self.in_front.then(|| card.on()),
+                self.theme,
+            ),
             None => self.writing(cells, regions.writing, &rows, plain, dim),
         }
     }
@@ -1900,6 +1909,7 @@ mod caret {
                             },
                         ),
                         card: None,
+                        in_front: true,
                         root: std::path::Path::new("/"),
                         phase: 0,
                         branch: None,

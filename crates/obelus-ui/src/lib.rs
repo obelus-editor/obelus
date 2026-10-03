@@ -959,10 +959,11 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     }
     // The agent's own commands, which are not a layer: the list follows
     // what is being typed in the box rather than being something the
-    // reader opened, and it goes where any compact list goes. A picker
-    // over the same conversation wins, because that one is a question the
-    // agent is waiting on an answer to.
-    if !layers.has(Layer::Picker)
+    // reader opened, and it goes where any compact list goes. Anything
+    // over the conversation wins, because the box has lost the keys to it
+    // and this is a list of what the box is typing -- drawn last, it was
+    // drawn over the settings.
+    if !layers.any()
         && let Some(list) = app.slash()
     {
         bars::of(Whose::Commands, || {

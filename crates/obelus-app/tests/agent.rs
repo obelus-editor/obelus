@@ -1440,6 +1440,92 @@ fn escape_shuts_the_list_of_commands_and_leaves_the_words() {
     );
 }
 
+/// The list of commands is a list of what the box is typing, so it goes
+/// with the box's keys: a page opened over the conversation from the
+/// palette is not drawn under it.
+///
+/// It was. The list is not a layer and was drawn after all of them, kept
+/// off only by a picker -- which the palette is until enter, and then the
+/// settings are up and nothing stood in the way. Broken deliberately by
+/// putting that gate back: the list's rows came up over the settings'.
+#[test]
+fn a_page_over_the_conversation_is_not_under_its_list_of_commands() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the commands", |app| {
+        !app.agent_orders().is_empty()
+    });
+    support::type_text(&mut app, "/c");
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(dump.contains("/compact"), "no list to begin with:\n{dump}");
+
+    support::press_control(&mut app, 'p');
+    support::type_text(&mut app, "open-settings");
+    support::press(&mut app, KeyCode::Enter);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        dump.contains("Filter settings"),
+        "the settings did not open:\n{dump}"
+    );
+    assert!(
+        !dump.contains("/compact"),
+        "the list of commands is over the settings:\n{dump}"
+    );
+
+    // And it is the box's again once the page has gone, because what the
+    // reader typed is still a name.
+    support::press(&mut app, KeyCode::Esc);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        dump.contains("/compact"),
+        "the list did not come back:\n{dump}"
+    );
+}
+
+/// A card behind a list is behind it: the row the reader was on in it is
+/// not lit while the keys are the list's, because one mark says where the
+/// keys are and two would be two answers.
+///
+/// Broken deliberately by handing the card its `on()` whatever is over it:
+/// the card's row came up in the palette's selected-row colour.
+#[test]
+fn a_card_behind_a_list_does_not_say_the_keys_are_on_it() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/pick");
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", App::is_asking);
+    let answer = "Write the weekly report";
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let lit = behind(&dump, answer);
+
+    support::press_control(&mut app, 'p');
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    // What a list lights is read off the list itself, so the comparison is
+    // with the mark and not with a colour written down here.
+    assert_eq!(
+        behind(&dump, "open-file"),
+        lit,
+        "the palette's row:\n{dump}"
+    );
+    assert_ne!(
+        behind(&dump, answer),
+        lit,
+        "the card is lit behind the palette:\n{dump}"
+    );
+
+    support::press(&mut app, KeyCode::Esc);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        behind(&dump, answer),
+        lit,
+        "the card did not take the mark back:\n{dump}"
+    );
+}
+
 /// The conversation's status row says what the session is set to: every
 /// setting the agent offers, in its own order, as short as it can be said.
 ///
