@@ -113,13 +113,24 @@ const BAR: f32 = 0.15;
 /// And how thick the line under what is being spelled is.
 const UNDERLINE: f32 = 0.06;
 
-/// How big the glyph texture starts, in pixels each way.
+/// How big one layer of a glyph texture is, in pixels each way.
 ///
-/// A screenful of code is a few hundred distinct glyphs, and this holds
-/// thousands. It grows by being emptied rather than by being enlarged: a
-/// reader who has filled it has changed the size of the text, and the
-/// glyphs in it are the old size.
+/// A screenful of code is a few hundred distinct glyphs, and a layer holds
+/// about a thousand at the size a doubled screen draws them. A screenful
+/// of Chinese is more than that -- every character is a glyph of its own --
+/// so a texture that is full takes another layer rather than being emptied.
+/// Emptying it was what this did once, half way through a frame: the
+/// glyphs already placed in that frame were read from where the next ones
+/// had just been written, and a line number came out as part of a
+/// character until something drew the frame again.
 const ATLAS: u32 = 1024;
+
+/// How many layers a glyph texture starts with.
+///
+/// Two, because one is not an array everywhere: wgpu's GL backend makes a
+/// texture of one layer a plain two-dimensional one, which a binding that
+/// asks for an array will not take.
+const LAYERS: u32 = 2;
 
 /// What Obelus draws on.
 pub(crate) struct Painter {
@@ -195,6 +206,10 @@ pub(crate) struct Painter {
     /// the pass that *draws* it: a texture cannot be read and written in
     /// one pass, and what goes in the slot is never sampled there.
     plain_bindings: wgpu::BindGroup,
+    /// What goes in a picture's slot where none is read: a pixel, because
+    /// a binding cannot be left empty and the atlas is the wrong shape for
+    /// the slot.
+    nothing: wgpu::TextureView,
 }
 
 /// What one pane's glass reads: what is behind the pane, as a picture of
@@ -394,8 +409,11 @@ struct Quad {
     /// How far its corners are rounded, in pixels. Read only where
     /// `ROUNDED` is set.
     radius: f32,
-    /// The hardware wants the whole thing aligned; nothing reads these.
-    padding: [u32; 2],
+    /// Which layer of the atlas `uv` is on: of the letters', or of the
+    /// pictures' where the quad is `COLOURFUL`.
+    layer: u32,
+    /// The hardware wants the whole thing aligned; nothing reads this.
+    padding: u32,
 }
 
 /// A rectangle with no picture: its colour is the whole of it.
@@ -658,9 +676,17 @@ struct Screen {
 
 /// Where every glyph drawn this session is kept.
 struct Atlas {
-    texture: wgpu::Texture,
-    view: wgpu::TextureView,
-    allocator: etagere::AtlasAllocator,
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    /// Coverage, a byte a pixel: every letter, and the white pixel.
+    letters: Layers,
+    /// Colour, four bytes a pixel: an emoji, and an agent's mark. Apart
+    /// from the letters because a letter is a quarter of the size in a
+    /// texture of its own, and there are thousands of letters.
+    pictures: Layers,
+    /// Whether either texture has been made again since the bindings that
+    /// read it were.
+    remade: bool,
     /// Where each glyph landed, or that the face had no picture for it --
     /// which is worth remembering too, or a missing glyph is rasterised
     /// again on every frame that asks for it.
@@ -673,14 +699,36 @@ struct Atlas {
     /// a different reason -- a theme, rather than a size.
     marks: HashMap<(String, bool), Option<Spot>>,
     /// One opaque pixel, so that a rectangle with no picture can go through
-    /// the same pipeline as one with.
+    /// the same pipeline as one with. On the letters' first layer, which is
+    /// the layer a quad that says none reads.
     white: [f32; 4],
+}
+
+/// One texture of layers, and where there is room in it.
+struct Layers {
+    texture: wgpu::Texture,
+    view: wgpu::TextureView,
+    format: wgpu::TextureFormat,
+    room: Room,
+}
+
+/// Where there is room in a stack of layers.
+///
+/// Nothing in it is given back until the whole is: a glyph is asked for
+/// again on the next frame, and a place handed out has to hold what was
+/// put there for as long as anything may still read it -- which, once it
+/// is in a frame's quads, is to the end of that frame. Apart from the
+/// texture so that what is handed out can be checked without a device.
+struct Room {
+    layers: Vec<etagere::AtlasAllocator>,
 }
 
 /// Where one glyph is, and how it sits against its cell.
 #[derive(Clone, Copy, Debug)]
 struct Spot {
     uv: [f32; 4],
+    /// Which layer of its texture `uv` is on.
+    layer: u32,
     width: f32,
     height: f32,
     /// How far right of the pen the picture starts.
@@ -831,7 +879,7 @@ impl Painter {
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
                         multisampled: false,
                     },
                     count: None,
@@ -868,6 +916,16 @@ impl Painter {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 6,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
         // Smooth, unlike the glyphs': what this samples is a picture being
@@ -885,16 +943,18 @@ impl Painter {
             device: &device,
             layout: &layout,
             uniforms: &uniforms,
-            atlas: &atlas.view,
+            letters: &atlas.letters.view,
+            pictures: &atlas.pictures.view,
             sampler: &sampler,
             smooth: &smooth,
         };
+        let nothing = made_to_draw_into(&device, view, 1, 1);
         let levels = vec![Seen::made(&binder, view, width, height)];
         let scratch = made_to_draw_into(&device, view, width, height);
-        let scratch_bindings = binder.bound(&scratch, &atlas.view);
+        let scratch_bindings = binder.bound(&scratch, &nothing);
         let picture = made_to_draw_into(&device, view, width, height);
-        let showing_bindings = binder.bound(&picture, &atlas.view);
-        let plain_bindings = binder.bound(&atlas.view, &atlas.view);
+        let showing_bindings = binder.bound(&picture, &nothing);
+        let plain_bindings = binder.bound(&nothing, &nothing);
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("obelus"),
@@ -921,6 +981,7 @@ impl Painter {
                         2 => Float32x4,
                         3 => Uint32,
                         4 => Float32,
+                        5 => Uint32,
                     ],
                 })],
             },
@@ -980,6 +1041,7 @@ impl Painter {
             picture,
             showing_bindings,
             plain_bindings,
+            nothing,
         })
     }
 
@@ -1014,12 +1076,32 @@ impl Painter {
             .map(|_| Seen::made(&binder, self.view, width, height))
             .collect();
         let scratch = made_to_draw_into(&self.device, self.view, width, height);
-        let scratch_bindings = binder.bound(&scratch, &self.atlas.view);
+        let scratch_bindings = binder.bound(&scratch, &self.nothing);
         let picture = made_to_draw_into(&self.device, self.view, width, height);
-        let showing_bindings = binder.bound(&picture, &self.atlas.view);
+        let showing_bindings = binder.bound(&picture, &self.nothing);
         self.levels = levels;
         (self.scratch, self.scratch_bindings) = (scratch, scratch_bindings);
         (self.picture, self.showing_bindings) = (picture, showing_bindings);
+    }
+
+    /// Every bind group again, over the same pictures, because the atlas
+    /// they read is a different texture now.
+    fn bound_again(&mut self) {
+        let binder = self.binder();
+        let levels: Vec<wgpu::BindGroup> = self
+            .levels
+            .iter()
+            .map(|seen| binder.bound(&seen.backdrop, &seen.blurred))
+            .collect();
+        let scratch = binder.bound(&self.scratch, &self.nothing);
+        let showing = binder.bound(&self.picture, &self.nothing);
+        let plain = binder.bound(&self.nothing, &self.nothing);
+        for (seen, bindings) in self.levels.iter_mut().zip(levels) {
+            seen.bindings = bindings;
+        }
+        self.scratch_bindings = scratch;
+        self.showing_bindings = showing;
+        self.plain_bindings = plain;
     }
 
     /// What every bind group is made of, but the two pictures it reads.
@@ -1028,7 +1110,8 @@ impl Painter {
             device: &self.device,
             layout: &self.layout,
             uniforms: &self.uniforms,
-            atlas: &self.atlas.view,
+            letters: &self.atlas.letters.view,
+            pictures: &self.atlas.pictures.view,
             sampler: &self.sampler,
             smooth: &self.smooth,
         }
@@ -1300,6 +1383,12 @@ impl Painter {
             && let Some(first) = first
         {
             self.sliding_under(page, first, said.bands, fonts);
+        }
+        // After the last glyph has been placed and before anything is drawn:
+        // a glyph that found no room made the texture again, and every
+        // binding is still reading the one before.
+        if std::mem::take(&mut self.atlas.remade) {
+            self.bound_again();
         }
 
         // Where the light is, in the pixels a fragment knows itself by:
@@ -1753,7 +1842,8 @@ impl Painter {
             colour,
             flags: SOLID | ROUNDED | HELD_PLATE | (turns << HELD_TURNS),
             radius,
-            padding: [0; 2],
+            layer: 0,
+            padding: 0,
         });
     }
 
@@ -1788,7 +1878,8 @@ impl Painter {
             colour,
             flags: SOLID,
             radius: 0.0,
-            padding: [0; 2],
+            layer: 0,
+            padding: 0,
         });
     }
 
@@ -1979,7 +2070,8 @@ impl Painter {
                 colour: [0.0, 0.0, 0.0, 1.0],
                 flags: FRAME,
                 radius: 0.0,
-                padding: [0; 2],
+                layer: 0,
+                padding: 0,
             });
         }
     }
@@ -2012,7 +2104,8 @@ impl Painter {
             colour: [0.0, 0.0, 0.0, fade],
             flags: SLID,
             radius: shift,
-            padding: [0; 2],
+            layer: 0,
+            padding: 0,
         });
     }
 
@@ -2032,7 +2125,8 @@ impl Painter {
             colour,
             flags: SOLID | ROUNDED,
             radius: radius.max(0.0).min(width.min(height) / 2.0),
-            padding: [0; 2],
+            layer: 0,
+            padding: 0,
         });
     }
 
@@ -2436,7 +2530,8 @@ impl Painter {
             colour,
             flags: SOLID | WEDGE,
             radius: way,
-            padding: [0; 2],
+            layer: 0,
+            padding: 0,
         });
     }
 
@@ -2486,7 +2581,8 @@ impl Painter {
                     colour: ground,
                     flags: CHECKED,
                     radius: 0.0,
-                    padding: [0; 2],
+                    layer: 0,
+                    padding: 0,
                 }),
                 false => {
                     let edge = (side * BOX_EDGE).round().max(1.0);
@@ -2801,7 +2897,8 @@ impl Painter {
             // Unread: a pane has no corners to round -- see `outside` in
             // `paint.wgsl`.
             radius: 0.0,
-            padding: [0; 2],
+            layer: 0,
+            padding: 0,
         });
         if let Some(([over, tall], ground)) = under {
             self.block(
@@ -2875,7 +2972,8 @@ impl Painter {
             colour: [0.0, 0.0, 0.0, SHADOW_INK * fade],
             flags: SHADOW | joined,
             radius,
-            padding: [0; 2],
+            layer: 0,
+            padding: 0,
         });
     }
 
@@ -2951,7 +3049,8 @@ impl Painter {
                     false => 0,
                 },
             radius,
-            padding: [0; 2],
+            layer: 0,
+            padding: 0,
         });
         let [left, top, wide, tall] = inside;
         (glass, [left, top, left + wide, top + tall])
@@ -2972,7 +3071,8 @@ impl Painter {
                 colour: [way[0], way[1], 0.0, 0.0],
                 flags: BLUR,
                 radius: 0.0,
-                padding: [0; 2],
+                layer: 0,
+                padding: 0,
             });
         }
         first
@@ -3160,7 +3260,8 @@ impl Painter {
                     // carried by the same flag a letter is.
                     flags: lit,
                     radius: 0.0,
-                    padding: [0; 2],
+                    layer: 0,
+                    padding: 0,
                 });
             }
             return;
@@ -3169,7 +3270,7 @@ impl Painter {
         let italic = look.modifier.contains(Modifier::ITALIC);
         let placed = fonts.glyphs(look.text, bold, italic, size).to_vec();
         for glyph in placed {
-            let Some(spot) = self.atlas.spot(&self.queue, fonts, glyph.key) else {
+            let Some(spot) = self.atlas.spot(fonts, glyph.key) else {
                 continue;
             };
             #[expect(
@@ -3201,7 +3302,8 @@ impl Painter {
                     false => lit,
                 },
                 radius: 0.0,
-                padding: [0; 2],
+                layer: spot.layer,
+                padding: 0,
             });
         }
     }
@@ -3252,7 +3354,7 @@ impl Painter {
                     };
                     let rgba = drawn.to_rgba8();
                     let (width, height) = (rgba.width(), rgba.height());
-                    let spot = self.atlas.place(&self.queue, width, height, &rgba, true);
+                    let spot = self.atlas.place(width, height, &rgba, true);
                     self.atlas.marked(key, spot);
                     match spot {
                         Some(spot) => spot,
@@ -3273,7 +3375,8 @@ impl Painter {
                 colour: [1.0, 1.0, 1.0, 1.0],
                 flags: COLOURFUL,
                 radius: 0.0,
-                padding: [0; 2],
+                layer: spot.layer,
+                padding: 0,
             });
         }
     }
@@ -3409,89 +3512,52 @@ impl Painter {
 }
 
 impl Atlas {
-    /// A texture with one white pixel in it, which is where every rectangle
-    /// that has no picture gets its picture.
+    /// Both textures, with nothing in them but the white pixel.
     fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("obelus glyphs"),
-            size: wgpu::Extent3d {
-                width: ATLAS,
-                height: ATLAS,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
+        let mut atlas = Self {
+            device: device.clone(),
+            queue: queue.clone(),
             // Not sRGB: what is in here is coverage and emoji, and the
             // colours it is multiplied by are the theme's own.
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-        #[expect(
-            clippy::cast_possible_wrap,
-            reason = "the atlas is a thousand pixels across"
-        )]
-        let mut allocator =
-            etagere::AtlasAllocator::new(etagere::size2(ATLAS as i32, ATLAS as i32));
-        // The one opaque pixel. Allocated first so that it is there before
-        // anything asks, and through the allocator so that nothing else is
-        // ever put on top of it.
-        let white = allocator
-            .allocate(etagere::size2(1, 1))
-            .expect("an empty atlas has room for one pixel");
-        let corner = white.rectangle.min;
-        queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d {
-                    #[expect(clippy::cast_sign_loss, reason = "an allocation is never negative")]
-                    x: corner.x as u32,
-                    #[expect(clippy::cast_sign_loss, reason = "an allocation is never negative")]
-                    y: corner.y as u32,
-                    z: 0,
-                },
-                aspect: wgpu::TextureAspect::All,
-            },
-            &[0xff, 0xff, 0xff, 0xff],
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(4),
-                rows_per_image: Some(1),
-            },
-            wgpu::Extent3d {
-                width: 1,
-                height: 1,
-                depth_or_array_layers: 1,
-            },
-        );
-        // Half a pixel in, so that no filtering can reach a neighbour.
-        #[expect(
-            clippy::cast_precision_loss,
-            reason = "the atlas is a thousand pixels across"
-        )]
-        let middle = [
-            (corner.x as f32 + 0.5) / ATLAS as f32,
-            (corner.y as f32 + 0.5) / ATLAS as f32,
-        ];
-        Self {
-            texture,
-            view,
-            allocator,
+            letters: Layers::new(device, wgpu::TextureFormat::R8Unorm),
+            pictures: Layers::new(device, wgpu::TextureFormat::Rgba8Unorm),
+            remade: false,
             spots: HashMap::new(),
             marks: HashMap::new(),
-            white: [middle[0], middle[1], middle[0], middle[1]],
-        }
+            white: [0.0; 4],
+        };
+        atlas.whiten();
+        atlas
+    }
+
+    /// Puts the one opaque pixel in.
+    ///
+    /// First, so that it is there before anything asks and lands on the
+    /// first layer, and through the room like everything else so that
+    /// nothing is ever put on top of it.
+    fn whiten(&mut self) {
+        let white = self
+            .place(1, 1, &[0xff], false)
+            .expect("an empty texture has room for one pixel");
+        // Half a pixel in, so that no filtering can reach a neighbour.
+        let middle = [
+            f32::midpoint(white.uv[0], white.uv[2]),
+            f32::midpoint(white.uv[1], white.uv[3]),
+        ];
+        self.white = [middle[0], middle[1], middle[0], middle[1]];
     }
 
     /// Everything in it is the wrong size now.
+    ///
+    /// New textures rather than the old ones with their maps cleared: what
+    /// the old size took is room nothing would ever be put in again.
     fn empty(&mut self) {
+        self.letters = Layers::new(&self.device, self.letters.format);
+        self.pictures = Layers::new(&self.device, self.pictures.format);
+        self.remade = true;
         self.spots.clear();
         self.marks.clear();
-        // The white pixel keeps its place: the allocator is not cleared,
-        // because the one thing in it that is not a glyph is still right.
+        self.whiten();
     }
 
     /// The marks are the wrong colour now, which a theme change makes them.
@@ -3517,52 +3583,47 @@ impl Atlas {
 
     /// Puts pixels in, and says where they went.
     ///
-    /// The one piece of code that writes to the texture: a glyph and a
-    /// mark differ in where their pixels come from and in nothing else.
-    fn place(
-        &mut self,
-        queue: &wgpu::Queue,
-        width: u32,
-        height: u32,
-        pixels: &[u8],
-        colourful: bool,
-    ) -> Option<Spot> {
+    /// The one piece of code that writes to a texture: a glyph and a mark
+    /// differ in where their pixels come from and in nothing else. A byte a
+    /// pixel where the picture is not `colourful`, and four where it is.
+    fn place(&mut self, width: u32, height: u32, pixels: &[u8], colourful: bool) -> Option<Spot> {
         if width == 0 || height == 0 {
             return None;
         }
-        #[expect(
-            clippy::cast_possible_wrap,
-            reason = "what is put in is smaller than the atlas, which is a thousand pixels"
-        )]
-        let wanted = etagere::size2(width as i32, height as i32);
-        let allocation = match self.allocator.allocate(wanted) {
-            Some(allocation) => allocation,
+        let layers = match colourful {
+            true => &mut self.pictures,
+            false => &mut self.letters,
+        };
+        let (layer, [x, y]) = match layers.room.take(width, height) {
+            Some(taken) => taken,
+            // Larger than a layer, which no number of layers has room for.
+            None if width > ATLAS || height > ATLAS => return None,
             None => {
-                // Full. Everything in it is thrown away and whatever is
-                // still wanted is drawn again as it is asked for, which
-                // costs one frame and cannot fail twice: a session that
-                // filled it did so over thousands of frames.
-                tracing::debug!("the glyph atlas is full, and is being started again");
-                self.allocator.clear();
-                self.spots.clear();
-                self.marks.clear();
-                self.allocator.allocate(wanted)?
+                let most = self.device.limits().max_texture_array_layers;
+                if layers.room.layers.len() >= most as usize {
+                    tracing::warn!(most, "the glyph texture has as many layers as it can");
+                    return None;
+                }
+                layers.grow(&self.device, &self.queue);
+                self.remade = true;
+                layers.room.take(width, height)?
             }
         };
-        let corner = allocation.rectangle.min;
-        #[expect(clippy::cast_sign_loss, reason = "an allocation is never negative")]
-        let (x, y) = (corner.x as u32, corner.y as u32);
-        queue.write_texture(
+        let bytes = match colourful {
+            true => 4,
+            false => 1,
+        };
+        self.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
-                texture: &self.texture,
+                texture: &layers.texture,
                 mip_level: 0,
-                origin: wgpu::Origin3d { x, y, z: 0 },
+                origin: wgpu::Origin3d { x, y, z: layer },
                 aspect: wgpu::TextureAspect::All,
             },
             pixels,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
-                bytes_per_row: Some(width * 4),
+                bytes_per_row: Some(width * bytes),
                 rows_per_image: Some(height),
             },
             wgpu::Extent3d {
@@ -3573,7 +3634,7 @@ impl Atlas {
         );
         #[expect(
             clippy::cast_precision_loss,
-            reason = "the atlas is a thousand pixels across"
+            reason = "a layer is a thousand pixels across"
         )]
         let uv = [
             x as f32 / ATLAS as f32,
@@ -3587,6 +3648,7 @@ impl Atlas {
         )]
         Some(Spot {
             uv,
+            layer,
             width: width as f32,
             height: height as f32,
             left: 0.0,
@@ -3597,30 +3659,25 @@ impl Atlas {
 
     /// Where a glyph is, putting it in if this is the first time it has
     /// been asked for.
-    fn spot(&mut self, queue: &wgpu::Queue, fonts: &mut Fonts, key: CacheKey) -> Option<Spot> {
+    fn spot(&mut self, fonts: &mut Fonts, key: CacheKey) -> Option<Spot> {
         if let Some(known) = self.spots.get(&key) {
             return *known;
         }
-        let spot = self.rasterise(queue, fonts, key);
+        let spot = self.rasterise(fonts, key);
         self.spots.insert(key, spot);
         spot
     }
 
     /// Draws one glyph and finds it a place.
-    fn rasterise(&mut self, queue: &wgpu::Queue, fonts: &mut Fonts, key: CacheKey) -> Option<Spot> {
+    fn rasterise(&mut self, fonts: &mut Fonts, key: CacheKey) -> Option<Spot> {
         let picture = fonts.picture(key)?;
         let width = picture.placement.width;
         let height = picture.placement.height;
         let colourful = matches!(picture.content, SwashContent::Color);
         let pixels = match picture.content {
-            // Coverage: the alpha is the whole of it, and the colour comes
-            // from the instance.
-            SwashContent::Mask => picture
-                .data
-                .iter()
-                .flat_map(|coverage| [0xff, 0xff, 0xff, *coverage])
-                .collect::<Vec<u8>>(),
-            SwashContent::Color => picture.data.clone(),
+            // A letter's coverage, which is the whole of it: the colour
+            // comes from the instance. And an emoji's colours, as they are.
+            SwashContent::Mask | SwashContent::Color => picture.data.clone(),
             // Three coverages, one per subpixel. Obelus does not draw
             // subpixel text -- it would be wrong on a rotated screen and on
             // every screen that is not RGB -- so the middle one is taken as
@@ -3630,7 +3687,7 @@ impl Atlas {
                 .as_chunks::<4>()
                 .0
                 .iter()
-                .flat_map(|texel| [0xff, 0xff, 0xff, texel[1]])
+                .map(|texel| texel[1])
                 .collect::<Vec<u8>>(),
         };
         // Where the glyph sits against the pen, which is the one thing a
@@ -3640,9 +3697,132 @@ impl Atlas {
             reason = "a glyph is offset by a few dozen pixels"
         )]
         let (left, top) = (picture.placement.left as f32, picture.placement.top as f32);
-        let spot = self.place(queue, width, height, &pixels, colourful)?;
+        let spot = self.place(width, height, &pixels, colourful)?;
         Some(Spot { left, top, ..spot })
     }
+}
+
+impl Layers {
+    /// A texture of `LAYERS` empty layers.
+    fn new(device: &wgpu::Device, format: wgpu::TextureFormat) -> Self {
+        let texture = layered(device, format, LAYERS);
+        Self {
+            view: array_of(&texture),
+            texture,
+            format,
+            room: Room::new(LAYERS),
+        }
+    }
+
+    /// One layer more, with what was in the others still where it was.
+    ///
+    /// A texture cannot be made bigger, so this is a new one with the old
+    /// one copied into it -- and every place already handed out, in this
+    /// frame or an earlier one, still holds what it held. Submitted at
+    /// once, which puts it after every write already made to the old one:
+    /// a queue's writes go before the next work handed to it.
+    fn grow(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "a device allows a few hundred layers"
+        )]
+        let had = self.room.layers.len() as u32;
+        let texture = layered(device, self.format, had + 1);
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("obelus glyphs"),
+        });
+        encoder.copy_texture_to_texture(
+            self.texture.as_image_copy(),
+            texture.as_image_copy(),
+            wgpu::Extent3d {
+                width: ATLAS,
+                height: ATLAS,
+                depth_or_array_layers: had,
+            },
+        );
+        queue.submit([encoder.finish()]);
+        self.view = array_of(&texture);
+        self.texture = texture;
+        self.room.open();
+        tracing::debug!(layers = had + 1, format = ?self.format, "a glyph texture took another layer");
+    }
+}
+
+impl Room {
+    /// `layers` layers with nothing in them.
+    fn new(layers: u32) -> Self {
+        let mut room = Self { layers: Vec::new() };
+        for _ in 0..layers {
+            room.open();
+        }
+        room
+    }
+
+    /// The first place with room for this, and which layer it is on.
+    ///
+    /// The first layer first, which is where the white pixel goes.
+    fn take(&mut self, width: u32, height: u32) -> Option<(u32, [u32; 2])> {
+        #[expect(
+            clippy::cast_possible_wrap,
+            reason = "what is put in is smaller than a layer, which is a thousand pixels"
+        )]
+        let wanted = etagere::size2(width as i32, height as i32);
+        self.layers
+            .iter_mut()
+            .enumerate()
+            .find_map(|(layer, room)| {
+                let corner = room.allocate(wanted)?.rectangle.min;
+                #[expect(
+                    clippy::cast_possible_truncation,
+                    clippy::cast_sign_loss,
+                    reason = "a device allows a few hundred layers, and an allocation is never negative"
+                )]
+                Some((layer as u32, [corner.x as u32, corner.y as u32]))
+            })
+    }
+
+    /// One layer more, with nothing in it.
+    fn open(&mut self) {
+        #[expect(
+            clippy::cast_possible_wrap,
+            reason = "a layer is a thousand pixels across"
+        )]
+        self.layers
+            .push(etagere::AtlasAllocator::new(etagere::size2(
+                ATLAS as i32,
+                ATLAS as i32,
+            )));
+    }
+}
+
+/// A texture of `layers` layers of glyphs.
+fn layered(device: &wgpu::Device, format: wgpu::TextureFormat, layers: u32) -> wgpu::Texture {
+    device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("obelus glyphs"),
+        size: wgpu::Extent3d {
+            width: ATLAS,
+            height: ATLAS,
+            depth_or_array_layers: layers,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        // A source as well, because a texture that has to grow is copied
+        // into the larger one.
+        usage: wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_DST
+            | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    })
+}
+
+/// The whole of a texture, as the array the shader reads it as.
+fn array_of(texture: &wgpu::Texture) -> wgpu::TextureView {
+    texture.create_view(&wgpu::TextureViewDescriptor {
+        dimension: Some(wgpu::TextureViewDimension::D2Array),
+        ..Default::default()
+    })
 }
 
 /// The runs of one colour along a row, as few as they can be said in.
@@ -3993,13 +4173,14 @@ fn made_to_draw_into(
 /// reads, in one place because the pictures are made again whenever the
 /// window changes size and the rest goes with them.
 ///
-/// Six things that are the same in every one of them, kept together so
+/// Seven things that are the same in every one of them, kept together so
 /// that what differs between bind groups is all that is written at each.
 struct Binder<'a> {
     device: &'a wgpu::Device,
     layout: &'a wgpu::BindGroupLayout,
     uniforms: &'a wgpu::Buffer,
-    atlas: &'a wgpu::TextureView,
+    letters: &'a wgpu::TextureView,
+    pictures: &'a wgpu::TextureView,
     sampler: &'a wgpu::Sampler,
     smooth: &'a wgpu::Sampler,
 }
@@ -4018,7 +4199,7 @@ impl Binder<'_> {
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: wgpu::BindingResource::TextureView(self.atlas),
+                    resource: wgpu::BindingResource::TextureView(self.letters),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
@@ -4035,6 +4216,10 @@ impl Binder<'_> {
                 wgpu::BindGroupEntry {
                     binding: 5,
                     resource: wgpu::BindingResource::TextureView(blurred),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: wgpu::BindingResource::TextureView(self.pictures),
                 },
             ],
         })
@@ -5577,5 +5762,55 @@ mod tests {
         assert_eq!(indexed(196), (0xff, 0x00, 0x00));
         assert_eq!(indexed(232), (0x08, 0x08, 0x08));
         assert_eq!(indexed(255), (0xee, 0xee, 0xee));
+    }
+
+    /// A place handed out holds what was put there for as long as the room
+    /// does: a full layer opens another, and nothing already in it moves.
+    ///
+    /// The atlas was emptied when it filled, half way through a frame, and
+    /// the glyphs that frame had already placed were read from where the
+    /// next ones had just been written: on a doubled screen a page of
+    /// Chinese filled it, and a line number came out as a piece of a
+    /// character until something drew the frame again.
+    ///
+    /// Deliberate break: make `take` clear every layer and try again when
+    /// none has room, which is what the atlas did -- the next glyph lands on
+    /// the white pixel.
+    #[test]
+    fn a_full_layer_opens_another_and_keeps_what_it_holds() {
+        let mut room = Room::new(LAYERS);
+        let (layer, [x, y]) = room.take(1, 1).expect("room for the white pixel");
+        assert_eq!(
+            layer, 0,
+            "the white pixel is on the layer a quad reads by default"
+        );
+        let mut handed = vec![(layer, [x, y, 1, 1])];
+        // A character the size a doubled screen draws one at, and more of
+        // them than the first two layers hold.
+        let (wide, tall) = (44, 46);
+        for _ in 0..1200 {
+            let (layer, [x, y]) = match room.take(wide, tall) {
+                Some(taken) => taken,
+                None => {
+                    room.open();
+                    room.take(wide, tall).expect("room on a layer just opened")
+                }
+            };
+            handed.push((layer, [x, y, wide, tall]));
+        }
+        for (at, (layer, [x, y, w, h])) in handed.iter().enumerate() {
+            for (other, [ox, oy, ow, oh]) in &handed[..at] {
+                let apart = layer != other
+                    || x + w <= *ox
+                    || ox + ow <= *x
+                    || y + h <= *oy
+                    || oy + oh <= *y;
+                assert!(apart, "place {at} is on top of one handed out before it");
+            }
+        }
+        assert!(
+            handed.iter().any(|(layer, _)| *layer >= LAYERS),
+            "enough was put in to need another layer"
+        );
     }
 }
