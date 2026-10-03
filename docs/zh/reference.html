@@ -119,6 +119,9 @@
           <tr><td><kbd>Ctrl+l</kbd></td><td><code>go-to-line</code></td><td>跳到某一行</td></tr>
           <tr><td><kbd>Ctrl+c</kbd> <kbd>Ctrl+x</kbd> <kbd>Ctrl+v</kbd></td><td><code>copy-selection</code> <code>cut-selection</code> <code>paste</code></td><td>复制、剪切、粘贴（走系统剪贴板）</td></tr>
           <tr><td><kbd>Ctrl+z</kbd> <kbd>Ctrl+y</kbd></td><td><code>undo</code> <code>redo</code></td><td>撤销、重做</td></tr>
+          <tr><td><kbd>Ctrl+a</kbd></td><td><code>select-all</code></td><td>选中整个文件</td></tr>
+          <tr><td><kbd>Ctrl+/</kbd></td><td><code>toggle-comment</code></td><td>把这一行或选中的几行注释掉，再按一次取消</td></tr>
+          <tr><td><kbd>Ctrl+Insert</kbd> <kbd>Shift+Insert</kbd></td><td><code>copy-selection</code> <code>paste</code></td><td>桌面本来就用来表示复制、粘贴的那两个键</td></tr>
           <tr><td><kbd>Ctrl+q</kbd></td><td><code>quit</code></td><td>离开</td></tr>
         </tbody>
       </table>
@@ -145,13 +148,26 @@
           <tr><td><kbd>Alt+m</kbd></td><td><code>go-to-bracket</code></td><td>跳到配对的括号</td></tr>
           <tr><td><kbd>Alt+←</kbd> <kbd>Alt+→</kbd></td><td><code>go-back</code> <code>go-forward</code></td><td>回到跳转之前的位置；以及再跳回来</td></tr>
           <tr><td><kbd>Alt+t</kbd></td><td><code>todo-add</code></td><td>就着这一行写一条笔记（在对话里则是打开笔记）</td></tr>
+          <tr><td><kbd>Alt+s</kbd></td><td><code>show-signature</code></td><td>光标所在的这个调用要哪些参数</td></tr>
+          <tr><td><kbd>Alt+w</kbd></td><td><code>widen-selection</code></td><td>按语法一层一层扩大选区</td></tr>
+          <tr><td><kbd>Alt+c</kbd></td><td><code>toggle-comment</code></td><td>和 <kbd>Ctrl+/</kbd> 一样</td></tr>
+          <tr><td><kbd>Alt+↑</kbd> <kbd>Alt+↓</kbd></td><td><code>move-line-up</code> <code>move-line-down</code></td><td>把这一行或选中的几行上移、下移</td></tr>
         </tbody>
       </table>
       </div>
 
+      <h3>还有两个不带修饰键的</h3>
+      <p><kbd>Insert</kbd> 是 <code>toggle-replace</code>——输入时覆盖光标下的字，而不是插在它前面，状态行会用一个词说明；<kbd>Esc</kbd> 停止选择，或者放弃离你最近的那件事。</p>
+
       <h3>移动，和列表里</h3>
       <p>移动不是命令，所以它不在上面那些表里：方向键、<kbd>PageUp</kbd>/<kbd>PageDown</kbd>、<kbd>Home</kbd>/<kbd>End</kbd>（行首行尾）、<kbd>Ctrl+Home</kbd>/<kbd>Ctrl+End</kbd>（文件两端）。上下是按<em>视觉行</em>走的，所以换行之后它仍然是你看到的那一行。<kbd>Shift</kbd> 从不命名任何命令，它只做一件事：扩展选区。</p>
       <p>列表里（任何一个 picker、设置页、统计页）：打字就是筛选，<kbd>↑</kbd><kbd>↓</kbd> 选，<kbd>PageUp</kbd>/<kbd>PageDown</kbd> 快速翻，<kbd>Home</kbd>/<kbd>End</kbd> 到两端，<kbd>Enter</kbd> 作用于光标所在那一行，<kbd>Esc</kbd> 取消，<kbd>Ctrl+k</kbd> 列出全部的键。功能键在整屏视图里也能用，会换成它说的那个视图——在文件列表里按 <kbd>F6</kbd> 就是搜索，<kbd>F3</kbd> 是文件列表的另一个 tab。</p>
+
+      <h3>在对话里</h3>
+      <p><kbd>Enter</kbd> 发送，<kbd>Alt+Enter</kbd> 换行（终端支持的话 <kbd>Shift+Enter</kbd> 也行）。输入框空着时按 <kbd>→</kbd>，把关于笔记的对话提议的第一句话填进来。<kbd>Shift+Tab</kbd> 在底部那一行切换 agent 自己的模式。<kbd>Esc</kbd> 停下 agent 这一轮，连同它正在跑的命令。<kbd>Alt+t</kbd> 去这段对话所属的那条笔记。问题是一张卡片：<kbd>↑</kbd><kbd>↓</kbd> 在上面走，<kbd>Enter</kbd> 作用于你所在的那一行。</p>
+
+      <h3>在笔记页</h3>
+      <p>这一页一直在被写：敲一个字母就是一个字母，<kbd>Enter</kbd> 起下一条，<kbd>Alt+Enter</kbd> 或 <kbd>Shift+Enter</kbd> 在一条里换行。<kbd>Tab</kbd> 把一条挂到上一条底下，<kbd>Shift+Tab</kbd> 再挪出来。把一条笔记当笔记来操作的键都在 <kbd>Alt</kbd> 底下：<kbd>Alt+Space</kbd> 打勾，<kbd>Alt+o</kbd> 去它指着的那一行，<kbd>Alt+a</kbd> 打开它的对话，<kbd>Alt+↑</kbd><kbd>Alt+↓</kbd> 挪位置，<kbd>Alt+←</kbd> 拿掉。</p>
 
       <h3 id="commands">命令</h3>
 
@@ -166,7 +182,7 @@
         <tbody>
           <tr>
             <td>Files</td>
-            <td><code>open-file</code> <code>open-changed-file</code> <code>save-file</code> <code>reload-file</code> <code>switch-document</code> <code>switch-worktree</code> <code>close-document</code> <code>rename-file</code> <code>toggle-preview</code> <code>count-lines</code> <code>todo</code> <code>todo-add</code></td>
+            <td><code>open-file</code> <code>open-changed-file</code> <code>save-file</code> <code>reload-file</code> <code>switch-document</code> <code>switch-worktree</code> <code>new-file</code> <code>close-document</code> <code>rename-file</code> <code>toggle-preview</code> <code>count-lines</code> <code>todo</code> <code>todo-add</code></td>
           </tr>
           <tr>
             <td>Search</td>
@@ -174,7 +190,7 @@
           </tr>
           <tr>
             <td>Code</td>
-            <td><code>ask-about-symbol</code> <code>go-to-definition</code> <code>go-to-type-definition</code> <code>go-to-implementation</code> <code>find-references</code> <code>show-calls</code> <code>show-outline</code> <code>describe-symbol</code> <code>complete-here</code> <code>do-something-here</code> <code>rename-symbol</code> <code>show-problems</code> <code>go-to-previous-problem</code> <code>go-to-next-problem</code> <code>fold</code> <code>fold-all</code> <code>unfold-all</code></td>
+            <td><code>ask-about-symbol</code> <code>go-to-definition</code> <code>go-to-type-definition</code> <code>go-to-implementation</code> <code>find-references</code> <code>show-calls</code> <code>show-outline</code> <code>describe-symbol</code> <code>show-signature</code> <code>complete-here</code> <code>do-something-here</code> <code>rename-symbol</code> <code>show-problems</code> <code>go-to-previous-problem</code> <code>go-to-next-problem</code> <code>fold</code> <code>fold-all</code> <code>unfold-all</code></td>
           </tr>
           <tr>
             <td>Edit</td>

@@ -119,6 +119,9 @@
           <tr><td><kbd>Ctrl+l</kbd></td><td><code>go-to-line</code></td><td>Go to a line by number</td></tr>
           <tr><td><kbd>Ctrl+c</kbd> <kbd>Ctrl+x</kbd> <kbd>Ctrl+v</kbd></td><td><code>copy-selection</code> <code>cut-selection</code> <code>paste</code></td><td>Copy, cut, paste — through the system clipboard</td></tr>
           <tr><td><kbd>Ctrl+z</kbd> <kbd>Ctrl+y</kbd></td><td><code>undo</code> <code>redo</code></td><td>Undo, redo</td></tr>
+          <tr><td><kbd>Ctrl+a</kbd></td><td><code>select-all</code></td><td>Select the whole file</td></tr>
+          <tr><td><kbd>Ctrl+/</kbd></td><td><code>toggle-comment</code></td><td>Comment this line, or the selected ones, out — and back</td></tr>
+          <tr><td><kbd>Ctrl+Insert</kbd> <kbd>Shift+Insert</kbd></td><td><code>copy-selection</code> <code>paste</code></td><td>The names a desktop already sends for copy and paste</td></tr>
           <tr><td><kbd>Ctrl+q</kbd></td><td><code>quit</code></td><td>Leave</td></tr>
         </tbody>
       </table>
@@ -145,13 +148,26 @@
           <tr><td><kbd>Alt+m</kbd></td><td><code>go-to-bracket</code></td><td>The bracket that matches this one</td></tr>
           <tr><td><kbd>Alt+←</kbd> <kbd>Alt+→</kbd></td><td><code>go-back</code> <code>go-forward</code></td><td>Return to where the last jump was made from; and undo that</td></tr>
           <tr><td><kbd>Alt+t</kbd></td><td><code>todo-add</code></td><td>Write a note against this line (in a conversation, it opens the notes)</td></tr>
+          <tr><td><kbd>Alt+s</kbd></td><td><code>show-signature</code></td><td>What the call the cursor is in takes</td></tr>
+          <tr><td><kbd>Alt+w</kbd></td><td><code>widen-selection</code></td><td>Widen what is selected, one piece of syntax at a time</td></tr>
+          <tr><td><kbd>Alt+c</kbd></td><td><code>toggle-comment</code></td><td>The same as <kbd>Ctrl+/</kbd></td></tr>
+          <tr><td><kbd>Alt+↑</kbd> <kbd>Alt+↓</kbd></td><td><code>move-line-up</code> <code>move-line-down</code></td><td>Move this line, or the selected ones</td></tr>
         </tbody>
       </table>
       </div>
 
+      <h3>And two that are not modified</h3>
+      <p><kbd>Insert</kbd> is <code>toggle-replace</code> — type over what is under the cursor rather than before it, which the status row says in a word — and <kbd>Esc</kbd> stops selecting, or gives up on whatever is nearest.</p>
+
       <h3>Moving, and inside a list</h3>
       <p>Navigation is not a command, so it is not in the tables above: the arrows, <kbd>PageUp</kbd>/<kbd>PageDown</kbd>, <kbd>Home</kbd>/<kbd>End</kbd> for the line's ends, <kbd>Ctrl+Home</kbd>/<kbd>Ctrl+End</kbd> for the file's. Up and down move by <em>visual</em> row, so a wrapped line still moves the way it looks. <kbd>Shift</kbd> never names a command: it only ever extends.</p>
       <p>Inside a list — any picker, the settings, the counts — type to narrow, <kbd>↑</kbd><kbd>↓</kbd> to choose, <kbd>PageUp</kbd>/<kbd>PageDown</kbd> to cover ground, <kbd>Home</kbd>/<kbd>End</kbd> for either end, <kbd>Enter</kbd> acts on the row you are on, <kbd>Esc</kbd> cancels, and <kbd>Ctrl+k</kbd> lists every key. A function key works from inside a whole-screen view as well, and goes to the view it names in place of the one showing — <kbd>F6</kbd> from the files is the search, <kbd>F3</kbd> is the files' other tab.</p>
+
+      <h3>In a conversation</h3>
+      <p><kbd>Enter</kbd> sends, and <kbd>Alt+Enter</kbd> makes a new line (so does <kbd>Shift+Enter</kbd>, in a terminal that reports it). <kbd>→</kbd> in an empty box fills in the first thing a conversation about a note offers to say. <kbd>Shift+Tab</kbd> walks the agent's own modes, on the row at the foot. <kbd>Esc</kbd> stops the agent's turn, and anything it was running with it. <kbd>Alt+t</kbd> goes to the note the conversation is about. A question is a card: <kbd>↑</kbd><kbd>↓</kbd> to walk it, <kbd>Enter</kbd> on the row you are on.</p>
+
+      <h3>On the notes page</h3>
+      <p>The page is always being written: a letter is a letter, <kbd>Enter</kbd> starts another note, and <kbd>Alt+Enter</kbd> or <kbd>Shift+Enter</kbd> a line inside one. <kbd>Tab</kbd> hangs a note under the one before it and <kbd>Shift+Tab</kbd> brings it back out. What acts on a note as a note is under <kbd>Alt</kbd>: <kbd>Alt+Space</kbd> ticks it, <kbd>Alt+o</kbd> goes to the line it points at, <kbd>Alt+a</kbd> opens its conversation, <kbd>Alt+↑</kbd><kbd>Alt+↓</kbd> move it, and <kbd>Alt+←</kbd> takes it away.</p>
 
       <h3 id="commands">Commands</h3>
 
@@ -166,7 +182,7 @@
         <tbody>
           <tr>
             <td>Files</td>
-            <td><code>open-file</code> <code>open-changed-file</code> <code>save-file</code> <code>reload-file</code> <code>switch-document</code> <code>switch-worktree</code> <code>close-document</code> <code>rename-file</code> <code>toggle-preview</code> <code>count-lines</code> <code>todo</code> <code>todo-add</code></td>
+            <td><code>open-file</code> <code>open-changed-file</code> <code>save-file</code> <code>reload-file</code> <code>switch-document</code> <code>switch-worktree</code> <code>new-file</code> <code>close-document</code> <code>rename-file</code> <code>toggle-preview</code> <code>count-lines</code> <code>todo</code> <code>todo-add</code></td>
           </tr>
           <tr>
             <td>Search</td>
@@ -174,7 +190,7 @@
           </tr>
           <tr>
             <td>Code</td>
-            <td><code>ask-about-symbol</code> <code>go-to-definition</code> <code>go-to-type-definition</code> <code>go-to-implementation</code> <code>find-references</code> <code>show-calls</code> <code>show-outline</code> <code>describe-symbol</code> <code>complete-here</code> <code>do-something-here</code> <code>rename-symbol</code> <code>show-problems</code> <code>go-to-previous-problem</code> <code>go-to-next-problem</code> <code>fold</code> <code>fold-all</code> <code>unfold-all</code></td>
+            <td><code>ask-about-symbol</code> <code>go-to-definition</code> <code>go-to-type-definition</code> <code>go-to-implementation</code> <code>find-references</code> <code>show-calls</code> <code>show-outline</code> <code>describe-symbol</code> <code>show-signature</code> <code>complete-here</code> <code>do-something-here</code> <code>rename-symbol</code> <code>show-problems</code> <code>go-to-previous-problem</code> <code>go-to-next-problem</code> <code>fold</code> <code>fold-all</code> <code>unfold-all</code></td>
           </tr>
           <tr>
             <td>Edit</td>
