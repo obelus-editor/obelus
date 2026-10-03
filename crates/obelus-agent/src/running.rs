@@ -472,13 +472,28 @@ static LEADERS: Mutex<Vec<libc::pid_t>> = Mutex::new(Vec::new());
 /// why this is a list of numbers rather than a walk of them.
 ///
 /// Listened for from the first command on, not from the start: an `ob`
-/// that never runs one keeps the disposition it was given.
+/// that never runs one keeps the disposition it was given. And not at all
+/// where that disposition is to ignore it -- `nohup obg &` -- because a
+/// listener is installed over whatever was there, and an ignored hangup
+/// would become one that takes the window and its unwritten buffers with
+/// it. The commands inherit the ignoring, so they outlive the terminal as
+/// `ob` does, which is what was asked for.
 #[cfg(unix)]
 fn stop_on_hangup() {
     use tokio::signal::unix::{SignalKind, signal};
 
     static LISTENING: std::sync::Once = std::sync::Once::new();
     LISTENING.call_once(|| {
+        // Safety: a null new action asks only for the old one, which is
+        // written into this frame's own struct.
+        let ignored = unsafe {
+            let mut was: libc::sigaction = std::mem::zeroed();
+            libc::sigaction(libc::SIGHUP, std::ptr::null(), &raw mut was) == 0
+                && was.sa_sigaction == libc::SIG_IGN
+        };
+        if ignored {
+            return;
+        }
         let _inside = obelus_runtime::handle().enter();
         let Ok(mut hangup) = signal(SignalKind::hangup()) else {
             return;
@@ -974,17 +989,7 @@ mod tests {
 
         let mark = std::env::temp_dir().join(format!("obelus-hangup-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&mark);
-        let status = std::process::Command::new(std::env::current_exe().expect("this test"))
-            .args([
-                "--exact",
-                "running::tests::hang_up_on_a_running_command",
-                "--ignored",
-            ])
-            .env("OBELUS_HANGUP_MARK", &mark)
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .expect("this test, again");
+        let status = hang_up_in_a_process_of_its_own(&mark, false);
         assert_eq!(
             status.signal(),
             Some(libc::SIGHUP),
@@ -997,16 +1002,70 @@ mod tests {
         );
     }
 
-    /// The other half of the test above, which it runs in a process of its
-    /// own. Ignored, because run anywhere else it hangs up on the test
+    /// A hangup that was being ignored is still ignored once a command has
+    /// run.
+    ///
+    /// `nohup obg &` is a window that was asked to outlive its terminal, and
+    /// listening for the hangup replaces the ignoring: the window went when
+    /// the terminal did, with whatever it had not written.
+    ///
+    /// Broken deliberately by taking the `ignored` check out of
+    /// `stop_on_hangup`: the listener goes in over the ignoring, the hangup
+    /// takes the process, and this goes red on how it ended.
+    #[cfg(unix)]
+    #[test]
+    fn a_hangup_that_was_ignored_is_still_ignored() {
+        let mark = std::env::temp_dir().join(format!("obelus-nohup-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&mark);
+        let status = hang_up_in_a_process_of_its_own(&mark, true);
+        let _ = std::fs::remove_dir_all(&mark);
+        assert!(status.success(), "an ignored hangup ended it: {status:?}");
+    }
+
+    /// Runs the test below in a process of its own, hanging up on it with
+    /// the hangup ignored or not, and says how that process ended.
+    #[cfg(unix)]
+    fn hang_up_in_a_process_of_its_own(
+        mark: &std::path::Path,
+        ignored: bool,
+    ) -> std::process::ExitStatus {
+        let mut process = std::process::Command::new(std::env::current_exe().expect("this test"));
+        process
+            .args([
+                "--exact",
+                "running::tests::hang_up_on_a_running_command",
+                "--ignored",
+            ])
+            .env("OBELUS_HANGUP_MARK", mark)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        if ignored {
+            process.env("OBELUS_HANGUP_IGNORED", "1");
+        }
+        process.status().expect("this test, again")
+    }
+
+    /// The other half of the tests above, which they run in a process of
+    /// its own. Ignored, because run anywhere else it hangs up on the test
     /// binary; and it does nothing without the mark it is given.
     #[cfg(unix)]
     #[test]
-    #[ignore = "run by a_hangup_takes_the_commands_with_it, in a process of its own"]
+    #[ignore = "run by the hangup tests, in a process of its own"]
     fn hang_up_on_a_running_command() {
         let Some(mark) = std::env::var_os("OBELUS_HANGUP_MARK") else {
             return;
         };
+        // Set either way, rather than inherited: a `nohup cargo test` would
+        // otherwise hand the ignoring to a test that is about not ignoring.
+        let disposition = match std::env::var_os("OBELUS_HANGUP_IGNORED") {
+            Some(_) => libc::SIG_IGN,
+            None => libc::SIG_DFL,
+        };
+        // Safety: `signal` takes two numbers, and the second is a
+        // disposition rather than an address anything calls.
+        unsafe {
+            libc::signal(libc::SIGHUP, disposition);
+        }
         let mut runs = Runs::default();
         let (line, wait) = a_mark_left_in_a_moment(std::path::Path::new(&mark));
         let id = runs
