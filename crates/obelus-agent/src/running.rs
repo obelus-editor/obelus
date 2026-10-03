@@ -462,8 +462,15 @@ impl Group {
 #[cfg(unix)]
 static LEADERS: Mutex<Vec<libc::pid_t>> = Mutex::new(Vec::new());
 
-/// Kills every command still running when the terminal hangs up, and then
-/// goes the way the hangup would have taken it.
+/// Hangs up on every command still running when the terminal hangs up, and
+/// then goes the way the hangup would have taken it.
+///
+/// A hangup and not a kill, because a hangup is what the commands got when
+/// they were in `ob`'s group, and a program that hears one tidies up: git
+/// takes its `index.lock` away, where a kill leaves it behind for the
+/// reader's next commit to trip over. And a `CONT` after it, which is what
+/// the system sends a group it has hung up on, so that a command stopped
+/// for reading the terminal hears the hangup at all.
 ///
 /// Gone the same way so that nothing else about a hangup changes: whoever
 /// started `ob` sees it end on `HUP` as it always did, and the language
@@ -506,7 +513,8 @@ fn stop_on_hangup() {
             // address anything calls.
             unsafe {
                 for leader in leaders {
-                    libc::killpg(leader, libc::SIGKILL);
+                    libc::killpg(leader, libc::SIGHUP);
+                    libc::killpg(leader, libc::SIGCONT);
                 }
                 libc::signal(libc::SIGHUP, libc::SIG_DFL);
                 libc::raise(libc::SIGHUP);
@@ -977,11 +985,16 @@ mod tests {
     /// running the one below -- because a hangup is the whole process's,
     /// and it has to be seen to die of it.
     ///
+    /// And hung up on rather than killed, so that it can tidy up the way
+    /// it could when it was in `ob`'s group: the command traps the hangup
+    /// and leaves a second mark saying it heard it.
+    ///
     /// Broken deliberately by taking the `stop_on_hangup()` out of
     /// `Group::of`: the hangup kills the process and nothing else, the
-    /// command leaves its mark, and this goes red. And by taking out the
+    /// command leaves its mark, and this goes red. By taking out the
     /// `raise`: the process outlives the hangup, and this goes red on how
-    /// it ended.
+    /// it ended. And by sending `SIGKILL` in place of the hangup: the
+    /// command never hears it, and this goes red on the tidying.
     #[cfg(unix)]
     #[test]
     fn a_hangup_takes_the_commands_with_it() {
@@ -1000,6 +1013,20 @@ mod tests {
             !mark.exists(),
             "a command outlived the terminal it was run from"
         );
+        let cleaned = cleaned_up(&mark);
+        assert!(
+            cleaned.exists(),
+            "a command was given no chance to tidy up after itself"
+        );
+        let _ = std::fs::remove_dir_all(&cleaned);
+    }
+
+    /// Where the command the hangup tests run says it heard the hangup.
+    #[cfg(unix)]
+    fn cleaned_up(mark: &std::path::Path) -> std::path::PathBuf {
+        let mut cleaned = mark.as_os_str().to_owned();
+        cleaned.push("-cleaned");
+        cleaned.into()
     }
 
     /// A hangup that was being ignored is still ignored once a command has
@@ -1019,6 +1046,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&mark);
         let status = hang_up_in_a_process_of_its_own(&mark, true);
         let _ = std::fs::remove_dir_all(&mark);
+        let _ = std::fs::remove_dir_all(cleaned_up(&mark));
         assert!(status.success(), "an ignored hangup ended it: {status:?}");
     }
 
@@ -1067,16 +1095,19 @@ mod tests {
             libc::signal(libc::SIGHUP, disposition);
         }
         let mut runs = Runs::default();
-        let (line, wait) = a_mark_left_in_a_moment(std::path::Path::new(&mark));
+        let mark = std::path::Path::new(&mark);
+        let wait = a_mark_left_in_a_moment(mark).1;
+        // Not `a_mark_left_in_a_moment`'s line, because the shell has to be
+        // listening while the moment passes: a shell running `sleep` in the
+        // foreground hears a trapped signal only once the sleep is over,
+        // and `wait` is interrupted by one.
+        let line = format!(
+            "trap 'mkdir \"{}\"; exit' HUP; echo started; sleep 0.4 & wait; mkdir \"{}\"",
+            cleaned_up(mark).display(),
+            mark.display()
+        );
         let id = runs
-            .start(
-                &format!("echo started; {line}"),
-                &[],
-                &[],
-                None,
-                std::path::Path::new("."),
-                None,
-            )
+            .start(&line, &[], &[], None, std::path::Path::new("."), None)
             .expect("the shell");
         for _ in 0..200 {
             if runs
