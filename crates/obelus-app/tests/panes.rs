@@ -22,12 +22,16 @@ struct Heard {
     /// The mark the light runs across, and the two colours it runs
     /// between.
     marks: Mutex<Vec<(Rect, Color, Color)>>,
-    /// And where one thing was said to stop and the next to begin.
-    partings: Mutex<Vec<Rect>>,
+    /// And where one thing was said to stop and the next to begin, with
+    /// the thread that said it: a second test here opens the notes too.
+    partings: Mutex<Vec<(ThreadId, Rect)>>,
     /// Every band and every pane, in the order they were said, with the
     /// thread that said them: the order is the claim, and the tests in
     /// this binary run side by side into the one recorder.
     order: Mutex<Vec<(ThreadId, Told)>>,
+    /// The change marks, with the thread that said them: the editor says
+    /// its margin in other tests' frames too.
+    strokes: Mutex<Vec<(ThreadId, obelus_ui::shapes::Stroke)>>,
 }
 
 /// A band or a pane, as it was said.
@@ -64,7 +68,7 @@ impl obelus_ui::shapes::Shapes for Heard {
 
     fn parted(&self, area: Rect) {
         if let Ok(mut partings) = self.partings.lock() {
-            partings.push(area);
+            partings.push((std::thread::current().id(), area));
         }
     }
 
@@ -73,7 +77,11 @@ impl obelus_ui::shapes::Shapes for Heard {
             marks.push((area, from, to));
         }
     }
-    fn stroked(&self, _stroke: obelus_ui::shapes::Stroke) {}
+    fn stroked(&self, stroke: obelus_ui::shapes::Stroke) {
+        if let Ok(mut strokes) = self.strokes.lock() {
+            strokes.push((std::thread::current().id(), stroke));
+        }
+    }
 }
 
 fn heard() -> &'static Arc<Heard> {
@@ -416,7 +424,8 @@ fn the_mark_says_where_it_is_and_what_the_light_runs_between() {
 #[test]
 fn the_notes_say_where_one_stops_and_the_next_begins() {
     let heard = heard();
-    heard.partings.lock().expect("the partings").clear();
+    let me = std::thread::current().id();
+    let since = heard.partings.lock().expect("the partings").len();
 
     let scratch = support::Scratch::new("panes-parted");
     support::make_room_for_notes(scratch.path());
@@ -455,7 +464,15 @@ depth = 1
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
     let dump = support::render(&mut app, 76, 18);
 
-    let said = heard.partings.lock().expect("the partings").clone();
+    let said: Vec<Rect> = heard
+        .partings
+        .lock()
+        .expect("the partings")
+        .iter()
+        .skip(since)
+        .filter(|(whose, _)| *whose == me)
+        .map(|(_, area)| *area)
+        .collect();
     // Two, for three notes: the first on screen has the page's own rule
     // above it and needs no blank. And two rather than one per row: the
     // middle note is four rows of screen and none of them is a blank.
@@ -474,4 +491,84 @@ depth = 1
         76 - obelus_ui::editor::SCROLLBAR_WIDTH,
         "through the bar's own column: {said:?}"
     );
+}
+
+/// The note the keys are on is marked by one stroke down the whole of it,
+/// which is the figure the editor's margin draws a hunk in: a window draws
+/// a run of rows as one rounded bar, and a mark that was a half cell per
+/// row came out there as a stack of square blocks beside the note.
+///
+/// And the cells under it are the glyph a window checks the stroke against
+/// (`Stroked::holds`, in `obg`), inked in the selection's colour: what the
+/// window draws a stroke in is the cell's ink.
+///
+/// Deliberate breaks: take the `shapes::stroked` call out of the notes'
+/// `render` and nothing is said; say it once per selected row and it is
+/// four strokes; put `HALF` back to `\u{2590}`, the right half, and the
+/// cells no longer say the left-hand stroke is there; ink it in the page's
+/// colour on a ground of the selection's, which is what it was, and the
+/// window draws a stroke the colour of the page.
+#[test]
+fn the_note_the_keys_are_on_is_one_stroke() {
+    let heard = heard();
+    let me = std::thread::current().id();
+
+    let scratch = support::Scratch::new("panes-stroked");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        // The second says three lines and points at a place: four rows of
+        // screen, so one stroke and one per row are different answers.
+        r#"
+[[todo]]
+said = "the first"
+done = false
+
+[[todo]]
+said = """
+the second, which says three lines
+so that the note is taller
+than one row of the screen
+"""
+done = false
+at = "sample.rs"
+line = 2
+"#,
+    )
+    .expect("the notes");
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    support::lay_out(&mut app, 76, 18);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    support::press(&mut app, crossterm::event::KeyCode::Down);
+    let since = heard.strokes.lock().expect("the strokes").len();
+    let cells = support::cells_of(&mut app, 76, 18);
+
+    let said: Vec<obelus_ui::shapes::Stroke> = heard
+        .strokes
+        .lock()
+        .expect("the strokes")
+        .iter()
+        .skip(since)
+        .filter(|(whose, _)| *whose == me)
+        .map(|(_, stroke)| *stroke)
+        .collect();
+    assert_eq!(said.len(), 1, "not one stroke for the note: {said:?}");
+    let stroke = said[0];
+    assert_eq!(stroke.side, obelus_ui::shapes::Side::Left);
+    assert_eq!(stroke.about, obelus_ui::shapes::About::Rows);
+    assert_eq!(stroke.area.height, 4, "not the whole note: {stroke:?}");
+    let row = |y: u16| -> String { (0..76).map(|x| cells[(x, y)].symbol()).collect() };
+    assert!(
+        row(stroke.area.y).contains("the second"),
+        "beside some other note: {}",
+        row(stroke.area.y)
+    );
+    let held = app.theme().selection_background;
+    for y in stroke.area.top()..stroke.area.bottom() {
+        let cell = &cells[(stroke.area.x, y)];
+        assert_eq!(cell.symbol(), "\u{258c}", "row {y} is not the stroke's");
+        assert_eq!(cell.fg, held, "row {y} is not inked in the selection");
+    }
 }

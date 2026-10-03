@@ -468,7 +468,7 @@ fn on_wayland(window: &Window) -> bool {
         .is_ok_and(|handle| matches!(handle.as_raw(), RawWindowHandle::Wayland(_)))
 }
 
-/// How wide a change mark is drawn, as a part of the cell it sits in.
+/// How wide a stroke is drawn, as a part of the cell it sits in.
 ///
 /// The same as a bar's track, because the map and the bar are next to each
 /// other and what they say is one picture: a stroke a different weight
@@ -2223,7 +2223,7 @@ impl Painter {
         }
     }
 
-    /// The change marks, as strokes rather than as the half blocks a
+    /// The marked runs, as strokes rather than as the half blocks a
     /// terminal has.
     ///
     /// Nothing is covered over, the same as a bar: `letters` is told to
