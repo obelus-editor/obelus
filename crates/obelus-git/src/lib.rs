@@ -49,8 +49,9 @@
 //! through gix's worktree conversion, which fixes that -- and also executes any
 //! `filter.*` driver the repository's own config names. `gix::discover` derives
 //! trust from who owns `.git`, so a clone the reader happens to own is fully
-//! trusted and the program runs: a code reader that executes a stranger's code
-//! because it was pointed at their checkout is not a reader. So `head_text`
+//! trusted and the program runs: an editor that executes a stranger's code
+//! because it was pointed at their checkout is one nobody can open a download
+//! in. So `head_text`
 //! opens through `git::without_running_anything`, which forces
 //! `Trust::Reduced`. `core.autocrlf` and `.gitattributes` both survive that
 //! level and the drivers do not -- measured, both ways. It is not the level
@@ -272,8 +273,8 @@ fn repository(path: &Path) -> Option<gix::Repository> {
 /// happens to own is fully trusted -- and a fully trusted repository's own
 /// config may name a program: `filter.*` drivers are run while a blob is
 /// converted the way a checkout would convert it, which is a thing Obelus
-/// does to draw an honest margin. A code reader that executes a stranger's
-/// code because it was pointed at their clone is not a reader.
+/// does to draw an honest margin. An editor that executes a stranger's code
+/// because it was pointed at their clone is one nobody can open a download in.
 ///
 /// Its own function rather than the level everything opens at, because
 /// reduced trust costs something: gix will not resolve a remote whose url

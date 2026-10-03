@@ -29,7 +29,7 @@ fn embed_the_icon() {
     let mut resource = winresource::WindowsResource::new();
     resource.set_icon(icon);
     // Nothing here fails a build, for the reason the commit above is not
-    // allowed to either: what is being built is a code reader, and a
+    // allowed to either: what is being built is an editor, and a
     // Windows SDK that cannot be found is a worse icon rather than no
     // program.
     if let Err(error) = resource.compile() {

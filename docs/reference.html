@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Obelus — reference: keys, commands and settings</title>
+<meta name="description" content="Every key, command and setting in Obelus, and the tools it offers an agent.">
+<link rel="icon" href="obelus.svg">
+<link rel="alternate" hreflang="zh-Hans" href="zh/reference.html">
+<!-- The page is set in the two families omarchy's web rules name: the mono
+     is the voice of the page and the sans is for the headings only. Neither
+     is on a machine by default, so they come off the network -- which is the
+     one thing this page asks for that is not in this repository. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=JetBrains+Mono:ital,wght@0,400..700;1,400..600&display=swap">
+<link rel="stylesheet" href="style.css">
+<script>
+  // Before the first paint, so the page never flashes the wrong theme.
+  (function () {
+    var root = document.documentElement;
+    // What the system is set to, which is the answer wherever the visitor
+    // has not said otherwise. Asked first and on its own, so that it is
+    // still the answer when reading their choice throws -- which is what
+    // throws: a browser with site data turned off refuses `localStorage`,
+    // and that visitor's desktop is as likely to be dark as anybody's. One
+    // `try` around both made a fixed `light` the answer there, which is
+    // the page choosing for somebody who had told their machine.
+    var system = 'light';
+    try {
+      system = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    } catch (e) {}
+    var theme = system;
+    try {
+      theme = localStorage.getItem('obelus-theme') || system;
+    } catch (e) {}
+    root.setAttribute('data-theme', theme);
+  })();
+</script>
+</head>
+<body data-copy="Copy" data-copied="Copied">
+
+<header class="top">
+  <a class="wordmark" href="index.html">
+    <span class="obelus">÷</span>
+    <span>Obelus</span>
+    <span class="tag">a code editor</span>
+  </a>
+  <span class="spacer"></span>
+  <a class="switch" href="zh/reference.html" title="切换到中文" hreflang="zh-Hans">中文</a>
+  <button class="switch" id="theme-switch" type="button" title="Switch theme" data-light="Light" data-dark="Dark">Theme</button>
+  <a class="switch" href="https://github.com/obelus-editor/obelus">GitHub</a>
+</header>
+
+<div class="frame" id="top">
+
+  <nav class="contents" aria-label="Contents">
+    <ol>
+      <li><a href="index.html"><span>‹ Obelus</span></a></li>
+      <li><a href="#keys"><span>Keys &amp; commands</span></a></li>
+      <li><a href="#tools"><span>The agent's tools</span></a></li>
+      <li><a href="#config"><span>Settings &amp; themes</span></a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <div class="hero">
+      <h1>Reference</h1>
+      <p class="sub">Every key, command and setting, and the tools Obelus offers an agent. What Obelus is for is on the <a href="index.html">front page</a>.</p>
+    </div>
+
+    <section id="keys">
+      <h2><span class="num">01</span><span>Keys &amp; commands</span></h2>
+
+      <p>No modes, so every key below means what it says whenever it is pressed — the VS Code and Emacs way, not the vim and helix one. Three families, and the family is the memorable part. This is the default table; every one of them can be moved — see <a href="#config">settings</a>.</p>
+
+      <h3>Function keys open something to look at</h3>
+      <p class="quiet small">Two banks of four, which is how they sit on the keyboard. Bare, never with a modifier: terminals disagree about what a modified function key even sends, so binding one works on this machine and not the next.</p>
+
+      <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th><span>Key</span></th>
+          <th><span>Command</span></th>
+          <th><span>Does</span></th>
+        </tr></thead>
+        <tbody>
+          <tr><td><kbd>F1</kbd></td><td><code>open-file</code></td><td>Choose a file under the project and open it</td></tr>
+          <tr><td><kbd>F2</kbd></td><td><code>switch-document</code></td><td>Choose among the documents already open — and, in a window, the worktrees</td></tr>
+          <tr><td><kbd>F3</kbd></td><td><code>open-changed-file</code></td><td>One of the files that changed since the last commit</td></tr>
+          <tr><td><kbd>F4</kbd></td><td><code>choose-conversation</code></td><td>Which conversation with the agent: a new one, or one to take up again</td></tr>
+          <tr><td><kbd>F5</kbd></td><td><code>search-file</code></td><td>Search the file being read</td></tr>
+          <tr><td><kbd>F6</kbd></td><td><code>search-project</code></td><td>Search every file in the project</td></tr>
+          <tr><td><kbd>F7</kbd></td><td><code>show-outline</code></td><td>Every symbol this file defines</td></tr>
+          <tr><td><kbd>F8</kbd></td><td><code>search-symbols</code></td><td>Search the names the language server knows</td></tr>
+          <tr><td><kbd>F9</kbd></td><td><code>show-file-history</code></td><td>Every commit that changed this file</td></tr>
+          <tr><td><kbd>F10</kbd></td><td><code>show-project-history</code></td><td>Every commit in the project</td></tr>
+          <tr><td><kbd>F11</kbd></td><td><code>show-line-commit</code></td><td>The commit that wrote the line under the cursor</td></tr>
+          <tr><td><kbd>F12</kbd></td><td><code>go-to-definition</code></td><td>Where the symbol under the cursor is defined</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>Control does something to the file in front of you</h3>
+      <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th><span>Key</span></th>
+          <th><span>Command</span></th>
+          <th><span>Does</span></th>
+        </tr></thead>
+        <tbody>
+          <tr><td><kbd>Ctrl+p</kbd></td><td><code>run-command</code></td><td>Run a command by name</td></tr>
+          <tr><td><kbd>Ctrl+w</kbd></td><td><code>close-document</code></td><td>Stop showing this document</td></tr>
+          <tr><td><kbd>Ctrl+s</kbd></td><td><code>save-file</code></td><td>Write the file back to disk</td></tr>
+          <tr><td><kbd>Ctrl+r</kbd></td><td><code>reload-file</code></td><td>Re-read this file from disk</td></tr>
+          <tr><td><kbd>Ctrl+t</kbd></td><td><code>toggle-preview</code></td><td>Show this file as rendered markdown, or stop</td></tr>
+          <tr><td><kbd>Ctrl+l</kbd></td><td><code>go-to-line</code></td><td>Go to a line by number</td></tr>
+          <tr><td><kbd>Ctrl+c</kbd> <kbd>Ctrl+x</kbd> <kbd>Ctrl+v</kbd></td><td><code>copy-selection</code> <code>cut-selection</code> <code>paste</code></td><td>Copy, cut, paste — through the system clipboard</td></tr>
+          <tr><td><kbd>Ctrl+z</kbd> <kbd>Ctrl+y</kbd></td><td><code>undo</code> <code>redo</code></td><td>Undo, redo</td></tr>
+          <tr><td><kbd>Ctrl+a</kbd></td><td><code>select-all</code></td><td>Select the whole file</td></tr>
+          <tr><td><kbd>Ctrl+/</kbd></td><td><code>toggle-comment</code></td><td>Comment this line, or the selected ones, out — and back</td></tr>
+          <tr><td><kbd>Ctrl+Insert</kbd> <kbd>Shift+Insert</kbd></td><td><code>copy-selection</code> <code>paste</code></td><td>The names a desktop already sends for copy and paste</td></tr>
+          <tr><td><kbd>Ctrl+q</kbd></td><td><code>quit</code></td><td>Leave</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>Alt asks about the cursor, or walks what was found</h3>
+      <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th><span>Key</span></th>
+          <th><span>Command</span></th>
+          <th><span>Does</span></th>
+        </tr></thead>
+        <tbody>
+          <tr><td><kbd>Alt+Enter</kbd></td><td><code>ask-about-symbol</code></td><td>The menu of what a language server can say about this symbol</td></tr>
+          <tr><td><kbd>Alt+h</kbd></td><td><code>describe-symbol</code></td><td>What the place under the caret is</td></tr>
+          <tr><td><kbd>Alt+a</kbd></td><td><code>do-something-here</code></td><td>What the server offers to do about where you are</td></tr>
+          <tr><td><kbd>Alt+r</kbd></td><td><code>rename-symbol</code></td><td>Rename this symbol, everywhere</td></tr>
+          <tr><td><kbd>Alt+e</kbd></td><td><code>show-problems</code></td><td>Everything the server says is wrong with this file</td></tr>
+          <tr><td><kbd>Alt+[</kbd> <kbd>Alt+]</kbd></td><td><code>go-to-previous-problem</code> <code>go-to-next-problem</code></td><td>The problem above / below the cursor</td></tr>
+          <tr><td><kbd>Alt+d</kbd></td><td><code>show-change</code></td><td>Open what changed here, in place, or close it</td></tr>
+          <tr><td><kbd>Alt+p</kbd> <kbd>Alt+n</kbd></td><td><code>go-to-previous-change</code> <code>go-to-next-change</code></td><td>The change above / below the cursor</td></tr>
+          <tr><td><kbd>Alt+f</kbd></td><td><code>fold</code></td><td>Fold the run the cursor is in, or unfold the one it is on</td></tr>
+          <tr><td><kbd>Alt+m</kbd></td><td><code>go-to-bracket</code></td><td>The bracket that matches this one</td></tr>
+          <tr><td><kbd>Alt+←</kbd> <kbd>Alt+→</kbd></td><td><code>go-back</code> <code>go-forward</code></td><td>Return to where the last jump was made from; and undo that</td></tr>
+          <tr><td><kbd>Alt+t</kbd></td><td><code>todo-add</code></td><td>Write a note against this line (in a conversation, it opens the notes)</td></tr>
+          <tr><td><kbd>Alt+s</kbd></td><td><code>show-signature</code></td><td>What the call the cursor is in takes</td></tr>
+          <tr><td><kbd>Alt+w</kbd></td><td><code>widen-selection</code></td><td>Widen what is selected, one piece of syntax at a time</td></tr>
+          <tr><td><kbd>Alt+c</kbd></td><td><code>toggle-comment</code></td><td>The same as <kbd>Ctrl+/</kbd></td></tr>
+          <tr><td><kbd>Alt+↑</kbd> <kbd>Alt+↓</kbd></td><td><code>move-line-up</code> <code>move-line-down</code></td><td>Move this line, or the selected ones</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>And two that are not modified</h3>
+      <p><kbd>Insert</kbd> is <code>toggle-replace</code> — type over what is under the cursor rather than before it, which the status row says in a word — and <kbd>Esc</kbd> stops selecting, or gives up on whatever is nearest.</p>
+
+      <h3>Moving, and inside a list</h3>
+      <p>Navigation is not a command, so it is not in the tables above: the arrows, <kbd>PageUp</kbd>/<kbd>PageDown</kbd>, <kbd>Home</kbd>/<kbd>End</kbd> for the line's ends, <kbd>Ctrl+Home</kbd>/<kbd>Ctrl+End</kbd> for the file's. Up and down move by <em>visual</em> row, so a wrapped line still moves the way it looks. <kbd>Shift</kbd> never names a command: it only ever extends.</p>
+      <p>Inside a list — any picker, the settings, the counts — type to narrow, <kbd>↑</kbd><kbd>↓</kbd> to choose, <kbd>PageUp</kbd>/<kbd>PageDown</kbd> to cover ground, <kbd>Home</kbd>/<kbd>End</kbd> for either end, <kbd>Enter</kbd> acts on the row you are on, <kbd>Esc</kbd> cancels, and <kbd>Ctrl+k</kbd> lists every key. A function key works from inside a whole-screen view as well, and goes to the view it names in place of the one showing — <kbd>F6</kbd> from the files is the search, <kbd>F3</kbd> is the files' other tab.</p>
+
+      <h3>In a conversation</h3>
+      <p><kbd>Enter</kbd> sends, and <kbd>Alt+Enter</kbd> makes a new line (so does <kbd>Shift+Enter</kbd>, in a terminal that reports it). <kbd>→</kbd> in an empty box fills in the first thing a conversation about a note offers to say. <kbd>Shift+Tab</kbd> walks the agent's own modes, on the row at the foot. <kbd>Esc</kbd> stops the agent's turn, and anything it was running with it. <kbd>Alt+t</kbd> goes to the note the conversation is about. A question is a card: <kbd>↑</kbd><kbd>↓</kbd> to walk it, <kbd>Enter</kbd> on the row you are on.</p>
+
+      <h3>On the notes page</h3>
+      <p>The page is always being written: a letter is a letter, <kbd>Enter</kbd> starts another note, and <kbd>Alt+Enter</kbd> or <kbd>Shift+Enter</kbd> a line inside one. <kbd>Tab</kbd> hangs a note under the one before it and <kbd>Shift+Tab</kbd> brings it back out. What acts on a note as a note is under <kbd>Alt</kbd>: <kbd>Alt+Space</kbd> ticks it, <kbd>Alt+o</kbd> goes to the line it points at, <kbd>Alt+a</kbd> opens its conversation, <kbd>Alt+↑</kbd><kbd>Alt+↓</kbd> move it, and <kbd>Alt+←</kbd> takes it away.</p>
+
+      <h3 id="commands">Commands</h3>
+
+      <p><kbd>Ctrl+p</kbd>, then the name — verb first. The palette groups them into six tabs, roughly the order of a morning: open something, find your way about it, ask what it means, change it, see what you changed, and Obelus's own housekeeping last.</p>
+
+      <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th><span>Tab</span></th>
+          <th><span>Commands</span></th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td>Files</td>
+            <td><code>open-file</code> <code>open-changed-file</code> <code>save-file</code> <code>reload-file</code> <code>switch-document</code> <code>switch-worktree</code> <code>new-file</code> <code>close-document</code> <code>rename-file</code> <code>toggle-preview</code> <code>count-lines</code> <code>todo</code> <code>todo-add</code></td>
+          </tr>
+          <tr>
+            <td>Search</td>
+            <td><code>search-file</code> <code>search-project</code> <code>search-symbols</code> <code>go-to-line</code> <code>go-to-bracket</code> <code>go-back</code> <code>go-forward</code></td>
+          </tr>
+          <tr>
+            <td>Code</td>
+            <td><code>ask-about-symbol</code> <code>go-to-definition</code> <code>go-to-type-definition</code> <code>go-to-implementation</code> <code>find-references</code> <code>show-calls</code> <code>show-outline</code> <code>describe-symbol</code> <code>show-signature</code> <code>complete-here</code> <code>do-something-here</code> <code>rename-symbol</code> <code>show-problems</code> <code>go-to-previous-problem</code> <code>go-to-next-problem</code> <code>fold</code> <code>fold-all</code> <code>unfold-all</code></td>
+          </tr>
+          <tr>
+            <td>Edit</td>
+            <td><code>copy-selection</code> <code>cut-selection</code> <code>paste</code> <code>undo</code> <code>redo</code> <code>select-all</code> <code>widen-selection</code> <code>clear-selection</code> <code>move-line-up</code> <code>move-line-down</code> <code>toggle-comment</code> <code>toggle-replace</code></td>
+          </tr>
+          <tr>
+            <td>Git</td>
+            <td><code>show-change</code> <code>go-to-previous-change</code> <code>go-to-next-change</code> <code>show-file-history</code> <code>show-project-history</code> <code>show-line-commit</code></td>
+          </tr>
+          <tr>
+            <td>Obelus</td>
+            <td><code>choose-theme</code> <code>new-conversation</code> <code>choose-conversation</code> <code>open-settings</code> <code>open-project-settings</code> <code>open-settings-file</code> <code>open-log</code> <code>open-server-log</code> <code>restart-server</code> <code>stop-server</code> <code>quit</code></td>
+          </tr>
+        </tbody>
+      </table>
+      </div>
+    </section>
+    <section id="tools">
+      <h2><span class="num">02</span><span>The agent's tools</span></h2>
+
+      <p>An agent can read a file and ask permission through the protocol it already speaks. What it cannot do that way is anything about your notes, so Obelus offers it a few tools over MCP. None of them asks you anything: the asking is the agent's to do, on a card, before it calls one.</p>
+
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th><span>Tool</span></th><th><span>Does</span></th></tr></thead>
+        <tbody>
+          <tr><td><code>todo_list</code></td><td>Every note this project keeps: what it says, whether it is done, where it points</td></tr>
+          <tr><td><code>todo_add</code></td><td>Write notes down — at the top level, or under a note, which is where the steps a conversation about that note works out go. What somebody would want to come back to, not a summary of what it just did</td></tr>
+          <tr><td><code>todo_finish</code></td><td>Tick a note off. It only ticks: a list of what was decided against is worth as much as a list of what was never got to, and taking one away is yours</td></tr>
+          <tr><td><code>todo_reword</code></td><td>Rewrite what a note says. The one tool here that loses something — the notes are not in git and the page has no undo — so it is required to ask first, showing both what the note says now and what it would say instead</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p class="quiet small">Three more: <code>open_file</code> puts a file on your screen at a line, once you have said yes — <kbd>Alt+←</kbd> brings you back; <code>read_workflow</code> hands the agent the workflow this project is set to when it is about to change something; and <code>close_conversation</code> closes the conversation it is in, once you have said yes.</p>
+    </section>
+    <section id="config">
+      <h2><span class="num">03</span><span>Settings &amp; themes</span></h2>
+
+      <h3>Two files</h3>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th><span>File</span></th><th><span>Whose</span></th></tr></thead>
+        <tbody>
+          <tr><td><code>~/.config/obelus/config.toml</code></td><td>Yours. <code>open-settings</code> writes it the moment anything changes</td></tr>
+          <tr><td><code>&lt;project&gt;/.obelus/config.toml</code></td><td>The project's, laid over yours — but only for what it is allowed to set</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p class="quiet small">A missing file means the defaults, and so does a line Obelus does not recognise: a typo should leave you with Obelus, not with an error message where your editor was. A file it cannot <em>read</em> is the one thing it treats differently — it stops writing to that file rather than saving over settings it never saw, says so, and starts again the moment the file parses.</p>
+      <p class="quiet small">And it tells you <em>where</em>. A settings file that will not parse, a key that binds nothing, a setting a project is not allowed to set, a theme named that no file answers to — each is marked on its own line, in the same list a language server's problems go in, so <kbd>Alt+e</kbd> and <kbd>Alt+[</kbd> <kbd>Alt+]</kbd> walk them like any other. Obelus writes the file, so Obelus has to be able to say which line it could not read.</p>
+
+      <div class="aside">
+        <p><strong>Four a project may not set:</strong> <code>agent</code>, <code>keys</code>, <code>agents</code> and <code>new_versions</code>. A program starting because a downloaded project said so is a decision that belongs to the person at the keyboard; a project that could rebind keys could put <code>quit</code> where you would find it by accident; and what an agent may do without asking is the setting a downloaded project would most like to write; and whether Obelus asks the network about a newer version is yours to decide, not a downloaded project's.</p>
+      </div>
+
+      <h3>The settings</h3>
+      <p class="quiet small">A few of them belong to one front end. The settings page shows you the ones that apply where you are reading — a row you can change and watch do nothing has taught you something untrue — and the <em>file</em> keeps them all, because the other Obelus on that machine is the one they are for.</p>
+      <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th><span>Key</span></th>
+          <th><span>Default</span></th>
+          <th><span>What it is</span></th>
+        </tr></thead>
+        <tbody>
+          <tr><td><code>theme</code></td><td><code>"dark"</code></td><td>The colours Obelus draws in</td></tr>
+          <tr><td><code>icons</code></td><td><code>false</code></td><td><em>A terminal only.</em> Nerd Font glyphs — one without a patched font draws a box instead. <code>obg</code> carries the marks in the binary, so it never asks</td></tr>
+          <tr><td><code>wrap</code></td><td><code>false</code></td><td>Whether a line too long for the screen carries onto the next row. Off, so a line is a line</td></tr>
+          <tr><td><code>blame_margin</code></td><td><code>true</code></td><td>Who last changed the line the cursor is on</td></tr>
+          <tr><td><code>tab_width</code></td><td><code>4</code></td><td>How wide a tab is drawn. <code>2</code>, <code>4</code> or <code>8</code></td></tr>
+          <tr><td><code>fonts</code></td><td><code>[]</code></td><td><em>A window only.</em> The faces to draw with, in your order, each tried for the character before the next. Empty means what this machine calls monospaced — asked of the platform, not of the text engine</td></tr>
+          <tr><td><code>animation</code></td><td><code>true</code></td><td><em>A window only.</em> Whether the caret flies to where it is going and a list slides rather than jumps. Off, everything arrives where it belongs at once</td></tr>
+          <tr><td><code>font_size</code></td><td><code>14</code></td><td><em>A window only.</em> How big the text is, in points. A terminal draws with the font you gave the terminal</td></tr>
+          <tr><td><code>hover_delay</code></td><td><code>400</code></td><td>How long the pointer rests before Obelus asks what a word is, in milliseconds. Zero asks only when a key does</td></tr>
+          <tr><td><code>format_on_save</code></td><td><code>false</code></td><td>Ask the language server to lay the file out before writing. Off: a formatter that ran without being asked would rewrite a file somebody opened to read</td></tr>
+          <tr><td><code>code_actions_on_save</code></td><td><code>false</code></td><td>Make the server's whole-file fixes before writing. Off, for the reason above it</td></tr>
+          <tr><td><code>inlay_hints</code></td><td><code>true</code></td><td>Draw the types and parameter names a server infers. They are not in the file: turning this off puts every column back where the file has it</td></tr>
+          <tr><td><code>diagnostics</code></td><td><code>true</code></td><td>Open the words under the line the caret is on. What is wrong is underlined either way; this is the <em>words</em>, which cost that line a row</td></tr>
+          <tr><td><code>ignored_files</code></td><td><code>false</code></td><td>Whether the file list offers the files a project has said to ignore</td></tr>
+          <tr><td><code>hidden_files</code></td><td><code>false</code></td><td>Whether the file list offers hidden files too — a name beginning with a dot, and on Windows the attribute as well</td></tr>
+          <tr><td><code>new_versions</code></td><td><code>true</code></td><td>Ask GitHub once a day whether a newer Obelus is out, and say so on the welcome screen</td></tr>
+          <tr><td><code>workflow</code></td><td><code>"feature-branch"</code></td><td>How an agent goes about changing the project. <code>feature-branch</code> is a branch in a worktree of its own; <code>none</code> is the agent's own way — see <a href="index.html#how">how it works</a>. A project may set it</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>Rebinding</h3>
+      <p>Changes rather than the whole table: rebind one key and everything you said nothing about still gets the current default. An empty chord is a key taken away, which is also a decision. The names are the command names above, and the keys are spelled the way the screen spells them — the case is not read, so a file written before they were capitalised still works.</p>
+      <pre><code>theme = "light"
+wrap = true
+blame_margin = false
+
+[keys]
+open-file = "Ctrl+o"
+show-change = "Alt+g"
+quit = ""            # taken away</code></pre>
+
+      <h3>Themes</h3>
+      <p>Built-in <code>dark</code> and <code>light</code>, switched by <code>choose-theme</code> without a reparse. Beyond those, every <code>.toml</code> in <code>~/.config/obelus/themes/</code> is a theme, named by the file (<code>omarchy.toml</code> → <code>omarchy</code>). Every colour is optional and whatever is not given comes from the built-in theme it builds on — which is what keeps old files working when a colour is added later.</p>
+      <p class="quiet small"><code>contrib/omarchy/</code> in the repository is a template for <a href="https://omarchy.org">omarchy</a>, so the desktop's palette writes Obelus's theme file for you. Nothing in Obelus knows about omarchy: a theme is a file.</p>
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <p><span class="mono">÷</span> &nbsp; Obelus &nbsp;·&nbsp; Apache-2.0 &nbsp;·&nbsp; <a href="https://github.com/obelus-editor/obelus">github.com/obelus-editor/obelus</a></p>
+  <p>A reader's mark, made while reading.</p>
+</footer>
+
+<script src="main.js"></script>
+</body>
+</html>

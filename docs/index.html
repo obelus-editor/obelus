@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Obelus — a code reader</title>
-<meta name="description" content="Obelus is a code reader, in a window of its own or in a terminal. It doesn't want you to type. Its principles, and how to use it.">
+<title>Obelus — an editor for how I work, with the agent built in</title>
+<meta name="description" content="Obelus is a code editor that fits how I work, with an agent built in, in a window of its own or in a terminal. Not a powerful editor: the agent changes the code on a branch of its own, and you read it, try it and say when it goes.">
 <link rel="icon" href="obelus.svg">
 <link rel="alternate" hreflang="zh-Hans" href="zh/">
 <!-- The page is set in the two families omarchy's web rules name: the mono
@@ -44,7 +44,7 @@
   <a class="wordmark" href="#top">
     <span class="obelus">÷</span>
     <span>Obelus</span>
-    <span class="tag">a code reader</span>
+    <span class="tag">a code editor</span>
   </a>
   <span class="spacer"></span>
   <a class="switch" href="zh/" title="切换到中文" hreflang="zh-Hans">中文</a>
@@ -52,176 +52,208 @@
   <a class="switch" href="https://github.com/obelus-editor/obelus">GitHub</a>
 </header>
 
-<div class="frame" id="top">
+<div class="hero wide" id="top">
+      <div class="mark">÷</div>
+      <h1>Obelus</h1>
+      <p class="lede">An editor that fits my own habits — <strong>with the agent built in.</strong></p>
+      <p class="sub">Obelus is a code editor, in a window of its own or in a terminal. It is not trying to be a powerful one. It is built around one way of working — mine. If you work the same way, it will suit you too: an agent changes the code on a branch of its own, you read what it did beside the code it changed, and nothing leaves the branch until you say so.</p>
+
+      <div class="buttons">
+        <a class="button primary" href="#start"><span>Get started</span></a>
+        <a class="button" href="#how"><span>See how it works</span></a>
+        <a class="button" href="https://github.com/obelus-editor/obelus">GitHub</a>
+      </div>
+
+      <div class="screens" role="region" aria-label="Main screens">
+      <div class="tabs" role="tablist" hidden>
+        <button type="button" role="tab" class="switch" id="tab-editor" aria-controls="screen-editor" aria-selected="true" tabindex="0" data-screen="editor">Editor</button>
+        <button type="button" role="tab" class="switch" id="tab-agent" aria-controls="screen-agent" aria-selected="false" tabindex="-1" data-screen="agent">Agent</button>
+        <button type="button" role="tab" class="switch" id="tab-todo" aria-controls="screen-todo" aria-selected="false" tabindex="-1" data-screen="todo">Todo</button>
+        <button type="button" role="tab" class="switch" id="tab-worktrees" aria-controls="screen-worktrees" aria-selected="false" tabindex="-1" data-screen="worktrees">Worktree</button>
+      </div>
+      <div class="frames">
+        <figure class="shot" id="screen-editor" role="tabpanel" aria-labelledby="tab-editor" data-depth="0" data-screen="editor">
+          <img class="dark" src="screens/editor-dark.webp" width="2100" height="1520" alt="A Rust file open on a commit, with one changed line opened in place showing the old line above the new one.">
+          <img class="light" src="screens/editor-light.webp" width="2100" height="1520" alt="A Rust file open on a commit, with one changed line opened in place showing the old line above the new one.">
+          <figcaption class="caption">A commit the agent made, read in place: the line it replaced above the one that replaced it, the marks in the margin, and who wrote it.</figcaption>
+        </figure>
+        <figure class="shot" id="screen-agent" role="tabpanel" aria-labelledby="tab-agent" data-depth="1" data-screen="agent">
+          <img class="dark" src="screens/agent-dark.webp" width="2100" height="1520" alt="A conversation in which the agent reports the cause, the fix, what it ran and where the change is, and a card below asks whether to review it.">
+          <img class="light" src="screens/agent-light.webp" width="2100" height="1520" alt="A conversation in which the agent reports the cause, the fix, what it ran and where the change is, and a card below asks whether to review it.">
+          <figcaption class="caption">A conversation about a note: the agent says where its change is, waits until you have tried it, and asks about a review on a card.</figcaption>
+        </figure>
+        <figure class="shot" id="screen-todo" role="tabpanel" aria-labelledby="tab-todo" data-depth="2" data-screen="todo">
+          <img class="dark" src="screens/todo-dark.webp" width="2100" height="1520" alt="The notes page: notes with steps under one of them, some ticked, and a mark beside the note that has a conversation.">
+          <img class="light" src="screens/todo-light.webp" width="2100" height="1520" alt="The notes page: notes with steps under one of them, some ticked, and a mark beside the note that has a conversation.">
+          <figcaption class="caption">The notes: steps hang under the note they belong to, and a note with a conversation is marked.</figcaption>
+        </figure>
+        <figure class="shot" id="screen-worktrees" role="tabpanel" aria-labelledby="tab-worktrees" data-depth="3" data-screen="worktrees">
+          <img class="dark" src="screens/worktrees-dark.webp" width="2100" height="1520" alt="The Worktrees tab: the main checkout and the agent's worktree, both with a window open.">
+          <img class="light" src="screens/worktrees-light.webp" width="2100" height="1520" alt="The Worktrees tab: the main checkout and the agent's worktree, both with a window open.">
+          <figcaption class="caption">F2 and Tab: every worktree of the repository, each a window away.</figcaption>
+        </figure>
+      </div>
+    </div>
+    </div>
+
+<div class="frame">
 
   <nav class="contents" aria-label="Contents">
     <ol>
-      <li><a href="#start"><span>Getting started</span></a></li>
-      <li><a href="#why"><span>Why it exists</span></a></li>
-      <li><a href="#highlights"><span>Highlights</span></a></li>
+      <li><a href="#fit"><span>Is this how you work?</span></a></li>
+      <li><a href="#does"><span>What it does for that</span></a></li>
+      <li><a href="#not"><span>What it does not do</span></a></li>
       <li><a href="#tenets"><span>Principles</span></a></li>
-      <li><a href="#what"><span>Reading code</span></a></li>
-      <li><a href="#notes"><span>Notes</span></a></li>
-      <li><a href="#agent"><span>Talking to an agent</span></a></li>
-      <li><a href="#many"><span>Many windows</span></a></li>
-      <li><a href="#keys"><span>Keys &amp; commands</span></a></li>
-      <li><a href="#config"><span>Config &amp; themes</span></a></li>
+      <li><a href="#why"><span>Why it exists</span></a></li>
+      <li><a href="#start"><span>Getting started</span></a></li>
+      <li><a href="reference.html"><span>Reference ›</span></a></li>
     </ol>
   </nav>
 
   <main>
 
-    <div class="hero">
-      <div class="mark">÷</div>
-      <h1>Obelus</h1>
-      <p class="lede">A code <strong>reader</strong>, in a window of its own or in a terminal.<br>It doesn't want you to type.</p>
-      <p class="sub">In the AI era every line you read is a line you did not write. An <em>obelus</em> (÷, †) is the mark a scholar put in a manuscript's margin to flag a line as doubtful — a reader's mark, made while reading.</p>
 
-      <div class="buttons">
-        <a class="button primary" href="#start"><span>Get started</span></a>
-        <a class="button" href="#tenets"><span>Read the principles</span></a>
-        <a class="button" href="https://github.com/obelus-editor/obelus">GitHub</a>
-      </div>
 
-      <figure class="shot">
-        <img class="dark" src="screen-dark.png" width="1500" height="1084" alt="Obelus reading a Rust source file. Line 59 has changed, and the hunk is opened underneath it showing the line as the last commit had it; the changes elsewhere in the file are marked beside the scrollbar, and the status row names the file, the language server and the cursor's position.">
-        <img class="light" src="screen-light.png" width="1500" height="1084" alt="The same screen in Obelus's light theme.">
-        <figcaption class="caption"><code>obg</code>, reading its own source. Line 59 changed, and <kbd>Alt+d</kbd> has opened the hunk in place, with the line as the last commit had it above the one that replaced it; the marks beside the scrollbar are the rest of the file's changes. Obelus's own <code>dark</code> and <code>light</code>, following whichever this page is in.</figcaption>
-      </figure>
-    </div>
+    <section id="fit">
+      <h2><span class="num">01</span><span>Is this how you work?</span></h2>
 
-    <section id="start">
-      <h2><span class="num">01</span><span>Getting started</span></h2>
-
-      <h3>Install</h3>
-      <p>One script per shell, and which you want is which shell you are in. Either one takes the latest release, checks what it downloaded against the release's own <code>SHA256SUMS</code>, and puts <code>obg</code> on your PATH — Obelus in a window of its own.</p>
-
-      <h4>Linux and macOS</h4>
-      <pre><code>curl -fsSL https://raw.githubusercontent.com/obelus-editor/obelus/master/contrib/install.sh | sh</code></pre>
-
-      <h4>Windows, in PowerShell</h4>
-      <pre><code>irm https://raw.githubusercontent.com/obelus-editor/obelus/master/contrib/install.ps1 | iex</code></pre>
-
-      <h4>The terminal one as well</h4>
-      <p><code>ob</code> is the other binary and is asked for by name. Everything after <code>-s --</code> goes to the script; a pipe into <code>iex</code> has nowhere to put an argument, so on Windows the script is fetched first instead.</p>
-
-      <pre><code>curl -fsSL https://raw.githubusercontent.com/obelus-editor/obelus/master/contrib/install.sh | sh -s -- --bin both</code></pre>
-
-      <pre><code>irm https://raw.githubusercontent.com/obelus-editor/obelus/master/contrib/install.ps1 -OutFile install.ps1
-.\install.ps1 -Binary both</code></pre>
-
-      <p><code>--bin ob</code> is the terminal one on its own, <code>--dir</code> says where to put it, and <code>--help</code> lists the rest. <a href="https://github.com/obelus-editor/obelus/releases">The releases</a> carry an archive for every platform as well as a <code>.deb</code>, an <code>.rpm</code>, an AppImage and a macOS <code>.app</code>. On Windows the script puts Obelus in the Start menu as well as on your PATH — the icon is in the binary, so the shortcut is the whole of it, and <code>-NoShortcut</code> leaves the menu alone. On Linux the same is a desktop entry for each of <code>obg</code> and <code>ob</code> that was installed — <code>ob</code>'s opens in a terminal — and an icon, under <code>~/.local/share</code>, which every launcher reads: omarchy's <code>Apps</code> menu among them. <code>--no-desktop</code> leaves them out. <code>-Uninstall</code> takes all three back, which is the half that matters there: a PATH and a Start menu are what a reader cannot simply delete. <code>--uninstall</code> is the same half of the shell script — <code>ob</code> and <code>obg</code> out of <code>--dir</code>, the desktop entries and their icon, and, on omarchy, the theme template and the link to what omarchy renders. Neither script touches your settings. On musl there is no <code>obg</code> at all: the window finds Vulkan, Wayland and X11 by <code>dlopen</code>, which a static binary cannot do, so the script says so and installs <code>ob</code>.</p>
-
-      <h4>From source</h4>
-      <p>Which needs nothing but a stable Rust toolchain (edition 2024).</p>
-
-      <pre><code>git clone https://github.com/obelus-editor/obelus
-cd obelus
-
-# installs as `obg` into ~/.cargo/bin: Obelus in a window of its own
-cargo install --path crates/obelus-gui
-
-# installs as `ob`: the same reader, in the terminal
-cargo install --path crates/obelus-cli
-
-# or just build them: target/release/obg and target/release/ob
-cargo build --release</code></pre>
-
-      <h4>Worth having as well</h4>
-      <ul>
-        <li>A <strong>Nerd Font</strong>, for the glyphs beside a file's name and on the status bar — in the terminal. They are off until <code>icons</code> is turned on, so without one no boxes appear. <code>obg</code> needs none of this: it carries the marks in the binary.</li>
-        <li>A <strong>language server</strong> for your language (<code>rust-analyzer</code> for Rust). Without one, reading still works — there is just no definition, no diagnostics, no outline.</li>
-        <li>An <strong>ACP</strong> agent. Obelus can install one from the registry — see <a href="#agent">talking to an agent</a>.</li>
-      </ul>
-
-      <h3>Run it</h3>
-      <pre><code>obg                  # nothing: the welcome screen, on this directory
-obg src/main.rs      # read a file — its repository is the project
-obg ../another-repo  # a directory: that is the project
-ob src/main.rs       # the same file, in the terminal instead</code></pre>
-
-      <h3>The first five minutes</h3>
-      <ol>
-        <li><kbd>F1</kbd> opens a file. Type to narrow, <kbd>↑</kbd><kbd>↓</kbd> to choose, <kbd>Enter</kbd> to accept, <kbd>Esc</kbd> to cancel.</li>
-        <li>Not sure which keys a view takes? Press <kbd>Ctrl+k</kbd>. The row at the foot lists what is available <em>now</em>; <kbd>Ctrl+k</kbd> opens all of them, with the rest greyed out.</li>
-        <li><kbd>Ctrl+p</kbd> is the command palette: anything you cannot remember a key for is findable by name.</li>
-        <li>Put the cursor on a change and press <kbd>Alt+d</kbd>: the hunk opens <em>in place</em>, with what was there before it.</li>
-        <li>See a line you doubt: <kbd>Alt+t</kbd>, and write a sentence. It goes in this project's notes, and <code>todo</code> brings them all back.</li>
-        <li><kbd>Ctrl+p</kbd> → <code>open-settings</code> for colours, wrapping, tab width; <code>choose-theme</code> for the theme.</li>
-        <li><kbd>Ctrl+q</kbd> leaves.</li>
-      </ol>
-    </section>
-    <section id="why">
-      <h2><span class="num">02</span>Why it exists</h2>
-
-      <p><strong>Honestly: it was written for me first.</strong> Every trade-off answers "does this work for me" before it answers "will somebody else refuse to use it without feature X".</p>
-
-      <p>I never got comfortable with the way vim is used. Modes, <code>hjkl</code>, colon commands — muscle memory for the people who have it, and for me something to work out again every time I open a terminal. What I wanted was: <em>open it and read</em>. Arrow keys are arrow keys, <kbd>Ctrl+c</kbd> copies, and nothing has to be escaped out of first.</p>
-
-      <p>The other half is that reading code has genuinely changed. A lot of the lines are written by something else now, and what I do in front of a terminal is read, check, mark what looks doubtful, and ask an agent about it — rather than type. There are good editors in a terminal, but they are <em>editors</em>: the feature list is an editor's list, with multiple cursors and macros and snippets on it. What I wanted sits on another line entirely — the syntax tree, the git timeline, the language server and the agent, all organised around reading.</p>
-
-      <h3>How I actually work</h3>
-      <p>Working with AI, I usually have several projects going at once: a pile of claude code and codex sessions, an editor, and a todo list for planning what comes next. I also keep several worktrees of one repository, each carrying a different part of the work. Obelus is shaped for that: it does not split, and assumes instead that you are running several, which it is <a href="#many">prepared for</a>.</p>
-      <p>That todo list is also why the <a href="#notes">notes</a> are in Obelus at all: planning the next step happens in the middle of reading code, not in another application.</p>
-    </section>
-    <section id="highlights">
-      <h2><span class="num">03</span>Highlights</h2>
+      <p>Obelus assumes a particular kind of day. See whether it is yours.</p>
 
       <ul class="beats">
-        <li><span>Every note can have its own conversation, and it is still there tomorrow</span><a class="where" href="#agent">Talking to an agent ›</a></li>
-        <li><span>Talk to an agent about a note and it writes the next steps under it — asking you first</span><a class="where" href="#planning">Notes ›</a></li>
-        <li><span>A note written last week still points at the line it was written about</span><a class="where" href="#notes">Notes ›</a></li>
-        <li><span>Worktrees of one repository share one set of notes, and two windows never erase each other</span><a class="where" href="#many">Many windows ›</a></li>
-        <li><span>One file, more than one reading — and more than one language</span><a class="where" href="#what">Reading code ›</a></li>
-        <li><span>No modes: keys work the way they do in VS Code or Emacs, not the way they do in vim or helix</span><a class="where" href="#keys">Keys ›</a></li>
-        <li><span>The same reader in a window of its own or in a terminal, with the keys a terminal cannot send</span><a class="where" href="#what">Reading code ›</a></li>
+        <li><span>You have several projects going at once, and more than one worktree of the same repository</span></li>
+        <li><span>An agent writes most of the code; your part is reading it, judging it, and deciding what comes next</span></li>
+        <li><span>You keep a list of what comes next, and would rather it sat beside the code than in another app</span></li>
+        <li><span>You would rather open a file and read than learn a mode first: arrow keys, <kbd>Ctrl+c</kbd>, <kbd>Ctrl+z</kbd></span></li>
+        <li><span>You put windows side by side and let your terminal or desktop arrange them</span></li>
       </ul>
-    </section>
-    <section id="tenets">
-      <h2><span class="num">04</span><span>Principles</span></h2>
 
-      <p>These are not slogans written afterwards. They are the sentences the trade-offs actually get decided against, and most of them were written down after getting it wrong once.</p>
+      <p>If most of that is you, the rest of this page is what Obelus does about it. If what you want is the most powerful editor there is, start with <a href="#not">what it does not do</a>.</p>
+    </section>
+
+    <section id="does">
+      <h2><span class="num">02</span><span>What it does for that</span></h2>
+
+      <h3 id="how">A note becomes a merged change</h3>
+      <p>The agent works on a branch of its own; you read what it did, try it, and say when it goes. The checkout you are reading never moves, and you never type a git command. The Agent screen at the top of this page is one of those days, partway through.</p>
 
       <ol class="tenets">
         <li>
           <span class="no">01</span>
           <div>
-            <p class="claim">Reading is the product; editing is incidental.</p>
-            <p class="why">Called an editor, it gets measured by an editor's checklist — multiple cursors? macros? snippets? — none of which it wants. There is basic editing, for the line you fix on the way past.</p>
+            <p class="claim">It starts from a note.</p>
+            <p class="why">A line you doubt — <kbd>Alt+t</kbd> on it, and a sentence — or a plan with no line under it, written on the notes page (<code>todo</code> from the palette). Either way it is in the project's notes, shared by every worktree of the repository.</p>
           </div>
         </li>
         <li>
           <span class="no">02</span>
           <div>
-            <p class="claim">No dialect to learn first.</p>
-            <p class="why">No modes. Keys work the way they do in VS Code or Emacs — pressed, they do what they say — and not the way they do in vim or helix, where what a key does depends on which mode you are in. Arrow keys are arrow keys, <kbd>Ctrl+c</kbd> copies, <kbd>Ctrl+z</kbd> undoes.</p>
+            <p class="claim">You talk it through with an agent.</p>
+            <p class="why"><kbd>Alt+a</kbd> on a note opens a conversation about it, and the agent is told what it says. Work out what it would take; the steps you agree to go under the note.</p>
           </div>
         </li>
         <li>
           <span class="no">03</span>
           <div>
-            <p class="claim">No splits.</p>
-            <p class="why">Two files side by side is another Obelus. This is settled rather than not got to yet — which is why running several at once is the normal case, and prepared for: see <a href="#many">many windows, many worktrees</a>.</p>
+            <p class="claim">It changes the code on a branch of its own.</p>
+            <p class="why">Before its first change it makes a worktree on a branch named after the change — under <code>.worktree/</code>, where this workflow puts the ones it makes — gets it building and runs the tests once, so a failure afterwards is known to be the change's. The conversation's header says which branch the changes are on.</p>
           </div>
         </li>
         <li>
           <span class="no">04</span>
           <div>
-            <p class="claim">A change that has happened is in the file; one that is still being asked for is in the conversation.</p>
-            <p class="why">Once an agent has edited a file, that is the difference between the working tree and the last commit, and the margin already draws it; drawing it again in the transcript would be a second account of one thing. What it is <em>asking</em> to do goes in the transcript, and stays there.</p>
+            <p class="claim">It tells you where to try it, and waits.</p>
+            <p class="why">It runs the tests again and says the directory and the branch, what it ran and what that showed — not that it should work — and waits until you have tried it. <kbd>F2</kbd> and <kbd>Tab</kbd> takes you to <a href="#worktrees">that worktree's window</a>; there the change is the newest commit on the branch, and <kbd>F11</kbd> on a line it wrote opens it.</p>
           </div>
         </li>
         <li>
           <span class="no">05</span>
           <div>
-            <p class="claim">A file being rewritten while you read it is the normal case.</p>
-            <p class="why">Not the exceptional one — an agent edits the file you have open, a formatter runs, a branch changes underneath you. So Obelus re-reads by itself rather than asking, and without losing your place; a file that has gone away is marked <code>[stale]</code> and keeps its contents on screen.</p>
+            <p class="claim">Nothing leaves before you say so.</p>
+            <p class="why">Once you say you have tried it, it asks whether to review the change first — in a fresh context where it can start one — and lists what it found by how much it matters, for you to tick which to fix. Then whether it goes back as a merge, as a pull request, or waits for later.</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">06</span>
+          <div>
+            <p class="claim">A pull request is followed to the end.</p>
+            <p class="why">It opens one with <code>gh</code>, follows the checks, says why one failed and fixes it if you ask, and merges once they pass. Without <code>gh</code> signed in, it pushes the branch and hands you the link.</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">07</span>
+          <div>
+            <p class="claim">And it tidies up, asking.</p>
+            <p class="why">Once it has merged: if your checkout is on the branch it went into, whether to bring it up to date — a fast-forward and nothing else — and whether to remove the worktree. Once the note is done: whether to tick it off and close the conversation.</p>
           </div>
         </li>
       </ol>
-    </section>
-    <section id="what">
-      <h2><span class="num">05</span><span>Reading code</span></h2>
+
+      <p>Every one of those questions is a card in the conversation, answered with the keys you are already holding. Nothing is pushed, merged, deleted or ticked off because the agent thought it was time.</p>
+      <p class="quiet small">This is the <code>feature-branch</code> workflow, and it is on unless you set <code>workflow = "none"</code> — <kbd>Ctrl+p</kbd> → <code>open-settings</code> → <code>Workflow</code> — after which the agent changes things its own way, usually straight in the checkout you are reading. A project may choose for itself, and one that is not a git repository has no branch to work on, so the agent changes the files where they are. Obelus itself runs no git: every command is the agent's.</p>
+
+      <div class="feature">
+        <div class="text">
+      <h3 id="worktrees">Every worktree is one key away</h3>
+      <p>Obelus has no splits: two files side by side is two windows. So several on one project, each on its own worktree, is the normal case. In a window, <kbd>F2</kbd> has a second tab, and <kbd>Tab</kbd> goes to it: every worktree git knows of for this repository, wherever it is, with the ones that have a window marked. Choosing one brings its window forward, or opens a new one on it.</p>
+        </div>
+        <figure class="shot">
+          <a class="dark" href="screens/worktree-list-dark.webp"><img src="screens/worktree-list-dark.webp" width="1300" height="420" loading="lazy" alt="The Worktrees tab: tally on main and tally/.worktree/stable-tie-order on its branch, both with a window open."></a>
+          <a class="light" href="screens/worktree-list-light.webp"><img src="screens/worktree-list-light.webp" width="1300" height="420" loading="lazy" alt="The Worktrees tab: tally on main and tally/.worktree/stable-tie-order on its branch, both with a window open."></a>
+        </figure>
+      </div>
+      <p class="quiet small">Only <code>obg</code> lists them. Going somewhere is starting an Obelus or bringing one forward, and a terminal can do neither: the window it is drawn in is the terminal's, and which terminal you would want a new Obelus started in is not something Obelus can know. So <code>ob</code> has no such tab, and <code>switch-worktree</code> is dim there.</p>
+      <ul>
+        <li>Every worktree of a repository opens <em>one</em> set of notes, and what another window writes turns up by itself.</li>
+        <li>Two windows writing at once do not erase each other: every change is made against what is on disk at that moment.</li>
+        <li>A conversation is open in one window at a time, and the claim goes when the process does — no "it did not exit properly last time".</li>
+        <li>A tree removed under a window leaves that window with what was open in it, and the project dim.</li>
+        <li>Each tree is named from the directory the main checkout sits in — by its own name beside it, by the way down inside it, in full anywhere else — and one deleted behind git's back says <code>Missing</code> and cannot be chosen.</li>
+        <li>Before saving, it asks the disk whether another window, an agent or a formatter changed the file since you opened it.</li>
+      </ul>
+
+      <div class="feature flip">
+        <div class="text">
+      <h3 id="agent">A conversation for every note</h3>
+      <p>Obelus has no model of its own. It talks to the agent you already have over <strong>ACP</strong>, the Agent Client Protocol, and installs one from the protocol's own registry if you have none: <kbd>F4</kbd>, a new conversation, the agents page.</p>
+        </div>
+        <figure class="shot">
+          <a class="dark" href="screens/card-dark.webp"><img src="screens/card-dark.webp" width="2100" height="600" loading="lazy" alt="An agent in a conversation has said where its change is and been told it was tried; a card below asks whether the change should be reviewed before it goes anywhere."></a>
+          <a class="light" href="screens/card-light.webp"><img src="screens/card-light.webp" width="2100" height="600" loading="lazy" alt="An agent in a conversation has said where its change is and been told it was tried; a card below asks whether the change should be reviewed before it goes anywhere."></a>
+          <figcaption class="caption">A question is a card, answered with the keys you already have under your hands.</figcaption>
+        </figure>
+      </div>
+      <ul>
+        <li>A conversation is a document in the list of open ones. Leave it and come back tomorrow: it is where you left it.</li>
+        <li>Opened from a note, it stays that note's, and if you reword the note the agent is told what changed.</li>
+        <li>The agent can write the next steps under the note, tick one off, or reword one — each only after asking you.</li>
+        <li>Before your first words, Obelus tells the agent who it is talking to: that you are reading code beside its replies, and that a choice which is yours should be asked on a card, not written into prose as <code>1) … 2) …</code>.</li>
+        <li>A question is a card, not prose: above it what the agent is going to do, below it the answers, and <kbd>Enter</kbd> acts on the row you are on.</li>
+        <li>A change it is <em>asking</em> to make is shown in the conversation; a change it has made is in the file, in the margin, like any other.</li>
+      </ul>
+
+      <div class="feature">
+        <div class="text">
+      <h3 id="notes">Notes that keep their place</h3>
+      <p><kbd>Alt+t</kbd> on a line starts a note about it; <code>todo</code> opens them all. A note can be about a line or about the whole project, and can hang under another. It keeps the commit it was written against as well as the line, so a note written last week still points at what it was written about, however the file has moved. They live in Obelus's own directory, per project — so every worktree shares them, and they never end up in your commits.</p>
+        </div>
+        <figure class="shot">
+          <a class="dark" href="screens/notes-dark.webp"><img src="screens/notes-dark.webp" width="2100" height="620" loading="lazy" alt="The notes page: a note with three steps under it, one of them ticked, and two notes beside it."></a>
+          <a class="light" href="screens/notes-light.webp"><img src="screens/notes-light.webp" width="2100" height="620" loading="lazy" alt="The notes page: a note with three steps under it, one of them ticked, and two notes beside it."></a>
+          <figcaption class="caption">Steps an agent worked out hang under the note they belong to.</figcaption>
+        </figure>
+      </div>
+
+      <div class="feature flip">
+        <div class="text">
+      <h3 id="what">Reading what changed</h3>
+      <p>Whatever wrote it, a change is read where it happened: marked in the margin, opened in place with <kbd>Alt+d</kbd>, and its history one key away.</p>
+        </div>
+        <figure class="shot">
+          <a class="dark" href="screens/hunk-dark.webp"><img src="screens/hunk-dark.webp" width="2100" height="640" loading="lazy" alt="A commit opened at the line it changed, the old line above the new one."></a>
+          <a class="light" href="screens/hunk-light.webp"><img src="screens/hunk-light.webp" width="2100" height="640" loading="lazy" alt="A commit opened at the line it changed, the old line above the new one."></a>
+          <figcaption class="caption">A commit the agent made, opened at the line it changed: the line before it, struck in red, above the line now.</figcaption>
+        </figure>
+      </div>
 
       <div class="cards">
         <div class="card">
@@ -252,7 +284,7 @@ ob src/main.rs       # the same file, in the terminal instead</code></pre>
             <li>Markdown laid out as prose (<kbd>Ctrl+t</kbd>), a log put in columns — decided by what the lines look like, not by the file's name</li>
             <li>The code in a markdown fence and the script in an HTML page are each highlighted as what they are</li>
             <li>Long lines break the way their language does: Chinese between characters, an English word never cut in half, continuation rows keeping the indentation</li>
-            <li>And the ordinary things: twenty-five languages, folding, soft wrap</li>
+            <li>And the ordinary things: twenty-three languages, folding, soft wrap</li>
           </ul>
         </div>
 
@@ -265,267 +297,145 @@ ob src/main.rs       # the same file, in the terminal instead</code></pre>
           </ul>
         </div>
       </div>
+
+      <h3 id="modeless">Keys without modes, in a window or a terminal</h3>
+      <p>Every key means what it says whenever it is pressed — the VS Code and Emacs way, not the vim and helix one. Function keys open something to look at, <kbd>Ctrl</kbd> does something to the file in front of you, and <kbd>Alt</kbd> asks about the cursor. <kbd>Ctrl+p</kbd> finds any command by name, and where a list or a page has a row of keys along its foot, <kbd>Ctrl+k</kbd> lists all of them. The full table is in the <a href="reference.html#keys">reference</a>.</p>
     </section>
-    <section id="notes">
-      <h2><span class="num">06</span><span>Notes</span></h2>
 
-      <blockquote><p>An <em>obelus</em> is the mark a scholar put beside a line they doubted. This is that mark, written down.</p></blockquote>
+    <section id="not">
+      <h2><span class="num">03</span><span>What it does not do</span></h2>
 
-      <p><kbd>Alt+t</kbd> while reading opens the notes with one started against the line under the cursor; <code>todo</code> opens them all. The page is always being written: the caret is in it when it opens, a letter is a letter, <kbd>Enter</kbd> starts another note and <kbd>Shift+Enter</kbd> a line inside one. What acts on a note <em>as</em> a note is under <kbd>Alt</kbd>: tick it, go to what it is about, move it, take it away. The keys are along the bottom.</p>
+      <p>On purpose, and not for want of getting to it.</p>
 
-      <p>A note may be about a line or about the project, and both are ordinary: "this cache is wrong" belongs to a line, "wire the counts page up to the search" belongs to the project. Where it points goes on a row of its own under it, and one that says nothing is not kept. A note can hang under another; the indentation is the nesting.</p>
+      <ul class="beats">
+        <li><span><strong>No multiple cursors, no macros.</strong> Large edits are the agent's job now; what is here is what fixing a line on the way past needs.</span></li>
+        <li><span><strong>No splits.</strong> Two files side by side is two windows; your terminal or window manager tiles better than an editor can from the inside.</span></li>
+        <li><span><strong>No modes.</strong> No vim or helix keys, and no switch to turn them on.</span></li>
+        <li><span><strong>No git writes of its own.</strong> Obelus reads git and never writes it. When a change goes somewhere, it is the agent running git — after asking you.</span></li>
+        <li><span><strong>One agent at a time.</strong> Two would mean every question having to say which agent it was for.</span></li>
+        <li><span><strong>No model of its own.</strong> It talks to the agent you already have.</span></li>
+      </ul>
 
-      <h4 id="planning">Working out the next step with an agent</h4>
-      <p>A note is also where you think about what comes next, and that is where an agent earns its place. On a note, <kbd>Alt+a</kbd> opens a conversation about it: the agent is told what the note says, and which note it is. Ask it to work the note through — what it would take, what order it goes in, what has to be decided first.</p>
-      <p>What it comes back with does not have to stay in the transcript. It proposes the steps and writes the ones you agree to <em>under</em> the note, where the indentation says they are the note's, and they are on the page when you go back to it, the way anything another window writes is. A step it has since done it can tick off; a note it would rather reword it has to show you both ways first. Each of these it asks you about before it does it. Tomorrow the note has its steps under it, and the conversation that worked them out is still beside it.</p>
-
-      <h4>Obelus hands it the notes</h4>
-      <p>An agent can read a file and ask permission through the protocol it is already speaking. What it cannot do that way is anything about <em>obelus</em>: it has no way to say "I think that note is finished" or "here are two more worth writing down". MCP is the door for that, and Obelus is the server on the other side of it. None of the tools asks you anything: the asking is the agent's to do, through the protocol it is already speaking.</p>
-
-      <div class="table-wrap">
-      <table>
-        <thead><tr><th><span>Tool</span></th><th><span>Does</span></th></tr></thead>
-        <tbody>
-          <tr><td><code>todo_list</code></td><td>Every note this project keeps: what it says, whether it is done, where it points</td></tr>
-          <tr><td><code>todo_add</code></td><td>Write notes down — at the top level, or under a note, which is where the steps a conversation about that note works out go. What somebody would want to come back to, not a summary of what it just did</td></tr>
-          <tr><td><code>todo_finish</code></td><td>Tick a note off. It only ticks: a list of what was decided against is worth as much as a list of what was never got to, and taking one away is yours</td></tr>
-          <tr><td><code>todo_reword</code></td><td>Rewrite what a note says. The one tool here that loses something — the notes are not in git and the page has no undo — so it is required to ask first, showing both what the note says now and what it would say instead</td></tr>
-        </tbody>
-      </table>
-      </div>
-
-      <h4>A note written last week still points at what it was written about</h4>
-      <p>Line numbers move. So a note keeps the commit it was written against as well as the line, and finding the place again is a question for git — rather than pointing at whatever has since moved into that line.</p>
-
-      <h4>Where they live</h4>
-      <p>In Obelus's own directory, kept per <strong>project</strong> rather than per checkout — so several worktrees of one repository open the same list. They are your notes, and they do not end up in the project's commits.</p>
+      <p>If any of those is a reason you choose an editor, Obelus will not suit you — and that is fine. It was not built to.</p>
     </section>
-    <section id="agent">
-      <h2><span class="num">07</span><span>Talking to an agent</span></h2>
 
-      <p>Obelus implements nobody's model. It talks to whatever you already have, over <strong>ACP</strong> (the Agent Client Protocol) — the same shape as a language server: another program, over its own standard input and output.</p>
+    <section id="tenets">
+      <h2><span class="num">04</span><span>Principles</span></h2>
 
-      <h4>Installing one</h4>
-      <p>Which agents exist is not Obelus's to decide. There is a registry kept by the protocol's own authors, and Obelus reads it: forty entries with a name, a version, a description and how to install each one. <kbd>F4</kbd> and a new conversation, then the agents page, then install one. A terminal that can draw pictures gets each agent's own mark; one that cannot gets a glyph. One agent at a time — two would mean every question having to say which agent it was for, and you having to know which.</p>
+      <p>The sentences the trade-offs are decided against. Most were written down after getting it wrong once.</p>
 
-      <h4>A conversation is a document</h4>
-      <p>It sits in the list of open documents (<kbd>F2</kbd>). Leaving one is going somewhere else rather than closing it: what was said is still there when you come back. <kbd>Enter</kbd> sends, <kbd>Alt+Enter</kbd> makes a line (and <kbd>Shift+Enter</kbd> where the terminal reports it). The status row is the agent's own session options — mode, model, reasoning effort — walked and changed there, with <kbd>Shift+Tab</kbd> going the other way as it always does. Obelus translates none of them: which options exist is the agent's business.</p>
-
-      <h4>A conversation belongs to a note</h4>
-      <p>Started from <kbd>F4</kbd>, a conversation is about nothing in particular. Opened from a note, it is about that note — and it stays that way: come back tomorrow and the conversation is where you left it, because the agent replays what was said and Obelus only has to remember which conversation was about which note.</p>
-      <p>Obelus tells the agent what the note says when the conversation starts. You reword the note overnight, and the next message carries what changed — nothing in the protocol would otherwise let an agent find out that a file it was told about on Monday says something else on Tuesday.</p>
-      <p>Before your first words, Obelus also says who the agent is talking to: that the person is reading code in a terminal, that what it sends lands beside the file they are reading, and that a choice which is theirs to make should be asked as a question rather than written into a reply as <code>1) … 2) …</code> — because that arrives as prose, and nothing on the screen would say an answer is wanted.</p>
-
-      <h4>When it asks you something</h4>
-      <p>A question is a card, not a picker. Above it is what the agent is actually going to do — the tool call itself, in the transcript where every call goes — and below it are the answers. Walking does not choose: the box is under the answers, so every way to it walks over them, and a card whose answer followed the focus would answer with whichever row you passed on your way somewhere else. <kbd>Enter</kbd> acts on the row you are on, and that is the whole key table.</p>
-
-      <h4>When it wants to change a file</h4>
-      <p>A change that has been made is a row with <code>+12 -4</code> on it, and the file is where it is read. A change it is <em>asking</em> to make is the opposite: those lines are in neither the file nor the last commit, so they go in the transcript, under the call's own row, open — and they stay there afterwards, which is how you find out later what you agreed to. Drawn the way an opened hunk is drawn in a file, because it is the same thing being said.</p>
+      <ol class="tenets">
+        <li>
+          <span class="no">01</span>
+          <div>
+            <p class="claim">It fits one way of working, not a checklist.</p>
+            <p class="why">A feature is in because it is what that way of working reaches for, not because editors are expected to have it.</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">02</span>
+          <div>
+            <p class="claim">What an agent does, you can see and take back.</p>
+            <p class="why">A write it makes goes through the file as one change, and <kbd>Ctrl+z</kbd> undoes it. A command it runs cannot be undone, so it is shown in the words it was actually run in, with everything it printed, and the key that stops the agent stops the command too.</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">03</span>
+          <div>
+            <p class="claim">A change that has happened is in the file; one still being asked for is in the conversation.</p>
+            <p class="why">Once an agent has edited a file, the margin already draws the difference; drawing it again in the transcript would be a second account of one thing. What it is <em>asking</em> to do goes in the transcript, and stays there.</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">04</span>
+          <div>
+            <p class="claim">A file being rewritten while you read it is the normal case.</p>
+            <p class="why">An agent edits the file you have open, a formatter runs, a branch changes underneath you. So Obelus re-reads by itself, without losing your place, and a file that has gone is marked <code>[stale]</code> and keeps its contents on screen.</p>
+          </div>
+        </li>
+      </ol>
     </section>
-    <section id="many">
-      <h2><span class="num">08</span><span>Many windows, many worktrees</span></h2>
 
-      <p>Obelus has no splits, so several Obelus on one project is not an edge case but the premise. These are the promises it makes because of it.</p>
+    <section id="why">
+      <h2><span class="num">05</span>Why it exists</h2>
 
-      <h4>A repository and its worktrees are one project</h4>
-      <p>Three worktrees of one repository open <em>one</em> set of notes, and share one record of which conversations are in use. With three of them open, you mean to come back to one list rather than three.</p>
+      <p><strong>Honestly: I wrote it for myself.</strong> Every trade-off answers "does this work for me" before "will somebody refuse it without feature X" — which is why the habits on this page are mine.</p>
 
-      <h4>Two windows writing notes do not erase each other</h4>
-      <p>Every change is made against what is on disk at that moment, not against what this window happened to be holding. So a note the other window just wrote does not vanish because you saved second — and being killed halfway through never leaves half a file.</p>
+      <p>I never got comfortable with vim. Modes, <code>hjkl</code>, colon commands — muscle memory for the people who have it, and for me something to work out again every time. I wanted to <em>open it and read</em>: arrow keys are arrow keys, <kbd>Ctrl+c</kbd> copies, and nothing has to be escaped out of first.</p>
 
-      <h4>A conversation is open in one Obelus at a time</h4>
-      <p>The agent keeps what was said and takes one turn at a time; two windows prompting one conversation is two turns in it. So a conversation is claimed, and the other windows can see that somebody has it. The claim goes when the process goes — killed, crashed, power cut — with nothing to clean up afterwards and no "it did not exit properly last time, so now it will not open".</p>
+      <p>And the way I work changed. A pile of claude code and codex sessions write most of the code; what I do in front of the screen is read, check, mark what looks doubtful, and decide what comes next — with a todo list I wanted beside the code rather than in another app. The editors in a terminal compete on an editor's list. Obelus is an editor too, but it is on another line: the syntax tree, the git timeline, the language server and the agent, arranged the way I work.</p>
 
-      <h4>What another window did turns up by itself</h4>
-      <p>While the notes are open, a note another window just wrote and a conversation it just opened turn up on this page by themselves, without your pressing anything first.</p>
-
-      <h4>Before saving, it looks at what is on disk</h4>
-      <p>Another window, an agent or a formatter may have changed the file since you opened it. That question is asked of disk at the moment you save, rather than guessed from whether a notification happened to arrive.</p>
+      <p>And the name: an <em>obelus</em> (÷, †) is the mark a scholar put in a manuscript's margin beside a line they doubted — a reader's mark, made while reading.</p>
     </section>
-    <section id="keys">
-      <h2><span class="num">09</span><span>Keys &amp; commands</span></h2>
 
-      <p>No modes, so every key below means what it says whenever it is pressed — the VS Code and Emacs way, not the vim and helix one. Three families, and the family is the memorable part. This is the default table; every one of them can be moved — see <a href="#config">config</a>.</p>
+    <section id="start">
+      <h2><span class="num">06</span><span>Getting started</span></h2>
 
-      <h3>Function keys open something to look at</h3>
-      <p class="quiet small">Two banks of four, which is how they sit on the keyboard. Bare, never with a modifier: terminals disagree about what a modified function key even sends, so binding one works on this machine and not the next.</p>
+      <h3>Install</h3>
+      <p>One script per shell, and which you want is which shell you are in. Either one takes the latest release, checks what it downloaded against the release's own <code>SHA256SUMS</code>, and puts <code>obg</code> where your PATH can find it — Obelus in a window of its own.</p>
 
-      <div class="table-wrap">
-      <table>
-        <thead><tr>
-          <th><span>Key</span></th>
-          <th><span>Command</span></th>
-          <th><span>Does</span></th>
-        </tr></thead>
-        <tbody>
-          <tr><td><kbd>F1</kbd></td><td><code>open-file</code></td><td>Choose a file under the project and open it</td></tr>
-          <tr><td><kbd>F2</kbd></td><td><code>switch-document</code></td><td>Choose among the documents already open</td></tr>
-          <tr><td><kbd>F3</kbd></td><td><code>open-changed-file</code></td><td>One of the files that changed since the last commit</td></tr>
-          <tr><td><kbd>F4</kbd></td><td><code>choose-conversation</code></td><td>Which conversation with the agent: a new one, or one to take up again</td></tr>
-          <tr><td><kbd>F5</kbd></td><td><code>search-file</code></td><td>Search the file being read</td></tr>
-          <tr><td><kbd>F6</kbd></td><td><code>search-project</code></td><td>Search every file in the project</td></tr>
-          <tr><td><kbd>F7</kbd></td><td><code>show-outline</code></td><td>Every symbol this file defines</td></tr>
-          <tr><td><kbd>F8</kbd></td><td><code>search-symbols</code></td><td>Search the names the language server knows</td></tr>
-          <tr><td><kbd>F9</kbd></td><td><code>show-file-history</code></td><td>Every commit that changed this file</td></tr>
-          <tr><td><kbd>F10</kbd></td><td><code>show-project-history</code></td><td>Every commit in the project</td></tr>
-          <tr><td><kbd>F11</kbd></td><td><code>show-line-commit</code></td><td>The commit that wrote the line under the cursor</td></tr>
-          <tr><td><kbd>F12</kbd></td><td><code>go-to-definition</code></td><td>Where the symbol under the cursor is defined</td></tr>
-        </tbody>
-      </table>
-      </div>
+      <h4>Linux and macOS</h4>
+      <pre><code>curl -fsSL https://raw.githubusercontent.com/obelus-editor/obelus/master/contrib/install.sh | sh</code></pre>
 
-      <h3>Control does something to the file in front of you</h3>
-      <div class="table-wrap">
-      <table>
-        <thead><tr>
-          <th><span>Key</span></th>
-          <th><span>Command</span></th>
-          <th><span>Does</span></th>
-        </tr></thead>
-        <tbody>
-          <tr><td><kbd>Ctrl+p</kbd></td><td><code>run-command</code></td><td>Run a command by name</td></tr>
-          <tr><td><kbd>Ctrl+w</kbd></td><td><code>close-document</code></td><td>Stop showing this document</td></tr>
-          <tr><td><kbd>Ctrl+s</kbd></td><td><code>save-file</code></td><td>Write the file back to disk</td></tr>
-          <tr><td><kbd>Ctrl+r</kbd></td><td><code>reload-file</code></td><td>Re-read this file from disk</td></tr>
-          <tr><td><kbd>Ctrl+t</kbd></td><td><code>toggle-preview</code></td><td>Show this file as rendered markdown, or stop</td></tr>
-          <tr><td><kbd>Ctrl+l</kbd></td><td><code>go-to-line</code></td><td>Go to a line by number</td></tr>
-          <tr><td><kbd>Ctrl+c</kbd> <kbd>Ctrl+x</kbd> <kbd>Ctrl+v</kbd></td><td><code>copy-selection</code> <code>cut-selection</code> <code>paste</code></td><td>Copy, cut, paste — through the system clipboard</td></tr>
-          <tr><td><kbd>Ctrl+z</kbd> <kbd>Ctrl+y</kbd></td><td><code>undo</code> <code>redo</code></td><td>Undo, redo</td></tr>
-          <tr><td><kbd>Ctrl+q</kbd></td><td><code>quit</code></td><td>Leave</td></tr>
-        </tbody>
-      </table>
-      </div>
+      <h4>Windows, in PowerShell</h4>
+      <pre><code>irm https://raw.githubusercontent.com/obelus-editor/obelus/master/contrib/install.ps1 | iex</code></pre>
 
-      <h3>Alt asks about the cursor, or walks what was found</h3>
-      <div class="table-wrap">
-      <table>
-        <thead><tr>
-          <th><span>Key</span></th>
-          <th><span>Command</span></th>
-          <th><span>Does</span></th>
-        </tr></thead>
-        <tbody>
-          <tr><td><kbd>Alt+Enter</kbd></td><td><code>ask-about-symbol</code></td><td>The menu of what a language server can say about this symbol</td></tr>
-          <tr><td><kbd>Alt+h</kbd></td><td><code>describe-symbol</code></td><td>What the place under the caret is</td></tr>
-          <tr><td><kbd>Alt+a</kbd></td><td><code>do-something-here</code></td><td>What the server offers to do about where you are</td></tr>
-          <tr><td><kbd>Alt+r</kbd></td><td><code>rename-symbol</code></td><td>Rename this symbol, everywhere</td></tr>
-          <tr><td><kbd>Alt+e</kbd></td><td><code>show-problems</code></td><td>Everything the server says is wrong with this file</td></tr>
-          <tr><td><kbd>Alt+[</kbd> <kbd>Alt+]</kbd></td><td><code>go-to-previous-problem</code> <code>go-to-next-problem</code></td><td>The problem above / below the cursor</td></tr>
-          <tr><td><kbd>Alt+d</kbd></td><td><code>show-change</code></td><td>Open what changed here, in place, or close it</td></tr>
-          <tr><td><kbd>Alt+p</kbd> <kbd>Alt+n</kbd></td><td><code>go-to-previous-change</code> <code>go-to-next-change</code></td><td>The change above / below the cursor</td></tr>
-          <tr><td><kbd>Alt+f</kbd></td><td><code>fold</code></td><td>Fold the run the cursor is in, or unfold the one it is on</td></tr>
-          <tr><td><kbd>Alt+m</kbd></td><td><code>go-to-bracket</code></td><td>The bracket that matches this one</td></tr>
-          <tr><td><kbd>Alt+←</kbd> <kbd>Alt+→</kbd></td><td><code>go-back</code> <code>go-forward</code></td><td>Return to where the last jump was made from; and undo that</td></tr>
-          <tr><td><kbd>Alt+t</kbd></td><td><code>todo-add</code></td><td>Write a note against this line (in a conversation, it opens the notes)</td></tr>
-        </tbody>
-      </table>
-      </div>
+      <h4>The terminal one as well</h4>
+      <p><code>ob</code> is the other binary and is asked for by name. Everything after <code>-s --</code> goes to the script; a pipe into <code>iex</code> has nowhere to put an argument, so on Windows the script is fetched first instead.</p>
 
-      <h3>Moving, and inside a list</h3>
-      <p>Navigation is not a command, so it is not in the tables above: the arrows, <kbd>PageUp</kbd>/<kbd>PageDown</kbd>, <kbd>Home</kbd>/<kbd>End</kbd> for the line's ends, <kbd>Ctrl+Home</kbd>/<kbd>Ctrl+End</kbd> for the file's. Up and down move by <em>visual</em> row, so a wrapped line still moves the way it looks. <kbd>Shift</kbd> never names a command: it only ever extends.</p>
-      <p>Inside a list — any picker, the settings, the counts, the notes — type to narrow, <kbd>↑</kbd><kbd>↓</kbd> to choose, <kbd>PageUp</kbd>/<kbd>PageDown</kbd> to cover ground, <kbd>Home</kbd>/<kbd>End</kbd> for either end, <kbd>Enter</kbd> acts on the row you are on, <kbd>Esc</kbd> cancels, and <kbd>Ctrl+k</kbd> lists every key. A function key works from inside a whole-screen view as well, and goes to the view it names in place of the one showing — <kbd>F6</kbd> from the files is the search, <kbd>F3</kbd> is the files' other tab.</p>
+      <pre><code>curl -fsSL https://raw.githubusercontent.com/obelus-editor/obelus/master/contrib/install.sh | sh -s -- --bin both</code></pre>
 
-      <h3 id="commands">Commands</h3>
+      <pre><code>irm https://raw.githubusercontent.com/obelus-editor/obelus/master/contrib/install.ps1 -OutFile install.ps1
+.\install.ps1 -Binary both</code></pre>
 
-      <p><kbd>Ctrl+p</kbd>, then the name — verb first. The palette groups them into six tabs, roughly the order of a morning: open something, find your way about it, ask what it means, change it, see what you changed, and Obelus's own housekeeping last.</p>
+      <ul>
+        <li><code>--bin ob</code> is the terminal one on its own, <code>--dir</code> says where to put it, and <code>--help</code> lists the rest.</li>
+        <li><a href="https://github.com/obelus-editor/obelus/releases">The releases</a> carry an archive for every platform, and a <code>.deb</code>, an <code>.rpm</code>, an AppImage and a macOS <code>.app</code>.</li>
+        <li>On Windows the script adds its directory to your PATH and puts Obelus in the Start menu; <code>-NoShortcut</code> leaves the menu alone. The shell script says which line to add if the directory is not on your PATH already, and on Linux it adds a desktop entry for each of <code>obg</code> and <code>ob</code> that it installed — <code>ob</code>'s opens in a terminal — and an icon, under <code>~/.local/share</code>, which every launcher reads, omarchy's <code>Apps</code> menu among them; <code>--no-desktop</code> leaves them out.</li>
+        <li><code>-Uninstall</code> takes back the binaries and the Start menu entry, and the directory and its PATH entry where nothing else is left in it. <code>--uninstall</code>, with the same <code>--dir</code> it was installed with, takes back the binaries, the desktop entries and their icon, and on omarchy the theme template — and leaves the PATH, which it never changed. Neither touches your settings.</li>
+        <li>On musl there is no <code>obg</code>: the window finds Vulkan, Wayland and X11 by <code>dlopen</code>, which a static binary cannot do, so the script says so and installs <code>ob</code>.</li>
+      </ul>
 
-      <div class="table-wrap">
-      <table>
-        <thead><tr>
-          <th><span>Tab</span></th>
-          <th><span>Commands</span></th>
-        </tr></thead>
-        <tbody>
-          <tr>
-            <td>Files</td>
-            <td><code>open-file</code> <code>open-changed-file</code> <code>save-file</code> <code>reload-file</code> <code>switch-document</code> <code>close-document</code> <code>rename-file</code> <code>toggle-preview</code> <code>count-lines</code> <code>todo</code> <code>todo-add</code></td>
-          </tr>
-          <tr>
-            <td>Search</td>
-            <td><code>search-file</code> <code>search-project</code> <code>search-symbols</code> <code>go-to-line</code> <code>go-to-bracket</code> <code>go-back</code> <code>go-forward</code></td>
-          </tr>
-          <tr>
-            <td>Code</td>
-            <td><code>ask-about-symbol</code> <code>go-to-definition</code> <code>go-to-type-definition</code> <code>go-to-implementation</code> <code>find-references</code> <code>show-calls</code> <code>show-outline</code> <code>describe-symbol</code> <code>complete-here</code> <code>do-something-here</code> <code>rename-symbol</code> <code>show-problems</code> <code>go-to-previous-problem</code> <code>go-to-next-problem</code> <code>fold</code> <code>fold-all</code> <code>unfold-all</code></td>
-          </tr>
-          <tr>
-            <td>Edit</td>
-            <td><code>copy-selection</code> <code>cut-selection</code> <code>paste</code> <code>undo</code> <code>redo</code> <code>select-all</code> <code>widen-selection</code> <code>clear-selection</code> <code>move-line-up</code> <code>move-line-down</code> <code>toggle-comment</code> <code>toggle-replace</code></td>
-          </tr>
-          <tr>
-            <td>Git</td>
-            <td><code>show-change</code> <code>go-to-previous-change</code> <code>go-to-next-change</code> <code>show-file-history</code> <code>show-project-history</code> <code>show-line-commit</code></td>
-          </tr>
-          <tr>
-            <td>Obelus</td>
-            <td><code>choose-theme</code> <code>new-conversation</code> <code>choose-conversation</code> <code>open-settings</code> <code>open-project-settings</code> <code>open-settings-file</code> <code>open-log</code> <code>open-server-log</code> <code>restart-server</code> <code>stop-server</code> <code>quit</code></td>
-          </tr>
-        </tbody>
-      </table>
-      </div>
-    </section>
-    <section id="config">
-      <h2><span class="num">10</span><span>Config &amp; themes</span></h2>
+      <h4>From source</h4>
+      <p>Which needs nothing but a stable Rust toolchain (edition 2024).</p>
 
-      <h3>Two files</h3>
-      <div class="table-wrap">
-      <table>
-        <thead><tr><th><span>File</span></th><th><span>Whose</span></th></tr></thead>
-        <tbody>
-          <tr><td><code>~/.config/obelus/config.toml</code></td><td>Yours. <code>open-settings</code> writes it the moment anything changes</td></tr>
-          <tr><td><code>&lt;project&gt;/.obelus/config.toml</code></td><td>The project's, laid over yours — but only for what it is allowed to set</td></tr>
-        </tbody>
-      </table>
-      </div>
-      <p class="quiet small">A missing file means the defaults, and so does a line Obelus does not recognise: a typo should leave you with Obelus, not with an error message where your reader was. A file it cannot <em>read</em> is the one thing it treats differently — it stops writing to that file rather than saving over settings it never saw, says so, and starts again the moment the file parses.</p>
-      <p class="quiet small">And it tells you <em>where</em>. A settings file that will not parse, a key that binds nothing, a setting a project is not allowed to set, a theme named that no file answers to — each is marked on its own line, in the same list a language server's problems go in, so <kbd>Alt+e</kbd> and <kbd>Alt+[</kbd> <kbd>Alt+]</kbd> walk them like any other. Obelus writes the file, so Obelus has to be able to say which line it could not read.</p>
+      <pre><code>git clone https://github.com/obelus-editor/obelus
+cd obelus
 
-      <div class="aside">
-        <p><strong>Three a project may not set:</strong> <code>agent</code>, <code>keys</code> and <code>agents</code>. A program starting because a downloaded project said so is a decision that belongs to the person at the keyboard; a project that could rebind keys could put <code>quit</code> where you would find it by accident; and what an agent may do without asking is the setting a downloaded project would most like to write.</p>
-      </div>
+# installs as `obg` into ~/.cargo/bin: Obelus in a window of its own
+cargo install --path crates/obelus-gui
 
-      <h3>The settings</h3>
-      <p class="quiet small">A few of them belong to one front end. The settings page shows you the ones that apply where you are reading — a row you can change and watch do nothing has taught you something untrue — and the <em>file</em> keeps them all, because the other Obelus on that machine is the one they are for.</p>
-      <div class="table-wrap">
-      <table>
-        <thead><tr>
-          <th><span>Key</span></th>
-          <th><span>Default</span></th>
-          <th><span>What it is</span></th>
-        </tr></thead>
-        <tbody>
-          <tr><td><code>theme</code></td><td><code>"dark"</code></td><td>The colours Obelus draws in</td></tr>
-          <tr><td><code>icons</code></td><td><code>false</code></td><td><em>A terminal only.</em> Nerd Font glyphs — one without a patched font draws a box instead. <code>obg</code> carries the marks in the binary, so it never asks</td></tr>
-          <tr><td><code>wrap</code></td><td><code>false</code></td><td>Whether a line too long for the screen carries onto the next row. Off, so a line is a line</td></tr>
-          <tr><td><code>blame_margin</code></td><td><code>true</code></td><td>Who last changed the line the cursor is on</td></tr>
-          <tr><td><code>tab_width</code></td><td><code>4</code></td><td>How wide a tab is drawn. <code>2</code>, <code>4</code> or <code>8</code></td></tr>
-          <tr><td><code>fonts</code></td><td><code>[]</code></td><td><em>A window only.</em> The faces to draw with, in your order, each tried for the character before the next. Empty means what this machine calls monospaced — asked of the platform, not of the text engine</td></tr>
-          <tr><td><code>animation</code></td><td><code>true</code></td><td><em>A window only.</em> Whether the caret flies to where it is going and a list slides rather than jumps. Off, everything arrives where it belongs at once</td></tr>
-          <tr><td><code>font_size</code></td><td><code>14</code></td><td><em>A window only.</em> How big the text is, in points. A terminal draws with the font you gave the terminal</td></tr>
-          <tr><td><code>hover_delay</code></td><td><code>400</code></td><td>How long the pointer rests before Obelus asks what a word is, in milliseconds. Zero asks only when a key does</td></tr>
-          <tr><td><code>format_on_save</code></td><td><code>false</code></td><td>Ask the language server to lay the file out before writing. Off: a formatter that ran without being asked would rewrite a file somebody opened to read</td></tr>
-          <tr><td><code>code_actions_on_save</code></td><td><code>false</code></td><td>Make the server's whole-file fixes before writing. Off, for the reason above it</td></tr>
-          <tr><td><code>inlay_hints</code></td><td><code>true</code></td><td>Draw the types and parameter names a server infers. They are not in the file: turning this off puts every column back where the file has it</td></tr>
-          <tr><td><code>diagnostics</code></td><td><code>true</code></td><td>Open the words under the line the caret is on. What is wrong is underlined either way; this is the <em>words</em>, which cost that line a row</td></tr>
-          <tr><td><code>ignored_files</code></td><td><code>false</code></td><td>Whether the file list offers the files a project has said to ignore</td></tr>
-        </tbody>
-      </table>
-      </div>
+# installs as `ob`: the same editor, in the terminal
+cargo install --path crates/obelus-cli
 
-      <h3>Rebinding</h3>
-      <p>Changes rather than the whole table: rebind one key and everything you said nothing about still gets the current default. An empty chord is a key taken away, which is also a decision. The names are the command names above, and the keys are spelled the way the screen spells them — the case is not read, so a file written before they were capitalised still works.</p>
-      <pre><code>theme = "light"
-wrap = true
-blame_margin = false
+# or just build them: target/release/obg and target/release/ob
+cargo build --release</code></pre>
 
-[keys]
-open-file = "Ctrl+o"
-show-change = "Alt+g"
-quit = ""            # taken away</code></pre>
+      <h4>Worth having as well</h4>
+      <ul>
+        <li>A <strong>Nerd Font</strong>, for the glyphs beside a file's name and on the status bar — in the terminal. They are off until <code>icons</code> is turned on, so without one no boxes appear. <code>obg</code> needs none of this: it carries the marks in the binary.</li>
+        <li>A <strong>language server</strong> for your language (<code>rust-analyzer</code> for Rust). Without one, reading still works — there is just no definition, no diagnostics, no outline.</li>
+        <li>An <strong>ACP</strong> agent. Obelus can install one from the registry — see <a href="#agent">a conversation for every note</a>.</li>
+      </ul>
 
-      <h3>Themes</h3>
-      <p>Built-in <code>dark</code> and <code>light</code>, switched by <code>choose-theme</code> without a reparse. Beyond those, every <code>.toml</code> in <code>~/.config/obelus/themes/</code> is a theme, named by the file (<code>omarchy.toml</code> → <code>omarchy</code>). Every colour is optional and whatever is not given comes from the built-in theme it builds on — which is what keeps old files working when a colour is added later.</p>
-      <p class="quiet small"><code>contrib/omarchy/</code> in the repository is a template for <a href="https://omarchy.org">omarchy</a>, so the desktop's palette writes Obelus's theme file for you. Nothing in Obelus knows about omarchy: a theme is a file.</p>
+      <h3>Run it</h3>
+      <pre><code>obg                  # nothing: the welcome screen, on this directory
+obg src/main.rs      # read a file — its repository is the project
+obg ../another-repo  # a directory: that is the project
+ob src/main.rs       # the same file, in the terminal instead</code></pre>
+
+      <h3>The first five minutes</h3>
+      <ol>
+        <li><kbd>F1</kbd> opens a file. Type to narrow, <kbd>↑</kbd><kbd>↓</kbd> to choose, <kbd>Enter</kbd> to accept, <kbd>Esc</kbd> to cancel.</li>
+        <li>A list or a page with a row of keys along its foot lists what is available <em>now</em>; <kbd>Ctrl+k</kbd> opens all of them, with the rest greyed out.</li>
+        <li><kbd>Ctrl+p</kbd> is the command palette: anything you cannot remember a key for is findable by name.</li>
+        <li>Put the cursor on a change and press <kbd>Alt+d</kbd>: the hunk opens <em>in place</em>, with what was there before it.</li>
+        <li>See a line you doubt: <kbd>Alt+t</kbd>, and write a sentence. It goes in this project's notes, and <code>todo</code> brings them all back.</li>
+        <li><kbd>Ctrl+p</kbd> → <code>open-settings</code> for colours, wrapping, tab width; <code>choose-theme</code> for the theme.</li>
+        <li><kbd>Ctrl+q</kbd> leaves.</li>
+      </ol>
+
+      <p>Every key, command and setting is in the <a href="reference.html">reference</a>.</p>
     </section>
 
   </main>

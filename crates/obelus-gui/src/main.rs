@@ -42,7 +42,7 @@ use anyhow::Result;
 use clap::Parser;
 use obelus_app::startup;
 
-/// A code reader in a window. It doesn't want you to type.
+/// A code editor in a window, with the agent built in.
 #[derive(Parser)]
 // Named rather than left to the package, the same as `ob`: clap takes the
 // name from the crate, and `obelus-gui --version` is a name nobody has.

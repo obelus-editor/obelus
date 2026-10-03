@@ -244,7 +244,6 @@ impl App {
             picker.with_scopes(&names);
             picker.go_to_tab(tabs.iter().position(|shown| *shown == tab).unwrap_or(0));
         }
-        picker.previews();
         self.show_list(picker);
         self.worktrees.tabs = tabs;
         self.refresh_switching();
@@ -281,6 +280,15 @@ impl App {
             return;
         };
         picker.replace(items);
+        // Per tab, because the two are lists of different things: an open
+        // document is somewhere to look, and a tree is a whole checkout and
+        // no one file of it. Previewing the file being read under the
+        // worktrees said nothing about any row, and halved the list to say
+        // it.
+        match tab {
+            Tab::Documents => picker.previews(),
+            Tab::Worktrees => picker.stops_previewing(),
+        }
         picker.when_empty(empty);
         picker.before_typing(typing);
         // By the row itself rather than by its label, which is what
@@ -338,25 +346,38 @@ impl App {
                 Listed { tree, door }
             })
             .collect();
-        // Named by the directory where they sit together, which is how
-        // `git worktree add ../name` leaves them: the parent is the same
-        // word on every row, and the name is what tells them apart.
-        // Resolved, because git hands the main checkout back resolved and
-        // the linked ones as they were added -- which on a mac, whose
-        // temporary directory is a link, are two spellings of one place.
+        // Named from the directory the main checkout sits in, which is the
+        // one rule that names every row the same way: `git worktree add
+        // ../name` leaves a tree beside it and so called by its name, and
+        // `.worktree/name` -- where the feature-branch workflow puts one --
+        // leaves it inside, and called by the way down to it from there.
+        // Naming the second by its whole path while the first had a word
+        // made the main checkout a name and the others addresses. Anything
+        // under that directory is called by the way down to it, and a tree
+        // outside it is said in full, because nothing shorter is true.
+        // Resolved, and every row resolved before it is compared, because a
+        // path as git writes it and the same path resolved can be spelled
+        // two ways -- on Windows always, where a resolved path is a `\\?\`
+        // one -- and a row compared in the other spelling was called by its
+        // whole path.
         let beside = self
             .worktrees
             .listed
             .first()
-            .and_then(|first| first.tree.path.parent().map(resolved));
+            .and_then(|first| named_from(&first.tree.path));
         self.worktrees
             .listed
             .iter()
             .enumerate()
             .map(|(at, listed)| {
                 let path = &listed.tree.path;
-                let label = match (path.parent().map(resolved) == beside, path.file_name()) {
-                    (true, Some(name)) => name.to_string_lossy().into_owned(),
+                let label = match beside.as_deref().and_then(|beside| {
+                    resolved_as_far_as_it_goes(path)
+                        .strip_prefix(beside)
+                        .ok()
+                        .map(Path::to_path_buf)
+                }) {
+                    Some(under) if !under.as_os_str().is_empty() => under.display().to_string(),
                     _ => obelus_ui::with_home_as_tilde(path),
                 };
                 let here = same_tree(path, &tree);
@@ -495,6 +516,37 @@ fn same_tree(one: &Path, other: &Path) -> bool {
 /// A path with its links followed, or as it was written where it has gone.
 fn resolved(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// The directory rows are named from: the one the main checkout sits in.
+///
+/// Not the root of the disk. A main checkout at `/repo` sits in `/`, and
+/// every path there is under it -- so a tree at `/tmp/x` would have been
+/// called `tmp/x`, a path with its first character taken off.
+fn named_from(main: &Path) -> Option<PathBuf> {
+    main.parent()
+        .filter(|parent| parent.parent().is_some())
+        .map(resolved)
+}
+
+/// A path with its links followed as far as it is still there, and the
+/// rest of it as it was written.
+///
+/// For a row's name, which is worked out against the main checkout
+/// resolved. A tree deleted behind git's back resolves to nothing, and
+/// taken as it was written it is a different spelling of the place
+/// wherever resolving changes the spelling -- on Windows always, where a
+/// resolved path is a `\\?\` one -- so a tree called `spare` the moment
+/// before was called by its whole path the moment it went. Held by
+/// `a_tree_that_has_gone_is_missing_and_goes_nowhere`, on Windows: git
+/// resolves a link when a tree is added, so nothing on Linux spells the
+/// place two ways.
+fn resolved_as_far_as_it_goes(path: &Path) -> PathBuf {
+    path.canonicalize()
+        .unwrap_or_else(|_| match (path.parent(), path.file_name()) {
+            (Some(parent), Some(name)) => resolved_as_far_as_it_goes(parent).join(name),
+            _ => path.to_path_buf(),
+        })
 }
 
 /// The door of a window on this tree, where one is open.
@@ -707,4 +759,26 @@ fn a_key() -> String {
         hasher.finish()
     };
     format!("{:016x}{:016x}", half(), half())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A main checkout at the root of a disk names nothing from where it
+    /// sits, and one anywhere else names from its parent.
+    ///
+    /// Deliberate break: drop the filter in `named_from`, and `/repo`
+    /// names every row from `/`.
+    #[test]
+    fn rows_are_not_named_from_the_root() {
+        let root = std::env::temp_dir()
+            .ancestors()
+            .last()
+            .expect("a path has a root")
+            .to_path_buf();
+        assert_eq!(named_from(&root.join("repo")), None);
+        let deeper = root.join("nowhere-obelus-made").join("repo");
+        assert_eq!(named_from(&deeper), Some(root.join("nowhere-obelus-made")));
+    }
 }

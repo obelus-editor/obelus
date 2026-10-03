@@ -684,7 +684,7 @@ pub const ALL: &[Setting] = &[
     Setting {
         key: "hidden_files",
         name: "Hidden files",
-        about: "offer them in the file list as well -- a name beginning with a dot, and on Windows the attribute too; `.github` and `.env` are files like any other, and `.git` comes with them",
+        about: "Offer them in the file list as well -- a name beginning with a dot, and on Windows the attribute too; `.github` and `.env` are files like any other, and `.git` comes with them",
         group: Group::Files,
         reach: Reach::Anywhere,
         kind: Kind::Switch,

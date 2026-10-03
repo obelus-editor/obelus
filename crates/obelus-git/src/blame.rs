@@ -6,10 +6,10 @@
 //!
 //! The margin knew which commit and threw it away. A blame walk finds the
 //! commit behind every line and `Blamed` kept only the name and the date, so
-//! "why is this line here" -- the question a code reader asks most -- had no
-//! answer in Obelus at all. It also knows where the line sat in that commit,
-//! which is not where it sits now: keep both, per line, because the run a line
-//! belongs to started somewhere else in that file.
+//! "why is this line here" -- the question somebody reading code asks most --
+//! had no answer in Obelus at all. It also knows where the line sat in that
+//! commit, which is not where it sits now: keep both, per line, because the run
+//! a line belongs to started somewhere else in that file.
 //!
 //! That walk stops at the commit that wrote the line, and says so rather than
 //! opening the same version again. Going further back is a different question

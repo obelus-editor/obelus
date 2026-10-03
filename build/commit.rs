@@ -22,7 +22,7 @@
 //
 // Nothing here fails a build. A tarball with no `.git`, a machine with no
 // git, a checkout of a shallow clone: all of them say so and carry on,
-// because what is being built is a code reader and not a release process.
+// because what is being built is an editor and not a release process.
 use std::process::Command;
 
 /// Says which commit this is, as `OBELUS_BUILD`.

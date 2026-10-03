@@ -1284,6 +1284,13 @@ impl Picker {
         self.previews = true;
     }
 
+    /// Says it shows none, for a list whose tab has moved to rows that name
+    /// nowhere to look -- a list of open documents previews them, and its
+    /// worktrees tab is whole checkouts.
+    pub const fn stops_previewing(&mut self) {
+        self.previews = false;
+    }
+
     /// Whether it does.
     #[must_use]
     pub const fn shows_previews(&self) -> bool {

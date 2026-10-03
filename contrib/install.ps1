@@ -296,7 +296,7 @@ try {
         # reader can make sense of; the temp directory a shell hands out is
         # not.
         $shortcut.WorkingDirectory = $env:USERPROFILE
-        $shortcut.Description = 'A code reader. It does not want you to type.'
+        $shortcut.Description = 'A code editor, with the agent built in.'
         $shortcut.Save()
         Write-Host "  a Start menu entry: $link"
     }

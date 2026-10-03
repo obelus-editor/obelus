@@ -105,8 +105,8 @@
      prose measure, which is applied per block so a structural layout keeps
      the full width. */
   --nav-h: 3.5rem;
-  --column: 69rem;
-  --measure: 48rem;
+  --column: 90rem;
+  --measure: 54rem;
   --gutter-width: 1rem;
 
   /* Square is enforced here, once. */
@@ -138,7 +138,7 @@ body {
   background: var(--t-bg);
   color: var(--t-text-secondary);
   font-family: var(--font-mono);
-  font-size: 15px;
+  font-size: 17px;
   line-height: 1.65;
   font-synthesis: none;
   -webkit-font-smoothing: antialiased;
@@ -240,7 +240,7 @@ a:hover { text-decoration-color: var(--t-brand); }
    wide tracking, the accent. The left padding is the tracking back again,
    so the trailing letter-space does not push the line off its centre. */
 .top .wordmark .tag {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
   letter-spacing: 0.18em;
   padding-left: 0.18em;
@@ -281,16 +281,16 @@ a:hover { text-decoration-color: var(--t-brand); }
 .switch {
   height: 32px;
   padding: 0 10px;
-  font-size: 12px;
+  font-size: 14px;
 }
 .switch:hover { background: var(--t-surface-2); }
 
-/* default: 40 tall, 16 of padding, 14px text. Outline unless it is the
+/* default: 40 tall, 16 of padding, 15px text. Outline unless it is the
    page's primary action. */
 .button {
   height: 40px;
   padding: 0 16px;
-  font-size: 14px;
+  font-size: 15px;
   background: var(--t-surface);
   border-color: var(--t-border-strong);
 }
@@ -342,7 +342,7 @@ a:hover { text-decoration-color: var(--t-brand); }
   max-height: calc(100vh - var(--nav-h) - 3rem);
   overflow-y: auto;
   padding-top: 3.2rem;
-  font-size: 13px;
+  font-size: 14px;
 }
 .contents ol { list-style: none; margin: 0; padding: 0; }
 .contents li { margin: 0; }
@@ -383,6 +383,65 @@ main { min-width: 0; }
 
 .hero { padding: 3.6rem 0 1rem; }
 
+/* The front page's hero stands outside the frame, centred over the whole
+   column: it is the one thing on the page that is not a section, and its
+   screen is read at the size it was photographed at rather than squeezed
+   into the prose measure beside the contents. */
+.hero.wide {
+  max-width: var(--column);
+  margin: 0 auto;
+  padding: 4.5rem var(--gutter-width) 1rem;
+  text-align: center;
+}
+.hero.wide h1 { margin-left: auto; margin-right: auto; }
+.hero.wide p { margin-left: auto; margin-right: auto; }
+.hero.wide .sub { max-width: 46rem; }
+.hero.wide .buttons { justify-content: center; }
+/* The main screens, as a stack: the one being shown in front, and the next
+   two showing behind it, smaller, fainter and turned a little, the way a
+   desktop stacks a folder of pictures. The frames share one cell of a
+   grid, so the stack takes the height of one picture and nothing below it
+   moves when the front one changes. `main.js` says how deep each one is,
+   and walks them on a clock until a visitor picks one. */
+/* Smaller than the screens were photographed at, never larger: they are
+   twice the width they are shown at, so a page this size only ever shrinks
+   them, and shrinking keeps a letter sharp where stretching blurs it. At
+   1050px -- one pixel to one of a 2x screen's -- the stack filled a whole
+   screen and pushed the sentence it illustrates out of view. */
+.screens { max-width: 680px; margin: 2.2rem auto 0; }
+.screens .tabs { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; margin-bottom: 1rem; }
+.screens .tabs .switch[aria-selected="true"] {
+  background: var(--t-surface-2);
+  color: var(--t-text);
+  box-shadow: inset 0 -2px 0 var(--t-brand);
+}
+.screens .frames { display: grid; text-align: left; padding-top: 3.2rem; }
+.screens .frames > .shot {
+  grid-area: 1 / 1;
+  margin: 0;
+  transform-origin: 50% 0;
+  transition: transform 600ms cubic-bezier(.2, .7, .2, 1), opacity 600ms ease;
+  opacity: 0;
+  visibility: hidden;
+  z-index: 1;
+}
+.screens .frames > .shot img { box-shadow: 0 14px 40px rgba(0, 0, 0, .22); }
+.screens .frames > .shot[data-depth="0"] { opacity: 1; visibility: visible; z-index: 5; transform: none; }
+.screens .frames > .shot[data-depth="1"] {
+  opacity: .55; visibility: visible; z-index: 4; cursor: pointer;
+  transform: translateY(-1.7rem) scale(.95) rotate(-1.6deg);
+}
+.screens .frames > .shot[data-depth="2"] {
+  opacity: .3; visibility: visible; z-index: 3; cursor: pointer;
+  transform: translateY(-3.1rem) scale(.9) rotate(1.4deg);
+}
+.screens .frames > .shot:not([data-depth="0"]) .caption { visibility: hidden; }
+.screens .frames .caption { text-align: center; max-width: 46rem; margin: 1rem auto 0; }
+@media (prefers-reduced-motion: reduce) {
+  .screens .frames > .shot { transition: none; }
+}
+
+
 /* The mark and the name wear the welcome screen's ramp. Brand artwork, and
    the only place a gradient belongs. */
 .hero .mark, .hero h1 {
@@ -408,12 +467,20 @@ main { min-width: 0; }
   display: table;
 }
 
+/* The one sentence the page is for, so it is set as a heading rather than
+   as the first line of the paragraph under it. */
 .hero .lede {
-  font-size: clamp(1rem, 2.4vw, 1.15rem);
-  line-height: 1.6;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: clamp(1.5rem, 4vw, 2.1rem);
+  letter-spacing: -0.01em;
+  line-height: 1.25;
   color: var(--t-text);
   margin: 0 0 1rem;
 }
+/* The half of it that is the reader's, in the brand colour: the sentence is
+   already the page's heaviest, so weight cannot be what picks it out. */
+.hero .lede strong { color: var(--t-brand); }
 .hero .sub { color: var(--t-text-muted); margin: 0 0 1.8rem; }
 
 /* One screen, photographed. Two of them, because the page has a theme
@@ -425,7 +492,7 @@ main { min-width: 0; }
 .shot .caption { margin: 0.6rem 0 0; }
 
 .caption {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--t-text-muted);
   margin: 0 0 1rem;
   max-width: var(--measure);
@@ -471,6 +538,28 @@ h4 {
 
 section > p, section > ul, section > ol { max-width: var(--measure); }
 
+/* A subsection beside its picture, the two swapping sides down the page so
+   the eye has somewhere to go besides straight down. The picture gets the
+   larger share because it is a screen, and opens at full size on a click.
+   One column again where two would make either unreadable. */
+.feature {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 2rem;
+  align-items: center;
+  margin: 2.6rem 0;
+}
+.feature.flip { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+.feature.flip > .text { order: 2; }
+.feature > .text > h3:first-child { margin-top: 0; }
+.feature > .text > :last-child { margin-bottom: 0; }
+.feature .shot { margin: 0; }
+.feature .shot a { display: block; }
+@media (max-width: 1100px) {
+  .feature, .feature.flip { grid-template-columns: minmax(0, 1fr); gap: 1.2rem; }
+  .feature.flip > .text { order: 0; }
+}
+
 /* ── prose ──────────────────────────────────────────────────────────── */
 
 ul { list-style: square; }
@@ -514,7 +603,7 @@ pre {
   box-shadow: var(--t-ring);
   border-radius: var(--round);
   overflow-x: auto;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
   color: var(--t-text);
 }
@@ -534,7 +623,7 @@ pre code { background: none; padding: 0; font-size: inherit; }
 }
 .tenets > li:hover { background: var(--t-surface); border-left-color: var(--t-brand); }
 .tenets .no {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--t-text-muted);
   text-align: right;
   padding-top: 0.15rem;
@@ -557,7 +646,7 @@ pre code { background: none; padding: 0; font-size: inherit; }
 .beats li:hover { background: var(--t-surface); border-left-color: var(--t-brand); }
 .beats .where {
   flex: none;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--t-text-muted);
   white-space: nowrap;
   transition: color 150ms ease-out;
@@ -597,7 +686,7 @@ th, td {
   vertical-align: top;
 }
 th {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--t-text-muted);
   font-weight: 600;
   white-space: nowrap;
@@ -631,7 +720,7 @@ footer {
   border-top: 1px solid var(--t-border-subtle);
   margin-top: 4rem;
   padding: 1rem var(--gutter-width) 2.5rem;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--t-text-muted);
 }
 footer p { max-width: none; margin: 0; }

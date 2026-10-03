@@ -4,8 +4,8 @@ Type=Application
 # they type `obelus`, and the two have to say which is which.
 Name=Obelus (Terminal)
 Categories=Development;ConsoleOnly;
-GenericName=Code Reader
-Comment=A code reader in a terminal. It doesn't want you to type.
+GenericName=Code Editor
+Comment=A code editor in a terminal, with the agent built in.
 Exec=ob %F
 Icon=obelus
 # The launcher picks the terminal: `xdg-terminal-exec` where it is there,

@@ -15,7 +15,7 @@ license = "Apache-2.0"
 # the sentence stayed, so the one crate that did inherit it -- `obelus-cli`
 # -- was right by accident, and the project was described as the half of
 # itself that was there first.
-description = "A code reader, in a window of its own or in a terminal. It doesn't want you to type."
+description = "A code editor that fits how I work, with the agent built in, in a window of its own or in a terminal."
 
 # The lints the whole of Obelus is written under. Crate attributes do not
 # travel, so `#![deny(..)]` in one crate root would silently stop applying to

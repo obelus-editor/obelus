@@ -236,6 +236,94 @@ fn the_worktrees_are_a_tab_of_what_is_open() {
     );
 }
 
+/// The worktrees tab shows no preview, and the documents tab beside it
+/// still does.
+///
+/// A tree is a whole checkout and no one file of it, so the file being
+/// read under its rows said nothing about any of them.
+///
+/// Broken deliberately by leaving the list previewing whichever tab it is
+/// on: the list is cut in two by a rule with an empty pane under it. And
+/// by previewing a tree as the file being read as well, which draws that
+/// file there.
+#[test]
+fn the_worktrees_tab_previews_nothing() {
+    let scratch = Scratch::new("worktrees-no-preview");
+    let (main, _, _) = repository(&scratch);
+    let asked = Arc::new(Asked::default());
+    let (mut app, _events) = window_on(&main, &asked);
+    app.open_for_test(&main.join("file.rs"));
+
+    press_function(&mut app, 2);
+    let documents = support::render(&mut app, 80, 24);
+    assert!(
+        documents.contains("fn main() {}"),
+        "the documents tab does not preview what is open:\n{documents}"
+    );
+
+    press(&mut app, KeyCode::Tab);
+    assert_eq!(tabs(&app).1, 1, "tab did not walk to the worktrees");
+    let worktrees = support::render(&mut app, 80, 24);
+    assert!(
+        !worktrees.contains("fn main() {}"),
+        "the worktrees tab previews the file being read:\n{worktrees}"
+    );
+    // A preview is under a rule of its own, so a list that previews has one
+    // more row of rule across the screen than one that does not.
+    let ruled = |screen: &str| {
+        screen
+            .lines()
+            .filter(|line| {
+                line.split_once('|')
+                    .is_some_and(|(_, row)| !row.is_empty() && row.chars().all(|c| c == '─'))
+            })
+            .count()
+    };
+    assert_eq!(
+        ruled(&worktrees) + 1,
+        ruled(&documents),
+        "the worktrees tab is still cut in two for a preview:\n{worktrees}"
+    );
+}
+
+/// A tree inside the main checkout is named the way the ones beside it
+/// are: from the directory the main checkout sits in.
+///
+/// Broken deliberately by going back to naming only a tree beside the
+/// main checkout by a word: the one under `.worktree` is called by its
+/// whole path while `main` is a name.
+#[test]
+fn a_tree_inside_the_main_checkout_is_named_from_where_it_sits() {
+    let scratch = Scratch::new("worktrees-inside");
+    let (main, _, _) = repository(&scratch);
+    let nested = main.join(".worktree").join("nested");
+    git(
+        &main,
+        &[
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            "nested",
+            nested.to_str().expect("a path"),
+        ],
+    );
+    let asked = Arc::new(Asked::default());
+    let (mut app, _events) = window_on(&main, &asked);
+
+    dispatch::dispatch(&mut app, Command::WorktreeList);
+    let said = rows(&app);
+    // Sorted, because the order of the linked trees is git's to choose.
+    let mut named: Vec<String> = said.iter().map(|row| row.0.clone()).collect();
+    named.sort();
+    let inside = Path::new("main").join(".worktree").join("nested");
+    assert_eq!(
+        named,
+        ["feature", "main", &inside.display().to_string(), "spare"],
+        "{said:?}"
+    );
+}
+
 /// A tree no window is on is opened in a new one; this window's own is
 /// where the reader already is.
 ///
@@ -344,7 +432,11 @@ fn a_tree_another_window_is_on_brings_that_window_forward() {
 ///
 /// Broken deliberately twice: a tree that has gone left enabled (a window
 /// is opened on nothing), and a window whose tree went keeping its claim
-/// (the row is marked as somewhere to go).
+/// (the row is marked as somewhere to go). And on Windows a third, which
+/// only Windows can show: naming a row from `resolved` rather than
+/// `resolved_as_far_as_it_goes` takes the tree that has gone as git wrote
+/// it, which is not the `\\?\` spelling the main checkout resolves to, so
+/// the row is called by its whole path and no row says `spare`.
 #[test]
 fn a_tree_that_has_gone_is_missing_and_goes_nowhere() {
     let scratch = Scratch::new("worktrees-gone");
