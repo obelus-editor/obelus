@@ -260,28 +260,46 @@ impl App {
 
     /// Copies the selected text to the system clipboard.
     pub fn copy_selection(&mut self) {
-        // Out of whatever is being typed into, nearest first, the same
-        // order a paste goes in by. A box a reader can select in but not
-        // copy out of is a box with half a selection -- and before this,
-        // `ctrl+c` over a list copied the line of the file behind it.
+        // Out of whatever is in front, the same answer a paste and a key
+        // get. A box a reader can select in but not copy out of is a box
+        // with half a selection -- and before this, `ctrl+c` over a list
+        // copied the line of the file behind it, and over the counts it
+        // still did, because a chain of the boxes that *had* a selection
+        // left out the views that had none.
         //
         // The notes are not here because they answer these two keys
-        // themselves: a dialog is bound to nothing in the key table, so
-        // nothing it takes ever arrives at one.
-        if let Some(prompt) = self.prompt.as_ref() {
-            let (text, what) = prompt.copied();
-            self.copied(&text, what);
-            return;
-        }
-        if let Some(settings) = self.settings.as_ref() {
-            let (text, what) = settings.copy_query();
-            self.copied(&text, what);
-            return;
-        }
-        if let Some(picker) = self.picker.as_ref() {
-            let (text, what) = picker.copy_query();
-            self.copied(&text, what);
-            return;
+        // themselves. A setting's list of names takes every key there is
+        // and lets none through, so nothing it is under reaches here.
+        match self.layers().nearest() {
+            Some(Layer::Prompt) => {
+                if let Some(prompt) = self.prompt.as_ref() {
+                    let (text, what) = prompt.copied();
+                    self.copied(&text, what);
+                }
+                return;
+            }
+            Some(Layer::Settings) => {
+                if let Some(settings) = self.settings.as_ref() {
+                    let (text, what) = settings.copy_query();
+                    self.copied(&text, what);
+                }
+                return;
+            }
+            Some(Layer::Picker) => {
+                if let Some(picker) = self.picker.as_ref() {
+                    let (text, what) = picker.copy_query();
+                    self.copied(&text, what);
+                }
+                return;
+            }
+            Some(Layer::Names | Layer::Counts | Layer::Gone) => return,
+            // Being asked which project, which is a page of its own and not
+            // a layer, with a box on it like any other.
+            None if self.chooser.is_some() => {
+                self.copy_from_the_chooser();
+                return;
+            }
+            None => {}
         }
         let width = obelus_ui::chat::reading_width(self.editor_area);
         if let Some((text, what)) = self.chat().map(|chat| chat.copied(width)) {
@@ -350,28 +368,42 @@ impl App {
     /// rows are lines the file no longer has, and cutting them would be
     /// cutting from a diff.
     pub fn cut_selection(&mut self) {
-        // The same order, and the same reason with more at stake: before
+        // The same answer, and the same reason with more at stake: before
         // this, `ctrl+x` over a list took a line out of the file behind it,
-        // where nobody could see it go.
-        if let Some(prompt) = self.prompt.as_mut() {
-            let (text, what) = prompt.cut();
-            self.cut_away(&text, what);
-            return;
-        }
-        let offering = self.agent_offering();
-        if let Some(settings) = self.settings.as_mut() {
-            let (text, what) = settings.cut_query(offering.as_ref());
-            self.cut_away(&text, what);
-            return;
-        }
-        if let Some(picker) = self.picker.as_mut() {
-            let (text, what) = picker.cut_query();
-            let searching = picker.is_searching();
-            self.cut_away(&text, what);
-            if searching {
-                self.refresh_search();
+        // where nobody could see it go -- and over the counts it still did.
+        match self.layers().nearest() {
+            Some(Layer::Prompt) => {
+                if let Some(prompt) = self.prompt.as_mut() {
+                    let (text, what) = prompt.cut();
+                    self.cut_away(&text, what);
+                }
+                return;
             }
-            return;
+            Some(Layer::Settings) => {
+                let offering = self.agent_offering();
+                if let Some(settings) = self.settings.as_mut() {
+                    let (text, what) = settings.cut_query(offering.as_ref());
+                    self.cut_away(&text, what);
+                }
+                return;
+            }
+            Some(Layer::Picker) => {
+                if let Some(picker) = self.picker.as_mut() {
+                    let (text, what) = picker.cut_query();
+                    let searching = picker.is_searching();
+                    self.cut_away(&text, what);
+                    if searching {
+                        self.refresh_search();
+                    }
+                }
+                return;
+            }
+            Some(Layer::Names | Layer::Counts | Layer::Gone) => return,
+            None if self.chooser.is_some() => {
+                self.cut_from_the_chooser();
+                return;
+            }
+            None => {}
         }
         if self.conversation().is_some() {
             // The width the box really has, from the same function the
@@ -510,6 +542,7 @@ impl App {
     #[must_use]
     pub(super) fn somewhere_to_type(&self) -> bool {
         self.prompt.is_some()
+            || self.chooser.is_some()
             || self.notes().is_some()
             || self.settings.is_some()
             || self.picker.is_some()

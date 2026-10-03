@@ -12,20 +12,15 @@ impl App {
     ///
     /// The motions, the paging, the scrolling of a rendering and the
     /// typing: four things that are all about the document under everything
-    /// else, which is why they share one refusal. Four separate guards were
-    /// four chances to leave a view out, and two of them did -- a letter
-    /// typed over the counts went into the file behind, and `ctrl+left`
-    /// under either the counts or a question on the status bar moved a
-    /// cursor nobody could see.
+    /// else. Asked only when nothing is in front of the file
+    /// (`app/hearing`): four separate guards here were four chances to leave
+    /// a view out, and two of them did -- a letter typed over the counts
+    /// went into the file behind, and `ctrl+left` under either the counts or
+    /// a question on the status bar moved a cursor nobody could see.
     ///
     /// It answers `false` rather than swallowing the key, so what it has no
-    /// use for goes on to the key table: `ctrl+q` still leaves Obelus, and
-    /// `ctrl+w` still closes a file from the list of them.
+    /// use for goes on to the key table: `ctrl+q` still leaves Obelus.
     pub(super) fn editor_key(&mut self, key: &KeyEvent) -> bool {
-        if self.layers().any() {
-            return false;
-        }
-
         // A rendering scrolls by rows. Its rows are not the file's lines, so
         // the cursor has nowhere to be in it and the motions have nothing to
         // move: what the keys do here is move the window.

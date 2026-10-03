@@ -920,3 +920,40 @@ fn a_paste_goes_into_the_box_the_page_is_showing() {
         "the paste did not reach the path box"
     );
 }
+
+/// And the keys that take a copy out of a box work in its boxes too, the
+/// same as they do in every other box Obelus has.
+///
+/// They were refused before they were asked: `ctrl+c`, `ctrl+x` and
+/// `ctrl+v` are bound in a dialog, the page is one, and whether there was
+/// anywhere to copy from or type into was asked of a list of boxes that
+/// left this page out -- while the paste the terminal sends went in.
+///
+/// Broken deliberately by taking the page back out of
+/// `App::somewhere_to_type`, and all three keys are refused; and by taking
+/// its arm out of `App::copy_selection`, and the copy finds nothing to copy.
+#[test]
+fn a_copy_a_cut_and_a_paste_work_in_the_page_that_asks() {
+    let _turn = support::clipboard_turn();
+    obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Kept);
+    let mut app = asking();
+    support::type_text(&mut app, "alp");
+
+    support::press_control(&mut app, 'c');
+    assert_eq!(app.note(), Some("Copied line"), "nothing was copied");
+
+    support::press_control(&mut app, 'x');
+    assert_eq!(app.note(), Some("Cut line"), "nothing was cut");
+    assert_eq!(
+        app.choosing().expect("asking").typed,
+        "",
+        "the cut left the filter"
+    );
+
+    support::press_control(&mut app, 'v');
+    assert_eq!(
+        app.choosing().expect("asking").typed,
+        "alp",
+        "the paste did not put the cut back"
+    );
+}

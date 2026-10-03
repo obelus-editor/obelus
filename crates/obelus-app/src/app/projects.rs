@@ -424,8 +424,28 @@ impl super::App {
         self.the_chooser_answered(outcome, before);
     }
 
+    /// A copy out of whichever box the page is showing.
+    pub(super) fn copy_from_the_chooser(&mut self) {
+        let Some(chooser) = &self.chooser else {
+            return;
+        };
+        let (text, what) = chooser.copied();
+        self.copied(&text, what);
+    }
+
+    /// And a cut, which moves the box the way a paste does.
+    pub(super) fn cut_from_the_chooser(&mut self) {
+        let Some(chooser) = &mut self.chooser else {
+            return;
+        };
+        let before = chooser.named();
+        let ((text, what), outcome) = chooser.cut();
+        self.cut_away(&text, what);
+        self.the_chooser_answered(outcome, before);
+    }
+
     /// What a box on the page that asks which project moving means outside
-    /// it, whether a key or a paste moved it.
+    /// it, whether a key, a paste or a cut moved it.
     fn the_chooser_answered(
         &mut self,
         outcome: obelus_component::chooser::Outcome,

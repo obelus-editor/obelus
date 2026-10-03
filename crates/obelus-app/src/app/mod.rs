@@ -24,6 +24,7 @@ pub mod dispatch;
 pub mod document;
 mod documents;
 mod fixing;
+mod hearing;
 mod hierarchy;
 mod history;
 mod history_view;
@@ -3121,107 +3122,10 @@ impl App {
         // whatever the reader did next.
         self.dragging = None;
 
-        // Before everything, because it is not a thing opened *over* a
-        // project -- it is what is there instead of one, and nothing
-        // behind it would know what to do. What it does not take falls to
-        // the ordinary lookup, which finds a dialog and so offers only
-        // what a dialog binds.
-        //
-        // Except while a list is up over it, which is what went wrong on
-        // the way up: that is nearer, and the page has the keys back once
-        // the reader has let it go.
-        if self.chooser.is_some()
-            && self.layers().nearest().is_none()
-            && self.choosing_a_project(&key)
-        {
-            return;
-        }
-
-        // Except the paging keys, while a preview is on screen: a screenful
-        // is what the thing being *read* is moved by, and the list above it
-        // is ten rows with its ends a keypress away. With control they page
-        // the list, which is the other half of the same swap.
-        if self.page_preview(&key) {
-            return;
-        }
-        // The keys a file list and a search have that are not about moving
-        // around them. Before the picker, because the picker would not know
-        // them: what they change is where the rows come from, which is the
-        // application's.
-        if self.listing_key(&key) || self.searching_key(&key) {
-            return;
-        }
-
-        // And then whatever is over the file, nearest the reader first --
-        // because escape belongs to whatever is in front, and every other
-        // key belongs to whatever owns the thing it moves. One order, the
-        // one `layers` declares, read backwards. What a layer does not want
-        // falls through it, which is how `ctrl+q` still leaves Obelus from
-        // inside any of them.
-        for layer in self.layers().nearest_first() {
-            let taken = match layer {
-                Layer::Prompt => self.prompt_key(&key),
-                Layer::Names => self.names_key(&key),
-                Layer::Picker => self.picker_key(&key),
-                Layer::Settings => self.settings_key(&key),
-                Layer::Counts => self.counts_key(&key),
-                Layer::Gone => self.the_page_saying_it_has_gone(&key),
-            };
-            if taken {
-                return;
-            }
-        }
-
-        // The document being read, where that document is a conversation.
-        // After the layers, because a list or a page is over it the way it
-        // is over a file; before the panels and the file's own keys, which
-        // are about a file and there is not one.
-        if self.chat_key(&key) {
-            return;
-        }
-
-        // And where that document is the notes. Beside the conversation
-        // rather than in the loop above, because that is what it now is:
-        // something the reader goes to, not something over what they were
-        // reading.
-        if self.notes_key(&key) {
-            return;
-        }
-
-        // What the server said about a place. Before the panels below it
-        // because escape belongs to whatever is nearest, and it takes no
-        // other key from them: what it does not want, it closes itself for
-        // and lets through.
-        if self.hover_key(&key) {
-            return;
-        }
-        // And what the call the cursor is inside takes, which takes escape
-        // and nothing else: the reader is typing arguments into the file
-        // under it. After the hover for the same reason the hover is after
-        // the layers -- escape belongs to whichever is nearest, and the two
-        // are never up together.
-        if self.signature_key(&key) {
-            return;
-        }
-        // What could be typed next, while a server's answer is beside the
-        // cursor. Before the motions and the typing, because the arrows
-        // walk the list and `enter` takes what is selected -- and after
-        // everything above, because a list or a dialog open over the file
-        // is what the reader is looking at instead.
-        if self.completion_key(&key) {
-            return;
-        }
-        // And the holes a snippet left, which take `tab` while there are
-        // any left to fill in.
-        if self.snippet_key(&key) {
-            return;
-        }
-
-        // The file being read: the motions, the paging and the typing. It
-        // goes last of the keys because everything above it is something
-        // opened *over* the file, and it refuses outright while any of
-        // those is showing.
-        if self.editor_key(&key) {
+        // Whatever is in front, and on down only as far as each thing lets
+        // a key through -- which for anything the reader is *in* is not at
+        // all (`app/hearing`). What nobody took goes to the key table.
+        if self.hand_over(&key) {
             return;
         }
 
