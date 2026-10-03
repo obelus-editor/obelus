@@ -82,6 +82,24 @@ where
     }
 }
 
+/// A channel with a bound, for a test that has to keep a worker in step with
+/// it.
+///
+/// With no room at all a send waits for the receiver to take the one before,
+/// so the worker cannot get further ahead of the test than the one event it
+/// is holding. Asking "did it stop" of a worker on a free-running channel is
+/// a race against the scheduler: a test that is paused for a few dozen
+/// milliseconds after starting the worker finds it already finished.
+impl<E, T> Sink<E> for std::sync::mpsc::SyncSender<T>
+where
+    E: Send + 'static,
+    T: From<E> + Send + 'static,
+{
+    fn send(&self, event: E) -> Result<(), Gone> {
+        std::sync::mpsc::SyncSender::<T>::send(self, T::from(event)).map_err(|_| Gone)
+    }
+}
+
 /// A sink behind a pointer, which is how one is shared and cloned without
 /// `Clone` being in the trait.
 ///

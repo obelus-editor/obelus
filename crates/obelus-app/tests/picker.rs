@@ -3986,6 +3986,17 @@ fn a_rule_is_a_rule_over_whatever_is_under_it() {
 /// and dropped -- a number on the answer, not a way to stop the question.
 /// The search and the history walk had both been asking whether anybody
 /// still wanted them for a long time; this one had not.
+///
+/// The channel has no room in it, and that is what makes this a test. On
+/// one with room, the walk was cancelled only after it had been started,
+/// and a test thread paused for a few dozen milliseconds in between -- a
+/// macOS runner did it -- found all 4000 read before the cancel arrived.
+/// Here the walk cannot send its next batch until the test has taken the
+/// one before, so it is cancelled with at most one batch in its hands.
+///
+/// Broken deliberately by taking out the check in the walk's loop: 3584
+/// paths arrived, the seven full batches. The old `found < 4000` passed
+/// that, because the check at the end still held back the last 416.
 #[test]
 fn a_walk_nobody_wants_stops() {
     use obelus_app::event::Event;
@@ -4000,18 +4011,24 @@ fn a_walk_nobody_wants_stops() {
 
     let latest = Latest::default();
     let mine = latest.next();
-    let (sender, events) = std::sync::mpsc::channel();
+    let (sender, events) = std::sync::mpsc::sync_channel(0);
     obelus_search::spawn_walk(scratch.path(), latest.claim(mine), false, false, sender);
 
+    let batch = match events.recv() {
+        Ok(Event::Search(obelus_search::Event::FilesFound { paths, .. })) => paths.len(),
+        _ => panic!("the walk sent nothing before it was cancelled"),
+    };
+    let mut found = batch;
     // The reader asks for something else before the walk has finished.
     latest.next();
 
-    let mut found = 0;
     while let Ok(Event::Search(obelus_search::Event::FilesFound { paths, .. })) = events.recv() {
         found += paths.len();
     }
+    // The batch it was told to stop after, and the one it may already have
+    // been holding when it was told.
     assert!(
-        found < 4000,
+        found <= 2 * batch,
         "the walk read the whole tree for nobody: {found} paths"
     );
 }
