@@ -52,23 +52,7 @@
   <a class="switch" href="https://github.com/obelus-editor/obelus">GitHub</a>
 </header>
 
-<div class="frame" id="top">
-
-  <nav class="contents" aria-label="Contents">
-    <ol>
-      <li><a href="#fit"><span>Is this how you work?</span></a></li>
-      <li><a href="#does"><span>What it does for that</span></a></li>
-      <li><a href="#not"><span>What it does not do</span></a></li>
-      <li><a href="#tenets"><span>Principles</span></a></li>
-      <li><a href="#why"><span>Why it exists</span></a></li>
-      <li><a href="#start"><span>Getting started</span></a></li>
-      <li><a href="reference.html"><span>Reference ›</span></a></li>
-    </ol>
-  </nav>
-
-  <main>
-
-    <div class="hero">
+<div class="hero wide" id="top">
       <div class="mark">÷</div>
       <h1>Obelus</h1>
       <p class="lede">An editor that fits my own habits — <strong>with the agent built in.</strong></p>
@@ -86,6 +70,24 @@
         <figcaption class="caption">A real run of <code>feature-branch</code>, on a made-up project. The header says which branch the changes are on. The agent made the worktree, ran the tests before and after and committed there, said where the change was, and waited; only once it was told the change had been tried did it ask about a review, on a card rather than in its reply.</figcaption>
       </figure>
     </div>
+
+<div class="frame">
+
+  <nav class="contents" aria-label="Contents">
+    <ol>
+      <li><a href="#fit"><span>Is this how you work?</span></a></li>
+      <li><a href="#does"><span>What it does for that</span></a></li>
+      <li><a href="#not"><span>What it does not do</span></a></li>
+      <li><a href="#tenets"><span>Principles</span></a></li>
+      <li><a href="#why"><span>Why it exists</span></a></li>
+      <li><a href="#start"><span>Getting started</span></a></li>
+      <li><a href="reference.html"><span>Reference ›</span></a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+
 
     <section id="fit">
       <h2><span class="num">01</span><span>Is this how you work?</span></h2>
@@ -164,13 +166,16 @@
       <p>Every one of those questions is a card in the conversation, answered with the keys you are already holding. Nothing is pushed, merged, deleted or ticked off because the agent thought it was time.</p>
       <p class="quiet small">This is the <code>feature-branch</code> workflow, and it is on unless you set <code>workflow = "none"</code> — <kbd>Ctrl+p</kbd> → <code>open-settings</code> → <code>Workflow</code> — after which the agent changes things its own way, usually straight in the checkout you are reading. A project may choose for itself, and one that is not a git repository has no branch to work on, so the agent changes the files where they are. Obelus itself runs no git: every command is the agent's.</p>
 
+      <div class="feature">
+        <div class="text">
       <h3 id="worktrees">Every worktree is one key away</h3>
       <p>Obelus has no splits: two files side by side is two windows. So several on one project, each on its own worktree, is the normal case. In a window, <kbd>F2</kbd> has a second tab, and <kbd>Tab</kbd> goes to it: every worktree git knows of for this repository, wherever it is, with the ones that have a window marked. Choosing one brings its window forward, or opens a new one on it.</p>
-      <figure class="shot">
-        <img class="dark" src="worktrees-dark.png" width="1500" height="286" alt="The Worktrees tab of the list of open documents: tally on main, and tally/.worktree/stable-tie-order on stable-tie-order, both marked as having a window open, the second marked This window.">
-        <img class="light" src="worktrees-light.png" width="1500" height="286" alt="The same list in Obelus's light theme.">
-        <figcaption class="caption"><kbd>F2</kbd> and <kbd>Tab</kbd>, in the window on the agent's tree. Both trees have a window, so both are marked; choosing <code>tally</code> brings the other one forward.</figcaption>
-      </figure>
+        </div>
+        <figure class="shot">
+          <a href="worktree-list-dark.png"><img class="dark" src="worktree-list-dark.png" width="950" height="286" loading="lazy" alt="The Worktrees tab: tally on main and tally/.worktree/stable-tie-order on its branch, both with a window open."></a>
+          <a href="worktree-list-light.png"><img class="light" src="worktree-list-light.png" width="950" height="286" loading="lazy" alt="The Worktrees tab: tally on main and tally/.worktree/stable-tie-order on its branch, both with a window open."></a>
+        </figure>
+      </div>
       <p class="quiet small">Only <code>obg</code> lists them. Going somewhere is starting an Obelus or bringing one forward, and a terminal can do neither: the window it is drawn in is the terminal's, and which terminal you would want a new Obelus started in is not something Obelus can know. So <code>ob</code> has no such tab, and <code>switch-worktree</code> is dim there.</p>
       <ul>
         <li>Every worktree of a repository opens <em>one</em> set of notes, and what another window writes turns up by itself.</li>
@@ -179,8 +184,17 @@
         <li>A tree removed under a window leaves that window with what was open in it, and the project dim.</li>
       </ul>
 
+      <div class="feature flip">
+        <div class="text">
       <h3 id="agent">A conversation for every note</h3>
       <p>Obelus has no model of its own. It talks to the agent you already have over <strong>ACP</strong>, the Agent Client Protocol, and installs one from the protocol's own registry if you have none: <kbd>F4</kbd>, a new conversation, the agents page.</p>
+        </div>
+        <figure class="shot">
+          <a href="agent-card-dark.png"><img class="dark" src="agent-card-dark.png" width="1500" height="526" loading="lazy" alt="An agent in a conversation has said where its change is and been told it was tried; a card below asks whether the change should be reviewed before it goes anywhere."></a>
+          <a href="agent-card-light.png"><img class="light" src="agent-card-light.png" width="1500" height="526" loading="lazy" alt="An agent in a conversation has said where its change is and been told it was tried; a card below asks whether the change should be reviewed before it goes anywhere."></a>
+          <figcaption class="caption">A question is a card, answered with the keys you already have under your hands.</figcaption>
+        </figure>
+      </div>
       <ul>
         <li>A conversation is a document in the list of open ones. Leave it and come back tomorrow: it is where you left it.</li>
         <li>Opened from a note, it stays that note's, and if you reword the note the agent is told what changed.</li>
@@ -189,15 +203,30 @@
         <li>A change it is <em>asking</em> to make is shown in the conversation; a change it has made is in the file, in the margin, like any other.</li>
       </ul>
 
+      <div class="feature">
+        <div class="text">
       <h3 id="notes">Notes that keep their place</h3>
       <p><kbd>Alt+t</kbd> on a line starts a note about it; <code>todo</code> opens them all. A note can be about a line or about the whole project, and can hang under another. It keeps the commit it was written against as well as the line, so a note written last week still points at what it was written about, however the file has moved. They live in Obelus's own directory, per project — so every worktree shares them, and they never end up in your commits.</p>
+        </div>
+        <figure class="shot">
+          <a href="notes-dark.png"><img class="dark" src="notes-dark.png" width="1500" height="516" loading="lazy" alt="The notes page: a note with three steps under it, one of them ticked, and two notes beside it."></a>
+          <a href="notes-light.png"><img class="light" src="notes-light.png" width="1500" height="516" loading="lazy" alt="The notes page: a note with three steps under it, one of them ticked, and two notes beside it."></a>
+          <figcaption class="caption">Steps an agent worked out hang under the note they belong to.</figcaption>
+        </figure>
+      </div>
 
+      <div class="feature flip">
+        <div class="text">
       <h3 id="what">Reading what changed</h3>
-      <figure class="shot">
+      <p>Whatever wrote it, a change is read where it happened: marked in the margin, opened in place with <kbd>Alt+d</kbd>, and its history one key away.</p>
+        </div>
+        <figure class="shot">
         <img class="dark" src="screen-dark.png" width="1500" height="1084" loading="lazy" alt="Obelus reading a Rust source file. Line 59 has changed, and the hunk is opened underneath it showing the line as the last commit had it; the changes elsewhere in the file are marked beside the scrollbar, and the status row names the file, the language server and the cursor's position.">
         <img class="light" src="screen-light.png" width="1500" height="1084" loading="lazy" alt="The same screen in Obelus's light theme.">
         <figcaption class="caption"><code>obg</code>, reading its own source. Line 59 changed, and <kbd>Alt+d</kbd> has opened the hunk in place, with the line as the last commit had it above the one that replaced it; the marks beside the scrollbar are the rest of the file's changes. Obelus's own <code>dark</code> and <code>light</code>, following whichever this page is in.</figcaption>
       </figure>
+      </div>
+
       <div class="cards">
         <div class="card">
           <h4>git</h4>

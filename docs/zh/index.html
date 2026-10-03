@@ -52,23 +52,7 @@
   <a class="switch" href="https://github.com/obelus-editor/obelus">GitHub</a>
 </header>
 
-<div class="frame" id="top">
-
-  <nav class="contents" aria-label="Contents">
-    <ol>
-      <li><a href="#fit"><span>你是这样干活的吗</span></a></li>
-      <li><a href="#does"><span>它为此做了什么</span></a></li>
-      <li><a href="#not"><span>它不做什么</span></a></li>
-      <li><a href="#tenets"><span>设计理念</span></a></li>
-      <li><a href="#why"><span>为什么写它</span></a></li>
-      <li><a href="#start"><span>上手</span></a></li>
-      <li><a href="reference.html"><span>参考 ›</span></a></li>
-    </ol>
-  </nav>
-
-  <main>
-
-    <div class="hero">
+<div class="hero wide" id="top">
       <div class="mark">÷</div>
       <h1>Obelus</h1>
       <p class="lede">符合我个人习惯的编辑器，<strong>agent 就在里面。</strong></p>
@@ -86,6 +70,24 @@
         <figcaption class="caption"><code>feature-branch</code> 真跑一遍的样子，项目是编的。标题行写着改动在哪个分支上。agent 开好 worktree、改之前和改之后各跑了一遍测试、在那里提交，说清楚改动在哪，然后就等着；直到被告知试过了，它才问要不要审——用卡片问，而不是写在回复里。</figcaption>
       </figure>
     </div>
+
+<div class="frame">
+
+  <nav class="contents" aria-label="Contents">
+    <ol>
+      <li><a href="#fit"><span>你是这样干活的吗</span></a></li>
+      <li><a href="#does"><span>它为此做了什么</span></a></li>
+      <li><a href="#not"><span>它不做什么</span></a></li>
+      <li><a href="#tenets"><span>设计理念</span></a></li>
+      <li><a href="#why"><span>为什么写它</span></a></li>
+      <li><a href="#start"><span>上手</span></a></li>
+      <li><a href="reference.html"><span>参考 ›</span></a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+
 
     <section id="fit">
       <h2><span class="num">01</span><span>你是这样干活的吗</span></h2>
@@ -164,13 +166,16 @@
       <p>上面每一个问题都是对话里的一张卡片，用你手上本来就按着的那几个键回答。没有哪一次推送、合并、删除或打勾，是因为 agent 觉得「该做了」。</p>
       <p class="quiet small">这就是 <code>feature-branch</code> 这个 workflow，默认就开着，除非你设成 <code>workflow = "none"</code>——<kbd>Ctrl+p</kbd> → <code>open-settings</code> → <code>Workflow</code>——那样 agent 就按它自己的方式改，通常直接改在你正在读的那份 checkout 里。项目可以替自己选；不是 git 仓库的项目没有分支可开，agent 就在原地改。Obelus 自己不跑任何 git：每一条命令都是 agent 的。</p>
 
+      <div class="feature">
+        <div class="text">
       <h3 id="worktrees">每个 worktree 都只隔着一个键</h3>
       <p>Obelus 不分屏：想并排看两个文件，就是两个窗口。所以同一个项目上开着好几个、各在自己的 worktree 上，是常态。在窗口里，<kbd>F2</kbd> 有第二个 tab，按 <kbd>Tab</kbd> 过去：git 知道的这个仓库的每一个 worktree 都在里面，不管它在哪儿，有窗口开着的会标出来。选一个，开着它的那个窗口就跳到前面来，没开就新开一个。</p>
-      <figure class="shot">
-        <img class="dark" src="../worktrees-dark.png" width="1500" height="286" alt="打开的文档列表里的 Worktrees 标签页：tally 在 main 上，tally/.worktree/stable-tie-order 在 stable-tie-order 上，两棵都标着有窗口开着，第二棵标着 This window。">
-        <img class="light" src="../worktrees-light.png" width="1500" height="286" alt="同一个列表，Obelus 的浅色主题。">
-        <figcaption class="caption">在 agent 那棵树的窗口里按 <kbd>F2</kbd> 和 <kbd>Tab</kbd>。两棵树都有窗口开着，所以都标了出来；选 <code>tally</code> 就把另一个窗口带到前面。</figcaption>
-      </figure>
+        </div>
+        <figure class="shot">
+          <a href="../worktree-list-dark.png"><img class="dark" src="../worktree-list-dark.png" width="950" height="286" loading="lazy" alt="Worktrees 标签页：tally 在 main 上，tally/.worktree/stable-tie-order 在它自己的分支上，两棵都有窗口开着。"></a>
+          <a href="../worktree-list-light.png"><img class="light" src="../worktree-list-light.png" width="950" height="286" loading="lazy" alt="Worktrees 标签页：tally 在 main 上，tally/.worktree/stable-tie-order 在它自己的分支上，两棵都有窗口开着。"></a>
+        </figure>
+      </div>
       <p class="quiet small">只有 <code>obg</code> 列这些。去另一个地方，要么是启动一个 Obelus，要么是把一个带到前面来，而终端两样都做不到：它所在的窗口是终端的，你想在哪个终端里开新的 Obelus，Obelus 也没法知道。所以 <code>ob</code> 里没有这个 tab，<code>switch-worktree</code> 也是灰的。</p>
       <ul>
         <li>同一个仓库的每个 worktree 打开的是<em>同一份</em>笔记，另一个窗口写的东西会自己出现。</li>
@@ -179,8 +184,17 @@
         <li>一个窗口底下的树被删掉，窗口留着，里面开着的东西也留着，只是项目变灰。</li>
       </ul>
 
+      <div class="feature flip">
+        <div class="text">
       <h3 id="agent">每条笔记都有自己的对话</h3>
       <p>Obelus 没有自己的模型。它通过 <strong>ACP</strong>（Agent Client Protocol）和你已经在用的 agent 说话；你还没有的话，它能从协议作者维护的注册表里装一个：<kbd>F4</kbd>，新建对话，进 agents 页。</p>
+        </div>
+        <figure class="shot">
+          <a href="../agent-card-dark.png"><img class="dark" src="../agent-card-dark.png" width="1500" height="526" loading="lazy" alt="对话里，agent 说了改动在哪、听到已经试过，下面一张卡片问要不要先审一遍。"></a>
+          <a href="../agent-card-light.png"><img class="light" src="../agent-card-light.png" width="1500" height="526" loading="lazy" alt="对话里，agent 说了改动在哪、听到已经试过，下面一张卡片问要不要先审一遍。"></a>
+          <figcaption class="caption">问题是一张卡片，用你手上本来就按着的键回答。</figcaption>
+        </figure>
+      </div>
       <ul>
         <li>对话是打开的文档之一。离开它，明天回来，它还在你离开的地方。</li>
         <li>从笔记开的对话一直属于那条笔记；你改写了笔记，agent 会被告知改了什么。</li>
@@ -189,15 +203,30 @@
         <li>它<em>请求</em>做的改动显示在对话里；它已经做了的改动在文件里，和别的改动一样画在边栏上。</li>
       </ul>
 
+      <div class="feature">
+        <div class="text">
       <h3 id="notes">笔记记得自己指着哪儿</h3>
       <p>在一行上按 <kbd>Alt+t</kbd>，就起一条关于它的笔记；<code>todo</code> 打开全部。笔记可以对着某一行，也可以对着整个项目，还可以挂在另一条底下。它除了记行号，还记着写下时的那个提交，所以上周写的笔记，文件再怎么改，也还指着当初那一行。笔记放在 Obelus 自己的目录里、按项目存——所以每个 worktree 都共用，也永远不会进你的提交。</p>
+        </div>
+        <figure class="shot">
+          <a href="../notes-dark.png"><img class="dark" src="../notes-dark.png" width="1500" height="516" loading="lazy" alt="笔记页：一条笔记底下挂着三步，其中一步打了勾，旁边还有两条笔记。"></a>
+          <a href="../notes-light.png"><img class="light" src="../notes-light.png" width="1500" height="516" loading="lazy" alt="笔记页：一条笔记底下挂着三步，其中一步打了勾，旁边还有两条笔记。"></a>
+          <figcaption class="caption">agent 想出来的步骤，挂在它们所属的那条笔记底下。</figcaption>
+        </figure>
+      </div>
 
+      <div class="feature flip">
+        <div class="text">
       <h3 id="what">读改了什么</h3>
-      <figure class="shot">
+      <p>不管是谁写的，改动都在它发生的地方读：边栏上标着，<kbd>Alt+d</kbd> 就地展开，它的历史只隔一个键。</p>
+        </div>
+        <figure class="shot">
         <img class="dark" src="../screen-dark.png" width="1500" height="1084" loading="lazy" alt="Obelus 正在读一个 Rust 源文件。第 59 行改过，它下面就地展开了这一处 hunk，显示上一次提交里这行是什么样子；文件里其余的改动标在滚动条旁边，状态行写着文件名、语言服务器和光标位置。">
         <img class="light" src="../screen-light.png" width="1500" height="1084" loading="lazy" alt="同一屏，Obelus 的浅色主题。">
         <figcaption class="caption"><code>obg</code> 在读它自己的源码。第 59 行改过，<kbd>Alt+d</kbd> 把这一处 hunk 就地展开，把上一次提交里的那行放在替换它的那行上面；滚动条旁边的标记是这个文件其余的改动。用的是 Obelus 内置的 <code>dark</code> 和 <code>light</code>，跟着本页当前的主题。</figcaption>
       </figure>
+      </div>
+
       <div class="cards">
         <div class="card">
           <h4>git</h4>
