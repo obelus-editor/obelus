@@ -797,11 +797,18 @@ fn split(said: &str, at: usize, looks: &[Look], gathered: &Gathered) -> Vec<Span
     // is laid out from text that was gathered out of the source, so two
     // characters beside each other here may be pages apart there -- and a
     // span says where it came from, which it cannot do for two places.
-    let mut carries: Option<usize> = None;
+    //
+    // Nor for a place and nowhere: the space a soft break becomes is in
+    // nobody's source, and a run that started on it said nowhere for the
+    // whole of the line that followed -- which could then not be selected.
+    // So the last character's own answer is kept, nowhere included:
+    // `Some(None)` is a run of nothing anybody wrote, and only more of
+    // nothing carries it on.
+    let mut carries: Option<Option<usize>> = None;
     for character in said.chars() {
         let here = looks.get(byte).copied().unwrap_or_default();
         let source = gathered.source_of(byte);
-        let broken = carries.is_some_and(|next| source != Some(next));
+        let broken = carries.is_some_and(|next| source != next);
         if (look.is_some_and(|had| had != here) || broken) && !run.is_empty() {
             spans.push(spanned(&run, from, look.unwrap_or_default(), gathered));
             run = String::new();
@@ -810,7 +817,7 @@ fn split(said: &str, at: usize, looks: &[Look], gathered: &Gathered) -> Vec<Span
         look = Some(here);
         run.push(character);
         byte += character.len_utf8();
-        carries = source.map(|source| source + character.len_utf8());
+        carries = Some(source.map(|source| source + character.len_utf8()));
     }
     if !run.is_empty() {
         spans.push(spanned(&run, from, look.unwrap_or_default(), gathered));
