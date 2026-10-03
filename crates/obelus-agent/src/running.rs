@@ -249,9 +249,8 @@ impl Runs {
             return None;
         }
         let child = run.child.as_mut()?;
-        let status = child.try_wait().ok()??;
+        let status = run.group.try_wait(child)?;
         run.child = None;
-        run.group.reaped();
         let ended = ended_as(&status);
         run.ended = Some(ended);
         Some(ended)
@@ -347,11 +346,22 @@ impl Drop for Runs {
 /// out: `cmd` takes a good deal longer than that to read its own line.
 ///
 /// A group of its own is also a group the terminal does not hang up on.
-/// When the reader closes the terminal `ob` is in, the hangup goes to `ob`'s
-/// group, and that used to take the commands with it because they were in
-/// it. So `ob` passes it on (`stop_on_hangup`). Windows has no such thing
-/// to lose: a console being closed is told to everything attached to it,
-/// and a job does not detach anything.
+/// When the reader closes the terminal Obelus was started from -- `ob`, or
+/// an `obg` started from a shell -- the hangup goes to Obelus's group, and
+/// that used to take the commands with it because they were in it. So
+/// Obelus passes it on (`stop_on_hangup`). Windows has no such thing to
+/// lose: a console being closed is told to everything attached to it, and
+/// a job does not detach anything.
+///
+/// Nor is it the terminal's foreground, so a command that reads the
+/// terminal -- a password prompt -- is stopped by the system where it would
+/// have taken the reader's keys out of the page. It waits, on the page,
+/// until escape.
+///
+/// What the shell leaves running when it ends -- `npm run dev &` -- is
+/// reached by neither a stop nor a hangup: the group is let go of with the
+/// shell, because its number is then the system's to give to somebody
+/// else. A hangup used to reach it, when it was in Obelus's group.
 #[derive(Debug)]
 struct Group {
     /// The group's number, which is the shell's, until the shell is reaped
@@ -369,10 +379,8 @@ impl Group {
     #[cfg(unix)]
     fn of(child: &Child) -> Self {
         let leader = child.id().and_then(|it| libc::pid_t::try_from(it).ok());
-        if let Some(leader) = leader
-            && let Ok(mut leaders) = LEADERS.lock()
-        {
-            leaders.push(leader);
+        if let Some(leader) = leader {
+            leaders().push(leader);
             stop_on_hangup();
         }
         Self { leader }
@@ -420,18 +428,23 @@ impl Group {
         unsafe {
             libc::killpg(leader, libc::SIGKILL);
         }
-        self.reaped();
+        self.leader = None;
+        leaders().retain(|it| *it != leader);
     }
 
-    /// Lets go of the number, because the shell that held it is gone.
+    /// Reaps the shell if it has ended, and lets go of its number.
+    ///
+    /// Both under the one lock the hangup holds while it kills: between
+    /// the reaping and the letting go, the number is the system's to give
+    /// away and still on the list.
     #[cfg(unix)]
-    fn reaped(&mut self) {
-        let Some(leader) = self.leader.take() else {
-            return;
-        };
-        if let Ok(mut leaders) = LEADERS.lock() {
+    fn try_wait(&mut self, child: &mut Child) -> Option<std::process::ExitStatus> {
+        let mut leaders = leaders();
+        let status = child.try_wait().ok()??;
+        if let Some(leader) = self.leader.take() {
             leaders.retain(|it| *it != leader);
         }
+        Some(status)
     }
 
     /// Kills everything in it. What has gone already is not an error.
@@ -450,9 +463,12 @@ impl Group {
         }
     }
 
-    /// Nothing to let go of: a job is not a number anybody else is given.
+    /// Reaps the shell if it has ended. Nothing to let go of: a job is not
+    /// a number anybody else is given.
     #[cfg(windows)]
-    fn reaped(&mut self) {}
+    fn try_wait(&mut self, child: &mut Child) -> Option<std::process::ExitStatus> {
+        child.try_wait().ok()?
+    }
 }
 
 /// Every group this process has running, for a hangup to stop.
@@ -462,29 +478,39 @@ impl Group {
 #[cfg(unix)]
 static LEADERS: Mutex<Vec<libc::pid_t>> = Mutex::new(Vec::new());
 
+/// The list, poisoned or not: only a push, a retain and a walk are ever
+/// done under it, and a hangup that killed nothing for a panic somewhere
+/// else would be the one answer that is wrong.
+#[cfg(unix)]
+fn leaders() -> std::sync::MutexGuard<'static, Vec<libc::pid_t>> {
+    LEADERS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// Hangs up on every command still running when the terminal hangs up, and
 /// then goes the way the hangup would have taken it.
 ///
 /// A hangup and not a kill, because a hangup is what the commands got when
-/// they were in `ob`'s group, and a program that hears one tidies up: git
+/// they were in Obelus's group, and a program that hears one tidies up: git
 /// takes its `index.lock` away, where a kill leaves it behind for the
 /// reader's next commit to trip over. And a `CONT` after it, which is what
 /// the system sends a group it has hung up on, so that a command stopped
 /// for reading the terminal hears the hangup at all.
 ///
 /// Gone the same way so that nothing else about a hangup changes: whoever
-/// started `ob` sees it end on `HUP` as it always did, and the language
-/// servers and the agent, which are still in `ob`'s group, were hung up on
+/// started Obelus sees it end on `HUP` as it always did, and the language
+/// servers and the agent, which are still in Obelus's group, were hung up on
 /// with it already. `Drop` on the runs is not reached either way, which is
 /// why this is a list of numbers rather than a walk of them.
 ///
-/// Listened for from the first command on, not from the start: an `ob`
+/// Listened for from the first command on, not from the start: an Obelus
 /// that never runs one keeps the disposition it was given. And not at all
 /// where that disposition is to ignore it -- `nohup obg &` -- because a
 /// listener is installed over whatever was there, and an ignored hangup
 /// would become one that takes the window and its unwritten buffers with
 /// it. The commands inherit the ignoring, so they outlive the terminal as
-/// `ob` does, which is what was asked for.
+/// Obelus does, which is what was asked for.
 #[cfg(unix)]
 fn stop_on_hangup() {
     use tokio::signal::unix::{SignalKind, signal};
@@ -502,17 +528,24 @@ fn stop_on_hangup() {
             return;
         }
         let _inside = obelus_runtime::handle().enter();
-        let Ok(mut hangup) = signal(SignalKind::hangup()) else {
-            return;
+        let mut hangup = match signal(SignalKind::hangup()) {
+            Ok(hangup) => hangup,
+            Err(error) => {
+                tracing::warn!(%error, "not listening for the terminal hanging up");
+                return;
+            }
         };
         obelus_runtime::handle().spawn(async move {
             hangup.recv().await;
-            let leaders = LEADERS.lock().map(|it| it.clone()).unwrap_or_default();
+            // Held to the end, which is this process's: a command started
+            // meanwhile waits rather than going unkilled, and a shell
+            // reaped meanwhile cannot give its number away first.
+            let leaders = leaders();
             // Safety: `killpg`, `signal` and `raise` take numbers and read
             // nothing through a pointer; `SIG_DFL` is a disposition, not an
             // address anything calls.
             unsafe {
-                for leader in leaders {
+                for &leader in leaders.iter() {
                     libc::killpg(leader, libc::SIGHUP);
                     libc::killpg(leader, libc::SIGCONT);
                 }
