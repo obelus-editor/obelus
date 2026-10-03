@@ -207,6 +207,9 @@ struct Showing {
     /// commit by sending its spelling again would be answered in turn --
     /// for as long as the reader was typing.
     pointed: Option<[f32; 4]>,
+    /// Whether the input method is on, which it is only where a character
+    /// typed would go into some text -- see `allow_the_input_method`.
+    allowed: bool,
     /// Where the marks go on the frame being shown.
     marked: Vec<Marked>,
     /// And where its key caps are, kept the same way and for the same
@@ -344,6 +347,7 @@ impl Showing {
             composing: false,
             spelling: None,
             pointed: None,
+            allowed: false,
             marked: Vec::new(),
             marking: Vec::new(),
             capped: Vec::new(),
@@ -484,6 +488,36 @@ impl Showing {
         self.measured
             .resized(columns, rows, size.width, size.height);
         self.page.resized(columns, rows);
+    }
+
+    /// Turns the input method on where a character typed would go into
+    /// some text, and off everywhere else.
+    ///
+    /// Without it on a window gets keys and nothing else, and there is no
+    /// way to type any language that is spelled before it is written. With
+    /// it on where nothing is typed -- the counts, a list only read, a
+    /// commit's version of a file, a key being bound -- the letters a
+    /// reader meant as keys are spelling instead, and a list of candidates
+    /// comes up for a word with nowhere to go.
+    ///
+    /// Said only when it moves: the frame says it every time, and turning
+    /// an input method on and off is a round trip to it.
+    fn allow_the_input_method(&mut self) {
+        let Some(window) = self.window.as_ref() else {
+            return;
+        };
+        let typing = self.page.typing();
+        if typing == self.allowed {
+            return;
+        }
+        self.allowed = typing;
+        window.set_ime_allowed(typing);
+        // Turned on, it has to be told again where the caret is: what it
+        // was told before belonged to a text box that has since been put
+        // away, and on Wayland that is the box being told.
+        if typing {
+            self.pointed = None;
+        }
     }
 
     /// Tells the input method where the caret is, so that its candidates
@@ -655,9 +689,6 @@ impl ApplicationHandler<Waking> for Showing {
             here.can_bring(),
         )));
         self.here = Some(here);
-        // Without this a window gets keys and nothing else, and there is
-        // no way to type any language that is spelled before it is written.
-        window.set_ime_allowed(true);
         self.window = Some(Arc::clone(&window));
         self.fonts = Some(fonts);
         self.painter = Some(painter);
@@ -1043,6 +1074,7 @@ impl ApplicationHandler<Waking> for Showing {
                     }
                 }
                 if drew {
+                    self.allow_the_input_method();
                     self.point_the_input_method();
                     self.redraw();
                 }
