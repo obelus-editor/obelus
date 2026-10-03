@@ -24,7 +24,9 @@ struct Screen {
 };
 
 @group(0) @binding(0) var<uniform> screen: Screen;
-@group(0) @binding(1) var atlas: texture_2d<f32>;
+// Every letter's coverage, in the first channel of as many layers as it
+// has taken.
+@group(0) @binding(1) var atlas: texture_2d_array<f32>;
 @group(0) @binding(2) var atlas_sampler: sampler;
 // What is behind a pane, drawn into a texture of its own a pass earlier.
 // Sampled only by a glass quad; every other quad ignores it.
@@ -33,6 +35,9 @@ struct Screen {
 // And the same picture blurred, by the two passes the blur quads are drawn
 // in. Read only by a glass quad, beside the sharp one.
 @group(0) @binding(5) var blurred: texture_2d<f32>;
+// And the pictures with colours of their own, beside the letters: an emoji,
+// and an agent's mark.
+@group(0) @binding(6) var pictures: texture_2d_array<f32>;
 
 // What the instance buffer holds.
 struct Quad {
@@ -58,6 +63,9 @@ struct Quad {
     // instead: how far a sliding pane has still to come, and which way a
     // wedge points.
     @location(4) radius: f32,
+    // Which layer of the atlas its picture is on: the letters', or the
+    // pictures' where it has colours of its own.
+    @location(5) layer: u32,
 };
 
 struct Fragment {
@@ -75,6 +83,7 @@ struct Fragment {
     // back together. Flat, because what it is is a region rather than
     // something measured across the quad.
     @location(6) @interpolate(flat) box: vec4<f32>,
+    @location(7) @interpolate(flat) layer: u32,
 };
 
 @vertex
@@ -98,6 +107,7 @@ fn vertex(@builtin(vertex_index) corner: u32, quad: Quad) -> Fragment {
     out.middle = (along - vec2<f32>(0.5)) * quad.rect.zw;
     out.radius = quad.radius;
     out.box = quad.uv + vec4<f32>(screen.origin, screen.origin);
+    out.layer = quad.layer;
     return out;
 }
 
@@ -481,12 +491,13 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
     if ((in.flags & 1u) != 0u) {
         return in.colour;
     }
-    let texel = textureSample(atlas, atlas_sampler, in.uv);
     if ((in.flags & 2u) != 0u) {
         // An emoji, which carries its own colours and uses the instance's
         // only for how much of it shows.
+        let texel = textureSample(pictures, atlas_sampler, in.uv, in.layer);
         return vec4<f32>(texel.rgb, texel.a * in.colour.a);
     }
+    let coverage = textureSample(atlas, atlas_sampler, in.uv, in.layer).r;
     // A letter, which is coverage: the ink is the instance's colour and the
     // glyph says how much of each pixel it covers.
     var ink = in.colour.rgb;
@@ -506,5 +517,5 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
         let lit = near * near * (3.0 - 2.0 * near);
         ink = mix(ink, screen.glow.rgb, lit * screen.sheen.z);
     }
-    return vec4<f32>(ink, in.colour.a * texel.a);
+    return vec4<f32>(ink, in.colour.a * coverage);
 }
