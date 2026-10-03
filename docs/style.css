@@ -397,7 +397,7 @@ main { min-width: 0; }
 .hero.wide p { margin-left: auto; margin-right: auto; }
 .hero.wide .sub { max-width: 46rem; }
 .hero.wide .buttons { justify-content: center; }
-.hero.wide .shot { margin-top: 2.8rem; text-align: left; }
+.hero.wide .shot { max-width: 60rem; margin: 2.8rem auto 0; text-align: left; }
 .hero.wide .shot .caption { text-align: center; max-width: 46rem; margin-left: auto; margin-right: auto; }
 
 /* The mark and the name wear the welcome screen's ramp. Brand artwork, and
