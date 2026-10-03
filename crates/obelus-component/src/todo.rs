@@ -635,7 +635,7 @@ impl TodoView {
     /// By name rather than by position, which is the whole reason a note has
     /// one: the list is read from the file every time it opens, and a note
     /// inserted above moves every position below it.
-    pub fn focus(&mut self, to: &obelus_git::todo::NoteId) {
+    fn focus(&mut self, to: &obelus_git::todo::NoteId) {
         let Some(at) = self.todo.notes.iter().position(|note| note.id == *to) else {
             return;
         };
@@ -645,6 +645,18 @@ impl TodoView {
             .position(|row| row.note == at && row.words())
         {
             self.window.set_focus(row);
+        }
+    }
+
+    /// Puts the caret in the note with this name, if it is still there.
+    ///
+    /// Not [`Self::focus`], which moves the selection and leaves the caret
+    /// in whatever note it was in: a view just opened has its caret in the
+    /// first note, and the next time the rows are laid out the selection
+    /// follows the caret back there.
+    pub fn put_caret_in(&mut self, to: &obelus_git::todo::NoteId) {
+        if let Some(at) = self.todo.notes.iter().position(|note| note.id == *to) {
+            self.enter_note(at, false);
         }
     }
 

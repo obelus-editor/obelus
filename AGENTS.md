@@ -547,7 +547,9 @@ crates/
                       (app/conversations); where Obelus has been is
                       remembered however the project was named, and only a
                       worktree, and what a start with nothing to go on asks
-                      (app/projects); what an agent offers is asked of it,
+                      (app/projects); what was open is kept by the tree,
+                      and the last window to change it wins (app/reopening);
+                      what an agent offers is asked of it,
                       not remembered (app/agents); a note that has gone takes
                       no conversation off the screen (app/noting); a key that
                       names another whole view swaps rather than stacks, and a

@@ -359,7 +359,17 @@ impl App {
             Some(Topic::Note(note)) => Some(note.clone()),
             Some(Topic::Loose) | None => None,
         };
-        let had = note.as_ref().and_then(|note| self.remembered_session(note));
+        // Taken rather than read: asked for once, the name is on its way,
+        // and a conversation that later loses its session -- the agent
+        // stopping, another agent chosen -- gets a new one, the way any
+        // conversation about nothing in particular does. By then its claim
+        // has gone with the session, and another window may have taken
+        // the old one up.
+        let to_take_up = self.talk_mut(whose).and_then(|talk| talk.to_take_up.take());
+        let had = note
+            .as_ref()
+            .and_then(|note| self.remembered_session(note))
+            .or(to_take_up);
         self.ask_for_a_session(whose, had);
     }
 
@@ -838,14 +848,7 @@ impl App {
             .filter_map(Document::chat)
             .filter_map(|talk| {
                 let session = talk.session.as_ref()?;
-                let which = match &talk.topic {
-                    Topic::Note(note) => obelus_agent::chats::ChatId::Note(note.clone()),
-                    // Named by the session, because nothing else names it:
-                    // a note is a thing in the project that outlives the
-                    // conversation, and this one has only the agent's word
-                    // for it that it exists.
-                    Topic::Loose => obelus_agent::chats::ChatId::Loose(session.0.to_string()),
-                };
+                let which = talk.which()?;
                 // Nothing said in it yet, so there is nothing to come
                 // back to -- and writing it down would take the place of
                 // a conversation there *is* something to come back to.

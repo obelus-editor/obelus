@@ -773,6 +773,7 @@ impl super::App {
         for file in &opening.files {
             self.open(file);
         }
+        self.reopen_what_was_open();
         // A directory is a reader saying which project and asking which
         // file, which is the list -- the same thing `ob some-directory`
         // does, said in the same place.

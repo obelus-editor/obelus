@@ -74,12 +74,24 @@ impl App {
             Some(crate::conversation::Topic::Note(note)) => Some(note),
             Some(crate::conversation::Topic::Loose) | None => None,
         };
+        let from = self.here();
+        let Some(id) = self.put_the_notes_up(about) else {
+            return;
+        };
+        self.record(from);
+        self.go_to_document(id);
+    }
+
+    /// Opens the notes without going to them, with the caret in `about`
+    /// where it names one, and says where they landed.
+    pub(super) fn put_the_notes_up(
+        &mut self,
+        about: Option<obelus_git::todo::NoteId>,
+    ) -> Option<DocumentId> {
         // Not opened at all where the file will not read: a page that
         // cannot be written is a page that lies, and this one would invite
         // the reader to type into a list that is not their list.
-        let Some(todo) = self.the_notes_now() else {
-            return;
-        };
+        let todo = self.the_notes_now()?;
         let where_now = self.where_the_notes_point(&todo);
         // How wide a note's text is here, and whether it wraps: the rows
         // depend on both, and the view has to be laid out before anything
@@ -90,15 +102,15 @@ impl App {
         // which is the return leg of that key. A note that has since been
         // taken away simply is not found, and the list opens at the top --
         // which is where a list with nothing to return to puts a reader.
+        //
+        // Entered rather than only selected: whenever the page lays itself
+        // out again or reads its file again, what the selection goes back to
+        // is the note the caret is in.
         if let Some(note) = about {
-            view.focus(&note);
+            view.put_caret_in(&note);
         }
-        let from = self.here();
-        self.record(from);
         self.documents
             .push(Some(crate::app::document::Document::from(view)));
-        let id = DocumentId::new(self.documents.len() - 1);
-        self.go_to_document(id);
         // What this page is drawn from, read as it opens. The watches on
         // the three of them are settled from what is open rather than taken
         // here -- see `App::settle_the_watches` -- but a watch says what
@@ -112,6 +124,7 @@ impl App {
         // through the file -- see `App::do_to_the_notes`.
         self.reread_the_sessions();
         self.reread_who_holds_what();
+        Some(DocumentId::new(self.documents.len() - 1))
     }
 
     /// Says the notes have just been typed into, so they are written down

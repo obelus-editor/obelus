@@ -1454,31 +1454,40 @@ impl App {
     /// is about to be edited, and a server that has not been told has a
     /// different document.
     pub(super) fn open_quietly(&mut self, path: &Path) -> Option<usize> {
-        if let Some(index) = self.documents.iter().position(|document| {
-            document
-                .as_ref()
-                .and_then(Document::file)
-                .is_some_and(|open| open.path() == path && open.content().is_file())
-        }) {
+        if let Some(index) = self.open_at(path) {
             return Some(index);
         }
         match Buffer::open(path) {
-            Ok(buffer) => {
-                if let Some(watcher) = self.watcher.as_mut()
-                    && let Err(error) = watcher.watch(buffer.path())
-                {
-                    tracing::warn!(%error, path = %buffer.path().display(), "not watching");
-                }
-                self.documents.push(Some(Document::from(buffer)));
-                let index = self.documents.len() - 1;
-                self.serve(index);
-                Some(index)
-            }
+            Ok(buffer) => Some(self.take_in(buffer)),
             Err(error) => {
                 tracing::warn!(%error, path = %path.display(), "could not open");
                 None
             }
         }
+    }
+
+    /// Where the file at this path is open, as the file on disk.
+    pub(super) fn open_at(&self, path: &Path) -> Option<usize> {
+        self.documents.iter().position(|document| {
+            document
+                .as_ref()
+                .and_then(Document::file)
+                .is_some_and(|open| open.path() == path && open.content().is_file())
+        })
+    }
+
+    /// Puts a buffer read somewhere else in the list, watched and served
+    /// the way one opened here is.
+    pub(super) fn take_in(&mut self, buffer: Buffer) -> usize {
+        if let Some(watcher) = self.watcher.as_mut()
+            && let Err(error) = watcher.watch(buffer.path())
+        {
+            tracing::warn!(%error, path = %buffer.path().display(), "not watching");
+        }
+        self.documents.push(Some(Document::from(buffer)));
+        let index = self.documents.len() - 1;
+        self.serve(index);
+        index
     }
 
     /// Folds what the cursor is in, or unfolds what it is on.

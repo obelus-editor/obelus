@@ -154,6 +154,14 @@ pub enum Event {
     /// which on the loop is a keystroke the reader watches arrive. So it
     /// goes where every other long answer goes: a worker, and back here.
     Scanned(Box<obelus_component::picker::Scanned>),
+    /// The files a tree had open, read on another thread, each by the path
+    /// it was asked for -- `None` for one that would not open.
+    ///
+    /// Read there because a start is when the reader is waiting for the
+    /// first screen: ten files of a large project are a fifth of a second to
+    /// read and parse in a debug build, and the whole of that is a blank
+    /// window.
+    Reopened(Vec<(std::path::PathBuf, Option<obelus_buffer::Buffer>)>),
     /// What the newest release of Obelus is called, as its tag says it.
     Released(String),
     /// Another Obelus's reader asked to be brought to this window, with
@@ -199,6 +207,7 @@ impl Event {
             Self::Counted(_) => "Counted",
             Self::Watched(_) => "Watched",
             Self::Scanned(_) => "Scanned",
+            Self::Reopened(_) => "Reopened",
             Self::Released(_) => "Released",
             Self::Summoned(_) => "Summoned",
         }

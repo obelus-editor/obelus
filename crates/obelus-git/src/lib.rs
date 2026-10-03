@@ -179,16 +179,23 @@ pub fn project(root: &Path) -> Option<String> {
         .canonicalize()
         .or_else(|_| std::path::absolute(&named))
         .unwrap_or(named);
-    Some(
-        named
-            .to_string_lossy()
-            .chars()
-            .map(|character| match character {
-                'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '.' => character,
-                _ => '_',
-            })
-            .collect(),
-    )
+    Some(file_name_of(&named))
+}
+
+/// A path written as a file name: every character a file name cannot safely
+/// carry becomes `_`.
+///
+/// Many-to-one, and not meant to be read back -- what is wanted is that one
+/// place is one name.
+#[must_use]
+pub fn file_name_of(path: &Path) -> String {
+    path.to_string_lossy()
+        .chars()
+        .map(|character| match character {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '.' => character,
+            _ => '_',
+        })
+        .collect()
 }
 
 /// Whether a path is certainly not there any more.
