@@ -6668,6 +6668,86 @@ fn the_first_conversation_opened_after_a_restart_is_taken_up() {
     );
 }
 
+/// A conversation taken up again keeps the name the agent gave it.
+///
+/// `session/load` replays what was said and is not obliged to send the
+/// title with it, and claude-agent-acp does not. So the name written down
+/// was the only one there was, and nothing handed it back: the list of what
+/// is open called the conversation by its note, and the first thing said in
+/// it wrote the name down as nothing -- after which it was gone from the
+/// list of conversations too.
+///
+/// Deliberate break: hand `Talk::reopen` `None` for the title in
+/// `ask_for_a_session`, and both asserts fail.
+#[test]
+fn a_conversation_taken_up_again_keeps_its_name() {
+    let scratch = support::Scratch::new("agent-note-named");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        "[[todo]]\nid = \"0123456T\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+    let id = obelus_git::todo::NoteId::read("0123456T").expect("a name");
+    let which = obelus_agent::chats::ChatId::Note(id.clone());
+    obelus_agent::acp::sessions::change(
+        scratch.path(),
+        Some(std::slice::from_ref(&id)),
+        |remembered| {
+            remembered.put(
+                &which,
+                "fake",
+                scratch.path(),
+                obelus_agent::acp::sessions::Kept {
+                    session: "s-old".to_string(),
+                    title: Some("why refilter drops rows".to_string()),
+                    told: Some("a note".to_string()),
+                    introduced: true,
+                    last: None,
+                },
+            );
+        },
+    );
+
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    talk_about_the_note(&mut app);
+    pump(&mut app, &events, "the old conversation", |app| {
+        said_in_transcript(app, "where we were") && app.talking() == obelus_agent::Talking::Ready
+    });
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentList);
+    let text = screen(&mut app);
+    assert!(
+        text.contains("why refilter drops rows"),
+        "the list of what is open does not call it by its name:\n{text}"
+    );
+    support::press(&mut app, KeyCode::Esc);
+
+    say_something(&mut app, &events);
+    let kept = obelus_agent::acp::sessions::read(scratch.path())
+        .remembered()
+        .expect("the table");
+    let kept = kept
+        .get(&which, "fake", scratch.path())
+        .expect("the conversation");
+    assert_eq!(
+        kept.session, "s-old",
+        "it was not taken up, so this proves nothing"
+    );
+    assert_eq!(
+        kept.title.as_deref(),
+        Some("why refilter drops rows"),
+        "saying something wrote the name down as nothing"
+    );
+}
+
 /// A conversation the agent has not got is forgotten, and an empty one is
 /// never written down in its place.
 ///
