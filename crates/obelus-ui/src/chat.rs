@@ -1676,11 +1676,7 @@ impl ChatView<'_> {
         match row.state.as_deref() {
             _ if row.speaker == Speaker::Doing => true,
             Some(UNDER_WAY) => true,
-            Some(WAITING) => {
-                row.speaker == Speaker::Tool
-                    && self.state == Talking::Thinking
-                    && self.card.is_none()
-            }
+            Some(WAITING) => self.state == Talking::Thinking && self.card.is_none(),
             _ => false,
         }
     }
