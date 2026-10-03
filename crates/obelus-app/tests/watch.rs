@@ -125,16 +125,28 @@ fn said(seen: &Arc<Mutex<Vec<String>>>) -> String {
 /// `Modify(Data(Content))` at once, and the two about reading saw the
 /// setup's own write land in the window they were watching.
 ///
-/// So the quiet is waited for rather than assumed. Two hundred
-/// milliseconds of nothing, which on a platform that reports promptly is
-/// one pass of an empty channel.
-fn settled(events: &Receiver<Event>) {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while Instant::now() < deadline {
-        if collect(events, Duration::from_millis(200)).is_empty() {
-            return;
-        }
-    }
+/// Quiet is not the answer, because quiet is a guess about how late is
+/// late. Two hundred milliseconds of nothing was how this used to decide,
+/// and a loaded mac runner delivered the setup's write after it: the
+/// second watcher in the failure, taken once the quiet was over, saw
+/// nothing at all, so what Obelus's watcher reported was not the read.
+///
+/// So something is made after the setup and waited for. Events arrive in
+/// the order things happened, so once the barrier has been reported the
+/// setup's events have been too -- before it, or handed over in the same
+/// breath, which is what the short wait after it is for. A directory and
+/// not a file, because making one is one event everywhere: a file's
+/// creation, its write and (on Linux) its close can be told separately,
+/// and one of them arriving late would be the barrier doing what it is
+/// here to stop.
+fn settled(events: &Receiver<Event>, directory: &Path) {
+    let barrier = directory.join("settled");
+    fs::create_dir(&barrier).expect("making the barrier");
+    assert!(
+        wait_for(events, &barrier),
+        "the barrier was never reported, so nothing here is being watched"
+    );
+    let _ = collect(events, Duration::from_millis(200));
 }
 
 /// Collects every change that arrives in `window`.
@@ -277,7 +289,7 @@ fn reading_the_file_is_not_a_change() {
     let (sender, events) = obelus_app::event::channel();
     let mut watcher = Watcher::new(sender).expect("starting the watcher");
     watcher.watch(&path).expect("watching");
-    settled(&events);
+    settled(&events, &scratch.directory);
     let (_kinds, kinds) = kinds(&path);
 
     // Exactly what a reload does.
@@ -364,7 +376,7 @@ fn a_change_of_mode_is_not_a_change_to_the_file() {
     let (sender, events) = obelus_app::event::channel();
     let mut watcher = Watcher::new(sender).expect("starting the watcher");
     watcher.watch(&path).expect("watching");
-    settled(&events);
+    settled(&events, &scratch.directory);
     let (_kinds, kinds) = kinds(&path);
 
     let mut how = fs::metadata(&path).expect("its mode").permissions();
@@ -475,7 +487,7 @@ fn reading_a_file_says_nothing() {
     let (sender, events) = obelus_app::event::channel();
     let mut watcher = Watcher::new(sender).expect("starting the watcher");
     watcher.watch(&path).expect("watching");
-    settled(&events);
+    settled(&events, &scratch.directory);
     let (_kinds, kinds) = kinds(&path);
 
     // Opened for reading and closed, which is what looking at a claim is.
