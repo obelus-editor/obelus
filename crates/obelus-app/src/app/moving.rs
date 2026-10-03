@@ -626,6 +626,13 @@ impl App {
             // go here -- and does not fall through to the file behind them
             // for want of anywhere else.
             Some(Layer::Counts) => return,
+            // Being asked which project, which is a page of its own and not
+            // a layer -- so this fell through to a file there is none of,
+            // and a path pasted or spelled into its box went nowhere.
+            None if self.chooser.is_some() => {
+                self.paste_into_the_chooser(what);
+                return;
+            }
             // Nothing over the document, so it goes into the document -- and
             // a conversation is one. This asked about the *layers* and a
             // conversation was one of those, so when it stopped being one

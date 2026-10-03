@@ -855,3 +855,35 @@ fn nothing_about_the_project_is_started_until_there_is_one() {
         "the project was chosen and nothing about it was started"
     );
 }
+
+/// A paste goes into whichever box the page is showing -- which is also
+/// where a word an input method spelled goes, because it arrives as one.
+///
+/// And the input method is on for both, the filter with nothing in it as
+/// well: no caret there, and the first letter still goes in.
+///
+/// Deliberate break: taking the chooser's arm out of `App::paste_text`,
+/// and the paste falls through to a file there is none of; and answering
+/// the chooser with `false` in `App::takes_text`.
+#[test]
+fn a_paste_goes_into_the_box_the_page_is_showing() {
+    let mut app = asking();
+    assert!(app.takes_text(), "the filter is said to take nothing");
+    app.handle(obelus_app::event::Event::Paste("文档".to_string()));
+    assert_eq!(
+        app.choosing().expect("asking").typed,
+        "文档",
+        "the paste did not reach the filter"
+    );
+
+    press(&mut app, KeyCode::Esc);
+    open_another(&mut app);
+    assert!(app.takes_text(), "the path box is said to take nothing");
+    app.handle(obelus_app::event::Event::Paste("/tmp/文档".to_string()));
+    let choosing = app.choosing().expect("asking");
+    assert!(choosing.naming, "not in the path box");
+    assert_eq!(
+        choosing.typed, "/tmp/文档",
+        "the paste did not reach the path box"
+    );
+}

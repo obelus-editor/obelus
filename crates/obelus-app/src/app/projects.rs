@@ -407,7 +407,29 @@ impl super::App {
             return false;
         };
         let before = chooser.named();
-        let taken = match chooser.handle(*key, rows) {
+        let outcome = chooser.handle(*key, rows);
+        self.the_chooser_answered(outcome, before)
+    }
+
+    /// Text pasted while the reader is being asked which project -- or a
+    /// word an input method committed, which arrives the same way.
+    pub(super) fn paste_into_the_chooser(&mut self, what: &str) {
+        let Some(chooser) = &mut self.chooser else {
+            return;
+        };
+        let before = chooser.named();
+        let outcome = chooser.paste(what);
+        self.the_chooser_answered(outcome, before);
+    }
+
+    /// What a box on the page that asks which project moving means outside
+    /// it, whether a key or a paste moved it.
+    fn the_chooser_answered(
+        &mut self,
+        outcome: obelus_component::chooser::Outcome,
+        before: Option<PathBuf>,
+    ) -> bool {
+        let taken = match outcome {
             obelus_component::chooser::Outcome::Taken => true,
             obelus_component::chooser::Outcome::Ignored => false,
             obelus_component::chooser::Outcome::Wants(directory) => {
