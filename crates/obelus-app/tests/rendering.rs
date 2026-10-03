@@ -2442,6 +2442,25 @@ fn what_went_wrong_is_a_list_over_the_welcome_screen() {
     );
 }
 
+/// And nothing is typed into it, so a window's input method is off over it.
+///
+/// Deliberate break: answering a list with `true` in `App::takes_text`
+/// whether or not it is only read.
+#[test]
+fn what_went_wrong_takes_no_typing() {
+    let scratch = support::Scratch::new("welcome-told-typing");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.config_file_for_test(a_settings_file_with_two_mistakes(&scratch));
+    started(&mut app);
+    assert!(
+        app.picker()
+            .is_some_and(obelus_component::picker::Picker::is_only_read),
+        "no list only read, so this proves nothing"
+    );
+    assert!(!app.takes_text(), "a list only read takes text");
+}
+
 /// The list has the keys until it is let go, and then the screen under it
 /// does.
 ///

@@ -1020,12 +1020,19 @@ impl App {
     /// The whole of what a paste means here: a conversation has one place
     /// text can go, and it is the box. What was said is what was said.
     ///
-    /// Through [`App::conversation_takes_text`], which is half of what
-    /// `ctrl+v` is offered on, so the key and the terminal's own paste land
-    /// in the same place or in no place -- and a paste with nowhere to go is
-    /// dropped rather than put behind whatever is over the box.
+    /// Dropped under a card with nowhere to write, rather than put behind
+    /// it. Not [`App::conversation_takes_text`], which also says no while
+    /// the keys are off the box: what an input method commits arrives here,
+    /// and a word spelled in the transcript goes where a letter typed there
+    /// goes -- into the box, which takes the keys back. The same answer
+    /// [`App::takes_text`] gives the window, which turned the input method
+    /// on for it.
     pub(super) fn paste_into_conversation(&mut self, what: &str) {
-        if !self.conversation_takes_text() {
+        let covered = self
+            .conversation()
+            .and_then(|talk| talk.card.as_ref())
+            .is_some_and(|card| !card.takes_words());
+        if covered {
             return;
         }
         // Each against the width its own rows are drawn at, which is what

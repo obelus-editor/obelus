@@ -493,3 +493,112 @@ fn what_is_over_a_conversation_owns_the_status_row() {
         "the settings were over the conversation and the row was not theirs:\n{covered}"
     );
 }
+
+/// A window turns its input method on exactly where a character typed
+/// would go into some text, and the answer is checked against the
+/// character rather than against itself: each place is typed at, and the
+/// screen either takes the letter or stays as it was.
+///
+/// Not where the caret is. An empty filter on the settings has no caret
+/// and takes the first letter typed -- which an input method turned on by
+/// that letter would already have missed.
+///
+/// Deliberate break: answering `Layer::Counts` with `true`, and the counts
+/// go red here; answering the settings with `true` whatever they are
+/// doing, and the key being bound does; asking a file only whether it is
+/// one, and the reading does; asking it only for its mode, and the
+/// commit's version does.
+#[test]
+fn the_input_method_is_on_only_where_typing_goes() {
+    /// Whether a letter typed here lands anywhere on the screen.
+    fn lands(app: &mut App) -> bool {
+        let before = support::render(app, WIDTH, HEIGHT);
+        // A digit, because the question of a line to go to takes nothing else.
+        support::type_text(app, "1");
+        let after = support::render(app, WIDTH, HEIGHT);
+        support::text_block(&before) != support::text_block(&after)
+    }
+
+    // The file, which is written into.
+    let mut app = reading();
+    assert!(app.takes_text(), "the file is not typed into");
+    assert!(lands(&mut app), "a letter did not land in the file");
+
+    for layer in obelus_component::layers::STACK {
+        let mut app = reading();
+        open(&mut app, layer);
+        let expected = match layer {
+            Layer::Counts => false,
+            Layer::Settings | Layer::Names | Layer::Picker | Layer::Prompt => true,
+        };
+        assert_eq!(app.takes_text(), expected, "{layer:?}");
+        assert_eq!(
+            lands(&mut app),
+            expected,
+            "{layer:?} disagrees with typing at it"
+        );
+    }
+
+    // The settings with nothing typed in their filter, which is where the
+    // caret is not and the first letter still goes.
+    let mut app = reading();
+    open(&mut app, Layer::Settings);
+    let area = ratatui::layout::Rect::new(0, 0, WIDTH, HEIGHT);
+    assert_eq!(
+        obelus_ui::cursor_position(area, &app),
+        None,
+        "an empty filter has a caret"
+    );
+    assert!(app.takes_text(), "an empty filter is not typed into");
+
+    // A key being bound, which takes the next key and not a letter.
+    let mut app = reading();
+    open(&mut app, Layer::Settings);
+    press(&mut app, KeyCode::Tab);
+    support::type_text(&mut app, "choose-theme");
+    press(&mut app, KeyCode::Enter);
+    assert!(
+        app.settings()
+            .is_some_and(|settings| settings.binding().is_some()),
+        "no key is being bound"
+    );
+    assert!(!app.takes_text(), "a key being bound takes text");
+
+    // A reading of a file, which is not the file's bytes.
+    let scratch = support::Scratch::new("typing-reading");
+    let path = scratch.path().join("sample.md");
+    std::fs::write(&path, "# before\n\nafter\n").expect("writing it");
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&path).expect("opening it"),
+    ]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert!(app.takes_text(), "the markdown file is not typed into");
+    dispatch::dispatch(&mut app, Command::PreviewToggle);
+    assert!(!app.takes_text(), "a reading takes text");
+    assert!(!lands(&mut app), "a letter landed in a reading");
+
+    // A commit's version of a file, which nobody can write -- in the mode
+    // a file is written in, so it is the content saying no and not the mode.
+    let version = obelus_buffer::Buffer::at_commit(
+        &path,
+        gix::ObjectId::null(gix::hash::Kind::Sha1),
+        "# older\n",
+    );
+    let mut app = App::new(vec![version]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        app.current_buffer().map(obelus_buffer::Buffer::mode),
+        Some(obelus_buffer::Mode::Edit),
+        "not in the mode a file is written in, so this proves nothing"
+    );
+    assert!(!app.takes_text(), "a commit's version takes text");
+    assert!(!lands(&mut app), "a letter landed in a commit's version");
+
+    // And nothing open at all.
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert!(!app.takes_text(), "an empty screen takes text");
+}

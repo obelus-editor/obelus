@@ -3321,7 +3321,13 @@ impl obelus_app::app::Drawing for Told {
     /// crate that draws one.
     fn animates(&self, _: bool) {}
 
-    fn caret_is(&self, _: obelus_app::app::Caret, _: Option<obelus_component::layers::Layer>) {}
+    fn caret_is(
+        &self,
+        _: obelus_app::app::Caret,
+        _: Option<obelus_component::layers::Layer>,
+        _: bool,
+    ) {
+    }
 
     /// Nor this: which faces a window draws with is its own business, and
     /// what is under test here is the size.

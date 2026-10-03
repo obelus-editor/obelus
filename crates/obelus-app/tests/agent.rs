@@ -3619,6 +3619,80 @@ fn a_paste_goes_into_the_card_and_not_behind_it() {
     );
 }
 
+/// A conversation takes typing wherever its keys are, except under a card
+/// with nowhere to write.
+///
+/// Off the box -- on the row of the agent's settings -- there is no caret,
+/// and a letter typed there takes the keys back to the box and goes in: an
+/// input method turned off there would miss it. A permission card is a Yes
+/// and a No, and swallows what is typed at it.
+///
+/// Deliberate break: asking `conversation_takes_text` instead, which says
+/// no off the box, and the row of settings goes red; answering the card
+/// with `true`, and the permission does; putting `conversation_takes_text`
+/// back in front of `paste_into_conversation`, and the word committed on
+/// the row is dropped.
+#[test]
+fn a_conversation_takes_typing_except_under_a_card_without_a_box() {
+    use obelus_component::chat::Focus;
+
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the settings", |app| {
+        app.agent_settings().len() > 2
+    });
+    assert!(app.takes_text(), "the box is not typed into");
+
+    support::press(&mut app, KeyCode::Down);
+    assert_eq!(
+        app.chat().map(|chat| chat.focus()),
+        Some(Focus::Settings(0))
+    );
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        support::cursor_line(&dump),
+        "none",
+        "the row has a caret:\n{dump}"
+    );
+    assert!(
+        app.takes_text(),
+        "the row of settings is said to take nothing"
+    );
+    support::type_text(&mut app, "w");
+    assert!(
+        app.chat().is_some_and(|chat| !chat.writing().is_blank()),
+        "a letter typed on the row did not reach the box"
+    );
+
+    // And a word an input method spelled there, which arrives as a paste
+    // and not as the letters that would have taken the keys back.
+    support::press(&mut app, KeyCode::Down);
+    assert_eq!(
+        app.chat().map(|chat| chat.focus()),
+        Some(Focus::Settings(0))
+    );
+    app.handle(Event::Paste("hat".to_string()));
+    assert_eq!(
+        app.chat().map(|chat| chat.writing().text()),
+        Some("what".to_string()),
+        "a word committed on the row was dropped"
+    );
+
+    support::type_text(&mut app, " is this file");
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        &events,
+        "the permission request",
+        App::is_asking_permission,
+    );
+    assert!(!app.takes_text(), "a permission card takes text");
+    support::type_text(&mut app, "x");
+    assert!(
+        app.chat().is_some_and(|chat| chat.writing().is_blank()),
+        "a letter typed at the card went into the box"
+    );
+}
+
 /// A conversation opened on a note tells the agent so, once.
 ///
 /// The agent has no other way to know: `Topic` never left Obelus, so a

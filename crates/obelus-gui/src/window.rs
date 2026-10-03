@@ -207,6 +207,11 @@ struct Showing {
     /// commit by sending its spelling again would be answered in turn --
     /// for as long as the reader was typing.
     pointed: Option<[f32; 4]>,
+    /// Whether the input method is on, which it is only where a character
+    /// typed would go into some text -- see `allow_the_input_method`.
+    allowed: bool,
+    /// Whether the window is on X11, where the input method is on for good.
+    on_x11: bool,
     /// Where the marks go on the frame being shown.
     marked: Vec<Marked>,
     /// And where its key caps are, kept the same way and for the same
@@ -344,6 +349,8 @@ impl Showing {
             composing: false,
             spelling: None,
             pointed: None,
+            allowed: false,
+            on_x11: false,
             marked: Vec::new(),
             marking: Vec::new(),
             capped: Vec::new(),
@@ -486,6 +493,52 @@ impl Showing {
         self.page.resized(columns, rows);
     }
 
+    /// Turns the input method on where a character typed would go into
+    /// some text, and off everywhere else.
+    ///
+    /// Without it on a window gets keys and nothing else, and there is no
+    /// way to type any language that is spelled before it is written. With
+    /// it on where nothing is typed -- the counts, a list only read, a
+    /// commit's version of a file, a key being bound -- the letters a
+    /// reader meant as keys are spelling instead, and a list of candidates
+    /// comes up for a word with nowhere to go.
+    ///
+    /// Said only when it moves: the frame says it every time, and turning
+    /// an input method on and off is a round trip to it.
+    fn allow_the_input_method(&mut self) {
+        let Some(window) = self.window.as_ref() else {
+            return;
+        };
+        // On X11 it stays on, as it was before it followed the screen:
+        // winit answers every change with a new input context and never
+        // focuses it, so one turned back on while the window has the focus
+        // hears no keys until the reader goes elsewhere and comes back.
+        // Keys swallowed where nothing is typed is the smaller harm.
+        if self.on_x11 {
+            return;
+        }
+        let typing = self.page.typing();
+        if typing == self.allowed {
+            return;
+        }
+        self.allowed = typing;
+        window.set_ime_allowed(typing);
+        match typing {
+            // Turned on, it has to be told again where the caret is: what
+            // it was told before belonged to a text box that has since been
+            // put away, and on Wayland that is the box being told.
+            true => self.pointed = None,
+            // Turned off, a word half spelled is over -- said here rather
+            // than waited for, because Windows takes the context away
+            // without a word, and `composing` left standing swallows every
+            // plain key after it.
+            false => {
+                self.composing = false;
+                self.spelling = None;
+            }
+        }
+    }
+
     /// Tells the input method where the caret is, so that its candidates
     /// are drawn beside the word being typed rather than in the corner of
     /// the screen.
@@ -606,6 +659,17 @@ fn wants_a_frame(stepped: bool, wake: Option<Wake>) -> bool {
     stepped || wake == Some(Wake::EveryFrame)
 }
 
+/// Whether the window is on X11, XWayland included.
+fn on_x11(window: &Window) -> bool {
+    use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    window.window_handle().is_ok_and(|handle| {
+        matches!(
+            handle.as_raw(),
+            RawWindowHandle::Xlib(_) | RawWindowHandle::Xcb(_)
+        )
+    })
+}
+
 impl ApplicationHandler<Waking> for Showing {
     fn resumed(&mut self, events: &ActiveEventLoop) {
         // Once. A platform that suspends and resumes says so again, and the
@@ -655,9 +719,12 @@ impl ApplicationHandler<Waking> for Showing {
             here.can_bring(),
         )));
         self.here = Some(here);
-        // Without this a window gets keys and nothing else, and there is
-        // no way to type any language that is spelled before it is written.
-        window.set_ime_allowed(true);
+        // On for good there -- see `allow_the_input_method`.
+        self.on_x11 = on_x11(&window);
+        if self.on_x11 {
+            window.set_ime_allowed(true);
+            self.allowed = true;
+        }
         self.window = Some(Arc::clone(&window));
         self.fonts = Some(fonts);
         self.painter = Some(painter);
@@ -1043,6 +1110,7 @@ impl ApplicationHandler<Waking> for Showing {
                     }
                 }
                 if drew {
+                    self.allow_the_input_method();
                     self.point_the_input_method();
                     self.redraw();
                 }

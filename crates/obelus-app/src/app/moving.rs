@@ -535,6 +535,51 @@ impl App {
         }
     }
 
+    /// Whether a character typed now would go into some text.
+    ///
+    /// What a window turns an input method on and off by: spelling a word
+    /// where nothing takes it is keys swallowed and a list of candidates
+    /// for nowhere. Not where the caret is, which is a different question
+    /// with two different answers -- an empty filter has no caret and
+    /// takes the first letter typed, and a character typed in a transcript
+    /// takes the focus back to the box and goes in. An input method turned
+    /// on by that first letter has already missed it.
+    ///
+    /// The layers in [`App::paste_text`]'s order, because what an input
+    /// method commits arrives as a paste -- with the two places that take
+    /// a paste and not a key: a key being bound is a key and not a letter,
+    /// and a card with no box swallows what is typed at it.
+    #[must_use]
+    pub fn takes_text(&self) -> bool {
+        match self.layers().nearest() {
+            Some(Layer::Prompt | Layer::Names) => true,
+            Some(Layer::Settings) => self
+                .settings
+                .as_ref()
+                .is_some_and(|settings| settings.binding().is_none()),
+            Some(Layer::Picker) => self
+                .picker
+                .as_ref()
+                .is_some_and(|picker| !picker.is_only_read()),
+            Some(Layer::Counts) => false,
+            // Being asked which project, which is a page of its own and
+            // typed into whichever box it is showing.
+            None if self.chooser.is_some() => true,
+            None => {
+                if let Some(talk) = self.conversation() {
+                    return talk.card.as_ref().is_none_or(Card::takes_words);
+                }
+                if let Some(notes) = self.notes() {
+                    return notes.writing().is_some() && !notes.selected_is_elsewhere();
+                }
+                // The same two things `Buffer::edit` refuses.
+                self.current_buffer().is_some_and(|buffer| {
+                    buffer.content().is_file() && buffer.mode() == obelus_buffer::Mode::Edit
+                })
+            }
+        }
+    }
+
     pub(super) fn paste_text(&mut self, what: &str) {
         // Into whatever the reader is writing on, which is the nearest
         // thing over the file -- the same answer a key gets, asked the same
@@ -581,6 +626,13 @@ impl App {
             // go here -- and does not fall through to the file behind them
             // for want of anywhere else.
             Some(Layer::Counts) => return,
+            // Being asked which project, which is a page of its own and not
+            // a layer -- so this fell through to a file there is none of,
+            // and a path pasted or spelled into its box went nowhere.
+            None if self.chooser.is_some() => {
+                self.paste_into_the_chooser(what);
+                return;
+            }
             // Nothing over the document, so it goes into the document -- and
             // a conversation is one. This asked about the *layers* and a
             // conversation was one of those, so when it stopped being one
