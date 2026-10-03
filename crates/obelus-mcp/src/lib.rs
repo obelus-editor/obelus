@@ -384,7 +384,8 @@ impl Obelus {
         their screen and does not ask for you. It closes at once and stops \
         this turn, so make it the last thing you do and say whatever is left \
         to say before it: nobody sees anything after it. It stays open if \
-        the reader has started writing in it. It stays in the list of \
+        the reader has started writing in it, or has a question of yours \
+        still to answer. It stays in the list of \
         conversations, and is taken up again from there as fully as you can \
         take a conversation up again -- so do not promise the reader it \
         comes back as it was.")]

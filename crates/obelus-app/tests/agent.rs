@@ -4874,6 +4874,34 @@ fn words_waiting_on_the_turn_keep_the_conversation_open() {
     );
 }
 
+/// A question the agent still has up in a conversation keeps it open: closed,
+/// the card would go with it unanswered.
+///
+/// Deliberate break: take the `is_waiting_on_the_reader` arm out of
+/// `close_for_an_agent`, and the conversation closes under the permission
+/// request.
+#[test]
+fn a_question_still_up_keeps_the_conversation_open() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "what is this file");
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        &events,
+        "the permission request",
+        App::is_asking_permission,
+    );
+
+    assert_eq!(
+        close_it(&mut app, 0),
+        "the reader has a question of yours open in it, so it stays open"
+    );
+    assert!(is_open(&app, 0), "closed with a question up in it");
+}
+
 /// A conversation an agent closes is named where Obelus says it closed,
 /// and goes from the list of what is open while that list is showing.
 ///

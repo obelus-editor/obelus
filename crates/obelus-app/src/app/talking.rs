@@ -1631,6 +1631,14 @@ impl App {
             Some(talk) if talk.has_the_readers_words() => {
                 return "the reader has started writing in it, so it stays open".to_string();
             }
+            // A question still up in it goes with the conversation, and the
+            // reader never sees it answered. The agent can ask in parallel
+            // with this call, and when the close waited for the turn to end
+            // the question had been answered by then.
+            Some(talk) if talk.is_waiting_on_the_reader() => {
+                return "the reader has a question of yours open in it, so it stays open"
+                    .to_string();
+            }
             Some(_) => {}
             None => return "this conversation is not open any more".to_string(),
         }
