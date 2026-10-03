@@ -415,18 +415,7 @@ impl App {
                     talked |= at.is_some();
                     at
                 }
-                Open::Notes { on } => self.notes_document().or_else(|| {
-                    let id = self.put_the_notes_up(None)?;
-                    // Entered rather than selected: whenever the page lays
-                    // itself out again or reads its file again, what the
-                    // selection goes back to is the note the caret is in.
-                    if let Some(on) = on
-                        && let Some(notes) = self.document_mut(id).and_then(Document::notes_mut)
-                    {
-                        notes.enter(&on);
-                    }
-                    Some(id)
-                }),
+                Open::Notes { on } => self.notes_document().or_else(|| self.put_the_notes_up(on)),
             };
             landed.push(at);
         }

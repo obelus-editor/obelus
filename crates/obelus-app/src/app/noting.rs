@@ -82,8 +82,8 @@ impl App {
         self.go_to_document(id);
     }
 
-    /// Opens the notes without going to them, standing on `about` where it
-    /// names one, and says where they landed.
+    /// Opens the notes without going to them, with the caret in `about`
+    /// where it names one, and says where they landed.
     pub(super) fn put_the_notes_up(
         &mut self,
         about: Option<obelus_git::todo::NoteId>,
@@ -102,8 +102,12 @@ impl App {
         // which is the return leg of that key. A note that has since been
         // taken away simply is not found, and the list opens at the top --
         // which is where a list with nothing to return to puts a reader.
+        //
+        // Entered rather than only selected: whenever the page lays itself
+        // out again or reads its file again, what the selection goes back to
+        // is the note the caret is in.
         if let Some(note) = about {
-            view.focus(&note);
+            view.enter(&note);
         }
         self.documents
             .push(Some(crate::app::document::Document::from(view)));

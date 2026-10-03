@@ -1547,6 +1547,48 @@ fn each_note_gets_a_conversation_of_its_own() {
     );
 }
 
+/// Coming back to the notes from a conversation stands on its note, and
+/// stays there once the page has read its file again.
+///
+/// The page opens with the caret in the first note, and reading again puts
+/// the selection back on the note the caret is in -- so a note that was
+/// only selected went back to the first the moment the watcher spoke.
+///
+/// Broken deliberately by standing on it with `focus` in
+/// `put_the_notes_up`: after the re-read the page was on the first note.
+#[test]
+fn the_notes_come_back_on_the_note_a_conversation_is_about() {
+    let scratch = tree(
+        "return",
+        "[[todo]]\nsaid = \"the first\"\n\n[[todo]]\nsaid = \"the second\"\n\n\
+         [[todo]]\nsaid = \"the third\"\n",
+    );
+    let mut app = open(&scratch, 76, 24);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Down);
+    support::press_alt(&mut app, 'a');
+    assert!(app.chat().is_some(), "no conversation about the third note");
+    let talk = app.current_document_for_test().expect("the conversation");
+    // The notes closed, so that coming back opens them again.
+    support::press_alt(&mut app, 't');
+    app.close_current();
+    app.go_to_document_for_test(talk);
+
+    support::press_alt(&mut app, 't');
+    let file = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
+    app.handle(Event::Watched(obelus_watch::Changed { path: file }));
+    support::lay_out(&mut app, 76, 24);
+    let on = app
+        .notes()
+        .and_then(obelus_component::todo::TodoView::selected_note)
+        .map(|note| note.said.clone());
+    assert_eq!(
+        on.as_deref(),
+        Some("the third"),
+        "not on the note the conversation is about"
+    );
+}
+
 /// A conversation says how to get back to its note.
 ///
 /// The key was added because the round trip had an outward leg and no
