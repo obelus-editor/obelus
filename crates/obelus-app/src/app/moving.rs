@@ -268,7 +268,8 @@ impl App {
         // left out the views that had none.
         //
         // The notes are not here because they answer these two keys
-        // themselves, and so does a setting's list of names.
+        // themselves. A setting's list of names takes every key there is
+        // and lets none through, so nothing it is under reaches here.
         match self.layers().nearest() {
             Some(Layer::Prompt) => {
                 if let Some(prompt) = self.prompt.as_ref() {
@@ -292,6 +293,12 @@ impl App {
                 return;
             }
             Some(Layer::Names | Layer::Counts | Layer::Gone) => return,
+            // Being asked which project, which is a page of its own and not
+            // a layer, with a box on it like any other.
+            None if self.chooser.is_some() => {
+                self.copy_from_the_chooser();
+                return;
+            }
             None => {}
         }
         let width = obelus_ui::chat::reading_width(self.editor_area);
@@ -392,6 +399,10 @@ impl App {
                 return;
             }
             Some(Layer::Names | Layer::Counts | Layer::Gone) => return,
+            None if self.chooser.is_some() => {
+                self.cut_from_the_chooser();
+                return;
+            }
             None => {}
         }
         if self.conversation().is_some() {
@@ -531,6 +542,7 @@ impl App {
     #[must_use]
     pub(super) fn somewhere_to_type(&self) -> bool {
         self.prompt.is_some()
+            || self.chooser.is_some()
             || self.notes().is_some()
             || self.settings.is_some()
             || self.picker.is_some()

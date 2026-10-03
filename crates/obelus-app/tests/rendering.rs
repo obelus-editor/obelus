@@ -2842,11 +2842,11 @@ fn the_foot_says_what_enter_does_here_and_how_to_leave() {
 ///
 /// And it is not typed into, so there is no caret on screen at all.
 ///
-/// Deliberate break: taking the `layers().nearest().is_none()` out of the
-/// chooser's turn in `handle_key`, and the letter goes into the projects'
-/// filter under the list (the second assertion); and taking the
-/// `is_only_read` out of `cursor_position`, and a caret stands in a box
-/// nothing can be typed into (the first). The same guard in
+/// Deliberate break: putting the chooser ahead of the layers in
+/// `App::hearers`, and the letter goes into the projects' filter under the
+/// list (the second assertion); and taking the `is_only_read` out of
+/// `cursor_position`, and a caret stands in a box nothing can be typed into
+/// (the first). The same guard in
 /// `cursor_position`'s turn for the chooser has no break that shows here:
 /// the list is up only at the start, when the page's own filter is empty
 /// and so has no caret of its own either.

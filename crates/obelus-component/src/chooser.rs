@@ -368,6 +368,28 @@ impl Chooser {
         }
     }
 
+    /// What a copy takes from whichever box is showing.
+    #[must_use]
+    pub fn copied(&self) -> (String, &'static str) {
+        self.typing().copied()
+    }
+
+    /// The same, taken out of the box -- which moves it the way a paste
+    /// does, so it answers the way a paste does too.
+    pub fn cut(&mut self) -> ((String, &'static str), Outcome) {
+        match &mut self.doing {
+            Doing::Choosing => {
+                let cut = self.filter.cut();
+                self.at = 0;
+                (cut, Outcome::Taken)
+            }
+            Doing::Naming(naming) => {
+                let cut = naming.typed.cut();
+                (cut, self.wants())
+            }
+        }
+    }
+
     /// Puts a chosen candidate in the box.
     ///
     /// A directory takes a separator with it, so that the next level's

@@ -124,14 +124,14 @@ fn escape_from_anywhere_comes_back_to_the_file() {
 
 /// No layer lets a key reach the file behind it.
 ///
-/// Broken deliberately by putting the old condition back, and it is the
-/// counts this catches: with a file open and the counts over it, a letter
-/// went into the file nobody could see, and so did `backspace`, `delete`
-/// and `tab`. The notes were just as unguarded and escaped by luck -- they
-/// have a box that swallows characters. Which is the reason every layer is
-/// asked rather than the one that looked suspicious: what makes a hole
-/// harmless here is an accident of another view's keys, and accidents do
-/// not hold still.
+/// Broken deliberately by having a layer let through what it does not take
+/// (`Hearer::lets_through`), and it is the counts this catches: with a file
+/// open and the counts over it, a letter went into the file nobody could
+/// see, and so did `backspace`, `delete` and `tab`. The notes were just as
+/// unguarded and escaped by luck -- they have a box that swallows characters.
+/// Which is the reason every layer is asked rather than the one that looked
+/// suspicious: what makes a hole harmless here is an accident of another view's
+/// keys, and accidents do not hold still.
 ///
 /// `Enter` is left out on purpose. It means "choose this" in half of these,
 /// so a test that pressed it would be asserting about what choosing does.
@@ -140,6 +140,10 @@ fn escape_from_anywhere_comes_back_to_the_file() {
 /// getting through are the same bug.
 #[test]
 fn nothing_typed_over_a_layer_reaches_the_file() {
+    // The cut below writes whatever it took to a clipboard, and a test that
+    // did not ask for Obelus's own would be writing the reader's.
+    let _turn = support::clipboard_turn();
+    obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Kept);
     for layer in obelus_component::layers::STACK {
         let mut app = reading();
         let before = app
@@ -699,6 +703,8 @@ fn pressed_at_what_is_behind(app: &mut App) {
 /// move, take away or talk about the note behind them.
 #[test]
 fn nothing_pressed_over_a_layer_reaches_the_notes() {
+    let _turn = support::clipboard_turn();
+    obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Kept);
     for layer in obelus_component::layers::STACK {
         let (scratch, mut app) = on_the_notes(&format!("{layer:?}"));
         let file = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
@@ -728,16 +734,11 @@ fn nothing_pressed_over_a_layer_reaches_the_notes() {
         }
         pressed_at_what_is_behind(&mut app);
 
-        // The page saying the tree has gone takes the notes' file with it,
-        // and the notes on screen are what is left of a tree that is not
-        // there: there is nothing on disk to compare.
-        if layer != Layer::Gone {
-            assert_eq!(
-                std::fs::read_to_string(&file).expect("the notes"),
-                written,
-                "{layer:?} let a key through to the notes file"
-            );
-        }
+        assert_eq!(
+            std::fs::read_to_string(&file).expect("the notes"),
+            written,
+            "{layer:?} let a key through to the notes file"
+        );
         assert!(app.notes().is_some(), "{layer:?}: the notes went away");
         assert_eq!(
             standing(&app),
@@ -754,6 +755,8 @@ fn nothing_pressed_over_a_layer_reaches_the_notes() {
 /// on past the counts, which took the words out of the box.
 #[test]
 fn nothing_pressed_over_a_layer_reaches_the_conversation() {
+    let _turn = support::clipboard_turn();
+    obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Kept);
     for layer in obelus_component::layers::STACK {
         let mut app = reading();
         app.new_conversation();
@@ -787,4 +790,63 @@ fn nothing_pressed_over_a_layer_reaches_the_conversation() {
             "{layer:?} let a key through to the conversation"
         );
     }
+}
+
+/// A copy over a page with nothing to copy copies nothing.
+///
+/// Copy is bound in a dialog, so it is not stopped by what stops a key: it
+/// asked a chain of the boxes that had a selection, the counts had none,
+/// and `ctrl+c` over them copied the line of the file nobody could see.
+/// Broken deliberately by letting the copy go on past the counts, and the
+/// line is copied.
+#[test]
+fn a_copy_over_the_counts_copies_nothing() {
+    let _turn = support::clipboard_turn();
+    obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Kept);
+    let mut app = reading();
+    open(&mut app, Layer::Counts);
+
+    support::press_control(&mut app, 'c');
+
+    assert_eq!(
+        app.note(),
+        None,
+        "a copy over the counts took something from behind them"
+    );
+}
+
+/// And a cut over a list over the settings comes out of the list.
+///
+/// The chain asked about the settings before the list, so with a setting's
+/// choices open over the page `ctrl+x` took the page's filter -- out of
+/// sight behind the list -- and left the list's query as it was. Broken
+/// deliberately by putting that chain back, and the settings' filter is
+/// what goes.
+#[test]
+fn a_cut_over_a_list_over_the_settings_comes_out_of_the_list() {
+    let _turn = support::clipboard_turn();
+    obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Kept);
+    let mut app = reading();
+    open(&mut app, Layer::Settings);
+    support::type_text(&mut app, "wrap");
+    open(&mut app, Layer::Picker);
+    assert_eq!(
+        app.layers().furthest_first().collect::<Vec<_>>(),
+        [Layer::Settings, Layer::Picker],
+        "the list did not open over the settings"
+    );
+    support::type_text(&mut app, "ab");
+
+    support::press_control(&mut app, 'x');
+
+    assert_eq!(
+        app.picker().expect("the list").query(),
+        "",
+        "the list kept its query"
+    );
+    assert_eq!(
+        app.settings().expect("the settings").query(),
+        "wrap",
+        "the cut came out of the settings behind the list"
+    );
 }
