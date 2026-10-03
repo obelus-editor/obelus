@@ -4835,9 +4835,12 @@ fn a_conversation_with_the_readers_words_in_it_stays_open() {
 /// keeps the conversation open as much as words in the box do -- and the
 /// turn goes on, because nothing has been closed.
 ///
-/// Deliberate break: take `|| !self.chat.unsent().is_empty()` out of
-/// `has_the_readers_words`, and the conversation closes with the reader's
-/// words waiting in it.
+/// Broken deliberately two ways. Taking `|| !self.chat.unsent().is_empty()`
+/// out of `has_the_readers_words` closes the conversation with the reader's
+/// words waiting in it. Moving the call to `interrupt_agent` in
+/// `close_for_an_agent` above the refusal stops the turn, and once the end
+/// Obelus writes for it has arrived the conversation is ready rather than
+/// thinking.
 #[test]
 fn words_waiting_on_the_turn_keep_the_conversation_open() {
     let (mut app, events) = talking();
@@ -4861,6 +4864,9 @@ fn words_waiting_on_the_turn_keep_the_conversation_open() {
         is_open(&app, 0),
         "closed with the reader's words waiting in it"
     );
+    // A stop is asked for and its end comes back as an event, so the
+    // answer is not in until whatever came of the asking has arrived.
+    settle(&mut app, &events, Duration::from_millis(300));
     assert_eq!(
         app.talking(),
         obelus_agent::Talking::Thinking,
