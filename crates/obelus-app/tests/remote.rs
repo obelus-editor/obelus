@@ -384,7 +384,9 @@ fn a_chat_that_is_set_is_connected_to() {
 /// the list by the name the platform gives them, and a word back to them.
 /// A wrong code lets nobody in.
 ///
-/// Broken deliberately twice. Comparing the code as it was typed: the code
+/// Broken deliberately three times. Leaving the commands out of the word
+/// back: they were told they were paired and nothing about what to say.
+/// Comparing the code as it was typed: the code
 /// sent in small letters without its dash let nobody in. And taking any
 /// code: the stranger's wrong one was taken, and they were asked their
 /// name.
@@ -450,9 +452,10 @@ fn pairing_lets_in_whoever_sends_the_code() {
     assert!(
         matches!(
             said_since().as_slice(),
-            [obelus_remote::model::Out::Say { to, .. }] if to == "U04ABCDEF"
+            [obelus_remote::model::Out::Say { to, text, .. }]
+                if to == "U04ABCDEF" && text.contains("**notes**")
         ),
-        "they were not told"
+        "they were not told, or not told what there is to say"
     );
     let written = std::fs::read_to_string(scratch.join("config.toml")).expect("the file");
     assert!(written.contains("U04ABCDEF"), "{written}");

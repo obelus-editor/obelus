@@ -407,7 +407,13 @@ impl App {
         self.say_to(obelus_remote::model::Out::Say {
             to: id,
             at: obelus_remote::model::Where::Top,
-            text: "Paired. This machine takes notes from you now.".to_string(),
+            // And what there is to say, now that there is somebody to say
+            // it: the first thing a reader wonders after pairing is what
+            // the bot answers to.
+            text: format!(
+                "Paired. This machine takes notes from you now.\n{}",
+                super::control::HELP
+            ),
             notify: false,
         });
     }

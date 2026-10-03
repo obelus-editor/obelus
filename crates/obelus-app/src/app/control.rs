@@ -24,7 +24,7 @@ use super::*;
 use crate::conversation::{Conversation, Topic};
 
 /// What the top answers to anything it does not know.
-const HELP: &str = "Send **notes** to see what there is to do, **new** to start a conversation, or **note** and a few words to write one down.";
+pub(super) const HELP: &str = "Send **notes** to see what there is to do, **new** to start a conversation, or **note** and a few words to write one down.";
 
 impl App {
     /// Somebody on the list said something at the top.
