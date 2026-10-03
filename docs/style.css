@@ -105,8 +105,8 @@
      prose measure, which is applied per block so a structural layout keeps
      the full width. */
   --nav-h: 3.5rem;
-  --column: 69rem;
-  --measure: 48rem;
+  --column: 90rem;
+  --measure: 54rem;
   --gutter-width: 1rem;
 
   /* Square is enforced here, once. */
