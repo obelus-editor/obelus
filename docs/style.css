@@ -408,7 +408,7 @@ main { min-width: 0; }
    them, and shrinking keeps a letter sharp where stretching blurs it. At
    1050px -- one pixel to one of a 2x screen's -- the stack filled a whole
    screen and pushed the sentence it illustrates out of view. */
-.screens { max-width: 860px; margin: 2.6rem auto 0; }
+.screens { max-width: 680px; margin: 2.2rem auto 0; }
 .screens .tabs { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px; margin-bottom: 1rem; }
 .screens .tabs .switch[aria-selected="true"] {
   background: var(--t-surface-2);
