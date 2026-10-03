@@ -18,7 +18,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use obelus_sink::Sink;
 
-use crate::{Event, model::Out, slack};
+use crate::{Event, feishu, model::Out, slack};
 
 /// Everything a platform has been told, by field: the secrets read from the
 /// keyring and the rest from the settings, put together only on the way to
@@ -164,6 +164,16 @@ pub fn connect_for_test(connect: Connect) {
 pub fn reach(platform: &'static Description, settled: Told, sink: Arc<dyn Sink<Event>>) {
     obelus_runtime::handle().spawn_blocking(move || {
         let mut told = settled;
+        // A choice nobody has made is its first word, the way the page
+        // draws it: Feishu's domain is Feishu until the reader says Lark.
+        for field in platform.fields {
+            if let FieldKind::Choice(words) = field.kind
+                && let Some(first) = words.first()
+            {
+                told.entry(field.key)
+                    .or_insert_with(|| (*first).to_string());
+            }
+        }
         for field in platform.fields {
             if let FieldKind::Secret { .. } = field.kind {
                 match crate::secrets::read(platform.key, field.key) {
@@ -204,7 +214,7 @@ pub fn reach(platform: &'static Description, settled: Told, sink: Arc<dyn Sink<E
 }
 
 /// Every platform Obelus can be reached from, in the order they are offered.
-pub const ALL: &[&Description] = &[&slack::DESCRIPTION];
+pub const ALL: &[&Description] = &[&feishu::DESCRIPTION, &slack::DESCRIPTION];
 
 /// A platform by its key.
 #[must_use]

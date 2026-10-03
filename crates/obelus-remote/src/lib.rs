@@ -17,6 +17,7 @@
 //! keyring ([`secrets`]), anything else in `[remotes.<platform>]` -- is
 //! decided here once, for all of them.
 
+pub mod feishu;
 pub mod model;
 pub mod platform;
 pub mod secrets;

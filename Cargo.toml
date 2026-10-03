@@ -482,6 +482,14 @@ zbus-secret-service-keyring-store = { version = "1", features = ["rt-tokio-crypt
 # for what is said back. The `hyper` connector, on the runtime Obelus already
 # has; rustls, as everything else here is.
 slack-morphism = { version = "2.29", features = ["hyper"] }
+# Feishu: its long connection is protobuf frames over a websocket, and these
+# are the frames' definitions as Feishu's own SDKs have them, generated and
+# published without needing `protoc`. `prost` at the version they were
+# generated for, and the websocket the Slack crate already brings, with the
+# same TLS.
+lark-websocket-protobuf = "0.1"
+prost = "0.13"
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"] }
 
 [profile.dist]
 inherits = "release"

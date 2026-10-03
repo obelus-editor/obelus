@@ -655,3 +655,45 @@ fn a_conversation_and_its_thread_say_the_same_things() {
         support::lay_out(&mut app, 76, 24);
     }
 }
+
+/// Feishu's page is made from what Feishu declares: an id written in the
+/// settings file, a secret in the keyring, and a domain that starts on
+/// Feishu and goes to Lark with a press -- none of which the page knows the
+/// first thing about.
+///
+/// Broken deliberately twice. Drawing a choice nobody made as unset: the
+/// domain said `Not set`. And writing a field that is not secret to the
+/// keyring: the id was not in the settings file.
+#[test]
+fn feishu_is_set_up_from_what_it_declares() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-feishu");
+    let (mut app, events) = on_the_remote_page(&scratch);
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "Feishu");
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.config().remote.as_deref(), Some("feishu"));
+    until(&mut app, &events, "the keyring to be asked", |app| {
+        app.settings()
+            .is_some_and(|settings| settings.reached().state == obelus_remote::State::Unready)
+    });
+    assert_eq!(
+        app.settings()
+            .and_then(|settings| settings.reached().kept.get("domain").cloned())
+            .as_deref(),
+        Some("feishu"),
+        "a choice nobody made is not its first word"
+    );
+    support::check("remote_feishu_66x24", &support::render(&mut app, 66, 24));
+
+    to_the_row(&mut app, "App ID");
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "cli_a1b2c3");
+    support::press(&mut app, KeyCode::Enter);
+    let written = std::fs::read_to_string(scratch.join("config.toml")).expect("the file");
+    assert!(written.contains("app_id = \"cli_a1b2c3\""), "{written}");
+
+    to_the_row(&mut app, "Domain");
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.config().remote_value("feishu", "domain"), Some("lark"));
+}

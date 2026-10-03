@@ -110,7 +110,9 @@ impl App {
         }
         let told = |field: &Field| match field.kind {
             FieldKind::Secret { .. } => self.remote.kept.contains_key(field.key),
-            FieldKind::Choice(_) | FieldKind::Text => self
+            // A choice nobody made is its first word, which is an answer.
+            FieldKind::Choice(_) => true,
+            FieldKind::Text => self
                 .config()
                 .remote_value(platform.key, field.key)
                 .is_some(),
@@ -129,7 +131,14 @@ impl App {
             for field in platform.fields {
                 let shown = match field.kind {
                     FieldKind::Secret { .. } => self.remote.kept.get(field.key).cloned(),
-                    FieldKind::Choice(_) | FieldKind::Text => self
+                    // Its first word where nobody has chosen, which is what
+                    // connecting will use.
+                    FieldKind::Choice(words) => self
+                        .config()
+                        .remote_value(platform.key, field.key)
+                        .or(words.first().copied())
+                        .map(str::to_string),
+                    FieldKind::Text => self
                         .config()
                         .remote_value(platform.key, field.key)
                         .map(str::to_string),
@@ -457,7 +466,12 @@ impl App {
                     let Some(platform) = self.platform() else {
                         return;
                     };
-                    let now = self.config().remote_value(platform.key, field.key);
+                    // From the word it is on, which is the first where
+                    // nobody has chosen: the row says so.
+                    let now = self
+                        .config()
+                        .remote_value(platform.key, field.key)
+                        .or(words.first().copied());
                     let at = words.iter().position(|word| Some(*word) == now);
                     let next = words[at.map_or(0, |at| (at + 1) % words.len())];
                     self.change_remote(|config| {
