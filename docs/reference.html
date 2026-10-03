@@ -208,7 +208,7 @@
         </tbody>
       </table>
       </div>
-      <p class="quiet small">Two more: <code>read_workflow</code> hands the agent the workflow this project is set to when it is about to change something, and <code>close_conversation</code> closes the conversation it is in, once you have said yes.</p>
+      <p class="quiet small">Three more: <code>open_file</code> puts a file on your screen at a line, once you have said yes — <kbd>Alt+←</kbd> brings you back; <code>read_workflow</code> hands the agent the workflow this project is set to when it is about to change something; and <code>close_conversation</code> closes the conversation it is in, once you have said yes.</p>
     </section>
     <section id="config">
       <h2><span class="num">03</span><span>Config &amp; themes</span></h2>
@@ -227,7 +227,7 @@
       <p class="quiet small">And it tells you <em>where</em>. A settings file that will not parse, a key that binds nothing, a setting a project is not allowed to set, a theme named that no file answers to — each is marked on its own line, in the same list a language server's problems go in, so <kbd>Alt+e</kbd> and <kbd>Alt+[</kbd> <kbd>Alt+]</kbd> walk them like any other. Obelus writes the file, so Obelus has to be able to say which line it could not read.</p>
 
       <div class="aside">
-        <p><strong>Three a project may not set:</strong> <code>agent</code>, <code>keys</code> and <code>agents</code>. A program starting because a downloaded project said so is a decision that belongs to the person at the keyboard; a project that could rebind keys could put <code>quit</code> where you would find it by accident; and what an agent may do without asking is the setting a downloaded project would most like to write.</p>
+        <p><strong>Four a project may not set:</strong> <code>agent</code>, <code>keys</code>, <code>agents</code> and <code>new_versions</code>. A program starting because a downloaded project said so is a decision that belongs to the person at the keyboard; a project that could rebind keys could put <code>quit</code> where you would find it by accident; and what an agent may do without asking is the setting a downloaded project would most like to write; and whether Obelus asks the network about a newer version is yours to decide, not a downloaded project's.</p>
       </div>
 
       <h3>The settings</h3>

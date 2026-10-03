@@ -91,7 +91,7 @@
     var held = false;
     // How far behind the front each one is, counted round the stack: the
     // one after the front is next to come forward.
-    var show = function (i) {
+    var bring = function (i) {
       at = i;
       tabs.forEach(function (tab, j) { tab.setAttribute('aria-selected', j === i ? 'true' : 'false'); });
       frames.forEach(function (frame, j) {
@@ -99,14 +99,14 @@
       });
     };
     tabs.forEach(function (tab, i) {
-      tab.addEventListener('click', function () { chosen = true; show(i); });
+      tab.addEventListener('click', function () { chosen = true; bring(i); });
     });
     // One showing behind the front can be picked by itself.
     frames.forEach(function (frame, i) {
       frame.addEventListener('click', function () {
         if (frame.getAttribute('data-depth') === '0') return;
         chosen = true;
-        show(i);
+        bring(i);
       });
     });
     screens.addEventListener('mouseenter', function () { held = true; });
@@ -116,7 +116,7 @@
     if (!still) {
       setInterval(function () {
         if (chosen || held || document.hidden) return;
-        show((at + 1) % frames.length);
+        bring((at + 1) % frames.length);
       }, 5000);
     }
   }

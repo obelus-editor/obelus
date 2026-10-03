@@ -208,7 +208,7 @@
         </tbody>
       </table>
       </div>
-      <p class="quiet small">另外两个：<code>read_workflow</code> 在 agent 要动手改东西时，把这个项目设定的 workflow 交给它；<code>close_conversation</code> 在你点头之后，关掉它所在的这段对话。</p>
+      <p class="quiet small">另外三个：<code>open_file</code> 在你点头之后，把一个文件打开到某一行，<kbd>Alt+←</kbd> 回到原来的地方；<code>read_workflow</code> 在 agent 要动手改东西时，把这个项目设定的 workflow 交给它；<code>close_conversation</code> 在你点头之后，关掉它所在的这段对话。</p>
     </section>
     <section id="config">
       <h2><span class="num">03</span><span>配置与主题</span></h2>
@@ -227,7 +227,7 @@
       <p class="quiet small">而且它会说清楚是<em>哪一行</em>。配置文件解析不了、某个键绑不上、某一项项目无权设、主题名字没有文件对应——每一条都标在它自己那一行上，进的是语言服务器的诊断同一个列表，所以 <kbd>Alt+e</kbd> 和 <kbd>Alt+[</kbd> <kbd>Alt+]</kbd> 照常能走它们。文件是 Obelus 写的，那它就得说得出自己哪一行读不懂。</p>
 
       <div class="aside">
-        <p><strong>项目不能设的三项：</strong><code>agent</code>、<code>keys</code>、<code>agents</code>。一个下载来的项目不该决定你的机器上启动哪个程序；能改键的项目也就能把 <code>quit</code> 挪到你会误触的地方；而「agent 不用问就能做什么」正是一个陌生项目最想写的那一项。</p>
+        <p><strong>项目不能设的四项：</strong><code>agent</code>、<code>keys</code>、<code>agents</code>、<code>new_versions</code>。一个下载来的项目不该决定你的机器上启动哪个程序；能改键的项目也就能把 <code>quit</code> 挪到你会误触的地方；而「agent 不用问就能做什么」正是一个陌生项目最想写的那一项；Obelus 要不要联网问有没有新版本，也该由你定，不该由下载来的项目定。</p>
       </div>
 
       <h3>能设的项</h3>
