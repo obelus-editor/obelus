@@ -19,7 +19,7 @@ use obelus_component::{
 };
 
 use super::*;
-use crate::conversation::{Asking, Topic};
+use crate::conversation::{Asking, Permission, Topic};
 
 /// Which conversation a message from the agent is for.
 ///
@@ -2248,7 +2248,7 @@ impl App {
         let up = talk
             .permission
             .as_ref()
-            .is_some_and(acp::Answer::is_canceled)
+            .is_some_and(|asked| asked.answer.is_canceled())
             || talk
                 .asking
                 .as_ref()
@@ -2260,7 +2260,12 @@ impl App {
         if !up {
             return;
         }
-        talk.permission = None;
+        // The call on the card as well as the ones behind it: taking the
+        // question back is not saying what became of the call, and one left
+        // waiting turns as though it were running.
+        if let Some(asked) = talk.permission.take() {
+            talk.chat.tool(&asked.call, "cancelled");
+        }
         talk.asking = None;
         talk.going = None;
         talk.card = None;
@@ -3513,7 +3518,10 @@ impl App {
             card.about(about);
         }
         if let Some(talk) = self.talk_mut(whose) {
-            talk.permission = Some(answer);
+            talk.permission = Some(Permission {
+                call: call.clone(),
+                answer,
+            });
             talk.card = Some(card);
         }
     }
@@ -3523,6 +3531,7 @@ impl App {
         let Some(answer) = self
             .conversation_mut()
             .and_then(|talk| talk.permission.take())
+            .map(|asked| asked.answer)
         else {
             return;
         };
@@ -3543,6 +3552,7 @@ impl App {
         let Some(answer) = self
             .conversation_mut()
             .and_then(|talk| talk.permission.take())
+            .map(|asked| asked.answer)
         else {
             return;
         };

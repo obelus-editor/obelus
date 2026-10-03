@@ -11481,6 +11481,49 @@ fn a_question_taken_back_comes_off_the_card() {
     );
 }
 
+/// The call a question taken back was about stops, rather than turning.
+///
+/// Taking a question back says nothing about the call, and an agent that
+/// goes on with its turn may never say. A call left waiting in a turn that
+/// is going turns -- that is how a command Claude never says is running is
+/// seen to run -- so the one the card was about turned for the rest of the
+/// turn, as if the agent had gone ahead with what nobody allowed.
+///
+/// Deliberate break: leave `take_back` clearing the permission without
+/// marking its call `cancelled`. The call turns.
+#[test]
+fn the_call_a_question_taken_back_was_about_stops() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/abandon");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", App::is_asking_permission);
+    pump(&mut app, &events, "the question taken back", |app| {
+        !app.is_asking_permission()
+    });
+    assert_eq!(
+        app.talking(),
+        obelus_agent::Talking::Thinking,
+        "the turn ended, so nothing here could have turned anyway"
+    );
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let call = rows(&dump)
+        .into_iter()
+        .find(|row| row.contains("Delete the logs"))
+        .unwrap_or_else(|| panic!("no row for the call:\n{dump}"))
+        .to_string();
+    assert!(
+        !SPINNING.iter().any(|frame| call.contains(*frame)),
+        "the call nobody allowed turns as though it were running:\n{call}"
+    );
+    assert!(
+        call.contains("Stopped"),
+        "the call does not say it stopped:\n{call}"
+    );
+}
+
 /// A list opened over a question and closed again leaves the question.
 ///
 /// The question is a card in the conversation, not the list: walking away

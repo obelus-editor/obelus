@@ -226,9 +226,8 @@ pub struct Conversation {
     /// thing: what it wants to know, what the answers are, and room to say
     /// one in your own words where it will take those.
     pub card: Option<Card>,
-    /// The permission request waiting on the reader: the channel its answer
-    /// goes back through.
-    pub permission: Option<acp::Answer<Option<String>>>,
+    /// The permission request waiting on the reader.
+    pub permission: Option<Permission>,
     /// Somewhere the agent wants the reader to go, while they have not
     /// said whether they will.
     pub going: Option<Going>,
@@ -324,6 +323,21 @@ impl Conversation {
             && self.asked_for.is_none()
             && (self.session.is_none() || self.minted)
     }
+}
+
+/// A permission request on the card: what it is about, and where the
+/// answer goes.
+///
+/// The call as well as the channel, because an agent may take the question
+/// back without saying what became of the call, and a call left waiting
+/// turns for as long as the turn goes on -- so the one on the card is marked
+/// as stopped the way the ones queued behind it are.
+#[derive(Debug)]
+pub struct Permission {
+    /// The call it asks about.
+    pub call: acp::Call,
+    /// Where the answer goes: the option chosen, or nothing for no answer.
+    pub answer: acp::Answer<Option<String>>,
 }
 
 /// A place on the web the agent wants the reader to go: to sign in
