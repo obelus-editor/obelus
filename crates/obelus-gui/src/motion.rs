@@ -533,9 +533,19 @@ impl Scrolling {
     }
 }
 
+/// Which band a slide belongs to: the rows it is drawn in, and how many
+/// panes were said before it.
+///
+/// Both, because a dialog's list sits in exactly the rows of the page under
+/// it -- the settings over a conversation share its transcript's -- and the
+/// two are not one band. Kept by the rows alone, a transcript scrolling on
+/// under the settings was a slide the settings' list was asked about too,
+/// and it was drawn sliding out of a page of the conversation.
+pub(crate) type Lane = (Rect, u8);
+
 /// The bands on the screen, and where each has got to.
 ///
-/// Kept by area rather than as one, for the reason the bars are: a screen
+/// Kept by lane rather than as one, for the reason the bars are: a screen
 /// has as many bands on it as it has lists, and which of them a frame
 /// happens to mention last is not which of them moved. One slot meant a
 /// hover over a file, or a list beside a preview, could not both be
@@ -547,17 +557,17 @@ impl Scrolling {
 /// length of what is on the screen.
 #[derive(Debug, Default)]
 struct Bands {
-    seen: Vec<(Rect, Scrolling)>,
+    seen: Vec<(Lane, Scrolling)>,
 }
 
 impl Bands {
     /// This band's list has got somewhere else -- see `Scrolling::moved`.
-    fn moved(&mut self, area: Rect, rows: f32, most: f32, now: Instant) -> bool {
-        let band = match self.seen.iter().position(|(seen, _)| *seen == area) {
+    fn moved(&mut self, lane: Lane, rows: f32, most: f32, now: Instant) -> bool {
+        let band = match self.seen.iter().position(|(seen, _)| *seen == lane) {
             Some(at) => &mut self.seen[at].1,
             None => {
                 self.seen.push((
-                    area,
+                    lane,
                     Scrolling {
                         from: None,
                         since: 0.0,
@@ -572,8 +582,8 @@ impl Bands {
 
     /// How far behind this band is drawn at this moment, and how far the
     /// page the window kept is from there.
-    fn behind(&self, area: Rect, now: Instant) -> Option<(f32, f32)> {
-        let (_, band) = self.seen.iter().find(|(seen, _)| *seen == area)?;
+    fn behind(&self, lane: Lane, now: Instant) -> Option<(f32, f32)> {
+        let (_, band) = self.seen.iter().find(|(seen, _)| *seen == lane)?;
         band.behind(now).map(|behind| (behind, band.since))
     }
 
@@ -583,8 +593,8 @@ impl Bands {
     /// no longer on the screen is one nothing will ask about again, and a
     /// list of them that only grew would be a window keeping every list
     /// the reader had opened.
-    fn drawn(&mut self, rooms: &[Rect]) {
-        self.seen.retain(|(area, _)| rooms.contains(area));
+    fn drawn(&mut self, lanes: &[Lane]) {
+        self.seen.retain(|(lane, _)| lanes.contains(lane));
     }
 
     /// Whether any of them is still catching up.
@@ -830,8 +840,8 @@ impl Motion {
     /// `rows` is how far it moved: positive where the list went down,
     /// which is the band's content going up. Says whether the window has
     /// to keep the page it scrolled off -- see `Scrolling::moved`.
-    pub(crate) fn band_moved(&mut self, area: Rect, rows: f32, most: f32, now: Instant) -> bool {
-        self.animates && self.bands.moved(area, rows, most, now)
+    pub(crate) fn band_moved(&mut self, lane: Lane, rows: f32, most: f32, now: Instant) -> bool {
+        self.animates && self.bands.moved(lane, rows, most, now)
     }
 
     /// How far behind where it has got to a band is drawn at this moment,
@@ -841,13 +851,13 @@ impl Motion {
     /// Both, because the rows it has not caught up to yet are on no page
     /// but the one it scrolled off, and where in that page they are is
     /// the difference between the two.
-    pub(crate) fn band_shown(&self, area: Rect, now: Instant) -> Option<(f32, f32)> {
-        self.bands.behind(area, now)
+    pub(crate) fn band_shown(&self, lane: Lane, now: Instant) -> Option<(f32, f32)> {
+        self.bands.behind(lane, now)
     }
 
     /// The frame drew these bands -- see `Bands::drawn`.
-    pub(crate) fn bands_drawn(&mut self, rooms: &[Rect]) {
-        self.bands.drawn(rooms);
+    pub(crate) fn bands_drawn(&mut self, lanes: &[Lane]) {
+        self.bands.drawn(lanes);
     }
 
     /// A pane opened over the page.
@@ -1553,14 +1563,18 @@ mod tests {
         assert!(motion.moving(half_way).pane.is_some(), "still arriving");
     }
 
-    /// A band of rows, which is the area a list is drawn in.
-    fn a_band(y: u16) -> Rect {
-        Rect {
-            x: 0,
-            y,
-            width: 40,
-            height: 10,
-        }
+    /// A band of rows, which is the area a list is drawn in, with no pane
+    /// under it.
+    fn a_band(y: u16) -> Lane {
+        (
+            Rect {
+                x: 0,
+                y,
+                width: 40,
+                height: 10,
+            },
+            0,
+        )
     }
 
     /// Break: answer the distance still to come from `Scrolling::behind`
@@ -1610,6 +1624,27 @@ mod tests {
         motion.bands_drawn(&[other]);
         assert_eq!(motion.band_shown(one, base), None, "gone with its list");
         assert_eq!(motion.band_shown(other, base), Some((7.0, 7.0)), "still up");
+    }
+
+    /// A list in a dialog and the page's list under it are two bands, in
+    /// one set of rows.
+    ///
+    /// Break: key `Bands` on the rows alone, which is what this was. The
+    /// transcript scrolling on under the settings -- every line an agent
+    /// writes -- is then a slide the settings' list is asked about as well,
+    /// and the list was drawn sliding out of a page of the conversation,
+    /// thinking and all.
+    #[test]
+    fn a_list_over_another_in_the_same_rows_keeps_its_own_slide() {
+        let base = Instant::now();
+        let (transcript, _) = a_band(0);
+        let mut motion = Motion::new(None);
+        assert!(motion.band_moved((transcript, 0), 3.0, 20.0, base));
+        assert_eq!(
+            motion.band_shown((transcript, 1), base),
+            None,
+            "the settings slid with the transcript under them"
+        );
     }
 
     /// Break: set `from` in `Scrolling::moved` to the rows alone, leaving

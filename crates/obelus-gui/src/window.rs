@@ -74,7 +74,7 @@ use crate::{
         Said, Sheened, Spelling, Stroked, Ticked, Update,
     },
     keys,
-    motion::{Motion, Wake},
+    motion::{Lane, Motion, Wake},
 };
 
 /// How many rows a notch of the wheel moves, which is what every terminal
@@ -122,7 +122,7 @@ pub(crate) fn show(app: App) -> Result<()> {
 /// which happened.
 #[derive(Clone, Debug)]
 struct Rolling {
-    /// The rows it is drawn in, which with `under` is what says it is the
+    /// The rows it is drawn in, which with `layer` is what says it is the
     /// same band as the one on the frame before -- see [`Rolling::is`].
     room: Rect,
     /// How far down its list it has got.
@@ -159,21 +159,39 @@ struct Rolling {
     /// as inside it as the dialog's own list. And a count rather than
     /// whether, because with a list over the settings over a conversation
     /// the transcript and the settings' list are both under something, in
-    /// the same rows -- see `Rolling::is`.
+    /// the same rows.
     under: u8,
+    /// How many panes were said before it, which is which of them it is
+    /// in: the page's own lists are on none, the settings' on one.
+    ///
+    /// Counted from the bottom, where `under` counts from the top, because
+    /// this is the one that stays put while panes come and go over a band
+    /// -- see `Rolling::is`.
+    layer: u8,
 }
 
 impl Rolling {
     /// Whether this is the band `was` was, a frame on.
     ///
-    /// Where it is and how many panes are over it. Where alone is not
+    /// Where it is and how many panes are under it. Where alone is not
     /// enough, because a dialog's list can sit exactly where the page under
     /// it has one -- the settings over a conversation share its
     /// transcript's rows -- and the first of the two was taken for both: the
     /// settings, scrolled, were measured against a transcript at the top
     /// every frame, and slid the difference again on every one of them.
+    ///
+    /// Under rather than over, because the panes over a band are the ones
+    /// that come and go. Counted from the top, the settings' list on the
+    /// frame it opened was the transcript on the frame before -- both had
+    /// nothing over them -- and took that transcript's slide and the page
+    /// of the conversation it was sliding out of.
     fn is(&self, was: &Self) -> bool {
-        self.room == was.room && self.under == was.under
+        self.room == was.room && self.layer == was.layer
+    }
+
+    /// Which band it is to the clock its slide runs on.
+    const fn lane(&self) -> Lane {
+        (self.room, self.layer)
     }
 }
 
@@ -918,6 +936,7 @@ impl ApplicationHandler<Waking> for Showing {
                                 bar,
                                 origin: None,
                                 under: 0,
+                                layer: u8::try_from(self.paning.len()).unwrap_or(u8::MAX),
                             });
                         }
                         Update::Ticked { area, on } => {
@@ -1076,15 +1095,15 @@ impl ApplicationHandler<Waking> for Showing {
                     // and the one the distance is counted from.
                     if self
                         .motion
-                        .band_moved(band.room, rows, f32::from(band.room.height), now)
+                        .band_moved(band.lane(), rows, f32::from(band.room.height), now)
                     {
                         band.origin = was.bar.map(|bar| bar.mark);
                         band.before.clone_from(&before);
                     }
                 }
                 // And what is no longer on the screen is no longer kept.
-                let rooms: Vec<Rect> = self.scrolled.iter().map(|band| band.room).collect();
-                self.motion.bands_drawn(&rooms);
+                let lanes: Vec<Lane> = self.scrolled.iter().map(Rolling::lane).collect();
+                self.motion.bands_drawn(&lanes);
                 if let Some(names) = faces {
                     // Which faces text is drawn in decides how wide a cell
                     // is, so this is the same work a new size is: measure
@@ -1236,7 +1255,7 @@ impl ApplicationHandler<Waking> for Showing {
                     .scrolled
                     .iter()
                     .filter_map(|band| {
-                        let (behind, since) = self.motion.band_shown(band.room, now)?;
+                        let (behind, since) = self.motion.band_shown(band.lane(), now)?;
                         Some(Rolled {
                             room: band.room,
                             under: band.under > 0,
@@ -1530,22 +1549,23 @@ mod tests {
     /// its top while the list is not, and it slid on every frame.
     #[test]
     fn a_band_under_a_pane_is_not_the_pane_s() {
-        let band = |top, under| Rolling {
+        let band = |top, under, layer| Rolling {
             room: Rect::new(0, 2, 75, 18),
             top,
             before: None,
             bar: None,
             origin: None,
             under,
+            layer,
         };
-        let was = [band(0, 1), band(4, 0)];
-        let settings = band(4, 0);
+        let was = [band(0, 1, 0), band(4, 0, 1)];
+        let settings = band(4, 0, 1);
         assert_eq!(
             was.iter().find(|was| settings.is(was)).map(|was| was.top),
             Some(4),
             "the list was taken for the transcript under it"
         );
-        let transcript = band(0, 1);
+        let transcript = band(0, 1, 0);
         assert_eq!(
             was.iter().find(|was| transcript.is(was)).map(|was| was.top),
             Some(0),
@@ -1553,14 +1573,31 @@ mod tests {
         );
         // And with a setting's choices over the settings, both are under
         // something: the transcript under two panes, the settings' list
-        // under one. Deliberate break: count whether, not how many -- the
-        // two are told apart by nothing again.
-        let was = [band(0, 2), band(4, 1)];
-        let settings = band(4, 1);
+        // under one -- and neither has become anything else.
+        let was = [band(0, 2, 0), band(4, 1, 1)];
+        let settings = band(4, 1, 1);
         assert_eq!(
             was.iter().find(|was| settings.is(was)).map(|was| was.top),
             Some(4),
             "under a list, the settings' list was taken for the transcript"
+        );
+        // And on the frame the settings open, the frame before has only
+        // the transcript, with nothing over it -- which is what the
+        // settings' list has over it too. Deliberate break: match on
+        // `under` rather than `layer`, which is what this was. The list
+        // is then the transcript a frame on, takes its slide and the page
+        // of the conversation it kept, and draws that page sliding.
+        let was = [band(3, 0, 0)];
+        let settings = band(0, 0, 1);
+        assert!(
+            !was.iter().any(|was| settings.is(was)),
+            "the settings' list was taken for the transcript it opened over"
+        );
+        let transcript = band(3, 1, 0);
+        assert_eq!(
+            was.iter().find(|was| transcript.is(was)).map(|was| was.top),
+            Some(3),
+            "the transcript lost itself under the settings"
         );
     }
 
