@@ -116,9 +116,10 @@ const UNDERLINE: f32 = 0.06;
 /// How big one layer of a glyph texture is, in pixels each way.
 ///
 /// A screenful of code is a few hundred distinct glyphs, and a layer holds
-/// about a thousand at the size a doubled screen draws them. A screenful
-/// of Chinese is more than that -- every character is a glyph of its own --
-/// so a texture that is full takes another layer rather than being emptied.
+/// about five hundred Chinese characters at the size a doubled screen draws
+/// 24-point text in. A window of Chinese can be more than that -- every
+/// character is a glyph of its own -- so a texture that is full takes
+/// another layer rather than being emptied.
 /// Emptying it was what this did once, half way through a frame: the
 /// glyphs already placed in that frame were read from where the next ones
 /// had just been written, and a line number came out as part of a
