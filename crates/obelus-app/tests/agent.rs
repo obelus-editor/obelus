@@ -1440,14 +1440,18 @@ fn escape_shuts_the_list_of_commands_and_leaves_the_words() {
     );
 }
 
-/// The list of commands is a list of what the box is typing, so it goes
-/// with the box's keys: a page opened over the conversation from the
-/// palette is not drawn under it.
+/// The list of commands is part of the conversation, so a page opened over
+/// the conversation from the palette covers it.
 ///
-/// It was. The list is not a layer and was drawn after all of them, kept
-/// off only by a picker -- which the palette is until enter, and then the
-/// settings are up and nothing stood in the way. Broken deliberately by
-/// putting that gate back: the list's rows came up over the settings'.
+/// It did not. The list is not a layer and was drawn after all of them,
+/// kept off only by a picker -- which the palette is until enter, and then
+/// the settings are up and nothing stood in the way. Broken deliberately
+/// by drawing it after the layers again: the list's rows came up over the
+/// settings'.
+///
+/// What this cannot see is a list *under* a list rather than hidden: the
+/// cells over it are the picker's either way, and the difference is the
+/// glass a window draws the picker on.
 #[test]
 fn a_page_over_the_conversation_is_not_under_its_list_of_commands() {
     let (mut app, events) = talking();
@@ -1471,8 +1475,8 @@ fn a_page_over_the_conversation_is_not_under_its_list_of_commands() {
         "the list of commands is over the settings:\n{dump}"
     );
 
-    // And it is the box's again once the page has gone, because what the
-    // reader typed is still a name.
+    // And still there once the page has gone, because what the reader
+    // typed is still a name.
     support::press(&mut app, KeyCode::Esc);
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     assert!(

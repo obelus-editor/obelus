@@ -823,6 +823,28 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
         }
     }
 
+    // The agent's own commands, which are not a layer: the list follows
+    // what is being typed in the box rather than being something the
+    // reader opened, and it goes where any compact list goes. So it is
+    // part of the conversation and is drawn with it, under every layer:
+    // a page opened over the conversation covers it, and a list opened
+    // over it lies over it, and neither puts it away -- it is still there
+    // when they go, because what is in the box is still a name.
+    if let Some(list) = app.slash() {
+        bars::of(Whose::Commands, || {
+            list_over(
+                cells,
+                app,
+                list,
+                room_for_the_commands(app, regions.editor),
+                regions.edge,
+                // Not a layer, so it never took the row: the conversation's
+                // own row is still the conversation's while this is showing.
+                None,
+            );
+        });
+    }
+
     // And then whatever is over it, furthest from the reader first, which
     // is the order `layers` declares and the reverse of the one a key is
     // The row a full-screen dialog is about to take, filled before it is
@@ -957,29 +979,6 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
             Layer::Prompt => {}
         }
     }
-    // The agent's own commands, which are not a layer: the list follows
-    // what is being typed in the box rather than being something the
-    // reader opened, and it goes where any compact list goes. Anything
-    // over the conversation wins, because the box has lost the keys to it
-    // and this is a list of what the box is typing -- drawn last, it was
-    // drawn over the settings.
-    if !layers.any()
-        && let Some(list) = app.slash()
-    {
-        bars::of(Whose::Commands, || {
-            list_over(
-                cells,
-                app,
-                list,
-                room_for_the_commands(app, regions.editor),
-                regions.edge,
-                // Not a layer, so it never took the row: the conversation's
-                // own row is still the conversation's while this is showing.
-                None,
-            );
-        });
-    }
-
     // The three panels that belong to a place in the file. Each is empty
     // while anything is over the file -- they are settled that way once a
     // frame -- so nothing here has to ask a second time.
