@@ -929,6 +929,30 @@ mod tests {
         assert!(runs.output(&id).is_none());
     }
 
+    /// Waits for a command to say it has started, and fails if it never
+    /// does.
+    ///
+    /// Fails rather than carrying on, because a stop that lands before the
+    /// shell has got as far as the command stops everything there is, so a
+    /// test that went on regardless would pass on a slow machine whether or
+    /// not the stop reached anything -- a test that cannot go red. Ten
+    /// seconds, which costs nothing where the command is quick.
+    ///
+    /// Broken deliberately by having the command say something else: the
+    /// test fails here, ten seconds on, rather than passing.
+    fn has_started(runs: &mut Runs, id: &str) {
+        for _ in 0..2_000 {
+            if runs
+                .output(id)
+                .is_some_and(|(text, ..)| text.contains("started"))
+            {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        panic!("the command never said it had started");
+    }
+
     /// Stopping one stops what it started, not only the shell.
     ///
     /// The shell is the one process Obelus has a handle on, and an agent's
@@ -963,15 +987,7 @@ mod tests {
         let id = runs
             .start(&line, &[], &[], None, std::path::Path::new("."), None)
             .expect("the shell");
-        for _ in 0..200 {
-            if runs
-                .output(&id)
-                .is_some_and(|(text, ..)| text.contains("started"))
-            {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
+        has_started(&mut runs, &id);
         runs.stop(&id);
         std::thread::sleep(wait);
         assert!(!mark.exists(), "what a stopped command started ran on");
@@ -1109,15 +1125,7 @@ mod tests {
         let id = runs
             .start(&line, &[], &[], None, std::path::Path::new("."), None)
             .expect("the shell");
-        for _ in 0..200 {
-            if runs
-                .output(&id)
-                .is_some_and(|(text, ..)| text.contains("started"))
-            {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
+        has_started(&mut runs, &id);
         // Safety: `raise` takes a number.
         unsafe {
             libc::raise(libc::SIGHUP);
