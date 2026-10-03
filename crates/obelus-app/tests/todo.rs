@@ -3200,3 +3200,52 @@ fn a_list_of_notes_taller_than_the_screen_scrolls_under_the_caret() {
         "walking back up left the page where it was:\n{up}"
     );
 }
+
+/// The input method is on in a note being written, and off in one somebody
+/// else is talking about -- which is read here and not changed, so what is
+/// typed at it goes nowhere.
+///
+/// Deliberate break: answering the notes with `true` in `App::takes_text`,
+/// and the locked note goes red; with `false`, and the note being written
+/// does.
+#[test]
+fn the_input_method_is_on_in_a_note_and_off_in_one_somebody_else_has() {
+    let scratch = tree(
+        "typing",
+        "[[todo]]\nid = \"0123456W\"\nsaid = \"mine\"\ndone = false\ndepth = 0\n\
+         \n[[todo]]\nid = \"0123456X\"\nsaid = \"theirs\"\ndone = false\ndepth = 0\n",
+    );
+    let theirs = obelus_git::todo::NoteId::read("0123456X").expect("a name");
+    let _held =
+        obelus_agent::chats::claim(scratch.path(), &obelus_agent::chats::ChatId::Note(theirs))
+            .expect("their claim");
+
+    let mut app = open(&scratch, 76, 18);
+    support::render(&mut app, 76, 18);
+    assert!(app.takes_text(), "the note being written takes nothing");
+
+    press(&mut app, KeyCode::Down);
+    let dump = support::render(&mut app, 76, 18);
+    assert_eq!(
+        app.notes()
+            .and_then(obelus_component::todo::TodoView::selected_note)
+            .map(|note| note.said.as_str()),
+        Some("theirs"),
+        "not on the locked note:\n{dump}"
+    );
+    assert!(
+        app.notes()
+            .is_some_and(obelus_component::todo::TodoView::selected_is_elsewhere),
+        "the note is not somebody else's, so this proves nothing:\n{dump}"
+    );
+    assert!(!app.takes_text(), "a note somebody else has takes text");
+    support::type_text(&mut app, "x");
+    assert!(
+        support::render(&mut app, 76, 18).contains("theirs"),
+        "the locked note was typed into"
+    );
+    assert!(
+        !support::render(&mut app, 76, 18).contains("xtheirs"),
+        "the locked note was typed into"
+    );
+}

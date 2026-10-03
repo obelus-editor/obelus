@@ -506,7 +506,8 @@ fn what_is_over_a_conversation_owns_the_status_row() {
 /// Deliberate break: answering `Layer::Counts` with `true`, and the counts
 /// go red here; answering the settings with `true` whatever they are
 /// doing, and the key being bound does; asking a file only whether it is
-/// one, and the reading does.
+/// one, and the reading does; asking it only for its mode, and the
+/// commit's version does.
 #[test]
 fn the_input_method_is_on_only_where_typing_goes() {
     /// Whether a letter typed here lands anywhere on the screen.
@@ -576,6 +577,24 @@ fn the_input_method_is_on_only_where_typing_goes() {
     dispatch::dispatch(&mut app, Command::PreviewToggle);
     assert!(!app.takes_text(), "a reading takes text");
     assert!(!lands(&mut app), "a letter landed in a reading");
+
+    // A commit's version of a file, which nobody can write -- in the mode
+    // a file is written in, so it is the content saying no and not the mode.
+    let version = obelus_buffer::Buffer::at_commit(
+        &path,
+        gix::ObjectId::null(gix::hash::Kind::Sha1),
+        "# older\n",
+    );
+    let mut app = App::new(vec![version]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        app.current_buffer().map(obelus_buffer::Buffer::mode),
+        Some(obelus_buffer::Mode::Edit),
+        "not in the mode a file is written in, so this proves nothing"
+    );
+    assert!(!app.takes_text(), "a commit's version takes text");
+    assert!(!lands(&mut app), "a letter landed in a commit's version");
 
     // And nothing open at all.
     let mut app = App::new(Vec::new());
