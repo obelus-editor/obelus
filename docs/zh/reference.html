@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Obelus — 参考：按键、命令与设置</title>
+<meta name="description" content="Obelus 的每个按键、命令和设置，以及它提供给 agent 的工具。">
+<link rel="icon" href="../obelus.svg">
+<link rel="alternate" hreflang="en" href="../reference.html">
+<!-- The page is set in the two families omarchy's web rules name: the mono
+     is the voice of the page and the sans is for the headings only. Neither
+     is on a machine by default, so they come off the network -- which is the
+     one thing this page asks for that is not in this repository. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400..700&family=JetBrains+Mono:ital,wght@0,400..700;1,400..600&display=swap">
+<link rel="stylesheet" href="../style.css">
+<script>
+  // Before the first paint, so the page never flashes the wrong theme.
+  (function () {
+    var root = document.documentElement;
+    // What the system is set to, which is the answer wherever the visitor
+    // has not said otherwise. Asked first and on its own, so that it is
+    // still the answer when reading their choice throws -- which is what
+    // throws: a browser with site data turned off refuses `localStorage`,
+    // and that visitor's desktop is as likely to be dark as anybody's. One
+    // `try` around both made a fixed `light` the answer there, which is
+    // the page choosing for somebody who had told their machine.
+    var system = 'light';
+    try {
+      system = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    } catch (e) {}
+    var theme = system;
+    try {
+      theme = localStorage.getItem('obelus-theme') || system;
+    } catch (e) {}
+    root.setAttribute('data-theme', theme);
+  })();
+</script>
+</head>
+<body data-copy="复制" data-copied="已复制">
+
+<header class="top">
+  <a class="wordmark" href="index.html">
+    <span class="obelus">÷</span>
+    <span>Obelus</span>
+    <span class="tag">代码编辑器</span>
+  </a>
+  <span class="spacer"></span>
+  <a class="switch" href="../reference.html" title="Switch to English" hreflang="en">English</a>
+  <button class="switch" id="theme-switch" type="button" title="切换主题" data-light="亮色" data-dark="暗色">主题</button>
+  <a class="switch" href="https://github.com/obelus-editor/obelus">GitHub</a>
+</header>
+
+<div class="frame" id="top">
+
+  <nav class="contents" aria-label="Contents">
+    <ol>
+      <li><a href="index.html"><span>‹ Obelus</span></a></li>
+      <li><a href="#keys"><span>按键与命令</span></a></li>
+      <li><a href="#tools"><span>给 agent 的工具</span></a></li>
+      <li><a href="#config"><span>设置与主题</span></a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <div class="hero">
+      <h1>参考</h1>
+      <p class="sub">每个按键、命令和设置，以及 Obelus 提供给 agent 的工具。Obelus 是做什么的，在<a href="index.html">首页</a>。</p>
+    </div>
+
+    <section id="keys">
+      <h2><span class="num">01</span><span>按键与命令</span></h2>
+
+      <p>没有模式，所以下面每个键什么时候按都是它写的那个意思——这是 VS Code、Emacs 的路子，不是 vim、helix 的。三个家族，好记的地方在家族本身。这里列的是默认表——每个都能改，见 <a href="#config">配置</a>。</p>
+
+      <h3><span class="mono">F1</span>–<span class="mono">F12</span> ：打开一样东西来看</h3>
+      <p class="quiet small">两排四个，正是它们在键盘上的样子。永远不带修饰键：同一个按法在不同终端上发出来的东西并不一样，所以带修饰的功能键是「这台机器上能用、换一台就不能」的绑定。</p>
+
+      <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th><span>键</span></th>
+          <th><span>命令</span></th>
+          <th><span>做什么</span></th>
+        </tr></thead>
+        <tbody>
+          <tr><td><kbd>F1</kbd></td><td><code>open-file</code></td><td>在这棵树里挑一个文件打开</td></tr>
+          <tr><td><kbd>F2</kbd></td><td><code>switch-document</code></td><td>在已经打开的文档之间挑——在窗口里还有 worktree</td></tr>
+          <tr><td><kbd>F3</kbd></td><td><code>open-changed-file</code></td><td>挑一个自上次提交以来改过的文件</td></tr>
+          <tr><td><kbd>F4</kbd></td><td><code>choose-conversation</code></td><td>和 agent 的哪个对话：开一个新的，或挑一个以前的接着说</td></tr>
+          <tr><td><kbd>F5</kbd></td><td><code>search-file</code></td><td>在正在读的这个文件里搜</td></tr>
+          <tr><td><kbd>F6</kbd></td><td><code>search-project</code></td><td>在整个项目里搜</td></tr>
+          <tr><td><kbd>F7</kbd></td><td><code>show-outline</code></td><td>这个文件定义的每个符号</td></tr>
+          <tr><td><kbd>F8</kbd></td><td><code>search-symbols</code></td><td>搜语言服务器知道的名字</td></tr>
+          <tr><td><kbd>F9</kbd></td><td><code>show-file-history</code></td><td>改过这个文件的每个提交</td></tr>
+          <tr><td><kbd>F10</kbd></td><td><code>show-project-history</code></td><td>项目的提交历史</td></tr>
+          <tr><td><kbd>F11</kbd></td><td><code>show-line-commit</code></td><td>写下光标这一行的那个提交</td></tr>
+          <tr><td><kbd>F12</kbd></td><td><code>go-to-definition</code></td><td>光标下这个符号定义在哪</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3><span class="mono">Ctrl</span> ：对眼前这个文件做点什么</h3>
+      <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th><span>键</span></th>
+          <th><span>命令</span></th>
+          <th><span>做什么</span></th>
+        </tr></thead>
+        <tbody>
+          <tr><td><kbd>Ctrl+p</kbd></td><td><code>run-command</code></td><td>命令面板</td></tr>
+          <tr><td><kbd>Ctrl+w</kbd></td><td><code>close-document</code></td><td>不再显示当前文档</td></tr>
+          <tr><td><kbd>Ctrl+s</kbd></td><td><code>save-file</code></td><td>写回磁盘</td></tr>
+          <tr><td><kbd>Ctrl+r</kbd></td><td><code>reload-file</code></td><td>从磁盘重读</td></tr>
+          <tr><td><kbd>Ctrl+t</kbd></td><td><code>toggle-preview</code></td><td>把 markdown 渲染出来看，或者不看</td></tr>
+          <tr><td><kbd>Ctrl+l</kbd></td><td><code>go-to-line</code></td><td>跳到某一行</td></tr>
+          <tr><td><kbd>Ctrl+c</kbd> <kbd>Ctrl+x</kbd> <kbd>Ctrl+v</kbd></td><td><code>copy-selection</code> <code>cut-selection</code> <code>paste</code></td><td>复制、剪切、粘贴（走系统剪贴板）</td></tr>
+          <tr><td><kbd>Ctrl+z</kbd> <kbd>Ctrl+y</kbd></td><td><code>undo</code> <code>redo</code></td><td>撤销、重做</td></tr>
+          <tr><td><kbd>Ctrl+q</kbd></td><td><code>quit</code></td><td>离开</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3><span class="mono">Alt</span> ：问光标底下是什么，或者在找到的东西之间走</h3>
+      <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th><span>键</span></th>
+          <th><span>命令</span></th>
+          <th><span>做什么</span></th>
+        </tr></thead>
+        <tbody>
+          <tr><td><kbd>Alt+Enter</kbd></td><td><code>ask-about-symbol</code></td><td>关于这个符号，语言服务器都能说什么</td></tr>
+          <tr><td><kbd>Alt+h</kbd></td><td><code>describe-symbol</code></td><td>光标处是什么</td></tr>
+          <tr><td><kbd>Alt+a</kbd></td><td><code>do-something-here</code></td><td>服务器对这里提供的修改（code actions）</td></tr>
+          <tr><td><kbd>Alt+r</kbd></td><td><code>rename-symbol</code></td><td>把这个符号到处改名</td></tr>
+          <tr><td><kbd>Alt+e</kbd></td><td><code>show-problems</code></td><td>这个文件里所有服务器认为有问题的地方</td></tr>
+          <tr><td><kbd>Alt+[</kbd> <kbd>Alt+]</kbd></td><td><code>go-to-previous-problem</code> <code>go-to-next-problem</code></td><td>上一个 / 下一个问题</td></tr>
+          <tr><td><kbd>Alt+d</kbd></td><td><code>show-change</code></td><td>就地展开 / 收起这里的改动</td></tr>
+          <tr><td><kbd>Alt+p</kbd> <kbd>Alt+n</kbd></td><td><code>go-to-previous-change</code> <code>go-to-next-change</code></td><td>上一个 / 下一个改动</td></tr>
+          <tr><td><kbd>Alt+f</kbd></td><td><code>fold</code></td><td>折叠光标所在的这一段，或展开它</td></tr>
+          <tr><td><kbd>Alt+m</kbd></td><td><code>go-to-bracket</code></td><td>跳到配对的括号</td></tr>
+          <tr><td><kbd>Alt+←</kbd> <kbd>Alt+→</kbd></td><td><code>go-back</code> <code>go-forward</code></td><td>回到跳转之前的位置；以及再跳回来</td></tr>
+          <tr><td><kbd>Alt+t</kbd></td><td><code>todo-add</code></td><td>就着这一行写一条笔记（在对话里则是打开笔记）</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>移动，和列表里</h3>
+      <p>移动不是命令，所以它不在上面那些表里：方向键、<kbd>PageUp</kbd>/<kbd>PageDown</kbd>、<kbd>Home</kbd>/<kbd>End</kbd>（行首行尾）、<kbd>Ctrl+Home</kbd>/<kbd>Ctrl+End</kbd>（文件两端）。上下是按<em>视觉行</em>走的，所以换行之后它仍然是你看到的那一行。<kbd>Shift</kbd> 从不命名任何命令，它只做一件事：扩展选区。</p>
+      <p>列表里（任何一个 picker、设置页、统计页、笔记页）：打字就是筛选，<kbd>↑</kbd><kbd>↓</kbd> 选，<kbd>PageUp</kbd>/<kbd>PageDown</kbd> 快速翻，<kbd>Home</kbd>/<kbd>End</kbd> 到两端，<kbd>Enter</kbd> 作用于光标所在那一行，<kbd>Esc</kbd> 取消，<kbd>Ctrl+k</kbd> 列出全部的键。</p>
+
+      <h3 id="commands">命令</h3>
+
+      <p>按 <kbd>Ctrl+p</kbd>，按名字找。名字都是动词开头，面板上分成六个标签页，大致是一个上午的顺序：打开点什么 → 在里面找路 → 问它是什么意思 → 改 → 看看自己改了什么 → 最后是 Obelus 自己的杂务。</p>
+
+      <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th><span>标签页</span></th>
+          <th><span>命令</span></th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td>Files</td>
+            <td><code>open-file</code> <code>open-changed-file</code> <code>save-file</code> <code>reload-file</code> <code>switch-document</code> <code>switch-worktree</code> <code>close-document</code> <code>rename-file</code> <code>toggle-preview</code> <code>count-lines</code> <code>todo</code> <code>todo-add</code></td>
+          </tr>
+          <tr>
+            <td>Search</td>
+            <td><code>search-file</code> <code>search-project</code> <code>search-symbols</code> <code>go-to-line</code> <code>go-to-bracket</code> <code>go-back</code> <code>go-forward</code></td>
+          </tr>
+          <tr>
+            <td>Code</td>
+            <td><code>ask-about-symbol</code> <code>go-to-definition</code> <code>go-to-type-definition</code> <code>go-to-implementation</code> <code>find-references</code> <code>show-calls</code> <code>show-outline</code> <code>describe-symbol</code> <code>complete-here</code> <code>do-something-here</code> <code>rename-symbol</code> <code>show-problems</code> <code>go-to-previous-problem</code> <code>go-to-next-problem</code> <code>fold</code> <code>fold-all</code> <code>unfold-all</code></td>
+          </tr>
+          <tr>
+            <td>Edit</td>
+            <td><code>copy-selection</code> <code>cut-selection</code> <code>paste</code> <code>undo</code> <code>redo</code> <code>select-all</code> <code>widen-selection</code> <code>clear-selection</code> <code>move-line-up</code> <code>move-line-down</code> <code>toggle-comment</code> <code>toggle-replace</code></td>
+          </tr>
+          <tr>
+            <td>Git</td>
+            <td><code>show-change</code> <code>go-to-previous-change</code> <code>go-to-next-change</code> <code>show-file-history</code> <code>show-project-history</code> <code>show-line-commit</code></td>
+          </tr>
+          <tr>
+            <td>Obelus</td>
+            <td><code>choose-theme</code> <code>new-conversation</code> <code>choose-conversation</code> <code>open-settings</code> <code>open-project-settings</code> <code>open-settings-file</code> <code>open-log</code> <code>open-server-log</code> <code>restart-server</code> <code>stop-server</code> <code>quit</code></td>
+          </tr>
+        </tbody>
+      </table>
+      </div>
+    </section>
+    <section id="tools">
+      <h2><span class="num">02</span><span>给 agent 的工具</span></h2>
+
+      <p>agent 通过它本来就在说的协议，能读文件、能请求许可，但碰不到你的笔记。所以 Obelus 通过 MCP 给它几个工具。这些工具自己都不问你：要问的是 agent，在调用之前，用一张卡片问。</p>
+
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th><span>工具</span></th><th><span>做什么</span></th></tr></thead>
+        <tbody>
+          <tr><td><code>todo_list</code></td><td>这个项目的每一条笔记：说了什么、有没有勾、指着哪儿</td></tr>
+          <tr><td><code>todo_add</code></td><td>写下新的笔记——放在最外层，或者挂在某条笔记底下；就着那条笔记的对话想出来的步骤，就放在那儿。写「有人会想回头看的东西」，而不是「我刚才干了什么」的总结</td></tr>
+          <tr><td><code>todo_finish</code></td><td>勾掉一条。只勾，不删——「当初决定不做」的清单和「一直没顾上」的清单一样值钱，而删不删是你自己的事</td></tr>
+          <tr><td><code>todo_reword</code></td><td>改写一条的措辞。四个里唯一会弄丢东西的一个（笔记不在 git 里，页面也没有撤销），所以它被要求先问你，并且把改前改后都摆给你看</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p class="quiet small">另外两个：<code>read_workflow</code> 在 agent 要动手改东西时，把这个项目设定的 workflow 交给它；<code>close_conversation</code> 在你点头之后，关掉它所在的这段对话。</p>
+    </section>
+    <section id="config">
+      <h2><span class="num">03</span><span>配置与主题</span></h2>
+
+      <h3>两个文件</h3>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th><span>文件</span></th><th><span>是谁的</span></th></tr></thead>
+        <tbody>
+          <tr><td><code>~/.config/obelus/config.toml</code></td><td>你自己的。<code>Ctrl+p</code> → <code>open-settings</code> 改任何一项都会立刻写回这里</td></tr>
+          <tr><td><code>&lt;项目&gt;/.obelus/config.toml</code></td><td>这个项目的，盖在你的上面——但只盖它有权盖的那些项</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p class="quiet small">文件不在，就是用默认值；里面有一行 Obelus 不认识，也是用默认值——配置里有个笔误，你该得到的是一个照常开起来的 Obelus，而不是在本该是编辑器的地方得到一条错误信息。只有一种情况不一样：文件<em>读不出来</em>。那时 Obelus 不再往这个文件里写，而不是拿它没见过的设置去覆盖你写的东西；它会说出来，并且在文件能解析的那一刻自己恢复。</p>
+      <p class="quiet small">而且它会说清楚是<em>哪一行</em>。配置文件解析不了、某个键绑不上、某一项项目无权设、主题名字没有文件对应——每一条都标在它自己那一行上，进的是语言服务器的诊断同一个列表，所以 <kbd>Alt+e</kbd> 和 <kbd>Alt+[</kbd> <kbd>Alt+]</kbd> 照常能走它们。文件是 Obelus 写的，那它就得说得出自己哪一行读不懂。</p>
+
+      <div class="aside">
+        <p><strong>项目不能设的三项：</strong><code>agent</code>、<code>keys</code>、<code>agents</code>。一个下载来的项目不该决定你的机器上启动哪个程序；能改键的项目也就能把 <code>quit</code> 挪到你会误触的地方；而「agent 不用问就能做什么」正是一个陌生项目最想写的那一项。</p>
+      </div>
+
+      <h3>能设的项</h3>
+      <p class="quiet small">其中几项只属于某一边。设置页只列在你当下这一边有效的那些——一行你改得动、改完却什么都不发生，只会教给你一件不真的事——而<em>文件</em>把它们全部留着，因为它们是留给这台机器上另一个 Obelus 的。</p>
+      <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th><span>键</span></th>
+          <th><span>默认</span></th>
+          <th><span>是什么</span></th>
+        </tr></thead>
+        <tbody>
+          <tr><td><code>theme</code></td><td><code>"dark"</code></td><td>Obelus 用哪套颜色画</td></tr>
+          <tr><td><code>icons</code></td><td><code>false</code></td><td><em>只在终端。</em>画不画 Nerd Font 字形——没有补丁字体的终端会画成方框。<code>obg</code> 的字形编译在二进制里，所以它从不问这一项</td></tr>
+          <tr><td><code>wrap</code></td><td><code>false</code></td><td>长行是否折到下一行。默认关，好让一行就是一行</td></tr>
+          <tr><td><code>blame_margin</code></td><td><code>true</code></td><td>边栏说不说这一行最后是谁改的</td></tr>
+          <tr><td><code>tab_width</code></td><td><code>4</code></td><td>一个 tab 画多宽。<code>2</code>、<code>4</code> 或 <code>8</code></td></tr>
+          <tr><td><code>fonts</code></td><td><code>[]</code></td><td><em>只在窗口。</em>用哪几套字体画，按你写的顺序，前一套没有这个字符才轮到后一套。留空表示「这台机器认的等宽字体」——问的是系统，不是文字引擎</td></tr>
+          <tr><td><code>animation</code></td><td><code>true</code></td><td><em>只在窗口。</em>光标是飞到目的地、列表是滑过去，还是直接跳过去。关掉，一切一步到位</td></tr>
+          <tr><td><code>font_size</code></td><td><code>14</code></td><td><em>只在窗口。</em>字画多大，单位 point。终端用的是你给终端设的字体</td></tr>
+          <tr><td><code>hover_delay</code></td><td><code>400</code></td><td>鼠标停多久才去问那个词是什么，毫秒；0 表示只有按键才问</td></tr>
+          <tr><td><code>format_on_save</code></td><td><code>false</code></td><td>保存前让语言服务器排一遍版。默认关：没人要求就跑格式化，等于把一个只是打开来读的文件改了，而且第一次知道是在 diff 里</td></tr>
+          <tr><td><code>code_actions_on_save</code></td><td><code>false</code></td><td>保存前做服务器提供的整文件修改（排 import 之类）。默认关，理由同上</td></tr>
+          <tr><td><code>inlay_hints</code></td><td><code>true</code></td><td>画不画服务器推导出来的类型和参数名。它们不在文件里——关掉之后每一列都回到文件本来的位置</td></tr>
+          <tr><td><code>diagnostics</code></td><td><code>true</code></td><td>把服务器的意见展开在光标这一行底下。标记本身一直都在，不额外占行；这一项管的是那些<em>字</em></td></tr>
+          <tr><td><code>ignored_files</code></td><td><code>false</code></td><td>文件列表里要不要也给出项目忽略掉的文件</td></tr>
+          <tr><td><code>hidden_files</code></td><td><code>false</code></td><td>文件列表里要不要也给出隐藏文件——名字以点开头的，Windows 上还有带隐藏属性的</td></tr>
+          <tr><td><code>new_versions</code></td><td><code>true</code></td><td>每天问一次 GitHub 有没有更新的 Obelus，有的话在欢迎页上说一声</td></tr>
+          <tr><td><code>workflow</code></td><td><code>"feature-branch"</code></td><td>agent 怎么改这个项目。<code>feature-branch</code> 是在自己的 worktree 分支上改；<code>none</code> 是按它自己的方式——见<a href="index.html#how">它怎么走一遍</a>。项目可以设</td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <h3>改键</h3>
+      <p>写的是<em>改动</em>，不是整张表：你动了一个键，其余没说的仍然拿默认——以后 Obelus 加了新键，你也照样拿得到。空字符串表示「把这个键拿掉」，这也是一种决定。命令的名字就是上面那些；键的写法和屏幕上看到的一致——读的时候不区分大小写，所以在它们改成大写之前写的配置照样能用。</p>
+      <pre><code>theme = "light"
+wrap = true
+blame_margin = false
+
+[keys]
+open-file = "Ctrl+o"
+show-change = "Alt+g"
+quit = ""            # 把这个绑定拿掉</code></pre>
+
+      <h3>主题</h3>
+      <p>内置 <code>dark</code> 和 <code>light</code>，<code>choose-theme</code> 切换，不重新解析文件。此外，<code>~/.config/obelus/themes/</code> 下每个 <code>.toml</code> 就是一个主题，名字就是文件名（<code>omarchy.toml</code> → <code>omarchy</code>）。每个颜色都可以不写：没写的从它声明要盖在上面的那个内置主题来——所以以后 Obelus 多出一种颜色，你手上的旧文件不用改也仍然管用。</p>
+      <p class="quiet small">仓库里的 <code>contrib/omarchy/</code> 是给 <a href="https://omarchy.org">omarchy</a> 的模板：桌面换一次主题，Obelus 的颜色跟着换。Obelus 自己对 omarchy 一无所知——那只是一个「有人帮你把文件写好」的办法。</p>
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <p><span class="mono">÷</span> &nbsp; Obelus &nbsp;·&nbsp; Apache-2.0 &nbsp;·&nbsp; <a href="https://github.com/obelus-editor/obelus">github.com/obelus-editor/obelus</a></p>
+  <p>一个读者在读的时候留下的记号。</p>
+</footer>
+
+<script src="../main.js"></script>
+</body>
+</html>
