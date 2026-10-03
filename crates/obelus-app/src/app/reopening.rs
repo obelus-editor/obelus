@@ -2,7 +2,8 @@
 //!
 //! A reader who leaves in the middle of something comes back to the middle
 //! of it: the files they had open, the caret where it was in each, the
-//! notes and the conversations -- and the one they were standing in.
+//! notes on the note they were on, and the conversations -- and the one
+//! they were standing in.
 //!
 //! **Kept by the tree, not by the project.** Two worktrees of one
 //! repository are one project to the notes and the conversations, and two
@@ -33,6 +34,7 @@
 use std::path::{Path, PathBuf};
 
 use obelus_agent::chats::ChatId;
+use obelus_git::todo::NoteId;
 use obelus_text::coordinates::{CharColumn, LineNumber};
 
 use super::{App, DocumentId, document::Document};
@@ -58,8 +60,12 @@ enum Open {
     },
     /// A conversation, by what claims it.
     Conversation(ChatId),
-    /// The notes.
-    Notes,
+    /// The notes, with the note the selection was on.
+    Notes {
+        /// By its name, because a note added above it since would move
+        /// every position below.
+        on: Option<NoteId>,
+    },
 }
 
 impl Open {
@@ -67,6 +73,7 @@ impl Open {
     fn is(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::File { path, .. }, Self::File { path: theirs, .. }) => path == theirs,
+            (Self::Notes { .. }, Self::Notes { .. }) => true,
             _ => self == other,
         }
     }
@@ -176,7 +183,12 @@ fn read(path: &Path) -> Option<Record> {
                     row.get("notes")
                         .and_then(toml::Value::as_bool)
                         .filter(|notes| *notes)
-                        .map(|_| Open::Notes)
+                        .map(|_| Open::Notes {
+                            on: row
+                                .get("on")
+                                .and_then(toml::Value::as_str)
+                                .and_then(NoteId::read),
+                        })
                 })
                 .collect()
         })
@@ -213,7 +225,12 @@ fn to_toml(record: &Record) -> String {
             Open::Conversation(which) => {
                 out.push_str(&format!("conversation = {}\n", quoted(&which.file_name())));
             }
-            Open::Notes => out.push_str("notes = true\n"),
+            Open::Notes { on } => {
+                out.push_str("notes = true\n");
+                if let Some(note) = on {
+                    out.push_str(&format!("on = {}\n", quoted(note.as_str())));
+                }
+            }
         }
     }
     out
@@ -285,7 +302,9 @@ impl App {
                     })
                 }
                 Some(Document::Chat(talk)) => claimed_as(talk).map(Open::Conversation),
-                Some(Document::Notes(_)) => Some(Open::Notes),
+                Some(Document::Notes(notes)) => Some(Open::Notes {
+                    on: notes.selected_note().map(|note| note.id.clone()),
+                }),
                 Some(Document::File(_)) | None => None,
             };
             if let Some(open) = open {
@@ -393,9 +412,7 @@ impl App {
                         None => None,
                     }
                 }
-                Open::Notes => self
-                    .notes_document()
-                    .or_else(|| self.put_the_notes_up(None)),
+                Open::Notes { on } => self.notes_document().or_else(|| self.put_the_notes_up(on)),
             };
             landed.push(at);
         }
@@ -493,7 +510,9 @@ mod tests {
                     column: 5,
                     top: 3,
                 },
-                Open::Notes,
+                Open::Notes {
+                    on: NoteId::read("0123456R"),
+                },
                 Open::Conversation(ChatId::Loose("a session/with odd bytes".to_string())),
                 Open::Conversation(ChatId::read("FTMER3E6").expect("a note's name")),
             ],
@@ -512,7 +531,8 @@ mod tests {
     /// are open, in what order, and which is on screen decides all of it.
     ///
     /// Broken deliberately by comparing with `==`: a moved caret then
-    /// counted as a change, and the first assertion failed.
+    /// counted as a change, and the first assertion failed. And by taking
+    /// the notes' arm out of `Open::is`, which failed the second.
     #[test]
     fn a_caret_moving_is_not_a_change() {
         let at = |line| Record {
@@ -525,6 +545,16 @@ mod tests {
             current: Some(0),
         };
         assert!(at(1).names_the_same(&at(40)), "a moved caret was a change");
+        let notes = |on| Record {
+            open: vec![Open::Notes {
+                on: NoteId::read(on),
+            }],
+            current: Some(0),
+        };
+        assert!(
+            notes("0123456R").names_the_same(&notes("0123456S")),
+            "walking the notes was a change"
+        );
         let elsewhere = Record {
             current: None,
             ..at(1)

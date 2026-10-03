@@ -155,6 +155,45 @@ fn a_file_named_is_where_the_reader_lands() {
     );
 }
 
+/// The notes come back on the note the reader was on.
+///
+/// Broken deliberately by reopening the notes with `put_the_notes_up(None)`:
+/// they came back on the first note.
+#[test]
+fn the_notes_come_back_on_the_note_the_reader_was_on() {
+    let scratch = tree("reopening-notes", true);
+    let root = scratch.path();
+    support::make_room_for_notes(root);
+    std::fs::write(
+        obelus_git::todo::path(root).expect("a tree that is there"),
+        "[[todo]]\nid = \"0123456R\"\nsaid = \"the first\"\ndone = false\ndepth = 0\n\n\
+         [[todo]]\nid = \"0123456S\"\nsaid = \"the second\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+
+    let mut first = startup::start(&[root.join("a.rs")], BUILT).expect("starting");
+    first.open_todo();
+    frame(&mut first);
+    support::press(&mut first, KeyCode::Down);
+    // Walking the notes is not a change to what is open; going to a file is.
+    first.open_for_test(&root.join("a.rs"));
+    frame(&mut first);
+    drop(first);
+
+    let second = startup::start(&[root.to_path_buf()], BUILT).expect("starting again");
+    let on = documents(&second)
+        .into_iter()
+        .find_map(Document::notes)
+        .expect("the notes came back")
+        .selected_note()
+        .map(|note| note.id.as_str().to_string());
+    assert_eq!(
+        on.as_deref(),
+        Some("0123456S"),
+        "not on the note the reader was on"
+    );
+}
+
 /// Switched off, nothing comes back.
 ///
 /// Broken deliberately by taking the setting out of the check in
