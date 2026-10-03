@@ -80,6 +80,25 @@ fn a_list_gets_its_bullets_drawn() {
     assert_eq!(bullet.ink, Ink::Mark);
 }
 
+/// A numbered list counts from the number its first item was written with:
+/// an agent that numbers one list on from another, and then asks about "7",
+/// is pointing at a row that has to say 7. The numbers after the first are
+/// counted rather than read, which is what markdown says they mean.
+///
+/// The deliberate break was counting from one regardless, which is what
+/// drew `1. 2.` here.
+#[test]
+fn a_numbered_list_starts_where_it_was_written_to() {
+    let drawn: Vec<String> = render("4. four\n5. five\n9. six\n", 40)
+        .iter()
+        .map(text)
+        .collect();
+    assert_eq!(drawn, vec!["4. four", "5. five", "6. six"]);
+
+    let drawn: Vec<String> = render("0) none\n1) one\n", 40).iter().map(text).collect();
+    assert_eq!(drawn, vec!["0. none", "1. one"]);
+}
+
 /// The whole reason for borrowing a markdown renderer instead of walking the
 /// syntax tree: wrapping. A row wider than the screen would have to be
 /// wrapped again by whoever drew it, and it is the same problem twice.

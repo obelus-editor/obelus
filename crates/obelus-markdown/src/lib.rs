@@ -296,17 +296,27 @@ impl Laying<'_> {
 
     /// A list: every item, with the mark its kind wears.
     fn list(&mut self, node: Node<'_>, width: u16, prefix: &Prefix) {
-        let mut number = 0usize;
+        let mut number: Option<u64> = None;
         let mut last: Option<usize> = None;
         let mut cursor = node.walk();
         for item in node.children(&mut cursor) {
             if item.kind() != "list_item" {
                 continue;
             }
-            number += 1;
             let marker = item
                 .children(&mut item.walk())
                 .find(|child| child.kind().starts_with("list_marker"));
+            // The first item's number is where the list starts, and the rest
+            // are counted on from it whatever they were written as: an agent
+            // that numbers one list on from the last, and then asks about
+            // "7", means the row that says 7.
+            let number = *number.insert(match number {
+                Some(before) => before + 1,
+                None => marker
+                    .and_then(|marker| self.source.get(marker.byte_range()))
+                    .and_then(|said| said.trim().trim_end_matches(['.', ')']).parse().ok())
+                    .unwrap_or(1),
+            });
             let said = match marker.map(|marker| marker.kind()) {
                 Some("list_marker_dot" | "list_marker_parenthesis") => format!("{number}. "),
                 _ => "\u{2022} ".to_string(),
