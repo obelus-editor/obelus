@@ -2490,8 +2490,8 @@ fn a_note_being_started_stays_where_it_is_when_the_file_is_read_again() {
 /// taken for each other, and a third colour would be a third thing to
 /// learn. Read off the cell's ink, which is what a window draws the
 /// mark's stroke in: the mark was once the page's colour masking half a
-/// ground of the selection's, which a terminal draws the same and a window
-/// drew as a stroke the colour of the page.
+/// ground of the selection's, and a window took that ground for something
+/// the reader was holding.
 ///
 /// Broken deliberately by filling the row with `selected_row_background`
 /// again, or by marking only `at == window.focus()`: the first leaves a

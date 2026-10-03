@@ -248,9 +248,16 @@ pub fn row_at(area: Rect, notes: &Notes, x: u16, y: u16) -> Option<(usize, Colum
 ///
 /// Inked in the selection's colour on the page's, and not the other way
 /// round -- the right half in the page's colour on a ground of the
-/// selection's, which is what this was. A terminal draws the two as the
-/// same pixels; a window draws a change mark as a stroke in the cell's
-/// *ink*, and that one's ink was the page.
+/// selection's, which is what this was. A window draws a run of these as
+/// one stroke in the cells' *ink*, and that one's ink was the page; its
+/// ground was the colour of what the reader is holding, so the window
+/// drew it as a cell of selection.
+///
+/// The two are the same pixels in a terminal only until the terminal
+/// steps in: one with a minimum contrast moves the ink and never the
+/// ground, so this may come out another colour there than the old one
+/// did. Worth knowing before going back to the ground for it: what that
+/// costs is the window's stroke, for a setting of somebody's terminal.
 const HALF: char = '\u{258c}';
 
 /// Which column a note's own text starts in: a blank, the box, and the blank

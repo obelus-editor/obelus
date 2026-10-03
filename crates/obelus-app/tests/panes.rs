@@ -22,8 +22,9 @@ struct Heard {
     /// The mark the light runs across, and the two colours it runs
     /// between.
     marks: Mutex<Vec<(Rect, Color, Color)>>,
-    /// And where one thing was said to stop and the next to begin.
-    partings: Mutex<Vec<Rect>>,
+    /// And where one thing was said to stop and the next to begin, with
+    /// the thread that said it: a second test here opens the notes too.
+    partings: Mutex<Vec<(ThreadId, Rect)>>,
     /// Every band and every pane, in the order they were said, with the
     /// thread that said them: the order is the claim, and the tests in
     /// this binary run side by side into the one recorder.
@@ -67,7 +68,7 @@ impl obelus_ui::shapes::Shapes for Heard {
 
     fn parted(&self, area: Rect) {
         if let Ok(mut partings) = self.partings.lock() {
-            partings.push(area);
+            partings.push((std::thread::current().id(), area));
         }
     }
 
@@ -423,7 +424,8 @@ fn the_mark_says_where_it_is_and_what_the_light_runs_between() {
 #[test]
 fn the_notes_say_where_one_stops_and_the_next_begins() {
     let heard = heard();
-    heard.partings.lock().expect("the partings").clear();
+    let me = std::thread::current().id();
+    let since = heard.partings.lock().expect("the partings").len();
 
     let scratch = support::Scratch::new("panes-parted");
     support::make_room_for_notes(scratch.path());
@@ -462,7 +464,15 @@ depth = 1
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
     let dump = support::render(&mut app, 76, 18);
 
-    let said = heard.partings.lock().expect("the partings").clone();
+    let said: Vec<Rect> = heard
+        .partings
+        .lock()
+        .expect("the partings")
+        .iter()
+        .skip(since)
+        .filter(|(whose, _)| *whose == me)
+        .map(|(_, area)| *area)
+        .collect();
     // Two, for three notes: the first on screen has the page's own rule
     // above it and needs no blank. And two rather than one per row: the
     // middle note is four rows of screen and none of them is a blank.

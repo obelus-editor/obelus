@@ -85,13 +85,16 @@ pub enum Joined {
     Nowhere,
 }
 
-/// A run of rows in a one-cell column, saying what git says about them.
+/// A run of rows in a one-cell column, marked.
 ///
-/// Two columns are drawn this way and they are one figure: the margin
-/// beside the text, which says what changed *here*, and the map beside the
-/// bar, which says where else to look. A terminal has half a block for
-/// each of them already -- and half a block is the only bar a cell can
-/// draw -- so this is the same answer drawn rather than spelled.
+/// Three columns are drawn this way. Two say what git says and are one
+/// figure: the margin beside the text, which says what changed *here*, and
+/// the map beside the bar, which says where else to look. The third is the
+/// edge of the notes, which says which note the keys are on -- in the same
+/// figure, because a mark down the side of some rows is one thing to learn.
+/// A terminal has half a block for each of them already -- and half a
+/// block is the only bar a cell can draw -- so this is the same answer
+/// drawn rather than spelled.
 ///
 /// A *run*, because a hunk of six lines is one bar with two rounded ends
 /// and not six beads. Coalesced by whoever draws the column, for the
@@ -110,14 +113,16 @@ pub struct Stroke {
 
 /// Which edge of its column a stroke is against.
 ///
-/// Both of Obelus's are against the edge nearest the text -- the margin's
-/// on its right, where it sits beside the line it is about, and the map's
-/// on its left, away from the bar it is next to -- so "nearest the text"
-/// is not something a front end can work out. It depends on which column
-/// the stroke is in, and the column is all the front end has.
+/// git's are against the edge nearest the text -- the margin's on its
+/// right, where it sits beside the line it is about, and the map's on its
+/// left, away from the bar it is next to -- and the notes' is against the
+/// page's edge, away from the box beside it. So which edge is not
+/// something a front end can work out. It depends on which column the
+/// stroke is in, and the column is all the front end has.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Side {
-    /// The left-hand edge of the cell: the map's, away from the bar.
+    /// The left-hand edge of the cell: the map's, away from the bar, and
+    /// the notes'.
     Left,
     /// The right-hand edge: the margin's, beside the text.
     Right,
@@ -346,7 +351,7 @@ pub trait Shapes: Send + Sync {
     /// cells hold.
     fn sheened(&self, area: Rect, from: Color, to: Color);
 
-    /// This run of rows is a change mark, in a column one cell wide.
+    /// This run of rows is marked, in a column one cell wide.
     ///
     /// No colours, for the reason a bar has none: what the stroke is drawn
     /// in is the foreground of those very cells, which whoever drew the
@@ -433,7 +438,7 @@ pub(crate) fn sheened(area: Rect, from: Color, to: Color) {
     }
 }
 
-/// Tells whoever is drawing that a run of change marks is here.
+/// Tells whoever is drawing that a marked run of rows is here.
 pub(crate) fn stroked(stroke: Stroke) {
     if let Some(shapes) = DRAWING.get() {
         shapes.stroked(stroke);

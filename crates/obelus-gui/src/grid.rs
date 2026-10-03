@@ -170,7 +170,7 @@ pub(crate) enum Update {
         /// starts.
         bar: Bar,
     },
-    /// A run of rows in a one-cell column that is a change mark.
+    /// A run of rows in a one-cell column that is marked.
     ///
     /// What a terminal draws as half a block per row, and a window draws
     /// as one shape however many rows it covers. No colours, for a bar's
@@ -256,7 +256,7 @@ pub(crate) struct Said<'a> {
     /// And which rows begin something new, with nowhere to say so but the
     /// pixel between two rows.
     pub(crate) parted: &'a [Parted],
-    /// And which runs of a one-cell column are change marks.
+    /// And which runs of a one-cell column are marked.
     pub(crate) stroked: &'a [Stroked],
     /// And what is under the pane, where there is one.
     pub(crate) behind: Option<&'a Behind>,
@@ -596,7 +596,7 @@ impl Ruled {
     }
 }
 
-/// Where a change mark is in the frame being drawn.
+/// Where a marked run of rows is in the frame being drawn.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Stroked {
     /// Which rows, which edge of the column, and what it is about.
