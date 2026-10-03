@@ -266,6 +266,7 @@ fn claimed_as(talk: &crate::conversation::Conversation) -> Option<ChatId> {
         Topic::Loose => talk
             .session
             .as_ref()
+            .or(talk.asked_for.as_ref())
             .map(|session| session.0.to_string())
             .or_else(|| talk.taken_up_as.clone())
             .map(ChatId::Loose),
@@ -393,6 +394,7 @@ impl App {
             .then(|| obelus_agent::acp::sessions::read(&self.working_directory).remembered())
             .flatten();
         let mut landed: Vec<Option<DocumentId>> = Vec::new();
+        let mut talked = false;
         for open in record.open {
             let at = match open {
                 Open::File {
@@ -407,10 +409,11 @@ impl App {
                             .as_ref()?
                             .get(&which, agent, &self.working_directory)
                     });
-                    match kept.cloned() {
-                        Some(kept) => self.reopen_conversation(which, &kept),
-                        None => None,
-                    }
+                    let at = kept
+                        .cloned()
+                        .and_then(|kept| self.reopen_conversation(which, &kept));
+                    talked |= at.is_some();
+                    at
                 }
                 Open::Notes { on } => self.notes_document().or_else(|| {
                     let id = self.put_the_notes_up(None)?;
@@ -426,6 +429,15 @@ impl App {
                 }),
             };
             landed.push(at);
+        }
+        // What a conversation about a note is read against, as taking one up
+        // from the list reads it: which session is that note's, when it is
+        // shown, and what the note says. Kept as read rather than read again
+        // -- the table is in hand.
+        if talked {
+            self.sessions_kept = sessions;
+            self.reread_the_notes_kept();
+            self.reread_who_holds_what();
         }
         if self.current.is_none()
             && let Some(id) = record

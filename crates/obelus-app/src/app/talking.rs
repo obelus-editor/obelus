@@ -355,14 +355,23 @@ impl App {
             self.stop_agent();
             self.start_agent();
         }
-        let had = match self
-            .talk(whose)
-            .map(|talk| (&talk.topic, &talk.taken_up_as))
-        {
-            Some((Topic::Note(note), _)) => self.remembered_session(&note.clone()),
-            Some((Topic::Loose, taken_up_as)) => taken_up_as.clone(),
-            None => None,
+        let note = match self.talk(whose).map(|talk| &talk.topic) {
+            Some(Topic::Note(note)) => Some(note.clone()),
+            Some(Topic::Loose) | None => None,
         };
+        // Taken rather than read: asked for once, the name is on its way,
+        // and a conversation that later loses its session -- the agent
+        // stopping, another agent chosen -- gets a new one, the way any
+        // conversation about nothing in particular does. By then its claim
+        // has gone with the session, and another window may have taken
+        // the old one up.
+        let taken_up_as = self
+            .talk_mut(whose)
+            .and_then(|talk| talk.taken_up_as.take());
+        let had = note
+            .as_ref()
+            .and_then(|note| self.remembered_session(note))
+            .or(taken_up_as);
         self.ask_for_a_session(whose, had);
     }
 

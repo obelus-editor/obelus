@@ -11473,3 +11473,133 @@ fn a_question_taken_back_while_it_waits_is_never_put() {
         "a question taken back was put after all"
     );
 }
+
+/// Puts a window on a tree of its own whose last window had one
+/// conversation open and nothing else, with the fake agent installed and
+/// chosen -- so that showing the conversation starts it, the way a reader's
+/// start does.
+///
+/// The record is written by hand over the one the window's first frame
+/// makes: a window writes the record of its own tree, and this is the
+/// record a window that had only `conversation` open would have left.
+fn reopened_on(scratch: &support::Scratch, conversation: &str) -> (App, Receiver<Event>) {
+    let outcome = std::process::Command::new("git")
+        .arg("-C")
+        .arg(scratch.path())
+        .args(["init", "--quiet"])
+        .output()
+        .expect("running git");
+    assert!(outcome.status.success(), "git init failed");
+    let (mut app, events) = wired();
+    let root = scratch.join("agents");
+    obelus_agent::remember(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+        "0.1",
+        &root,
+    )
+    .expect("writing what was installed");
+    app.agents_root_for_test(root);
+    let file = scratch.join("config.toml");
+    std::fs::write(&file, "agent = \"fake\"\n").expect("a settings file");
+    app.config_file_for_test(file);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    let name = scratch
+        .path()
+        .file_name()
+        .expect("a name")
+        .to_string_lossy()
+        .into_owned();
+    let record = std::fs::read_dir(
+        obelus_logging::state_directory()
+            .expect("somewhere to keep state")
+            .join("open"),
+    )
+    .expect("the records")
+    .filter_map(Result::ok)
+    .map(|entry| entry.path())
+    .find(|path| path.to_string_lossy().contains(&name))
+    .expect("the record the first frame wrote");
+    std::fs::write(
+        &record,
+        format!("current = 0\n\n[[open]]\nconversation = \"{conversation}\"\n"),
+    )
+    .expect("the record");
+    app.reopen_what_was_open();
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    (app, events)
+}
+
+/// A conversation about a note that comes back takes up the one it was,
+/// and knows which note it is about -- with the notes page not among what
+/// came back, which is what used to read both for it.
+///
+/// Broken deliberately twice: taking out the reading `reopen_what_was_open`
+/// does once a conversation has come back asked the agent for a new
+/// session, and this gave up waiting for `s-old`; and taking out only the
+/// notes' half of it left the conversation not knowing its note.
+#[test]
+fn a_conversation_that_comes_back_takes_up_the_one_it_was() {
+    let scratch = support::Scratch::new("agent-reopened-note");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        "[[todo]]\nid = \"0123456W\"\nsaid = \"wire the counts tree up to the search\"\n\
+         done = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+    remember_a_note_conversation(&scratch, "0123456W", "s-old");
+
+    let (mut app, events) = reopened_on(&scratch, "0123456W");
+    pump(&mut app, &events, "the conversation it was", |app| {
+        app.chat_session_for_test().as_deref() == Some("s-old")
+    });
+    assert!(
+        app.is_about_a_note(),
+        "the conversation came back without knowing its note"
+    );
+}
+
+/// A conversation about nothing in particular that comes back is taken up
+/// once, and not again after its agent stops: by then its claim has gone
+/// with its session, and another window may have taken the old one up.
+///
+/// Broken deliberately by reading `taken_up_as` in `settle_the_sessions`
+/// rather than taking it: coming back after the agent stopped asked for
+/// `s-old` again.
+#[test]
+fn a_loose_conversation_that_comes_back_is_taken_up_once() {
+    let scratch = support::Scratch::new("agent-reopened-loose");
+    remember_a_conversation(&scratch, "fake", "s-old", "count the lines", Some(1_000));
+
+    let (mut app, events) = reopened_on(
+        &scratch,
+        &obelus_agent::chats::ChatId::Loose("s-old".to_string()).file_name(),
+    );
+    pump(&mut app, &events, "the conversation it was", |app| {
+        app.chat_session_for_test().as_deref() == Some("s-old")
+            && app.talking() == obelus_agent::Talking::Ready
+    });
+    let here = app.current_document_for_test().expect("the conversation");
+    support::type_text(&mut app, "/die");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to stop", |app| {
+        app.talking() == obelus_agent::Talking::Gone
+    });
+
+    // Away and back, which is what asks for a session again.
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    app.go_to_document_for_test(here);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    pump(&mut app, &events, "a session again", |app| {
+        app.chat_session_for_test().is_some()
+    });
+    assert_ne!(
+        app.chat_session_for_test().as_deref(),
+        Some("s-old"),
+        "the old conversation was taken up a second time"
+    );
+}
