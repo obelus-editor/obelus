@@ -163,8 +163,9 @@ pub fn footed(area: Rect, settings: &Settings, offering: Option<&Offering>) -> R
 ///
 /// Not the arrows: they walk the tabs and say so on the tab row, where the
 /// key *is* the arrow. What is here is what a reader could not guess -- that
-/// this page is filtered by typing at it, and that a setting the project has
-/// set can be unset.
+/// a setting the project has set can be unset. Nor typing: that the page is
+/// filtered by it is said on the row it goes into, before anything has
+/// been typed there, and a cap at the foot would be a key nobody presses.
 #[must_use]
 pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
     use crossterm::event::{KeyCode, KeyModifiers};
@@ -200,11 +201,6 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
         Hint::common(bare(KeyCode::Delete), AGENTS_OWN)
             .saying("Stop saying what this one starts on, and leave it to the agent")
             .when(focused.is_some()),
-        // The one thing on this page nothing else says: a page that is
-        // filtered by typing at it looks exactly like one that is not.
-        Hint::common(bare(KeyCode::Char('a')), "To filter")
-            .written("type")
-            .saying("Type to narrow the list"),
         Hint::common(bare(KeyCode::Delete), "Unset")
             .saying("Take this setting out of the project's file")
             .when(settings.on_project() && !settings.on_keys() && !settings.on_agents()),

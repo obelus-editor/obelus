@@ -1976,21 +1976,6 @@ pub struct Hint {
     pub and_also: Option<obelus_editing::keymap::KeyChord>,
     /// What it does, in the one word the foot has room for.
     pub does: Option<&'static str>,
-    /// How the key is written, where the chord does not say it.
-    ///
-    /// For the thing a page does that is not one key: a list narrowed by
-    /// typing at it answers to every letter, and naming one of them would
-    /// read as "press this one".
-    ///
-    /// Which is also what keeps it off the card. The foot has to say it
-    /// -- a page that is filtered by typing at it looks exactly like one
-    /// that is not -- and the card is a table of *chords*, read down its
-    /// left column by somebody looking for what to press. A row there
-    /// whose key is the word `type` is a row that column cannot answer,
-    /// and it is `why_not`'s rule one place along: a printable character
-    /// is not something anybody binds, so a table of bindings has no row
-    /// for one.
-    pub spelled: Option<&'static str>,
     /// The same thing said properly, for the card, which has room for it.
     ///
     /// `None` where the word is the whole of it. Two forms rather than one
@@ -2031,7 +2016,6 @@ impl Hint {
             chord,
             and_also: None,
             does: Some(does),
-            spelled: None,
             said: None,
             switched: None,
             common: true,
@@ -2046,13 +2030,6 @@ impl Hint {
             common: false,
             ..Self::common(chord, does)
         }
-    }
-
-    /// How to write the key, where the chord is not what a reader presses.
-    #[must_use]
-    pub const fn written(mut self, spelled: &'static str) -> Self {
-        self.spelled = Some(spelled);
-        self
     }
 
     /// What it does, at length, for the card.
@@ -2086,9 +2063,6 @@ impl Hint {
     /// How it is written: the key, or the pair of them.
     #[must_use]
     pub fn keys(self) -> String {
-        if let Some(spelled) = self.spelled {
-            return spelled.to_string();
-        }
         match self.and_also {
             Some(also) => format!("{} {}", self.chord.label(), also.label()),
             None => self.chord.label(),
@@ -2487,18 +2461,7 @@ fn row_of_keys(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme
 /// left out: what a reader should come away with is that this view has these
 /// keys, not that its keys come and go. There is room here for a sentence,
 /// which is why the words can be words rather than the one the foot fits.
-///
-/// Keys, though. What the foot says that is not one -- typing at a list to
-/// narrow it -- is at the foot and not here: see `Hint::spelled`.
 pub fn keys_card(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme) {
-    // The keys, which is not everything at the foot: what is written as
-    // a word rather than a chord is not a key -- see `Hint::spelled`.
-    let hints: Vec<Hint> = hints
-        .iter()
-        .filter(|hint| hint.spelled.is_none())
-        .copied()
-        .collect();
-    let hints = hints.as_slice();
     if hints.is_empty() {
         return;
     }
