@@ -93,13 +93,29 @@
     // one after the front is next to come forward.
     var bring = function (i) {
       at = i;
-      tabs.forEach(function (tab, j) { tab.setAttribute('aria-selected', j === i ? 'true' : 'false'); });
+      tabs.forEach(function (tab, j) {
+        tab.setAttribute('aria-selected', j === i ? 'true' : 'false');
+        tab.tabIndex = j === i ? 0 : -1;
+      });
       frames.forEach(function (frame, j) {
         frame.setAttribute('data-depth', String((j - i + frames.length) % frames.length));
       });
     };
+    // The tabs are only any use with this script, so they are hidden in the
+    // page and shown here; without it the stack still shows its front.
+    screens.querySelector('[role="tablist"]').hidden = false;
     tabs.forEach(function (tab, i) {
       tab.addEventListener('click', function () { chosen = true; bring(i); });
+      // The arrows walk a row of tabs, the way a row of tabs is walked.
+      tab.addEventListener('keydown', function (event) {
+        var step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+        if (!step) return;
+        event.preventDefault();
+        var next = (i + step + tabs.length) % tabs.length;
+        chosen = true;
+        bring(next);
+        tabs[next].focus();
+      });
     });
     // One showing behind the front can be picked by itself.
     frames.forEach(function (frame, i) {
@@ -109,8 +125,10 @@
         bring(i);
       });
     });
-    screens.addEventListener('mouseenter', function () { held = true; });
-    screens.addEventListener('mouseleave', function () { held = false; });
+    // A mouse resting on them holds the clock. Only a mouse: a finger that
+    // taps has entered and never leaves, and would hold it for good.
+    screens.addEventListener('pointerenter', function (event) { if (event.pointerType === 'mouse') held = true; });
+    screens.addEventListener('pointerleave', function (event) { if (event.pointerType === 'mouse') held = false; });
     var still = false;
     try { still = matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
     if (!still) {

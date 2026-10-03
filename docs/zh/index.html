@@ -64,30 +64,30 @@
         <a class="button" href="https://github.com/obelus-editor/obelus">GitHub</a>
       </div>
 
-      <div class="screens" aria-label="主要界面">
-      <div class="tabs" role="tablist">
-        <button type="button" role="tab" class="switch" aria-selected="true" data-screen="editor">编辑</button>
-        <button type="button" role="tab" class="switch" aria-selected="false" data-screen="agent">Agent</button>
-        <button type="button" role="tab" class="switch" aria-selected="false" data-screen="todo">Todo</button>
-        <button type="button" role="tab" class="switch" aria-selected="false" data-screen="worktrees">Worktree</button>
+      <div class="screens" role="region" aria-label="主要界面">
+      <div class="tabs" role="tablist" hidden>
+        <button type="button" role="tab" class="switch" id="tab-editor" aria-controls="screen-editor" aria-selected="true" tabindex="0" data-screen="editor">编辑</button>
+        <button type="button" role="tab" class="switch" id="tab-agent" aria-controls="screen-agent" aria-selected="false" tabindex="-1" data-screen="agent">Agent</button>
+        <button type="button" role="tab" class="switch" id="tab-todo" aria-controls="screen-todo" aria-selected="false" tabindex="-1" data-screen="todo">Todo</button>
+        <button type="button" role="tab" class="switch" id="tab-worktrees" aria-controls="screen-worktrees" aria-selected="false" tabindex="-1" data-screen="worktrees">Worktree</button>
       </div>
       <div class="frames">
-        <figure class="shot" data-depth="0" data-screen="editor">
+        <figure class="shot" id="screen-editor" role="tabpanel" aria-labelledby="tab-editor" data-depth="0" data-screen="editor">
           <img class="dark" src="../screens/editor-dark.webp" width="2100" height="1520" alt="一个 Rust 文件停在某个提交上，其中改过的一行就地展开，旧的一行在新的一行上面。">
           <img class="light" src="../screens/editor-light.webp" width="2100" height="1520" alt="一个 Rust 文件停在某个提交上，其中改过的一行就地展开，旧的一行在新的一行上面。">
           <figcaption class="caption">在编辑界面里读 agent 的一个提交：被替换的那一行就地展开在新的一行上面，边栏有标记，旁边写着是谁写的。</figcaption>
         </figure>
-        <figure class="shot" data-depth="1" data-screen="agent">
+        <figure class="shot" id="screen-agent" role="tabpanel" aria-labelledby="tab-agent" data-depth="1" data-screen="agent">
           <img class="dark" src="../screens/agent-dark.webp" width="2100" height="1520" alt="一段对话，agent 说明了原因、改法、跑了什么、改动在哪，下面一张卡片问要不要审。">
           <img class="light" src="../screens/agent-light.webp" width="2100" height="1520" alt="一段对话，agent 说明了原因、改法、跑了什么、改动在哪，下面一张卡片问要不要审。">
           <figcaption class="caption">关于一条笔记的对话：agent 说清改动在哪，等你试过，再用卡片问要不要审。</figcaption>
         </figure>
-        <figure class="shot" data-depth="2" data-screen="todo">
+        <figure class="shot" id="screen-todo" role="tabpanel" aria-labelledby="tab-todo" data-depth="2" data-screen="todo">
           <img class="dark" src="../screens/todo-dark.webp" width="2100" height="1520" alt="笔记页：一条笔记底下挂着几步，有的打了勾，有对话的那条笔记旁边有标记。">
           <img class="light" src="../screens/todo-light.webp" width="2100" height="1520" alt="笔记页：一条笔记底下挂着几步，有的打了勾，有对话的那条笔记旁边有标记。">
           <figcaption class="caption">笔记：步骤挂在它们所属的笔记底下，有对话的笔记会标出来。</figcaption>
         </figure>
-        <figure class="shot" data-depth="3" data-screen="worktrees">
+        <figure class="shot" id="screen-worktrees" role="tabpanel" aria-labelledby="tab-worktrees" data-depth="3" data-screen="worktrees">
           <img class="dark" src="../screens/worktrees-dark.webp" width="2100" height="1520" alt="Worktrees 标签页：主 checkout 和 agent 的 worktree，两个都有窗口开着。">
           <img class="light" src="../screens/worktrees-light.webp" width="2100" height="1520" alt="Worktrees 标签页：主 checkout 和 agent 的 worktree，两个都有窗口开着。">
           <figcaption class="caption">F2 再按 Tab：这个仓库的每个 worktree，各只隔一个窗口。</figcaption>
@@ -197,8 +197,8 @@
       <p>Obelus 不分屏：想并排看两个文件，就是两个窗口。所以同一个项目上开着好几个、各在自己的 worktree 上，是常态。在窗口里，<kbd>F2</kbd> 有第二个 tab，按 <kbd>Tab</kbd> 过去：git 知道的这个仓库的每一个 worktree 都在里面，不管它在哪儿，有窗口开着的会标出来。选一个，开着它的那个窗口就跳到前面来，没开就新开一个。</p>
         </div>
         <figure class="shot">
-          <a href="../screens/worktree-list-dark.webp"><img class="dark" src="../screens/worktree-list-dark.webp" width="1300" height="420" loading="lazy" alt="Worktrees 标签页：tally 在 main 上，tally/.worktree/stable-tie-order 在它自己的分支上，两棵都有窗口开着。"></a>
-          <a href="../screens/worktree-list-light.webp"><img class="light" src="../screens/worktree-list-light.webp" width="1300" height="420" loading="lazy" alt="Worktrees 标签页：tally 在 main 上，tally/.worktree/stable-tie-order 在它自己的分支上，两棵都有窗口开着。"></a>
+          <a class="dark" href="../screens/worktree-list-dark.webp"><img src="../screens/worktree-list-dark.webp" width="1300" height="420" loading="lazy" alt="Worktrees 标签页：tally 在 main 上，tally/.worktree/stable-tie-order 在它自己的分支上，两棵都有窗口开着。"></a>
+          <a class="light" href="../screens/worktree-list-light.webp"><img src="../screens/worktree-list-light.webp" width="1300" height="420" loading="lazy" alt="Worktrees 标签页：tally 在 main 上，tally/.worktree/stable-tie-order 在它自己的分支上，两棵都有窗口开着。"></a>
         </figure>
       </div>
       <p class="quiet small">只有 <code>obg</code> 列这些。去另一个地方，要么是启动一个 Obelus，要么是把一个带到前面来，而终端两样都做不到：它所在的窗口是终端的，你想在哪个终端里开新的 Obelus，Obelus 也没法知道。所以 <code>ob</code> 里没有这个 tab，<code>switch-worktree</code> 也是灰的。</p>
@@ -207,6 +207,8 @@
         <li>两个窗口同时写，不会互相抹掉：每一次改动都以那一刻磁盘上的内容为准。</li>
         <li>一个对话同一时刻只在一个窗口里打开，占用随进程消失而消失——不存在「上次没退干净」。</li>
         <li>一个窗口底下的树被删掉，窗口留着，里面开着的东西也留着，只是项目变灰。</li>
+        <li>每棵树的名字从主 checkout 所在的目录算起——在它旁边的叫自己的名字，在它里面的叫往下走的路，别处的写完整路径；在 git 背后被删掉的树写着 <code>Missing</code>，选不了。</li>
+        <li>保存之前，它会问一下磁盘：你打开之后，另一个窗口、agent 或者格式化工具有没有改过这个文件。</li>
       </ul>
 
       <div class="feature flip">
@@ -215,8 +217,8 @@
       <p>Obelus 没有自己的模型。它通过 <strong>ACP</strong>（Agent Client Protocol）和你已经在用的 agent 说话；你还没有的话，它能从协议作者维护的注册表里装一个：<kbd>F4</kbd>，新建对话，进 agents 页。</p>
         </div>
         <figure class="shot">
-          <a href="../screens/card-dark.webp"><img class="dark" src="../screens/card-dark.webp" width="2100" height="600" loading="lazy" alt="对话里，agent 说了改动在哪、听到已经试过，下面一张卡片问要不要先审一遍。"></a>
-          <a href="../screens/card-light.webp"><img class="light" src="../screens/card-light.webp" width="2100" height="600" loading="lazy" alt="对话里，agent 说了改动在哪、听到已经试过，下面一张卡片问要不要先审一遍。"></a>
+          <a class="dark" href="../screens/card-dark.webp"><img src="../screens/card-dark.webp" width="2100" height="600" loading="lazy" alt="对话里，agent 说了改动在哪、听到已经试过，下面一张卡片问要不要先审一遍。"></a>
+          <a class="light" href="../screens/card-light.webp"><img src="../screens/card-light.webp" width="2100" height="600" loading="lazy" alt="对话里，agent 说了改动在哪、听到已经试过，下面一张卡片问要不要先审一遍。"></a>
           <figcaption class="caption">问题是一张卡片，用你手上本来就按着的键回答。</figcaption>
         </figure>
       </div>
@@ -224,6 +226,7 @@
         <li>对话是打开的文档之一。离开它，明天回来，它还在你离开的地方。</li>
         <li>从笔记开的对话一直属于那条笔记；你改写了笔记，agent 会被告知改了什么。</li>
         <li>agent 可以把下一步写在笔记底下、给某一步打勾、或者改写一条——每一件都先问过你。</li>
+        <li>在你说第一句话之前，Obelus 先告诉 agent 它在跟谁说话：你在读代码，它的回复就在旁边；属于你的选择要用卡片问，而不是在回复里写成 <code>1) … 2) …</code>。</li>
         <li>问题是一张卡片，不是一段话：上面是 agent 要做什么，下面是答案，<kbd>Enter</kbd> 作用于你所在的那一行。</li>
         <li>它<em>请求</em>做的改动显示在对话里；它已经做了的改动在文件里，和别的改动一样画在边栏上。</li>
       </ul>
@@ -234,8 +237,8 @@
       <p>在一行上按 <kbd>Alt+t</kbd>，就起一条关于它的笔记；<code>todo</code> 打开全部。笔记可以对着某一行，也可以对着整个项目，还可以挂在另一条底下。它除了记行号，还记着写下时的那个提交，所以上周写的笔记，文件再怎么改，也还指着当初那一行。笔记放在 Obelus 自己的目录里、按项目存——所以每个 worktree 都共用，也永远不会进你的提交。</p>
         </div>
         <figure class="shot">
-          <a href="../screens/notes-dark.webp"><img class="dark" src="../screens/notes-dark.webp" width="2100" height="620" loading="lazy" alt="笔记页：一条笔记底下挂着三步，其中一步打了勾，旁边还有两条笔记。"></a>
-          <a href="../screens/notes-light.webp"><img class="light" src="../screens/notes-light.webp" width="2100" height="620" loading="lazy" alt="笔记页：一条笔记底下挂着三步，其中一步打了勾，旁边还有两条笔记。"></a>
+          <a class="dark" href="../screens/notes-dark.webp"><img src="../screens/notes-dark.webp" width="2100" height="620" loading="lazy" alt="笔记页：一条笔记底下挂着三步，其中一步打了勾，旁边还有两条笔记。"></a>
+          <a class="light" href="../screens/notes-light.webp"><img src="../screens/notes-light.webp" width="2100" height="620" loading="lazy" alt="笔记页：一条笔记底下挂着三步，其中一步打了勾，旁边还有两条笔记。"></a>
           <figcaption class="caption">agent 想出来的步骤，挂在它们所属的那条笔记底下。</figcaption>
         </figure>
       </div>
@@ -246,8 +249,8 @@
       <p>不管是谁写的，改动都在它发生的地方读：边栏上标着，<kbd>Alt+d</kbd> 就地展开，它的历史只隔一个键。</p>
         </div>
         <figure class="shot">
-          <a href="../screens/hunk-dark.webp"><img class="dark" src="../screens/hunk-dark.webp" width="2100" height="640" loading="lazy" alt="一个提交在它改的那一行就地展开，旧的一行在新的一行上面。"></a>
-          <a href="../screens/hunk-light.webp"><img class="light" src="../screens/hunk-light.webp" width="2100" height="640" loading="lazy" alt="一个提交在它改的那一行就地展开，旧的一行在新的一行上面。"></a>
+          <a class="dark" href="../screens/hunk-dark.webp"><img src="../screens/hunk-dark.webp" width="2100" height="640" loading="lazy" alt="一个提交在它改的那一行就地展开，旧的一行在新的一行上面。"></a>
+          <a class="light" href="../screens/hunk-light.webp"><img src="../screens/hunk-light.webp" width="2100" height="640" loading="lazy" alt="一个提交在它改的那一行就地展开，旧的一行在新的一行上面。"></a>
           <figcaption class="caption">agent 的一个提交，在它改的那一行就地展开：原来的一行（红）在现在这一行上面。</figcaption>
         </figure>
       </div>
@@ -361,6 +364,8 @@
       <p>vim 那套我一直不习惯。模式、<code>hjkl</code>、冒号命令——对习惯的人是肌肉记忆，对我是每次都要重新想一遍的东西。我想要的是<em>打开就能读</em>：方向键就是方向键，<kbd>Ctrl+c</kbd> 就是复制，不用先退出什么。</p>
 
       <p>而且我干活的方式变了。大部分代码是一堆 claude code、codex 写的；我坐在屏幕前做的是读、确认、标出存疑的地方、决定下一步——还有一份我想放在代码旁边、而不是另一个应用里的 todo。终端里的编辑器都在比编辑器的清单。Obelus 也是编辑器，但在另一条线上：语法树、git 的时间线、语言服务器和 agent，按我干活的方式排好。</p>
+
+      <p>还有这个名字：<em>obelus</em>（÷、†）是古代学者在手稿边上、标在存疑的那一行旁边的记号——一个读者在读的时候留下的记号。</p>
     </section>
 
     <section id="start">

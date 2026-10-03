@@ -67,11 +67,13 @@ PATH — the icon is in the binary, so the shortcut is the whole of it, and
 for each of `obg` and `ob` that was installed — `ob`'s opens in a terminal
 — and an icon, under `~/.local/share`, which every launcher reads:
 omarchy's `Apps` menu among them. `--no-desktop` leaves them out. `-Uninstall`
-takes all three back: it is the half that matters there, because a PATH and
-a Start menu are what a reader cannot simply delete. `--uninstall` is the
+takes back the binaries and the Start menu entry, and the directory and its
+PATH entry where nothing else is left in it: it is the half that matters
+there, because a PATH and a Start menu are what a reader cannot simply
+delete. `--uninstall`, with the same `--dir` it was installed with, is the
 same half of the shell script — `ob` and `obg` out of `--dir`, the desktop
 entries and their icon, and, on omarchy, the theme template and the link to
-what omarchy renders. Neither script touches your settings. And on musl
+what omarchy renders — and it leaves the PATH, which it never changed. Neither script touches your settings. And on musl
 there is no `obg` to install at all — the window finds Vulkan, Wayland and X11 by `dlopen`, which a static
 binary cannot do — so the script says so and installs `ob`.
 

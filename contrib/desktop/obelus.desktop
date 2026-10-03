@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
 Name=Obelus
-# `Development` and not `TextEditor`: it is an editor, but one for code, and
-# a launcher that offered it for every text file would be offering it for
-# a job it does not set out to do.
+# `Development` and not `TextEditor`: the category is only where a launcher
+# files it, and that is among the tools for code. Which files it offers to
+# open is `MimeType` below, and that is not decided here.
 Categories=Development;
 GenericName=Code Editor
 Comment=A code editor in a window, with the agent built in.

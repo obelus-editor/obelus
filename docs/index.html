@@ -64,30 +64,30 @@
         <a class="button" href="https://github.com/obelus-editor/obelus">GitHub</a>
       </div>
 
-      <div class="screens" aria-label="Main screens">
-      <div class="tabs" role="tablist">
-        <button type="button" role="tab" class="switch" aria-selected="true" data-screen="editor">Editor</button>
-        <button type="button" role="tab" class="switch" aria-selected="false" data-screen="agent">Agent</button>
-        <button type="button" role="tab" class="switch" aria-selected="false" data-screen="todo">Todo</button>
-        <button type="button" role="tab" class="switch" aria-selected="false" data-screen="worktrees">Worktree</button>
+      <div class="screens" role="region" aria-label="Main screens">
+      <div class="tabs" role="tablist" hidden>
+        <button type="button" role="tab" class="switch" id="tab-editor" aria-controls="screen-editor" aria-selected="true" tabindex="0" data-screen="editor">Editor</button>
+        <button type="button" role="tab" class="switch" id="tab-agent" aria-controls="screen-agent" aria-selected="false" tabindex="-1" data-screen="agent">Agent</button>
+        <button type="button" role="tab" class="switch" id="tab-todo" aria-controls="screen-todo" aria-selected="false" tabindex="-1" data-screen="todo">Todo</button>
+        <button type="button" role="tab" class="switch" id="tab-worktrees" aria-controls="screen-worktrees" aria-selected="false" tabindex="-1" data-screen="worktrees">Worktree</button>
       </div>
       <div class="frames">
-        <figure class="shot" data-depth="0" data-screen="editor">
+        <figure class="shot" id="screen-editor" role="tabpanel" aria-labelledby="tab-editor" data-depth="0" data-screen="editor">
           <img class="dark" src="screens/editor-dark.webp" width="2100" height="1520" alt="A Rust file open on a commit, with one changed line opened in place showing the old line above the new one.">
           <img class="light" src="screens/editor-light.webp" width="2100" height="1520" alt="A Rust file open on a commit, with one changed line opened in place showing the old line above the new one.">
           <figcaption class="caption">A commit the agent made, read in place: the line it replaced above the one that replaced it, the marks in the margin, and who wrote it.</figcaption>
         </figure>
-        <figure class="shot" data-depth="1" data-screen="agent">
+        <figure class="shot" id="screen-agent" role="tabpanel" aria-labelledby="tab-agent" data-depth="1" data-screen="agent">
           <img class="dark" src="screens/agent-dark.webp" width="2100" height="1520" alt="A conversation in which the agent reports the cause, the fix, what it ran and where the change is, and a card below asks whether to review it.">
           <img class="light" src="screens/agent-light.webp" width="2100" height="1520" alt="A conversation in which the agent reports the cause, the fix, what it ran and where the change is, and a card below asks whether to review it.">
           <figcaption class="caption">A conversation about a note: the agent says where its change is, waits until you have tried it, and asks about a review on a card.</figcaption>
         </figure>
-        <figure class="shot" data-depth="2" data-screen="todo">
+        <figure class="shot" id="screen-todo" role="tabpanel" aria-labelledby="tab-todo" data-depth="2" data-screen="todo">
           <img class="dark" src="screens/todo-dark.webp" width="2100" height="1520" alt="The notes page: notes with steps under one of them, some ticked, and a mark beside the note that has a conversation.">
           <img class="light" src="screens/todo-light.webp" width="2100" height="1520" alt="The notes page: notes with steps under one of them, some ticked, and a mark beside the note that has a conversation.">
           <figcaption class="caption">The notes: steps hang under the note they belong to, and a note with a conversation is marked.</figcaption>
         </figure>
-        <figure class="shot" data-depth="3" data-screen="worktrees">
+        <figure class="shot" id="screen-worktrees" role="tabpanel" aria-labelledby="tab-worktrees" data-depth="3" data-screen="worktrees">
           <img class="dark" src="screens/worktrees-dark.webp" width="2100" height="1520" alt="The Worktrees tab: the main checkout and the agent's worktree, both with a window open.">
           <img class="light" src="screens/worktrees-light.webp" width="2100" height="1520" alt="The Worktrees tab: the main checkout and the agent's worktree, both with a window open.">
           <figcaption class="caption">F2 and Tab: every worktree of the repository, each a window away.</figcaption>
@@ -197,8 +197,8 @@
       <p>Obelus has no splits: two files side by side is two windows. So several on one project, each on its own worktree, is the normal case. In a window, <kbd>F2</kbd> has a second tab, and <kbd>Tab</kbd> goes to it: every worktree git knows of for this repository, wherever it is, with the ones that have a window marked. Choosing one brings its window forward, or opens a new one on it.</p>
         </div>
         <figure class="shot">
-          <a href="screens/worktree-list-dark.webp"><img class="dark" src="screens/worktree-list-dark.webp" width="1300" height="420" loading="lazy" alt="The Worktrees tab: tally on main and tally/.worktree/stable-tie-order on its branch, both with a window open."></a>
-          <a href="screens/worktree-list-light.webp"><img class="light" src="screens/worktree-list-light.webp" width="1300" height="420" loading="lazy" alt="The Worktrees tab: tally on main and tally/.worktree/stable-tie-order on its branch, both with a window open."></a>
+          <a class="dark" href="screens/worktree-list-dark.webp"><img src="screens/worktree-list-dark.webp" width="1300" height="420" loading="lazy" alt="The Worktrees tab: tally on main and tally/.worktree/stable-tie-order on its branch, both with a window open."></a>
+          <a class="light" href="screens/worktree-list-light.webp"><img src="screens/worktree-list-light.webp" width="1300" height="420" loading="lazy" alt="The Worktrees tab: tally on main and tally/.worktree/stable-tie-order on its branch, both with a window open."></a>
         </figure>
       </div>
       <p class="quiet small">Only <code>obg</code> lists them. Going somewhere is starting an Obelus or bringing one forward, and a terminal can do neither: the window it is drawn in is the terminal's, and which terminal you would want a new Obelus started in is not something Obelus can know. So <code>ob</code> has no such tab, and <code>switch-worktree</code> is dim there.</p>
@@ -207,6 +207,8 @@
         <li>Two windows writing at once do not erase each other: every change is made against what is on disk at that moment.</li>
         <li>A conversation is open in one window at a time, and the claim goes when the process does — no "it did not exit properly last time".</li>
         <li>A tree removed under a window leaves that window with what was open in it, and the project dim.</li>
+        <li>Each tree is named from the directory the main checkout sits in — by its own name beside it, by the way down inside it, in full anywhere else — and one deleted behind git's back says <code>Missing</code> and cannot be chosen.</li>
+        <li>Before saving, it asks the disk whether another window, an agent or a formatter changed the file since you opened it.</li>
       </ul>
 
       <div class="feature flip">
@@ -215,8 +217,8 @@
       <p>Obelus has no model of its own. It talks to the agent you already have over <strong>ACP</strong>, the Agent Client Protocol, and installs one from the protocol's own registry if you have none: <kbd>F4</kbd>, a new conversation, the agents page.</p>
         </div>
         <figure class="shot">
-          <a href="screens/card-dark.webp"><img class="dark" src="screens/card-dark.webp" width="2100" height="600" loading="lazy" alt="An agent in a conversation has said where its change is and been told it was tried; a card below asks whether the change should be reviewed before it goes anywhere."></a>
-          <a href="screens/card-light.webp"><img class="light" src="screens/card-light.webp" width="2100" height="600" loading="lazy" alt="An agent in a conversation has said where its change is and been told it was tried; a card below asks whether the change should be reviewed before it goes anywhere."></a>
+          <a class="dark" href="screens/card-dark.webp"><img src="screens/card-dark.webp" width="2100" height="600" loading="lazy" alt="An agent in a conversation has said where its change is and been told it was tried; a card below asks whether the change should be reviewed before it goes anywhere."></a>
+          <a class="light" href="screens/card-light.webp"><img src="screens/card-light.webp" width="2100" height="600" loading="lazy" alt="An agent in a conversation has said where its change is and been told it was tried; a card below asks whether the change should be reviewed before it goes anywhere."></a>
           <figcaption class="caption">A question is a card, answered with the keys you already have under your hands.</figcaption>
         </figure>
       </div>
@@ -224,6 +226,7 @@
         <li>A conversation is a document in the list of open ones. Leave it and come back tomorrow: it is where you left it.</li>
         <li>Opened from a note, it stays that note's, and if you reword the note the agent is told what changed.</li>
         <li>The agent can write the next steps under the note, tick one off, or reword one — each only after asking you.</li>
+        <li>Before your first words, Obelus tells the agent who it is talking to: that you are reading code beside its replies, and that a choice which is yours should be asked on a card, not written into prose as <code>1) … 2) …</code>.</li>
         <li>A question is a card, not prose: above it what the agent is going to do, below it the answers, and <kbd>Enter</kbd> acts on the row you are on.</li>
         <li>A change it is <em>asking</em> to make is shown in the conversation; a change it has made is in the file, in the margin, like any other.</li>
       </ul>
@@ -234,8 +237,8 @@
       <p><kbd>Alt+t</kbd> on a line starts a note about it; <code>todo</code> opens them all. A note can be about a line or about the whole project, and can hang under another. It keeps the commit it was written against as well as the line, so a note written last week still points at what it was written about, however the file has moved. They live in Obelus's own directory, per project — so every worktree shares them, and they never end up in your commits.</p>
         </div>
         <figure class="shot">
-          <a href="screens/notes-dark.webp"><img class="dark" src="screens/notes-dark.webp" width="2100" height="620" loading="lazy" alt="The notes page: a note with three steps under it, one of them ticked, and two notes beside it."></a>
-          <a href="screens/notes-light.webp"><img class="light" src="screens/notes-light.webp" width="2100" height="620" loading="lazy" alt="The notes page: a note with three steps under it, one of them ticked, and two notes beside it."></a>
+          <a class="dark" href="screens/notes-dark.webp"><img src="screens/notes-dark.webp" width="2100" height="620" loading="lazy" alt="The notes page: a note with three steps under it, one of them ticked, and two notes beside it."></a>
+          <a class="light" href="screens/notes-light.webp"><img src="screens/notes-light.webp" width="2100" height="620" loading="lazy" alt="The notes page: a note with three steps under it, one of them ticked, and two notes beside it."></a>
           <figcaption class="caption">Steps an agent worked out hang under the note they belong to.</figcaption>
         </figure>
       </div>
@@ -246,8 +249,8 @@
       <p>Whatever wrote it, a change is read where it happened: marked in the margin, opened in place with <kbd>Alt+d</kbd>, and its history one key away.</p>
         </div>
         <figure class="shot">
-          <a href="screens/hunk-dark.webp"><img class="dark" src="screens/hunk-dark.webp" width="2100" height="640" loading="lazy" alt="A commit opened at the line it changed, the old line above the new one."></a>
-          <a href="screens/hunk-light.webp"><img class="light" src="screens/hunk-light.webp" width="2100" height="640" loading="lazy" alt="A commit opened at the line it changed, the old line above the new one."></a>
+          <a class="dark" href="screens/hunk-dark.webp"><img src="screens/hunk-dark.webp" width="2100" height="640" loading="lazy" alt="A commit opened at the line it changed, the old line above the new one."></a>
+          <a class="light" href="screens/hunk-light.webp"><img src="screens/hunk-light.webp" width="2100" height="640" loading="lazy" alt="A commit opened at the line it changed, the old line above the new one."></a>
           <figcaption class="caption">A commit the agent made, opened at the line it changed: the line before it, struck in red, above the line now.</figcaption>
         </figure>
       </div>
@@ -361,6 +364,8 @@
       <p>I never got comfortable with vim. Modes, <code>hjkl</code>, colon commands — muscle memory for the people who have it, and for me something to work out again every time. I wanted to <em>open it and read</em>: arrow keys are arrow keys, <kbd>Ctrl+c</kbd> copies, and nothing has to be escaped out of first.</p>
 
       <p>And the way I work changed. A pile of claude code and codex sessions write most of the code; what I do in front of the screen is read, check, mark what looks doubtful, and decide what comes next — with a todo list I wanted beside the code rather than in another app. The editors in a terminal compete on an editor's list. Obelus is an editor too, but it is on another line: the syntax tree, the git timeline, the language server and the agent, arranged the way I work.</p>
+
+      <p>And the name: an <em>obelus</em> (÷, †) is the mark a scholar put in a manuscript's margin beside a line they doubted — a reader's mark, made while reading.</p>
     </section>
 
     <section id="start">
