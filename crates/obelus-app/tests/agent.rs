@@ -898,6 +898,50 @@ fn enter_on_something_not_yet_sent_takes_it_back() {
     );
 }
 
+/// Enter on something the reader said that has gone puts a copy in the box.
+///
+/// Taking back was the only thing a row of theirs offered, so the cursor
+/// stood on what was waiting and stepped over everything that had gone --
+/// and saying something again, or nearly again, is the commoner wish. What
+/// has gone stays on the page: it was said, and the agent has it.
+///
+/// Broken deliberately twice: taking `again` out of `Row::acts` leaves the
+/// cursor stepping over the row, and dropping the `(None, Some(which), ..)`
+/// arm from the enter match leaves the box empty.
+#[test]
+fn enter_on_something_already_said_copies_it_to_the_box() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/forever");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to start thinking", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+    assert_eq!(app.chat().map(|chat| chat.unsent().len()), Some(0));
+
+    support::press(&mut app, KeyCode::Up);
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Enter copies it to the box"),
+        "the row says nothing about the key standing on it:\n{text}"
+    );
+    support::press(&mut app, KeyCode::Enter);
+
+    assert_eq!(
+        app.chat().map(|chat| chat.writing().text()),
+        Some("/forever".to_string()),
+        "the words were not put in the box"
+    );
+    let text = screen(&mut app);
+    assert_eq!(
+        text.matches("/forever").count(),
+        2,
+        "what was said should stay on the page under the box's copy:\n{text}"
+    );
+}
+
 /// Something waiting is dim on every row of it, not only the first.
 ///
 /// `Row::unsent` is on the first row alone, because that is where the key

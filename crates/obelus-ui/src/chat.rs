@@ -1607,13 +1607,16 @@ impl ChatView<'_> {
     /// goes at the end of this row" is how the end of a row goes missing.
     fn tail_of(&self, row: &Row, dim: Style, standing: bool) -> Vec<(u16, String, Style)> {
         let mut tail = Vec::new();
-        // What enter does here, on the row it would do it to: the one row
-        // in a transcript whose key hands something back rather than
-        // opening it, so a reader has no way to guess it. Only while they
-        // are standing on it -- said on every waiting row at once it would
+        // What enter does here, on the row it would do it to: the rows in
+        // a transcript whose key hands something back rather than opening
+        // it, so a reader has no way to guess it. Only while they are
+        // standing on it -- said on every row of theirs at once it would
         // be answering somebody who has not asked yet.
         if row.unsent.is_some() && standing {
             tail.push((2, "Enter takes it back".to_string(), dim));
+        }
+        if row.again.is_some() && standing {
+            tail.push((2, "Enter copies it to the box".to_string(), dim));
         }
         // Where it said it was working. The path is its own affordance:
         // Obelus opens files, so a row that names one is a row that goes

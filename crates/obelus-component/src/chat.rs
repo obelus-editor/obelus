@@ -315,6 +315,14 @@ pub struct Row {
     /// that one back and has to name it. On the first row only, like
     /// everything else that is true of the whole of what was said.
     pub unsent: Option<usize>,
+    /// Which thing said this is, where it is one the reader has said and
+    /// that has gone.
+    ///
+    /// Beside `unsent` rather than folded into it, because the key does
+    /// something else here: what has gone cannot be taken back, so enter
+    /// puts a copy in the box and leaves the page as it was. On the first
+    /// row only, like `unsent`.
+    pub again: Option<usize>,
     /// What the row is, where it is a line of a change: gone, new, or the
     /// line it is at.
     pub marker: Option<obelus_text::marker::Marker>,
@@ -412,7 +420,11 @@ impl Row {
     /// does nothing is a key that appears not to work.
     #[must_use]
     pub const fn acts(&self) -> bool {
-        self.place.is_some() || self.folds.is_some() || self.away.is_some() || self.unsent.is_some()
+        self.place.is_some()
+            || self.folds.is_some()
+            || self.away.is_some()
+            || self.unsent.is_some()
+            || self.again.is_some()
     }
 
     /// How many characters the row draws.
@@ -547,7 +559,8 @@ pub enum ChatOutcome {
     /// Ask the agent to stop.
     Interrupt,
     /// Put these words back in the box: the reader took back something
-    /// they had said that had not gone yet.
+    /// they had said that had not gone yet, or wants to say again
+    /// something that had.
     TakeBack(Vec<crate::composer::Part>),
     /// Move to the agent's next way of working.
     StepMode,
@@ -1108,6 +1121,23 @@ impl Chat {
         Some(self.said.remove(at).parts)
     }
 
+    /// A copy of something the reader said that has gone, to say again.
+    ///
+    /// Its words when it has no parts: what comes back from a conversation
+    /// taken up again is the agent's copy of it, which is text and nothing
+    /// else.
+    #[must_use]
+    pub fn again(&self, at: usize) -> Option<Vec<crate::composer::Part>> {
+        let said = self
+            .said
+            .get(at)
+            .filter(|said| said.speaker == Speaker::Reader)?;
+        Some(match said.parts.is_empty() {
+            true => vec![crate::composer::Part::Words(said.text.clone())],
+            false => said.parts.clone(),
+        })
+    }
+
     /// Takes back everything the reader said that has not gone, joined the
     /// way it would have gone.
     ///
@@ -1540,6 +1570,7 @@ impl Chat {
                 folds: planning.then_some(Folds::Plan),
                 open: self.plan_open,
                 unsent: None,
+                again: None,
                 marker: None,
                 changed: None,
                 depth: 0,
@@ -1564,6 +1595,7 @@ impl Chat {
                             folds: None,
                             open: false,
                             unsent: None,
+                            again: None,
                             marker: None,
                             changed: None,
                             depth: 1,
@@ -1634,6 +1666,7 @@ impl Chat {
             folds: Some(Folds::Run(run.start)),
             open,
             unsent: None,
+            again: None,
             marker: None,
             changed: None,
             depth: 0,
@@ -1847,6 +1880,10 @@ impl Chat {
                 true => from.map(|(at, _)| at),
                 false => None,
             },
+            again: match (said.speaker, said.unsent) {
+                (Speaker::Reader, false) => from.map(|(at, _)| at),
+                _ => None,
+            },
             marker: None,
             changed: None,
             depth,
@@ -1868,6 +1905,7 @@ impl Chat {
             folds: None,
             open: false,
             unsent: None,
+            again: None,
             marker: None,
             changed: None,
             depth,
@@ -1890,6 +1928,7 @@ impl Chat {
             folds: None,
             open: false,
             unsent: None,
+            again: None,
             marker: None,
             changed: None,
             depth: 0,
@@ -2840,9 +2879,10 @@ impl Chat {
             KeyCode::Enter if bare => {
                 let row = laid.get(at.row).cloned();
                 match row {
-                    Some(row) => match (row.unsent, row.folds, row.place, row.away) {
-                        // Something they said that has not gone: the only
-                        // row here whose key gives rather than opens.
+                    Some(row) => match (row.unsent, row.again, row.folds, row.place, row.away) {
+                        // Something they said that has not gone: one of
+                        // the two rows here whose key gives rather than
+                        // opens.
                         (Some(which), ..) => match self.take_back(which) {
                             // Back to the box with them, where the caret
                             // is: taking something back is almost always
@@ -2853,18 +2893,28 @@ impl Chat {
                             }
                             None => Some(ChatOutcome::Consumed),
                         },
-                        (None, Some(begins), _, _) => {
+                        // And something they said that has gone, which
+                        // stays on the page: it was said, and the box gets
+                        // a copy to say again or differently.
+                        (None, Some(which), ..) => match self.again(which) {
+                            Some(words) => {
+                                self.leave_the_transcript(at);
+                                Some(ChatOutcome::TakeBack(words))
+                            }
+                            None => Some(ChatOutcome::Consumed),
+                        },
+                        (None, None, Some(begins), _, _) => {
                             self.fold(begins);
                             // The heading stays under the reader: what
                             // moved is what is below it.
                             self.show_to(at.row, laid.len(), room);
                             Some(ChatOutcome::Consumed)
                         }
-                        (None, None, Some((place, _)), _) => Some(ChatOutcome::GoTo(place)),
+                        (None, None, None, Some((place, _)), _) => Some(ChatOutcome::GoTo(place)),
                         // And a row that points at a web address goes
                         // there, which is the same rule about the same key.
-                        (None, None, None, Some(url)) => Some(ChatOutcome::Away(url)),
-                        (None, None, None, None) => Some(ChatOutcome::Consumed),
+                        (None, None, None, None, Some(url)) => Some(ChatOutcome::Away(url)),
+                        (None, None, None, None, None) => Some(ChatOutcome::Consumed),
                     },
                     None => Some(ChatOutcome::Consumed),
                 }
@@ -3484,7 +3534,11 @@ mod tests {
             .filter(|(_, row)| row.acts())
             .map(|(at, _)| at)
             .collect();
-        assert_eq!(stops.len(), 2, "the tool calls are the two stops");
+        assert_eq!(
+            stops.len(),
+            3,
+            "what the reader asked and the two tool calls are the stops"
+        );
         let last = rows.len() - 1;
 
         // Up from the box lands at the end of the last row, which is the
@@ -3522,12 +3576,12 @@ mod tests {
         // The last row here is the second tool call, so the cursor came in
         // already standing on one of the two: shift and tab goes to the
         // other.
-        assert_eq!(last, stops[1], "the last row is the second tool call");
+        assert_eq!(last, stops[2], "the last row is the second tool call");
         chat.handle_key(&key(KeyCode::BackTab), false, ROOM, &[]);
         assert_eq!(
             chat.focus(),
             Focus::Transcript(Place {
-                row: stops[0],
+                row: stops[1],
                 character: 0
             }),
             "shift and tab did not reach the thing enter opens"
@@ -3551,7 +3605,7 @@ mod tests {
         assert_eq!(
             chat.focus(),
             Focus::Transcript(Place {
-                row: stops[1],
+                row: stops[2],
                 character: 0
             }),
             "tab did not reach the next thing enter opens"
