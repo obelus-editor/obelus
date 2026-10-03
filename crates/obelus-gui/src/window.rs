@@ -157,36 +157,35 @@ struct Rolling {
     /// Said rather than worked out from where the two are, because a
     /// full-screen dialog is over everything, so a transcript under one is
     /// as inside it as the dialog's own list. And a count rather than
-    /// whether, because with a list over the settings over a conversation
-    /// the transcript and the settings' list are both under something, in
-    /// the same rows.
+    /// whether, because a pane coming or going over a band is a band that
+    /// is not the one it was -- see `Rolling::is`.
     under: u8,
     /// How many panes were said before it, which is which of them it is
     /// in: the page's own lists are on none, the settings' on one.
-    ///
-    /// Counted from the bottom, where `under` counts from the top, because
-    /// this is the one that stays put while panes come and go over a band
-    /// -- see `Rolling::is`.
     layer: u8,
 }
 
 impl Rolling {
     /// Whether this is the band `was` was, a frame on.
     ///
-    /// Where it is and how many panes are under it. Where alone is not
-    /// enough, because a dialog's list can sit exactly where the page under
-    /// it has one -- the settings over a conversation share its
-    /// transcript's rows -- and the first of the two was taken for both: the
-    /// settings, scrolled, were measured against a transcript at the top
-    /// every frame, and slid the difference again on every one of them.
+    /// Where it is, which pane it is in, and how many are over it. Where
+    /// alone is not enough, because a dialog's list can sit exactly where
+    /// the page under it has one -- the settings over a conversation share
+    /// its transcript's rows -- and the first of the two was taken for
+    /// both: the settings, scrolled, were measured against a transcript at
+    /// the top every frame, and slid the difference again on every one of
+    /// them.
     ///
-    /// Under rather than over, because the panes over a band are the ones
-    /// that come and go. Counted from the top, the settings' list on the
-    /// frame it opened was the transcript on the frame before -- both had
-    /// nothing over them -- and took that transcript's slide and the page
-    /// of the conversation it was sliding out of.
+    /// Which pane, because the panes over a band alone do not say: on the
+    /// frame the settings opened their list had nothing over it, as the
+    /// transcript had on the frame before, and it took that transcript's
+    /// slide and the page of the conversation it was sliding out of. And
+    /// how many over it, because the page a band kept is a picture of
+    /// whatever was over it then: a transcript that carried its slide out
+    /// from under the settings as they closed drew their rows sliding into
+    /// the conversation.
     fn is(&self, was: &Self) -> bool {
-        self.room == was.room && self.layer == was.layer
+        self.room == was.room && self.layer == was.layer && self.under == was.under
     }
 
     /// Which band it is to the clock its slide runs on.
@@ -1547,6 +1546,12 @@ mod tests {
     /// Deliberate break: match on `room` alone in `Rolling::is`. The
     /// settings' list is then taken for the transcript under it, which is at
     /// its top while the list is not, and it slid on every frame.
+    ///
+    /// The bands are written here as the drain would count them, and the
+    /// counting is not under test: it happens where a window takes a
+    /// frame, and setting `layer` to nothing there passes this. What was
+    /// checked by hand is that it fails in the window -- the settings
+    /// slide with a transcript scrolling under them.
     #[test]
     fn a_band_under_a_pane_is_not_the_pane_s() {
         let band = |top, under, layer| Rolling {
@@ -1571,16 +1576,6 @@ mod tests {
             Some(0),
             "the transcript was taken for the list over it"
         );
-        // And with a setting's choices over the settings, both are under
-        // something: the transcript under two panes, the settings' list
-        // under one -- and neither has become anything else.
-        let was = [band(0, 2, 0), band(4, 1, 1)];
-        let settings = band(4, 1, 1);
-        assert_eq!(
-            was.iter().find(|was| settings.is(was)).map(|was| was.top),
-            Some(4),
-            "under a list, the settings' list was taken for the transcript"
-        );
         // And on the frame the settings open, the frame before has only
         // the transcript, with nothing over it -- which is what the
         // settings' list has over it too. Deliberate break: match on
@@ -1593,11 +1588,16 @@ mod tests {
             !was.iter().any(|was| settings.is(was)),
             "the settings' list was taken for the transcript it opened over"
         );
-        let transcript = band(3, 1, 0);
-        assert_eq!(
-            was.iter().find(|was| transcript.is(was)).map(|was| was.top),
-            Some(3),
-            "the transcript lost itself under the settings"
+        // And on the frame they close, the transcript is not the one that
+        // was under them: what it kept while they were up is a picture with
+        // the settings in its rows. Deliberate break: leave `under` out of
+        // `Rolling::is`, and the transcript carries that page out and slides
+        // it into the conversation.
+        let was = [band(3, 1, 0), band(0, 0, 1)];
+        let transcript = band(3, 0, 0);
+        assert!(
+            !was.iter().any(|was| transcript.is(was)),
+            "the transcript took the page it kept under the settings out with it"
         );
     }
 
