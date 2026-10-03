@@ -498,12 +498,23 @@ impl App {
             talk.asked_while_shown = true;
         }
         let tools = self.tools_for(whose);
+        // By the session rather than by the note, because a conversation
+        // about no note is taken up too, and it is named by nothing else.
+        let title = had.as_ref().and_then(|session| {
+            let agent = self.talker.as_ref()?.id();
+            self.sessions()?
+                .all()
+                .find(|(_, by, tree, kept)| {
+                    *by == agent && *tree == self.working_directory && kept.session == *session
+                })
+                .and_then(|(_, _, _, kept)| kept.title.clone())
+        });
         let Some(talker) = self.talker.as_mut() else {
             return;
         };
         match had {
             Some(session) => {
-                let asking = talker.reopen(&session, tools);
+                let asking = talker.reopen(&session, title, tools);
                 if let Some(talk) = self.talk_mut(whose) {
                     talk.asked_for = Some(obelus_agent::acp::SessionId::new(session));
                     talk.requested = Some(asking);

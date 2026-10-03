@@ -187,6 +187,16 @@ pub struct Talk {
     /// real one's and answered with the reader's choices, to a session the
     /// agent had already deleted.
     thrown: std::collections::HashSet<SessionId>,
+    /// What Obelus wrote down as the name of each conversation it has asked
+    /// to take up, until the agent says it has it.
+    ///
+    /// Because `session/load` replays what was said and is not obliged to
+    /// send the title with it: a conversation taken up went by its note, or
+    /// by nothing, and the next time it was written down its name was
+    /// written down as nothing too. Kept by the session asked for and not by
+    /// the request, so a conversation the agent no longer has and opens
+    /// afresh in its place is not given the old one's name.
+    named: std::collections::HashMap<SessionId, String>,
     /// How many turns have been asked for on this connection.
     ///
     /// The last number handed out, and the next one is one more. On the
@@ -347,6 +357,7 @@ impl Talk {
             connection,
             asked: std::collections::HashSet::new(),
             thrown: std::collections::HashSet::new(),
+            named: std::collections::HashMap::new(),
             turns: 0,
         }
     }
@@ -491,8 +502,19 @@ impl Talk {
     /// with the session it asked for, or -- where the agent will not --
     /// word that it has gone and then a new one, which is still the answer
     /// to this request.
-    pub fn reopen(&mut self, session: &str, tools: Option<String>) -> Asking {
+    ///
+    /// `title` is what it was called when it was written down, which the
+    /// agent's own word about it replaces whenever that arrives.
+    pub fn reopen(
+        &mut self,
+        session: &str,
+        title: Option<String>,
+        tools: Option<String>,
+    ) -> Asking {
         let asking = self.waiting_for_one();
+        if let Some(title) = title {
+            self.named.insert(SessionId::new(session), title);
+        }
         let _ = self.asks.unbounded_send(Ask::Reopen {
             session: SessionId::new(session),
             tools,
@@ -519,7 +541,9 @@ impl Talk {
         self.session(session)?.mode()
     }
 
-    /// What the agent calls this conversation, once it has said.
+    /// What the agent calls this conversation, once it has said -- or, for
+    /// one taken up again, what it was called when Obelus wrote it down,
+    /// until the agent says otherwise.
     #[must_use]
     pub fn title(&self, session: Option<&SessionId>) -> Option<&str> {
         self.session(session)?.title.as_deref()
@@ -722,6 +746,7 @@ impl Talk {
         self.asks.close_channel();
         self.sessions.clear();
         self.waiting.clear();
+        self.named.clear();
     }
 
     /// Whether the agent is still there, for the frame that checks.
@@ -783,6 +808,11 @@ impl Talk {
                 // them. Whatever named it, the agent says it exists.
                 let open = self.sessions.entry(session.clone()).or_default();
                 open.legacy_mode = mode;
+                // Unless the agent named it during the replay, which is the
+                // newer of the two.
+                if let Some(title) = self.named.remove(&session) {
+                    open.title.get_or_insert(title);
+                }
                 open.merge();
                 // Which request this answers: the oldest, because they are
                 // answered in the order they were made.
@@ -905,8 +935,15 @@ impl Talk {
                 // an agent that is not there.
                 self.sessions.clear();
                 self.waiting.clear();
+                self.named.clear();
                 self.gone = Some(why.clone());
                 Some(Incoming::Gone(why))
+            }
+            Incoming::Lost { session, why } => {
+                // Refused, so the name it was asked under is nobody's: the
+                // one opened in its place arrives under another.
+                self.named.remove(&session);
+                Some(Incoming::Lost { session, why })
             }
             other => Some(other),
         }
@@ -950,6 +987,7 @@ mod tests {
             connection: 0,
             asked: std::collections::HashSet::new(),
             thrown: std::collections::HashSet::new(),
+            named: std::collections::HashMap::new(),
             turns: 0,
         }
     }
@@ -1052,5 +1090,32 @@ mod tests {
             "what it said it can be set to, late, was not its answer"
         );
         assert!(!talk.holds(&thrown), "what it offered late is held");
+    }
+
+    /// The name an agent gives a conversation while replaying it beats the
+    /// one Obelus wrote down.
+    ///
+    /// The replay arrives before the answer that says the session is taken
+    /// up, so the agent's word is already here when the written-down one
+    /// would go in -- and it is the newer of the two.
+    ///
+    /// Deliberate break: have `Started` put the written-down name in with
+    /// `open.title = Some(title)` rather than `get_or_insert`, and the
+    /// agent's new name is replaced by the old one.
+    #[test]
+    fn a_name_the_agent_gives_while_replaying_beats_the_one_written_down() {
+        let mut talk = detached();
+        let session = SessionId::new("s-1");
+        talk.reopen("s-1", Some("old".to_string()), None);
+        talk.on(Incoming::Update {
+            session: session.clone(),
+            update: Update::Titled("new".to_string()),
+        });
+        talk.on(Incoming::Started {
+            session: session.clone(),
+            mode: None,
+            asking: None,
+        });
+        assert_eq!(talk.title(Some(&session)), Some("new"));
     }
 }
