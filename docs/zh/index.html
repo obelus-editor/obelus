@@ -64,11 +64,42 @@
         <a class="button" href="https://github.com/obelus-editor/obelus">GitHub</a>
       </div>
 
-      <figure class="shot">
-        <img class="dark" src="../workflow-dark.png" width="1500" height="1086" alt="Obelus 里一段关于一条笔记的对话。标题行写着分支 stable-tie-order。记录里是 agent 在 .worktree 底下的 worktree 里改 src/lib.rs、在那里跑测试并提交，然后说明改动在哪、等着读者说试过了。读者说试过了，一张卡片问这次改动要不要先审一遍。">
-        <img class="light" src="../workflow-light.png" width="1500" height="1086" alt="同一段对话，Obelus 的浅色主题。">
-        <figcaption class="caption"><code>feature-branch</code> 真跑一遍的样子，项目是编的。标题行写着改动在哪个分支上。agent 开好 worktree、改之前和改之后各跑了一遍测试、在那里提交，说清楚改动在哪，然后就等着；直到被告知试过了，它才问要不要审——用卡片问，而不是写在回复里。</figcaption>
-      </figure>
+      <div class="screens" aria-label="主要界面">
+      <div class="tabs" role="tablist">
+        <button type="button" role="tab" class="switch" aria-selected="true" data-screen="welcome">欢迎</button>
+        <button type="button" role="tab" class="switch" aria-selected="false" data-screen="editor">编辑</button>
+        <button type="button" role="tab" class="switch" aria-selected="false" data-screen="agent">Agent</button>
+        <button type="button" role="tab" class="switch" aria-selected="false" data-screen="todo">Todo</button>
+        <button type="button" role="tab" class="switch" aria-selected="false" data-screen="worktrees">Worktree</button>
+      </div>
+      <div class="frames">
+        <figure class="shot on" data-screen="welcome">
+          <img class="dark" src="../screens/welcome-dark.webp" width="2100" height="1520" alt="欢迎页：Obelus 的标志，以及打开文件、改过的文件、搜索、agent、命令面板和退出的按键。">
+          <img class="light" src="../screens/welcome-light.webp" width="2100" height="1520" alt="欢迎页：Obelus 的标志，以及打开文件、改过的文件、搜索、agent、命令面板和退出的按键。">
+          <figcaption class="caption">开起来的样子：一个项目从哪几个键开始，以及现在是哪个项目。</figcaption>
+        </figure>
+        <figure class="shot" data-screen="editor">
+          <img class="dark" src="../screens/editor-dark.webp" width="2100" height="1520" alt="一个 Rust 文件停在某个提交上，其中改过的一行就地展开，旧的一行在新的一行上面。">
+          <img class="light" src="../screens/editor-light.webp" width="2100" height="1520" alt="一个 Rust 文件停在某个提交上，其中改过的一行就地展开，旧的一行在新的一行上面。">
+          <figcaption class="caption">在编辑界面里读 agent 的一个提交：被替换的那一行就地展开在新的一行上面，边栏有标记，旁边写着是谁写的。</figcaption>
+        </figure>
+        <figure class="shot" data-screen="agent">
+          <img class="dark" src="../screens/agent-dark.webp" width="2100" height="1520" alt="一段对话，agent 说明了原因、改法、跑了什么、改动在哪，下面一张卡片问要不要审。">
+          <img class="light" src="../screens/agent-light.webp" width="2100" height="1520" alt="一段对话，agent 说明了原因、改法、跑了什么、改动在哪，下面一张卡片问要不要审。">
+          <figcaption class="caption">关于一条笔记的对话：agent 说清改动在哪，等你试过，再用卡片问要不要审。</figcaption>
+        </figure>
+        <figure class="shot" data-screen="todo">
+          <img class="dark" src="../screens/todo-dark.webp" width="2100" height="1520" alt="笔记页：一条笔记底下挂着几步，有的打了勾，有对话的那条笔记旁边有标记。">
+          <img class="light" src="../screens/todo-light.webp" width="2100" height="1520" alt="笔记页：一条笔记底下挂着几步，有的打了勾，有对话的那条笔记旁边有标记。">
+          <figcaption class="caption">笔记：步骤挂在它们所属的笔记底下，有对话的笔记会标出来。</figcaption>
+        </figure>
+        <figure class="shot" data-screen="worktrees">
+          <img class="dark" src="../screens/worktrees-dark.webp" width="2100" height="1520" alt="Worktrees 标签页：主 checkout 和 agent 的 worktree，两个都有窗口开着。">
+          <img class="light" src="../screens/worktrees-light.webp" width="2100" height="1520" alt="Worktrees 标签页：主 checkout 和 agent 的 worktree，两个都有窗口开着。">
+          <figcaption class="caption">F2 再按 Tab：这个仓库的每个 worktree，各只隔一个窗口。</figcaption>
+        </figure>
+      </div>
+    </div>
     </div>
 
 <div class="frame">
@@ -109,7 +140,7 @@
       <h2><span class="num">02</span><span>它为此做了什么</span></h2>
 
       <h3 id="how">一条笔记，变成一个合进去的改动</h3>
-      <p>agent 在自己的分支上干活；你读它改了什么、试一试、说可以了才走。你正在读的那份 checkout 一直不动，你也不用敲一条 git 命令。本页最上面那一屏，就是这样一天里的某一刻。</p>
+      <p>agent 在自己的分支上干活；你读它改了什么、试一试、说可以了才走。你正在读的那份 checkout 一直不动，你也不用敲一条 git 命令。本页最上面 Agent 那一屏，就是这样一天里的某一刻。</p>
 
       <ol class="tenets">
         <li>
@@ -172,8 +203,8 @@
       <p>Obelus 不分屏：想并排看两个文件，就是两个窗口。所以同一个项目上开着好几个、各在自己的 worktree 上，是常态。在窗口里，<kbd>F2</kbd> 有第二个 tab，按 <kbd>Tab</kbd> 过去：git 知道的这个仓库的每一个 worktree 都在里面，不管它在哪儿，有窗口开着的会标出来。选一个，开着它的那个窗口就跳到前面来，没开就新开一个。</p>
         </div>
         <figure class="shot">
-          <a href="../worktree-list-dark.png"><img class="dark" src="../worktree-list-dark.png" width="950" height="286" loading="lazy" alt="Worktrees 标签页：tally 在 main 上，tally/.worktree/stable-tie-order 在它自己的分支上，两棵都有窗口开着。"></a>
-          <a href="../worktree-list-light.png"><img class="light" src="../worktree-list-light.png" width="950" height="286" loading="lazy" alt="Worktrees 标签页：tally 在 main 上，tally/.worktree/stable-tie-order 在它自己的分支上，两棵都有窗口开着。"></a>
+          <a href="../screens/worktree-list-dark.webp"><img class="dark" src="../screens/worktree-list-dark.webp" width="1300" height="420" loading="lazy" alt="Worktrees 标签页：tally 在 main 上，tally/.worktree/stable-tie-order 在它自己的分支上，两棵都有窗口开着。"></a>
+          <a href="../screens/worktree-list-light.webp"><img class="light" src="../screens/worktree-list-light.webp" width="1300" height="420" loading="lazy" alt="Worktrees 标签页：tally 在 main 上，tally/.worktree/stable-tie-order 在它自己的分支上，两棵都有窗口开着。"></a>
         </figure>
       </div>
       <p class="quiet small">只有 <code>obg</code> 列这些。去另一个地方，要么是启动一个 Obelus，要么是把一个带到前面来，而终端两样都做不到：它所在的窗口是终端的，你想在哪个终端里开新的 Obelus，Obelus 也没法知道。所以 <code>ob</code> 里没有这个 tab，<code>switch-worktree</code> 也是灰的。</p>
@@ -190,8 +221,8 @@
       <p>Obelus 没有自己的模型。它通过 <strong>ACP</strong>（Agent Client Protocol）和你已经在用的 agent 说话；你还没有的话，它能从协议作者维护的注册表里装一个：<kbd>F4</kbd>，新建对话，进 agents 页。</p>
         </div>
         <figure class="shot">
-          <a href="../agent-card-dark.png"><img class="dark" src="../agent-card-dark.png" width="1500" height="526" loading="lazy" alt="对话里，agent 说了改动在哪、听到已经试过，下面一张卡片问要不要先审一遍。"></a>
-          <a href="../agent-card-light.png"><img class="light" src="../agent-card-light.png" width="1500" height="526" loading="lazy" alt="对话里，agent 说了改动在哪、听到已经试过，下面一张卡片问要不要先审一遍。"></a>
+          <a href="../screens/card-dark.webp"><img class="dark" src="../screens/card-dark.webp" width="2100" height="600" loading="lazy" alt="对话里，agent 说了改动在哪、听到已经试过，下面一张卡片问要不要先审一遍。"></a>
+          <a href="../screens/card-light.webp"><img class="light" src="../screens/card-light.webp" width="2100" height="600" loading="lazy" alt="对话里，agent 说了改动在哪、听到已经试过，下面一张卡片问要不要先审一遍。"></a>
           <figcaption class="caption">问题是一张卡片，用你手上本来就按着的键回答。</figcaption>
         </figure>
       </div>
@@ -209,8 +240,8 @@
       <p>在一行上按 <kbd>Alt+t</kbd>，就起一条关于它的笔记；<code>todo</code> 打开全部。笔记可以对着某一行，也可以对着整个项目，还可以挂在另一条底下。它除了记行号，还记着写下时的那个提交，所以上周写的笔记，文件再怎么改，也还指着当初那一行。笔记放在 Obelus 自己的目录里、按项目存——所以每个 worktree 都共用，也永远不会进你的提交。</p>
         </div>
         <figure class="shot">
-          <a href="../notes-dark.png"><img class="dark" src="../notes-dark.png" width="1500" height="516" loading="lazy" alt="笔记页：一条笔记底下挂着三步，其中一步打了勾，旁边还有两条笔记。"></a>
-          <a href="../notes-light.png"><img class="light" src="../notes-light.png" width="1500" height="516" loading="lazy" alt="笔记页：一条笔记底下挂着三步，其中一步打了勾，旁边还有两条笔记。"></a>
+          <a href="../screens/notes-dark.webp"><img class="dark" src="../screens/notes-dark.webp" width="2100" height="620" loading="lazy" alt="笔记页：一条笔记底下挂着三步，其中一步打了勾，旁边还有两条笔记。"></a>
+          <a href="../screens/notes-light.webp"><img class="light" src="../screens/notes-light.webp" width="2100" height="620" loading="lazy" alt="笔记页：一条笔记底下挂着三步，其中一步打了勾，旁边还有两条笔记。"></a>
           <figcaption class="caption">agent 想出来的步骤，挂在它们所属的那条笔记底下。</figcaption>
         </figure>
       </div>
@@ -221,10 +252,10 @@
       <p>不管是谁写的，改动都在它发生的地方读：边栏上标着，<kbd>Alt+d</kbd> 就地展开，它的历史只隔一个键。</p>
         </div>
         <figure class="shot">
-        <img class="dark" src="../screen-dark.png" width="1500" height="1084" loading="lazy" alt="Obelus 正在读一个 Rust 源文件。第 59 行改过，它下面就地展开了这一处 hunk，显示上一次提交里这行是什么样子；文件里其余的改动标在滚动条旁边，状态行写着文件名、语言服务器和光标位置。">
-        <img class="light" src="../screen-light.png" width="1500" height="1084" loading="lazy" alt="同一屏，Obelus 的浅色主题。">
-        <figcaption class="caption"><code>obg</code> 在读它自己的源码。第 59 行改过，<kbd>Alt+d</kbd> 把这一处 hunk 就地展开，把上一次提交里的那行放在替换它的那行上面；滚动条旁边的标记是这个文件其余的改动。用的是 Obelus 内置的 <code>dark</code> 和 <code>light</code>，跟着本页当前的主题。</figcaption>
-      </figure>
+          <a href="../screens/hunk-dark.webp"><img class="dark" src="../screens/hunk-dark.webp" width="2100" height="640" loading="lazy" alt="一个提交在它改的那一行就地展开，旧的一行在新的一行上面。"></a>
+          <a href="../screens/hunk-light.webp"><img class="light" src="../screens/hunk-light.webp" width="2100" height="640" loading="lazy" alt="一个提交在它改的那一行就地展开，旧的一行在新的一行上面。"></a>
+          <figcaption class="caption">agent 的一个提交，在它改的那一行就地展开：原来的一行（红）在现在这一行上面。</figcaption>
+        </figure>
       </div>
 
       <div class="cards">

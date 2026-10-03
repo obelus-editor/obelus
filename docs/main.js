@@ -78,6 +78,37 @@
     });
   }
 
+  // The main screens, one after another. A visitor who picks one has
+  // chosen what to look at, so the clock stops for good; a pointer resting
+  // on them only holds it. And no clock at all for somebody who has asked
+  // their machine for less motion.
+  var screens = document.querySelector('.screens');
+  if (screens) {
+    var tabs = [].slice.call(screens.querySelectorAll('[role="tab"]'));
+    var frames = [].slice.call(screens.querySelectorAll('.frames > .shot'));
+    var at = 0;
+    var chosen = false;
+    var held = false;
+    var show = function (i) {
+      at = i;
+      tabs.forEach(function (tab, j) { tab.setAttribute('aria-selected', j === i ? 'true' : 'false'); });
+      frames.forEach(function (frame, j) { frame.classList.toggle('on', j === i); });
+    };
+    tabs.forEach(function (tab, i) {
+      tab.addEventListener('click', function () { chosen = true; show(i); });
+    });
+    screens.addEventListener('mouseenter', function () { held = true; });
+    screens.addEventListener('mouseleave', function () { held = false; });
+    var still = false;
+    try { still = matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+    if (!still) {
+      setInterval(function () {
+        if (chosen || held || document.hidden) return;
+        show((at + 1) % frames.length);
+      }, 5000);
+    }
+  }
+
   // Which section is being read. Bottom-most heading above the fold wins,
   // which is what a reader scrolling down expects the mark to follow.
   var links = [].slice.call(document.querySelectorAll('.contents a[href^="#"]'));
