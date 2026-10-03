@@ -690,6 +690,11 @@ struct Atlas {
     /// Whether either texture has been made again since the bindings that
     /// read it were.
     remade: bool,
+    /// Whether a glyph found no room with every layer the device allows:
+    /// it is missing from this frame, and the next starts both textures
+    /// again. Not this one, which has already placed glyphs that would be
+    /// read from where the next ones were written.
+    overflowed: bool,
     /// Where each glyph landed, or that the face had no picture for it --
     /// which is worth remembering too, or a missing glyph is rasterised
     /// again on every frame that asks for it.
@@ -1156,6 +1161,11 @@ impl Painter {
         said: Said<'_>,
     ) -> Result<()> {
         let cell = fonts.cell();
+        // Before anything is placed, which is the one moment starting the
+        // glyphs again is safe: nothing from the last frame is read after it.
+        if std::mem::take(&mut self.atlas.overflowed) {
+            self.atlas.empty();
+        }
         self.quads.clear();
         self.placed = Placed::default();
         #[expect(
@@ -1392,6 +1402,12 @@ impl Painter {
         // binding is still reading the one before.
         if std::mem::take(&mut self.atlas.remade) {
             self.bound_again();
+        }
+        // And a frame that went without a glyph asks for the one that will
+        // have it, rather than waiting for a key the reader has no reason
+        // to press.
+        if self.atlas.overflowed {
+            self.window.request_redraw();
         }
 
         // Where the light is, in the pixels a fragment knows itself by:
@@ -3525,6 +3541,7 @@ impl Atlas {
             letters: Layers::new(device, wgpu::TextureFormat::R8Unorm),
             pictures: Layers::new(device, wgpu::TextureFormat::Rgba8Unorm),
             remade: false,
+            overflowed: false,
             spots: HashMap::new(),
             marks: HashMap::new(),
             white: [0.0; 4],
@@ -3599,7 +3616,15 @@ impl Atlas {
         };
         let had = layers.room.layers.len();
         let most = self.device.limits().max_texture_array_layers;
-        let (layer, [x, y]) = layers.room.find(width, height, most)?;
+        let Some((layer, [x, y])) = layers.room.find(width, height, most) else {
+            // Full, where it would fit in a layer -- see `overflowed`. Said
+            // once, rather than for every glyph the frame goes without.
+            if width <= ATLAS && height <= ATLAS && !self.overflowed {
+                tracing::warn!(most, "the glyph texture has as many layers as it can");
+                self.overflowed = true;
+            }
+            return None;
+        };
         if layers.room.layers.len() > had {
             layers.grow(&self.device, &self.queue, had);
             self.remade = true;
@@ -3772,7 +3797,6 @@ impl Room {
         }
         // Two short of it, because a step past a multiple of six is two.
         if self.layers.len() + 2 > most as usize {
-            tracing::warn!(most, "the glyph texture has as many layers as it can");
             return None;
         }
         self.open();
