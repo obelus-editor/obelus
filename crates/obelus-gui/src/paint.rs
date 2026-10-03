@@ -128,8 +128,9 @@ const ATLAS: u32 = 1024;
 /// How many layers a glyph texture starts with.
 ///
 /// Two, because one is not an array everywhere: wgpu's GL backend makes a
-/// texture of one layer a plain two-dimensional one, which a binding that
-/// asks for an array will not take.
+/// texture of one layer a plain two-dimensional one, and a shader reading
+/// that as an array reads nothing from it -- no error, and no text. Seen on
+/// Mesa's software GL, where the same texture read on Vulkan was right.
 const LAYERS: u32 = 2;
 
 /// What Obelus draws on.
