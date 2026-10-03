@@ -3596,21 +3596,13 @@ impl Atlas {
             true => &mut self.pictures,
             false => &mut self.letters,
         };
-        let (layer, [x, y]) = match layers.room.take(width, height) {
-            Some(taken) => taken,
-            // Larger than a layer, which no number of layers has room for.
-            None if width > ATLAS || height > ATLAS => return None,
-            None => {
-                let most = self.device.limits().max_texture_array_layers;
-                if layers.room.layers.len() >= most as usize {
-                    tracing::warn!(most, "the glyph texture has as many layers as it can");
-                    return None;
-                }
-                layers.grow(&self.device, &self.queue);
-                self.remade = true;
-                layers.room.take(width, height)?
-            }
-        };
+        let had = layers.room.layers.len();
+        let most = self.device.limits().max_texture_array_layers;
+        let (layer, [x, y]) = layers.room.find(width, height, most)?;
+        if layers.room.layers.len() > had {
+            layers.grow(&self.device, &self.queue, had);
+            self.remade = true;
+        }
         let bytes = match colourful {
             true => 4,
             false => 1,
@@ -3716,20 +3708,20 @@ impl Layers {
         }
     }
 
-    /// Another layer, with what was in the others still where it was.
+    /// As many layers as the room has opened, with what was in the `had`
+    /// before them still where it was.
     ///
     /// A texture cannot be made bigger, so this is a new one with the old
     /// one copied into it -- and every place already handed out, in this
     /// frame or an earlier one, still holds what it held. Submitted at
     /// once, which puts it after every write already made to the old one:
     /// a queue's writes go before the next work handed to it.
-    fn grow(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+    fn grow(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, had: usize) {
         #[expect(
             clippy::cast_possible_truncation,
             reason = "a device allows a few hundred layers"
         )]
-        let had = self.room.layers.len() as u32;
-        self.room.open();
+        let had = had as u32;
         #[expect(
             clippy::cast_possible_truncation,
             reason = "a device allows a few hundred layers"
@@ -3763,6 +3755,27 @@ impl Room {
             room.open();
         }
         room
+    }
+
+    /// A place for this, opening another layer where none has room -- so
+    /// that what is already in the room stays where it is -- and nothing
+    /// where no layer could hold it, or the device allows `most` layers
+    /// and a step would take more.
+    fn find(&mut self, width: u32, height: u32, most: u32) -> Option<(u32, [u32; 2])> {
+        if let Some(taken) = self.take(width, height) {
+            return Some(taken);
+        }
+        // Larger than a layer, which no number of layers has room for.
+        if width > ATLAS || height > ATLAS {
+            return None;
+        }
+        // Two short of it, because a step past a multiple of six is two.
+        if self.layers.len() + 2 > most as usize {
+            tracing::warn!(most, "the glyph texture has as many layers as it can");
+            return None;
+        }
+        self.open();
+        self.take(width, height)
     }
 
     /// The first place with room for this, and which layer it is on.
@@ -5792,29 +5805,24 @@ mod tests {
     /// Chinese filled it, and a line number came out as a piece of a
     /// character until something drew the frame again.
     ///
-    /// Deliberate break: make `take` clear every layer and try again when
-    /// none has room, which is what the atlas did -- the next glyph lands on
-    /// the white pixel.
+    /// Through `find`, which is what `Atlas::place` asks. Deliberate break:
+    /// make `find` clear every layer and take again where none has room,
+    /// which is what the atlas did -- the next glyph lands on the white
+    /// pixel.
     #[test]
     fn a_full_layer_opens_another_and_keeps_what_it_holds() {
         let mut room = Room::new(LAYERS);
-        let (layer, [x, y]) = room.take(1, 1).expect("room for the white pixel");
+        let (layer, [x, y]) = room.find(1, 1, 2048).expect("room for the white pixel");
         assert_eq!(
             layer, 0,
             "the white pixel is on the layer a quad reads by default"
         );
         let mut handed = vec![(layer, [x, y, 1, 1])];
-        // A character the size a doubled screen draws one at, and more of
-        // them than the first two layers hold.
-        let (wide, tall) = (44, 46);
-        for _ in 0..1200 {
-            let (layer, [x, y]) = match room.take(wide, tall) {
-                Some(taken) => taken,
-                None => {
-                    room.open();
-                    room.take(wide, tall).expect("room on a layer just opened")
-                }
-            };
+        // Large, so that a few hundred of them fill more than the first two
+        // layers.
+        let (wide, tall) = (100, 100);
+        for _ in 0..400 {
+            let (layer, [x, y]) = room.find(wide, tall, 2048).expect("room on some layer");
             handed.push((layer, [x, y, wide, tall]));
         }
         for (at, (layer, [x, y, w, h])) in handed.iter().enumerate() {
@@ -5830,6 +5838,48 @@ mod tests {
         assert!(
             handed.iter().any(|(layer, _)| *layer >= LAYERS),
             "enough was put in to need another layer"
+        );
+    }
+
+    /// No count of layers a glyph texture is made with is a multiple of six,
+    /// which wgpu's GL backend makes a cube map of -- and a shader reading
+    /// that as an array reads nothing, so every letter goes.
+    ///
+    /// Deliberate break: let `open` push one layer and stop.
+    #[test]
+    fn a_glyph_texture_is_never_six_layers() {
+        let mut room = Room::new(LAYERS);
+        let mut counts = vec![room.layers.len()];
+        for _ in 0..2000 {
+            room.find(100, 100, 2048).expect("room on some layer");
+            counts.push(room.layers.len());
+        }
+        assert!(
+            counts.last().is_some_and(|&last| last > 12),
+            "enough was put in to pass two multiples of six"
+        );
+        assert!(
+            counts.iter().all(|count| !count.is_multiple_of(6)),
+            "a texture was made of {counts:?} layers"
+        );
+    }
+
+    /// A room at the device's limit says so rather than opening a layer the
+    /// device cannot make.
+    ///
+    /// Deliberate break: drop the check against `most` in `find`.
+    #[test]
+    fn a_room_stops_at_the_layers_a_device_allows() {
+        let mut room = Room::new(LAYERS);
+        let mut placed = 0;
+        while room.find(512, 512, 4).is_some() {
+            placed += 1;
+            assert!(placed < 100, "the room kept opening layers");
+        }
+        assert!(
+            room.layers.len() <= 4,
+            "{} layers on a device of four",
+            room.layers.len()
         );
     }
 }
