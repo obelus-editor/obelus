@@ -472,6 +472,8 @@ pub struct App {
     /// this one, so a second agent started later reaches the same tools
     /// rather than a second server nobody asked for.
     tools_url: Option<String>,
+    /// The server at that address, which stops listening when this goes.
+    listening: Option<obelus_mcp::Listening>,
     /// The agent Obelus is talking to, once something has needed it.
     talker: Option<obelus_agent::acp::Talk>,
     /// The commands an agent asked to run, while they run.
@@ -810,10 +812,9 @@ pub struct App {
     /// Whether the tree Obelus was put on has gone from disk.
     ///
     /// For good: a tree made again at the same path is somebody else's
-    /// tree, and every watch Obelus had in this one went with it. What is
-    /// open stays open -- a document keeps what it has, and closing it is
-    /// the reader's -- and nothing about the project is asked or written
-    /// from here on. See [`App::the_tree_has_gone`].
+    /// tree, and every watch Obelus had in this one went with it. What was
+    /// open is closed, and until the reader asks for another project
+    /// nothing about one is asked or written. See [`App::the_tree_has_gone`].
     gone: bool,
     /// What this window knows about the others on the repository, and the
     /// list of worktrees while it is showing.
@@ -913,6 +914,7 @@ impl App {
             statuses: std::collections::HashMap::new(),
 
             tools_url: None,
+            listening: None,
             talker: None,
             runs: obelus_agent::running::Runs::default(),
             waiting_on: Vec::new(),
@@ -1215,17 +1217,95 @@ impl App {
     /// from being written into a project that has gone is asked of the disk
     /// at the moment of writing (`obelus_git::project`).
     ///
-    /// The window stays, and what is open in it: a file with unsaved work
-    /// in it is somebody's work, and the reader is the one to say what
-    /// becomes of it. What goes is the project -- everything keyed by it
-    /// is dim (`has_a_project`), the watches drawn from it are given up
-    /// (`settle_the_watches`), and the branch it had is not a branch
-    /// anything is on any more.
+    /// Everything the project was goes with it, and the window is left
+    /// saying so and nothing else (`ui::gone`): enter asks which project
+    /// next, and the one other key is the one that leaves. What was open is
+    /// closed without asking, unsaved work and all -- a file in a tree that
+    /// has gone has nowhere to be written, and Obelus does not make the
+    /// tree again to write it.
+    ///
+    /// **A window that starts again, without starting again.** What is
+    /// kept is what belongs to the process and not to the project -- the
+    /// loop's channel, the reader's settings, what the front end can do --
+    /// and everything else is a new [`App`]'s. Kept by name rather than
+    /// cleared by name, so that a field nobody thought of here is one that
+    /// starts empty, and not one still holding the last project's answer.
     pub(super) fn the_tree_has_gone(&mut self) {
         tracing::warn!(tree = %self.working_directory.display(), "the tree Obelus is on has gone");
-        self.gone = true;
-        self.head = None;
+        // The sessions nothing was said in, as on the way out: an agent
+        // keeps what it is not told to let go of.
+        self.let_go_of_what_nothing_was_said_in(None);
+        // Moved on rather than made again, because a walk still running
+        // holds the old count: a new one would start where the old one's
+        // answers are numbered, and they would arrive as current.
+        self.walk_generation.next();
+        self.history_generation.next();
+        self.search_generation.next();
         self.worktrees.tree_has_gone();
+        self.worktrees.not_showing();
+
+        let was = std::mem::replace(self, Self::new(Vec::new()));
+        self.events = was.events;
+        self.drawing = was.drawing;
+        self.fonts_here = was.fonts_here;
+        self.monospace_here = was.monospace_here;
+        self.screen_area = was.screen_area;
+        self.editor_area = was.editor_area;
+        self.settled = was.settled;
+        self.keymap = was.keymap;
+        self.theme = was.theme;
+        self.theme_name = was.theme_name;
+        self.walk_generation = was.walk_generation;
+        self.history_generation = was.history_generation;
+        self.search_generation = was.search_generation;
+        // The door other windows reach this one by is the process's, and
+        // listens for as long as it runs.
+        self.worktrees = was.worktrees;
+        self.agents = was.agents;
+        self.releases = was.releases;
+        self.looking = was.looking;
+        self.outside = was.outside;
+        // What Obelus could not make of its own files, which are not the
+        // project's: the reader's settings and their theme.
+        let root = was.working_directory;
+        self.reported = was
+            .reported
+            .into_iter()
+            .filter(|(path, _)| !path.starts_with(&root))
+            .collect();
+        self.working_directory = root;
+        self.gone = true;
+        // A watcher of its own as well, on what is left -- the settings and
+        // the theme. Started again rather than kept and given things back
+        // one at a time: a watch is a count on the watcher it was taken on,
+        // and what this one held for the project and its files is a list
+        // nothing here has.
+        if was.watcher.is_some()
+            && let Some(events) = self.events.clone()
+        {
+            self.start_watching(events);
+        }
+        // And the rest of `was` goes at the end of this: the servers, the
+        // agent, what it was running and the tools it was offered, all of
+        // which stop as they are dropped.
+        //
+        // The reader's settings without the project's over them, which
+        // are in a file that is not there.
+        self.apply_project();
+    }
+
+    /// The page saying the tree has gone, answered.
+    ///
+    /// Enter asks which project, the way a start with nothing to go on
+    /// does; nothing else is taken, and what falls through finds a dialog
+    /// and so only the key that leaves.
+    pub(super) fn the_page_saying_it_has_gone(&mut self, key: &KeyEvent) -> bool {
+        if !(key.code == KeyCode::Enter && key.modifiers == KeyModifiers::NONE) {
+            return false;
+        }
+        self.gone = false;
+        self.ask_which_project();
+        true
     }
 
     /// Says to open on the file list rather than on a file.
@@ -1373,9 +1453,10 @@ impl App {
             // Said, because the silent half of this is the half nobody can
             // ask about: whether an agent was offered anything, and whether
             // it took it, were both questions Obelus had no answer to.
-            Ok(url) => {
+            Ok((url, listening)) => {
                 tracing::info!(url, "Obelus is offering an agent its tools");
                 self.tools_url = Some(url);
+                self.listening = Some(listening);
             }
             Err(error) => {
                 // Not a reason to stop: an Obelus that cannot listen is an
@@ -1889,10 +1970,11 @@ impl App {
         // ramp they were last drawn with, which is that sheen at one
         // moment and as true as any other frame of it.
         //
-        // Nor while Obelus is asking which project: that screen is not the
-        // welcome screen and has no mark to run a sheen across.
+        // Nor while Obelus is asking which project, or saying the one it
+        // was on has gone: neither is the welcome screen, and neither has
+        // a mark to run a sheen across.
         (self.current.is_none()
-            && self.chooser.is_none()
+            && self.has_a_project()
             && !self.layers().filling()
             && !obelus_config::in_a_window())
             // An agent at work in the conversation being read.
@@ -2068,7 +2150,11 @@ impl App {
         // act on what the reader has hold of -- a box they can select in
         // and not paste into is half a box. Everything else in Obelus is
         // about a project, and `Requires::AProject` is what refuses it.
-        if self.chooser.is_some() {
+        //
+        // And so is being told the project has gone, which offers less
+        // still: enter is the page's own, and the rest is the key that
+        // leaves.
+        if self.chooser.is_some() || self.gone {
             return Context::Dialog;
         }
         // A list whose rows are open files is the list of open files, and
@@ -3020,6 +3106,12 @@ impl App {
         if self.chooser.is_some()
             && self.layers().nearest().is_none()
             && self.choosing_a_project(&key)
+        {
+            return;
+        }
+        // And the page saying the project has gone, for the same reason:
+        // it is what is there instead of one.
+        if self.gone && self.layers().nearest().is_none() && self.the_page_saying_it_has_gone(&key)
         {
             return;
         }

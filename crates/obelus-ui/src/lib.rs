@@ -427,6 +427,7 @@ pub mod chat;
 pub mod complete;
 pub mod counts;
 pub mod editor;
+pub mod gone;
 pub mod hover;
 pub mod image;
 pub mod names;
@@ -819,10 +820,17 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     // Or, where there is no project yet, the question of which: a screen
     // of its own rather than the welcome screen, because every key the
     // welcome screen names is about a project.
+    //
+    // Or, where the project has gone, that it has: what it was is closed,
+    // and the welcome screen's keys would be about it.
     if app.reading_nothing() && !layers.filling() {
-        match projects::ProjectsView::new(app) {
-            Some(view) => bars::of(Whose::Projects, || view.render(regions.editor, cells)),
-            None => welcome::WelcomeView::new(app).render(regions.editor, cells),
+        if let Some(view) = gone::GoneView::new(app) {
+            view.render(regions.editor, cells);
+        } else {
+            match projects::ProjectsView::new(app) {
+                Some(view) => bars::of(Whose::Projects, || view.render(regions.editor, cells)),
+                None => welcome::WelcomeView::new(app).render(regions.editor, cells),
+            }
         }
         // What could finish the path being named, which is not a layer
         // for the reason the agent's own commands are not one: the list

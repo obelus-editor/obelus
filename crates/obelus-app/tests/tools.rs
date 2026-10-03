@@ -16,7 +16,11 @@ fn served(
     root: &std::path::Path,
     sender: std::sync::mpsc::Sender<obelus_app::event::Event>,
 ) -> String {
-    let server = obelus_mcp::serve(root, std::sync::Arc::new(sender)).expect("a socket");
+    let (server, listening) =
+        obelus_mcp::serve(root, std::sync::Arc::new(sender)).expect("a socket");
+    // Listening for the life of the test, which is what the loop's own
+    // hold on it is for the life of the project.
+    std::mem::forget(listening);
     obelus_mcp::address(&server, 0)
 }
 

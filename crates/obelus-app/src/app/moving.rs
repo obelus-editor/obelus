@@ -633,6 +633,9 @@ impl App {
                 self.paste_into_the_chooser(what);
                 return;
             }
+            // Nor into the page saying the project has gone, which has no
+            // box -- and nothing behind it to fall through to.
+            None if self.tree_has_gone() => return,
             // Nothing over the document, so it goes into the document -- and
             // a conversation is one. This asked about the *layers* and a
             // conversation was one of those, so when it stopped being one

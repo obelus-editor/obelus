@@ -167,9 +167,6 @@ impl App {
             // once the one it was has gone.
             Requires::AProject => self.has_a_project(),
             Requires::AnotherWorktree => self.another_worktree(),
-            Requires::SomethingOpenOrAProject => {
-                self.has_a_project() || self.documents.iter().any(Option::is_some)
-            }
             Requires::AFileOpen => buffer.is_some(),
             Requires::AFileOnDisk => buffer.is_some_and(|buffer| buffer.content().is_file()),
             // A file, or a box a reader is typing into. The same places a

@@ -481,11 +481,14 @@ but will not read stops Obelus writing at all until it reads again.
 and `index` are watched, and `App::forget_what_git_said` drops what git said
 when either moves.
 
-*A tree that goes takes the project and leaves the window.* `git worktree
-remove` or an `rm` in the reader's shell is somebody else changing the
-world: what is open stays open, everything keyed by the project goes dim,
-and nothing of the project is written into a tree that is not there
-(`App::the_tree_has_gone`, `obelus_git::project`).
+*A tree that goes takes the project and everything open in it.* `git
+worktree remove` or an `rm` in the reader's shell is somebody else changing
+the world: what was open is closed, unwritten work and all, because there
+is nowhere left to write it; the servers, the agent and the tools go with
+it; and the window is a page saying so, with enter to ask which project
+next and the key that leaves. Nothing of the project is written into a
+tree that is not there (`App::the_tree_has_gone`, `ui::gone`,
+`obelus_git::project`).
 
 *A repository and its worktrees are one project.* What Obelus keeps about a
 project -- the notes, which conversation is about which note -- is keyed by
@@ -676,7 +679,8 @@ crates/
   obelus-mcp/       the tools Obelus offers an agent -- and why none of them
                     asks the reader anything itself
   obelus-ui/        editor, status bar, picker, settings, chat, welcome,
-                    which project, images, shapes, shared cell writers
+                    which project, a project that has gone, images, shapes,
+                    shared cell writers
                     · what the bar measures is what is shown, the caret can be
                       in the block, a bar is a block, a column a file might
                       need is reserved for the whole file (editor); everything
