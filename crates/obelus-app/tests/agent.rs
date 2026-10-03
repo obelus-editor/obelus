@@ -8523,6 +8523,23 @@ fn a_conversation_another_obelus_has_open_is_not_opened_again() {
             .is_some_and(|status| status.contains("Talked about in another window")),
         "the status row does not say the note is talked about elsewhere:\n{dump}"
     );
+    // The lock, and not the mark that says the key takes a conversation up
+    // here: the other window may be on another checkout or another agent,
+    // and then this one has nothing to take up. Broken deliberately by
+    // drawing that mark for `Talked::Elsewhere` again.
+    let (lock, here) = match obelus_icons::enabled() {
+        true => (obelus_icons::ui::ELSEWHERE, obelus_icons::ui::AGENT),
+        false => ('-', '*'),
+    };
+    let marks = text
+        .lines()
+        .find_map(|line| line.split_once("somebody else has this"))
+        .map(|(before, _)| before)
+        .unwrap_or_default();
+    assert!(
+        marks.contains(lock) && !marks.contains(here),
+        "a note somebody else is talking about is marked as talked about here:\n{dump}"
+    );
 
     // Given up, it is the reader's again: they closed it in the other
     // window and this one does not have to be restarted. Heard rather than
@@ -9546,11 +9563,15 @@ fn another_checkouts_conversations_are_listed_and_cannot_be_taken_up() {
         Vec::new(),
     );
     remember_a_conversation(&scratch, "fake", "s-here", "here", Some(2_000));
+    // There, because a conversation from a checkout that has gone is not
+    // read at all.
+    let there = scratch.path().join("worktree-two");
+    std::fs::create_dir_all(&there).expect("the other checkout");
     obelus_agent::acp::sessions::change(scratch.path(), None, |remembered| {
         remembered.put(
             &obelus_agent::chats::ChatId::Loose("s-there".to_string()),
             "fake",
-            &scratch.path().join("worktree-two"),
+            &there,
             obelus_agent::acp::sessions::Kept {
                 session: "s-there".to_string(),
                 title: Some("there".to_string()),
@@ -9591,6 +9612,63 @@ fn another_checkouts_conversations_are_listed_and_cannot_be_taken_up() {
     );
 }
 
+/// A conversation had in a checkout that has since gone is not listed.
+///
+/// It can be taken up from nowhere -- the agent keeps it under the directory
+/// it was told -- so its row was a dim line naming somewhere that is not
+/// there, in every other checkout's list, for ever.
+///
+/// Broken deliberately by taking the sweep out of `sessions::read`: the
+/// removed worktree's row is listed, dim.
+#[test]
+fn a_conversation_from_a_checkout_that_has_gone_is_not_listed() {
+    let scratch = support::Scratch::new("agent-conversation-gone-checkout");
+    let (mut app, _events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    remember_a_conversation(&scratch, "fake", "s-here", "here", Some(2_000));
+    let there = scratch.path().join("worktree-two");
+    std::fs::create_dir_all(&there).expect("the other checkout");
+    obelus_agent::acp::sessions::change(scratch.path(), None, |remembered| {
+        remembered.put(
+            &obelus_agent::chats::ChatId::Loose("s-there".to_string()),
+            "fake",
+            &there,
+            obelus_agent::acp::sessions::Kept {
+                session: "s-there".to_string(),
+                title: Some("there".to_string()),
+                told: None,
+                introduced: false,
+                last: Some(1_000),
+            },
+        );
+    });
+    std::fs::remove_dir_all(&there).expect("the checkout goes");
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
+    let rows: Vec<String> = listed_conversations(&app)
+        .into_iter()
+        .map(|item| item.label.clone())
+        .collect();
+    assert_eq!(
+        rows,
+        ["here".to_string()],
+        "a conversation from a checkout that has gone is listed"
+    );
+    assert!(
+        app.picker()
+            .and_then(|picker| picker.what_about())
+            .is_none_or(|said| !said.contains("checkout it was had in")),
+        "the list says why rows cannot be chosen when none is there"
+    );
+}
+
 /// A note's conversation from another checkout is not asked for here, and
 /// is still there for the checkout that had it.
 ///
@@ -9611,6 +9689,7 @@ fn a_notes_conversation_from_another_checkout_is_not_asked_for() {
     )
     .expect("the notes");
     let there = scratch.path().join("worktree-two");
+    std::fs::create_dir_all(&there).expect("the other checkout");
     let id = obelus_git::todo::NoteId::read("0123456W").expect("a name");
     obelus_agent::acp::sessions::change(
         scratch.path(),

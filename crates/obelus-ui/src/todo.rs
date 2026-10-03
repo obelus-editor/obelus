@@ -354,19 +354,22 @@ fn working_mark(talked: Talked, phase: u32) -> Option<String> {
 /// The glyph a conversation wears everywhere else, or the plainest mark
 /// there is where a terminal has no font for it -- and nothing at all for
 /// a note nobody has talked about, because an empty column is what says
-/// so. One glyph for every note that has one, whatever is going on in it:
-/// this column says the conversation exists, and the column before it says
-/// what it is doing.
+/// so. One glyph for every note that has one here, whatever is going on in
+/// it: this column says there is a conversation the key will take up, and
+/// the column before it says what it is doing.
 fn talked_mark(talked: Talked) -> Option<String> {
     let said = match obelus_icons::enabled() {
         true => obelus_icons::ui::AGENT.to_string(),
         false => "*".to_string(),
     };
     match talked {
-        Talked::Not => None,
-        // A conversation open elsewhere is still a conversation, and this
-        // column says only that there is one.
-        Talked::Yes | Talked::Elsewhere | Talked::Working | Talked::Waiting => Some(said),
+        // Not one open elsewhere, which this column used to count: that
+        // window may be on another checkout or another agent, whose
+        // conversation the key cannot take up from here -- so the mark
+        // came and went with whether somebody had it open, not with
+        // whether there was one. The lock before it says all there is.
+        Talked::Not | Talked::Elsewhere => None,
+        Talked::Yes | Talked::Working | Talked::Waiting => Some(said),
     }
 }
 
