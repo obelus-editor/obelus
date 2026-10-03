@@ -1610,62 +1610,33 @@ impl App {
     ///
     /// The number is the one the conversation's tools address carries,
     /// which is its document's. What comes back is said to the agent, which
-    /// is waiting on an answer: closed, closing when the turn ends, or why
-    /// not.
+    /// is waiting on an answer: closed, or why not.
+    ///
+    /// At once, and the turn it was asked from is stopped on the way out.
+    /// It used to wait for that turn to end, so that whatever the agent
+    /// said after the call landed somewhere the reader could see -- and a
+    /// turn the agent never ends then kept the conversation open for good,
+    /// saying it was thinking. Which happens: Claude's adapter folds a
+    /// prompt that arrives while a background task's notification is being
+    /// answered into that answer, and never answers the prompt. Stopped,
+    /// the end is Obelus's own to write, and the conversation is not left
+    /// running where nobody can see it -- taken up again, it would still be
+    /// thinking. What is lost is a sentence after the call, and the tool's
+    /// description tells the agent there is nobody to say it to.
     pub(super) fn close_for_an_agent(&mut self, conversation: Option<usize>) -> String {
         let Some(id) = conversation.map(DocumentId::new) else {
             return "this address names no conversation, so there is nothing to close".to_string();
         };
-        let session = match self.document(id).and_then(Document::chat) {
+        match self.document(id).and_then(Document::chat) {
             Some(talk) if talk.has_the_readers_words() => {
                 return "the reader has started writing in it, so it stays open".to_string();
             }
-            Some(talk) => talk.session.clone(),
+            Some(_) => {}
             None => return "this conversation is not open any more".to_string(),
-        };
-        // From inside a turn, which is the ordinary case: whatever the
-        // agent says after this has to land somewhere the reader can see,
-        // so the closing waits for the turn to end.
-        let running = self.talker.as_ref().and_then(|talker| {
-            talker
-                .turn(session.as_ref())
-                .map(|turn| (talker.connection(), turn))
-        });
-        if let Some(running) = running {
-            if let Some(talk) = self.talk_mut(Whose::One(id)) {
-                talk.closing = Some(running);
-            }
-            return "it closes when this turn ends".to_string();
         }
+        self.interrupt_agent(id);
         self.close_the_conversation(id);
         "closed".to_string()
-    }
-
-    /// Closes the conversation now that a turn of it is over, if that is
-    /// the turn the agent asked for that at the end of, and says whether
-    /// it did.
-    ///
-    /// Only where the turn finished. One the reader stopped, or that went
-    /// wrong, is not the turn that was meant to be the last one -- and
-    /// where they have written something since, it is theirs to answer.
-    fn close_as_the_agent_asked(
-        &mut self,
-        id: DocumentId,
-        turn: acp::Turn,
-        finished: bool,
-    ) -> bool {
-        let connection = self.talker.as_ref().map(acp::Talk::connection);
-        let Some(talk) = self.talk_mut(Whose::One(id)) else {
-            return false;
-        };
-        let asked = talk.closing.take().zip(connection).is_some_and(
-            |((asked_on, asked_at), connection)| asked_on == connection && asked_at == turn,
-        );
-        if !asked || !finished || talk.has_the_readers_words() {
-            return false;
-        }
-        self.close_the_conversation(id);
-        true
     }
 
     /// Closes one conversation and says which, which is the difference
@@ -1709,19 +1680,23 @@ impl App {
     /// above that line -- and the reader pressed escape again and stopped
     /// their own words. Stop means stop; saying them is enter, in the box,
     /// where they can be changed first.
-    pub(super) fn interrupt_agent(&mut self) {
-        if let Some(talk) = self.conversation_mut()
+    ///
+    /// The conversation is named rather than read off the screen, because
+    /// an agent closing its own is stopped too, and it may not be the one
+    /// the reader is in.
+    pub(super) fn interrupt_agent(&mut self, id: DocumentId) {
+        if let Some(talk) = self.talk_mut(Whose::One(id))
             && let Some(parts) = talk.chat.take_back_waiting()
         {
             talk.chat.put_back(parts);
         }
         let running: Vec<String> = self
-            .conversation()
+            .talk(Whose::One(id))
             .map(|talk| talk.chat.commands())
             .unwrap_or_default();
-        for id in running {
-            self.runs.stop(&id);
-            self.tell_whoever_waited(&id);
+        for command in running {
+            self.runs.stop(&command);
+            self.tell_whoever_waited(&command);
         }
         // And the calls it left open, which the agent will not close if it
         // never saw the cancellation: a row that says it is running under a
@@ -1732,10 +1707,11 @@ impl App {
         // running the command for is the exception: its state is the
         // runner's, read every frame (`Chat::running`), and it says how the
         // command stopped above ended -- not Obelus's to overwrite.
-        if let Some(talk) = self.conversation_mut() {
-            talk.chat.stop_the_calls();
-        }
-        let session = self.session_now();
+        let Some(talk) = self.talk_mut(Whose::One(id)) else {
+            return;
+        };
+        talk.chat.stop_the_calls();
+        let session = talk.session.clone();
         let Some(talker) = self.talker.as_mut() else {
             return;
         };
@@ -2043,7 +2019,9 @@ impl App {
                 true
             }
             ChatOutcome::Interrupt => {
-                self.interrupt_agent();
+                if let Some(id) = self.current {
+                    self.interrupt_agent(id);
+                }
                 true
             }
             ChatOutcome::TakeBack(parts) => {
@@ -3222,10 +3200,7 @@ impl App {
                 | acp::Update::Settings(_)
                 | acp::Update::Used(_) => {}
             },
-            acp::Incoming::Ended {
-                turn, why: reason, ..
-            } => {
-                let finished = matches!(reason.as_deref(), Ok("end_turn"));
+            acp::Incoming::Ended { why: reason, .. } => {
                 // Only the ends that are not the ordinary one: a turn that
                 // finished has its answer above it, and "end turn" under
                 // every answer is noise.
@@ -3240,13 +3215,6 @@ impl App {
                     }
                     Ok(other) => self.in_talk(whose, |chat| chat.note(other)),
                     Err(why) => self.in_talk(whose, |chat| chat.note(&format!("The agent: {why}"))),
-                }
-                // Always one conversation: an end names the session it
-                // ends a turn of.
-                if let Whose::One(id) = whose
-                    && self.close_as_the_agent_asked(id, turn, finished)
-                {
-                    return;
                 }
                 // And then whatever the reader said while it was running.
                 // After the line above and not before it, so that the

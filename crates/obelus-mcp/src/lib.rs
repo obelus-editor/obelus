@@ -45,10 +45,11 @@
 //! one another, and that is answered once, in `obelus-app`.
 //!
 //! And one takes something off the screen: `close_conversation` closes the
-//! conversation it is called from. Closed and not ended: what goes is a
-//! document from what is open and nothing else -- the session is not let
-//! go and the list of conversations still offers it -- which is why an
-//! agent may do it at all once it has asked. Whether taking it up again
+//! conversation it is called from, at once, and stops the turn it was
+//! called from on the way. Closed and not ended: what goes is a document
+//! from what is open and the turn that was running in it -- the session is
+//! not let go and the list of conversations still offers it -- which is
+//! why an agent may do it at all once it has asked. Whether taking it up again
 //! brings its words back is the agent's, so the description promises
 //! nothing about that: an agent that can only resume comes back to an
 //! empty page, and one that can do neither to a new conversation. It is
@@ -380,12 +381,13 @@ impl Obelus {
     #[tool(description = "\
         Close this conversation, once the work it was opened for is done. \
         Ask the reader first, with `elicitation/create` -- this takes it off \
-        their screen and does not ask for you. It closes when this turn \
-        ends, so make it the last thing you do and say whatever is left to \
-        say before it; and it stays open if the reader has started writing \
-        in it. It stays in the list of conversations, and is taken up again \
-        from there as fully as you can take a conversation up again -- so \
-        do not promise the reader it comes back as it was.")]
+        their screen and does not ask for you. It closes at once and stops \
+        this turn, so make it the last thing you do and say whatever is left \
+        to say before it: nobody sees anything after it. It stays open if \
+        the reader has started writing in it. It stays in the list of \
+        conversations, and is taken up again from there as fully as you can \
+        take a conversation up again -- so do not promise the reader it \
+        comes back as it was.")]
     async fn close_conversation(
         &self,
         Extension(parts): Extension<axum::http::request::Parts>,
