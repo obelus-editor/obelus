@@ -83,12 +83,11 @@ fn mark(speaker: Speaker) -> &'static str {
 
 /// What a tool call's state says while it is still running.
 ///
-/// The protocol's own word, named because three places in this file have
-/// to agree about it: the mark at the front of a row, which turns while a
-/// call is in this state; the mark after the title, which stays away while
-/// it is; and [`ChatView::state_of`], which says what each of the four
-/// states looks like. Three spellings of one string is two chances for the
-/// row to say a call is running and still at once.
+/// The protocol's own word, named because two places in this file have to
+/// agree about it: [`ChatView::turns`], which the mark at the front of a
+/// row and the mark after its title both ask, and [`ChatView::state_said`],
+/// which says what each state looks like. Two spellings of one string is a
+/// chance for the row to say a call is running and still at once.
 const UNDER_WAY: &str = "in_progress";
 
 /// The protocol's word for a call that has not started, which a call that
@@ -994,7 +993,11 @@ impl ChatView<'_> {
                 // kind goes while the call runs and comes back when it
                 // ends: what sort of call it is is written along the row
                 // beside it, and which of ten calls is the live one is
-                // written nowhere else.
+                // written nowhere else -- as nearly as the agent says. One
+                // that sends every call of a message as waiting and runs
+                // them one at a time has two turning where one is running,
+                // and that is the price of not leaving the one that is
+                // running still (see `turns`).
                 if self.turns(row) {
                     put(
                         cells,
