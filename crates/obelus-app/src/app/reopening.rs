@@ -51,11 +51,12 @@ enum Open {
     File {
         /// Against the tree where it is in it, as it was named otherwise.
         path: PathBuf,
-        /// The line the caret is on, counted from one.
+        /// The line the caret is on, counted from zero the way the text
+        /// counts them: a file format has no reader to number lines for.
         line: usize,
-        /// The character it is before, counted from one.
+        /// The character it is before, counted from zero.
         column: usize,
-        /// The first line on screen, counted from one.
+        /// The first line on screen, counted from zero.
         top: usize,
     },
     /// A conversation, by what claims it.
@@ -160,7 +161,7 @@ fn read(path: &Path) -> Option<Record> {
         row.get(key)
             .and_then(toml::Value::as_integer)
             .and_then(|count| usize::try_from(count).ok())
-            .unwrap_or(1)
+            .unwrap_or(0)
     };
     let open = table
         .get("open")
@@ -297,9 +298,9 @@ impl App {
                             .strip_prefix(&self.reopening.tree)
                             .unwrap_or(path)
                             .to_path_buf(),
-                        line: cursor.line.get() + 1,
-                        column: cursor.column.get() + 1,
-                        top: buffer.viewport().top.get() + 1,
+                        line: cursor.line.get(),
+                        column: cursor.column.get(),
+                        top: buffer.viewport().top.get(),
                     })
                 }
                 Some(Document::Chat(talk)) => claimed_as(talk).map(Open::Conversation),
@@ -449,13 +450,10 @@ impl App {
         // A file that has gone does not open, and is passed over.
         let at = self.open_quietly(path)?;
         let buffer = self.file_mut(DocumentId::new(at))?;
-        let line = LineNumber::new(line.saturating_sub(1));
-        buffer.place_cursor(line, CharColumn::new(column.saturating_sub(1)));
+        buffer.place_cursor(LineNumber::new(line), CharColumn::new(column));
         // The view where it was, rather than wherever the caret pulls it:
         // the reader left a screen, and that screen is what they know.
-        let top = buffer
-            .text()
-            .clamp_line(LineNumber::new(top.saturating_sub(1)));
+        let top = buffer.text().clamp_line(LineNumber::new(top));
         buffer.look_back(obelus_buffer::Viewport {
             top,
             top_row: 0,
@@ -510,7 +508,7 @@ mod tests {
     /// tree's documents survive the window, and one that does not come
     /// back whole reopens something else.
     ///
-    /// Broken deliberately by writing every `line` as 1: the file came
+    /// Broken deliberately by writing every `line` as 0: the file came
     /// back on its first line, and this failed.
     #[test]
     fn a_record_survives_the_file() {
