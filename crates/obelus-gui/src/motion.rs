@@ -502,6 +502,13 @@ impl Scrolling {
         // has drawn for a second is not in the middle of anything.
         let fresh = !self.moving(now);
         let since = if fresh { rows } else { self.since + rows };
+        // Turned back past where it is being drawn, and what is drawn is no
+        // longer between the page kept and where the list has got to: the
+        // rows it would show are on neither, and the gap goes black. The
+        // frame before this one is on the other side of it, so the slide
+        // starts again from that.
+        let turned = !fresh && !(since.min(0.0)..=since.max(0.0)).contains(&(rows + behind));
+        let (fresh, since) = if turned { (true, rows) } else { (fresh, since) };
         if since.abs() > most {
             self.from = None;
             self.since = 0.0;
@@ -1648,6 +1655,36 @@ mod tests {
         assert!(
             motion.band_moved(room, 1.0, 20.0, midway + CATCH_UP),
             "caught up"
+        );
+    }
+
+    /// A band that turns back in the middle of a slide is still drawn
+    /// somewhere a page has rows for.
+    ///
+    /// What is shown is somewhere between the page kept and where the list
+    /// has got to, because the gap is filled out of the one and the rest is
+    /// the other. A transcript following its end does turn back: a tool
+    /// call arrives, and folds itself shut a moment later.
+    ///
+    /// Break: leave `turned` out of `Scrolling::moved` and the band is
+    /// drawn nearly two rows from where it belongs while the page kept is
+    /// where it belongs -- two rows at the foot of a transcript that no
+    /// page has, which is the black that showed under "Thinking…".
+    #[test]
+    fn a_band_that_turns_back_is_drawn_where_a_page_has_rows() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        let room = a_band(0);
+        assert!(motion.band_moved(room, 3.0, 10.0, base));
+        let midway = base + CATCH_UP / 4;
+        assert!(
+            motion.band_moved(room, -3.0, 10.0, midway),
+            "the page kept has none of the rows it would show"
+        );
+        let (behind, since) = motion.band_shown(room, midway).expect("on its way");
+        assert!(
+            (since.min(0.0)..=since.max(0.0)).contains(&behind),
+            "drawn {behind} rows from where it belongs, and the page kept is {since}"
         );
     }
 
