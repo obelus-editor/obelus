@@ -260,11 +260,9 @@ pub(crate) struct Said<'a> {
     pub(crate) parted: &'a [Parted],
     /// And which runs of a one-cell column are marked.
     pub(crate) stroked: &'a [Stroked],
-    /// And what is under the pane, where there is one.
-    pub(crate) behind: Option<&'a Behind>,
-    /// And under each box with a frame round it, nearest the reader last:
-    /// over that pane where both are up.
-    pub(crate) cards: &'a [Behind],
+    /// And what is under each pane and each box, furthest first: each is
+    /// glass over everything before it.
+    pub(crate) stack: &'a [Behind],
     /// And the bands that are catching up with where their lists have
     /// got to.
     ///
@@ -313,6 +311,12 @@ pub(crate) struct Behind {
 }
 
 impl Behind {
+    /// Whether this is a box put over the page rather than a pane joined
+    /// to it.
+    pub(crate) fn is_a_box(&self) -> bool {
+        self.joined == Joined::Nowhere
+    }
+
     /// What was at this place, as the painter reads a cell.
     pub(crate) fn look(&self, x: u16, y: u16) -> Option<Look<'_>> {
         self.at(x, y).map(|cell| Look {

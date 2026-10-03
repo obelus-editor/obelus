@@ -13,6 +13,14 @@
 //! The colours go through untouched, which is why the surface is viewed
 //! without its sRGB conversion -- a theme's `#1e1e2e` is the colour the
 //! reader picked, and a pipeline that corrects it draws a different one.
+//!
+//! Every pane and every box is glass over everything said before it. Each
+//! is a level with a picture of its own -- the screen as it was before it
+//! was put there -- so a list opened over the settings shows the settings
+//! through it, and the settings still show the page through theirs. There
+//! were two places for that, one pane and one box, and the second pane
+//! said took the first one's: the settings went solid the moment a
+//! setting's choices opened over them (`Level`, `put_over`).
 
 use std::{collections::HashMap, ops::Range, sync::Arc, time::Instant};
 
@@ -165,13 +173,14 @@ pub(crate) struct Painter {
     layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
     smooth: wgpu::Sampler,
-    /// What the first pane's glass reads -- and the bindings the whole
-    /// frame is drawn with, because nothing else reads a picture.
-    sheet: Seen,
-    /// What a box's glass reads, which is a second picture because it is
-    /// a second pane: over the first one where both are up, and what it
-    /// sees through itself is that pane's glass.
-    card: Seen,
+    /// What each pane's and each box's glass reads, furthest first: each
+    /// is a picture of its own, because what one sees through itself is
+    /// the glass of everything under it. Made as they are first wanted and
+    /// kept, so a window that has once had three things open draws a fourth
+    /// pass for nothing -- and the first is always there, because its
+    /// bindings are the ones the whole frame is drawn with, nothing else
+    /// reading a picture.
+    levels: Vec<Seen>,
     /// Where a blur's first way is put, for the second to read, and the
     /// bindings that read it.
     scratch: wgpu::TextureView,
@@ -222,32 +231,123 @@ impl Seen {
 /// it read.
 #[derive(Clone, Debug, Default)]
 struct Placed {
-    /// How many quads are what is behind the first pane, which is drawn
-    /// twice: into its picture, and on the screen, where it is what shows
-    /// round the pane's edge.
-    behind: usize,
-    /// How many are that pane and everything about it: what a box's
-    /// picture draws first, because what is under the box is that pane.
-    sheet: usize,
-    /// The box's: the picture of what is under it, which is drawn into
-    /// its own and nowhere else, and the glass that reads it.
-    card: Option<(Range<usize>, usize)>,
-    /// And which quad lays that picture back over the box while the box
-    /// is still coming up, where one is: it reads the same picture the
-    /// glass does, so it is drawn with the same bindings.
-    covered: Option<usize>,
+    /// Each pane and box, furthest first -- see `Level`.
+    levels: Vec<Level>,
+    /// And which quad lays the nearest box's picture back over it while the
+    /// box is still coming up, where one is, with which level that is: it
+    /// reads the same picture the glass does, so it is drawn with the same
+    /// bindings.
+    covered: Option<(usize, usize)>,
     /// How many are what the screen draws.
     drawn: usize,
     /// And with the pieces a sliding pane is put back in, which is where
     /// the blurs start.
     moved: usize,
-    /// The first quad of each blur's pair: the first pane's and the box's.
-    blurs: [Option<usize>; 2],
     /// Where a band under the first pane is catching up: the rows of it
     /// above the pane, which the slide brings in under it, and the quads
     /// that put what is behind the pane back together with the band slid.
     /// See `Painter::sliding_under`.
     under: Option<(Range<usize>, Range<usize>)>,
+}
+
+/// Where one pane or box is in the frame being built.
+///
+/// What is under it, then what is round its glass, then the glass, then
+/// what is round it again: the first level's picture is its own `under`,
+/// and every level over it is the glass of every level under it with its
+/// own `under` on top -- which is the screen as it was before this one was
+/// put over it, and so the picture this one's glass reads.
+#[derive(Clone, Debug)]
+struct Level {
+    /// What it was put over. The first level's starts at the first quad,
+    /// which is the window's own ground, and is drawn on the screen as
+    /// well; every other level's is drawn into its picture and nowhere
+    /// else.
+    under: Range<usize>,
+    /// Which quad is the glass, which is the one drawn with this level's
+    /// pictures. Between `under` and it is a box's frame.
+    glass: usize,
+    /// Where what is about it ends: a rule's half row under a pane's line.
+    end: usize,
+    /// Where the glass is, left, top, right and bottom, which is what its
+    /// blur covers and what a pane casts its shadow from.
+    rect: [f32; 4],
+    /// Whether it is a pane rather than a box.
+    pane: bool,
+    /// The first quad of its blur's pair.
+    blur: usize,
+}
+
+impl Placed {
+    /// How many quads are what is behind the first pane, which is drawn
+    /// twice: into its picture, and on the screen, where it is what shows
+    /// round the pane's edge.
+    fn behind(&self) -> usize {
+        self.levels.first().map_or(0, |level| level.under.end)
+    }
+}
+
+/// Which pictures a run of quads is drawn with.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Reads {
+    /// None at all: a quad that is its colour, or a letter.
+    Nothing,
+    /// One level's, which its glass reads -- and, for the box coming up,
+    /// what is laid back over it.
+    Level(usize),
+}
+
+/// The quads the screen draws, each with whatever it reads.
+///
+/// Everything but the glass reads nothing, so it is drawn with whatever the
+/// first glass reads. Each glass reads its own level's pictures, and what
+/// is under each level over the first is that level's picture and not on
+/// the screen at all.
+fn on_the_screen(placed: &Placed) -> Vec<(Range<usize>, Reads)> {
+    let mut plan = Vec::new();
+    let mut at = 0;
+    for (level, placed) in placed.levels.iter().enumerate() {
+        if level > 0 {
+            plan.push((at..placed.under.start, Reads::Nothing));
+            at = placed.under.end;
+        }
+        plan.push((at..placed.glass, Reads::Nothing));
+        plan.push((placed.glass..placed.glass + 1, Reads::Level(level)));
+        at = placed.glass + 1;
+    }
+    match placed.covered {
+        // What is under the box, over the box -- the same picture the
+        // glass reads, so the same bindings.
+        Some((covered, level)) => {
+            plan.push((at..covered, Reads::Nothing));
+            plan.push((covered..covered + 1, Reads::Level(level)));
+            plan.push((covered + 1..placed.drawn, Reads::Nothing));
+        }
+        None => plan.push((at..placed.drawn, Reads::Nothing)),
+    }
+    plan.retain(|(quads, _)| !quads.is_empty());
+    plan
+}
+
+/// What one level was put over, as the screen had it: the picture its
+/// glass reads, and what shows under a pane while it is on its way in.
+///
+/// The first level's own `under`, then the glass of every level before
+/// this one, then this one's `under`. Never this level's own pictures,
+/// which are what this may be drawing into -- the one thing a pass may not
+/// read.
+fn put_over(levels: &[Level], level: usize) -> Vec<(Range<usize>, Reads)> {
+    let mut plan = vec![(levels[0].under.clone(), Reads::Nothing)];
+    if level > 0 {
+        for (at, placed) in levels[..level].iter().enumerate() {
+            plan.push((placed.under.end..placed.glass, Reads::Nothing));
+            plan.push((placed.glass..placed.glass + 1, Reads::Level(at)));
+            plan.push((placed.glass + 1..placed.end, Reads::Nothing));
+        }
+        plan.push((levels[level].under.clone(), Reads::Nothing));
+    }
+    plan.retain(|(quads, _)| !quads.is_empty());
+    plan
 }
 
 /// One rectangle, as the shader reads it.
@@ -758,8 +858,7 @@ impl Painter {
             sampler: &sampler,
             smooth: &smooth,
         };
-        let sheet = Seen::made(&binder, view, width, height);
-        let card = Seen::made(&binder, view, width, height);
+        let levels = vec![Seen::made(&binder, view, width, height)];
         let scratch = made_to_draw_into(&device, view, width, height);
         let scratch_bindings = binder.bound(&scratch, &atlas.view);
         let picture = made_to_draw_into(&device, view, width, height);
@@ -844,8 +943,7 @@ impl Painter {
             layout,
             sampler,
             smooth,
-            sheet,
-            card,
+            levels,
             scratch,
             scratch_bindings,
             picture,
@@ -881,14 +979,14 @@ impl Painter {
         // wrong place for every pixel of the glass.
         let (width, height) = (self.configured.width, self.configured.height);
         let binder = self.binder();
-        let sheet = Seen::made(&binder, self.view, width, height);
-        let card = Seen::made(&binder, self.view, width, height);
+        let levels = (0..self.levels.len())
+            .map(|_| Seen::made(&binder, self.view, width, height))
+            .collect();
         let scratch = made_to_draw_into(&self.device, self.view, width, height);
         let scratch_bindings = binder.bound(&scratch, &self.atlas.view);
         let picture = made_to_draw_into(&self.device, self.view, width, height);
         let showing_bindings = binder.bound(&picture, &self.atlas.view);
-        self.sheet = sheet;
-        self.card = card;
+        self.levels = levels;
         (self.scratch, self.scratch_bindings) = (scratch, scratch_bindings);
         (self.picture, self.showing_bindings) = (picture, showing_bindings);
     }
@@ -968,23 +1066,48 @@ impl Painter {
         // be the black the pass clears to.
         let [left, top, wide, tall] = whole_window([across, down], margin);
         self.block(left, top, wide, tall, rgba(self.ground, Ink::Background));
-        // First of everything, because these are the quads the backdrop
-        // pass draws and it draws the front of the buffer.
-        let pane = said
-            .behind
-            .map(|behind| self.glass(page, behind, said.ruled, said.barred, said.capped, fonts));
-        self.placed.sheet = self.quads.len();
-        // The boxes whose frames are still there to hold them -- see
-        // `Behind::framed` -- which four passes ask about. The nearest is
-        // glass; the rest, which are rare, are drawn on their own ground.
-        let framed: Vec<&Behind> = said.cards.iter().filter(|card| card.framed(page)).collect();
-        let (card, opaque) = match framed.split_last() {
-            Some((card, rest)) => (Some(*card), rest),
-            None => (None, &[][..]),
-        };
-        if let Some(card) = card {
-            self.card_glass(page, card, said.behind, fonts);
+        // Every pane and box, furthest first, each over the glass of those
+        // before it. A box is one only while its frame is still there to
+        // hold it -- see `Behind::framed` -- which four passes ask about.
+        let stack: Vec<&Behind> = said
+            .stack
+            .iter()
+            .filter(|over| !over.is_a_box() || over.framed(page))
+            .collect();
+        // First of everything, because the first of these is what the
+        // first picture draws and it draws the front of the buffer.
+        for (at, over) in stack.iter().enumerate() {
+            let lower = &stack[..at];
+            let start = match at {
+                // The window's own ground is under the first one too.
+                0 => 0,
+                _ => self.quads.len(),
+            };
+            match (at, over.is_a_box()) {
+                (0, false) => self.pane_under(over, said.barred, said.capped, fonts),
+                _ => self.seen_under(over, lower, fonts),
+            }
+            let under = start..self.quads.len();
+            let (glass, rect) = match over.is_a_box() {
+                true => self.box_glass(page, over, lower, cell),
+                false => self.pane_glass(page, over, lower, said.ruled, cell),
+            };
+            self.placed.levels.push(Level {
+                under,
+                glass,
+                end: self.quads.len(),
+                rect,
+                pane: !over.is_a_box(),
+                blur: 0,
+            });
         }
+        // The pane on top, which is the one that arrives: a list opened
+        // over the settings comes up over a page that was already there.
+        let top = stack.iter().rposition(|over| !over.is_a_box());
+        let pane = top.map(|top| self.placed.levels[top].rect);
+        // And the first, where it is a pane: a band scrolling under glass
+        // is put back into the first picture -- see `sliding_under`.
+        let first = stack.first().copied().filter(|over| !over.is_a_box());
         // The shapes the page still holds -- see `Ticked::still_said` and
         // the one beside it, and `Capped`'s a few lines down, which is
         // kept apart only because the caps are wanted as borrows. Asked
@@ -1013,11 +1136,12 @@ impl Painter {
             marked: &marked,
             ..said
         };
-        let panes: Vec<&Behind> = said.behind.into_iter().chain(card).collect();
-        // Before the backgrounds, which paint every cell inside a frame
-        // over it: the ground a selected row wears in a list with a frame
-        // round it is the row's, and goes on top of the box's.
-        self.frames(page, opaque, &panes, cell);
+        let panes = &stack;
+        let framed: Vec<&Behind> = stack
+            .iter()
+            .copied()
+            .filter(|over| over.is_a_box())
+            .collect();
         // The caps still about the cells they were said about -- see
         // `Capped::still_said`.
         let capped: Vec<&Capped> = said
@@ -1025,18 +1149,18 @@ impl Painter {
             .iter()
             .filter(|cap| cap.still_said(page))
             .collect();
-        self.backgrounds(page, cell, &panes, &framed, &capped);
+        self.backgrounds(page, cell, panes, &framed, &capped);
         // Over the page and under everything written on it: a hold is a
         // ground, and the letters it is behind are the ones the reader is
         // holding.
-        self.holdings(page, &panes, &framed, &capped, cell);
+        self.holdings(page, panes, &framed, &capped, cell);
         self.rules(page, said.ruled, cell);
         // The boundaries with no row to be on, which go where there is no
         // cell: the pixel between one row and the one above it. Under the
         // letters, like a rule, because a line through a letter is a line
         // nobody put there -- and there is nothing on that pixel to be
         // under except the ground.
-        self.partings(page, said.parted, &panes, cell);
+        self.partings(page, said.parted, panes, cell);
         self.letters(page, fonts, said, &framed, &capped);
         // Over the glyph, the way a terminal draws one: a descender
         // crossing the line is what an underline looks like everywhere
@@ -1045,10 +1169,10 @@ impl Painter {
         // Over the text, which it covers: a cap is the shape the cells
         // behind a key are, and it writes the key on itself, smaller than
         // the words beside it.
-        self.caps(page, &capped, &panes, fonts);
+        self.caps(page, &capped, panes, fonts);
         // Over the letters: a switch replaces the glyph standing in for
         // it, rather than sitting beside one.
-        self.ticks(page, said.ticked, &panes, &framed, &capped, cell);
+        self.ticks(page, said.ticked, panes, &framed, &capped, cell);
         // And so does a bar, for the same reason: what a terminal has for
         // a track is a column of full blocks, and a window has a shape.
         self.bars(page, said.barred, cell);
@@ -1064,9 +1188,8 @@ impl Painter {
         // drawn. Before the caret, which is the reader's own place and
         // is never in shadow.
         self.shadows(
-            &said,
-            pane.filter(|_| moving.pane.is_none()),
-            &framed,
+            &stack,
+            top.filter(|_| moving.pane.is_some()),
             moving.card.unwrap_or(1.0),
             cell,
         );
@@ -1087,20 +1210,21 @@ impl Painter {
         // nothing has to be drawn a second time. Over everything of the
         // box's, the caret in it included: a solid caret on a box that is
         // half there is the one part of it that has already arrived.
-        if let (Some(card), Some(along)) = (card, moving.card) {
-            self.placed.covered = Some(self.quads.len());
-            self.slid(box_of(card.area, cell), 0.0, 1.0 - along);
+        let nearest = stack.iter().rposition(|over| over.is_a_box());
+        if let (Some(nearest), Some(along)) = (nearest, moving.card) {
+            self.placed.covered = Some((self.quads.len(), nearest));
+            self.slid(box_of(stack[nearest].area, cell), 0.0, 1.0 - along);
         }
 
         // Everything the frame says has been said. What is left is
         // putting it back on the screen in two pieces, where a pane is on
         // its way in -- see `paint.wgsl`.
         self.placed.drawn = self.quads.len();
-        if let (Some(pane), Some(along)) = (pane, moving.pane) {
+        if let (Some(top), Some(pane), Some(along)) = (top, pane, moving.pane) {
             let height = pane[3] - pane[1];
             // A pane comes from the side it is joined to, which is the
             // only side it could come from without crossing the page.
-            let away = match said.behind.map(|behind| behind.joined) {
+            let away = match Some(stack[top].joined) {
                 Some(Joined::Below) => 1.0,
                 _ => -1.0,
             };
@@ -1114,7 +1238,7 @@ impl Painter {
             // from stops there. And it comes up as the pane does, because
             // a shadow at full strength under a pane that is still half
             // there is a shadow with nothing casting it.
-            if let Some(joined) = said.behind.and_then(|behind| casting(behind.joined)) {
+            if let Some(joined) = casting(stack[top].joined) {
                 self.shadow(
                     reached(pane, shift),
                     0.0,
@@ -1127,23 +1251,19 @@ impl Painter {
             // The pane's cells rather than its glass, which starts half
             // way down the rule over it: the half row above the line,
             // slid, would be filled from inside the list.
-            let over = said.behind.map(|behind| box_of(behind.area, cell));
+            let over = first.map(|first| box_of(first.area, cell));
             self.catching_up(said.bands, over, fonts);
         }
         // Last, because none of it is drawn on the screen: the blurs are
         // passes of their own, before any of the above.
         self.placed.moved = self.quads.len();
-        self.placed.blurs = [
-            pane.map(|pane| self.blurs_over(pane)),
-            self.placed.card.clone().map(|(_, glass)| {
-                let [left, top, wide, tall] = self.quads[glass].rect;
-                self.blurs_over([left, top, left + wide, top + tall])
-            }),
-        ];
+        for at in 0..self.placed.levels.len() {
+            self.placed.levels[at].blur = self.blurs_over(self.placed.levels[at].rect);
+        }
         if moving.pane.is_none()
-            && let Some(behind) = said.behind
+            && let Some(first) = first
         {
-            self.sliding_under(page, behind, said.bands, fonts);
+            self.sliding_under(page, first, said.bands, fonts);
         }
 
         // Where the light is, in the pixels a fragment knows itself by:
@@ -1232,7 +1352,8 @@ impl Painter {
                 label: Some("obelus"),
             });
         let placed = self.placed.clone();
-        // What is behind the pane, into a picture of its own. Only the
+        self.levels_for(placed.levels.len());
+        // What is behind the first pane, into a picture of its own. Only the
         // front of the buffer, which is exactly those cells -- and only
         // where there is a pane at all, so a window with nothing over the
         // page does none of this.
@@ -1248,38 +1369,33 @@ impl Painter {
                     let mut pass =
                         self.pass(&mut encoder, "obelus behind, standing", &self.picture);
                     pass.set_bind_group(0, &self.plain_bindings, &[]);
-                    drawing(&mut pass, 0..placed.behind);
+                    drawing(&mut pass, 0..placed.behind());
                     drawing(&mut pass, above);
                 }
-                let mut pass = self.pass(&mut encoder, "obelus behind", &self.sheet.backdrop);
+                let mut pass = self.pass(&mut encoder, "obelus behind", &self.levels[0].backdrop);
                 pass.set_bind_group(0, &self.showing_bindings, &[]);
                 drawing(&mut pass, put_back);
             }
-            None if placed.behind > 0 => {
-                let mut pass = self.pass(&mut encoder, "obelus behind", &self.sheet.backdrop);
-                // Not the pane's own bindings: those have the texture this
-                // pass is drawing into bound for reading, which is the one
-                // thing a pass may not have.
-                pass.set_bind_group(0, &self.plain_bindings, &[]);
-                drawing(&mut pass, 0..placed.behind);
+            None if !placed.levels.is_empty() => {
+                let mut pass = self.pass(&mut encoder, "obelus behind", &self.levels[0].backdrop);
+                self.beneath(&mut pass, 0);
             }
             None => {}
         }
-        if let Some(first) = placed.blurs[0] {
-            self.blurring(&mut encoder, first, &self.sheet);
-        }
-        // What is behind the box, into a picture of its own: the first
-        // pane as the screen shows it, glass and all, and then the cells
-        // the box was put over. Reading the first picture while drawing
-        // into the second, which is two textures and allowed.
-        if let Some((under, _)) = placed.card.clone() {
-            let mut pass = self.pass(&mut encoder, "obelus behind the box", &self.card.backdrop);
-            pass.set_bind_group(0, &self.sheet.bindings, &[]);
-            drawing(&mut pass, 0..placed.sheet);
-            drawing(&mut pass, under);
-        }
-        if let Some(first) = placed.blurs[1] {
-            self.blurring(&mut encoder, first, &self.card);
+        // And each one over it, in order: a picture of the screen as it was
+        // before that one was put over it, which reads the pictures before
+        // it and so has to come after them. Reading one while drawing into
+        // another, which is two textures and allowed.
+        for (at, level) in placed.levels.iter().enumerate() {
+            if at > 0 {
+                let mut pass = self.pass(
+                    &mut encoder,
+                    "obelus behind the next",
+                    &self.levels[at].backdrop,
+                );
+                self.beneath(&mut pass, at);
+            }
+            self.blurring(&mut encoder, level.blur, &self.levels[at]);
         }
         // A pane on its way in: the frame goes into a picture of its own
         // first, and the screen is put together out of it below. Only
@@ -1303,8 +1419,11 @@ impl Painter {
                 // place, it was a pane already open with only its words
                 // sliding into it -- which is not what the list does.
                 true => {
-                    pass.set_bind_group(0, &self.sheet.bindings, &[]);
-                    drawing(&mut pass, 0..placed.behind);
+                    // What the pane on top was put over, which is the
+                    // picture its glass reads.
+                    if let Some(top) = placed.levels.iter().rposition(|level| level.pane) {
+                        self.beneath(&mut pass, top);
+                    }
                     pass.set_bind_group(0, &self.showing_bindings, &[]);
                     drawing(&mut pass, placed.drawn..placed.moved);
                 }
@@ -1340,7 +1459,7 @@ impl Painter {
     ) {
         let (width, height) = (cell.width, cell.height);
         for row in 0..page.rows() {
-            // A frame's own cells, which `frames` has drawn already: what
+            // A frame's own cells, which `frame` has drawn already: what
             // the cells hold there is a terminal's square corner under a
             // round one.
             let ring: Vec<u16> = (0..page.columns())
@@ -2009,26 +2128,6 @@ impl Painter {
         }
     }
 
-    /// The boxes with frames round them that are not glass, each on its
-    /// own ground inside its line.
-    ///
-    /// Which leaves the cells *inside* the ring to `backgrounds`, drawn
-    /// over this, so that whatever they wear -- a selected row most often
-    /// -- is theirs.
-    fn frames(&mut self, page: &Page, cards: &[&Behind], panes: &[&Behind], cell: CellSize) {
-        for card in cards {
-            let ([left, top, wide, tall], radius) = self.frame(page, card, panes, cell);
-            self.rounded(
-                left,
-                top,
-                wide,
-                tall,
-                radius,
-                rgba(card.ground, Ink::Background),
-            );
-        }
-    }
-
     /// A box's frame, drawn as the shape a terminal spells in `╭─╮`: the
     /// line where the glyphs put it, down the middle of the ring of cells,
     /// and outside it what the box was put over, where a terminal has its
@@ -2519,28 +2618,19 @@ impl Painter {
         }
     }
 
-    /// What is under a pane, and the glass over it.
+    /// What is under a pane, drawn exactly as the page would draw it.
     ///
-    /// The cells first, all of them, drawn exactly as the page would draw
-    /// them. They go in front of everything else in the buffer because
-    /// they are drawn twice: once into a texture of their own, which is
-    /// what the glass reads, and once here on the screen, where they are
-    /// what shows through the pane's rounded corners -- the one place the
-    /// pane is not.
-    ///
-    /// Then one quad over the lot of it, which is the glass. What it does
-    /// with what is behind is in `paint.wgsl`: the shape is the same
-    /// rounded box a key's cap is, and it is the same function that says
-    /// where its edge is.
-    fn glass(
+    /// The first pane's goes in front of everything else in the buffer,
+    /// because it is drawn twice: once into a texture of its own, which is
+    /// what the glass reads, and once on the screen, where it is what shows
+    /// through the pane's rounded corners -- the one place the pane is not.
+    fn pane_under(
         &mut self,
-        page: &Page,
         behind: &Behind,
-        ruled: &[Ruled],
         barred: &[Barred],
         capped: &[Capped],
         fonts: &mut Fonts,
-    ) -> [f32; 4] {
+    ) {
         let cell = fonts.cell();
         for y in behind.area.top()..behind.area.bottom() {
             let ground = self.ground_colour();
@@ -2579,10 +2669,31 @@ impl Painter {
         for cap in capped.iter().filter(|cap| cap.still_behind(behind)) {
             self.cap(cap, |x, y| behind.look(x, y), true, fonts);
         }
-        self.placed.behind = self.quads.len();
+    }
 
+    /// The glass over a pane: one quad over what is under it. What it does
+    /// with what is behind is in `paint.wgsl`: the shape is the same
+    /// rounded box a key's cap is, and it is the same function that says
+    /// where its edge is.
+    ///
+    /// Hands back which quad the glass is, which is the one drawn with the
+    /// pane's own pictures, and where it is.
+    fn pane_glass(
+        &mut self,
+        page: &Page,
+        behind: &Behind,
+        lower: &[&Behind],
+        ruled: &[Ruled],
+        cell: CellSize,
+    ) -> (usize, [f32; 4]) {
+        // Over another pane's glass where it is over one at all: a list
+        // opened over the settings is, a list opened over the code never.
+        let on_glass = lower.iter().any(|lower| lower.area.intersects(behind.area));
         let mut tint = rgba(behind.ground, Ink::Background);
-        tint[3] = TINT;
+        tint[3] = match on_glass {
+            true => ON_GLASS_TINT,
+            false => TINT,
+        };
         let (left, mut top) = (
             f32::from(behind.area.x) * cell.width,
             f32::from(behind.area.y) * cell.height,
@@ -2632,19 +2743,23 @@ impl Painter {
             ));
             low = at;
         }
+        let glass = self.quads.len();
         self.quads.push(Quad {
             rect: [left, top, (far - left).max(1.0), (low - top).max(1.0)],
             uv: self.atlas.white,
             colour: tint,
             flags: SOLID
                 | GLASS
+                | match on_glass {
+                    true => ON_GLASS,
+                    false => 0,
+                }
                 | match behind.joined {
                     Joined::Above => HANGING,
                     Joined::Below => STANDING,
                     // Nothing under the screen's own bottom edge.
                     Joined::Screen => 0,
-                    // Never here: a box is `card_glass`'s, and the window
-                    // keeps it apart from the pane this is.
+                    // Never here: a box's glass is `box_glass`'s.
                     Joined::Nowhere => 0,
                 },
             // Unread: a pane has no corners to round -- see `outside` in
@@ -2661,7 +2776,7 @@ impl Painter {
                 rgba(ground, Ink::Background),
             );
         }
-        [left, top, far, low]
+        (glass, [left, top, far, low])
     }
 
     /// The soft edge outside a pane and outside each box with a frame
@@ -2685,30 +2800,25 @@ impl Painter {
     /// one a terminal already answers -- and it is added in the front
     /// end, from what the front end already knows: the rectangle it drew
     /// the glass in, and which edge the thing is joined to.
-    fn shadows(
-        &mut self,
-        said: &Said<'_>,
-        pane: Option<[f32; 4]>,
-        framed: &[&Behind],
-        boxes: f32,
-        cell: CellSize,
-    ) {
+    fn shadows(&mut self, stack: &[&Behind], sliding: Option<usize>, boxes: f32, cell: CellSize) {
         let spread = cell.height * SHADOW_SPREAD;
-        if let (Some(glass), Some(joined)) =
-            (pane, said.behind.and_then(|behind| casting(behind.joined)))
-        {
-            self.shadow(glass, 0.0, joined, spread, 1.0);
-        }
-        // And a box has four edges and corners, so it casts all round.
-        for card in framed {
-            let line = thickness(cell.height);
-            self.shadow(
-                outline(card.area, cell, line),
-                cell.width * FRAME_CORNER,
-                0,
-                spread,
-                boxes,
-            );
+        for (at, over) in stack.iter().enumerate() {
+            // A box has four edges and corners, so it casts all round.
+            if over.is_a_box() {
+                let line = thickness(cell.height);
+                self.shadow(
+                    outline(over.area, cell, line),
+                    cell.width * FRAME_CORNER,
+                    0,
+                    spread,
+                    boxes,
+                );
+            } else if sliding != Some(at)
+                && let Some(joined) = casting(over.joined)
+            {
+                let glass = self.placed.levels[at].rect;
+                self.shadow(glass, 0.0, joined, spread, 1.0);
+            }
         }
     }
 
@@ -2732,38 +2842,25 @@ impl Painter {
         });
     }
 
-    /// What is under a box with a frame round it, and the glass inside
-    /// its line.
-    ///
-    /// The picture first, which goes into the box's own backdrop and never
-    /// onto the screen: the cells the box was put over, as the screen had
-    /// them. Where those were the first pane's glass -- the card of every
-    /// key is nearly always over a list or a page of settings -- they are
-    /// the letters alone, because the picture draws that pane's glass
-    /// before them and a ground under the letters would cover it.
-    ///
-    /// Then on the screen, the frame and the glass inside its line. The
-    /// cells inside the ring are drawn after all of this by `backgrounds`
-    /// and `letters`, which leave the box's own ground to the glass.
-    fn card_glass(
-        &mut self,
-        page: &Page,
-        card: &Behind,
-        sheet: Option<&Behind>,
-        fonts: &mut Fonts,
-    ) {
+    /// What is under anything over the first pane, or under a box with
+    /// a frame round it: the picture its glass reads, which goes into its
+    /// own backdrop and never onto the screen -- the cells it was put over,
+    /// as the screen had them. Where those were glass further down -- the
+    /// card of every key is nearly always over a list or a page of
+    /// settings, and a setting's choices are over the settings -- they are
+    /// the letters alone, because the picture draws that glass before them
+    /// and a ground under the letters would cover it.
+    fn seen_under(&mut self, over: &Behind, lower: &[&Behind], fonts: &mut Fonts) {
         let cell = fonts.cell();
-        let sheet = sheet.as_slice();
-        let start = self.quads.len();
-        for y in card.area.top()..card.area.bottom() {
-            for x in card.area.left()..card.area.right() {
-                let Some(under) = card.look(x, y) else {
+        for y in over.area.top()..over.area.bottom() {
+            for x in over.area.left()..over.area.right() {
+                let Some(under) = over.look(x, y) else {
                     continue;
                 };
                 let left = f32::from(x) * cell.width;
                 let top = f32::from(y) * cell.height;
-                if !seen_through(sheet, x, y, under.background) {
-                    let ground = self.under(sheet, &[], x, y);
+                if !seen_through(lower, x, y, under.background) {
+                    let ground = self.under(lower, &[], x, y);
                     self.block(
                         left,
                         top,
@@ -2779,12 +2876,25 @@ impl Painter {
                 }
             }
         }
-        let under = start..self.quads.len();
+    }
 
-        let (inside, radius) = self.frame(page, card, sheet, cell);
-        // Over the first pane where it is over one at all: the card of
-        // every key always is, a hover over the code never.
-        let on_glass = sheet.iter().any(|sheet| sheet.area.intersects(card.area));
+    /// The frame round a box and the glass inside its line. The cells
+    /// inside the ring are drawn after all of this by `backgrounds` and
+    /// `letters`, which leave the box's own ground to the glass.
+    ///
+    /// Hands back which quad the glass is and where it is, the way a
+    /// pane's does.
+    fn box_glass(
+        &mut self,
+        page: &Page,
+        card: &Behind,
+        lower: &[&Behind],
+        cell: CellSize,
+    ) -> (usize, [f32; 4]) {
+        let (inside, radius) = self.frame(page, card, lower, cell);
+        // Over a pane where it is over one at all: the card of every key
+        // always is, a hover over the code never.
+        let on_glass = lower.iter().any(|lower| lower.area.intersects(card.area));
         let mut tint = rgba(card.ground, Ink::Background);
         tint[3] = match on_glass {
             true => ON_GLASS_TINT,
@@ -2806,7 +2916,8 @@ impl Painter {
             radius,
             padding: [0; 2],
         });
-        self.placed.card = Some((under, glass));
+        let [left, top, wide, tall] = inside;
+        (glass, [left, top, left + wide, top + tall])
     }
 
     /// The two quads that blur what is behind a pane, one way and then
@@ -2872,41 +2983,51 @@ impl Painter {
         pass
     }
 
-    /// The quads the screen draws, each with whatever it reads.
-    ///
-    /// Everything reads the first pane's pictures, which only the first
-    /// pane's glass samples -- except the box's glass, which reads its
-    /// own, and the picture of what is under the box, which is not on the
-    /// screen at all.
+    /// The quads the screen draws, each with whatever it reads -- see
+    /// `on_the_screen`.
     fn the_frame(&self, pass: &mut wgpu::RenderPass<'_>) {
-        let end = self.placed.drawn;
-        pass.set_bind_group(0, &self.sheet.bindings, &[]);
-        let Some((under, glass)) = self.placed.card.clone() else {
-            drawing(pass, 0..end);
-            return;
-        };
-        drawing(pass, 0..under.start);
-        drawing(pass, under.end..glass);
-        pass.set_bind_group(0, &self.card.bindings, &[]);
-        drawing(pass, glass..glass + 1);
-        pass.set_bind_group(0, &self.sheet.bindings, &[]);
-        let Some(covered) = self.placed.covered else {
-            drawing(pass, glass + 1..end);
-            return;
-        };
-        drawing(pass, glass + 1..covered);
-        // What is under the box, over the box -- the same picture the
-        // glass reads, so the same bindings.
-        pass.set_bind_group(0, &self.card.bindings, &[]);
-        drawing(pass, covered..covered + 1);
-        pass.set_bind_group(0, &self.sheet.bindings, &[]);
-        drawing(pass, covered + 1..end);
+        self.follow(pass, &on_the_screen(&self.placed), &self.levels[0].bindings);
+    }
+
+    /// What one level was put over -- see `put_over`.
+    fn beneath(&self, pass: &mut wgpu::RenderPass<'_>, level: usize) {
+        self.follow(
+            pass,
+            &put_over(&self.placed.levels, level),
+            &self.plain_bindings,
+        );
+    }
+
+    /// Draws a plan: each run of quads with the pictures it reads.
+    fn follow(
+        &self,
+        pass: &mut wgpu::RenderPass<'_>,
+        plan: &[(Range<usize>, Reads)],
+        otherwise: &wgpu::BindGroup,
+    ) {
+        for (quads, reads) in plan {
+            let bindings = match reads {
+                Reads::Nothing => otherwise,
+                Reads::Level(level) => &self.levels[*level].bindings,
+            };
+            pass.set_bind_group(0, bindings, &[]);
+            drawing(pass, quads.clone());
+        }
+    }
+
+    /// As many pictures as there are levels to read them.
+    fn levels_for(&mut self, wanted: usize) {
+        while self.levels.len() < wanted {
+            let (width, height) = (self.configured.width, self.configured.height);
+            let seen = Seen::made(&self.binder(), self.view, width, height);
+            self.levels.push(seen);
+        }
     }
 
     /// The text.
     ///
     /// Less what is drawn rather than spelled: a rule's line and a
-    /// frame's are `rules` and `frames`, and the glyph a terminal draws
+    /// frame's are `rules` and `frame`, and the glyph a terminal draws
     /// them in would be a second line half a pixel from the first.
     ///
     /// And less what is written again: a cap's key, which `caps` writes
@@ -4125,7 +4246,7 @@ fn casting(joined: Joined) -> Option<u32> {
         Joined::Above => Some(HANGING),
         Joined::Below => Some(STANDING),
         Joined::Screen => None,
-        // Never here -- a box is `card_glass`'s.
+        // A box casts all round -- see `shadows`.
         Joined::Nowhere => Some(0),
     }
 }
@@ -4306,6 +4427,93 @@ fn indexed(index: u8) -> (u8, u8, u8) {
 #[cfg(test)]
 mod tests {
     use super::mark_behind;
+
+    mod stacked {
+        use super::super::{Level, Placed, Reads, on_the_screen, put_over};
+
+        /// Three things open at once -- the settings, a setting's choices
+        /// over them, and the card of every key over those -- each with
+        /// what it was put over, a frame or a rule round it, and its glass.
+        fn three() -> Placed {
+            let level = |under: std::ops::Range<usize>, glass, end| Level {
+                under,
+                glass,
+                end,
+                rect: [0.0; 4],
+                pane: true,
+                blur: 0,
+            };
+            Placed {
+                levels: vec![
+                    level(0..5, 5, 6),
+                    level(6..10, 12, 13),
+                    level(13..16, 16, 17),
+                ],
+                drawn: 30,
+                ..Placed::default()
+            }
+        }
+
+        /// Each glass reads its own level's pictures, and what is under a
+        /// level over the first is that level's picture, never the screen.
+        ///
+        /// The pictures were two, and the window kept one pane: a list
+        /// opened over the settings took the settings' glass away, and the
+        /// page under them stopped showing through. Deliberate break:
+        /// draw a glass with the first level's pictures, or leave out the
+        /// skip over what is under a level -- the first reads the wrong
+        /// picture, and the second lays the settings' cells over their own
+        /// glass on the screen.
+        #[test]
+        fn every_glass_reads_its_own_picture() {
+            let placed = three();
+            let plan = on_the_screen(&placed);
+            for (at, level) in placed.levels.iter().enumerate() {
+                assert!(
+                    plan.contains(&(level.glass..level.glass + 1, Reads::Level(at))),
+                    "level {at}'s glass reads the wrong picture: {plan:?}"
+                );
+            }
+            let drawn: Vec<usize> = plan.iter().flat_map(|(quads, _)| quads.clone()).collect();
+            let wanted: Vec<usize> = (0..30)
+                .filter(|quad| !(6..10).contains(quad) && !(13..16).contains(quad))
+                .collect();
+            assert_eq!(drawn, wanted, "the screen drew the wrong quads: {plan:?}");
+        }
+
+        /// What a level was put over is the glass of every level under it
+        /// and what it was put over -- and never its own picture, which is
+        /// the one being drawn into.
+        ///
+        /// Deliberate break: walk the levels up to and including this one.
+        /// The picture then reads itself, which the device refuses.
+        #[test]
+        fn a_level_s_picture_is_everything_under_it() {
+            let placed = three();
+            for level in 0..placed.levels.len() {
+                let plan = put_over(&placed.levels, level);
+                assert!(
+                    plan.iter().all(|(_, reads)| match reads {
+                        Reads::Nothing => true,
+                        Reads::Level(read) => *read < level,
+                    }),
+                    "level {level} reads its own picture or one over it: {plan:?}"
+                );
+                for under in 0..level {
+                    let glass = placed.levels[under].glass;
+                    assert!(
+                        plan.contains(&(glass..glass + 1, Reads::Level(under))),
+                        "level {level} does not see level {under}'s glass: {plan:?}"
+                    );
+                }
+                assert_eq!(
+                    plan.last().map(|(quads, _)| quads.clone()),
+                    Some(placed.levels[level].under.clone()),
+                    "what level {level} was put over is not on top of its picture: {plan:?}"
+                );
+            }
+        }
+    }
 
     /// A bar's mark stays between the two rows it was drawn on.
     ///
@@ -4788,8 +4996,7 @@ mod tests {
             sheened: None,
             parted: &[],
             stroked: &[],
-            behind: None,
-            cards: &[],
+            stack: &[],
             bands: &[],
         };
         assert!(
@@ -5061,8 +5268,7 @@ mod tests {
             stroked: &stroked,
             sheened: None,
             parted: &[],
-            behind: None,
-            cards: &[],
+            stack: &[],
             bands: &[],
         };
         for row in 0..3 {

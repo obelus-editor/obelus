@@ -286,21 +286,17 @@ struct Showing {
     scrolled: Vec<Rolling>,
     /// And on the frame being laid out.
     scrolling: Vec<Rolling>,
-    /// What is under the pane on the frame being shown, where there is
-    /// one.
-    behind: Option<Behind>,
+    /// What is under each pane and each box on the frame being shown,
+    /// furthest first: each is glass over everything said before it, so
+    /// the order they were said in is the order they are stacked in.
+    stack: Vec<Behind>,
     /// And on the frame being laid out.
-    behinding: Option<Behind>,
+    stacking: Vec<Behind>,
     /// Every pane on the frame being shown, by the edge it is joined
     /// along, furthest first -- see `Motion::panes_laid`.
     panes: Vec<Joined>,
     /// And on the frame being laid out.
     paning: Vec<Joined>,
-    /// What is behind a box with a frame round it, on the frame being
-    /// shown -- a second pane, over the first where there is one.
-    cards: Vec<Behind>,
-    /// And on the one being laid out.
-    carding: Vec<Behind>,
     /// And the ones the frame being laid out has asked for so far.
     ///
     /// Two lists because a frame is drawn from what it said, not from what
@@ -387,12 +383,10 @@ impl Showing {
             ruling: Vec::new(),
             scrolled: Vec::new(),
             scrolling: Vec::new(),
-            behind: None,
-            behinding: None,
+            stack: Vec::new(),
+            stacking: Vec::new(),
             panes: Vec::new(),
             paning: Vec::new(),
-            cards: Vec::new(),
-            carding: Vec::new(),
             // The blink is asked once, on the way up: it is a question
             // about the system rather than about this window.
             motion: Motion::new(Blink::asked()),
@@ -839,7 +833,7 @@ impl ApplicationHandler<Waking> for Showing {
                 // its arrival on every pixel of a resize is worse than one
                 // that never arrives at all.
                 let were_panes = self.panes.clone();
-                let had_a_card = !self.cards.is_empty();
+                let had_a_card = self.stack.iter().any(Behind::is_a_box);
                 // Cloned rather than taken: a wake with no whole frame
                 // in it leaves what is on the screen alone, and a band
                 // that had been emptied here would be one the next frame
@@ -882,18 +876,14 @@ impl ApplicationHandler<Waking> for Showing {
                         Update::Marked { id, focused, x, y } => {
                             self.marking.push(Marked { id, focused, x, y })
                         }
-                        // The last one said wins, which is the pane
-                        // nearest the reader: a setting's choices open
-                        // over the settings, and what the reader sees
-                        // through is the one on top.
-                        //
-                        // A box with a frame is kept beside that rather
-                        // than in its place, because it is put over one:
-                        // the card of every key opens over a list, the
-                        // settings and the counts, all of which are glass.
-                        // A sheet said after one was drawn over it, so a
-                        // box is nearer the reader than the sheet or it is
-                        // not kept at all.
+                        // Every one said is kept, in the order it was
+                        // said, which is the order they are stacked in: a
+                        // setting's choices open over the settings, and
+                        // the card of every key over those. Each is glass,
+                        // and what the reader sees through one is
+                        // everything said before it -- the settings kept
+                        // their glass under a list once there was more
+                        // than one place to keep a pane.
                         Update::Behind {
                             area,
                             joined,
@@ -906,19 +896,16 @@ impl ApplicationHandler<Waking> for Showing {
                                 ground,
                                 cells,
                             };
-                            match joined {
-                                Joined::Nowhere => self.carding.push(behind),
-                                // A pane, however many edges it is joined
-                                // along.
-                                Joined::Above | Joined::Below | Joined::Screen => {
-                                    self.behinding = Some(behind);
-                                    self.paning.push(joined);
-                                    self.carding.clear();
-                                    for band in &mut self.scrolling {
-                                        band.under = true;
-                                    }
+                            // A pane, however many edges it is joined
+                            // along. A box goes on the pile too, and what
+                            // was said before either is under it.
+                            if joined != Joined::Nowhere {
+                                self.paning.push(joined);
+                                for band in &mut self.scrolling {
+                                    band.under = true;
                                 }
                             }
+                            self.stacking.push(behind);
                         }
                         Update::Scrolled { area, top, bar } => {
                             self.scrolling.push(Rolling {
@@ -990,9 +977,8 @@ impl ApplicationHandler<Waking> for Showing {
                             self.motion
                                 .sheen_drawn(self.sheened.is_some(), Instant::now());
                             self.stroked = std::mem::take(&mut self.stroking);
-                            self.behind = self.behinding.take();
+                            self.stack = std::mem::take(&mut self.stacking);
                             self.panes = std::mem::take(&mut self.paning);
-                            self.cards = std::mem::take(&mut self.carding);
                             self.scrolled = std::mem::take(&mut self.scrolling);
                             drew = true;
                         }
@@ -1042,7 +1028,7 @@ impl ApplicationHandler<Waking> for Showing {
                 // a completion list redrawn on every character the reader
                 // types is the same box, and one that came up again on
                 // each of them would be a flicker under their hands.
-                match (had_a_card, self.cards.is_empty()) {
+                match (had_a_card, !self.stack.iter().any(Behind::is_a_box)) {
                     (false, false) => self.motion.card_opened(Instant::now()),
                     (true, true) => self.motion.card_shut(),
                     _ => {}
@@ -1283,8 +1269,7 @@ impl ApplicationHandler<Waking> for Showing {
                         sheened: self.sheened.as_ref(),
                         parted: &self.parted,
                         stroked: &self.stroked,
-                        behind: self.behind.as_ref(),
-                        cards: &self.cards,
+                        stack: &self.stack,
                         bands: &rolled,
                     },
                 ) {
