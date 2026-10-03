@@ -561,7 +561,7 @@ impl App {
                 .picker
                 .as_ref()
                 .is_some_and(|picker| !picker.is_only_read()),
-            Some(Layer::Counts) => false,
+            Some(Layer::Counts | Layer::Gone) => false,
             // Being asked which project, which is a page of its own and
             // typed into whichever box it is showing.
             None if self.chooser.is_some() => true,
@@ -624,8 +624,9 @@ impl App {
             }
             // Nothing is typed into the counts, so a paste has nowhere to
             // go here -- and does not fall through to the file behind them
-            // for want of anywhere else.
-            Some(Layer::Counts) => return,
+            // for want of anywhere else. Nor into the page saying the
+            // project has gone, for the same reason.
+            Some(Layer::Counts | Layer::Gone) => return,
             // Being asked which project, which is a page of its own and not
             // a layer -- so this fell through to a file there is none of,
             // and a path pasted or spelled into its box went nowhere.

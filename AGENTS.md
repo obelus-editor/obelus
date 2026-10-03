@@ -481,11 +481,15 @@ but will not read stops Obelus writing at all until it reads again.
 and `index` are watched, and `App::forget_what_git_said` drops what git said
 when either moves.
 
-*A tree that goes takes the project and leaves the window.* `git worktree
-remove` or an `rm` in the reader's shell is somebody else changing the
-world: what is open stays open, everything keyed by the project goes dim,
-and nothing of the project is written into a tree that is not there
-(`App::the_tree_has_gone`, `obelus_git::project`).
+*A tree that goes takes the project and everything open in it.* `git
+worktree remove` or an `rm` in the reader's shell is somebody else changing
+the world: a page saying so goes over the whole screen, on top of what the
+reader was in, and answers two keys. Enter lets go of everything the
+project was -- what was open, unwritten work and all, because there is
+nowhere left to write it, and the servers, the agent and the tools with it
+-- and asks which project next; the key that leaves leaves, and asks
+nothing. Nothing of the project is written into a tree that is not there
+(`App::the_tree_has_gone`, `ui::gone`, `obelus_git::project`).
 
 *A repository and its worktrees are one project.* What Obelus keeps about a
 project -- the notes, which conversation is about which note -- is keyed by
@@ -559,6 +563,8 @@ crates/
                       window on a tree is a claim held the way a
                       conversation's is, a claim appears already held, and a
                       tree that has gone is nowhere to go (app/worktrees); a
+                      window whose project went starts again without starting
+                      again (app/mod); a
                       conversation takes one prompt turn at a time, what is
                       waiting waits where the reader's words live, and it goes
                       as one prompt (conversation); nothing but the animation
@@ -675,8 +681,11 @@ crates/
                       numbers its own turns (acp/mod)
   obelus-mcp/       the tools Obelus offers an agent -- and why none of them
                     asks the reader anything itself
+                    · a server is about one tree, and stops listening when
+                      what holds it goes (lib)
   obelus-ui/        editor, status bar, picker, settings, chat, welcome,
-                    which project, images, shapes, shared cell writers
+                    which project, a project that has gone, images, shapes,
+                    shared cell writers
                     · what the bar measures is what is shown, the caret can be
                       in the block, a bar is a block, a column a file might
                       need is reserved for the whole file (editor); everything
@@ -686,7 +695,8 @@ crates/
                       named is not said after it (chat); a list open over
                       anything owns the status row (status); asking which
                       project is a page of its own, and the welcome screen
-                      comes after (projects); a
+                      comes after (projects); the project going is said over
+                      the whole screen, in the middle of it (gone); a
                       window draws the marks itself, and the view does not
                       know the difference (image); a view says
                       what a region *is* and the front end says what that looks

@@ -47,6 +47,22 @@ fn open(app: &mut App, layer: Layer) {
         // window's -- so a test running as a terminal has no row to press.
         Layer::Names => app.open_names("fonts"),
         Layer::Prompt => dispatch::dispatch(app, Command::GoLine),
+        // No command either: it is what the project going from under the
+        // reader puts up. So a project of the test's own, taken away.
+        Layer::Gone => {
+            static GONE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+            let tree = std::env::temp_dir().join(format!(
+                "obelus-layers-gone-{}-{}",
+                std::process::id(),
+                GONE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            ));
+            std::fs::create_dir_all(&tree).expect("a tree");
+            app.working_directory_for_test(tree.clone());
+            std::fs::remove_dir_all(&tree).expect("the tree going");
+            app.handle(obelus_app::event::Event::Watched(obelus_watch::Changed {
+                path: tree.join("anything"),
+            }));
+        }
     }
 }
 
@@ -80,6 +96,21 @@ fn escape_from_anywhere_comes_back_to_the_file() {
         let mut app = reading();
         open(&mut app, layer);
         press(&mut app, KeyCode::Esc);
+        // Except from the page saying the project has gone, which is the
+        // one thing over the file that is not left but answered: the file
+        // is in the project that went, and there is nothing to come back
+        // to. The page that asks which project is the same, and is not a
+        // layer. Broken deliberately by having the page's own key handler
+        // put `gone` back to false on escape -- where every other layer
+        // takes escape as leaving -- and this fails.
+        if layer == Layer::Gone {
+            assert_eq!(
+                app.layers().nearest(),
+                Some(Layer::Gone),
+                "escape took the page away with nowhere to go back to"
+            );
+            continue;
+        }
         assert!(
             !app.layers().any(),
             "{layer:?} was still showing after escape"
@@ -528,7 +559,7 @@ fn the_input_method_is_on_only_where_typing_goes() {
         let mut app = reading();
         open(&mut app, layer);
         let expected = match layer {
-            Layer::Counts => false,
+            Layer::Counts | Layer::Gone => false,
             Layer::Settings | Layer::Names | Layer::Picker | Layer::Prompt => true,
         };
         assert_eq!(app.takes_text(), expected, "{layer:?}");

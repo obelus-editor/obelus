@@ -334,10 +334,12 @@ fn to_toml(projects: &[Project]) -> String {
 impl super::App {
     /// Asks which project to work in, which nothing else has answered.
     ///
-    /// Called from `startup` and nowhere else: being asked is a fact
-    /// about how Obelus was started, not a state anything later can put
-    /// the reader back into. A reader who wants another project opens
-    /// another Obelus, which is how Obelus is used anyway.
+    /// Called from `startup`, and from the page saying the project has
+    /// gone -- the one moment a window is back where a start with nothing
+    /// to go on began, because everything the project was has gone with it
+    /// (`App::the_tree_has_gone`). Not a state anything else can put the
+    /// reader back into: a reader who wants another project opens another
+    /// Obelus, which is how Obelus is used anyway.
     pub(crate) fn ask_which_project(&mut self) {
         let reading = read();
         // What Obelus could not make of its own file goes where everything

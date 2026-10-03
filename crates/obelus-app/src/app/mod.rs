@@ -468,10 +468,13 @@ pub struct App {
     statuses: std::collections::HashMap<PathBuf, obelus_git::Standing>,
     /// Where an agent reaches what Obelus offers it, if it could listen.
     ///
-    /// Taken once and kept: every conversation is told an address under
-    /// this one, so a second agent started later reaches the same tools
-    /// rather than a second server nobody asked for.
+    /// Taken once per project and kept: every conversation is told an
+    /// address under this one, so a second agent started later reaches the
+    /// same tools rather than a second server nobody asked for. Taken again
+    /// only when the project is, because the tools are about one tree.
     tools_url: Option<String>,
+    /// The server at that address, which stops listening when this goes.
+    listening: Option<obelus_mcp::Listening>,
     /// The agent Obelus is talking to, once something has needed it.
     talker: Option<obelus_agent::acp::Talk>,
     /// The commands an agent asked to run, while they run.
@@ -752,13 +755,14 @@ pub struct App {
     travelled: i64,
     /// The question "which project", while nobody has answered it.
     ///
-    /// `Some` only on a start with nothing to go on: no argument, and a
+    /// `Some` on a start with nothing to go on: no argument, and a
     /// directory git has never heard of -- a desktop launcher, which
-    /// begins the process in the home directory. It is the whole screen
-    /// until it is answered, and `None` ever after: a reader who has
-    /// settled on a project does not go back to being asked, and the way
-    /// to another one is a second Obelus, which is how Obelus is used
-    /// anyway.
+    /// begins the process in the home directory. And once more after the
+    /// project has gone and the reader has said so, which leaves the window
+    /// where such a start began. It is the whole screen until it is
+    /// answered, and `None` otherwise: a reader on a project does not go
+    /// back to being asked, and the way to another one is a second Obelus,
+    /// which is how Obelus is used anyway.
     chooser: Option<obelus_component::chooser::Chooser>,
     /// What could finish the path being named, while one is.
     ///
@@ -810,10 +814,9 @@ pub struct App {
     /// Whether the tree Obelus was put on has gone from disk.
     ///
     /// For good: a tree made again at the same path is somebody else's
-    /// tree, and every watch Obelus had in this one went with it. What is
-    /// open stays open -- a document keeps what it has, and closing it is
-    /// the reader's -- and nothing about the project is asked or written
-    /// from here on. See [`App::the_tree_has_gone`].
+    /// tree, and every watch Obelus had in this one went with it. Nothing
+    /// about the project is asked or written from here on, and what was
+    /// open goes once the reader has read so. See [`App::the_tree_has_gone`].
     gone: bool,
     /// What this window knows about the others on the repository, and the
     /// list of worktrees while it is showing.
@@ -913,6 +916,7 @@ impl App {
             statuses: std::collections::HashMap::new(),
 
             tools_url: None,
+            listening: None,
             talker: None,
             runs: obelus_agent::running::Runs::default(),
             waiting_on: Vec::new(),
@@ -1002,6 +1006,12 @@ impl App {
 
     /// Asks the loop to stop after this iteration.
     pub fn request_quit(&mut self) {
+        // Nothing is asked once the project has gone: what is unwritten
+        // has nowhere to be written, and neither have the notes.
+        if self.gone {
+            self.should_quit = true;
+            return;
+        }
         // The notes first, and without asking. A buffer that is unwritten
         // is a decision the reader has to make -- their change, or the file
         // on disk -- and there is no such decision here: a note lives
@@ -1215,17 +1225,113 @@ impl App {
     /// from being written into a project that has gone is asked of the disk
     /// at the moment of writing (`obelus_git::project`).
     ///
-    /// The window stays, and what is open in it: a file with unsaved work
-    /// in it is somebody's work, and the reader is the one to say what
-    /// becomes of it. What goes is the project -- everything keyed by it
-    /// is dim (`has_a_project`), the watches drawn from it are given up
-    /// (`settle_the_watches`), and the branch it had is not a branch
-    /// anything is on any more.
+    /// Said over the whole screen, on top of whatever the reader was in
+    /// (`ui::gone`), and answered with one of two keys: enter asks which
+    /// project next, and the key that leaves leaves. Everything else that
+    /// was over the page goes first, because the page covers the screen
+    /// and a page covers what shares its room.
     pub(super) fn the_tree_has_gone(&mut self) {
         tracing::warn!(tree = %self.working_directory.display(), "the tree Obelus is on has gone");
+        self.make_room(layers::Room::Screen);
         self.gone = true;
         self.head = None;
         self.worktrees.tree_has_gone();
+    }
+
+    /// The page saying the tree has gone, answered -- or not, and then
+    /// nothing else hears the key either: what is under the page is about
+    /// a project that is not there.
+    pub(super) fn the_page_saying_it_has_gone(&mut self, key: &KeyEvent) -> bool {
+        if key.code == KeyCode::Enter && key.modifiers == KeyModifiers::NONE {
+            self.let_go_of_the_project();
+            self.ask_which_project();
+        } else if self.keymap.lookup(key, Context::Dialog) == Some(Command::Quit) {
+            self.request_quit();
+        }
+        true
+    }
+
+    /// Lets go of everything the project that went was.
+    ///
+    /// What was open is closed without asking, unsaved work and all -- a
+    /// file in a tree that has gone has nowhere to be written, and Obelus
+    /// does not make the tree again to write it.
+    ///
+    /// **A window that starts again, without starting again.** What is
+    /// kept is what belongs to the process and not to the project -- the
+    /// loop's channel, the reader's settings, what the front end can do --
+    /// and everything else is a new [`App`]'s. Kept by name rather than
+    /// cleared by name, so that a field nobody thought of here is one that
+    /// starts empty, and not one still holding the last project's answer.
+    fn let_go_of_the_project(&mut self) {
+        // The sessions nothing was said in, as on the way out: an agent
+        // keeps what it is not told to let go of.
+        self.let_go_of_what_nothing_was_said_in(None);
+        // Moved on rather than made again, because a walk still running
+        // holds the old count: a new one would start where the old one's
+        // answers are numbered, and they would arrive as current.
+        self.walk_generation.next();
+        self.history_generation.next();
+        self.search_generation.next();
+        self.worktrees.not_showing();
+
+        let was = std::mem::replace(self, Self::new(Vec::new()));
+        self.events = was.events;
+        self.drawing = was.drawing;
+        self.fonts_here = was.fonts_here;
+        self.monospace_here = was.monospace_here;
+        self.screen_area = was.screen_area;
+        self.editor_area = was.editor_area;
+        self.settled = was.settled;
+        self.keymap = was.keymap;
+        self.theme = was.theme;
+        self.theme_name = was.theme_name;
+        self.walk_generation = was.walk_generation;
+        self.history_generation = was.history_generation;
+        self.search_generation = was.search_generation;
+        // The door other windows reach this one by is the process's, and
+        // listens for as long as it runs.
+        self.worktrees = was.worktrees;
+        self.agents = was.agents;
+        self.releases = was.releases;
+        self.looking = was.looking;
+        self.outside = was.outside;
+        // What Obelus could not make of its own files, which are not the
+        // project's: the reader's settings, which nothing reads again here.
+        // Obelus's own marks and none of a server's -- the server that said
+        // those has gone with the project, and nothing would ever take what
+        // it said away.
+        let root = was.working_directory;
+        self.troubles = was
+            .troubles
+            .into_iter()
+            .filter(|(path, _)| !path.starts_with(&root))
+            .filter_map(|(path, troubles)| {
+                let ours: Vec<_> = troubles
+                    .into_iter()
+                    .filter(|trouble| trouble.source.as_deref() == Some(semantics::OBELUS))
+                    .collect();
+                (!ours.is_empty()).then_some((path, ours))
+            })
+            .collect();
+        self.working_directory = root;
+        // A watcher of its own as well, on what is left -- the settings and
+        // the theme. Started again rather than kept and given things back
+        // one at a time: a watch is a count on the watcher it was taken on,
+        // and what this one held for the project and its files is a list
+        // nothing here has.
+        if was.watcher.is_some()
+            && let Some(events) = self.events.clone()
+        {
+            self.start_watching(events);
+        }
+        // And the rest of `was` goes at the end of this: the servers, the
+        // agent, what it was running and the tools it was offered, all of
+        // which stop as they are dropped.
+        //
+        // The reader's settings without the project's over them, which
+        // are in a file that is not there.
+        self.apply_project();
     }
 
     /// Says to open on the file list rather than on a file.
@@ -1373,9 +1479,10 @@ impl App {
             // Said, because the silent half of this is the half nobody can
             // ask about: whether an agent was offered anything, and whether
             // it took it, were both questions Obelus had no answer to.
-            Ok(url) => {
+            Ok((url, listening)) => {
                 tracing::info!(url, "Obelus is offering an agent its tools");
                 self.tools_url = Some(url);
+                self.listening = Some(listening);
             }
             Err(error) => {
                 // Not a reason to stop: an Obelus that cannot listen is an
@@ -2100,6 +2207,7 @@ impl App {
             layers::Layer::Names => self.names.is_some(),
             layers::Layer::Picker => self.picker.is_some(),
             layers::Layer::Prompt => self.prompt.is_some(),
+            layers::Layer::Gone => self.gone,
         })
     }
 
@@ -2131,6 +2239,11 @@ impl App {
     /// leaves them.
     pub(crate) fn leave(&mut self, layer: Layer) {
         match layer {
+            // Not left: answered. Escape gives up on the nearest thing,
+            // and here there is nothing nearer to give up on and nothing
+            // behind it to give up to -- what is behind it is the project
+            // that went.
+            Layer::Gone => {}
             Layer::Picker => {
                 self.picker = None;
                 // Back to where they were looking from. The other way out
@@ -3052,6 +3165,7 @@ impl App {
                 Layer::Picker => self.picker_key(&key),
                 Layer::Settings => self.settings_key(&key),
                 Layer::Counts => self.counts_key(&key),
+                Layer::Gone => self.the_page_saying_it_has_gone(&key),
             };
             if taken {
                 return;
@@ -3359,6 +3473,8 @@ impl App {
             obelus_component::layers::Layer::Names => {}
             obelus_component::layers::Layer::Counts => self.press_in_counts(x, y),
             obelus_component::layers::Layer::Settings => self.press_in_settings(x, y),
+            // Two keys, and nothing to point at.
+            obelus_component::layers::Layer::Gone => {}
         }
     }
 
@@ -3892,18 +4008,20 @@ impl App {
         if self.pointer_on_status(kind, x, y) {
             return;
         }
+        // Covering rather than merely open: a question on the status bar
+        // leaves every line of the file where the reader can see it, and a
+        // line they can see is a line they can point at. Before the notes,
+        // which are a document like the file: a page over them took the
+        // press here, and it ticked off a note nobody could see.
+        if self.layers().covering() {
+            self.pointer_in_a_layer(kind, x, y);
+            return;
+        }
         // The notes, which are a page with a box on it: the box takes the
         // pointer the way the file does, and the rest of the page takes
         // nothing rather than letting it through to the code behind.
         if self.notes().is_some() {
             self.pointer_in_notes(kind, x, y);
-            return;
-        }
-        // Covering rather than merely open: a question on the status bar
-        // leaves every line of the file where the reader can see it, and a
-        // line they can see is a line they can point at.
-        if self.layers().covering() {
-            self.pointer_in_a_layer(kind, x, y);
             return;
         }
         // A conversation is what is being read rather than something over

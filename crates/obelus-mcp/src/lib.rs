@@ -569,8 +569,12 @@ impl ServerHandler for Obelus {
 /// Obelus goes on without the tools and says so.
 ///
 /// What comes back is where the server is and not where to reach it:
-/// a conversation is offered the tools at its own [`address`] under it.
-pub fn serve(root: &std::path::Path, events: Arc<dyn Sink<Asked>>) -> std::io::Result<String> {
+/// a conversation is offered the tools at its own [`address`] under it --
+/// and the server itself, which listens for as long as that is held.
+pub fn serve(
+    root: &std::path::Path,
+    events: Arc<dyn Sink<Asked>>,
+) -> std::io::Result<(String, Listening)> {
     use rmcp::transport::streamable_http_server::{
         StreamableHttpService, session::local::LocalSessionManager,
     };
@@ -590,7 +594,7 @@ pub fn serve(root: &std::path::Path, events: Arc<dyn Sink<Asked>>) -> std::io::R
     // A task on the one runtime, which is what it was already: a thread
     // whose whole job was to own a runtime of its own, because there was
     // none to put this on.
-    obelus_runtime::handle().spawn(async move {
+    let task = obelus_runtime::handle().spawn(async move {
         let listener = match tokio::net::TcpListener::from_std(listener) {
             Ok(listener) => listener,
             Err(error) => {
@@ -603,7 +607,24 @@ pub fn serve(root: &std::path::Path, events: Arc<dyn Sink<Asked>>) -> std::io::R
         }
     });
 
-    Ok(format!("http://{address}/mcp"))
+    Ok((
+        format!("http://{address}/mcp"),
+        Listening(task.abort_handle()),
+    ))
+}
+
+/// The tools being offered, for as long as this is held.
+///
+/// A server is about one tree, and a window can outlive the tree it was
+/// put on and be put on another: one left listening would go on answering
+/// for the first, under an address nobody is told any more.
+#[derive(Debug)]
+pub struct Listening(tokio::task::AbortHandle);
+
+impl Drop for Listening {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
 }
 
 /// Where one conversation reaches the tools: the server's address, with

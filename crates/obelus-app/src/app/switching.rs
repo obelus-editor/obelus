@@ -46,6 +46,9 @@ impl App {
             // A band, like a compact list: the page that opened it is
             // still behind it.
             Some(Layer::Names) | Some(Layer::Prompt) | None => false,
+            // Never asked: the page saying the project has gone takes every
+            // key before a swap is looked for, and swaps with nothing.
+            Some(Layer::Gone) => false,
         }
     }
 

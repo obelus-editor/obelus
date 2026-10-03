@@ -427,6 +427,7 @@ pub mod chat;
 pub mod complete;
 pub mod counts;
 pub mod editor;
+pub mod gone;
 pub mod hover;
 pub mod image;
 pub mod names;
@@ -689,6 +690,9 @@ pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
         // file behind them kept its own, blinking in a view it is not part
         // of.
         Some(Layer::Counts) => return None,
+        // Nor into the page saying the project has gone, which is answered
+        // with a key and has no box.
+        Some(Layer::Gone) => return None,
         // Nothing over the document, so the caret is the document's own.
         None => {
             // A conversation is written into, and its caret is in the box
@@ -931,6 +935,15 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
                 if let Some(view) = counts::CountsView::new(app) {
                     shapes::behind(area, shapes::Joined::Screen, app.theme().background, cells);
                     bars::of(Whose::Counts, || view.render(area, cells));
+                }
+            }
+            // The screen, like the counts, over whatever the reader was in
+            // when the project went: a window draws it as glass over that,
+            // and a terminal, which has no glass, as the page alone.
+            Layer::Gone => {
+                if let Some(view) = gone::GoneView::new(app) {
+                    shapes::behind(area, shapes::Joined::Screen, app.theme().background, cells);
+                    view.render(area, cells);
                 }
             }
             Layer::Picker => {

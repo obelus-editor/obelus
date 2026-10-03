@@ -365,14 +365,6 @@ pub enum Requires {
     /// walking a repository that was not there and finding nothing: the
     /// right answer for the wrong reason, and a walk per keypress for it.
     AProject,
-    /// Something has to be open, or there has to be a project to open
-    /// something in.
-    ///
-    /// The list of open documents, which says so itself when it is empty --
-    /// worth saying in a project the reader has just started on, and not
-    /// while Obelus is asking which project, where nothing can be open and
-    /// there is nowhere yet to open anything.
-    SomethingOpenOrAProject,
     /// There has to be another worktree to go to, and a window to go there
     /// in.
     ///
@@ -1190,12 +1182,6 @@ impl Command {
             | Self::ConfigFile
             | Self::LogOpen
             | Self::Quit => Requires::Nothing,
-            // What is open, which outlives the project it was opened in. A
-            // tree that has gone from under the reader leaves its files open,
-            // some of them with work in them nothing else has, and this is
-            // the way between them; asking for a project alone would take the
-            // list away at exactly the moment the reader most needs it.
-            Self::DocumentList => Requires::SomethingOpenOrAProject,
             // A project, and nothing more. Each of these is about one --
             // a list of its files, a search across it, how much code is
             // in it, its own settings, the notes beside it, the
@@ -1206,13 +1192,17 @@ impl Command {
             // starts a new one, and a project with nothing counted in it
             // is an answer too.
             //
-            // A project and deliberately not a file for `new-file`. `ob
-            // some-directory` opens on a list with no file behind it, and
-            // that reader is exactly the one about to make the first one --
-            // the directory it fills its question in with is the only part
-            // that wants a file, and it does without.
+            // A project and deliberately not a file, for two of them.
+            // `ob some-directory` opens on a list with no file behind it,
+            // and that reader is exactly the one about to make the first
+            // one -- the directory `new-file` fills its question in with
+            // is the only part that wants a file, and it does without.
+            // And what `switch-document` lists is what is open including
+            // nothing, which the list says itself; it said it to nobody
+            // while the key insisted on a file.
             Self::FileOpen
             | Self::FileNew
+            | Self::DocumentList
             | Self::SearchProject
             | Self::CountLines
             | Self::ConversationNew

@@ -808,36 +808,46 @@ fn a_tree_with_settings(name: &str) -> (Scratch, PathBuf, obelus_app::app::App) 
     (scratch, settings, app)
 }
 
-/// A tree that goes from under Obelus takes the project with it, and
-/// leaves the window and what is open in it.
-///
-/// What arrives first is whatever the kernel and the debouncing leave
-/// first, which is usually something inside the tree -- so the change fed
-/// here is the project's settings file going, and that has to be enough:
-/// taken on its own it is the reader taking the project's settings away,
-/// and the project's theme and margin vanished at the moment the tree did.
+/// The same, with the tree already gone and Obelus told so.
 ///
 /// By hand rather than through a watcher, because this is about what the
 /// application makes of the change and holds on every platform; that the
-/// change arrives at all is the test after this one.
+/// change arrives at all is a test of its own. What arrives first is
+/// whatever the kernel and the debouncing leave first, which is usually
+/// something inside the tree -- so the change fed here is the project's
+/// settings file going, and that has to be enough.
 ///
-/// Broken deliberately four ways, one at a time: the question about the
-/// tree taken out of the handler (nothing goes dim), `has_a_project` back to
-/// asking only about the welcome screen (`open-file` is offered on a tree
-/// that is not there), `switch-document` back to wanting a project (the one
-/// list the reader needs goes dim), and the project's settings file read as
-/// one when there is no project (the setting goes) -- each fails its own
-/// line below. And once with the badge's words left out of the status row.
-#[test]
-fn a_tree_that_goes_takes_the_project_and_leaves_the_window() {
-    let (scratch, settings, mut app) = a_tree_with_settings("tree-gone");
+/// The file is changed and not written first, because what is unwritten
+/// in a tree that has gone goes with it.
+fn a_tree_that_has_gone(name: &str) -> (Scratch, obelus_app::app::App) {
+    let (scratch, settings, mut app) = a_tree_with_settings(name);
+    support::type_text(&mut app, "x");
+    assert!(
+        app.current_buffer()
+            .is_some_and(obelus_buffer::Buffer::is_dirty),
+        "nothing was left unwritten"
+    );
     assert!(
         app.offers(Command::FileOpen),
         "a project that is there offers its files"
     );
-
     fs::remove_dir_all(&scratch.directory).expect("the tree going");
     app.handle(Event::Watched(obelus_watch::Changed { path: settings }));
+    (scratch, app)
+}
+
+/// A tree that goes from under Obelus is said over the whole screen, on
+/// top of what the reader was in, and nothing under it answers a key.
+///
+/// Broken deliberately, one at a time: the question about the tree taken
+/// out of the handler (nothing goes dim), the page left out of the frame
+/// (the words are not on screen), its own ground left unfilled (the file
+/// shows through in a terminal), and its key handler letting what it does
+/// not want fall through (`ctrl+x` is bound in a dialog, and cuts a line
+/// out of the file under it) -- each fails its own line below.
+#[test]
+fn a_tree_that_goes_is_said_over_everything() {
+    let (scratch, mut app) = a_tree_that_has_gone("tree-gone");
 
     assert!(
         app.tree_has_gone(),
@@ -852,6 +862,7 @@ fn a_tree_that_goes_takes_the_project_and_leaves_the_window() {
         Command::ConfigProject,
         Command::HistoryProject,
         Command::FileChanged,
+        Command::DocumentList,
     ] {
         assert!(
             !app.offers(command),
@@ -859,20 +870,134 @@ fn a_tree_that_goes_takes_the_project_and_leaves_the_window() {
             command.name()
         );
     }
+    let dump = support::render(&mut app, 80, 12);
+    let text = support::text_block(&dump);
     assert!(
-        app.offers(Command::DocumentList),
-        "what is open cannot be reached once the tree has gone"
+        text.contains("The project has gone") && text.contains("Nothing is left at"),
+        "the page does not say so:\n{dump}"
     );
     assert!(
-        !app.config().blame_margin,
-        "the project's settings went the moment the tree did"
+        !text.contains("fn one"),
+        "the file shows through the page:\n{dump}"
     );
-    let dump = support::render(&mut app, 80, 6);
+
+    let first = |app: &obelus_app::app::App| {
+        app.current_buffer().map(|buffer| {
+            buffer
+                .text()
+                .line(obelus_text::coordinates::LineNumber::new(0))
+                .to_string()
+        })
+    };
+    let before = first(&app);
+    support::type_text(&mut app, "y");
+    support::press_control(&mut app, 'x');
+    support::press_control(&mut app, 'p');
+    assert_eq!(
+        first(&app),
+        before,
+        "a key went past the page into the file under it"
+    );
     assert!(
-        dump.contains("Tree gone"),
-        "the status row does not say so:\n{dump}"
+        !app.layers().has(obelus_component::layers::Layer::Picker),
+        "a key other than enter opened something under the page"
     );
     assert!(!scratch.directory.exists(), "the tree was made again");
+}
+
+/// Enter on that page lets go of everything the project was, and asks
+/// which project next.
+///
+/// Broken deliberately, one at a time: enter left unanswered (the page
+/// that asks never comes), the documents carried over the reset (one is
+/// still open), and the project's settings kept over the reader's (the
+/// setting stays).
+#[test]
+fn enter_lets_the_project_go_and_asks_which_is_next() {
+    let (_scratch, mut app) = a_tree_that_has_gone("tree-gone-enter");
+    support::state_of_its_own();
+
+    support::press(&mut app, crossterm::event::KeyCode::Enter);
+    let dump = support::render(&mut app, 80, 8);
+    assert!(
+        dump.contains("Open a project") && !dump.contains("The project has gone"),
+        "enter did not ask which project:\n{dump}"
+    );
+    assert_eq!(
+        app.document_count_for_test(),
+        0,
+        "what was open in a tree that has gone is still open"
+    );
+    assert!(
+        app.config().blame_margin,
+        "the settings of a project that has gone are still in force"
+    );
+    assert!(!app.should_quit(), "enter left Obelus");
+}
+
+/// What Obelus said about its own files outlives the project, and what a
+/// server said about any file goes with it.
+///
+/// Both about paths outside the tree, which are the ones a reset could
+/// keep: the reader's settings are marked by Obelus, and a server reports
+/// on a dependency beside the project as readily as on the project.
+///
+/// Broken deliberately twice: keeping the server's list and dropping
+/// Obelus's, which is what the reset first did, and the first line fails;
+/// keeping both, and the second does.
+#[test]
+fn enter_keeps_what_obelus_said_and_not_what_a_server_did() {
+    let (scratch, mut app) = a_tree_that_has_gone("tree-gone-marks");
+    support::state_of_its_own();
+    let settings = scratch.directory.with_extension("settings.toml");
+    let beside = scratch.directory.with_extension("beside.rs");
+    app.obelus_says_for_test(
+        &settings,
+        obelus_text::coordinates::Span {
+            line: obelus_text::coordinates::LineNumber::new(0),
+            column: obelus_text::coordinates::CharColumn::new(0),
+            end_line: obelus_text::coordinates::LineNumber::new(0),
+            end_column: obelus_text::coordinates::CharColumn::new(2),
+        },
+        obelus_lsp::trouble::Severity::Warning,
+        "Nothing is bound to this",
+    );
+    app.publish_for_test(serde_json::json!({
+        "uri": support::uri_for(&beside),
+        "diagnostics": [{
+            "range": { "start": { "line": 0, "character": 0 },
+                       "end": { "line": 0, "character": 2 } },
+            "severity": 2,
+            "source": "rustc",
+            "message": "unused"
+        }]
+    }));
+    assert_eq!(app.marks_on_for_test(&settings), (1, 0), "nothing to keep");
+    assert_eq!(app.marks_on_for_test(&beside), (0, 1), "nothing to drop");
+
+    support::press(&mut app, crossterm::event::KeyCode::Enter);
+    assert_eq!(
+        app.marks_on_for_test(&settings).0,
+        1,
+        "what Obelus said about the reader's settings went with the project"
+    );
+    assert_eq!(
+        app.marks_on_for_test(&beside).1,
+        0,
+        "what a server that has gone said is still in the list"
+    );
+}
+
+/// And the key that leaves leaves, without asking about what was
+/// unwritten: there is nowhere left to write it.
+///
+/// Broken deliberately by taking the early answer out of `request_quit`,
+/// which puts the question about unsaved work in the way.
+#[test]
+fn leaving_once_the_tree_has_gone_asks_nothing() {
+    let (_scratch, mut app) = a_tree_that_has_gone("tree-gone-leaving");
+    support::press_control(&mut app, 'q');
+    assert!(app.should_quit(), "the key that leaves did not leave");
 }
 
 /// And the change arrives: a tree deleted from under a watching Obelus is
@@ -909,6 +1034,93 @@ fn a_tree_deleted_from_under_obelus_is_heard() {
     assert!(
         app.tree_has_gone(),
         "the tree went and Obelus did not hear it; what arrived: {heard:?}"
+    );
+}
+
+/// Where a server offering tools is listening, from the address an agent
+/// is told.
+#[cfg(target_os = "linux")]
+fn listening_at(url: &str) -> String {
+    url.trim_start_matches("http://")
+        .split('/')
+        .next()
+        .expect("an address")
+        .to_string()
+}
+
+/// A window whose tree went stops what was about it once the reader has
+/// read so, and starts again on whatever project they name next.
+///
+/// The tools are what this watches, because an address is a thing a test
+/// can knock on: a server left listening answers for a tree that is not
+/// there, under an address no agent is told any more.
+///
+/// Linux's, because it is a real watcher hearing a real `rm -rf`.
+///
+/// Broken deliberately twice: the server's task left running when what
+/// holds it goes (`Listening` without its `Drop`), and the old address
+/// still answers; and `let_go_of_the_project` carrying `gone` over, and
+/// the project chosen afterwards offers nothing.
+#[test]
+#[cfg(target_os = "linux")]
+fn a_window_whose_tree_went_starts_again_on_another() {
+    let (scratch, _, mut app) = a_tree_with_settings("tree-again");
+    let next = Scratch::new("tree-next");
+    let (sender, events) = std::sync::mpsc::channel();
+    app.start(sender);
+    settled_into(&events, &mut app);
+    let before = listening_at(app.tools_url().expect("tools offered for the project"));
+    assert!(
+        std::net::TcpStream::connect(&before).is_ok(),
+        "the tools were never listening"
+    );
+
+    fs::remove_dir_all(&scratch.directory).expect("the tree going");
+    let deadline = Instant::now() + DEADLINE;
+    while Instant::now() < deadline && !app.tree_has_gone() {
+        if let Ok(event) = events.recv_timeout(Duration::from_millis(200)) {
+            app.handle(event);
+        }
+    }
+    assert!(
+        app.tree_has_gone(),
+        "the tree went and Obelus did not hear it"
+    );
+
+    support::state_of_its_own();
+    support::press(&mut app, crossterm::event::KeyCode::Enter);
+    assert!(
+        app.tools_url().is_none(),
+        "an agent is still told about the tools of a tree that has gone"
+    );
+    let deadline = Instant::now() + DEADLINE;
+    while Instant::now() < deadline && std::net::TcpStream::connect(&before).is_ok() {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        std::net::TcpStream::connect(&before).is_err(),
+        "the tools of a tree that has gone are still listening"
+    );
+
+    support::press(&mut app, crossterm::event::KeyCode::End);
+    support::press(&mut app, crossterm::event::KeyCode::Enter);
+    support::type_text(&mut app, &next.directory.display().to_string());
+    support::press(&mut app, crossterm::event::KeyCode::Esc);
+    support::press(&mut app, crossterm::event::KeyCode::Enter);
+
+    assert_eq!(
+        app.working_directory(),
+        next.directory,
+        "Obelus was not put on the project chosen after the last one went"
+    );
+    assert!(
+        app.offers(Command::FileOpen),
+        "the project chosen after the last one went offers nothing"
+    );
+    let after = listening_at(app.tools_url().expect("tools offered for the next project"));
+    assert!(
+        std::net::TcpStream::connect(&after).is_ok(),
+        "the next project's tools are not listening"
     );
 }
 

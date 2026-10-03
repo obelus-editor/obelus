@@ -31,7 +31,7 @@
 //! **A tree that has gone is nowhere to go.** git lists a checkout deleted
 //! behind its back until somebody prunes it, and the row says `Missing`
 //! and cannot be chosen. A window that was on it has stopped saying so --
-//! a tree that goes takes the project and leaves the window, and the
+//! a tree that goes takes the project and everything open in it, and the
 //! window is left on nothing (`App::the_tree_has_gone`). One removed
 //! through git is not listed at all.
 //!

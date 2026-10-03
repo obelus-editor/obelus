@@ -3231,6 +3231,57 @@ fn a_press_on_a_notes_box_ticks_it_and_on_its_mark_opens_the_conversation() {
     );
 }
 
+/// A press on a page over the notes stays on the page.
+///
+/// The notes took the pointer before anything was asked about what covers
+/// them, so a press on the counts, the settings or the page saying the
+/// project has gone landed on the note under it: moving the caret into a
+/// note nobody could see, or ticking it off.
+///
+/// Broken deliberately by asking about the notes before what covers them
+/// again, and every page fails.
+#[test]
+fn a_press_on_a_page_over_the_notes_stays_on_the_page() {
+    let notes = "[[todo]]\nid = \"0123456B\"\nsaid = \"the first\"\ndone = false\ndepth = 0\n\n[[todo]]\nid = \"0123456C\"\nsaid = \"the second\"\ndone = false\ndepth = 0\n";
+    for page in ["counts", "settings", "gone"] {
+        let scratch = tree(&format!("pressed-through-{page}"), notes);
+        let mut app = open(&scratch, 76, 18);
+        let _ = support::render(&mut app, 76, 18);
+        let on = |app: &App| {
+            app.notes()
+                .and_then(|notes| notes.selected_note())
+                .map(|note| note.id.clone())
+        };
+        let before = on(&app);
+        assert!(before.is_some(), "{page}: no note to stay on");
+        match page {
+            "counts" => dispatch::dispatch(&mut app, Command::CountLines),
+            "settings" => dispatch::dispatch(&mut app, Command::ConfigOpen),
+            _ => {
+                std::fs::remove_dir_all(scratch.path()).expect("the tree going");
+                app.handle(Event::Watched(obelus_watch::Changed {
+                    path: scratch.path().join("anything"),
+                }));
+            }
+        }
+        assert!(app.layers().covering(), "{page}: nothing over the notes");
+
+        // The second note's box, as the test above finds it.
+        let area = app.editor_area_for_test();
+        let top = obelus_ui::todo::list_region(area, &[]).y;
+        app.handle(Event::Pointer {
+            kind: obelus_app::event::Pointer::Pressed,
+            x: area.x + 6,
+            y: top + 2,
+        });
+        assert_eq!(
+            on(&app),
+            before,
+            "{page}: the press reached the notes under it"
+        );
+    }
+}
+
 /// A list of notes longer than the screen scrolls under the caret.
 ///
 /// The window over the rows was told how wide a note's words are and never

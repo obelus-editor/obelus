@@ -330,6 +330,36 @@ fn a_band_under_the_counts_is_said_before_them() {
     assert_eq!(joined, Joined::Screen, "the counts are the whole screen");
 }
 
+/// The page saying the project has gone, which is the whole screen and is
+/// laid over what the reader was in: the file under it is said first, so
+/// a window has it to draw the glass from.
+///
+/// Broken deliberately by taking `shapes::behind` out of the page's arm in
+/// the frame: no pane is said at all.
+#[test]
+fn the_page_saying_the_project_has_gone_is_glass_over_the_file() {
+    let scratch = support::Scratch::new("panes-gone");
+    let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    app.statuses_for_test(std::collections::HashMap::new());
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    support::lay_out(&mut app, 60, 24);
+    std::fs::remove_dir_all(scratch.path()).expect("the tree going");
+    app.handle(obelus_app::event::Event::Watched(obelus_watch::Changed {
+        path: scratch.path().join("anything"),
+    }));
+
+    let since = told_so_far();
+    let _ = support::cells_of(&mut app, 60, 24);
+    let told = told_since(since);
+    let (pane, joined, under, _) = either_side_of_the_pane(&told);
+    assert_eq!(joined, Joined::Screen, "the page is the whole screen");
+    assert_eq!(pane, Rect::new(0, 0, 60, 24), "the page is not the screen");
+    assert!(
+        under.iter().any(|band| band.height > 3),
+        "the file under the page, before its pane: {told:?}"
+    );
+}
+
 /// The names, which stand on the foot of the screen like a compact list.
 #[test]
 fn a_band_under_the_names_is_said_before_them() {
