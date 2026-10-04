@@ -13,25 +13,22 @@
 //! to call something, and what it said last when the turn is over -- rather
 //! than as it types, which in a chat is a message edited forty times or
 //! forty messages; and only the end of the turn calls the reader. So do the
-//! questions it asks, as the card would ask them in words. What the reader
+//! questions it asks, as cards the platform draws. What the reader
 //! types here goes there too, marked as said on this machine; what they say
 //! there arrives here like anything they typed, with a line in front of it for
 //! the agent saying where it came from. What the agent's tools did does not go:
 //! a chat is not a transcript, and a run of calls is the part of a turn nobody
 //! reads on a phone.
 //!
-//! **A reply is an answer while something is asked, and the next words
-//! otherwise.** The conversation is waiting on the reader while a card is
-//! up, so there is nothing else the reply could be; and once the card is
-//! answered, here or there, the next reply is talking again.
-//!
-//! **Where the platform draws the question, the card is the answer.** A
-//! press on it comes back as the ids chosen and the words written, held to
-//! the same counts as the card here and taken as if pressed here; a reply in
-//! words while it is up is pointed back at it. Reading words as an answer
-//! was Obelus deciding what the reader meant, and taking a question back so
-//! that the agent could read them was a turn stopped under it -- which the
-//! agent talked about, and whose words it ran into the answer.
+//! **The card is the answer.** A question goes to the thread as a card the
+//! platform draws, and a press on it comes back as the ids chosen and the
+//! words written, held to the same counts as the card here and taken as if
+//! pressed here; a reply in words while it is up is pointed back at it, and
+//! once it is answered, here or there, the next reply is talking again.
+//! Reading words as an answer was Obelus deciding what the reader meant --
+//! `1，3` was no number until it learnt Chinese punctuation -- and taking the
+//! question back so that the agent could read them was a turn stopped under
+//! it, which the agent talked about and whose words it ran into the answer.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -168,7 +165,6 @@ fn question_of(card: &obelus_component::card::Card) -> Question {
         words: card
             .placeholder()
             .map(|placeholder| (placeholder.to_string(), card.words_needed())),
-        in_words: card.in_words(),
     }
 }
 
@@ -998,22 +994,10 @@ impl App {
             return;
         };
         let whose = talking::Whose::One(id);
-        // A card up is the conversation waiting on exactly this -- on its
-        // card, where the platform drew one.
-        if self.platform().is_some_and(|platform| platform.cards)
-            && self.talk_of(whose).is_some_and(|talk| talk.card.is_some())
-        {
+        // A card up is the conversation waiting on exactly this, on the
+        // card: words are not read as an answer.
+        if self.talk_of(whose).is_some_and(|talk| talk.card.is_some()) {
             self.say_in_thread(&chat, "Answer on the card above".to_string(), false);
-            return;
-        }
-        if let Some(card) = self.talk_of(whose).and_then(|talk| talk.card.clone()) {
-            match card.answered_by(text) {
-                Ok((chosen, words)) => {
-                    self.answer_from_afar(whose, &chosen, words.as_deref());
-                    self.mirror_head(whose, Some(Turning::Working));
-                }
-                Err(why) => self.say_in_thread(&chat, why, false),
-            }
             return;
         }
         let parts = [Part::Words(text.to_string())];

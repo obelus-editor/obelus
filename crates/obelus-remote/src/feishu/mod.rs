@@ -50,7 +50,6 @@ pub static DESCRIPTION: Description = Description {
         url: "https://open.feishu.cn/app",
     },
     begin: "Start a topic here to talk to an agent.",
-    cards: true,
     connect: |told, sink| {
         let said = |key| told.get(key).cloned().unwrap_or_default();
         connection::start(said("app_id"), said("app_secret"), &said("domain"), sink)

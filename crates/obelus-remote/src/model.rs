@@ -1,11 +1,9 @@
 //! What passes between Obelus and a chat platform: words, and where they go.
 //!
-//! **Words are the floor.** A platform is told to say some text somewhere and
-//! tells Obelus what somebody said and where. Which is everything every chat
-//! can do, and so the whole of what a new platform has to be taught. The one
-//! thing above the floor is a question ([`Question`]), which carries its
-//! words for a platform that has only those and what it is made of for one
-//! that can draw it.
+//! **Words, and a question.** A platform is told to say some text somewhere
+//! and tells Obelus what somebody said and where. The one thing that is not
+//! words is a question ([`Question`]): what it is made of, for the platform
+//! to draw as a card, and a press on the card is its answer.
 
 /// Where in the room something was said.
 ///
@@ -69,8 +67,7 @@ pub enum Out {
         id: String,
     },
     /// Put a question the agent is waiting on to the reader in a thread,
-    /// calling them: as a card where the platform can draw one, answered
-    /// by `Event::Answered`, and in its words where it cannot.
+    /// calling them, as a card answered by `Event::Answered`.
     Ask {
         /// Which room.
         room: String,
@@ -85,8 +82,7 @@ pub enum Out {
         question: Question,
     },
     /// What became of a question asked: answered, here or there, or taken
-    /// back -- drawn on the card where it was one, so that it cannot be
-    /// answered twice, and said in the thread where it was words.
+    /// back -- drawn on the card, so that it cannot be answered twice.
     Settle {
         /// Which room.
         room: String,
@@ -102,25 +98,12 @@ pub enum Out {
 }
 
 impl Out {
-    /// The same, for a platform that cannot draw a question: the question
-    /// said in its words, calling the reader, and what became of it said
-    /// after it.
+    /// What became of a question whose card never went up -- the platform
+    /// would not take it, or it went on a connection since let go -- said
+    /// in the thread instead.
     #[must_use]
     pub fn in_words(self) -> Self {
         match self {
-            Self::Ask {
-                room,
-                thread,
-                to,
-                question,
-                ..
-            } => Self::Say {
-                room,
-                thread,
-                to,
-                text: question.in_words,
-                notify: true,
-            },
             Self::Settle {
                 room,
                 thread,
@@ -153,9 +136,6 @@ pub struct Question {
     /// The box for the reader's own words, where it has one: what it is
     /// called, and whether the agent needs something in it.
     pub words: Option<(String, bool)>,
-    /// The whole of it as words, answered by replying -- for a platform
-    /// that cannot draw it.
-    pub in_words: String,
 }
 
 /// What a thread is: the first message of it, said again whenever any of

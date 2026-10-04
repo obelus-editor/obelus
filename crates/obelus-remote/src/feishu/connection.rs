@@ -1154,7 +1154,6 @@ mod tests {
             several,
             needed: true,
             words,
-            in_words: String::new(),
         };
         let drawn = |question: &Question| {
             serde_json::from_str::<Value>(&asking(7, question, "ou_1")).expect("a card")

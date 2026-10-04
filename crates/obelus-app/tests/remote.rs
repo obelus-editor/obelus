@@ -605,10 +605,10 @@ fn said_until(
     }
 }
 
-/// Whether something was said in this thread with these words in it.
+/// Whether something was said in this thread with these words in it --
+/// what became of a question among them, which is said there where its card
+/// never went up, and the fake puts up no cards.
 fn in_thread(said: &[obelus_remote::model::Out], thread: &str, words: &str) -> bool {
-    // A question, and what became of it, as a platform with no cards is
-    // given them -- which is what the fake is.
     said.iter().any(|out| {
         matches!(
             out.clone().in_words(),
@@ -618,17 +618,43 @@ fn in_thread(said: &[obelus_remote::model::Out], thread: &str, words: &str) -> b
     })
 }
 
+/// The number of the question put to this thread offering this answer, if
+/// one has been.
+fn asked_with(said: &[obelus_remote::model::Out], thread: &str, answer: &str) -> Option<u64> {
+    said.iter().find_map(|out| match out {
+        obelus_remote::model::Out::Ask {
+            thread: at,
+            asked,
+            question,
+            ..
+        } if at == thread && question.choices.iter().any(|(_, name)| name == answer) => {
+            Some(*asked)
+        }
+        _ => None,
+    })
+}
+
+/// The reader on the list pressing one answer on a question's card.
+fn pressed(asked: u64, chosen: &str) -> obelus_remote::Event {
+    obelus_remote::Event::Answered {
+        from: "U1".to_string(),
+        asked,
+        chosen: vec![chosen.to_string()],
+        words: None,
+    }
+}
+
 /// A conversation and its thread say the same things: a thread opened for
 /// it, the reader's words from here marked as from here, the agent's words
-/// when its turn is over, its question as numbered words -- answered by a
-/// number from the chat -- and words from the chat arriving with a line for
-/// the agent saying where they came from.
+/// when its turn is over, its question as a card -- answered by a press on
+/// it -- and words from the chat arriving with a line for the agent saying
+/// where they came from.
 ///
 /// Broken deliberately five ways, each failing at its own step. Not opening
 /// threads: no `Open` came. Not echoing what was typed here. Posting the
 /// turn as it streamed rather than when it ended: the reply was split. Not
-/// reading a reply as the answer while a card is up: the permission was
-/// never given and the turn never ended. And dropping the line in front of
+/// taking a press as the answer: the permission was never given and the
+/// turn never ended. And dropping the line in front of
 /// words from afar: the agent's log had no "sent from Slack". The thread's
 /// head twice: never said again, it stayed as it opened; said again with
 /// the state it had, it never said `Waiting` or `Done`.
@@ -701,8 +727,9 @@ fn a_conversation_and_its_thread_say_the_same_things() {
     support::type_text(&mut app, "what is this file");
     support::press(&mut app, KeyCode::Enter);
     let said = said_until(&mut app, &events, "the question in the thread", |said| {
-        in_thread(said, "T1", "Allow once")
+        asked_with(said, "T1", "Allow once").is_some()
     });
+    let asked = asked_with(&said, "T1", "Allow once").expect("asked");
     assert!(
         in_thread(&said, "T1", "On this machine:_ what is this file"),
         "{said:#?}"
@@ -712,8 +739,8 @@ fn a_conversation_and_its_thread_say_the_same_things() {
     assert!(in_thread(&said, "T1", "it is a rust file"), "{said:#?}");
     assert!(
         said.iter().any(|out| matches!(
-            out.clone().in_words(),
-            obelus_remote::model::Out::Say { text, notify: true, .. } if text.contains("1. Allow once")
+            out,
+            obelus_remote::model::Out::Ask { to, .. } if to == "U1"
         )),
         "the question did not call the reader: {said:#?}"
     );
@@ -730,13 +757,8 @@ fn a_conversation_and_its_thread_say_the_same_things() {
         "the head does not say it is waiting: {said:#?}"
     );
 
-    // A number from the chat answers it, and the rest of the turn follows.
-    let _ = sink.send(obelus_remote::Event::Heard {
-        from: "U1".to_string(),
-        room: "C1".to_string(),
-        at: obelus_remote::model::Where::Thread("T1".to_string()),
-        text: "1".to_string(),
-    });
+    // A press on its card answers it, and the rest of the turn follows.
+    let _ = sink.send(pressed(asked, "once"));
     let said = said_until(
         &mut app,
         &events,
@@ -1011,7 +1033,7 @@ fn a_thread_the_reader_starts_is_a_conversation() {
         text: "what is in here".to_string(),
     });
     let said = said_until(&mut app, &events, "the question in the thread", |said| {
-        in_thread(said, "F1", "Allow once")
+        asked_with(said, "F1", "Allow once").is_some()
     });
     let logged = std::fs::read_to_string(&log).unwrap_or_default();
     assert!(
@@ -1105,33 +1127,29 @@ fn a_question_is_answered_in_its_own_conversation() {
         at: obelus_remote::model::Where::Fresh("F1".to_string()),
         text: "what is in here".to_string(),
     });
-    said_until(&mut app, &events, "the question in the thread", |said| {
-        in_thread(said, "F1", "Allow once")
+    let said = said_until(&mut app, &events, "the question in the thread", |said| {
+        asked_with(said, "F1", "Allow once").is_some()
     });
-    let _ = platform.send(obelus_remote::Event::Heard {
-        from: "U1".to_string(),
-        room: "C1".to_string(),
-        at: obelus_remote::model::Where::Thread("F1".to_string()),
-        text: "1".to_string(),
-    });
+    let asked = asked_with(&said, "F1", "Allow once").expect("asked");
+    let _ = platform.send(pressed(asked, "once"));
     said_until(&mut app, &events, "the rest of the turn", |said| {
         in_thread(said, "F1", "and I was allowed")
     });
 }
 
-/// Where the platform draws a question as a card, the card is the answer:
-/// put to the thread as a question with the agent's own ids on it, a press
-/// on it answering for the reader on the list and nobody else, the card
-/// closed with what was chosen -- and words in the thread while it is up
-/// pointed back at it rather than read.
+/// The card is the answer: put to the thread as a question with the
+/// agent's own ids on it, a press on it answering for the reader on the
+/// list and nobody else, the card closed with what was chosen -- and words
+/// in the thread while it is up pointed back at it rather than read. On
+/// Feishu, which is set up with fields of its own.
 ///
 /// Broken deliberately four ways. Not hearing presses: the permission was
-/// never given and the turn never ended. Reading words as the answer on a
-/// platform with cards: the `1` answered it, and nobody was told to use the
-/// card. Taking a press from anybody: the stranger's answered it. And not
-/// closing the card: no `Settle` came, and it could be pressed again.
+/// never given and the turn never ended. Reading words as the answer: the
+/// `1` answered it, and nobody was told to use the card. Taking a press from
+/// anybody: the stranger's answered it. And not closing the card: no `Settle`
+/// came, and it could be pressed again.
 #[test]
-fn a_question_is_a_card_where_the_platform_draws_one() {
+fn a_question_is_a_card_and_the_card_is_the_answer() {
     let _turn = turn();
     let scratch = support::Scratch::new("remote-card");
     let (mut app, events, _log) = paired_on_feishu_with_an_agent(&scratch);
@@ -1234,7 +1252,7 @@ fn what_is_said_while_reconnecting_still_goes() {
         text: "what is in here".to_string(),
     });
     said_until(&mut app, &events, "the question in the thread", |said| {
-        in_thread(said, "F1", "Allow once")
+        asked_with(said, "F1", "Allow once").is_some()
     });
 }
 
@@ -1470,7 +1488,7 @@ fn a_thread_finds_its_conversation_while_its_agent_is_gone() {
         text: "what is in here".to_string(),
     });
     let said = said_until(&mut app, &events, "the question in the thread", |said| {
-        in_thread(said, "F1", "Allow once") || in_thread(said, "F1", "not open")
+        asked_with(said, "F1", "Allow once").is_some() || in_thread(said, "F1", "not open")
     });
     assert!(
         !in_thread(&said, "F1", "not open"),

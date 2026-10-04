@@ -5,12 +5,11 @@
 //! they find there is the same conversations their windows hold: one thread
 //! a conversation, and a thread they start a conversation begun.
 //!
-//! **Words are the floor.** Most chats cannot be given a screen of their own,
-//! so everything Obelus says there is text and everything it is told is
-//! text: a question is a numbered list answered by replying with a number.
-//! A platform that can draw a card draws the question as one instead, and
-//! there the card is the only way to answer it -- what it sends back is the
-//! answer as the agent asked for it, with nothing read out of words.
+//! **Words, and a card for a question.** What Obelus says in a chat is text
+//! and what it is told is text, except a question: that is a card the
+//! platform draws -- buttons, a list, a box -- and the card is the only way
+//! to answer it. What a press sends back is the answer as the agent asked
+//! for it, with nothing read out of words.
 //!
 //! **A platform declares; Obelus keeps.** What one has to be told is a list
 //! of fields ([`platform`]), and where each is kept -- a secret in the

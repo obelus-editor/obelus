@@ -40,7 +40,6 @@ pub static DESCRIPTION: Description = Description {
         text: manifest,
     },
     begin: "Send a message here to talk to an agent; it answers in the thread under it.",
-    cards: false,
     connect: |told, sink| {
         let said = |key| told.get(key).cloned().unwrap_or_default();
         connection::start(said("app_token"), said("bot_token"), sink)
@@ -53,9 +52,9 @@ pub static DESCRIPTION: Description = Description {
 /// internet can reach. No Home tab and no Messages tab: everything happens
 /// in a private channel the reader makes and invites the app to, where every
 /// message begins a conversation in the thread under it, and a page or a
-/// direct message beside it would be a second place for it to happen. No
-/// interactivity: everything Obelus says is words and everything it is told
-/// is words, which is what every chat can carry. And the scopes for reading
+/// direct message beside it would be a second place for it to happen.
+/// Interactivity, by the same socket, because a question is a message with
+/// buttons and a press is how it is answered. And the scopes for reading
 /// and writing the channels it is invited to, private or not -- nothing
 /// where it has not been invited.
 #[must_use]
@@ -85,7 +84,7 @@ pub fn manifest() -> String {
             "event_subscriptions": {
                 "bot_events": ["message.channels", "message.groups"],
             },
-            "interactivity": { "is_enabled": false },
+            "interactivity": { "is_enabled": true },
             "org_deploy_enabled": false,
             "socket_mode_enabled": true,
             "token_rotation_enabled": false,

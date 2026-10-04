@@ -10,15 +10,23 @@
 //! app's own messages come back to it as events too, and an edit, a join or
 //! a deleted message is a message with a subtype; none of those is somebody
 //! talking, so none of them is passed on.
+//!
+//! **A question is a message with buttons, and a press is its answer.** A
+//! button for each answer where one press is the whole of it; otherwise a
+//! list and a box, and a button that sends what they hold -- Slack hands the
+//! state of every input on the message over with the press. The press
+//! names the question by Obelus's number for it, and the message is edited
+//! closed once Obelus says what became of it.
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use obelus_sink::Sink;
+use serde_json::{Value, json};
 use slack_morphism::{errors::SlackClientError, listener::HttpStatusCode, prelude::*};
 
 use crate::{
     Event, State,
-    model::{Out, Where},
+    model::{Out, Question, Where},
 };
 
 /// What the listener's callbacks share: where what they hear goes.
@@ -103,13 +111,21 @@ async fn run(
     let _ = sink.send(Event::connection(State::Connected, None));
 
     let session = client.open_session(&bot);
+    // Each question's message, by Obelus's number for it: where it is, and
+    // what it was about, to edit it closed with.
+    let mut cards: HashMap<u64, (SlackChannelId, SlackTs, String)> = HashMap::new();
     let mut waiting = waiting.drain().collect::<Vec<Out>>().into_iter();
     while let Some(out) = match waiting.next() {
         Some(out) => Some(out),
         None => said.recv().await,
     } {
-        // Slack is given a question in words, and answered by replying.
-        match out.in_words() {
+        // What became of a question that never went up as a card is said
+        // in words.
+        let out = match out {
+            Out::Settle { asked, .. } if !cards.contains_key(&asked) => out.in_words(),
+            out => out,
+        };
+        match out {
             Out::Say {
                 room,
                 thread,
@@ -198,7 +214,40 @@ async fn run(
                     Err(error) => tracing::warn!(%error, "Slack would not say who that is"),
                 }
             }
-            Out::Ask { .. } | Out::Settle { .. } => {}
+            Out::Ask {
+                room,
+                thread,
+                to,
+                asked,
+                question,
+            } => {
+                let channel = SlackChannelId::new(room);
+                let mut content = SlackMessageContent::new();
+                // What a notification shows, which blocks are not.
+                content.text = Some(format!("<@{to}> {}", question.about));
+                content.blocks = Some(asking(asked, &question, &to));
+                let mut request = SlackApiChatPostMessageRequest::new(channel.clone(), content);
+                request.thread_ts = Some(SlackTs::new(thread));
+                match session.chat_post_message(&request).await {
+                    Ok(posted) => {
+                        cards.insert(asked, (channel, posted.ts, question.about));
+                    }
+                    Err(error) => tracing::warn!(%error, asked, "Slack would not take a question"),
+                }
+            }
+            Out::Settle { asked, said, .. } => {
+                if let Some((channel, ts, about)) = cards.remove(&asked) {
+                    let mut content = SlackMessageContent::new();
+                    content.text = Some(about.clone());
+                    content.blocks = Some(settled(&about, &said));
+                    if let Err(error) = session
+                        .chat_update(&SlackApiChatUpdateRequest::new(channel, content, ts))
+                        .await
+                    {
+                        tracing::warn!(%error, asked, "Slack would not close a question");
+                    }
+                }
+            }
         }
     }
     listener.shutdown().await;
@@ -228,7 +277,9 @@ async fn connect(
             .with_error_handler(said_wrong)
             .with_user_state(Listening { sink: sink.clone() }),
     );
-    let callbacks = SlackSocketModeListenerCallbacks::new().with_push_events(pushed);
+    let callbacks = SlackSocketModeListenerCallbacks::new()
+        .with_push_events(pushed)
+        .with_interaction_events(pressed);
     let listener = SlackClientSocketModeListener::new(
         &SlackClientSocketModeConfig::new(),
         environment,
@@ -309,6 +360,147 @@ async fn pushed(
     Ok(())
 }
 
+/// A question as blocks: what it is about, calling the reader, then a
+/// button for each answer where one press is the whole answer, or a list
+/// and a box with a button that sends them. Every press names the question
+/// by `asked` -- with the answer's id after a colon, on a button that is one.
+fn asking(asked: u64, question: &Question, to: &str) -> Vec<SlackBlock> {
+    let plain = |text: &str| json!({ "type": "plain_text", "text": text });
+    let mut blocks = vec![json!({
+        "type": "section",
+        "text": { "type": "mrkdwn", "text": format!("<@{to}> {}", question.about) },
+    })];
+    if !question.several && question.words.is_none() && !question.choices.is_empty() {
+        let buttons: Vec<Value> = question
+            .choices
+            .iter()
+            .enumerate()
+            .map(|(at, (id, name))| {
+                json!({
+                    "type": "button",
+                    "text": plain(name),
+                    "action_id": format!("choice-{at}"),
+                    "value": format!("{asked}:{id}"),
+                })
+            })
+            .collect();
+        blocks.push(json!({ "type": "actions", "block_id": "answers", "elements": buttons }));
+    } else {
+        if !question.choices.is_empty() {
+            let options: Vec<Value> = question
+                .choices
+                .iter()
+                .map(|(id, name)| json!({ "text": plain(name), "value": id }))
+                .collect();
+            blocks.push(json!({
+                "type": "input",
+                "block_id": "chosen",
+                "optional": !question.needed,
+                "label": plain("Choose"),
+                "element": {
+                    "type": match question.several {
+                        true => "multi_static_select",
+                        false => "static_select",
+                    },
+                    "action_id": "chosen",
+                    "options": options,
+                },
+            }));
+        }
+        if let Some((name, required)) = &question.words {
+            blocks.push(json!({
+                "type": "input",
+                "block_id": "words",
+                "optional": !required,
+                "label": plain(name),
+                "element": { "type": "plain_text_input", "action_id": "words" },
+            }));
+        }
+        blocks.push(json!({
+            "type": "actions",
+            "block_id": "send",
+            "elements": [{
+                "type": "button",
+                "style": "primary",
+                "text": plain("Send"),
+                "action_id": "send",
+                "value": asked.to_string(),
+            }],
+        }));
+    }
+    serde_json::from_value(Value::Array(blocks)).unwrap_or_default()
+}
+
+/// The same question closed: what it was about, and what became of it in
+/// place of anything to press.
+fn settled(about: &str, said: &str) -> Vec<SlackBlock> {
+    serde_json::from_value(json!([
+        { "type": "section", "text": { "type": "mrkdwn", "text": about } },
+        { "type": "context", "elements": [{ "type": "mrkdwn", "text": said }] },
+    ]))
+    .unwrap_or_default()
+}
+
+async fn pressed(
+    event: SlackInteractionEvent,
+    _: Arc<SlackHyperClient>,
+    states: SlackClientEventsUserState,
+) -> UserCallbackResult<()> {
+    let SlackInteractionEvent::BlockActions(event) = event else {
+        return Ok(());
+    };
+    let Some(answered) = answer_of(&event) else {
+        return Ok(());
+    };
+    if let Some(listening) = states.read().await.get_user_state::<Listening>() {
+        let _ = listening.sink.send(answered);
+    }
+    Ok(())
+}
+
+/// The answer a press makes: which question, the ids chosen -- the one on
+/// a button, or what the list held when it was sent -- and the words in the
+/// box.
+fn answer_of(event: &SlackInteractionBlockActionsEvent) -> Option<Event> {
+    let from = event.user.as_ref()?.id.to_string();
+    let value = event.actions.as_ref()?.first()?.value.clone()?;
+    let (asked, chosen) = match value.split_once(':') {
+        Some((asked, id)) => (asked, vec![id.to_string()]),
+        None => (value.as_str(), Vec::new()),
+    };
+    let asked = asked.parse().ok()?;
+    let held = |block: &str| {
+        event
+            .state
+            .as_ref()?
+            .values
+            .get(&SlackBlockId::new(block.to_string()))?
+            .get(&SlackActionId::new(block.to_string()))
+            .cloned()
+    };
+    let chosen = match (chosen.is_empty(), held("chosen")) {
+        (true, Some(list)) => list
+            .selected_options
+            .unwrap_or_default()
+            .into_iter()
+            .chain(list.selected_option)
+            .map(|option| option.value)
+            .collect(),
+        _ => chosen,
+    };
+    let words = held("words")
+        .and_then(|words| words.value)
+        .map(|words| words.trim().to_string())
+        .filter(|words| !words.is_empty());
+    tracing::info!(asked, ?chosen, "a question answered on its message");
+    Some(Event::Answered {
+        from,
+        asked,
+        chosen,
+        words,
+    })
+}
+
 /// What the listener could not handle, for the log.
 fn said_wrong(
     error: Box<dyn std::error::Error + Send + Sync>,
@@ -342,5 +534,114 @@ mod tests {
             "if a < b && c > d"
         );
         assert_eq!(unescaped("&amp;lt;"), "&lt;");
+    }
+
+    /// A question one press answers is a button per answer, carrying the
+    /// question's number and the agent's id; one that takes several, or
+    /// words, is a list and a box and a button that sends them -- and both
+    /// are blocks Slack's types take, not an empty message.
+    ///
+    /// Broken deliberately three ways. Drawing a list whatever the
+    /// question: the permission had no buttons. Putting the name where the
+    /// id goes: the press carried "Allow once". And a block Slack's types
+    /// do not take -- the multi-select in an `actions` block: the form came
+    /// out as no blocks at all.
+    #[test]
+    fn a_question_is_buttons_or_a_form() {
+        let question = |several: bool, words: Option<(String, bool)>| Question {
+            about: "Read the file?".to_string(),
+            choices: vec![
+                ("once".to_string(), "Allow once".to_string()),
+                ("never".to_string(), "Reject".to_string()),
+            ],
+            several,
+            needed: true,
+            words,
+        };
+        let drawn =
+            |question: &Question| serde_json::to_value(asking(7, question, "U1")).expect("blocks");
+
+        let blocks = drawn(&question(false, None));
+        assert_eq!(blocks[0]["text"]["text"], "<@U1> Read the file?");
+        assert_eq!(blocks[1]["type"], "actions", "{blocks:#}");
+        assert_eq!(blocks[1]["elements"][0]["value"], "7:once");
+        assert_eq!(blocks[1]["elements"][1]["value"], "7:never");
+
+        let blocks = drawn(&question(true, Some(("Other".to_string(), false))));
+        assert_eq!(blocks.as_array().map(Vec::len), Some(4), "{blocks:#}");
+        assert_eq!(blocks[1]["element"]["type"], "multi_static_select");
+        assert_eq!(blocks[1]["element"]["options"][1]["value"], "never");
+        assert_eq!(blocks[2]["element"]["type"], "plain_text_input");
+        assert_eq!(blocks[2]["optional"], true);
+        assert_eq!(blocks[3]["elements"][0]["value"], "7");
+    }
+
+    /// A press is heard as the answer it makes: a button's question and
+    /// id, or the send button's question with what the list and the box
+    /// held -- trimmed, and only where there is something in the box.
+    ///
+    /// Broken deliberately twice. Reading only the button's value: what
+    /// the list held arrived as nothing chosen. And reading only several
+    /// from the list: the one chosen from a single list was dropped.
+    #[test]
+    fn a_press_is_heard_as_its_answer() {
+        let press = |value: &str, state: Value| {
+            let event: SlackInteractionEvent = serde_json::from_value(json!({
+                "type": "block_actions",
+                "team": { "id": "T1" },
+                "user": { "id": "U1" },
+                "api_app_id": "A1",
+                "container": { "type": "message", "message_ts": "1.2", "channel_id": "C1" },
+                "trigger_id": "t",
+                "actions": [{ "type": "button", "action_id": "send", "block_id": "send", "value": value }],
+                "state": { "values": state },
+            }))
+            .expect("a press");
+            let SlackInteractionEvent::BlockActions(event) = event else {
+                panic!("not a press");
+            };
+            match answer_of(&event) {
+                Some(Event::Answered {
+                    from,
+                    asked,
+                    chosen,
+                    words,
+                }) => (from, asked, chosen, words),
+                other => panic!("not an answer: {other:?}"),
+            }
+        };
+        assert_eq!(
+            press("7:once", json!({})),
+            ("U1".to_string(), 7, vec!["once".to_string()], None)
+        );
+        assert_eq!(
+            press(
+                "8",
+                json!({
+                    "chosen": { "chosen": { "type": "multi_static_select", "selected_options": [
+                        { "text": { "type": "plain_text", "text": "App" }, "value": "app" },
+                        { "text": { "type": "plain_text", "text": "UI" }, "value": "ui" },
+                    ] } },
+                    "words": { "words": { "type": "plain_text_input", "value": " the docs too  " } },
+                })
+            ),
+            (
+                "U1".to_string(),
+                8,
+                vec!["app".to_string(), "ui".to_string()],
+                Some("the docs too".to_string())
+            )
+        );
+        assert_eq!(
+            press(
+                "9",
+                json!({
+                    "chosen": { "chosen": { "type": "static_select", "selected_option":
+                        { "text": { "type": "plain_text", "text": "App" }, "value": "app" } } },
+                    "words": { "words": { "type": "plain_text_input", "value": null } },
+                })
+            ),
+            ("U1".to_string(), 9, vec!["app".to_string()], None)
+        );
     }
 }
