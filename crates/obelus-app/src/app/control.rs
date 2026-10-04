@@ -24,7 +24,7 @@ use super::*;
 use crate::conversation::{Conversation, Topic};
 
 /// What the top answers to anything it does not know.
-pub(super) const HELP: &str = "Send **notes** to see what there is to do, **new** to start a conversation, or **note** and a few words to write one down.";
+pub(super) const HELP: &str = "Send **notes** to see what there is to do, **new** to start a conversation, or **note** and a few words to write one down. A topic started in the Obelus group is a conversation too.";
 
 impl App {
     /// Somebody on the list said something at the top.
@@ -121,6 +121,12 @@ impl App {
     /// A conversation about nothing in particular, its session asked for
     /// now: one is named by its session, and its thread waits on the name.
     fn begin_from_afar(&mut self) -> String {
+        self.a_conversation_from_afar();
+        "Starting one; its thread is next.".to_string()
+    }
+
+    /// A conversation begun from the chat, and its session asked for.
+    pub(super) fn a_conversation_from_afar(&mut self) -> DocumentId {
         self.documents.push(Some(
             Conversation {
                 from_afar: true,
@@ -138,7 +144,7 @@ impl App {
             self.start_agent();
         }
         self.ask_for_a_session(talking::Whose::One(id), None);
-        "Starting one; its thread is next.".to_string()
+        id
     }
 
     /// Writes words down as a note of their own.

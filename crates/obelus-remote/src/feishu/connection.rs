@@ -11,13 +11,20 @@
 //! or Feishu sends it again). A big event can arrive in pieces, each saying
 //! which of how many it is.
 //!
-//! **A conversation's topic is a reply to its first message.** A direct
-//! message has no topics of its own until a message is replied to *in a
-//! topic*, so a thread here is the first message Obelus sends for a
-//! conversation, everything after it is a reply to that one with
-//! `reply_in_thread`, and what the reader writes in it arrives naming that
-//! message as its root. What they write outside any topic arrives with no
-//! root, and is the top.
+//! **A conversation's topic is a reply to its first message.** A thread
+//! here is the first message Obelus sends for a conversation, everything
+//! after it is a reply to that one with `reply_in_thread`, and what the
+//! reader writes in it arrives naming that message as its root.
+//!
+//! **The topics are in a group of their own, and the direct message is the
+//! top.** In a direct message a topic hangs off a message in it, so every
+//! conversation put a card into the stream the top is talked in, and the
+//! two were one tangle. A group in topic mode is nothing but topics -- a
+//! list of them, each opened to read -- so the conversations go in one, made
+//! for the reader with only them and the bot in it, and the direct message
+//! keeps the top to itself. A topic the reader starts there is a
+//! conversation they are starting. Where the app may not make a group, the
+//! topics stay in the direct message as they were.
 
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
@@ -57,6 +64,7 @@ pub fn start(
         app_id,
         app_secret,
         token: tokio::sync::Mutex::new(None),
+        room: std::sync::Mutex::new(None),
     };
     obelus_runtime::handle().spawn(run(Arc::new(api), sink, said));
     out
@@ -72,6 +80,9 @@ struct Api {
     /// little before then: a token Feishu has just let lapse is a message
     /// that does not go.
     token: tokio::sync::Mutex<Option<(String, std::time::Instant)>>,
+    /// The group the topics are in, once Obelus has said which or one has
+    /// been made: what is heard in any other group is not for Obelus.
+    room: std::sync::Mutex<Option<String>>,
 }
 
 /// Why the API would not do something.
@@ -92,6 +103,20 @@ impl std::fmt::Display for Refusal {
 }
 
 impl Api {
+    fn room(&self) -> Option<String> {
+        self.room
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    fn set_room(&self, room: Option<String>) {
+        *self
+            .room
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = room;
+    }
+
     /// The tenant's token, asked for when there is none or it is nearly up.
     async fn token(&self) -> Result<String, Refusal> {
         let mut kept = self.token.lock().await;
@@ -312,7 +337,7 @@ async fn say(api: &Api, sink: &Arc<dyn Sink<Event>>, out: Out) -> Result<(), Ref
                     )
                     .await?;
                 }
-                Where::Thread(root) => {
+                Where::Thread(root) | Where::Fresh(root) => {
                     api.call(
                         reqwest::Method::POST,
                         &format!("/open-apis/im/v1/messages/{root}/reply"),
@@ -327,17 +352,33 @@ async fn say(api: &Api, sink: &Arc<dyn Sink<Event>>, out: Out) -> Result<(), Ref
             }
         }
         Out::Open { asked, to, head } => {
-            let data = api
-                .call(
+            let send = |kind: &'static str, receive: String| {
+                api.call(
                     reqwest::Method::POST,
-                    "/open-apis/im/v1/messages?receive_id_type=open_id",
+                    match kind {
+                        "chat_id" => "/open-apis/im/v1/messages?receive_id_type=chat_id",
+                        _ => "/open-apis/im/v1/messages?receive_id_type=open_id",
+                    },
                     Some(json!({
-                        "receive_id": to,
+                        "receive_id": receive,
                         "msg_type": "interactive",
                         "content": card(&head),
                     })),
                 )
-                .await?;
+            };
+            // In the group where there is one, and in the direct message
+            // where it would not take it -- the reader left it, or it was
+            // disbanded: a topic somewhere is better than none.
+            let data = match api.room() {
+                Some(room) => match send("chat_id", room).await {
+                    Ok(data) => data,
+                    Err(why) => {
+                        tracing::warn!(%why, "the group would not take a topic, so the direct message has it");
+                        send("open_id", to).await?
+                    }
+                },
+                None => send("open_id", to).await?,
+            };
             let thread = data["message_id"].as_str().unwrap_or_default().to_string();
             if !thread.is_empty() {
                 let _ = sink.send(Event::Opened {
@@ -356,6 +397,27 @@ async fn say(api: &Api, sink: &Arc<dyn Sink<Event>>, out: Out) -> Result<(), Ref
             )
             .await?;
         }
+        Out::Room {
+            to,
+            room: Some(room),
+        } => {
+            tracing::info!(%to, "the topics go in the group kept for them");
+            api.set_room(Some(room));
+        }
+        Out::Room { to, room: None } => match make_room(api, &to).await {
+            Ok(room) => {
+                api.set_room(Some(room.clone()));
+                let _ = sink.send(Event::Roomed { to, room });
+            }
+            // Said in the log and nowhere else: the topics go on in the
+            // direct message, which is how this worked before there were
+            // groups, and what is missing is a permission on the app's
+            // page that the log names.
+            Err(why) => tracing::warn!(
+                %why,
+                "no group for the topics, so they stay in the direct message; the app needs im:chat:create"
+            ),
+        },
         Out::Name { id } => {
             // The name where the app may read it, and the id where it may
             // not: a person on the list by an id is still on the list.
@@ -376,12 +438,38 @@ async fn say(api: &Api, sink: &Arc<dyn Sink<Event>>, out: Out) -> Result<(), Ref
     Ok(())
 }
 
+/// Makes the group the topics go in: in topic mode, with the reader and
+/// the bot in it and nobody else, the reader owning it and the bot one of
+/// its managers.
+async fn make_room(api: &Api, to: &str) -> Result<String, Refusal> {
+    let data = api
+        .call(
+            reqwest::Method::POST,
+            "/open-apis/im/v1/chats?user_id_type=open_id&set_bot_manager=true",
+            Some(json!({
+                "name": "Obelus",
+                "description": "One topic for each conversation in Obelus. Start a topic to start one.",
+                "chat_mode": "group",
+                "chat_type": "private",
+                "group_message_type": "thread",
+                "user_id_list": [to],
+                "owner_id": to,
+            })),
+        )
+        .await?;
+    data["chat_id"]
+        .as_str()
+        .filter(|room| !room.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| Refusal::Other("a group with no id".to_string()))
+}
+
 /// The long connection, made and made again for as long as it is wanted.
 async fn listen(api: Arc<Api>, sink: Arc<dyn Sink<Event>>) {
     loop {
         match api.endpoint().await {
             Ok((url, ping)) => {
-                if let Err(why) = connected(&url, ping, &sink).await {
+                if let Err(why) = connected(&api, &url, ping, &sink).await {
                     tracing::warn!(%why, "the long connection to Feishu dropped");
                 }
             }
@@ -393,7 +481,12 @@ async fn listen(api: Arc<Api>, sink: Arc<dyn Sink<Event>>) {
 }
 
 /// One long connection, until it drops.
-async fn connected(url: &str, ping: Duration, sink: &Arc<dyn Sink<Event>>) -> Result<(), String> {
+async fn connected(
+    api: &Api,
+    url: &str,
+    ping: Duration,
+    sink: &Arc<dyn Sink<Event>>,
+) -> Result<(), String> {
     let service: i32 = url::Url::parse(url)
         .ok()
         .and_then(|url| {
@@ -452,7 +545,7 @@ async fn connected(url: &str, ping: Duration, sink: &Arc<dyn Sink<Event>>) -> Re
                     continue;
                 };
                 if value_of(&frame.headers, "type") == Some("event") {
-                    heard_event(&payload, sink);
+                    heard_event(&payload, api.room().as_deref(), sink);
                 }
                 // Answered whatever it was, at once: an event not answered
                 // within three seconds is sent again, and what was done
@@ -511,10 +604,10 @@ fn whole(pieces: &mut HashMap<String, Vec<Option<Vec<u8>>>>, frame: &Frame) -> O
 
 /// What somebody wrote to the app, passed on -- and nothing else is.
 ///
-/// Only a person's text in a direct message: an event of another kind, a
-/// message in a group, a picture, are none of them somebody talking to
-/// Obelus.
-fn heard_event(payload: &[u8], sink: &Arc<dyn Sink<Event>>) {
+/// Only a person's words, in the direct message or in the group the topics
+/// are in: an event of another kind, a message in any other group, a
+/// picture, are none of them somebody talking to Obelus.
+fn heard_event(payload: &[u8], room: Option<&str>, sink: &Arc<dyn Sink<Event>>) {
     let Ok(event) = serde_json::from_slice::<Value>(payload) else {
         return;
     };
@@ -522,8 +615,10 @@ fn heard_event(payload: &[u8], sink: &Arc<dyn Sink<Event>>) {
         return;
     }
     let message = &event["event"]["message"];
-    if message["chat_type"].as_str() != Some("p2p")
-        || message["message_type"].as_str() != Some("text")
+    let in_the_room = message["chat_type"].as_str() == Some("group")
+        && room.is_some()
+        && message["chat_id"].as_str() == room;
+    if !(message["chat_type"].as_str() == Some("p2p") || in_the_room)
         || event["event"]["sender"]["sender_type"].as_str() != Some("user")
     {
         return;
@@ -531,20 +626,62 @@ fn heard_event(payload: &[u8], sink: &Arc<dyn Sink<Event>>) {
     let Some(from) = event["event"]["sender"]["sender_id"]["open_id"].as_str() else {
         return;
     };
-    let text = message["content"]
+    let Some(text) = message["content"]
         .as_str()
         .and_then(|content| serde_json::from_str::<Value>(content).ok())
-        .and_then(|content| content["text"].as_str().map(str::to_string))
-        .unwrap_or_default();
-    let at = match message["root_id"].as_str().filter(|root| !root.is_empty()) {
-        Some(root) => Where::Thread(root.to_string()),
-        None => Where::Top,
+        .and_then(|content| words_of(message["message_type"].as_str()?, &content))
+    else {
+        return;
+    };
+    let root = message["root_id"].as_str().filter(|root| !root.is_empty());
+    let at = match (root, in_the_room) {
+        (Some(root), _) => Where::Thread(root.to_string()),
+        // A message in the group with nothing above it is a topic the
+        // reader has just started, and the topic is that message.
+        (None, true) => match message["message_id"].as_str() {
+            Some(id) => Where::Fresh(id.to_string()),
+            None => return,
+        },
+        (None, false) => Where::Top,
     };
     let _ = sink.send(Event::Heard {
         from: from.to_string(),
         at,
         text,
     });
+}
+
+/// The words in a message: a text's text, or a rich message's title and
+/// paragraphs -- which is what a topic group's box sends when the reader
+/// gives a topic a title. Anything else has no words to hear.
+fn words_of(kind: &str, content: &Value) -> Option<String> {
+    match kind {
+        "text" => content["text"].as_str().map(str::to_string),
+        "post" => {
+            // As sent it is under a language; as heard it is not.
+            let post = match content.get("content") {
+                Some(_) => content,
+                None => content.as_object()?.values().next()?,
+            };
+            let mut lines: Vec<String> = Vec::new();
+            if let Some(title) = post["title"].as_str().filter(|title| !title.is_empty()) {
+                lines.push(title.to_string());
+            }
+            for paragraph in post["content"].as_array()? {
+                let line: String = paragraph
+                    .as_array()?
+                    .iter()
+                    .filter_map(|piece| match piece["tag"].as_str() {
+                        Some("text" | "a" | "code_block") => piece["text"].as_str(),
+                        _ => None,
+                    })
+                    .collect();
+                lines.push(line);
+            }
+            Some(lines.join("\n").trim().to_string())
+        }
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -583,16 +720,22 @@ mod tests {
         assert!(pieces.is_empty(), "the pieces were kept after the whole");
     }
 
-    /// Somebody's text in a direct message is heard, at the top or in the
-    /// topic its root names; anything else is not.
+    /// Somebody's words are heard in the direct message -- at the top, or
+    /// in the topic its root names -- and in the group the topics are in,
+    /// where a message with no root is a topic just started; a message in
+    /// any other group is not heard, and nor is anything in a group before
+    /// Obelus has said which is its.
     ///
-    /// Broken deliberately by taking the thread's own id instead of the
-    /// root: the reply in a topic arrived naming a thread nothing keeps.
+    /// Broken deliberately three ways. Taking the thread's own id instead
+    /// of the root: the reply in a topic arrived naming a thread nothing
+    /// keeps. Hearing every group: the stranger's group was heard as a
+    /// topic started. And reading only a text: the topic started with a
+    /// title, which arrives as a rich message, was not heard at all.
     #[test]
-    fn a_direct_message_is_heard_where_it_was_written() {
+    fn words_are_heard_where_they_were_written() {
         let (sender, heard) = std::sync::mpsc::channel::<Event>();
         let sink: Arc<dyn Sink<Event>> = Arc::new(sender);
-        let event = |root: Option<&str>, chat: &str| {
+        let event = |root: Option<&str>, chat: &str, chat_id: &str, kind: &str, content: &str| {
             json!({
                 "schema": "2.0",
                 "header": { "event_type": "im.message.receive_v1" },
@@ -602,35 +745,71 @@ mod tests {
                         "message_id": "om_2",
                         "root_id": root,
                         "thread_id": "omt_3",
+                        "chat_id": chat_id,
                         "chat_type": chat,
-                        "message_type": "text",
-                        "content": "{\"text\":\"1\"}"
+                        "message_type": kind,
+                        "content": content
                     }
                 }
             })
             .to_string()
         };
-        heard_event(event(Some("om_root"), "p2p").as_bytes(), &sink);
-        heard_event(event(None, "p2p").as_bytes(), &sink);
-        heard_event(event(None, "group").as_bytes(), &sink);
-        let heard: Vec<(String, Where, String)> = heard
+        let text = "{\"text\":\"1\"}";
+        let titled = json!({
+            "title": "Fix the build",
+            "content": [[{ "tag": "text", "text": "it fails on " }, { "tag": "text", "text": "arm" }]]
+        })
+        .to_string();
+        let room = Some("oc_room");
+        heard_event(
+            event(Some("om_root"), "p2p", "oc_dm", "text", text).as_bytes(),
+            room,
+            &sink,
+        );
+        heard_event(
+            event(None, "p2p", "oc_dm", "text", text).as_bytes(),
+            room,
+            &sink,
+        );
+        heard_event(
+            event(None, "group", "oc_room", "post", &titled).as_bytes(),
+            room,
+            &sink,
+        );
+        heard_event(
+            event(Some("om_root"), "group", "oc_room", "text", text).as_bytes(),
+            room,
+            &sink,
+        );
+        heard_event(
+            event(None, "group", "oc_other", "text", text).as_bytes(),
+            room,
+            &sink,
+        );
+        heard_event(
+            event(None, "group", "oc_room", "text", text).as_bytes(),
+            None,
+            &sink,
+        );
+        let heard: Vec<(Where, String)> = heard
             .try_iter()
             .filter_map(|event| match event {
-                Event::Heard { from, at, text } => Some((from, at, text)),
+                Event::Heard { from, at, text } if from == "ou_1" => Some((at, text)),
                 _ => None,
             })
             .collect();
         assert_eq!(
             heard,
             [
+                (Where::Thread("om_root".to_string()), "1".to_string()),
+                (Where::Top, "1".to_string()),
                 (
-                    "ou_1".to_string(),
-                    Where::Thread("om_root".to_string()),
-                    "1".to_string()
+                    Where::Fresh("om_2".to_string()),
+                    "Fix the build\nit fails on arm".to_string()
                 ),
-                ("ou_1".to_string(), Where::Top, "1".to_string()),
+                (Where::Thread("om_root".to_string()), "1".to_string()),
             ],
-            "a group message was heard, or a topic was not"
+            "something was heard that should not have been, or the other way about"
         );
     }
 

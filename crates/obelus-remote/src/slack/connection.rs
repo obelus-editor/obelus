@@ -132,7 +132,9 @@ async fn run(
                 };
                 let thread = match at {
                     Where::Top => None,
-                    Where::Thread(thread) => Some(SlackTs::new(thread)),
+                    // Never said to: a fresh thread is only heard, and
+                    // Slack has no room to start one in.
+                    Where::Thread(thread) | Where::Fresh(thread) => Some(SlackTs::new(thread)),
                 };
                 if let Err(error) = session
                     .chat_post_message(&posted(channel, text, thread))
@@ -187,6 +189,8 @@ async fn run(
                     tracing::warn!(%error, "Slack would not say what a thread is again");
                 }
             }
+            // The threads stay in the direct message.
+            Out::Room { .. } => {}
             Out::Name { id } => {
                 match session
                     .users_info(&SlackApiUsersInfoRequest::new(SlackUserId::new(id.clone())))

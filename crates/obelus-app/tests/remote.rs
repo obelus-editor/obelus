@@ -449,13 +449,19 @@ fn pairing_lets_in_whoever_sends_the_code() {
             .is_some_and(|remote| remote.people.iter().any(|person| person.name == "Sunli"))
     });
     assert_eq!(app.note(), Some("Paired Sunli"));
+    // What is said to them, apart from where their threads will go, which
+    // the platform is told the moment there is somebody to tell it about.
+    let said: Vec<obelus_remote::model::Out> = said_since()
+        .into_iter()
+        .filter(|out| !matches!(out, obelus_remote::model::Out::Room { .. }))
+        .collect();
     assert!(
         matches!(
-            said_since().as_slice(),
+            said.as_slice(),
             [obelus_remote::model::Out::Say { to, text, .. }]
                 if to == "U04ABCDEF" && text.contains("**notes**")
         ),
-        "they were not told, or not told what there is to say"
+        "they were not told, or not told what there is to say: {said:#?}"
     );
     let written = std::fs::read_to_string(scratch.join("config.toml")).expect("the file");
     assert!(written.contains("U04ABCDEF"), "{written}");
@@ -1052,4 +1058,148 @@ fn the_top_answers_three_words() {
     let notes = std::fs::read_to_string(obelus_git::todo::path(scratch.path()).expect("there"))
         .expect("the notes");
     assert!(notes.contains("said = \"the thumb is quicker\""), "{notes}");
+}
+
+/// A window set to Slack, with the reader on its list and the fake agent
+/// to talk to, connected to the fake platform.
+fn paired_with_an_agent(
+    scratch: &support::Scratch,
+) -> (App, std::sync::mpsc::Receiver<Event>, std::path::PathBuf) {
+    obelus_remote::platform::connect_for_test(fake_connect);
+    *FAKED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    std::fs::write(
+        scratch.join("config.toml"),
+        "remote = \"slack\"\n[remotes.slack]\npeople = [{ id = \"U1\", name = \"Sunli\" }]\n",
+    )
+    .expect("the settings");
+    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    let log = scratch.join("asked.log");
+    let mut app = App::new(Vec::new());
+    app.config_file_for_test(scratch.join("config.toml"));
+    let events = support::drive(&mut app);
+    app.agents_root_for_test(scratch.join("agents"));
+    support::lay_out(&mut app, 76, 24);
+    app.talk_to(
+        "fake",
+        std::path::Path::new("sh"),
+        &[
+            "tests/fixtures/fake-agent.sh".to_string(),
+            format!("log={}", log.display()),
+            "prompts".to_string(),
+        ],
+    );
+    until(&mut app, &events, "the connection", |app| {
+        app.remote_state_for_test() == obelus_remote::State::Connected
+    });
+    (app, events, log)
+}
+
+/// The platform's sink, for saying something from its side.
+fn the_platform() -> std::sync::Arc<dyn obelus_sink::Sink<obelus_remote::Event>> {
+    FAKED
+        .lock()
+        .ok()
+        .and_then(|faked| faked.as_ref().map(|faked| faked.sink.clone()))
+        .expect("connected")
+}
+
+/// The platform is told where the threads go before the first is asked
+/// for -- nowhere yet, the first time -- and a room it makes is kept, so
+/// that the next connection tells it the same room.
+///
+/// Broken deliberately three ways. Saying the room after the threads: the
+/// `Open` came first, and on Feishu that thread would have gone to the
+/// direct message. Not keeping what came back: the next connection said no
+/// room, and Feishu would have made a second group. And telling the
+/// platform once a window rather than once a connection: the next
+/// connection, which knew nothing, was told nothing.
+#[test]
+fn the_threads_go_in_the_room_kept_for_them() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-room");
+    let (mut app, events, _log) = paired_with_an_agent(&scratch);
+    app.new_conversation();
+    app.open_a_session_for_test();
+    let said = said_until(&mut app, &events, "a thread to be asked for", |said| {
+        said.iter()
+            .any(|out| matches!(out, obelus_remote::model::Out::Open { .. }))
+    });
+    let room = said.iter().position(
+        |out| matches!(out, obelus_remote::model::Out::Room { to, room: None } if to == "U1"),
+    );
+    let open = said
+        .iter()
+        .position(|out| matches!(out, obelus_remote::model::Out::Open { .. }));
+    assert!(
+        room.is_some() && room < open,
+        "the room was not said before the thread: {said:#?}"
+    );
+    let platform = the_platform();
+    let _ = platform.send(obelus_remote::Event::Roomed {
+        to: "U1".to_string(),
+        room: "R1".to_string(),
+    });
+
+    // The connection made again: a platform that knows nothing, told the
+    // room that was kept.
+    let (out, mut heard) = tokio::sync::mpsc::unbounded_channel();
+    let _ = platform.send(obelus_remote::Event::Started {
+        platform: "slack",
+        out,
+    });
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let told = loop {
+        if let Ok(obelus_remote::model::Out::Room { to, room }) = heard.try_recv() {
+            break (to, room);
+        }
+        assert!(
+            std::time::Instant::now() < until,
+            "the new connection was told nothing about the room"
+        );
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(50)) {
+            app.handle(event);
+        }
+        support::lay_out(&mut app, 76, 24);
+    };
+    assert_eq!(told, ("U1".to_string(), Some("R1".to_string())));
+}
+
+/// A thread the reader starts in the room is a conversation: their words
+/// go to an agent as its first prompt, with the line saying where they came
+/// from, and what the agent says goes back to that thread -- with no other
+/// thread opened for it, and no head said over the reader's own words.
+///
+/// Broken deliberately four ways. Not hearing a fresh thread: the words
+/// never reached the agent. Leaving out the line in front of them: the
+/// agent's log had no "sent from Slack". Asking for a thread like any
+/// other: an `Open` came. And saying the head on it: a `Retitle` named the
+/// reader's own message.
+#[test]
+fn a_thread_the_reader_starts_is_a_conversation() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-fresh");
+    let (mut app, events, log) = paired_with_an_agent(&scratch);
+    let _ = the_platform().send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        text: "what is in here".to_string(),
+    });
+    let said = said_until(&mut app, &events, "the question in the thread", |said| {
+        in_thread(said, "F1", "Allow once")
+    });
+    let logged = std::fs::read_to_string(&log).unwrap_or_default();
+    assert!(
+        logged.contains("what is in here") && logged.contains("sent from Slack"),
+        "the agent was not given the words, or not told where from:\n{logged}"
+    );
+    assert!(
+        !said.iter().any(|out| matches!(
+            out,
+            obelus_remote::model::Out::Open { .. } | obelus_remote::model::Out::Retitle { .. }
+        )),
+        "a thread was asked for, or a head said, over the reader's own: {said:#?}"
+    );
 }

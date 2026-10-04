@@ -243,6 +243,7 @@ impl App {
             obelus_remote::Event::Started { platform, out } => {
                 if self.remote.reaching == Some(platform) {
                     self.remote.out = Some(out);
+                    self.mirror.roomed = false;
                 }
             }
             obelus_remote::Event::Connection(state) => {
@@ -251,6 +252,7 @@ impl App {
             }
             obelus_remote::Event::Heard { from, at, text } => self.heard(&from, &at, &text),
             obelus_remote::Event::Named { id, name } => self.let_in(id, name),
+            obelus_remote::Event::Roomed { to, room } => self.keep_the_room(&to, &room),
             obelus_remote::Event::Opened { asked, thread, .. } => self.thread_opened(asked, thread),
             obelus_remote::Event::PairingOver => {
                 self.remote.pairing = None;
@@ -381,6 +383,7 @@ impl App {
         }
         match at {
             obelus_remote::model::Where::Thread(thread) => self.heard_in_thread(thread, text),
+            obelus_remote::model::Where::Fresh(thread) => self.heard_fresh(thread, text),
             obelus_remote::model::Where::Top => self.heard_at_top(from, text),
         }
     }

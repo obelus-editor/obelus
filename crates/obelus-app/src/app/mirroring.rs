@@ -57,6 +57,14 @@ pub(super) struct Mirror {
     /// What each thread was last said to be, so that it is said again only
     /// when something on it has moved.
     heads: BTreeMap<String, Head>,
+    /// Whether the platform has been told where the threads go, on the
+    /// connection it has now: a new connection is a platform that knows
+    /// nothing yet.
+    pub(super) roomed: bool,
+    /// Conversations begun by a thread the reader started, by document,
+    /// and that thread: theirs from the start, and named once the session
+    /// arrives.
+    starting: BTreeMap<usize, String>,
     /// The notes the top was last offered, in the order they were
     /// numbered: a number sent back means the note that had it then.
     pub(super) offered: Vec<obelus_git::todo::NoteId>,
@@ -68,6 +76,10 @@ pub(super) struct Mirror {
 struct Thread {
     thread: String,
     to: String,
+    /// Whether Obelus started it, with a head it can say again. One the
+    /// reader started is headed by their own first words, which are theirs
+    /// and not Obelus's to change.
+    own: bool,
 }
 
 /// What a conversation is called when it is talked about anywhere but here.
@@ -109,6 +121,11 @@ fn read_the_table(platform: &str) -> BTreeMap<String, Thread> {
                 Thread {
                     thread: said("thread")?,
                     to: said("to")?,
+                    // A table from before there was any other kind.
+                    own: kept
+                        .get("own")
+                        .and_then(toml::Value::as_bool)
+                        .unwrap_or(true),
                 },
             ))
         })
@@ -127,6 +144,7 @@ fn write_the_table(platform: &str, threads: &BTreeMap<String, Thread>) {
             let mut kept = toml::Table::new();
             kept.insert("thread".to_string(), thread.thread.clone().into());
             kept.insert("to".to_string(), thread.to.clone().into());
+            kept.insert("own".to_string(), thread.own.into());
             (chat.clone(), toml::Value::Table(kept))
         })
         .collect();
@@ -138,6 +156,45 @@ fn write_the_table(platform: &str, threads: &BTreeMap<String, Thread>) {
     })();
     if written.is_none() {
         tracing::warn!(platform, "the table of threads was not written");
+    }
+}
+
+/// Where the rooms a platform made for the threads are written down: whose
+/// each is, by the platform's id for them.
+fn rooms_for(platform: &str) -> Option<std::path::PathBuf> {
+    Some(
+        obelus_logging::state_directory()?
+            .join("remote")
+            .join(platform)
+            .join("rooms.toml"),
+    )
+}
+
+/// The room kept for somebody's threads, if one was made.
+fn room_of(platform: &str, to: &str) -> Option<String> {
+    let text = std::fs::read_to_string(rooms_for(platform)?).ok()?;
+    let table = text.parse::<toml::Table>().ok()?;
+    table.get(to)?.as_str().map(str::to_string)
+}
+
+/// Keeps a room made for somebody's threads, beside the rest.
+fn keep_the_room(platform: &str, to: &str, room: &str) {
+    let Some(path) = rooms_for(platform) else {
+        return;
+    };
+    let mut table = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|text| text.parse::<toml::Table>().ok())
+        .unwrap_or_default();
+    table.insert(to.to_string(), room.into());
+    let written = (|| {
+        std::fs::create_dir_all(path.parent()?).ok()?;
+        let beside = path.with_extension(format!("toml.{}", std::process::id()));
+        std::fs::write(&beside, table.to_string()).ok()?;
+        std::fs::rename(&beside, &path).ok()
+    })();
+    if written.is_none() {
+        tracing::warn!(platform, "the room for the threads was not written");
     }
 }
 
@@ -179,6 +236,16 @@ impl App {
                 ..Mirror::default()
             };
         }
+        // Where the threads go, before the first one is asked for: the
+        // channel keeps its order, so every `Open` after this goes there.
+        if !self.mirror.roomed {
+            self.mirror.roomed = true;
+            self.say_to(Out::Room {
+                to: to.clone(),
+                room: room_of(platform.key, &to),
+            });
+        }
+        self.adopt_what_the_reader_started(platform.key, &to);
         let wanting: Vec<String> = self
             .documents
             .iter()
@@ -284,9 +351,62 @@ impl App {
         // words go out the moment they press enter, and the platform has
         // not answered with the thread by then -- and said once it is: see
         // `thread_opened`.
-        if let Some(Thread { thread, to }) = self.mirror.threads.get(&chat).cloned() {
+        self.retitle(&chat, head);
+    }
+
+    /// Keeps the room a platform made for somebody's threads.
+    pub(super) fn keep_the_room(&self, to: &str, room: &str) {
+        if let Some(platform) = self.platform() {
+            keep_the_room(platform.key, to, room);
+        }
+    }
+
+    /// Says a thread's head again, where it has one Obelus can say.
+    fn retitle(&self, chat: &str, head: Head) {
+        if let Some(Thread {
+            thread,
+            to,
+            own: true,
+        }) = self.mirror.threads.get(chat).cloned()
+        {
             self.say_to(Out::Retitle { to, thread, head });
         }
+    }
+
+    /// Writes down the threads the reader started, once the conversations
+    /// they began are named -- which for one about nothing in particular is
+    /// when its session arrives.
+    fn adopt_what_the_reader_started(&mut self, platform: &'static str, to: &str) {
+        let named: Vec<(usize, String, String)> = self
+            .mirror
+            .starting
+            .iter()
+            .filter_map(|(at, thread)| {
+                let chat = self
+                    .documents
+                    .get(*at)?
+                    .as_ref()
+                    .and_then(Document::chat)
+                    .and_then(chat_of)?
+                    .file_name();
+                Some((*at, thread.clone(), chat))
+            })
+            .collect();
+        if named.is_empty() {
+            return;
+        }
+        for (at, thread, chat) in named {
+            self.mirror.starting.remove(&at);
+            self.mirror.threads.insert(
+                chat,
+                Thread {
+                    thread,
+                    to: to.to_string(),
+                    own: false,
+                },
+            );
+        }
+        write_the_table(platform, &self.mirror.threads);
     }
 
     /// The chat the conversation on screen is mirrored to, while it is:
@@ -340,17 +460,19 @@ impl App {
         let (Some(platform), Some(to)) = (self.platform(), self.whom()) else {
             return;
         };
-        self.mirror
-            .threads
-            .insert(chat.clone(), Thread { thread, to });
+        self.mirror.threads.insert(
+            chat.clone(),
+            Thread {
+                thread,
+                to,
+                own: true,
+            },
+        );
         write_the_table(platform.key, &self.mirror.threads);
         // What the head became while the thread was on its way -- a turn
         // started, a name given -- said now there is one to say it on.
-        if let (Some(head), Some(Thread { thread, to })) = (
-            self.mirror.heads.get(&chat).cloned(),
-            self.mirror.threads.get(&chat).cloned(),
-        ) {
-            self.say_to(Out::Retitle { to, thread, head });
+        if let Some(head) = self.mirror.heads.get(&chat).cloned() {
+            self.retitle(&chat, head);
         }
         for (text, notify) in self.mirror.held.remove(&chat).unwrap_or_default() {
             self.say_in_thread(&chat, text, notify);
@@ -360,7 +482,7 @@ impl App {
     /// Says something in a conversation's thread, or holds it for the
     /// thread that is on its way.
     fn say_in_thread(&mut self, chat: &str, text: String, notify: bool) {
-        if let Some(Thread { thread, to }) = self.mirror.threads.get(chat).cloned() {
+        if let Some(Thread { thread, to, .. }) = self.mirror.threads.get(chat).cloned() {
             self.say_to(Out::Say {
                 to,
                 at: Where::Thread(thread),
@@ -479,27 +601,53 @@ impl App {
             self.say_in_thread(&chat, "Closed.".to_string(), false);
             // Said here rather than through `mirror_head`, which asks the
             // conversation -- and by now the document has gone.
-            if let (Some(Thread { thread, to }), Some(head)) = (
-                self.mirror.threads.get(&chat).cloned(),
-                self.mirror.heads.get(&chat).cloned(),
-            ) {
+            if let Some(head) = self.mirror.heads.get(&chat).cloned() {
                 let head = Head {
                     state: Some(Turning::Closed),
                     ..head
                 };
-                self.mirror.heads.insert(chat, head.clone());
-                self.say_to(Out::Retitle { to, thread, head });
+                self.mirror.heads.insert(chat.clone(), head.clone());
+                self.retitle(&chat, head);
             }
         }
     }
 
     /// What goes to the agent in front of words from the chat, if these are.
     pub(super) fn afar_for(&mut self, whose: talking::Whose) -> Option<String> {
-        let chat = self.chat_named(whose)?;
-        self.mirror.from_afar.remove(&chat).then(|| {
+        // A conversation the reader started from a thread has no name yet
+        // when its first words go, and every word in it so far is theirs
+        // from afar.
+        let starting = match whose {
+            talking::Whose::One(id) => self.mirror.starting.contains_key(&id.get()),
+            talking::Whose::Whoever => false,
+        };
+        let named = self
+            .chat_named(whose)
+            .is_some_and(|chat| self.mirror.from_afar.remove(&chat));
+        (starting || named).then(|| {
             let platform = self.platform().map_or("a chat", |platform| platform.name);
             AFAR.replace("{platform}", platform)
         })
+    }
+
+    /// Somebody on the list started a thread in the room the threads are
+    /// in: a conversation begun, that thread its own, and what they wrote
+    /// the first thing said in it.
+    pub(super) fn heard_fresh(&mut self, thread: &str, text: &str) {
+        // Heard twice is one thread: a platform sends an event again when it
+        // thinks it was not taken.
+        if self.mirror.starting.values().any(|kept| kept == thread)
+            || self
+                .mirror
+                .threads
+                .values()
+                .any(|kept| kept.thread == thread)
+        {
+            return;
+        }
+        let id = self.a_conversation_from_afar();
+        self.mirror.starting.insert(id.get(), thread.to_string());
+        self.say_from_afar(talking::Whose::One(id), &[Part::Words(text.to_string())]);
     }
 
     /// Somebody on the list said something in a thread.

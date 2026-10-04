@@ -76,6 +76,14 @@ pub enum Event {
         /// Where a reader can be sent to read it, where the platform says.
         link: Option<String>,
     },
+    /// A room has been made for somebody's threads, to be kept for the
+    /// next connection.
+    Roomed {
+        /// Whose.
+        to: String,
+        /// What the platform calls it.
+        room: String,
+    },
     /// What somebody is called.
     Named {
         /// Their id.

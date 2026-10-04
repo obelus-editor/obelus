@@ -14,6 +14,10 @@ pub enum Where {
     /// A thread, by the platform's own name for it -- which nothing here
     /// reads, only keeps and hands back.
     Thread(String),
+    /// A thread somebody has just started themselves, in the room the
+    /// conversations are in, by the platform's name for it: a conversation
+    /// that has not begun yet. Only heard, never said to.
+    Fresh(String),
 }
 
 /// Something Obelus asks a platform to do.
@@ -50,6 +54,18 @@ pub enum Out {
         thread: String,
         /// What it is now.
         head: Head,
+    },
+    /// Where the threads with somebody go: the room kept for them, or one
+    /// to be made -- see `Event::Roomed`. Said once a connection, before
+    /// any thread is asked for, so that every thread goes there.
+    ///
+    /// A platform with no room of its own to offer keeps the threads in the
+    /// direct message and answers nothing.
+    Room {
+        /// Whose.
+        to: String,
+        /// The room kept for them, where there is one.
+        room: Option<String>,
     },
     /// Find out what somebody is called, for the list of who may talk.
     Name {
