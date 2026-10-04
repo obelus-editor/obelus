@@ -1262,9 +1262,13 @@ impl SettingsView<'_> {
             ),
             // Only with something to send it to: a code made while nothing
             // is listening is a code nobody can use. Dim rather than gone,
-            // the way every row here that cannot be used is.
+            // the way every row here that cannot be used is -- which takes
+            // a word to be dim, until there is a code to show instead.
             RemoteRow::Pair => Aside::Does(
-                reached.pairing.clone().unwrap_or_default(),
+                reached
+                    .pairing
+                    .clone()
+                    .unwrap_or_else(|| "Make a code".to_string()),
                 reached.state.connected(),
             ),
             RemoteRow::Setup(setup) => Aside::Does(

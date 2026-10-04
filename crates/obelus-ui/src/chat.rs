@@ -1569,12 +1569,17 @@ impl ChatView<'_> {
             }
             None => right,
         };
-        let name = self.name.unwrap_or("No agent");
+        // The agent's name is the registry's, and as long as it likes: cut
+        // to what is left, so it cannot write over the platform's.
+        let name = super::truncate_from_right(
+            self.name.unwrap_or("No agent"),
+            usize::from(right.saturating_sub(column)),
+        );
         column = write(
             cells,
             column,
             area.y,
-            name,
+            &name,
             plain.fg(self.theme.gutter_current),
         );
         // The branch, dimmed after it, in the badge the status row gives
@@ -1966,6 +1971,42 @@ mod caret {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use obelus_component::chat::{Chat, Room, Speaker};
     use ratatui::layout::Rect;
+
+    /// The header keeps the platform's name at the right however long the
+    /// agent's name is: the agent's is cut to what is left.
+    ///
+    /// Broken deliberately by writing the agent's name whole: it ran over
+    /// `Slack`, and the row no longer said where else the conversation is.
+    #[test]
+    fn a_long_name_gives_way_to_where_else_it_is() {
+        let area = ratatui::layout::Rect::new(0, 0, 30, 6);
+        let chat = obelus_component::chat::Chat::new();
+        let view = super::ChatView {
+            chat: &chat,
+            theme: &obelus_theme::builtin::DARK,
+            state: obelus_agent::Talking::Ready,
+            name: Some("An agent with a very long name indeed"),
+            settings: &[],
+            focus: obelus_component::chat::Focus::Writing,
+            card: None,
+            in_front: true,
+            root: std::path::Path::new("/"),
+            phase: 0,
+            branch: None,
+            about_a_note: false,
+            note: None,
+            note_is_wrong: false,
+            usage: None,
+            mirrored: Some("Slack"),
+        };
+        let mut cells = ratatui::buffer::Buffer::empty(area);
+        ratatui::widgets::Widget::render(view, area, &mut cells);
+        let row: String = (area.x..area.right())
+            .map(|x| cells[(x, area.y)].symbol().to_string())
+            .collect();
+        assert!(row.trim_end().ends_with("Slack"), "{row:?}");
+        assert!(row.contains("An agent"), "{row:?}");
+    }
 
     /// Nothing a row carries is written in the scrollbar's column.
     ///

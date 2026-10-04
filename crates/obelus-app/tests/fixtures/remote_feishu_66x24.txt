@@ -19,7 +19,7 @@ screen 66x24  editor 66x22  status 66x1
 16|   People                                        Nobody ▸         
 17|     Who may talk to this machine through it                      
 18|                                                                  
-19|   Pair                                           ▸               
+19|   Pair                                          Make a code ▸    
 20|──────────────────────────────────────────────────────────────────
 21|   Enter  Change                                    Ctrl+k  Keys  
 22|──────────────────────────────────────────────────────────────────
@@ -44,7 +44,7 @@ screen 66x24  editor 66x22  status 66x1
 16|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccaccccccccc
 17|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccc
 18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
-19|ccccccccccccccccccccccccccccccccccccccccccccccccccaccccccccccccccc
+19|cccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaacacccc
 20|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 21|ccfffffffcaaaaaacccccccccccccccccccccccccccccccccccffffffffcaaaacc
 22|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

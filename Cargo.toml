@@ -491,9 +491,7 @@ tokio-tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"] }
 # and a panic in a stripped binary names no function at all -- there is no
 # debug info in a release build to begin with, so the symbol table is the
 # whole of what a backtrace has to read.
-
 [profile.dist]
 inherits = "release"
 lto = "thin"
 codegen-units = 1
-
