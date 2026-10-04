@@ -287,35 +287,49 @@ impl Obelus {
                 "the notes file will not read, so this is not the list".to_string(),
             )]));
         };
-        let said: Vec<String> = todo
-            .notes
-            .iter()
-            .map(|note| {
-                let done = if note.done { "done" } else { "not done" };
-                let at = note.at.as_ref().map_or_else(String::new, |at| {
-                    format!(" ({}:{})", at.path.display(), at.line.get() + 1)
-                });
-                let under = " ".repeat(usize::from(note.depth * obelus_git::todo::INDENT));
-                // The first line beside the name and the rest under it. A
-                // note is allowed to be a paragraph, and printing the whole
-                // of one where a line was expected put newlines in the
-                // middle of a row: the list said it was one note per line
-                // and was not, so a three-line note read as three notes
-                // with two of them nameless.
-                let mut said = format!(
-                    "{under}{} [{done}]{at} {}",
-                    note.id,
-                    note.said.lines().next().unwrap_or_default()
-                );
-                for line in note.said.lines().skip(1) {
-                    said.push_str(&format!("\n{under}  {line}"));
-                }
-                said
-            })
-            .collect();
-        Ok(CallToolResult::success(vec![ContentBlock::text(
-            said.join("\n"),
-        )]))
+        Ok(CallToolResult::success(vec![ContentBlock::text(listed(
+            &todo.notes,
+        ))]))
+    }
+
+    /// One note and what hangs under it.
+    ///
+    /// For a project with a great many notes, where the list is a lot to
+    /// read to find the one a conversation is about. With what is under it,
+    /// because finishing a note is about the whole of it, and the same
+    /// shape as the list so that one way of reading serves both.
+    #[tool(
+        annotations(read_only_hint = true),
+        description = "\
+        One note by its name: what it says, whether it is done, where it \
+        points, and the notes that hang under it, written the way \
+        `todo_list` writes them. For when the list is long and you know \
+        which note you want. The name is for the tools, as everywhere: a \
+        note you mention to the reader is mentioned in its own words."
+    )]
+    fn todo_read(
+        &self,
+        Parameters(About { note }): Parameters<About>,
+    ) -> Result<CallToolResult, ErrorData> {
+        tracing::info!(note, "an agent asked for a note");
+        let Some(id) = todo::NoteId::read(&note) else {
+            return Ok(CallToolResult::error(vec![ContentBlock::text(
+                "that is not a note's name; `todo_list` gives them",
+            )]));
+        };
+        let Some(todo) = todo::read(&self.root).notes() else {
+            return Ok(CallToolResult::error(vec![ContentBlock::text(
+                "the notes file will not read, so this is not the note",
+            )]));
+        };
+        let Some(at) = todo.find(&id) else {
+            return Ok(CallToolResult::error(vec![ContentBlock::text(
+                "there is no note by that name any more",
+            )]));
+        };
+        Ok(CallToolResult::success(vec![ContentBlock::text(listed(
+            &todo.notes[at..=at + todo.under(at)],
+        ))]))
     }
 
     /// Puts a file on the reader's screen.
@@ -514,6 +528,42 @@ impl Obelus {
     }
 }
 
+/// Notes as an agent reads them, one to a name.
+///
+/// Indented from the first of them rather than from the top of the file,
+/// so that a note read on its own starts where a note at the top would.
+fn listed(notes: &[todo::Note]) -> String {
+    let from = notes.first().map_or(0, |note| note.depth);
+    notes
+        .iter()
+        .map(|note| {
+            let done = if note.done { "done" } else { "not done" };
+            let at = note.at.as_ref().map_or_else(String::new, |at| {
+                format!(" ({}:{})", at.path.display(), at.line.get() + 1)
+            });
+            let under = " ".repeat(usize::from(
+                note.depth.saturating_sub(from) * obelus_git::todo::INDENT,
+            ));
+            // The first line beside the name and the rest under it. A
+            // note is allowed to be a paragraph, and printing the whole
+            // of one where a line was expected put newlines in the
+            // middle of a row: the list said it was one note per line
+            // and was not, so a three-line note read as three notes
+            // with two of them nameless.
+            let mut said = format!(
+                "{under}{} [{done}]{at} {}",
+                note.id,
+                note.said.lines().next().unwrap_or_default()
+            );
+            for line in note.said.lines().skip(1) {
+                said.push_str(&format!("\n{under}  {line}"));
+            }
+            said
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// What Obelus did, as the agent hears it.
 ///
 /// A loop that has gone is Obelus shutting down, and a tool answered with
@@ -553,7 +603,8 @@ impl ServerHandler for Obelus {
              `under`, a note's name, and puts them beneath it. A note's own \
              `depth` puts it beneath the note before it.\n\n\
              From any conversation. One about a note says so in its first \
-             message; otherwise `todo_list`."
+             message; otherwise `todo_list`. `todo_read` is one note by its \
+             name and what hangs under it, for when the list is long."
                 .to_string(),
         );
         info.capabilities = ServerCapabilities::builder().enable_tools().build();

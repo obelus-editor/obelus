@@ -85,6 +85,7 @@ fn an_agent_is_told_what_obelus_can_do() {
     );
     for tool in [
         "todo_list",
+        "todo_read",
         "todo_finish",
         "todo_add",
         "todo_reword",
@@ -107,7 +108,7 @@ fn an_agent_is_told_what_obelus_can_do() {
         );
     }
 
-    // The two that only look say so, which is what spares the reader a
+    // The three that only look say so, which is what spares the reader a
     // question about a tool whose whole act is to look something up. The
     // three that write the notes say nothing of the sort, and a
     // `readOnlyHint` on any of them would be Obelus telling an agent
@@ -115,7 +116,7 @@ fn an_agent_is_told_what_obelus_can_do() {
     // Cut at the names rather than at the word, because a tool's
     // description may name another tool -- `todo_finish` names `todo_list`
     // in its own, which is where looking for the word found it.
-    for only_reads in ["todo_list", "read_workflow"] {
+    for only_reads in ["todo_list", "todo_read", "read_workflow"] {
         let reading = listed
             .split("\"name\":\"")
             .find(|tool| tool.starts_with(&format!("{only_reads}\"")))
@@ -127,7 +128,7 @@ fn an_agent_is_told_what_obelus_can_do() {
     }
     assert_eq!(
         listed.matches("\"readOnlyHint\":true").count(),
-        2,
+        3,
         "a tool that writes the notes says it only reads:\n{listed}"
     );
 }
@@ -324,6 +325,76 @@ fn a_note_of_several_lines_is_one_entry() {
         ["  and a body", "  of two lines"],
         "the rest of it is not written under the name:\n{said}"
     );
+}
+
+/// One note read by its name is that note and what hangs under it.
+///
+/// What it is for is a project with more notes than are worth reading to
+/// find one, so the note after it is not in the answer -- and what is under
+/// it is, because finishing a note is about the whole of it. Indented from
+/// the note itself, which starts where a note at the top would.
+///
+/// Broken deliberately by answering with only the note, which drops the one
+/// under it; by answering with `under(at) + 1` notes, which takes in the one
+/// after it; by indenting from the top of the file, which pushes the note
+/// itself in by a level; and by answering a name that is not there with
+/// nothing.
+#[test]
+fn a_note_read_by_its_name_is_that_note_and_what_is_under_it() {
+    let scratch = support::Scratch::new("tools-one");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        "[[todo]]\nid = \"AAAAAAAA\"\nsaid = \"the one at the top\"\ndone = false\n\
+         [[todo]]\nid = \"ABCDEFGH\"\nsaid = \"the one asked for\"\ndone = false\ndepth = 1\n\
+         [[todo]]\nid = \"BBBBBBBB\"\nsaid = \"the one under it\"\ndone = true\ndepth = 2\n\
+         [[todo]]\nid = \"CCCCCCCC\"\nsaid = \"the one after it\"\ndone = false\ndepth = 1\n",
+    )
+    .expect("the notes");
+
+    let (sender, events) = channel::<obelus_app::event::Event>();
+    std::mem::forget(events);
+    let url = served(scratch.path(), sender);
+    let (_, session) = ask(
+        &url,
+        None,
+        r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"a test","version":"0"}}}"#,
+    );
+    let session = session.expect("a session of its own");
+    let text = |answer: &str| {
+        answer
+            .lines()
+            .filter_map(|line| line.strip_prefix("data: "))
+            .filter_map(|json| serde_json::from_str::<serde_json::Value>(json).ok())
+            .find_map(|value| {
+                value["result"]["content"][0]["text"]
+                    .as_str()
+                    .map(str::to_string)
+            })
+            .unwrap_or_else(|| panic!("no answer in:\n{answer}"))
+    };
+
+    let (read, _) = ask(
+        &url,
+        Some(&session),
+        r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"todo_read","arguments":{"note":"ABCDEFGH"}}}"#,
+    );
+    assert_eq!(
+        text(&read).lines().collect::<Vec<_>>(),
+        [
+            "ABCDEFGH [not done] the one asked for",
+            "  BBBBBBBB [done] the one under it",
+        ],
+    );
+
+    // A name that is not there says so, rather than answering with nothing,
+    // which would read as a note that says nothing.
+    let (gone, _) = ask(
+        &url,
+        Some(&session),
+        r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"todo_read","arguments":{"note":"ZZZZZZZZ"}}}"#,
+    );
+    assert_eq!(text(&gone), "there is no note by that name any more");
 }
 
 /// A depth an agent asked for that nothing could hang at is brought up.
