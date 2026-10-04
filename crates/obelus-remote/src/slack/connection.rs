@@ -64,54 +64,46 @@ async fn run(
     };
     let client = Arc::new(SlackClient::new(connector));
     let bot = SlackApiToken::new(bot_token.into());
+    let app = SlackApiToken::new(app_token.into());
 
-    // The bot token first, because a wrong one is the commonest way this
-    // goes wrong and the socket would not say so: it is connected with the
-    // other token, and a bad bot token is found out at the first reply.
-    match client.open_session(&bot).auth_test().await {
-        Ok(_) => {}
-        Err(error) if refused(&error) => {
-            tracing::warn!(%error, "Slack refused the bot token");
-            let _ = sink.send(Event::Connection(State::Refused));
-            return;
+    // Tried until it is up, a refusal less often: a machine started before
+    // its network is a machine that would otherwise never connect, and a
+    // reader who mends a token starts a new connection anyway. What is to
+    // be said meanwhile waits, in order, and a window letting go ends it.
+    let mut waiting: Vec<Out> = Vec::new();
+    let listener = loop {
+        let state = match connect(&client, &bot, &app, &sink).await {
+            Ok(listener) => break listener,
+            Err(state) => state,
+        };
+        let _ = sink.send(Event::Connection(state));
+        let again = match state {
+            State::Refused => 60,
+            _ => 10,
+        };
+        let pause = tokio::time::sleep(std::time::Duration::from_secs(again));
+        tokio::pin!(pause);
+        loop {
+            tokio::select! {
+                () = &mut pause => break,
+                out = said.recv() => match out {
+                    Some(out) => waiting.push(out),
+                    None => return,
+                },
+            }
         }
-        Err(error) => {
-            tracing::warn!(%error, "Slack could not be reached");
-            let _ = sink.send(Event::Connection(State::Unreachable));
-            return;
-        }
-    }
-
-    let environment = Arc::new(
-        SlackClientEventsListenerEnvironment::new(client.clone())
-            .with_error_handler(said_wrong)
-            .with_user_state(Listening { sink: sink.clone() }),
-    );
-    let callbacks = SlackSocketModeListenerCallbacks::new().with_push_events(pushed);
-    let listener = SlackClientSocketModeListener::new(
-        &SlackClientSocketModeConfig::new(),
-        environment,
-        callbacks,
-    );
-    if let Err(error) = listener
-        .listen_for(&SlackApiToken::new(app_token.into()))
-        .await
-    {
-        tracing::warn!(%error, "Slack refused the app token");
-        let _ = sink.send(Event::Connection(match refused(&error) {
-            true => State::Refused,
-            false => State::Unreachable,
-        }));
-        return;
-    }
-    listener.start().await;
+    };
     // Connected once the socket is up, which `start` waits for. Slack's
     // own hello would say it a moment later, but the crate does not name
     // the type a listener for it would have to take.
     let _ = sink.send(Event::Connection(State::Connected));
 
     let session = client.open_session(&bot);
-    while let Some(out) = said.recv().await {
+    let mut waiting = waiting.into_iter();
+    while let Some(out) = match waiting.next() {
+        Some(out) => Some(out),
+        None => said.recv().await,
+    } {
         match out {
             Out::Say {
                 room,
@@ -198,6 +190,45 @@ async fn run(
         }
     }
     listener.shutdown().await;
+}
+
+/// The bot token checked and the socket up, or the state that says why not.
+async fn connect(
+    client: &Arc<SlackHyperClient>,
+    bot: &SlackApiToken,
+    app: &SlackApiToken,
+    sink: &Arc<dyn Sink<Event>>,
+) -> Result<SlackClientSocketModeListener<SlackClientHyperHttpsConnector>, State> {
+    // The bot token first, because a wrong one is the commonest way this
+    // goes wrong and the socket would not say so: it is connected with the
+    // other token, and a bad bot token is found out at the first reply.
+    if let Err(error) = client.open_session(bot).auth_test().await {
+        tracing::warn!(%error, "Slack refused the bot token, or could not be reached");
+        return Err(match refused(&error) {
+            true => State::Refused,
+            false => State::Unreachable,
+        });
+    }
+    let environment = Arc::new(
+        SlackClientEventsListenerEnvironment::new(client.clone())
+            .with_error_handler(said_wrong)
+            .with_user_state(Listening { sink: sink.clone() }),
+    );
+    let callbacks = SlackSocketModeListenerCallbacks::new().with_push_events(pushed);
+    let listener = SlackClientSocketModeListener::new(
+        &SlackClientSocketModeConfig::new(),
+        environment,
+        callbacks,
+    );
+    if let Err(error) = listener.listen_for(app).await {
+        tracing::warn!(%error, "Slack refused the app token, or could not be reached");
+        return Err(match refused(&error) {
+            true => State::Refused,
+            false => State::Unreachable,
+        });
+    }
+    listener.start().await;
+    Ok(listener)
 }
 
 /// A message in markdown, which Slack draws itself.

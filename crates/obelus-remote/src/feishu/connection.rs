@@ -58,7 +58,13 @@ pub fn start(
 ) -> tokio::sync::mpsc::UnboundedSender<Out> {
     let (out, said) = tokio::sync::mpsc::unbounded_channel();
     let api = Api {
-        http: reqwest::Client::new(),
+        // A request that never answers would hold up everything after it --
+        // what is said goes one thing at a time -- and the connection could
+        // not even be let go, since that is noticed between two of them.
+        http: reqwest::Client::builder()
+            .timeout(Duration::from_secs(15))
+            .build()
+            .unwrap_or_default(),
         base: base(domain),
         app_id,
         app_secret,
@@ -275,22 +281,45 @@ async fn run(
 ) {
     let _ = sink.send(Event::Connection(State::Connecting));
     // The id and secret first, by asking for a token: the long connection
-    // would refuse them too, but in words that do not say which.
-    match api.token().await {
-        Ok(_) => {}
-        Err(Refusal::Credentials(why)) => {
-            tracing::warn!(%why, "Feishu refused the app's id or secret");
-            let _ = sink.send(Event::Connection(State::Refused));
-            return;
-        }
-        Err(Refusal::Other(why)) => {
-            tracing::warn!(%why, "Feishu could not be reached");
-            let _ = sink.send(Event::Connection(State::Unreachable));
+    // would refuse them too, but in words that do not say which. Asked
+    // again until they are taken, a refusal less often: a machine started
+    // before its network is a machine that would otherwise never connect,
+    // and what Feishu calls a refusal includes being busy. What is to be
+    // said meanwhile waits, in order, and a window letting go ends it.
+    let mut waiting: Vec<Out> = Vec::new();
+    loop {
+        let (state, again) = match api.token().await {
+            Ok(_) => break,
+            Err(Refusal::Credentials(why)) => {
+                tracing::warn!(%why, "Feishu refused the app's id or secret");
+                (State::Refused, 60)
+            }
+            Err(Refusal::Other(why)) => {
+                tracing::warn!(%why, "Feishu could not be reached");
+                (State::Unreachable, 10)
+            }
+        };
+        let _ = sink.send(Event::Connection(state));
+        let pause = tokio::time::sleep(Duration::from_secs(again));
+        tokio::pin!(pause);
+        loop {
+            tokio::select! {
+                () = &mut pause => break,
+                out = said.recv() => match out {
+                    Some(out) => waiting.push(out),
+                    None => return,
+                },
+            }
         }
     }
     // The long connection, on a task of its own, and made again whenever it
     // drops: what it hears goes straight to the sink.
     let listening = obelus_runtime::handle().spawn(listen(api.clone(), sink.clone()));
+    for out in waiting {
+        if let Err(why) = say(&api, &sink, out).await {
+            tracing::warn!(%why, "Feishu would not take a message");
+        }
+    }
     while let Some(out) = said.recv().await {
         if let Err(why) = say(&api, &sink, out).await {
             tracing::warn!(%why, "Feishu would not take a message");
@@ -373,15 +402,19 @@ async fn say(api: &Api, sink: &Arc<dyn Sink<Event>>, out: Out) -> Result<(), Ref
 /// The long connection, made and made again for as long as it is wanted.
 async fn listen(api: Arc<Api>, sink: Arc<dyn Sink<Event>>) {
     loop {
-        match api.endpoint().await {
+        let state = match api.endpoint().await {
             Ok((url, ping)) => {
                 if let Err(why) = connected(&url, ping, &sink).await {
                     tracing::warn!(%why, "the long connection to Feishu dropped");
                 }
+                State::Connecting
             }
-            Err(why) => tracing::warn!(%why, "Feishu gave no long connection"),
-        }
-        let _ = sink.send(Event::Connection(State::Connecting));
+            Err(why) => {
+                tracing::warn!(%why, "Feishu gave no long connection");
+                State::Unreachable
+            }
+        };
+        let _ = sink.send(Event::Connection(state));
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
 }
@@ -396,17 +429,31 @@ async fn connected(url: &str, ping: Duration, sink: &Arc<dyn Sink<Event>>) -> Re
                 .and_then(|(_, value)| value.parse().ok())
         })
         .unwrap_or(0);
-    let (socket, _) = tokio_tungstenite::connect_async(url)
-        .await
-        .map_err(|error| error.to_string())?;
+    let (socket, _) = tokio::time::timeout(
+        Duration::from_secs(15),
+        tokio_tungstenite::connect_async(url),
+    )
+    .await
+    .map_err(|_| "no answer".to_string())?
+    .map_err(|error| error.to_string())?;
     let (mut out, mut heard) = socket.split();
     let _ = sink.send(Event::Connection(State::Connected));
     let mut pings = tokio::time::interval(ping);
+    // When anything last came back. A ping goes into a socket that is
+    // already dead without complaint -- after the machine sleeps, or the
+    // network under it changes -- and nothing says so until TCP gives up,
+    // a quarter of an hour later, with the row saying `Connected` all the
+    // while. Feishu answers every ping, so three without a word back is a
+    // connection that has gone.
+    let mut heard_last = std::time::Instant::now();
     // Pieces of events that arrived in several, by the event's id.
     let mut pieces: HashMap<String, Vec<Option<Vec<u8>>>> = HashMap::new();
     loop {
         tokio::select! {
             _ = pings.tick() => {
+                if heard_last.elapsed() > ping * 3 {
+                    return Err("nothing heard for three pings".to_string());
+                }
                 let frame = Frame {
                     seq_id: 0,
                     log_id: 0,
@@ -426,6 +473,7 @@ async fn connected(url: &str, ping: Duration, sink: &Arc<dyn Sink<Event>>) -> Re
                 let Some(message) = message else {
                     return Err("closed".to_string());
                 };
+                heard_last = std::time::Instant::now();
                 let bytes = match message.map_err(|error| error.to_string())? {
                     Message::Binary(bytes) => bytes,
                     Message::Ping(bytes) => {
