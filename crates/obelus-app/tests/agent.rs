@@ -12105,6 +12105,75 @@ fn a_question_taken_back_while_it_waits_is_never_put() {
     );
 }
 
+/// A turn that ends without finishing takes its questions down.
+///
+/// The agent ran out of room with two questions out: the card and the one
+/// behind it are about a turn that is over, and nothing is coming back for
+/// their answers. Left up, the reader answers a question nobody is asking.
+/// The agent hears both cancelled, as it would after a stop.
+///
+/// Deliberate breaks: leave `give_up_the_questions` out of the end of a
+/// turn -- the card stays up and the agent hears nothing; and leave the
+/// queue alone in it -- the sixth goes up once the fifth is down, and its
+/// row still waits.
+#[test]
+fn a_turn_that_ran_out_of_room_takes_its_questions_down() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/endwith max_tokens");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the agent to hear both", |app| {
+        said_in_transcript(app, "the fifth was [cancelled]")
+            && said_in_transcript(app, "the sixth was [cancelled]")
+    });
+    assert_eq!(app.talking(), obelus_agent::Talking::Ready);
+    assert!(
+        !app.is_asking_permission(),
+        "the card is still asking about a turn that is over:\n{}",
+        screen(&mut app)
+    );
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let row = rows(&dump)
+        .into_iter()
+        .find(|row| row.contains("Read the sixth file"))
+        .unwrap_or_else(|| panic!("the waiting call is not in the transcript:\n{dump}"))
+        .to_string();
+    assert!(
+        row.contains("Stopped"),
+        "the call behind the card still says it is waiting:\n{dump}"
+    );
+}
+
+/// A turn that ends in the ordinary way leaves a question up.
+///
+/// An agent may ask outside a turn, so a question up when one ends is not
+/// necessarily that turn's -- the line zed draws as well.
+///
+/// Deliberate break: take the questions down whatever the turn ended with.
+/// The card comes down under an ordinary end.
+#[test]
+fn an_ordinary_end_leaves_the_question_up() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/endwith end_turn");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the end of the turn", |app| {
+        app.is_asking_permission() && app.talking() == obelus_agent::Talking::Ready
+    });
+    assert!(
+        said_in_transcript(&app, "Read the sixth file"),
+        "the second question never arrived"
+    );
+    assert!(
+        app.is_asking_permission(),
+        "an ordinary end took the question down"
+    );
+}
+
 /// Puts a window on a tree of its own whose last window had one
 /// conversation open and nothing else, with the fake agent installed and
 /// chosen -- so that showing the conversation starts it, the way a reader's

@@ -2338,6 +2338,32 @@ impl App {
         self.ask_the_next(whose);
     }
 
+    /// Takes down every question in a conversation whose turn ended
+    /// without finishing, the one up and the ones behind it.
+    ///
+    /// Dropped rather than answered: an answer channel that goes away is
+    /// the protocol's "cancelled" to the agent, which is what the protocol
+    /// asks a client to send every request still open once a turn is
+    /// cancelled -- an agent told nothing waits on them for ever.
+    fn give_up_the_questions(&mut self, whose: Whose) {
+        let Some(talk) = self.talk_mut(whose) else {
+            return;
+        };
+        for question in std::mem::take(&mut talk.queued) {
+            if let acp::Question::Permission { call, .. } = question {
+                talk.chat.tool(&call, "cancelled");
+            }
+        }
+        if let Some(asked) = talk.permission.take() {
+            talk.chat.tool(&asked.call, "cancelled");
+        }
+        talk.asking = None;
+        talk.going = None;
+        if talk.card.take().is_some() {
+            self.mirror_withdrawn(whose);
+        }
+    }
+
     /// Puts a form the agent asked for to the reader.
     fn ask_reader(
         &mut self,
@@ -3377,6 +3403,14 @@ impl App {
                     }
                     Ok(other) => self.in_talk(whose, |chat| chat.note(other)),
                     Err(why) => self.in_talk(whose, |chat| chat.note(&format!("The agent: {why}"))),
+                }
+                // A turn that was stopped, ran out of room or failed takes
+                // its questions with it: whatever was asking is not coming
+                // back for the answer. An ordinary end leaves them, because
+                // an agent may ask outside a turn and a question up then is
+                // not this turn's -- zed draws the line in the same place.
+                if matches!(reason.as_deref(), Ok("cancelled" | "max_tokens") | Err(_)) {
+                    self.give_up_the_questions(whose);
                 }
                 // What it said goes to its thread, if it has one, before
                 // anything else happens to the conversation.
