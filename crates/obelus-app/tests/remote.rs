@@ -1804,6 +1804,48 @@ fn asking_again_waits_on_the_same_thread() {
     });
 }
 
+/// A clock that ran out for an asking since taken back gives up on nothing:
+/// its word was already on its way when the asking was taken back, and the
+/// asking after it waits on the same thread under the same number.
+///
+/// Broken deliberately by numbering the clock with the asking's number
+/// again: the new asking was given up on the moment the old clock's word
+/// arrived.
+#[test]
+fn a_clock_from_an_asking_taken_back_gives_up_on_nothing() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-old-clock");
+    set_up_for_two(&scratch);
+    // Without a watcher, so it never hears the asking.
+    let (mut first, firsts) = a_window(&scratch);
+    dispatch::dispatch(&mut first, Command::RemoteConnect);
+    until(&mut first, &firsts, "the first to connect", |app| {
+        app.remote_state_for_test() == obelus_remote::State::Connected
+    });
+    let (mut second, seconds) = a_window(&scratch);
+    dispatch::dispatch(&mut second, Command::RemoteConnect);
+    // The clock's word, caught on its way rather than heard.
+    let ran_out = loop {
+        match seconds.recv_timeout(std::time::Duration::from_secs(15)) {
+            Ok(event @ obelus_app::event::Event::NotLetGo(_)) => break event,
+            Ok(event) => second.handle(event),
+            Err(_) => panic!("the clock never ran out"),
+        }
+    };
+    dispatch::dispatch(&mut second, Command::RemoteDisconnect);
+    dispatch::dispatch(&mut second, Command::RemoteConnect);
+    second.handle(ran_out);
+    assert_ne!(
+        second.note(),
+        Some("Another window would not let Slack go"),
+        "the new asking was given up on by the old clock"
+    );
+    assert!(
+        second.offers(Command::RemoteDisconnect),
+        "the new asking is not going on"
+    );
+}
+
 /// A window whose chat is set to nothing lets go of it, so the next window
 /// to want it has it at once, without asking.
 ///

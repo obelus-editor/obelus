@@ -174,7 +174,9 @@ pub enum Event {
     /// The lock that makes this the window the chat talks to, come back
     /// from the window that had it, for the asking with this number.
     Held(u64, std::fs::File),
-    /// The window that had it did not let go in time, for this asking.
+    /// The window that had it did not let go in time, by the number of the
+    /// clock that ran out -- not the asking's, which an asking after it
+    /// shares while they wait on one thread.
     NotLetGo(u64),
     /// The kernel would not take the lock at all for the thread waiting on
     /// it, for this asking: no waiting is going on any more.

@@ -88,6 +88,11 @@ pub(super) struct Remote {
     taking: Option<(u64, Option<crate::event::Pause>)>,
     /// The last such number handed out.
     asked: u64,
+    /// The number of the last clock an asking was given, numbered apart
+    /// from the askings: a clock dropped after it has run out has already
+    /// said so, and an asking after it waits on the same thread and so
+    /// under the same number.
+    clocks: u64,
     /// The number of the thread waiting in the kernel for the lock, while
     /// one is. One at a time: an asking given up on leaves its thread
     /// waiting, and asking again is the same wait with a new clock -- a new
@@ -919,8 +924,11 @@ impl App {
         // Given up on after a while, because the asking travels by a watch,
         // and a watch is freshness rather than a promise: a window that
         // never heard would leave this one turning for ever.
-        let runs_out =
-            self.come_back_in(std::time::Duration::from_secs(10), Event::NotLetGo(number));
+        self.remote.clocks += 1;
+        let runs_out = self.come_back_in(
+            std::time::Duration::from_secs(10),
+            Event::NotLetGo(self.remote.clocks),
+        );
         self.remote.taking = Some((number, runs_out));
     }
 
@@ -961,11 +969,13 @@ impl App {
     }
 
     /// The other window never let go.
-    pub(super) fn not_let_go(&mut self, number: u64) {
-        if self.remote.taking.as_ref().map(|(asked, _)| *asked) != Some(number) {
+    pub(super) fn not_let_go(&mut self, clock: u64) {
+        if clock != self.remote.clocks {
             return;
         }
-        self.remote.taking = None;
+        let Some((number, _)) = self.remote.taking.take() else {
+            return;
+        };
         self.remote.given_up = Some(number);
         if let Some(platform) = self.platform() {
             self.wrong(format!("Another window would not let {} go", platform.name));
