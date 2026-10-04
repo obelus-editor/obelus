@@ -180,10 +180,13 @@ impl Api {
             .await?;
         match answer["code"].as_i64() {
             Some(0) => Ok(answer["data"].clone()),
+            // With Feishu's own id for the request, which is what its
+            // troubleshooting asks for.
             _ => Err(Refusal::Other(format!(
-                "{} ({})",
+                "{} ({}, log {})",
                 answer["msg"].as_str().unwrap_or("refused"),
-                answer["code"]
+                answer["code"],
+                answer["error"]["log_id"].as_str().unwrap_or("none")
             ))),
         }
     }
@@ -350,16 +353,41 @@ async fn say(api: &Api, sink: &Arc<dyn Sink<Event>>, out: Out) -> Result<(), Ref
             notify,
             ..
         } => {
-            api.call(
-                reqwest::Method::POST,
-                &format!("/open-apis/im/v1/messages/{thread}/reply"),
-                Some(json!({
-                    "msg_type": "post",
-                    "content": rich(&text, notify.then_some(to.as_str())),
-                    "reply_in_thread": true,
-                })),
-            )
-            .await?;
+            // Which thread and what was said, either way: a refusal on its
+            // own was a line that could not say which conversation lost
+            // its words, or whether it was the question or the turn's end.
+            let opening: String = text
+                .lines()
+                .next()
+                .unwrap_or_default()
+                .chars()
+                .take(60)
+                .collect();
+            let replied = api
+                .call(
+                    reqwest::Method::POST,
+                    &format!("/open-apis/im/v1/messages/{thread}/reply"),
+                    Some(json!({
+                        "msg_type": "post",
+                        "content": rich(&text, notify.then_some(to.as_str())),
+                        "reply_in_thread": true,
+                    })),
+                )
+                .await;
+            match &replied {
+                Ok(data) => tracing::info!(
+                    thread,
+                    notify,
+                    opening,
+                    message = data["message_id"].as_str(),
+                    root = data["root_id"].as_str(),
+                    "said in a thread"
+                ),
+                Err(why) => {
+                    tracing::warn!(thread, notify, opening, %why, "not said in a thread");
+                }
+            }
+            replied?;
         }
         Out::Open { asked, room, head } => {
             let opened = api
@@ -376,6 +404,7 @@ async fn say(api: &Api, sink: &Arc<dyn Sink<Event>>, out: Out) -> Result<(), Ref
                 .map(|data| data["message_id"].as_str().unwrap_or_default().to_string());
             match opened {
                 Ok(thread) if !thread.is_empty() => {
+                    tracing::info!(asked, thread, "a thread opened");
                     let _ = sink.send(Event::Opened {
                         asked,
                         thread,
@@ -398,7 +427,8 @@ async fn say(api: &Api, sink: &Arc<dyn Sink<Event>>, out: Out) -> Result<(), Ref
                 &format!("/open-apis/im/v1/messages/{thread}"),
                 Some(json!({ "content": card(&head) })),
             )
-            .await?;
+            .await
+            .inspect_err(|why| tracing::warn!(thread, %why, "a thread's head not said again"))?;
         }
         Out::Name { id } => {
             // The name where the app may read it, and the id where it may
@@ -674,6 +704,11 @@ fn heard_event(
             None => return,
         },
     };
+    tracing::info!(
+        ?at,
+        message = message["message_id"].as_str(),
+        "heard in the room"
+    );
     let _ = sink.send(Event::Heard {
         from: from.to_string(),
         room: room.to_string(),
