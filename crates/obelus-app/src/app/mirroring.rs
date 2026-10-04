@@ -70,9 +70,10 @@ pub(super) struct Mirror {
     /// name, and then a new one. What is kept under the old name moves to
     /// the new -- its thread first -- and meanwhile it is found by this.
     named: BTreeMap<usize, String>,
-    /// Conversations whose thread would not open, asked for again on the
-    /// next connection rather than on the next frame: a platform that
-    /// refused once -- a permission the app lacks -- refuses every time.
+    /// Conversations whose thread would not open, asked for again once the
+    /// connection is up again rather than on the next frame: a platform
+    /// that refused once -- a permission the app lacks -- refuses every
+    /// time, and one that could not be reached is worth asking when it can.
     unopened: BTreeSet<String>,
     /// Conversations begun by a thread the reader started, by document,
     /// and that thread: theirs from the start, and named once the session
@@ -533,6 +534,11 @@ impl App {
             }
             self.mirror.unopened.insert(chat);
         }
+    }
+
+    /// Lets the threads that would not open be asked for again.
+    pub(super) fn threads_may_open_again(&mut self) {
+        self.mirror.unopened.clear();
     }
 
     /// What was on its way to a connection that is being let go: threads

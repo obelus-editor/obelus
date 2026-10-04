@@ -88,6 +88,11 @@ pub(super) struct Remote {
     taking: Option<(u64, Option<crate::event::Pause>)>,
     /// The last such number handed out.
     asked: u64,
+    /// An asking given up on because the other window did not answer in
+    /// time -- not one the reader took back. Its request still stands, so
+    /// a window that hears late and lets go leaves the chat here rather
+    /// than with nobody.
+    given_up: Option<u64>,
     /// What this window last wrote to ask for the chat, which it hears too
     /// and must not take as somebody else asking.
     wrote: Option<String>,
@@ -296,6 +301,12 @@ impl App {
             obelus_remote::Event::Connection(state) => {
                 tracing::info!(?state, "the chat says where it has got to");
                 self.remote.connection = Some(state);
+                // Up again -- a socket made again inside one connection is
+                // not a new connection -- so what would not open, whether a
+                // refusal or a request that timed out, is asked for again.
+                if state == State::Connected {
+                    self.threads_may_open_again();
+                }
             }
             obelus_remote::Event::Heard {
                 from,
@@ -785,6 +796,9 @@ fn the_lock() -> Option<std::fs::File> {
         .ok()
 }
 
+/// What a window writes in place of its asking when the reader takes it back.
+const WITHDRAWN: &str = "withdrawn";
+
 /// The file a window writes its number into to ask for the connection.
 fn the_wanting() -> Option<std::path::PathBuf> {
     Some(remote_directory(std::path::Path::new(""))?.join("wanted"))
@@ -882,8 +896,17 @@ impl App {
 
     /// The lock, come back from the kernel.
     pub(super) fn held_the_remote(&mut self, number: u64, lock: std::fs::File) {
-        if self.remote.taking.as_ref().map(|(asked, _)| *asked) != Some(number) {
-            // An asking given up on: dropped here, which lets go again.
+        let asking = self.remote.taking.as_ref().map(|(asked, _)| *asked) == Some(number);
+        // Or the asking that timed out, answered late: the other window let
+        // go, so this one has it -- where nothing has happened since that
+        // would make having it wrong.
+        let late = self.remote.given_up == Some(number)
+            && self.remote.taking.is_none()
+            && self.remote.holding.is_none()
+            && self.platform().is_some();
+        if !asking && !late {
+            // An asking taken back, or one since replaced: dropped here,
+            // which lets go again.
             return;
         }
         self.take_the_remote(lock);
@@ -895,6 +918,7 @@ impl App {
             return;
         }
         self.remote.taking = None;
+        self.remote.given_up = Some(number);
         if let Some(platform) = self.platform() {
             self.wrong(format!("Another window would not let {} go", platform.name));
         }
@@ -902,6 +926,7 @@ impl App {
 
     fn take_the_remote(&mut self, lock: std::fs::File) {
         self.remote.taking = None;
+        self.remote.given_up = None;
         self.remote.holding = Some(lock);
         if let Some(platform) = self.platform() {
             self.say(format!("{} talks to this window now", platform.name));
@@ -911,6 +936,15 @@ impl App {
     /// Stops this window talking to the chat, which leaves it to no window
     /// until one asks.
     pub(super) fn disconnect_remote(&mut self) {
+        // An asking, taken back: the request withdrawn, so that the window
+        // that has the chat keeps it when it hears.
+        if self.remote.taking.take().is_some() {
+            if let Some(path) = the_wanting() {
+                let _ = std::fs::write(path, WITHDRAWN);
+            }
+            self.remote.wrote = None;
+            return;
+        }
         if self.remote.holding.take().is_none() {
             return;
         }
@@ -932,7 +966,7 @@ impl App {
             return;
         }
         let asker = the_wanting().and_then(|path| std::fs::read_to_string(path).ok());
-        if asker.is_some() && asker == self.remote.wrote {
+        if (asker.is_some() && asker == self.remote.wrote) || asker.as_deref() == Some(WITHDRAWN) {
             return;
         }
         self.remote.holding = None;

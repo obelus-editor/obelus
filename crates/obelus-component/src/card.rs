@@ -517,7 +517,9 @@ impl Card {
             (false, Some(words)) if words.required => {
                 format!("Reply with {numbers}, then your own words.")
             }
-            (false, Some(_)) if self.needed => {
+            // Words alone answer nothing where a named answer has to be
+            // chosen: one, or at least some.
+            (false, Some(_)) if self.needed || self.least.is_some_and(|least| least > 0) => {
                 format!("Reply with {numbers}, and your own words after it if you like.")
             }
             (false, Some(_)) => format!("Reply with {numbers}, or in your own words."),
@@ -1042,8 +1044,10 @@ mod tests {
     /// Broken deliberately three ways. Not asking for the words when the
     /// reply is a number: `2` went out with no reason, which the card on
     /// screen refuses. Not counting when the reply is words: `foo` went out
-    /// choosing none of a card that takes at least one. And reading the
-    /// whole reply as numbers or as words: `2 because` was neither.
+    /// choosing none of a card that takes at least one. Reading the whole
+    /// reply as numbers or as words: `2 because` was neither. And asking a
+    /// card that takes at least one as if words alone would do: it invited
+    /// `foo`, and then refused it.
     #[test]
     fn a_reply_is_held_to_what_the_card_holds_an_answer_to() {
         let mut reasoned = Card::new(answers(), false);
@@ -1071,6 +1075,15 @@ mod tests {
         several.counts(Some(1), None);
         several.writing("Other", false, None);
         assert_eq!(several.answered_by("foo"), Err("At least 1".to_string()));
+        // And the sentence asking it says so, rather than inviting the words
+        // alone that it then refuses.
+        assert!(
+            several.in_words().ends_with(
+                "Reply with the numbers (at least 1), and your own words after it if you like."
+            ),
+            "{}",
+            several.in_words()
+        );
         assert_eq!(
             several.answered_by("1, 3 and that"),
             Ok((

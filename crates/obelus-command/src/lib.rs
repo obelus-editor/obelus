@@ -379,9 +379,9 @@ pub enum Requires {
     /// not something Obelus can know.
     AnotherWorktree,
     /// A chat has to be set in the settings, and this window not already
-    /// the one it talks to.
+    /// the one it talks to, nor asking to be.
     ARemote,
-    /// This window has to be the one the chat talks to.
+    /// This window has to be the one the chat talks to, or be asking to be.
     TheRemote,
 }
 

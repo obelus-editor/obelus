@@ -747,13 +747,16 @@ impl App {
             How::Directory,
             super::worktrees::directory,
         );
-        // And the chat, while this window is the one it talks to: another
-        // asking for it is a file written beside the lock. Not the project's,
-        // and not given up with it.
-        let holding = self.holds_the_remote();
+        // And the chat, wherever one is set: another window asking for it is
+        // a file written beside the lock. Watched before this window has it
+        // rather than from then -- a watch is taken a frame after it is
+        // wanted, and an asking written in that frame would be missed -- and
+        // heard only while it has it. Not the project's, and not given up
+        // with it.
+        let chat = self.platform().is_some();
         self.settle_a_watch(
             REMOTE,
-            holding,
+            chat,
             How::Directory,
             super::remote::remote_directory,
         );
