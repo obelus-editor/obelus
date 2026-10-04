@@ -1530,8 +1530,8 @@ impl App {
         // Words that came from a chat carry a line saying so, for the
         // agent; the reader's own here go to the chat, so that the thread
         // has both halves.
-        let afar = self.afar_for(whose);
-        if afar.is_none() {
+        let (afar, echoed) = self.origin_of(whose);
+        if echoed {
             self.mirror_typed_here(whose, parts);
         }
         let opening = match (opening, afar) {
@@ -1616,7 +1616,9 @@ impl App {
         if waiting.is_empty() {
             return;
         }
+        let afar = talk.chat.unsent_afar();
         talk.chat.sent();
+        self.about_to_say_what_waited(whose, &waiting, &afar);
         // One prompt, so the messages are joined the way the box's own
         // `alt+enter` joins two paragraphs -- and the pictures keep their
         // places between them, because the join is a run of parts and not
@@ -2925,10 +2927,11 @@ impl App {
         });
         if running {
             if let Some(talk) = self.talk_mut(whose) {
-                talk.chat.will_say(parts);
+                talk.chat.will_say_from_afar(parts);
             }
             return;
         }
+        self.about_to_say_from_afar(whose);
         self.say_in(whose, parts, false);
     }
 

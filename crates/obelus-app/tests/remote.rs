@@ -1140,3 +1140,235 @@ fn a_connection_let_go_is_not_heard() {
         "the old connection's word was taken as the new one's"
     );
 }
+
+/// A conversation whose agent has gone is still the one its thread is
+/// about: what is said there finds it -- by the name it went by, since it
+/// has none until a new session arrives -- and starts the agent again, the
+/// way typing into it here does.
+///
+/// Broken deliberately by finding a conversation only by the name it has
+/// now: the reply was answered "not open on this machine", which it was.
+#[test]
+fn a_thread_finds_its_conversation_while_its_agent_is_gone() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-agent-gone");
+    // Installed and named in the settings, the way a reader's is, because
+    // starting it *again* goes through that.
+    obelus_remote::platform::connect_for_test(fake_connect);
+    *FAKED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    let log = scratch.join("asked.log");
+    let root = scratch.join("agents");
+    obelus_agent::remember(
+        "fake",
+        std::path::Path::new("sh"),
+        &[
+            "tests/fixtures/fake-agent.sh".to_string(),
+            format!("log={}", log.display()),
+            "prompts".to_string(),
+        ],
+        "0.1",
+        &root,
+    )
+    .expect("writing what was installed");
+    std::fs::write(
+        scratch.join("config.toml"),
+        "agent = \"fake\"\nremote = \"slack\"\n[remotes.slack]\npeople = [{ id = \"U1\", name = \"Sunli\" }]\n",
+    )
+    .expect("the settings");
+    a_room_kept();
+    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    let mut app = App::new(Vec::new());
+    app.agents_root_for_test(root);
+    app.config_file_for_test(scratch.join("config.toml"));
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 76, 24);
+    until(&mut app, &events, "the connection", |app| {
+        app.remote_state_for_test() == obelus_remote::State::Connected
+    });
+    let platform = the_platform();
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        text: "/die".to_string(),
+    });
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while !std::fs::read_to_string(&log)
+        .unwrap_or_default()
+        .contains("/die")
+    {
+        assert!(
+            std::time::Instant::now() < until,
+            "the agent was never asked"
+        );
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(50)) {
+            app.handle(event);
+        }
+        support::lay_out(&mut app, 76, 24);
+    }
+    for _ in 0..20 {
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(50)) {
+            app.handle(event);
+        }
+        support::lay_out(&mut app, 76, 24);
+    }
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Thread("F1".to_string()),
+        text: "what is in here".to_string(),
+    });
+    let said = said_until(&mut app, &events, "the question in the thread", |said| {
+        in_thread(said, "F1", "Allow once") || in_thread(said, "F1", "not open")
+    });
+    assert!(
+        !in_thread(&said, "F1", "not open"),
+        "the conversation was not found: {said:#?}"
+    );
+}
+
+/// Words from the chat that waited for a turn, and came back to the box
+/// here when the reader stopped it, are the reader's once they send them:
+/// nothing tells the agent they came from the chat, and the thread hears
+/// them as said on this machine.
+///
+/// Broken deliberately by marking the conversation when the words arrive,
+/// as it was: the mark outlived them, the reader's own words went to the
+/// agent as sent from Slack, and the thread never heard them.
+#[test]
+fn words_from_the_chat_taken_back_here_are_the_readers() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-taken-back");
+    let (mut app, events, log) = paired_with_an_agent(&scratch);
+    let platform = the_platform();
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        text: "/pausing".to_string(),
+    });
+    said_until(&mut app, &events, "the words before the call", |said| {
+        in_thread(said, "F1", "looking at it first")
+    });
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Thread("F1".to_string()),
+        text: "and later".to_string(),
+    });
+    for _ in 0..10 {
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(30)) {
+            app.handle(event);
+        }
+        support::lay_out(&mut app, 76, 24);
+    }
+    app.go_to_document_for_test(obelus_buffer::DocumentId::new(
+        app.document_count_for_test() - 1,
+    ));
+    support::press(&mut app, KeyCode::Esc);
+    until(&mut app, &events, "the turn to stop", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::press(&mut app, KeyCode::Enter);
+    let said = said_until(&mut app, &events, "the words in the thread", |said| {
+        in_thread(said, "F1", "and later")
+    });
+    assert!(
+        in_thread(&said, "F1", "On this machine:_ and later"),
+        "{said:#?}"
+    );
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let prompt = loop {
+        let logged = std::fs::read_to_string(&log).unwrap_or_default();
+        if let Some(line) = logged
+            .lines()
+            .find(|line| line.contains("\"text\":\"and later"))
+        {
+            break line.to_string();
+        }
+        assert!(
+            std::time::Instant::now() < until,
+            "the words never reached the agent:\n{logged}"
+        );
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(50)) {
+            app.handle(event);
+        }
+        support::lay_out(&mut app, 76, 24);
+    };
+    assert!(
+        !prompt.contains("sent from Slack"),
+        "the reader's own words went as from the chat: {prompt}"
+    );
+}
+
+/// Words from the chat and the reader's own, waiting on one turn, go to the
+/// agent together when it ends -- with nothing saying they came from the
+/// chat, since the reader is evidently at the machine -- and the thread
+/// hears the reader's own, and only those, as said on this machine.
+///
+/// Broken deliberately twice. Telling the agent they came from the chat
+/// whenever any did: the prompt said so. And leaving the thread to hear
+/// the whole of what went: the chat's own words came back to it as said
+/// on this machine.
+#[test]
+fn words_from_here_and_from_the_chat_go_together() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-mixed");
+    let (mut app, events, log) = paired_with_an_agent(&scratch);
+    let platform = the_platform();
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        text: "/later".to_string(),
+    });
+    until(&mut app, &events, "the turn to start", |_| {
+        std::fs::read_to_string(&log)
+            .unwrap_or_default()
+            .contains("/later")
+    });
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Thread("F1".to_string()),
+        text: "from the phone".to_string(),
+    });
+    app.go_to_document_for_test(obelus_buffer::DocumentId::new(
+        app.document_count_for_test() - 1,
+    ));
+    support::type_text(&mut app, "from the desk");
+    support::press(&mut app, KeyCode::Enter);
+    let said = said_until(&mut app, &events, "what was typed here", |said| {
+        in_thread(said, "F1", "from the desk")
+    });
+    assert!(
+        !in_thread(&said, "F1", "from the phone"),
+        "the chat's own words came back to it: {said:#?}"
+    );
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let prompt = loop {
+        let logged = std::fs::read_to_string(&log).unwrap_or_default();
+        if let Some(line) = logged.lines().find(|line| line.contains("from the desk")) {
+            break line.to_string();
+        }
+        assert!(
+            std::time::Instant::now() < until,
+            "the words never reached the agent:\n{logged}"
+        );
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(50)) {
+            app.handle(event);
+        }
+        support::lay_out(&mut app, 76, 24);
+    };
+    assert!(
+        prompt.contains("from the phone"),
+        "the two did not go together: {prompt}"
+    );
+    assert!(
+        !prompt.contains("sent from Slack"),
+        "the agent was told the reader is away: {prompt}"
+    );
+}

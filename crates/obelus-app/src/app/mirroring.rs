@@ -53,15 +53,23 @@ pub(super) struct Mirror {
     held: BTreeMap<String, Vec<(String, bool)>>,
     /// What the agent has said in each conversation's turn so far.
     this_turn: BTreeMap<String, String>,
-    /// Conversations whose words waiting for the turn to end came from the
-    /// chat, so that they go to the agent saying so.
-    from_afar: BTreeSet<String>,
+    /// Where the words about to go to each conversation's agent came from,
+    /// said the moment before they go and gone the moment after: never
+    /// kept for words still waiting, which may be taken back or joined by
+    /// the reader's own -- those carry where they came from themselves.
+    from_afar: BTreeMap<String, Origin>,
     /// What each thread was last said to be, so that it is said again only
     /// when something on it has moved.
     heads: BTreeMap<String, Head>,
     /// The group the threads are in, which pairing chose: read with the
     /// table, and changed only by pairing again.
     room: Option<String>,
+    /// The name each conversation last went by, by document. One about
+    /// nothing in particular is named by its session, and a session goes
+    /// with the agent that had it: until the next one arrives it has no
+    /// name, and then a new one. What is kept under the old name moves to
+    /// the new -- its thread first -- and meanwhile it is found by this.
+    named: BTreeMap<usize, String>,
     /// Conversations whose thread would not open, asked for again on the
     /// next connection rather than on the next frame: a platform that
     /// refused once -- a permission the app lacks -- refuses every time.
@@ -70,6 +78,15 @@ pub(super) struct Mirror {
     /// and that thread: theirs from the start, and named once the session
     /// arrives.
     starting: BTreeMap<usize, String>,
+}
+
+/// Where words going to an agent came from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Origin {
+    /// The chat, all of them.
+    Afar,
+    /// Both, so the reader is at the machine.
+    Mixed,
 }
 
 /// One conversation's thread: what the platform calls it, the group it is
@@ -234,6 +251,7 @@ impl App {
         else {
             return;
         };
+        self.carry_the_names(platform.key);
         self.adopt_what_the_reader_started(platform.key, &room, &to);
         let wanting: Vec<String> = self
             .documents
@@ -439,32 +457,74 @@ impl App {
 
     /// The conversation open here by its name elsewhere.
     fn talk_named(&self, chat: &str) -> Option<&Conversation> {
-        self.documents
-            .iter()
-            .flatten()
-            .filter_map(Document::chat)
-            .find(|talk| chat_of(talk).is_some_and(|named| named.file_name() == chat))
+        self.document_named(chat)
+            .and_then(|id| self.document(id))
+            .and_then(Document::chat)
     }
 
     /// Which document that is.
     fn document_named(&self, chat: &str) -> Option<DocumentId> {
-        self.documents
-            .iter()
-            .position(|document| {
-                document
-                    .as_ref()
-                    .and_then(Document::chat)
-                    .and_then(chat_of)
-                    .is_some_and(|named| named.file_name() == chat)
-            })
+        (0..self.documents.len())
+            .find(|at| self.name_of_document(*at).as_deref() == Some(chat))
             .map(DocumentId::new)
+    }
+
+    /// The name a document's conversation goes by: its own, or the last
+    /// it had while it is between sessions.
+    fn name_of_document(&self, at: usize) -> Option<String> {
+        let talk = self.documents.get(at)?.as_ref()?.chat()?;
+        chat_of(talk)
+            .map(|chat| chat.file_name())
+            .or_else(|| self.mirror.named.get(&at).cloned())
+    }
+
+    /// Moves what is kept under a conversation's old name to its new one,
+    /// and lets go of the names of documents that are no longer
+    /// conversations. Once a frame, and a lookup apiece.
+    fn carry_the_names(&mut self, platform: &'static str) {
+        let mut moved = false;
+        for at in 0..self.documents.len() {
+            let Some(talk) = self.documents[at].as_ref().and_then(Document::chat) else {
+                self.mirror.named.remove(&at);
+                continue;
+            };
+            let Some(now) = chat_of(talk).map(|chat| chat.file_name()) else {
+                continue;
+            };
+            match self.mirror.named.insert(at, now.clone()) {
+                Some(was) if was != now => {
+                    if !self.mirror.threads.contains_key(&now)
+                        && let Some(thread) = self.mirror.threads.remove(&was)
+                    {
+                        tracing::info!(was, now, "a conversation's thread goes by its new name");
+                        self.mirror.threads.insert(now.clone(), thread);
+                        moved = true;
+                    }
+                    if let Some(head) = self.mirror.heads.remove(&was) {
+                        self.mirror.heads.insert(now.clone(), head);
+                    }
+                    if let Some(said) = self.mirror.this_turn.remove(&was) {
+                        self.mirror.this_turn.insert(now.clone(), said);
+                    }
+                    if let Some(origin) = self.mirror.from_afar.remove(&was) {
+                        self.mirror.from_afar.insert(now, origin);
+                    }
+                }
+                _ => {}
+            }
+        }
+        if moved {
+            write_the_table(platform, &self.mirror.threads);
+        }
     }
 
     /// The name elsewhere of the conversation `whose` names.
     fn chat_named(&self, whose: talking::Whose) -> Option<String> {
-        self.talk_of(whose)
-            .and_then(chat_of)
-            .map(|chat| chat.file_name())
+        let at = match whose {
+            talking::Whose::One(id) => Some(id.get()),
+            talking::Whose::Whoever => self.current.map(DocumentId::get),
+        };
+        self.name_of_document(at?)
     }
 
     /// A thread that would not open: what was held for it let go, and the
@@ -666,8 +726,49 @@ impl App {
         }
     }
 
-    /// What goes to the agent in front of words from the chat, if these are.
-    pub(super) fn afar_for(&mut self, whose: talking::Whose) -> Option<String> {
+    /// Says that the words about to go to this conversation's agent came
+    /// from the chat.
+    pub(super) fn about_to_say_from_afar(&mut self, whose: talking::Whose) {
+        if let Some(chat) = self.chat_named(whose) {
+            self.mirror.from_afar.insert(chat, Origin::Afar);
+        }
+    }
+
+    /// Says where the words that waited for a turn to end came from, now
+    /// that they go together: from the chat, all of them, and the agent is
+    /// told so; or some from here, and the reader is evidently at the
+    /// machine -- so the agent is told nothing, and the thread hears what
+    /// was typed here now, the chat's own words being there already.
+    pub(super) fn about_to_say_what_waited(
+        &mut self,
+        whose: talking::Whose,
+        waiting: &[Vec<Part>],
+        afar: &[bool],
+    ) {
+        if !afar.contains(&true) {
+            return;
+        }
+        let Some(chat) = self.chat_named(whose) else {
+            return;
+        };
+        if !afar.contains(&false) {
+            self.mirror.from_afar.insert(chat, Origin::Afar);
+            return;
+        }
+        let mut here: Vec<Part> = Vec::new();
+        for (said, _) in waiting.iter().zip(afar).filter(|(_, afar)| !**afar) {
+            if !here.is_empty() {
+                here.push(Part::Words("\n\n".to_string()));
+            }
+            here.extend(said.iter().cloned());
+        }
+        self.mirror_typed_here(whose, &here);
+        self.mirror.from_afar.insert(chat, Origin::Mixed);
+    }
+
+    /// Where the words going to the agent now came from: what goes in
+    /// front of them, and whether the thread still has to hear them.
+    pub(super) fn origin_of(&mut self, whose: talking::Whose) -> (Option<String>, bool) {
         // A conversation the reader started from a thread has no name yet
         // when its first words go, and every word in it so far is theirs
         // from afar.
@@ -675,13 +776,17 @@ impl App {
             talking::Whose::One(id) => self.mirror.starting.contains_key(&id.get()),
             talking::Whose::Whoever => false,
         };
-        let named = self
+        let said = self
             .chat_named(whose)
-            .is_some_and(|chat| self.mirror.from_afar.remove(&chat));
-        (starting || named).then(|| {
-            let platform = self.platform().map_or("a chat", |platform| platform.name);
-            AFAR.replace("{platform}", platform)
-        })
+            .and_then(|chat| self.mirror.from_afar.remove(&chat));
+        match (starting, said) {
+            (true, _) | (_, Some(Origin::Afar)) => {
+                let platform = self.platform().map_or("a chat", |platform| platform.name);
+                (Some(AFAR.replace("{platform}", platform)), false)
+            }
+            (false, Some(Origin::Mixed)) => (None, false),
+            (false, None) => (None, true),
+        }
     }
 
     /// A conversation begun from the chat, and its session asked for.
@@ -757,7 +862,6 @@ impl App {
             return;
         }
         let parts = [Part::Words(text.to_string())];
-        self.mirror.from_afar.insert(chat);
         self.say_from_afar(whose, &parts);
     }
 }

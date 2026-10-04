@@ -809,6 +809,15 @@ while IFS= read -r line; do
         *'"method":"session/prompt"'*'"text":"/broken'*)
             printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"nobody has signed in"}}\n' "$(id_of "$line")"
             ;;
+        *'"method":"session/prompt"'*'"text":"/later'*)
+            # A turn that takes a moment and then ends having said little:
+            # long enough for words to be said into it, from here and from
+            # a chat, and to go when it is over.
+            set_turn "$session" "$(id_of "$line")"
+            sleep 2
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"done waiting"}}}}\n'
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
         *'"method":"session/prompt"'*'"text":"/pausing'*)
             # It says what it is about to do and goes to do it -- a call
             # that never finishes, in a turn that never ends: what it said
