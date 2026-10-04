@@ -1085,7 +1085,6 @@ impl App {
     /// Another window has asked for the chat: let go, so that it can have
     /// it. Not this window's own asking, which it hears too.
     pub(super) fn somebody_wants_the_remote(&mut self) {
-        self.remote.pair_once_connected = false;
         if self.remote.holding.is_none() {
             return;
         }
@@ -1093,6 +1092,9 @@ impl App {
         if (asker.is_some() && asker == self.remote.wrote) || asker.as_deref() == Some(WITHDRAWN) {
             return;
         }
+        // Only once it is going: this window hears its own asking too, and
+        // a code it is waiting to make is the reason it asked.
+        self.remote.pair_once_connected = false;
         self.remote.holding = None;
         self.let_the_chat_go();
         if let Some(platform) = self.platform() {

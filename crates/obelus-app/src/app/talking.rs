@@ -2698,10 +2698,9 @@ impl App {
             }
         }
         let taken = usize::from(choice.is_some()) + usize::from(asked.is_some());
-        let Some(asking) = self
-            .conversation_mut()
-            .and_then(|talk| talk.asking.as_mut())
-        else {
+        // The conversation it was asked in, not the one on screen: a card
+        // answered from a chat is in a conversation nobody is looking at.
+        let Some(asking) = self.talk_mut(whose).and_then(|talk| talk.asking.as_mut()) else {
             return;
         };
         for _ in 0..taken {

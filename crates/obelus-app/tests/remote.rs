@@ -318,6 +318,65 @@ fn pairing_takes_the_chat_and_then_makes_the_code() {
     assert!(app.holds_the_remote_for_test(), "the chat is not here");
 }
 
+/// Pairing in a window while another has the chat takes it from that one,
+/// and the code comes once it is here -- the window hears its own asking
+/// for the chat, and that is not somebody asking for it.
+///
+/// Broken deliberately by letting go of the code asked for whenever an
+/// asking is heard: the chat moved, and no code came.
+#[test]
+fn pairing_takes_the_chat_from_another_window() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-pair-from-another");
+    set_up_for_two(&scratch);
+    let watched = |scratch: &support::Scratch| {
+        let mut app = App::new(Vec::new());
+        app.config_file_for_test(scratch.join("config.toml"));
+        let (sender, events) = obelus_app::event::channel();
+        app.start(sender);
+        support::lay_out(&mut app, 76, 24);
+        (app, events)
+    };
+    let (mut first, firsts) = watched(&scratch);
+    dispatch::dispatch(&mut first, Command::RemoteConnect);
+    until(&mut first, &firsts, "the first to connect", |app| {
+        app.remote_state_for_test() == obelus_remote::State::Connected
+    });
+
+    let (mut second, seconds) = watched(&scratch);
+    dispatch::dispatch(&mut second, Command::ConfigOpen);
+    support::press(&mut second, KeyCode::Tab);
+    support::press(&mut second, KeyCode::Tab);
+    until(&mut second, &seconds, "the tokens to be read", |app| {
+        app.settings()
+            .is_some_and(|settings| settings.reached().state.may_connect())
+    });
+    to_the_row(&mut second, "Pair");
+    support::press(&mut second, KeyCode::Enter);
+    // The second hears its own asking before the first lets go, which is
+    // the order the bug needed and the one a race may or may not give.
+    let until = std::time::Instant::now() + std::time::Duration::from_millis(500);
+    while std::time::Instant::now() < until {
+        if let Ok(event) = seconds.recv_timeout(std::time::Duration::from_millis(20)) {
+            second.handle(event);
+        }
+        support::lay_out(&mut second, 76, 24);
+    }
+    both_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the chat to move and a code to come",
+        |first, second| {
+            !first.holds_the_remote_for_test()
+                && second
+                    .settings()
+                    .is_some_and(|settings| settings.reached().pairing.is_some())
+        },
+    );
+}
+
 /// What the fake platform was handed: where it reports what it hears, and
 /// what Obelus asked it to say.
 struct Faked {
@@ -632,6 +691,24 @@ fn asked_with(said: &[obelus_remote::model::Out], thread: &str, answer: &str) ->
         }
         _ => None,
     })
+}
+
+/// Every question put to this thread, in order: its number and what it is.
+fn asks_in(
+    said: &[obelus_remote::model::Out],
+    thread: &str,
+) -> Vec<(u64, obelus_remote::model::Question)> {
+    said.iter()
+        .filter_map(|out| match out {
+            obelus_remote::model::Out::Ask {
+                thread: at,
+                asked,
+                question,
+                ..
+            } if at == thread => Some((*asked, question.clone())),
+            _ => None,
+        })
+        .collect()
 }
 
 /// The reader on the list pressing one answer on a question's card.
@@ -1189,7 +1266,7 @@ fn a_question_is_a_card_and_the_card_is_the_answer() {
         text: "1".to_string(),
     });
     said_until(&mut app, &events, "words pointed at the card", |said| {
-        in_thread(said, "F1", "Answer on the card above")
+        in_thread(said, "F1", "Answer on the card above.")
     });
 
     let press = |from: &str| obelus_remote::Event::Answered {
@@ -1227,6 +1304,121 @@ fn a_question_is_a_card_and_the_card_is_the_answer() {
         in_thread(said, "F1", "and I was allowed")
     });
     assert!(settled(&said), "the card was not closed: {said:#?}");
+}
+
+/// A form answered on its cards from the chat -- in a conversation begun
+/// there, which is never the one on screen -- goes to that conversation a
+/// field at a time, each card closed as it is taken; and a number it will
+/// not take is said in the thread, the card left open for another go.
+///
+/// Broken deliberately twice. Taking each answer off the conversation on
+/// screen: there was none, the first field was never taken, and the agent
+/// waited for ever. And closing a card before its answer was taken: the
+/// card that refused `twelve` was closed as answered.
+#[test]
+fn a_form_is_answered_on_its_cards_in_its_own_conversation() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-form-cards");
+    let (mut app, events, _log) = paired_with_an_agent(&scratch);
+    let platform = the_platform();
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        text: "/ask".to_string(),
+    });
+    let press =
+        |asked: u64, chosen: Option<&str>, words: Option<&str>| obelus_remote::Event::Answered {
+            from: "U1".to_string(),
+            asked,
+            chosen: chosen.map(str::to_string).into_iter().collect(),
+            words: words.map(str::to_string),
+        };
+    let mut said = said_until(&mut app, &events, "how", |said| {
+        asks_in(said, "F1").len() == 1
+    });
+    let how = asks_in(&said, "F1")[0].0;
+    let _ = platform.send(press(how, Some("fast"), None));
+    said.extend(said_until(&mut app, &events, "sure", |said| {
+        asks_in(said, "F1").len() == 1
+    }));
+    let sure = asks_in(&said, "F1")[1].0;
+    let _ = platform.send(press(sure, Some("on"), None));
+    said.extend(said_until(&mut app, &events, "times", |said| {
+        asks_in(said, "F1").len() == 1
+    }));
+    let times = asks_in(&said, "F1")[2].0;
+    let closed = |said: &[obelus_remote::model::Out], which: u64| {
+        said.iter().any(
+            |out| matches!(out, obelus_remote::model::Out::Settle { asked, .. } if *asked == which),
+        )
+    };
+    assert!(
+        closed(&said, how) && closed(&said, sure),
+        "a card taken was not closed: {said:#?}"
+    );
+
+    let _ = platform.send(press(times, None, Some("twelve")));
+    let refused = said_until(&mut app, &events, "the number refused", |said| {
+        in_thread(said, "F1", "not a number this takes")
+    });
+    assert!(
+        !closed(&refused, times),
+        "the card was closed on an answer not taken: {refused:#?}"
+    );
+    let _ = platform.send(press(times, None, Some("3")));
+    let said = said_until(&mut app, &events, "the answers", |said| {
+        in_thread(said, "F1", "you said [fast] [true] [3]")
+    });
+    assert!(
+        closed(&said, times),
+        "the last card was not closed: {said:#?}"
+    );
+}
+
+/// Words in a thread whose question the chat was never given -- a page
+/// to open on the machine -- are told so, rather than sent to a card that
+/// is not there.
+///
+/// Broken deliberately by asking only whether a card is up: the thread was
+/// told to answer on the card above, where there was none.
+#[test]
+fn a_question_the_chat_was_never_given_is_said_to_be_the_machines() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-only-here");
+    let (mut app, events, _log) = paired_with_an_agent(&scratch);
+    let platform = the_platform();
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        text: "/signin".to_string(),
+    });
+    // Until the page to open is up here, which the thread is never told.
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while !app.asking_in_thread_for_test("F1") {
+        assert!(
+            std::time::Instant::now() < until,
+            "gave up waiting for the page"
+        );
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(50)) {
+            app.handle(event);
+        }
+        support::lay_out(&mut app, 76, 24);
+    }
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Thread("F1".to_string()),
+        text: "done".to_string(),
+    });
+    let said = said_until(&mut app, &events, "the words answered", |said| {
+        in_thread(said, "F1", "on the machine") || in_thread(said, "F1", "card above")
+    });
+    assert!(
+        in_thread(&said, "F1", "can only be answered on the machine"),
+        "the thread was pointed at a card it never had: {said:#?}"
+    );
 }
 
 /// What a conversation says while the connection is on its way back up

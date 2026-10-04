@@ -793,6 +793,18 @@ impl App {
         self.settle_the_question(whose, "The agent stopped asking.".to_string());
     }
 
+    /// Whether the conversation a thread is has a question up, for a test
+    /// that cannot put a conversation begun from the chat on the screen.
+    #[must_use]
+    pub fn asking_in_thread_for_test(&self, thread: &str) -> bool {
+        self.mirror
+            .threads
+            .iter()
+            .find(|(_, kept)| kept.thread == thread)
+            .and_then(|(chat, _)| self.talk_named(chat))
+            .is_some_and(|talk| talk.card.is_some())
+    }
+
     /// Somebody pressed something on a question's card: taken as the
     /// answer where it is the question still up and the card here holds an
     /// answer to it, and said in the thread why not where it does not -- the
@@ -830,8 +842,26 @@ impl App {
             .map(|id| card.name_of(id).unwrap_or(id).to_string())
             .chain(words.map(str::to_string))
             .collect();
-        self.settle_the_question(whose, format!("\u{2714} {}", said.join(", ")));
         self.answer_from_afar(whose, chosen, words);
+        // Closed only once it is taken, which is known by what came after:
+        // the same question still up is one that was not -- a number it
+        // would not take, which the page here says why -- and closing it
+        // left the reader there with a card that said it was answered.
+        let still = self.mirror.questions.get(&chat) == Some(&asked)
+            && self.talk_of(whose).is_some_and(|talk| talk.card.is_some());
+        if still {
+            self.say_in_thread(&chat, "That is not a number this takes".to_string(), false);
+            return;
+        }
+        // By its own number: the next question, if there is one, is up
+        // already under a number of its own.
+        if self.mirror.questions.get(&chat) == Some(&asked) {
+            self.mirror.questions.remove(&chat);
+        }
+        self.say_to_thread(
+            &chat,
+            Saying::Settle(asked, format!("\u{2714} {}", said.join(", "))),
+        );
         self.mirror_head(whose, Some(Turning::Working));
     }
 
@@ -995,9 +1025,15 @@ impl App {
         };
         let whose = talking::Whose::One(id);
         // A card up is the conversation waiting on exactly this, on the
-        // card: words are not read as an answer.
+        // card: words are not read as an answer. And pointed at a card only
+        // where the thread has one -- a page to open on the machine is never
+        // put to it, and a card the platform would not take never got there.
         if self.talk_of(whose).is_some_and(|talk| talk.card.is_some()) {
-            self.say_in_thread(&chat, "Answer on the card above".to_string(), false);
+            let said = match self.mirror.questions.contains_key(&chat) {
+                true => "Answer on the card above.",
+                false => "This question can only be answered on the machine.",
+            };
+            self.say_in_thread(&chat, said.to_string(), false);
             return;
         }
         let parts = [Part::Words(text.to_string())];
