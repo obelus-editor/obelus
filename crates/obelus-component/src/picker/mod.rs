@@ -617,6 +617,13 @@ pub struct Picker {
     /// Whether the list holds the height it asked for rather than shrinking
     /// to the rows that match.
     steady: bool,
+    /// How wide the widest label in the showing tab is, for a list that asked
+    /// for its details in one column; `None` for one that did not.
+    ///
+    /// Over the tab's rows rather than the matching ones, for the reason the
+    /// mark's column is: a column that moved as the reader typed would slide
+    /// every description sideways under them.
+    aligned: Option<usize>,
     /// Whether the rows of this list name something worth showing beneath it.
     previews: bool,
     /// Whether any row carries a mark, and so whether every row leaves a
@@ -887,6 +894,7 @@ impl Picker {
             searching: false,
             listing: false,
             steady: false,
+            aligned: None,
             previews: false,
             explains: false,
             marked: false,
@@ -1099,6 +1107,26 @@ impl Picker {
     /// unless a list says the steadiness is worth more.
     pub const fn keeps_height(&mut self) {
         self.steady = true;
+    }
+
+    /// Starts every row's detail in one column, after the widest label in
+    /// the tab that is showing.
+    ///
+    /// For a list whose labels are names and whose details say what each
+    /// does: the palette's descriptions are read down as a column, and a
+    /// column that starts wherever its name happened to end is one the eye
+    /// has to find again on every row. Per tab, so a tab of short names is
+    /// not pushed across the row by a long name it does not hold.
+    pub fn aligns_details(&mut self) {
+        self.aligned = Some(0);
+        self.refilter();
+    }
+
+    /// Where a row's detail starts, counted in columns from where its label
+    /// does, for a list that asked for its details in one column.
+    #[must_use]
+    pub const fn detail_column(&self) -> Option<usize> {
+        self.aligned
     }
 
     /// Says the rows of this list are sentences, read whole: see
@@ -2397,6 +2425,16 @@ impl Picker {
             (true, _, _) | (_, 0, _) | (_, _, None) => true,
             (_, tab, Some(of)) => tab == of,
         };
+        // A narrowing pass is the same tab with the same rows in it.
+        if self.aligned.is_some() && !matches!(candidates, Candidates::Survivors) {
+            self.aligned = self
+                .items
+                .iter()
+                .filter(|item| showing(item))
+                .map(|item| obelus_text::text_width(&item.label))
+                .max()
+                .or(Some(0));
+        }
 
         // A search's rows are answers, not candidates. Whatever produced
         // them -- the walk of the tree, the language server, the search of
@@ -2716,6 +2754,60 @@ mod tests {
             picker.visible_rows(20, 40),
             10,
             "it moved when the list emptied"
+        );
+    }
+
+    /// A list that asked for its details in one column puts it after the
+    /// widest label of the tab showing, and keeps it there as it is typed
+    /// at.
+    ///
+    /// Broken twice: measuring every row rather than the tab's left the
+    /// second tab's column at the first tab's widest, and measuring the rows
+    /// that match moved the column when a query left only the short one.
+    #[test]
+    fn details_line_up_after_the_widest_label_in_the_tab() {
+        let rows = vec![
+            PickerItem {
+                tab: Some(1),
+                ..named("open-changed-file")
+            },
+            PickerItem {
+                tab: Some(1),
+                ..named("save")
+            },
+            PickerItem {
+                tab: Some(2),
+                ..named("copy")
+            },
+            PickerItem {
+                tab: Some(2),
+                ..named("paste-it")
+            },
+        ];
+        let mut picker = Picker::new(rows, PickerLayout::Compact { rows: 10 });
+        picker.with_tabs(&["All", "Files", "Edit"]);
+        assert_eq!(
+            picker.detail_column(),
+            None,
+            "a list that did not ask got one"
+        );
+
+        picker.aligns_details();
+        assert_eq!(picker.detail_column(), Some(17), "not the widest of all");
+        picker.go_to_tab(2);
+        assert_eq!(
+            picker.detail_column(),
+            Some(8),
+            "not the widest of this tab"
+        );
+
+        picker.go_to_tab(1);
+        picker.set_query("save");
+        assert_eq!(picker.match_count(), 1, "the query matched something else");
+        assert_eq!(
+            picker.detail_column(),
+            Some(17),
+            "it moved as it was typed at"
         );
     }
 
