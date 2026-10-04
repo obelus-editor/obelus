@@ -560,7 +560,7 @@ mod against_a_real_server {
         }
         let root = std::path::PathBuf::from(env!("OBELUS_TREE"));
         let mut app = App::new(vec![
-            Buffer::open(&root.join("src/jump.rs")).expect("opening it"),
+            Buffer::open(&root.join("crates/obelus-app/src/jump.rs")).expect("opening it"),
         ]);
         app.working_directory_for_test(root);
         let (sender, events) = mpsc::channel();
@@ -698,7 +698,13 @@ mod against_a_real_server {
 
     /// A file changing on disk is news to the server as much as to
     /// Obelus: a branch checked out under it, a build script's output, an
-    /// editor somewhere else.
+    /// editor somewhere else. A file outside the project is not: what
+    /// Obelus watches there is its own -- the settings, which window holds
+    /// the chat, which asks for it -- and a server told about one goes to
+    /// look, its mark turning on a window whose code nobody touched.
+    ///
+    /// Broken deliberately by telling it about every change: the window
+    /// asked for the chat told rust-analyzer about the asking.
     #[test]
     #[ignore = "starts a server and waits for the project to be read"]
     fn a_file_that_changed_on_disk_is_reported() {
@@ -713,6 +719,14 @@ mod against_a_real_server {
         );
 
         let before = app.told_servers_for_test();
+        app.handle(Event::Watched(obelus_watch::Changed {
+            path: std::env::temp_dir().join("obelus-remote-wanted"),
+        }));
+        assert_eq!(
+            app.told_servers_for_test(),
+            before,
+            "the server was told about a file that is not the project's"
+        );
         app.handle(Event::Watched(obelus_watch::Changed {
             path: std::path::PathBuf::from(env!("OBELUS_TREE"))
                 .join("crates/obelus-app/src/lib.rs"),
