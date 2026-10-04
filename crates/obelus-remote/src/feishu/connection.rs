@@ -407,10 +407,15 @@ async fn say(api: &Api, sink: &Arc<dyn Sink<Event>>, out: Out) -> Result<(), Ref
 
 /// The long connection, made and made again for as long as it is wanted.
 async fn listen(api: Arc<Api>, sink: Arc<dyn Sink<Event>>) {
+    // Which events have been heard lately, kept across connections: Feishu
+    // sends an event again when it thinks the answer did not arrive, and a
+    // connection that dropped is the likeliest time for that -- a reply
+    // heard twice is a question answered twice.
+    let mut seen: std::collections::VecDeque<String> = std::collections::VecDeque::new();
     loop {
         let state = match api.endpoint().await {
             Ok((url, ping)) => {
-                if let Err(why) = connected(&url, ping, &sink).await {
+                if let Err(why) = connected(&url, ping, &mut seen, &sink).await {
                     tracing::warn!(%why, "the long connection to Feishu dropped");
                 }
                 State::Connecting
@@ -426,7 +431,12 @@ async fn listen(api: Arc<Api>, sink: Arc<dyn Sink<Event>>) {
 }
 
 /// One long connection, until it drops.
-async fn connected(url: &str, ping: Duration, sink: &Arc<dyn Sink<Event>>) -> Result<(), String> {
+async fn connected(
+    url: &str,
+    ping: Duration,
+    seen: &mut std::collections::VecDeque<String>,
+    sink: &Arc<dyn Sink<Event>>,
+) -> Result<(), String> {
     let service: i32 = url::Url::parse(url)
         .ok()
         .and_then(|url| {
@@ -500,7 +510,7 @@ async fn connected(url: &str, ping: Duration, sink: &Arc<dyn Sink<Event>>) -> Re
                     continue;
                 };
                 if value_of(&frame.headers, "type") == Some("event") {
-                    heard_event(&payload, sink);
+                    heard_event(&payload, seen, sink);
                 }
                 // Answered whatever it was, at once: an event not answered
                 // within three seconds is sent again, and what was done
@@ -562,10 +572,23 @@ fn whole(pieces: &mut HashMap<String, Vec<Option<Vec<u8>>>>, frame: &Frame) -> O
 /// Only a person's words in a group: an event of another kind, a direct
 /// message, a picture, are none of them somebody talking to Obelus. Which
 /// group is Obelus's to judge, by the id that goes with them.
-fn heard_event(payload: &[u8], sink: &Arc<dyn Sink<Event>>) {
+fn heard_event(
+    payload: &[u8],
+    seen: &mut std::collections::VecDeque<String>,
+    sink: &Arc<dyn Sink<Event>>,
+) {
     let Ok(event) = serde_json::from_slice::<Value>(payload) else {
         return;
     };
+    if let Some(id) = event["header"]["event_id"].as_str() {
+        if seen.iter().any(|kept| kept == id) {
+            return;
+        }
+        seen.push_back(id.to_string());
+        if seen.len() > 256 {
+            seen.pop_front();
+        }
+    }
     if event["header"]["event_type"].as_str() != Some("im.message.receive_v1") {
         return;
     }
@@ -712,12 +735,18 @@ mod tests {
             "content": [[{ "tag": "text", "text": "it fails on " }, { "tag": "text", "text": "arm" }]]
         })
         .to_string();
+        let seen = &mut std::collections::VecDeque::new();
         heard_event(
             event(Some("om_root"), "group", "text", text).as_bytes(),
+            seen,
             &sink,
         );
-        heard_event(event(None, "group", "post", &titled).as_bytes(), &sink);
-        heard_event(event(None, "p2p", "text", text).as_bytes(), &sink);
+        heard_event(
+            event(None, "group", "post", &titled).as_bytes(),
+            seen,
+            &sink,
+        );
+        heard_event(event(None, "p2p", "text", text).as_bytes(), seen, &sink);
         let heard: Vec<(String, Where, String)> = heard
             .try_iter()
             .filter_map(|event| match event {
@@ -747,6 +776,37 @@ mod tests {
             ],
             "something was heard that should not have been, or the other way about"
         );
+    }
+
+    /// An event Feishu sends again -- it does, when it thinks the answer
+    /// did not arrive -- is heard once.
+    ///
+    /// Broken deliberately by not keeping the ids: the reply was heard
+    /// twice, which is a question answered twice.
+    #[test]
+    fn an_event_sent_again_is_heard_once() {
+        let (sender, heard) = std::sync::mpsc::channel::<Event>();
+        let sink: Arc<dyn Sink<Event>> = Arc::new(sender);
+        let event = json!({
+            "schema": "2.0",
+            "header": { "event_type": "im.message.receive_v1", "event_id": "e-1" },
+            "event": {
+                "sender": { "sender_id": { "open_id": "ou_1" }, "sender_type": "user" },
+                "message": {
+                    "message_id": "om_2",
+                    "root_id": "om_root",
+                    "chat_id": "oc_room",
+                    "chat_type": "group",
+                    "message_type": "text",
+                    "content": "{\"text\":\"1\"}"
+                }
+            }
+        })
+        .to_string();
+        let seen = &mut std::collections::VecDeque::new();
+        heard_event(event.as_bytes(), seen, &sink);
+        heard_event(event.as_bytes(), seen, &sink);
+        assert_eq!(heard.try_iter().count(), 1, "the event was heard twice");
     }
 
     /// A rich message carries its markdown whole, with the reader called in

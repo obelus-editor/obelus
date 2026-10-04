@@ -1372,3 +1372,28 @@ fn words_from_here_and_from_the_chat_go_together() {
         "the agent was told the reader is away: {prompt}"
     );
 }
+
+/// In the room, somebody not on the list is not heard: a thread they start
+/// begins nothing and is not answered.
+///
+/// Broken deliberately by hearing anybody in the room: the stranger's
+/// thread began a conversation and the agent was asked.
+#[test]
+fn somebody_not_on_the_list_is_not_heard_in_the_room() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-stranger");
+    let (mut app, events, log) = paired_with_an_agent(&scratch);
+    somebody_says("U0STRANGER", "C1", "what is in here");
+    for _ in 0..20 {
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(50)) {
+            app.handle(event);
+        }
+        support::lay_out(&mut app, 76, 24);
+    }
+    let logged = std::fs::read_to_string(&log).unwrap_or_default();
+    assert!(
+        !logged.contains("what is in here"),
+        "a stranger's words reached the agent:\n{logged}"
+    );
+    assert!(said_since().is_empty(), "a stranger was answered");
+}

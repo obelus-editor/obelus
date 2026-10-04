@@ -291,7 +291,7 @@ async fn pushed(
             from: from.to_string(),
             room: room.to_string(),
             at,
-            text,
+            text: unescaped(&text),
         });
     }
     Ok(())
@@ -305,4 +305,30 @@ fn said_wrong(
 ) -> HttpStatusCode {
     tracing::warn!(%error, "something Slack sent could not be handled");
     HttpStatusCode::OK
+}
+
+/// What somebody wrote, as they wrote it. Slack escapes three characters in
+/// what it hands over, and code is made of them: `a < b` would reach the
+/// agent as `a &lt; b`. The ampersand last, so that `&amp;lt;` -- somebody
+/// writing the escape itself -- stays `&lt;`.
+fn unescaped(text: &str) -> String {
+    text.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Broken deliberately by undoing the ampersand first: `&amp;lt;`
+    /// came out as `<`, which is not what was written.
+    #[test]
+    fn what_slack_escapes_is_given_back_as_written() {
+        assert_eq!(
+            unescaped("if a &lt; b &amp;&amp; c &gt; d"),
+            "if a < b && c > d"
+        );
+        assert_eq!(unescaped("&amp;lt;"), "&lt;");
+    }
 }
