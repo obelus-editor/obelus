@@ -487,7 +487,8 @@ impl<'a> ChatView<'a> {
     ///
     /// A point in a row the reading drew rather than read -- a blank, the
     /// heading over a folded run, the row that says what is happening now
-    /// -- is the place just after the last word above it. A drag has to go
+    /// -- is the place just after the last word above it, or where there is
+    /// none, the place before the first word below. A drag has to go
     /// somewhere while it crosses one, and the words either side of it are
     /// what the reader is dragging between.
     ///
@@ -519,9 +520,10 @@ impl<'a> ChatView<'a> {
         {
             return Some(spot);
         }
-        // Upwards first, unlike the cursor's nearest: a drag that starts on
-        // a blank and goes down means the words below it, and one anchored
-        // at the end of those above takes them whole.
+        // Upwards first, where the cursor's nearest looks down, and nothing
+        // turns on it: what lies between the end of the words above and the
+        // start of those below is nobody's words, so a drag from either
+        // copies the same. Under the last row there is only above.
         rows[..at]
             .iter()
             .rev()
