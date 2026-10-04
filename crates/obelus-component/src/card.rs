@@ -299,6 +299,18 @@ impl Card {
         self.several
     }
 
+    /// Whether the agent said one of the named answers has to be chosen.
+    #[must_use]
+    pub const fn needed(&self) -> bool {
+        self.needed
+    }
+
+    /// Whether the agent needs something written in the box.
+    #[must_use]
+    pub fn words_needed(&self) -> bool {
+        self.words.as_ref().is_some_and(|words| words.required)
+    }
+
     /// Where the keys are going, for the view to say so.
     #[must_use]
     pub const fn on(&self) -> On {
@@ -656,6 +668,39 @@ impl Card {
             Some(Short::One) => Err("Choose one of the numbers as well".to_string()),
             Some(Short::Words) => Err(format!(
                 "{} as well, after the number",
+                self.placeholder().unwrap_or("An answer")
+            )),
+        }
+    }
+
+    /// Whether an answer given on a card drawn somewhere else -- the ids
+    /// chosen and the words written -- is one this card holds an answer to,
+    /// or why not, in a sentence: the same counts the card on screen holds
+    /// its own answers to, so that the two cannot take different answers.
+    ///
+    /// # Errors
+    ///
+    /// Why it cannot be taken.
+    pub fn takes(&self, chosen: &[String], words: Option<&str>) -> Result<(), String> {
+        if chosen
+            .iter()
+            .any(|id| !self.choices.iter().any(|choice| choice.id == *id))
+        {
+            return Err("That is not one of the answers".to_string());
+        }
+        if !self.several && chosen.len() > 1 {
+            return Err("Just one".to_string());
+        }
+        if words.is_some() && !self.takes_words() {
+            return Err("This takes no words".to_string());
+        }
+        match self.short_of(chosen.len() as u64, words.is_some()) {
+            None => Ok(()),
+            Some(Short::Least(least)) => Err(format!("At least {least}")),
+            Some(Short::Most(most)) => Err(format!("At most {most}")),
+            Some(Short::One) => Err("Choose one as well".to_string()),
+            Some(Short::Words) => Err(format!(
+                "{} as well",
                 self.placeholder().unwrap_or("An answer")
             )),
         }
@@ -1175,6 +1220,47 @@ mod tests {
         assert_eq!(
             words.answered_by("feature-x"),
             Ok((Vec::new(), Some("feature-x".to_string())))
+        );
+    }
+
+    /// An answer given on a card drawn elsewhere is held to what this one
+    /// holds an answer to: answers it offered, as many as it takes, and
+    /// the words it needs.
+    ///
+    /// Broken deliberately twice. Not checking the ids: `nine`, which the
+    /// card never offered, went to the agent. And not counting: two went
+    /// to a question that takes one.
+    #[test]
+    fn an_answer_from_elsewhere_is_held_to_the_card() {
+        let one = Card::new(answers(), false);
+        assert_eq!(one.takes(&["two".to_string()], None), Ok(()));
+        assert_eq!(
+            one.takes(&["nine".to_string()], None),
+            Err("That is not one of the answers".to_string())
+        );
+        assert_eq!(
+            one.takes(&["one".to_string(), "two".to_string()], None),
+            Err("Just one".to_string())
+        );
+        assert_eq!(
+            one.takes(&[], Some("mine")),
+            Err("This takes no words".to_string())
+        );
+
+        let mut several = Card::new(answers(), true);
+        several.counts(Some(2), None);
+        several.writing("Reason", true, None);
+        assert_eq!(
+            several.takes(&["one".to_string()], Some("why")),
+            Err("At least 2".to_string())
+        );
+        assert_eq!(
+            several.takes(&["one".to_string(), "three".to_string()], None),
+            Err("Reason as well".to_string())
+        );
+        assert_eq!(
+            several.takes(&["one".to_string(), "three".to_string()], Some("why")),
+            Ok(())
         );
     }
 

@@ -24,12 +24,20 @@
 //! otherwise.** The conversation is waiting on the reader while a card is
 //! up, so there is nothing else the reply could be; and once the card is
 //! answered, here or there, the next reply is talking again.
+//!
+//! **Where the platform draws the question, the card is the answer.** A
+//! press on it comes back as the ids chosen and the words written, held to
+//! the same counts as the card here and taken as if pressed here; a reply in
+//! words while it is up is pointed back at it. Reading words as an answer
+//! was Obelus deciding what the reader meant, and taking a question back so
+//! that the agent could read them was a turn stopped under it -- which the
+//! agent talked about, and whose words it ran into the answer.
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use obelus_agent::chats::ChatId;
 use obelus_component::composer::Part;
-use obelus_remote::model::{Head, Out, Turning};
+use obelus_remote::model::{Head, Out, Question, Turning};
 
 use super::*;
 use crate::conversation::{Conversation, Topic};
@@ -50,7 +58,10 @@ pub(super) struct Mirror {
     /// The last number handed out.
     asked: u64,
     /// What was to be said in a thread still being opened, in order.
-    held: BTreeMap<String, Vec<(String, bool)>>,
+    held: BTreeMap<String, Vec<Saying>>,
+    /// The question up in each conversation, by the number it was put to
+    /// the thread with, while it is up.
+    questions: BTreeMap<String, u64>,
     /// What the agent has said in each conversation's turn so far.
     this_turn: BTreeMap<String, String>,
     /// Where the words about to go to each conversation's agent came from,
@@ -81,6 +92,46 @@ pub(super) struct Mirror {
     starting: BTreeMap<usize, String>,
 }
 
+/// Something to say in a thread, before it is known which.
+#[derive(Debug)]
+enum Saying {
+    /// Words, and whether to call the reader.
+    Words(String, bool),
+    /// A question, by its number.
+    Ask(u64, Question),
+    /// What became of one.
+    Settle(u64, String),
+}
+
+impl Saying {
+    /// Said in this thread.
+    fn in_thread(self, room: String, thread: String, to: String) -> Out {
+        match self {
+            Self::Words(text, notify) => Out::Say {
+                room,
+                thread,
+                to,
+                text,
+                notify,
+            },
+            Self::Ask(asked, question) => Out::Ask {
+                room,
+                thread,
+                to,
+                asked,
+                question,
+            },
+            Self::Settle(asked, said) => Out::Settle {
+                room,
+                thread,
+                to,
+                asked,
+                said,
+            },
+        }
+    }
+}
+
 /// Where words going to an agent came from.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Origin {
@@ -101,6 +152,24 @@ struct Thread {
     /// reader started is headed by their own first words, which are theirs
     /// and not Obelus's to change.
     own: bool,
+}
+
+/// A card's question as a chat is given it.
+fn question_of(card: &obelus_component::card::Card) -> Question {
+    Question {
+        about: card.what_about().unwrap_or_default().trim().to_string(),
+        choices: card
+            .choices()
+            .iter()
+            .map(|choice| (choice.id.clone(), choice.name.clone()))
+            .collect(),
+        several: card.several(),
+        needed: card.needed(),
+        words: card
+            .placeholder()
+            .map(|placeholder| (placeholder.to_string(), card.words_needed())),
+        in_words: card.in_words(),
+    }
 }
 
 /// What a conversation is called when it is talked about anywhere but here.
@@ -290,7 +359,7 @@ impl App {
                     .held
                     .entry(chat.clone())
                     .or_default()
-                    .push((lately, false));
+                    .push(Saying::Words(lately, false));
             }
             self.mirror.heads.insert(chat.clone(), head.clone());
             self.say_to(Out::Open {
@@ -496,6 +565,9 @@ impl App {
                     if let Some(said) = self.mirror.this_turn.remove(&was) {
                         self.mirror.this_turn.insert(now.clone(), said);
                     }
+                    if let Some(asked) = self.mirror.questions.remove(&was) {
+                        self.mirror.questions.insert(now.clone(), asked);
+                    }
                     if let Some(origin) = self.mirror.from_afar.remove(&was) {
                         self.mirror.from_afar.insert(now, origin);
                     }
@@ -589,25 +661,24 @@ impl App {
         if let Some(head) = self.mirror.heads.get(&chat).cloned() {
             self.retitle(&chat, head);
         }
-        for (text, notify) in held {
-            self.say_in_thread(&chat, text, notify);
+        for saying in held {
+            self.say_to_thread(&chat, saying);
         }
     }
 
     /// Says something in a conversation's thread, or holds it for the
     /// thread that is on its way.
     fn say_in_thread(&mut self, chat: &str, text: String, notify: bool) {
+        self.say_to_thread(chat, Saying::Words(text, notify));
+    }
+
+    /// The same, for anything that can be said there.
+    fn say_to_thread(&mut self, chat: &str, saying: Saying) {
         if let Some(Thread {
             thread, room, to, ..
         }) = self.mirror.threads.get(chat).cloned()
         {
-            self.say_to(Out::Say {
-                room,
-                thread,
-                to,
-                text,
-                notify,
-            });
+            self.say_to(saying.in_thread(room, thread, to));
             return;
         }
         if self.mirror.opening.values().any(|opening| opening == chat) {
@@ -615,7 +686,7 @@ impl App {
                 .held
                 .entry(chat.to_string())
                 .or_default()
-                .push((text, notify));
+                .push(saying);
         }
     }
 
@@ -675,18 +746,40 @@ impl App {
     /// The question now up, in words, in the thread -- calling the reader,
     /// because the agent is waiting on them.
     pub(super) fn mirror_asked(&mut self, whose: talking::Whose) {
-        let Some(asked) = self
+        let Some(question) = self
             .talk_of(whose)
             .and_then(|talk| talk.card.as_ref())
-            .map(obelus_component::card::Card::in_words)
+            .map(question_of)
         else {
             return;
         };
         // What it said before it asked goes out before the question does:
         // an answer here would be to a question nobody there had read yet.
         self.mirror_paused(whose);
-        self.mirror_in(whose, asked, true);
+        if self.chat_is_listening()
+            && let Some(chat) = self.chat_named(whose)
+        {
+            self.mirror.asked += 1;
+            let asked = self.mirror.asked;
+            self.mirror.questions.insert(chat.clone(), asked);
+            self.say_to_thread(&chat, Saying::Ask(asked, question));
+        }
         self.mirror_head(whose, Some(Turning::Waiting));
+    }
+
+    /// Says in the thread what became of the question up in it, which
+    /// closes its card where it had one.
+    fn settle_the_question(&mut self, whose: talking::Whose, said: String) {
+        if !self.chat_is_listening() {
+            return;
+        }
+        let Some(chat) = self.chat_named(whose) else {
+            return;
+        };
+        match self.mirror.questions.remove(&chat) {
+            Some(asked) => self.say_to_thread(&chat, Saying::Settle(asked, said)),
+            None => self.say_in_thread(&chat, said, false),
+        }
     }
 
     /// Says in the thread that a question was answered on this machine.
@@ -695,13 +788,55 @@ impl App {
             true => "\u{2714} Answered on this machine".to_string(),
             false => format!("\u{2714} Answered on this machine: {said}"),
         };
-        self.mirror_in(whose, said, false);
+        self.settle_the_question(whose, said);
         self.mirror_head(whose, Some(Turning::Working));
     }
 
     /// Says in the thread that the agent stopped waiting.
     pub(super) fn mirror_withdrawn(&mut self, whose: talking::Whose) {
-        self.mirror_in(whose, "The agent stopped asking.".to_string(), false);
+        self.settle_the_question(whose, "The agent stopped asking.".to_string());
+    }
+
+    /// Somebody pressed something on a question's card: taken as the
+    /// answer where it is the question still up and the card here holds an
+    /// answer to it, and said in the thread why not where it does not -- the
+    /// card there stays open for another go.
+    pub(super) fn answered_on_a_card(
+        &mut self,
+        asked: u64,
+        chosen: &[String],
+        words: Option<&str>,
+    ) {
+        let Some(chat) = self
+            .mirror
+            .questions
+            .iter()
+            .find(|(_, now)| **now == asked)
+            .map(|(chat, _)| chat.clone())
+        else {
+            // Answered already, here or by a press before this one.
+            tracing::info!(asked, "a press on a question no longer asked");
+            return;
+        };
+        let Some(id) = self.document_named(&chat) else {
+            return;
+        };
+        let whose = talking::Whose::One(id);
+        let Some(card) = self.talk_of(whose).and_then(|talk| talk.card.clone()) else {
+            return;
+        };
+        if let Err(why) = card.takes(chosen, words) {
+            self.say_in_thread(&chat, why, false);
+            return;
+        }
+        let said: Vec<String> = chosen
+            .iter()
+            .map(|id| card.name_of(id).unwrap_or(id).to_string())
+            .chain(words.map(str::to_string))
+            .collect();
+        self.settle_the_question(whose, format!("\u{2714} {}", said.join(", ")));
+        self.answer_from_afar(whose, chosen, words);
+        self.mirror_head(whose, Some(Turning::Working));
     }
 
     /// Says in the thread what the reader typed here.
@@ -863,7 +998,14 @@ impl App {
             return;
         };
         let whose = talking::Whose::One(id);
-        // A card up is the conversation waiting on exactly this.
+        // A card up is the conversation waiting on exactly this -- on its
+        // card, where the platform drew one.
+        if self.platform().is_some_and(|platform| platform.cards)
+            && self.talk_of(whose).is_some_and(|talk| talk.card.is_some())
+        {
+            self.say_in_thread(&chat, "Answer on the card above".to_string(), false);
+            return;
+        }
         if let Some(card) = self.talk_of(whose).and_then(|talk| talk.card.clone()) {
             match card.answered_by(text) {
                 Ok((chosen, words)) => {

@@ -40,6 +40,7 @@ pub static DESCRIPTION: Description = Description {
         text: manifest,
     },
     begin: "Send a message here to talk to an agent; it answers in the thread under it.",
+    cards: false,
     connect: |told, sink| {
         let said = |key| told.get(key).cloned().unwrap_or_default();
         connection::start(said("app_token"), said("bot_token"), sink)

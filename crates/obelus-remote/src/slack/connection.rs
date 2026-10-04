@@ -108,7 +108,8 @@ async fn run(
         Some(out) => Some(out),
         None => said.recv().await,
     } {
-        match out {
+        // Slack is given a question in words, and answered by replying.
+        match out.in_words() {
             Out::Say {
                 room,
                 thread,
@@ -197,6 +198,7 @@ async fn run(
                     Err(error) => tracing::warn!(%error, "Slack would not say who that is"),
                 }
             }
+            Out::Ask { .. } | Out::Settle { .. } => {}
         }
     }
     listener.shutdown().await;

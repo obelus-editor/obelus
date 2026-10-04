@@ -1,9 +1,11 @@
 //! What passes between Obelus and a chat platform: words, and where they go.
 //!
-//! **Words are the floor.** Nothing here is a button, a card or a form: a
-//! platform is told to say some text somewhere and tells Obelus what somebody
-//! said and where. Which is everything every chat can do, and so the whole of
-//! what a new platform has to be taught.
+//! **Words are the floor.** A platform is told to say some text somewhere and
+//! tells Obelus what somebody said and where. Which is everything every chat
+//! can do, and so the whole of what a new platform has to be taught. The one
+//! thing above the floor is a question ([`Question`]), which carries its
+//! words for a platform that has only those and what it is made of for one
+//! that can draw it.
 
 /// Where in the room something was said.
 ///
@@ -66,6 +68,94 @@ pub enum Out {
         /// Their id.
         id: String,
     },
+    /// Put a question the agent is waiting on to the reader in a thread,
+    /// calling them: as a card where the platform can draw one, answered
+    /// by `Event::Answered`, and in its words where it cannot.
+    Ask {
+        /// Which room.
+        room: String,
+        /// Which thread.
+        thread: String,
+        /// Whom the thread is with.
+        to: String,
+        /// Obelus's own number for the question, handed back with the
+        /// answer and with what became of it.
+        asked: u64,
+        /// The question.
+        question: Question,
+    },
+    /// What became of a question asked: answered, here or there, or taken
+    /// back -- drawn on the card where it was one, so that it cannot be
+    /// answered twice, and said in the thread where it was words.
+    Settle {
+        /// Which room.
+        room: String,
+        /// Which thread.
+        thread: String,
+        /// Whom the thread is with.
+        to: String,
+        /// The number it was asked with.
+        asked: u64,
+        /// What became of it, in a line.
+        said: String,
+    },
+}
+
+impl Out {
+    /// The same, for a platform that cannot draw a question: the question
+    /// said in its words, calling the reader, and what became of it said
+    /// after it.
+    #[must_use]
+    pub fn in_words(self) -> Self {
+        match self {
+            Self::Ask {
+                room,
+                thread,
+                to,
+                question,
+                ..
+            } => Self::Say {
+                room,
+                thread,
+                to,
+                text: question.in_words,
+                notify: true,
+            },
+            Self::Settle {
+                room,
+                thread,
+                to,
+                said,
+                ..
+            } => Self::Say {
+                room,
+                thread,
+                to,
+                text: said,
+                notify: false,
+            },
+            out => out,
+        }
+    }
+}
+
+/// A question the agent is waiting on, as a chat is given it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Question {
+    /// What it is about.
+    pub about: String,
+    /// The named answers: the agent's id for each, and what it is called.
+    pub choices: Vec<(String, String)>,
+    /// Whether more than one may be chosen.
+    pub several: bool,
+    /// Whether one of them has to be.
+    pub needed: bool,
+    /// The box for the reader's own words, where it has one: what it is
+    /// called, and whether the agent needs something in it.
+    pub words: Option<(String, bool)>,
+    /// The whole of it as words, answered by replying -- for a platform
+    /// that cannot draw it.
+    pub in_words: String,
 }
 
 /// What a thread is: the first message of it, said again whenever any of

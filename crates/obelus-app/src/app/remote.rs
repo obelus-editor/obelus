@@ -359,6 +359,16 @@ impl App {
                 text,
             } => self.heard(&from, &room, &at, &text),
             obelus_remote::Event::Named { id, name } => self.let_in(id, name),
+            obelus_remote::Event::Answered {
+                from,
+                asked,
+                chosen,
+                words,
+            } => {
+                if self.on_the_list(&from) {
+                    self.answered_on_a_card(asked, &chosen, words.as_deref());
+                }
+            }
             obelus_remote::Event::Opened { asked, thread, .. } => self.thread_opened(asked, thread),
             obelus_remote::Event::Unopened { asked, waited } => {
                 self.thread_unopened(asked, waited);
@@ -500,11 +510,7 @@ impl App {
             tracing::info!(platform = platform.key, "words outside the room, not heard");
             return;
         }
-        let known = self
-            .config()
-            .remote_of(platform.key)
-            .is_some_and(|remote| remote.people.iter().any(|person| person.id == from));
-        if !known {
+        if !self.on_the_list(from) {
             tracing::info!(
                 platform = platform.key,
                 "somebody not on the list, not answered"
@@ -515,6 +521,16 @@ impl App {
             obelus_remote::model::Where::Thread(thread) => self.heard_in_thread(thread, text),
             obelus_remote::model::Where::Fresh(thread) => self.heard_fresh(thread, text),
         }
+    }
+
+    /// Whether somebody is on the list of who may talk to this machine:
+    /// nobody else is answered, in words or on a card.
+    fn on_the_list(&self, who: &str) -> bool {
+        self.platform().is_some_and(|platform| {
+            self.config()
+                .remote_of(platform.key)
+                .is_some_and(|remote| remote.people.iter().any(|person| person.id == who))
+        })
     }
 
     /// Lets in somebody who sent the code, now that their name is known,

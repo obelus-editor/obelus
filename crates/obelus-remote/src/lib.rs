@@ -7,9 +7,10 @@
 //!
 //! **Words are the floor.** Most chats cannot be given a screen of their own,
 //! so everything Obelus says there is text and everything it is told is
-//! text: a question is a numbered list answered by replying with a number. A
-//! platform that can draw buttons may draw them later, and pressing one is the
-//! same as replying with its number.
+//! text: a question is a numbered list answered by replying with a number.
+//! A platform that can draw a card draws the question as one instead, and
+//! there the card is the only way to answer it -- what it sends back is the
+//! answer as the agent asked for it, with nothing read out of words.
 //!
 //! **A platform declares; Obelus keeps.** What one has to be told is a list
 //! of fields ([`platform`]), and where each is kept -- a secret in the
@@ -103,6 +104,17 @@ pub enum Event {
         id: String,
         /// The name they go by.
         name: String,
+    },
+    /// Somebody answered a question on its card.
+    Answered {
+        /// Their id, which is what they are checked by.
+        from: String,
+        /// The number the question was asked with.
+        asked: u64,
+        /// The ids of the named answers they chose.
+        chosen: Vec<String>,
+        /// What they wrote in the box, where they wrote anything.
+        words: Option<String>,
     },
 }
 

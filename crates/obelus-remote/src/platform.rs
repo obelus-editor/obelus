@@ -47,6 +47,9 @@ pub struct Description {
     /// they are let in: a thread they start is a conversation, and what
     /// starts a thread is the platform's.
     pub begin: &'static str,
+    /// Whether it draws a question as a card, which is then the only way
+    /// to answer it: a reply in words is not read as an answer.
+    pub cards: bool,
     /// How it is connected to.
     pub connect: Connect,
 }
