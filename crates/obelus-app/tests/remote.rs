@@ -20,6 +20,11 @@ fn turn() -> std::sync::MutexGuard<'static, ()> {
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     secrets_of_its_own();
+    // Before the state directory is asked anything: a test comes to its
+    // turn before it makes a scratch, and until something has said where
+    // the state goes it is the reader's -- whose room and threads this
+    // emptied, so that a window paired in a group stopped hearing it.
+    support::state_of_its_own();
     // And no threads from a test before: the table of which conversation
     // is which thread is the process's, and a fake agent names its
     // sessions from `s-1` in every test, so a thread one test opened is a
