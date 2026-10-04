@@ -1870,6 +1870,7 @@ impl App {
         // Read, not chosen from: its rows go nowhere, so no row is the
         // reader's to be on and nothing is typed to narrow them.
         picker.only_read();
+        picker.will_not_give_way();
         picker.ask("What went wrong starting up");
         self.show_list(picker);
         true
@@ -3177,8 +3178,9 @@ impl App {
         // which is a sentence nobody asked for.
         //
         // Except for a key that names another whole-screen view, from inside
-        // one: that goes to the view it names, in place of this one, rather
-        // than being refused because a dialog is showing. What a key means in
+        // one or from a list the reader opened: that goes to the view it
+        // names, in place of this one, rather than being refused because a
+        // dialog is showing (`app/switching`). What a key means in
         // a file is what it means here -- the table is asked as though the
         // file were what is showing -- and only the keys that open a view
         // are let through, so nothing opens over anything.
@@ -3191,7 +3193,7 @@ impl App {
         // meant "which one" inside one, and it swapped the conversation for
         // itself; it is the list everywhere now, and this stays for the
         // next view that takes a key of its own.
-        if self.in_a_whole_view()
+        if self.gives_way_to_a_view()
             && self.keymap.bound_here(&key, self.context()).is_none()
             && let Some(command) = self.keymap.lookup(&key, Context::Normal)
             && command.opens_a_view()

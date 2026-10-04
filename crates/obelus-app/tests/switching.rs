@@ -1,4 +1,5 @@
-//! A key that names a whole-screen view goes there from inside another.
+//! A key that names a whole-screen view goes there from inside another, and
+//! from a list the reader opened over the file.
 //!
 //! One view swapped for the other, never one opened over the other: after
 //! every switch there is one thing on screen and one escape back to the
@@ -115,7 +116,7 @@ fn a_dim_key_leaves_the_view_where_it_was() {
 /// The settings are a whole-screen view too, and give way the same.
 ///
 /// Broken deliberately by leaving `Layer::Settings` out of
-/// `in_a_whole_view`: `f5` is refused on the settings page.
+/// `gives_way_to_a_view`: `f5` is refused on the settings page.
 #[test]
 fn the_settings_give_way_to_a_view_s_key() {
     let mut app = reading();
@@ -129,20 +130,80 @@ fn the_settings_give_way_to_a_view_s_key() {
     );
 }
 
-/// A list over the file rather than instead of it keeps its keys: the
-/// palette is somewhere the reader is choosing a command, and a function key
-/// there is not a way out of it.
+/// A list over the file gives way the same: the palette is somewhere the
+/// reader is choosing, and a key naming a view is them choosing that instead.
+/// And escape from what it gave way to goes back to the file, not to the
+/// palette.
 ///
-/// Broken deliberately by answering yes in `in_a_whole_view` for every
-/// list, whatever its layout: the palette gives way to the search.
+/// Broken deliberately by answering only for a full-screen list in
+/// `gives_way_to_a_view`, which is what it did before: `f5` in the palette
+/// is refused, and the palette stays.
 #[test]
-fn a_list_over_the_file_keeps_its_keys() {
+fn a_list_over_the_file_gives_way_to_a_view_s_key() {
     let mut app = reading();
     press_control(&mut app, 'p');
     assert!(app.picker().is_some(), "the palette did not open");
     press_function(&mut app, 5);
     assert!(
-        app.picker().is_some_and(|picker| !picker.is_searching()),
-        "f5 in the palette went to the search"
+        app.picker().is_some_and(|picker| picker.is_searching()),
+        "f5 in the palette did not go to the search"
     );
+    press(&mut app, KeyCode::Esc);
+    assert!(
+        app.picker().is_none(),
+        "escape went back to the palette, so the search was opened over it"
+    );
+}
+
+/// The conversations are a list over the file, and `f1` goes from them to
+/// the files -- the one view the files could not be reached from while a
+/// list over the file kept its keys. `f4` there is the list it is already
+/// in, so the reader keeps what they typed.
+///
+/// Broken deliberately twice. Answering only for a full-screen list in
+/// `gives_way_to_a_view`: `f1` is refused and the conversations stay. And
+/// taking the conversations out of `tab_for`: `f4` closes the list and
+/// opens it again, empty.
+#[test]
+fn the_conversations_give_way_and_f4_keeps_them() {
+    let mut app = reading();
+    dispatch::dispatch(&mut app, Command::ConversationSelect);
+    assert!(
+        app.picker().is_some_and(|picker| !picker.is_listing()),
+        "the conversations did not open"
+    );
+    type_text(&mut app, "zz");
+    press_function(&mut app, 4);
+    assert_eq!(
+        app.picker().map(|picker| picker.query().to_string()),
+        Some("zz".to_string()),
+        "f4 in its own list did not leave the reader where they were"
+    );
+
+    press_function(&mut app, 1);
+    assert!(
+        app.picker().is_some_and(|picker| picker.is_listing()),
+        "f1 in the conversations did not go to the files"
+    );
+}
+
+/// A question keeps its keys: leaving it by any other key is an answer the
+/// reader never gave, so `f1` does nothing until it is answered.
+///
+/// Broken deliberately by taking `will_not_give_way` out of
+/// `Picker::asking`: `f1` puts the files where the question was, and the
+/// file it was asking about is still open with nothing decided.
+#[test]
+fn a_question_keeps_its_keys() {
+    let mut app = reading();
+    type_text(&mut app, "x");
+    dispatch::dispatch(&mut app, Command::DocumentClose);
+    let asking = |app: &App| {
+        app.picker()
+            .and_then(|picker| picker.selected_item())
+            .is_some_and(|row| row.label.contains("Save"))
+    };
+    assert!(asking(&app), "closing an unsaved file did not ask");
+    press_function(&mut app, 1);
+    assert!(asking(&app), "f1 took the question away");
 }

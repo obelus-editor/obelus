@@ -2464,11 +2464,11 @@ fn what_went_wrong_takes_no_typing() {
 /// The list has the keys until it is let go, and then the screen under it
 /// does.
 ///
-/// Deliberate break: none needed for the first half -- a compact list
-/// keeps every key it is given, and `f1` is not a way out of one (see
-/// `app/switching`). The second half is broken by having escape leave the
-/// list where it is, which is the break that matters: the welcome screen's
-/// keys never come back.
+/// Deliberate break: for the first half, taking `will_not_give_way` out of
+/// `tell_what_went_wrong` -- a list the reader opened gives way to `f1` (see
+/// `app/switching`), and this one went before it was read. The second half
+/// is broken by having escape leave the list where it is: the welcome
+/// screen's keys never come back.
 #[test]
 fn what_went_wrong_has_the_keys_until_it_is_let_go() {
     let scratch = support::Scratch::new("welcome-held");

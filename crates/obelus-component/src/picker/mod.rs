@@ -755,6 +755,17 @@ pub struct Picker {
     footed: bool,
     /// Whether the card listing every key is up.
     keys: bool,
+    /// Whether a key that opens a view may take this list's place.
+    ///
+    /// Every list the reader opened will: it is somewhere they are
+    /// choosing, and a key naming another view is the reader choosing that
+    /// instead -- the palette held on to `f1` while the files were one row
+    /// of it away. What will not is a list waiting on the reader: a
+    /// question, whose way out by any other key is an answer nobody gave,
+    /// and what went wrong on the way up, which is owed a reading first.
+    /// Declared where the list is made, because nothing else about a list
+    /// says which of the two it is.
+    gives_way: bool,
     /// How this search is looking, where the question arises.
     ///
     /// `None` where it does not: a list that is not a search, and the
@@ -909,6 +920,7 @@ impl Picker {
             ordered: false,
             footed: false,
             keys: false,
+            gives_way: true,
             looking: None,
             outside: None,
             ignored: None,
@@ -980,6 +992,7 @@ impl Picker {
         // prompt sits *under* the rows: a reader who found the question
         // there had already read the three things they could do about it.
         picker.about(question.prompt());
+        picker.will_not_give_way();
         picker
     }
 
@@ -1577,6 +1590,17 @@ impl Picker {
             return;
         }
         self.move_selection(rows, Wrap::No);
+    }
+
+    /// Makes this a list that is waiting on the reader: see `gives_way`.
+    pub const fn will_not_give_way(&mut self) {
+        self.gives_way = false;
+    }
+
+    /// Whether a key that opens a view may take its place.
+    #[must_use]
+    pub const fn gives_way(&self) -> bool {
+        self.gives_way
     }
 
     /// Makes this a list that is only read: see `reads`.

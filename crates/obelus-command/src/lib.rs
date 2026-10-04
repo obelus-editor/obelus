@@ -880,8 +880,9 @@ impl Command {
 
     /// Whether the command opens something that takes the whole screen.
     ///
-    /// Which is what makes its key reach it from inside another such thing:
-    /// the view on screen gives way to the one the key names, so there is
+    /// Which is what makes its key reach it from inside another such thing,
+    /// or from a list over the file the reader opened: what is on screen
+    /// gives way to the view the key names, so there is
     /// still one thing on screen and one escape back to the file. A key that
     /// opened something *over* a view -- a list over a list -- would be two
     /// of them, and that is the thing a view keeping its keys to itself is

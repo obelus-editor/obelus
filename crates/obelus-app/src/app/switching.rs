@@ -12,10 +12,17 @@
 //! kept: `f3` from `f1`'s list is its other tab, not the same list opened
 //! again with the words taken away.
 //!
-//! Which keys those are is `Command::opens_a_view`, and only from a view
-//! that takes the whole screen. A list over the file rather than instead of
-//! it -- the palette, a menu -- keeps its keys: it is somewhere the reader
-//! is choosing, and a function key is not a way out of it.
+//! Which keys those are is `Command::opens_a_view`. And a list over the
+//! file rather than instead of it -- the palette, a menu, the conversations
+//! -- gives way to them the same: it once kept its keys, as somewhere the
+//! reader was choosing, and the cost was that `f1` did nothing in the very
+//! palette `open-file` is a row of, and `f4`'s list was the one view `f1`
+//! could not be reached from. A key naming a view is the reader choosing
+//! that instead. What does not give way is what is waiting on the reader --
+//! a question, and what went wrong on the way up -- because leaving one by
+//! another key is an answer nobody gave (`Picker::gives_way`); nor what is
+//! being typed into, a box or a list of names, which a key that goes
+//! elsewhere would throw away.
 //!
 //! **A view that has bound the key itself beats the swap.** `App::handle_key`
 //! asked the swap first once, so a key the showing view had taken was
@@ -30,21 +37,19 @@
 use super::*;
 
 impl App {
-    /// Whether what the reader is in takes the whole screen.
+    /// Whether what the reader is in gives way to a key that opens a view.
     ///
     /// The nearest layer only. A list open over the settings is a list, and
-    /// a key in it is about the list.
-    pub(super) fn in_a_whole_view(&self) -> bool {
+    /// a key in it is about the list -- which gives way, and takes the
+    /// settings with it.
+    pub(super) fn gives_way_to_a_view(&self) -> bool {
         match self.layers().nearest() {
             Some(Layer::Settings | Layer::Counts) => true,
-            // A list is a band of the screen by its room, whichever layout it
-            // was given, so the layout is what says it is a whole view.
-            Some(Layer::Picker) => self
-                .picker
-                .as_ref()
-                .is_some_and(|picker| picker.layout() == PickerLayout::FullArea),
-            // A band, like a compact list: the page that opened it is
-            // still behind it.
+            // Whichever layout it was given: a band over the file is as much
+            // somewhere the reader chose to be as a list instead of it.
+            Some(Layer::Picker) => self.picker.as_ref().is_some_and(Picker::gives_way),
+            // Something being typed, which a key that went elsewhere would
+            // throw away. And nothing at all, which is the file's own table.
             Some(Layer::Names) | Some(Layer::Prompt) | None => false,
             // Never asked: the page saying the project has gone takes every
             // key before a swap is looked for, and swaps with nothing.
@@ -91,6 +96,12 @@ impl App {
     /// other view.
     fn tab_for(&self, command: Command) -> Option<usize> {
         let picker = self.picker.as_ref()?;
+        // The list `f4` opens is the list it is in: the reader stays where
+        // they are, with what they typed, rather than being given the same
+        // list again empty.
+        if !self.conversing.agents.is_empty() {
+            return (command == Command::ConversationSelect).then(|| picker.tab());
+        }
         if !self.worktrees.tabs.is_empty() {
             return self.switching_tab_for(command);
         }
