@@ -982,3 +982,36 @@ fn words_outside_the_room_are_not_heard() {
         "words from another group were answered"
     );
 }
+
+/// A question answered from the chat is answered in the conversation whose
+/// thread it is, whichever is on the screen -- here none of them is, the way
+/// a conversation the reader began from their phone never is.
+///
+/// Broken deliberately by taking the permission from the conversation on
+/// screen: the card went from the thread's conversation, nothing reached
+/// its agent, and the turn never ended.
+#[test]
+fn a_question_is_answered_in_its_own_conversation() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-answer-elsewhere");
+    let (mut app, events, _log) = paired_with_an_agent(&scratch);
+    let platform = the_platform();
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        text: "what is in here".to_string(),
+    });
+    said_until(&mut app, &events, "the question in the thread", |said| {
+        in_thread(said, "F1", "Allow once")
+    });
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Thread("F1".to_string()),
+        text: "1".to_string(),
+    });
+    said_until(&mut app, &events, "the rest of the turn", |said| {
+        in_thread(said, "F1", "and I was allowed")
+    });
+}

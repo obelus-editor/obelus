@@ -3626,7 +3626,7 @@ impl App {
     /// Answers the permission request the reader chose an option for.
     pub(super) fn allow(&mut self, whose: Whose, option: &str) {
         let Some(answer) = self
-            .conversation_mut()
+            .talk_mut(whose)
             .and_then(|talk| talk.permission.take())
             .map(|asked| asked.answer)
         else {
@@ -3647,7 +3647,7 @@ impl App {
             talk.card = None;
         }
         let Some(answer) = self
-            .conversation_mut()
+            .talk_mut(whose)
             .and_then(|talk| talk.permission.take())
             .map(|asked| asked.answer)
         else {
