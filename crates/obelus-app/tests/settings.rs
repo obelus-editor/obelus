@@ -406,7 +406,7 @@ fn every_setting_is_on_one_page_under_a_heading() {
     // offer how big the text is, because its font is its own.
     assert_eq!(rows(&app).len(), shown());
     assert_eq!(rows(&app)[0], "Theme");
-    assert_eq!(rows(&app).last().map(String::as_str), Some("Workflow"));
+    assert_eq!(rows(&app).last().map(String::as_str), Some("Speaks as"));
 
     // A heading on the first of each group and on nothing else, so the
     // focus never has a row to step over.
@@ -3792,6 +3792,48 @@ fn each_workflow_says_what_it_does_where_it_is_chosen() {
     ] {
         assert!(text.contains(said), "{said:?} is not on the list:\n{dump}");
     }
+}
+
+/// What an agent calls itself is typed, on the status row, starting from
+/// what it is now -- and what is typed is what the row says and what the
+/// file keeps.
+///
+/// Broken deliberately three ways: `Kind::Text` opening nothing, which
+/// leaves no prompt on the status row; the prompt's answer not reaching
+/// `change_setting`, which leaves the setting `Obelus`; and the control
+/// drawing nothing for a `Text`, which leaves `Ada` off the page.
+#[test]
+fn what_an_agent_calls_itself_is_typed() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("speaks-as");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+    support::type_text(&mut app, "speaks");
+    support::press(&mut app, KeyCode::Enter);
+    let dump = support::render(&mut app, 100, 24);
+    assert!(
+        support::text_block(&dump).contains("Speaks as: Obelus"),
+        "the line did not open on what it is now:\n{dump}"
+    );
+    for _ in "Obelus".chars() {
+        support::press(&mut app, KeyCode::Backspace);
+    }
+    support::type_text(&mut app, "Ada");
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.config().speaks_as, "Ada");
+    let written = std::fs::read_to_string(&file).expect("the file was written");
+    assert_eq!(
+        obelus_config::from_toml(&written).speaks_as,
+        "Ada",
+        "the file does not say so: {written:?}"
+    );
+    let dump = support::render(&mut app, 100, 24);
+    assert!(
+        support::text_block(&dump).contains("Ada"),
+        "the row does not say what was typed:\n{dump}"
+    );
 }
 
 /// A workflow is called by its title wherever it is drawn, and written

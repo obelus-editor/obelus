@@ -26,6 +26,12 @@ use super::*;
 use crate::conversation::Topic;
 
 /// Who the agent is talking to, in every conversation.
+///
+/// With one hole, `{name}`, for what the agent calls itself -- the
+/// reader's setting, read when the conversation begins. A reader who
+/// changes it half-way is heard in the next conversation, not this one:
+/// this is said once, and saying it again would be the agent told twice
+/// who it is.
 const ALWAYS: &str = include_str!("always.txt");
 
 /// That the project has a workflow, and where to read it.
@@ -139,7 +145,7 @@ impl App {
     ) -> Option<Opening> {
         let mut pieces = Vec::new();
         if !introduced {
-            pieces.push(ALWAYS.trim().to_string());
+            pieces.push(ALWAYS.trim().replace("{name}", &self.config().speaks_as));
             if self.workflow().is_some() {
                 pieces.push(WORKFLOW.trim().to_string());
             }

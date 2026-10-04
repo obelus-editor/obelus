@@ -317,6 +317,10 @@ impl App {
                 self.open_names(key);
                 true
             }
+            SettingsOutcome::Type(key, said) => {
+                self.ask_on_the_status_row(Prompt::about(PromptKind::Setting(key), said));
+                true
+            }
             SettingsOutcome::Install(id) => {
                 self.install_agent(&id);
                 true

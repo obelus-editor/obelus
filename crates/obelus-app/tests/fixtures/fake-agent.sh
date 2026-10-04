@@ -722,7 +722,15 @@ while IFS= read -r line; do
                     first="${first:+$first+}steps" ;;
             esac
             : "${first:=reader}"
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"blocks='"$blocks"' first='"$first"'"}}}}\n'
+            # And what the agent was told to call itself, apart from the
+            # pieces because it is a name inside one of them: the two the
+            # tests set, the default and a reader's own.
+            as=""
+            case "$line" in
+                *'speak of yourself as Obelus:'*) as=" as=Obelus" ;;
+                *'speak of yourself as Ada:'*) as=" as=Ada" ;;
+            esac
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"blocks='"$blocks"' first='"$first"''"$as"'"}}}}\n'
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
         *'"method":"session/prompt"'*'"text":"/longtitle'*)

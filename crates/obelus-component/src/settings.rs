@@ -90,6 +90,9 @@ pub enum SettingsOutcome {
     /// Only the key: what is in the list is in the config, and what may go
     /// in it comes from the machine rather than from anything here.
     Names(&'static str),
+    /// A setting that is typed wants its line: which setting, and what it
+    /// says now, which is where the typing starts.
+    Type(&'static str, String),
     /// A command should be on this key from now on, or on none.
     ///
     /// Only ever a key nothing else is on: what is taken is said on the row
@@ -1104,6 +1107,7 @@ impl Settings {
                     .unwrap_or_default(),
             ),
             Kind::Names => Value::Names(Vec::new()),
+            Kind::Text => Value::Text(String::new()),
             Kind::Count(counts) => Value::Count(
                 counts
                     .first()
@@ -1328,7 +1332,9 @@ impl Settings {
                             let word = match Self::value_of(setting, config) {
                                 Value::Choice(word) => word,
                                 Value::Count(count) => count.to_string(),
-                                Value::Switch(_) | Value::Names(_) => String::new(),
+                                Value::Switch(_) | Value::Names(_) | Value::Text(_) => {
+                                    String::new()
+                                }
                             };
                             SettingsOutcome::Choose(setting.key, choices, word)
                         }
@@ -1336,6 +1342,10 @@ impl Settings {
                         // offers, so what opens is not the short list of
                         // choices but the thing that adds and orders.
                         Kind::Names => SettingsOutcome::Names(setting.key),
+                        Kind::Text => match Self::value_of(setting, config) {
+                            Value::Text(said) => SettingsOutcome::Type(setting.key, said),
+                            _ => SettingsOutcome::Type(setting.key, String::new()),
+                        },
                     },
                     None => SettingsOutcome::Consumed,
                 }
