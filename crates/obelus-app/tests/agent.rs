@@ -7026,11 +7026,7 @@ fn a_drag_starts_on_a_blank_of_the_transcript() {
         what, "selection",
         "a press on the blank took hold of nothing"
     );
-    assert_eq!(
-        text.trim(),
-        "heard",
-        "the copy is not what was dragged across"
-    );
+    assert_eq!(text, "heard", "the copy is not what was dragged across");
 
     // Up from the empty screen under it, to the start of the answer.
     let (text, what) = drag(&mut app, (start, below), (start, at));
@@ -7038,11 +7034,7 @@ fn a_drag_starts_on_a_blank_of_the_transcript() {
         what, "selection",
         "a press under the transcript took hold of nothing"
     );
-    assert_eq!(
-        text.trim(),
-        "heard you",
-        "the copy is not what was dragged across"
-    );
+    assert_eq!(text, "heard you", "the copy is not what was dragged across");
 }
 
 /// A transcript scrolled away from its end says how to get back, and what
