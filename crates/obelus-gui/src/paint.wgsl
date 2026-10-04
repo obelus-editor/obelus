@@ -68,6 +68,10 @@ struct Quad {
     // Which layer of the atlas its picture is on: the letters', or the
     // pictures' where it has colours of its own.
     @location(5) layer: u32,
+    // How much further down than where it stands a glass reads what is
+    // behind it, in pixels: a list catching up is taken from further up
+    // the frame, and its glass with it -- see `glass_kept_still`.
+    @location(6) lower: f32,
 };
 
 struct Fragment {
@@ -82,10 +86,12 @@ struct Fragment {
     @location(4) @interpolate(flat) half_size: vec2<f32>,
     @location(5) @interpolate(flat) radius: f32,
     // A rectangle in pixels, for the two quads that put a sliding pane
-    // back together. Flat, because what it is is a region rather than
-    // something measured across the quad.
+    // back together and for glass, which is drawn inside one. Flat,
+    // because what it is is a region rather than something measured
+    // across the quad.
     @location(6) @interpolate(flat) box: vec4<f32>,
     @location(7) @interpolate(flat) layer: u32,
+    @location(8) @interpolate(flat) lower: f32,
 };
 
 @vertex
@@ -110,6 +116,7 @@ fn vertex(@builtin(vertex_index) corner: u32, quad: Quad) -> Fragment {
     out.radius = quad.radius;
     out.box = quad.uv + vec4<f32>(screen.origin, screen.origin);
     out.layer = quad.layer;
+    out.lower = quad.lower;
     return out;
 }
 
@@ -423,6 +430,12 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
         if (distance > 0.0) {
             discard;
         }
+        // And outside the rectangle it was given, which is all of it for
+        // the glass itself and a list's rows for the same glass drawn
+        // again under them -- the shape stays the whole pane's.
+        if (any(in.position.xy < in.box.xy) || any(in.position.xy >= in.box.zw)) {
+            discard;
+        }
         let edge = normalize(LIGHT);
         let bevel = min(in.radius * BEVEL, min(in.half_size.x, in.half_size.y));
         // One at the very rim and nothing at all through the middle.
@@ -430,7 +443,7 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
         let facing = facing(in.middle, in.half_size, in.radius, joined);
         let lens = pow(rim, 2.5);
 
-        let uv = in.position.xy / screen.size;
+        let uv = (in.position.xy + vec2<f32>(0.0, in.lower)) / screen.size;
         // Pulled *inward*: at the edge of a slab you see what is further
         // under it, which is what makes a straight line behind the pane
         // bend as it passes the rim.

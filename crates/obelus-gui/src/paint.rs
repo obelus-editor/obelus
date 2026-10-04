@@ -266,6 +266,11 @@ struct Placed {
     /// that put what is behind the pane back together with the band slid.
     /// See `Painter::sliding_under`.
     under: Option<(Range<usize>, Range<usize>)>,
+    /// The glass under each list catching up, where its rows have not
+    /// arrived yet, with which level's glass it is. On the screen and not
+    /// in the frame, so drawn there among the pieces with that level's
+    /// pictures -- see `Painter::catching_up`.
+    gaps: Vec<(usize, usize)>,
 }
 
 /// Where one pane or box is in the frame being built.
@@ -285,6 +290,10 @@ struct Level {
     /// Which quad is the glass, which is the one drawn with this level's
     /// pictures. Between `under` and it is a box's frame.
     glass: usize,
+    /// How many quads straight after it are the same glass again, under a
+    /// list catching up -- see `Painter::glass_kept_still`. Drawn with the
+    /// level's pictures, and never into a picture another level reads.
+    lowered: usize,
     /// Where what is about it ends: a rule's half row under a pane's line.
     end: usize,
     /// Where the glass is, left, top, right and bottom, which is what its
@@ -361,8 +370,9 @@ fn on_the_screen(placed: &Placed) -> Vec<(Range<usize>, Reads)> {
             at = placed.under.end;
         }
         plan.push((at..placed.glass, Reads::Nothing));
-        plan.push((placed.glass..placed.glass + 1, Reads::Level(level)));
-        at = placed.glass + 1;
+        let glass = placed.glass + 1 + placed.lowered;
+        plan.push((placed.glass..glass, Reads::Level(level)));
+        at = glass;
     }
     match placed.covered {
         // What is under the box, over the box -- the same picture the
@@ -391,10 +401,29 @@ fn put_over(levels: &[Level], level: usize) -> Vec<(Range<usize>, Reads)> {
         for (at, placed) in levels[..level].iter().enumerate() {
             plan.push((placed.under.end..placed.glass, Reads::Nothing));
             plan.push((placed.glass..placed.glass + 1, Reads::Level(at)));
-            plan.push((placed.glass + 1..placed.end, Reads::Nothing));
+            plan.push((
+                placed.glass + 1 + placed.lowered..placed.end,
+                Reads::Nothing,
+            ));
         }
         plan.push((levels[level].under.clone(), Reads::Nothing));
     }
+    plan.retain(|(quads, _)| !quads.is_empty());
+    plan
+}
+
+/// The pieces the screen is put back together from while something on it
+/// is moving, each with whatever it reads: the frame, and the glass where
+/// a list's rows have not arrived -- see `Placed::gaps`.
+fn catching(placed: &Placed) -> Vec<(Range<usize>, Reads)> {
+    let mut plan = Vec::new();
+    let mut at = placed.drawn;
+    for &(glass, level) in &placed.gaps {
+        plan.push((at..glass, Reads::Nothing));
+        plan.push((glass..glass + 1, Reads::Level(level)));
+        at = glass + 1;
+    }
+    plan.push((at..placed.moved, Reads::Nothing));
     plan.retain(|(quads, _)| !quads.is_empty());
     plan
 }
@@ -405,7 +434,8 @@ fn put_over(levels: &[Level], level: usize) -> Vec<(Range<usize>, Reads)> {
 struct Quad {
     /// Left, top, width, height, in real pixels.
     rect: [f32; 4],
-    /// Left, top, right, bottom in the atlas, from zero to one.
+    /// Left, top, right, bottom in the atlas, from zero to one -- and
+    /// for glass, in pixels, the rectangle it is drawn inside.
     uv: [f32; 4],
     colour: [f32; 4],
     flags: u32,
@@ -415,8 +445,10 @@ struct Quad {
     /// Which layer of the atlas `uv` is on: of the letters', or of the
     /// pictures' where the quad is `COLOURFUL`.
     layer: u32,
-    /// The hardware wants the whole thing aligned; nothing reads this.
-    padding: u32,
+    /// How much further down than where it stands a glass reads what is
+    /// behind it, in pixels. Nothing else reads it -- see
+    /// `Painter::glass_kept_still`.
+    lower: f32,
 }
 
 /// A rectangle with no picture: its colour is the whole of it.
@@ -1010,6 +1042,7 @@ impl Painter {
                         3 => Uint32,
                         4 => Float32,
                         5 => Uint32,
+                        6 => Float32,
                     ],
                 })],
             },
@@ -1222,6 +1255,12 @@ impl Painter {
                 .filter(|over| !over.is_a_box() || over.framed(page))
                 .collect(),
         );
+        // The bands put back from further up the frame, which is all of
+        // them unless a pane is arriving -- then the pane is what moves.
+        let catching_up = match moving.pane.is_some() && stack.iter().any(|over| !over.is_a_box()) {
+            true => &[][..],
+            false => said.bands,
+        };
         // First of everything, because the first of these is what the
         // first picture draws and it draws the front of the buffer.
         for (at, over) in stack.iter().enumerate() {
@@ -1240,9 +1279,11 @@ impl Painter {
                 true => self.box_glass(page, over, lower, cell),
                 false => self.pane_glass(page, over, lower, said.ruled, cell),
             };
+            let lowered = self.glass_kept_still(glass, at, &stack, catching_up, cell);
             self.placed.levels.push(Level {
                 under,
                 glass,
+                lowered,
                 end: self.quads.len(),
                 rect,
                 pane: !over.is_a_box(),
@@ -1404,7 +1445,7 @@ impl Painter {
                 .filter(|over| !over.is_a_box())
                 .map(|over| box_of(over.area, cell))
                 .collect();
-            self.catching_up(said.bands, &panes, fonts);
+            self.catching_up(said.bands, &panes, &stack, fonts);
         }
         // Last, because none of it is drawn on the screen: the blurs are
         // passes of their own, before any of the above.
@@ -1593,8 +1634,7 @@ impl Painter {
                     if let Some(top) = placed.levels.iter().rposition(|level| level.pane) {
                         self.beneath(&mut pass, top);
                     }
-                    pass.set_bind_group(0, &self.showing_bindings, &[]);
-                    drawing(&mut pass, placed.drawn..placed.moved);
+                    self.follow(&mut pass, &catching(&placed), &self.showing_bindings);
                 }
                 false => self.the_frame(&mut pass),
             }
@@ -1888,7 +1928,7 @@ impl Painter {
             flags: SOLID | ROUNDED | HELD_PLATE | (turns << HELD_TURNS) | frosted,
             radius,
             layer: 0,
-            padding: 0,
+            lower: 0.0,
         });
     }
 
@@ -1924,7 +1964,7 @@ impl Painter {
             flags: SOLID,
             radius: 0.0,
             layer: 0,
-            padding: 0,
+            lower: 0.0,
         });
     }
 
@@ -1948,10 +1988,28 @@ impl Painter {
     /// with it -- every line an agent wrote behind a list was the list
     /// coming up again. A band the pane's own view drew is the list, and
     /// moves.
-    fn catching_up(&mut self, bands: &[Rolled<'_>], panes: &[[f32; 4]], fonts: &mut Fonts) {
+    fn catching_up(
+        &mut self,
+        bands: &[Rolled<'_>],
+        panes: &[[f32; 4]],
+        stack: &[&Behind],
+        fonts: &mut Fonts,
+    ) {
         let cell = fonts.cell();
         for band in bands {
             let room = band.room;
+            // A list on glass: the page it scrolled off is on the glass,
+            // which stands where it is, so that is drawn first and the
+            // pane's own colour in those rows is left to it -- the same
+            // hole `backgrounds` leaves.
+            let glass = on_glass(band, stack);
+            if let Some(level) = glass {
+                self.placed.gaps.push((self.quads.len(), level));
+                self.quads.push(Quad {
+                    uv: box_of(room, cell),
+                    ..self.quads[self.placed.levels[level].glass]
+                });
+            }
             // Where the page it scrolled off has got to, which is further
             // back than the band by however much of the move is already
             // done.
@@ -1961,13 +2019,15 @@ impl Painter {
                     let look = band.before.look(x, y);
                     let left = f32::from(x) * cell.width;
                     let top = f32::from(y).mul_add(cell.height, offset);
-                    self.block(
-                        left,
-                        top,
-                        cell.width,
-                        cell.height,
-                        rgba(look.background, Ink::Background),
-                    );
+                    if glass.is_none_or(|level| look.background != stack[level].ground) {
+                        self.block(
+                            left,
+                            top,
+                            cell.width,
+                            cell.height,
+                            rgba(look.background, Ink::Background),
+                        );
+                    }
                     if !look.text.trim().is_empty() {
                         let ink = rgba(look.foreground, Ink::Foreground);
                         self.glyphs_at((left, top), look, ink, 0, fonts, Size::Cell);
@@ -2018,6 +2078,33 @@ impl Painter {
                 );
             }
         }
+    }
+
+    /// The glass under each list that is catching up, drawn again over its
+    /// rows and reading what is behind it from as much further down as the
+    /// rows are about to be taken from further up. Hands back how many.
+    ///
+    /// The rows are put back from higher up the frame -- see `catching_up`
+    /// -- and the glass they are on is in the same picture: taken along
+    /// with them, what is behind a list slid with the list and jumped back
+    /// when it arrived. Read lower by the distance it is taken from, it
+    /// stands still on the screen while the rows go over it.
+    ///
+    /// Straight after the glass it is a copy of, so that the rows are
+    /// drawn over it -- the half row `pane_glass` paints under the status
+    /// row's rule comes after, and is nowhere near a list's rows.
+    fn glass_kept_still(
+        &mut self,
+        glass: usize,
+        level: usize,
+        stack: &[&Behind],
+        bands: &[Rolled<'_>],
+        cell: CellSize,
+    ) -> usize {
+        let copies = kept_still(&self.quads[glass], level, stack, bands, cell);
+        let lowered = copies.len();
+        self.quads.splice(glass + 1..glass + 1, copies);
+        lowered
     }
 
     /// What is behind the first pane, with the bands under it slid the
@@ -2116,7 +2203,7 @@ impl Painter {
                 flags: FRAME,
                 radius: 0.0,
                 layer: 0,
-                padding: 0,
+                lower: 0.0,
             });
         }
     }
@@ -2150,7 +2237,7 @@ impl Painter {
             flags: SLID,
             radius: shift,
             layer: 0,
-            padding: 0,
+            lower: 0.0,
         });
     }
 
@@ -2171,7 +2258,7 @@ impl Painter {
             flags: SOLID | ROUNDED,
             radius: radius.max(0.0).min(width.min(height) / 2.0),
             layer: 0,
-            padding: 0,
+            lower: 0.0,
         });
     }
 
@@ -2576,7 +2663,7 @@ impl Painter {
             flags: SOLID | WEDGE,
             radius: way,
             layer: 0,
-            padding: 0,
+            lower: 0.0,
         });
     }
 
@@ -2627,7 +2714,7 @@ impl Painter {
                     flags: CHECKED,
                     radius: 0.0,
                     layer: 0,
-                    padding: 0,
+                    lower: 0.0,
                 }),
                 false => {
                     let edge = (side * BOX_EDGE).round().max(1.0);
@@ -2923,7 +3010,7 @@ impl Painter {
         let glass = self.quads.len();
         self.quads.push(Quad {
             rect: [left, top, (far - left).max(1.0), (low - top).max(1.0)],
-            uv: self.atlas.white,
+            uv: [left, top, far, low],
             colour: tint,
             flags: SOLID
                 | GLASS
@@ -2943,7 +3030,7 @@ impl Painter {
             // `paint.wgsl`.
             radius: 0.0,
             layer: 0,
-            padding: 0,
+            lower: 0.0,
         });
         if let Some(([over, tall], ground)) = under {
             self.block(
@@ -3018,7 +3105,7 @@ impl Painter {
             flags: SHADOW | joined,
             radius,
             layer: 0,
-            padding: 0,
+            lower: 0.0,
         });
     }
 
@@ -3083,7 +3170,12 @@ impl Painter {
         let glass = self.quads.len();
         self.quads.push(Quad {
             rect: inside,
-            uv: self.atlas.white,
+            uv: [
+                inside[0],
+                inside[1],
+                inside[0] + inside[2],
+                inside[1] + inside[3],
+            ],
             colour: tint,
             // Neither hanging nor standing, which is a box with an edge on
             // every side -- see `outside` in `paint.wgsl`.
@@ -3095,7 +3187,7 @@ impl Painter {
                 },
             radius,
             layer: 0,
-            padding: 0,
+            lower: 0.0,
         });
         let [left, top, wide, tall] = inside;
         (glass, [left, top, left + wide, top + tall])
@@ -3117,7 +3209,7 @@ impl Painter {
                 flags: BLUR,
                 radius: 0.0,
                 layer: 0,
-                padding: 0,
+                lower: 0.0,
             });
         }
         first
@@ -3306,7 +3398,7 @@ impl Painter {
                     flags: lit,
                     radius: 0.0,
                     layer: 0,
-                    padding: 0,
+                    lower: 0.0,
                 });
             }
             return;
@@ -3348,7 +3440,7 @@ impl Painter {
                 },
                 radius: 0.0,
                 layer: spot.layer,
-                padding: 0,
+                lower: 0.0,
             });
         }
     }
@@ -3421,7 +3513,7 @@ impl Painter {
                 flags: COLOURFUL,
                 radius: 0.0,
                 layer: spot.layer,
-                padding: 0,
+                lower: 0.0,
             });
         }
     }
@@ -4472,6 +4564,39 @@ fn beneath(room: [f32; 4], pane: [f32; 4], under: bool) -> Option<[f32; 4]> {
     ])
 }
 
+/// The copies `Painter::glass_kept_still` lays over one level's glass: one
+/// per band on it, cut to the band's rows and reading what is behind from
+/// as far down as `catching_up` takes the rows from above.
+fn kept_still(
+    glass: &Quad,
+    level: usize,
+    stack: &[&Behind],
+    bands: &[Rolled<'_>],
+    cell: CellSize,
+) -> Vec<Quad> {
+    bands
+        .iter()
+        .filter(|band| on_glass(band, stack) == Some(level))
+        .map(|band| Quad {
+            uv: box_of(band.room, cell),
+            lower: band.behind * cell.height,
+            ..*glass
+        })
+        .collect()
+}
+
+/// Which level's glass a band's rows are drawn on: the nearest pane or box
+/// round it, where the list is that one's own. One the pane was put over
+/// slides behind the glass instead -- see `Painter::sliding_under`.
+fn on_glass(band: &Rolled<'_>, stack: &[&Behind]) -> Option<usize> {
+    if band.under {
+        return None;
+    }
+    stack
+        .iter()
+        .rposition(|over| over.area.intersection(band.room) == band.room)
+}
+
 /// What is left of the frame once the rooms that are moving are taken
 /// out of it.
 ///
@@ -4736,8 +4861,14 @@ mod tests {
     mod stacked {
         use ratatui::{layout::Rect, style::Color};
 
-        use super::super::{Level, Placed, Reads, casts, on_the_screen, put_over, uncovered};
-        use crate::grid::Behind;
+        use super::super::{
+            GLASS, HANGING, Level, Placed, Quad, Reads, SOLID, box_of, casts, catching, kept_still,
+            on_the_screen, put_over, uncovered,
+        };
+        use crate::{
+            font::CellSize,
+            grid::{Behind, Page, Rolled},
+        };
 
         fn pane(area: Rect, joined: obelus_ui::shapes::Joined) -> Behind {
             Behind {
@@ -4787,6 +4918,7 @@ mod tests {
             let level = |under: std::ops::Range<usize>, glass, end| Level {
                 under,
                 glass,
+                lowered: 0,
                 end,
                 rect: [0.0; 4],
                 pane: true,
@@ -4828,6 +4960,128 @@ mod tests {
                 .filter(|quad| !(6..10).contains(quad) && !(13..16).contains(quad))
                 .collect();
             assert_eq!(drawn, wanted, "the screen drew the wrong quads: {plan:?}");
+        }
+
+        /// The glass under a list catching up is drawn again over the list's
+        /// rows, the whole pane's shape cut to those rows, reading what is
+        /// behind from as far down as the rows are taken from above -- which
+        /// `catching_up` does by `behind` rows. Nothing is drawn again for a
+        /// band the pane was put over, or for one on no glass at all.
+        ///
+        /// The glass was in the picture the rows are taken from, so what
+        /// was behind the list slid with it and jumped back when it
+        /// arrived. Deliberate breaks: `lower: 0.0` and the backdrop slides
+        /// with the rows again; the glass's own `uv` and the copy is drawn
+        /// over the whole pane, so its tabs and the box typed into read
+        /// from below as well; leave out `band.under` in `on_glass` and the
+        /// transcript under the list gets glass of its own.
+        #[test]
+        fn a_lists_glass_stands_still_while_its_rows_catch_up() {
+            use obelus_ui::shapes::Joined;
+            let cell = CellSize {
+                width: 8.0,
+                height: 16.0,
+                baseline: 12.0,
+            };
+            let list = pane(Rect::new(0, 14, 80, 10), Joined::Below);
+            let before = Page::default();
+            let band = |room, under, behind| Rolled {
+                room,
+                under,
+                before: &before,
+                behind,
+                since: behind,
+                bar: None,
+            };
+            let rows = Rect::new(0, 16, 79, 6);
+            let bands = [
+                band(rows, false, 2.5),
+                // What the pane was put over, catching up as well, and
+                // inside the pane the way a transcript is inside the
+                // settings.
+                band(Rect::new(0, 14, 80, 6), true, 1.0),
+                // A list on the page, beside the pane.
+                band(Rect::new(0, 0, 80, 4), false, 1.0),
+            ];
+            let glass = Quad {
+                rect: [0.0, 232.0, 640.0, 152.0],
+                uv: [0.0, 232.0, 640.0, 384.0],
+                colour: [0.1, 0.1, 0.1, 0.74],
+                flags: SOLID | GLASS | HANGING,
+                radius: 0.0,
+                layer: 0,
+                lower: 0.0,
+            };
+            let copies = kept_still(&glass, 0, &[&list], &bands, cell);
+            assert_eq!(copies.len(), 1, "{copies:?}");
+            let copy = copies[0];
+            assert_eq!(copy.uv, box_of(rows, cell), "cut to the wrong rows");
+            assert!(
+                (copy.lower - 2.5 * cell.height).abs() < 0.001,
+                "reads from {} pixels lower",
+                copy.lower
+            );
+            assert_eq!(
+                (copy.rect, copy.flags, copy.colour),
+                (glass.rect, glass.flags, glass.colour),
+                "not the same glass"
+            );
+            // And a level the list is not on has nothing drawn again: a
+            // box over the top of the page, which neither list is inside.
+            let hover = pane(Rect::new(0, 0, 40, 6), Joined::Nowhere);
+            let copies = kept_still(&glass, 1, &[&list, &hover], &bands, cell);
+            assert!(copies.is_empty(), "{copies:?}");
+        }
+
+        /// The glass drawn again under a list reads its level's pictures on
+        /// the screen, and is in no picture another level reads; and where
+        /// the list's rows have not arrived, the glass there reads its level's
+        /// pictures among the pieces the screen is put back from.
+        ///
+        /// Deliberate breaks: `placed.glass + 1` for the end of the glass in
+        /// `on_the_screen`, and the copies read the frame's picture as if it
+        /// were what is behind; the same in `put_over`, and they are drawn
+        /// into the picture of the box over the list; skip the gaps in
+        /// `catching`, and the glass in a gap reads the frame.
+        #[test]
+        fn the_glass_drawn_again_reads_its_own_level() {
+            let level = |under: std::ops::Range<usize>, glass, lowered, end| Level {
+                under,
+                glass,
+                lowered,
+                end,
+                rect: [0.0; 4],
+                pane: true,
+                blur: 0,
+            };
+            let placed = Placed {
+                levels: vec![level(0..5, 5, 2, 8), level(8..10, 11, 0, 12)],
+                drawn: 20,
+                moved: 30,
+                gaps: vec![(22, 0), (25, 1)],
+                ..Placed::default()
+            };
+            let plan = on_the_screen(&placed);
+            assert!(
+                plan.contains(&(5..8, Reads::Level(0))),
+                "the copies read the wrong picture: {plan:?}"
+            );
+            let plan = put_over(&placed.levels, 1);
+            assert!(
+                plan.iter()
+                    .all(|(quads, _)| !quads.contains(&6) && !quads.contains(&7)),
+                "the copies are in the next level's picture: {plan:?}"
+            );
+            assert_eq!(
+                catching(&placed),
+                vec![
+                    (20..22, Reads::Nothing),
+                    (22..23, Reads::Level(0)),
+                    (23..25, Reads::Nothing),
+                    (25..26, Reads::Level(1)),
+                    (26..30, Reads::Nothing),
+                ]
+            );
         }
 
         /// What a level was put over is the glass of every level under it
