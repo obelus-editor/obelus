@@ -477,6 +477,85 @@ fn a_conversation_comes_back_unless_another_window_has_it() {
     );
 }
 
+/// A conversation that comes back is called what its agent called it,
+/// before it is shown.
+///
+/// It is not taken up until then, so its agent has said nothing about it
+/// yet -- and the name it gave last time is the one Obelus wrote down.
+///
+/// Broken deliberately by asking only the agent for the name in
+/// `conversation_title`: the row said what the note says instead.
+#[test]
+fn a_conversation_that_comes_back_keeps_its_name() {
+    let scratch = tree("reopening-conversation-name", true);
+    let root = scratch.path();
+    let note = obelus_git::todo::NoteId::read("0123456R").expect("a name");
+    support::make_room_for_notes(root);
+    std::fs::write(
+        obelus_git::todo::path(root).expect("a tree that is there"),
+        "[[todo]]\nid = \"0123456R\"\nsaid = \"reopen what was open\"\n\
+         done = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+    obelus_agent::acp::sessions::change(root, None, |remembered| {
+        remembered.put(
+            &obelus_agent::chats::ChatId::Note(note.clone()),
+            "fake",
+            root,
+            obelus_agent::acp::sessions::Kept {
+                session: "s-1".to_string(),
+                title: Some("why refilter drops rows".to_string()),
+                told: None,
+                introduced: false,
+                last: Some(1_700_000_000),
+            },
+        );
+    });
+    let window = || {
+        let mut app = App::new(Vec::new());
+        app.configure(
+            obelus_config::Config {
+                agent: Some("fake".to_string()),
+                ..obelus_config::Config::default()
+            },
+            Vec::new(),
+        );
+        app.working_directory_for_test(root.to_path_buf());
+        app
+    };
+
+    let mut first = window();
+    first.open_todo();
+    support::press_alt(&mut first, 'a');
+    frame(&mut first);
+    drop(first);
+
+    let mut second = window();
+    second.reopen_what_was_open();
+    arrive(&mut second);
+    assert!(
+        documents(&second)
+            .iter()
+            .any(|document| document.chat().is_some()),
+        "the conversation did not come back"
+    );
+    // Somewhere other than the conversation, which showing would take up.
+    second.open_todo();
+    support::press(&mut second, KeyCode::F(2));
+    let labels: Vec<String> = second
+        .picker()
+        .expect("the list of what is open")
+        .matches()
+        .map(|row| row.label.clone())
+        .collect();
+    assert!(
+        labels
+            .iter()
+            .any(|label| label == "why refilter drops rows"),
+        "the conversation is not called what its agent called it: {labels:?}"
+    );
+}
+
 /// Leaves the way a reader does, through the loop.
 fn leave(app: &mut App) {
     let (sender, events) = std::sync::mpsc::channel();

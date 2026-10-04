@@ -162,12 +162,13 @@ impl App {
         notes: &obelus_git::todo::Todo,
     ) -> PickerItem {
         let about = Self::conversation_about(talk, notes);
-        let titled = talker.and_then(|talker| talker.title(talk.session.as_ref()));
+        let titled = self.conversation_title(talk);
         PickerItem {
             prose: true,
             marker: Self::conversation_mark(talk, talker),
             icon: obelus_icons::enabled().then_some(obelus_icons::ui::AGENT),
-            label: Self::conversation_name(talk, talker, notes)
+            label: self
+                .conversation_name(talk, notes)
                 .unwrap_or_else(|| "A conversation".to_string()),
             // The note it is about, under the name the agent gave it. Two
             // facts that are both worth having: what the reader meant to do,
@@ -196,14 +197,34 @@ impl App {
     /// The one answer, which the list of what is open and the line saying
     /// one was closed both read, so the two cannot call it different things.
     pub(super) fn conversation_name(
+        &self,
         talk: &crate::conversation::Conversation,
-        talker: Option<&obelus_agent::acp::Talk>,
         notes: &obelus_git::todo::Todo,
     ) -> Option<String> {
-        talker
-            .and_then(|talker| talker.title(talk.session.as_ref()))
-            .map(str::to_string)
+        self.conversation_title(talk)
             .or_else(|| Self::conversation_about(talk, notes))
+    }
+
+    /// What the agent calls a conversation: what it has said, or what
+    /// Obelus wrote down the last time it did.
+    ///
+    /// The second half is for a conversation reopened at the start, which
+    /// is not taken up until it is shown -- so until then its agent has
+    /// said nothing about it, not even the name Obelus already has.
+    fn conversation_title(&self, talk: &crate::conversation::Conversation) -> Option<String> {
+        let talker = self.talker.as_ref();
+        if let Some(title) = talker.and_then(|talker| talker.title(talk.session.as_ref())) {
+            return Some(title.to_string());
+        }
+        // The agent in use where one has started, and the one the settings
+        // name where none has: the one a session is taken up with.
+        let agent = talker
+            .map(|talker| talker.id().to_string())
+            .or_else(|| self.settled.config.agent.clone())?;
+        self.sessions()?
+            .get(&talk.which()?, &agent, &self.working_directory)?
+            .title
+            .clone()
     }
 
     /// The note a conversation is about, by its title.
