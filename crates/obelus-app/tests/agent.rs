@@ -11877,8 +11877,13 @@ fn press_on(app: &mut App, needle: &str, past: usize) {
 /// where nothing typed would go, and the arrows went on walking the
 /// transcript.
 ///
+/// And back through the door the keys use, which remembers the column the
+/// cursor left the transcript at, so up from the box goes back to it.
+///
 /// Broken deliberately by taking `stand_in_the_box` out of the press, which
-/// leaves the keys in the transcript and then on the row.
+/// leaves the keys on the row and then in the transcript; and by giving the
+/// box the keys without `leave_the_transcript`, which brings up from the
+/// box back to the end of the row.
 #[test]
 fn a_press_in_the_box_takes_the_keys_back() {
     use obelus_component::chat::Focus;
@@ -11909,6 +11914,13 @@ fn a_press_in_the_box_takes_the_keys_back() {
         matches!(focus(&app), Focus::Transcript(_)),
         "up did not reach the transcript"
     );
+    // Off the end of the row, which is where up from the box would put it
+    // if nothing were remembered.
+    support::press(&mut app, KeyCode::Left);
+    support::press(&mut app, KeyCode::Left);
+    let Focus::Transcript(left) = focus(&app) else {
+        panic!("left took the keys out of the transcript");
+    };
     // Somewhere else in the box: a second press on the same cell is a
     // double click, which holds the word under it.
     press_on(&mut app, "a draft", 3);
@@ -11917,6 +11929,17 @@ fn a_press_in_the_box_takes_the_keys_back() {
         Focus::Writing,
         "a press in the box left the keys in the transcript"
     );
+
+    // From the end of the line again, so up leaves the box.
+    support::press(&mut app, KeyCode::End);
+    support::press(&mut app, KeyCode::Up);
+    let Focus::Transcript(back) = focus(&app) else {
+        panic!("up did not reach the transcript again");
+    };
+    assert_eq!(
+        back.character, left.character,
+        "up from the box forgot the column the press took the keys from"
+    );
 }
 
 /// A press in the transcript puts the cursor where it landed.
@@ -11924,15 +11947,27 @@ fn a_press_in_the_box_takes_the_keys_back() {
 /// It took hold of the words there and left the keys in the box, so the
 /// arrows after it moved a caret the reader had just pointed away from.
 ///
+/// And a drag carries it, so the keys are where the selection's far end
+/// is, the way a shift-motion leaves them.
+///
 /// Broken deliberately by taking `stand_in_transcript` out of the press,
-/// which leaves the keys in the box; and by putting the cursor at the
-/// start of the row, which lands it on "heard" rather than "you".
+/// which leaves the keys in the box; by putting the cursor at the start of
+/// the row, which lands it on "heard" rather than "you"; and by moving it
+/// for a press alone, which leaves it on "heard" where the drag began.
 #[test]
 fn a_press_in_the_transcript_puts_the_cursor_where_it_landed() {
     use obelus_component::chat::Focus;
 
     let (mut app, _events) = answered();
-    press_on(&mut app, "you", 0);
+    press_on(&mut app, "heard", 0);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let y = row_of(&dump, "heard you");
+    let x = support::column_of(rows(&dump)[usize::from(y)], "you");
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Dragged,
+        x: u16::try_from(x).expect("a column"),
+        y,
+    });
 
     let chat = app.chat().expect("the chat");
     let Focus::Transcript(place) = chat.focus() else {
@@ -12003,5 +12038,29 @@ fn a_drag_in_the_box_keeps_the_keys_there() {
         app.chat().expect("the chat").focus(),
         Focus::Writing,
         "a drag held in the box took the keys into the transcript"
+    );
+}
+
+/// A press in the transcript while a card is up leaves the cursor alone.
+///
+/// The card has the keys, and a cursor moved under it would be found in
+/// the transcript once it was answered -- with the reader's next keys going
+/// somewhere they had not pointed since.
+///
+/// Broken deliberately by moving the cursor whether a card is up or not.
+#[test]
+fn a_press_in_the_transcript_under_a_card_leaves_the_keys_alone() {
+    use obelus_component::chat::Focus;
+
+    let (mut app, events) = answered();
+    support::type_text(&mut app, "/twice");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", App::is_asking_permission);
+
+    press_on(&mut app, "heard you", 6);
+    assert_eq!(
+        app.chat().expect("the chat").focus(),
+        Focus::Writing,
+        "a press under a card moved the cursor into the transcript"
     );
 }
