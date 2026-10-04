@@ -353,15 +353,21 @@ fn a_key_the_picker_does_not_want_goes_nowhere() {
 }
 
 /// The one key the list of open files adds does not bring the others.
+///
+/// Asked with the box for a line, which a file opens over itself: from here
+/// it would be a second thing over the list, so it does not open at all. It
+/// was asked with the palette once, which goes in the list's place now
+/// rather than over it (`app/switching`).
+///
+/// Broken deliberately by having `Keymap::lookup` fall back from
+/// `Context::Documents` to a file's table: the box opens over the list.
 #[test]
 fn the_document_list_takes_its_own_key_and_not_the_global_ones() {
     let mut app = app();
     press_function(&mut app, 2);
     let documents = support::render(&mut app, 60, 12);
 
-    // The palette, which every other context opens: from here it is a
-    // second list over the first, so it does not open at all.
-    press_control(&mut app, 'p');
+    press_control(&mut app, 'l');
     let after = support::render(&mut app, 60, 12);
     assert_eq!(
         support::text_block(&documents),

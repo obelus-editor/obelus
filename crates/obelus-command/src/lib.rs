@@ -878,6 +878,18 @@ impl Command {
         self.drawn().here()
     }
 
+    /// Whether its key goes to it from inside a view, in the view's place.
+    ///
+    /// Every command that opens a view, and the palette: the one list every
+    /// command is on, so a reader inside a view who wants one is not made to
+    /// leave it first in order to ask. Nothing else that opens over the file
+    /// -- a menu about the name under the caret, the themes -- because what
+    /// those are about is the file, and a view is in front of it.
+    #[must_use]
+    pub const fn takes_a_view_s_place(self) -> bool {
+        self.opens_a_view() || matches!(self, Self::CommandPalette)
+    }
+
     /// Whether the command opens something that takes the whole screen.
     ///
     /// Which is what makes its key reach it from inside another such thing,

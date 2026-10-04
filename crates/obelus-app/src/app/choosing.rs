@@ -115,6 +115,7 @@ impl App {
         // height it opened at rather than closing up under the query.
         picker.keeps_height();
         picker.aligns_details();
+        picker.lists_commands();
         self.show_list(picker);
     }
 

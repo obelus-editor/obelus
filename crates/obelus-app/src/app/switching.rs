@@ -12,7 +12,9 @@
 //! kept: `f3` from `f1`'s list is its other tab, not the same list opened
 //! again with the words taken away.
 //!
-//! Which keys those are is `Command::opens_a_view`. And a list over the
+//! Which keys those are is `Command::takes_a_view_s_place`: every key that
+//! opens a view, and the palette's, because a reader inside a view who wants
+//! a command should not have to leave it to ask for one. And a list over the
 //! file rather than instead of it -- the palette, a menu, the conversations
 //! -- gives way to them the same: it once kept its keys, as somewhere the
 //! reader was choosing, and the cost was that `f1` did nothing in the very
@@ -96,6 +98,11 @@ impl App {
     /// other view.
     fn tab_for(&self, command: Command) -> Option<usize> {
         let picker = self.picker.as_ref()?;
+        // The palette is what `ctrl+p` opens, so it is where the reader
+        // already is, with what they have typed.
+        if picker.is_listing_commands() {
+            return (command == Command::CommandPalette).then(|| picker.tab());
+        }
         // The list `f4` opens is the list it is in: the reader stays where
         // they are, with what they typed, rather than being given the same
         // list again empty.

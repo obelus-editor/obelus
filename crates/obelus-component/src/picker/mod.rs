@@ -614,6 +614,8 @@ pub struct Picker {
     /// Whether this list is a list of files, whose rows are refilled when
     /// the tab moves.
     listing: bool,
+    /// Whether this list is the palette, every command there is.
+    commands: bool,
     /// Whether the list holds the height it asked for rather than shrinking
     /// to the rows that match.
     steady: bool,
@@ -904,6 +906,7 @@ impl Picker {
             scopes: false,
             searching: false,
             listing: false,
+            commands: false,
             steady: false,
             aligned: None,
             previews: false,
@@ -1336,6 +1339,17 @@ impl Picker {
     #[must_use]
     pub const fn shows_previews(&self) -> bool {
         self.previews
+    }
+
+    /// Says this list is the palette: every command there is.
+    pub const fn lists_commands(&mut self) {
+        self.commands = true;
+    }
+
+    /// Whether this list is the palette.
+    #[must_use]
+    pub const fn is_listing_commands(&self) -> bool {
+        self.commands
     }
 
     /// Says this list is a list of files, whose rows the application

@@ -3196,7 +3196,7 @@ impl App {
         if self.gives_way_to_a_view()
             && self.keymap.bound_here(&key, self.context()).is_none()
             && let Some(command) = self.keymap.lookup(&key, Context::Normal)
-            && command.opens_a_view()
+            && command.takes_a_view_s_place()
         {
             self.switch_view(command);
             return;

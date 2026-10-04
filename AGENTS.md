@@ -383,7 +383,8 @@ key it should keep gets a binding in it -- not a fall-through
 one, or from a list the reader opened over the file, it swaps the two rather
 than stacking them, so there is still one thing on screen and one escape back
 to the file -- and a view that has bound the key itself beats the swap, and a
-list waiting on the reader, a question, does not give way (`app/switching`).
+list waiting on the reader, a question, does not give way. The palette's key
+swaps the same way, being the one list every command is on (`app/switching`).
 
 **One mark for "the keys are here", and it says nothing else.** Every list,
 page and card in Obelus puts `selected_row_background` behind the row the

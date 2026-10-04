@@ -187,6 +187,38 @@ fn the_conversations_give_way_and_f4_keeps_them() {
     );
 }
 
+/// The palette takes a view's place as well: it is the one list every command
+/// is on, and a reader inside a view who wants one should not have to leave it
+/// first. And `ctrl+p` in the palette is the palette, with what was typed.
+///
+/// Broken deliberately twice. Taking the palette out of
+/// `Command::takes_a_view_s_place`: `ctrl+p` in the files is refused and the
+/// files stay. And taking the palette out of `tab_for`: `ctrl+p` in the
+/// palette closes it and opens it again, empty.
+#[test]
+fn the_palette_takes_a_view_s_place() {
+    let mut app = reading();
+    press_function(&mut app, 1);
+    press_control(&mut app, 'p');
+    assert!(
+        app.picker()
+            .is_some_and(obelus_component::picker::Picker::is_listing_commands),
+        "ctrl+p in the files did not go to the palette"
+    );
+    type_text(&mut app, "sav");
+    press_control(&mut app, 'p');
+    assert_eq!(
+        app.picker().map(|picker| picker.query().to_string()),
+        Some("sav".to_string()),
+        "ctrl+p in the palette did not leave the reader where they were"
+    );
+    press(&mut app, KeyCode::Esc);
+    assert!(
+        app.picker().is_none(),
+        "escape went back to the files, so the palette was opened over them"
+    );
+}
+
 /// A question keeps its keys: leaving it by any other key is an answer the
 /// reader never gave, so `f1` does nothing until it is answered.
 ///

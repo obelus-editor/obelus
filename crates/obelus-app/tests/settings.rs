@@ -111,14 +111,19 @@ fn the_row_under_a_list_is_not_marked() {
 /// `ctrl+q` used to be among the keys pressed here, and it is not any more:
 /// what this rule is about is a key *opening* something over the page, and
 /// leaving opens nothing. It keeps the key on purpose now, which
-/// `leaving_closes_the_settings_and_asks` is about.
+/// `leaving_closes_the_settings_and_asks` is about. Nor is `ctrl+p`: the
+/// palette goes in the page's place rather than over it (`app/switching`),
+/// so it is the box for a line.
+///
+/// Broken deliberately by leaving the settings out of
+/// `App::is_showing_dialog`: the box for a line opens over the page.
 #[test]
 fn nothing_of_obeluss_own_opens_over_the_settings() {
     let _taken = SETTINGS.lock().expect("the lock");
     let scratch = temporary("modal");
     let mut app = open(&settings_file(&scratch));
     let page = support::render(&mut app, 66, 12);
-    for key in ['o', 'e', 'p'] {
+    for key in ['o', 'e', 'l'] {
         support::press_control(&mut app, key);
     }
     assert!(app.picker().is_none(), "a list opened over the settings");
