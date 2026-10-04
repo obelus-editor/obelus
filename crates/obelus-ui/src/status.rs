@@ -219,11 +219,12 @@ impl Widget for StatusView<'_> {
                     // alone on the row it is the row. Truncated rather
                     // than dropped, for the same reason -- there is
                     // nothing here it could be crowding.
+                    let end = self.remote_at_end(area, cells, style);
                     write(
                         cells,
                         area.x + 1,
                         area.y,
-                        &truncate_from_right(note, usize::from(area.width).saturating_sub(2)),
+                        &truncate_from_right(note, end.saturating_sub(1)),
                         self.wrong_ink().map_or(style, |ink| style.fg(ink)),
                     );
                 } else {
@@ -308,9 +309,9 @@ fn server_badge(server: Option<(&'static str, ServerState)>, busy: Option<u32>) 
 ///
 /// Turning while it connects, and again while it connects again, which is
 /// a wait with an end and the one thing on the row that is not settled.
-/// Which of the wrong things it is goes unsaid: the row on the settings
-/// page whose value is wrong says that, and this is the one cell that says
-/// to go and look.
+/// Which of the wrong things it is goes unsaid here: the row says it in
+/// words once, as it goes wrong, and the settings page says it for as long
+/// as it stays wrong -- this is the one cell that says to go and look.
 #[must_use]
 fn remote_badge(remote: Option<(&'static str, obelus_remote::State)>, phase: u32) -> String {
     let Some((name, state)) = remote else {
@@ -323,6 +324,29 @@ fn remote_badge(remote: Option<(&'static str, obelus_remote::State)>, phase: u32
         _ => '\u{25cb}',
     };
     format!("{mark} {name}  ")
+}
+
+/// The chat's mark, and the ink it is written in, for every status row
+/// that carries it.
+///
+/// Every one, because the row the reader is on when the connection goes is
+/// whichever they happen to be on: a mark that only a file's row drew was
+/// one a reader in a conversation, on the notes or on the welcome screen
+/// never saw -- and those are where a reader working from a chat spends
+/// their time.
+#[must_use]
+pub(crate) fn remote_mark(
+    remote: Option<(&'static str, obelus_remote::State)>,
+    phase: u32,
+    theme: &Theme,
+) -> Option<(String, Color)> {
+    let (_, state) = remote?;
+    let ink = match state {
+        state if state.connected() => theme.status_foreground,
+        state if state.wrong() => theme.status_stale,
+        _ => theme.gutter,
+    };
+    Some((remote_badge(remote, phase).trim_end().to_string(), ink))
 }
 
 /// How many things are wrong with the file, by kind.
@@ -913,16 +937,11 @@ impl StatusView<'_> {
         // The chat beside the server, and for the same reason: both say
         // whether something outside this window is listening.
         let remote_start = badge_start.saturating_sub(remote_width);
-        if let Some((_, state)) = self.remote
+        if let Some((remote, ink)) = remote_mark(self.remote, self.phase, self.theme)
             && let Ok(offset) = u16::try_from(remote_start)
             && remote_start > after_path + marker_width
         {
-            let colour = match state {
-                state if state.connected() => self.theme.status_foreground,
-                state if state.wrong() => self.theme.status_stale,
-                _ => self.theme.gutter,
-            };
-            write(cells, area.x + offset, area.y, &remote, style.fg(colour));
+            write(cells, area.x + offset, area.y, &remote, style.fg(ink));
         }
 
         let wrong_start = remote_start.saturating_sub(wrong_width);
@@ -1032,6 +1051,28 @@ impl StatusView<'_> {
     /// Last of the four, so a sentence Obelus has just said still takes
     /// the row: that is news and this is standing information, and the
     /// news goes when the next key is pressed.
+    /// The chat's mark at the end of a row with nothing else there, and the
+    /// column what is left of the row stops short of.
+    ///
+    /// A file's row places it among the other things it says about the
+    /// window; these rows have only the one, so it takes the end. Dropped
+    /// whole from a row with less than half to spare, which leaves what
+    /// the row is about the room it needs.
+    fn remote_at_end(&self, area: Rect, cells: &mut CellBuffer, style: Style) -> usize {
+        let width = usize::from(area.width);
+        let Some((mark, ink)) = remote_mark(self.remote, self.phase, self.theme) else {
+            return width.saturating_sub(1);
+        };
+        let start = width.saturating_sub(text_width(&mark) + 1);
+        match u16::try_from(start) {
+            Ok(offset) if start >= width / 2 => {
+                write(cells, area.x + offset, area.y, &mark, style.fg(ink));
+                start.saturating_sub(usize::from(LABEL_GAP))
+            }
+            _ => width.saturating_sub(1),
+        }
+    }
+
     fn render_project(&self, area: Rect, cells: &mut CellBuffer, style: Style) {
         let said = crate::with_home_as_tilde(self.working_directory);
         let label = "Project";
@@ -1043,7 +1084,8 @@ impl StatusView<'_> {
             style.fg(self.theme.gutter),
         );
         let after = u16::try_from(text_width(label)).unwrap_or(0) + LABEL_GAP;
-        let room = usize::from(area.width.saturating_sub(after + 2));
+        let end = self.remote_at_end(area, cells, style);
+        let room = end.saturating_sub(usize::from(after) + 1);
         write(
             cells,
             area.x + 1 + after,
@@ -1137,11 +1179,12 @@ impl StatusView<'_> {
         };
         write(cells, area.x + 1, area.y, &name, style);
 
+        let end = self.remote_at_end(area, cells, style);
         let left = notes.todo().notes.iter().filter(|note| !note.done).count();
         let said = (left > 0).then(|| format!("{left} to come back to"));
-        let count_at = said.as_ref().map_or(usize::from(area.width), |said| {
-            usize::from(area.width).saturating_sub(text_width(said) + 1)
-        });
+        let count_at = said
+            .as_ref()
+            .map_or(end + 1, |said| end.saturating_sub(text_width(said)));
         if let Some(said) = &said
             && count_at > 1 + text_width(&name)
             && let Ok(offset) = u16::try_from(count_at)
@@ -1227,10 +1270,20 @@ mod tests {
             remote_badge(Some(("Feishu", obelus_remote::State::Connected)), 3)
                 .starts_with('\u{25cf}')
         );
-        assert!(
-            remote_badge(Some(("Feishu", obelus_remote::State::Refused)), 3)
-                .starts_with('\u{2715}')
-        );
+        // A field nobody filled in, and an app the platform will not let
+        // connect, are as wrong as a refused token. Broken deliberately by
+        // leaving `Unready` out of `wrong`: it drew the ring a chat that is
+        // switched off draws, after the reader had asked it to connect.
+        for state in [
+            obelus_remote::State::Refused,
+            obelus_remote::State::Unready,
+            obelus_remote::State::Declined,
+        ] {
+            assert!(
+                remote_badge(Some(("Feishu", state)), 3).starts_with('\u{2715}'),
+                "{state:?}"
+            );
+        }
     }
 
     /// The three states have to be told apart at a glance, and the one that

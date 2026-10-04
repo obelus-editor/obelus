@@ -186,22 +186,28 @@ pub fn reach(platform: &'static Description, settled: Told, sink: Arc<dyn Sink<E
                     }
                     Ok(None) => {}
                     Err(trouble) => {
-                        let _ = sink.send(Event::Connection(match trouble {
+                        let state = match trouble {
                             crate::secrets::Trouble::NoKeyring => crate::State::NoKeyring,
                             crate::secrets::Trouble::Locked => crate::State::Locked,
                             crate::secrets::Trouble::Failed(_) => crate::State::Unreachable,
-                        }));
+                        };
+                        let _ = sink.send(Event::connection(state, Some(trouble.to_string())));
                         return;
                     }
                 }
             }
         }
-        if !platform
+        let untold: Vec<&str> = platform
             .fields
             .iter()
-            .all(|field| told.contains_key(field.key))
-        {
-            let _ = sink.send(Event::Connection(crate::State::Unready));
+            .filter(|field| !told.contains_key(field.key))
+            .map(|field| field.name)
+            .collect();
+        if !untold.is_empty() {
+            let _ = sink.send(Event::connection(
+                crate::State::Unready,
+                Some(format!("no {} is set", untold.join(" or "))),
+            ));
             return;
         }
         let connect = CONNECT_FOR_TEST

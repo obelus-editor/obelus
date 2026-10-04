@@ -45,7 +45,12 @@ use obelus_component::{
 };
 use obelus_text::text_width;
 use obelus_theme::Theme;
-use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets::Widget};
+use ratatui::{
+    buffer::Buffer as CellBuffer,
+    layout::Rect,
+    style::{Color, Style},
+    widgets::Widget,
+};
 
 use crate::{Screen, fill, put, rule, write, write_within};
 
@@ -501,6 +506,10 @@ pub struct ChatView<'a> {
     /// How full the agent's memory of this conversation is, once it has
     /// said.
     usage: Option<&'a acp::Usage>,
+    /// The chat this window can be reached from, and where it stands: the
+    /// same mark a file's row carries, since this row is the one a reader
+    /// working from a chat is most often on.
+    remote: Option<(&'static str, obelus_remote::State)>,
 }
 
 impl<'a> ChatView<'a> {
@@ -524,6 +533,7 @@ impl<'a> ChatView<'a> {
             note: app.note(),
             note_is_wrong: app.note_is_wrong(),
             usage: app.agent_usage(),
+            remote: app.remote(),
         })
     }
 
@@ -1330,6 +1340,18 @@ impl ChatView<'_> {
         }
 
         let room = over.saturating_sub(used.as_ref().map_or(0, |(said, _)| text_width(said) + GAP));
+        // The chat's mark beside the memory, and for the same reason: it
+        // stays put while the settings scroll.
+        let room = match self.remote_on_row(room) {
+            Some((mark, ink, wide)) => {
+                let at = 1 + room - text_width(&mark);
+                if let Ok(offset) = u16::try_from(at) {
+                    write(cells, area.x + offset, area.y, &mark, plain.fg(ink));
+                }
+                room - wide
+            }
+            None => room,
+        };
         // A note over the settings, for as long as it lasts. The settings
         // are what the session is set to and are still true a moment later;
         // a note is the answer to the key just pressed, and an answer that
@@ -1561,7 +1583,19 @@ impl ChatView<'_> {
             .usage
             .and_then(used_up)
             .filter(|(said, _)| over > text_width(said) + GAP + LEAST_SETTINGS);
-        over.saturating_sub(used.as_ref().map_or(0, |(said, _)| text_width(said) + GAP))
+        let room = over.saturating_sub(used.as_ref().map_or(0, |(said, _)| text_width(said) + GAP));
+        room - self.remote_on_row(room).map_or(0, |(_, _, wide)| wide)
+    }
+
+    /// The chat's mark, where what the row has left holds it and still
+    /// leaves the settings some room, with its ink and how much it takes.
+    ///
+    /// Asked by the drawing and by `status_room` both, so the settings and
+    /// a press on them are measured against the row that is there.
+    fn remote_on_row(&self, room: usize) -> Option<(String, Color, usize)> {
+        let (mark, ink) = crate::status::remote_mark(self.remote, self.phase, self.theme)?;
+        let wide = text_width(&mark) + GAP;
+        (room > wide + LEAST_SETTINGS).then_some((mark, ink, wide))
     }
 
     /// Which of the agent's settings a point on the status row is on.
@@ -2005,6 +2039,7 @@ mod tests {
                 note: None,
                 note_is_wrong: false,
                 usage: None,
+                remote: None,
             };
             let mut cells = ratatui::buffer::Buffer::empty(area);
             ratatui::widgets::Widget::render(view, area, &mut cells);
@@ -2136,6 +2171,7 @@ mod caret {
                         note: None,
                         note_is_wrong: false,
                         usage: None,
+                        remote: None,
                     };
                     let mut cells = ratatui::buffer::Buffer::empty(area);
                     ratatui::widgets::Widget::render(view, area, &mut cells);

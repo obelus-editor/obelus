@@ -171,6 +171,8 @@ pub struct Reached {
     pub platform: Option<&'static Description>,
     /// Where this machine stands with it.
     pub state: obelus_remote::State,
+    /// Why, in the platform's words, where it said something was wrong.
+    pub why: Option<String>,
     /// What each field's control says, by the field's key: the start and
     /// end of a secret, the whole of anything else. A field that is not here
     /// has not been set.
@@ -645,11 +647,25 @@ impl Settings {
     pub fn warning_of(&self, shown: &Shown) -> Option<String> {
         match shown {
             // What is wrong with the chat is said on the row whose value
-            // it is wrong about, and only there: the page holds what the
-            // reader set, and whether it is connected is the status row's.
-            // A secret refused, or one the keyring will not give up, is a
-            // value the reader can do something about here; a chat that
-            // cannot be reached is not, and is not said.
+            // it is wrong about: the page holds what the reader set, and
+            // whether it is connected is the status row's. A secret
+            // refused, or one the keyring will not give up, is a value the
+            // reader can do something about here.
+            //
+            // What no row's value is about -- an app Feishu will not give a
+            // long connection, a platform that will not answer -- goes on
+            // the chat's own row, in the platform's words. The status row
+            // says it once and moves on, and a reader who comes here to find
+            // out why was otherwise told nothing.
+            Shown::Remote {
+                row: RemoteRow::Platform,
+                ..
+            } => match self.reached.state {
+                obelus_remote::State::Declined | obelus_remote::State::Unreachable => {
+                    self.reached.why.clone()
+                }
+                _ => None,
+            },
             Shown::Remote {
                 row: RemoteRow::Field(field),
                 ..

@@ -47,7 +47,14 @@ pub enum Event {
         written: Result<Option<String>, secrets::Trouble>,
     },
     /// Where the connection to a platform has got to.
-    Connection(State),
+    Connection {
+        /// Where.
+        state: State,
+        /// Why, where it is something wrong and something said why: the
+        /// platform's own words, or what would not answer. Capped, because
+        /// it is somebody else's text.
+        why: Option<String>,
+    },
     /// A platform is being connected to, and this is where to send what is
     /// to be said to it.
     Started {
@@ -117,6 +124,10 @@ pub enum State {
     Connected,
     /// The platform turned a token down.
     Refused,
+    /// The platform took the tokens and would not let the app connect:
+    /// something on its side of the app is not set up, which no row of
+    /// Obelus's can mend.
+    Declined,
     /// The platform could not be reached; Obelus goes on trying.
     Unreachable,
     /// The keyring would not open.
@@ -135,9 +146,43 @@ impl State {
     /// Whether something is wrong that the reader has to do something about.
     #[must_use]
     pub const fn wrong(self) -> bool {
+        // Unready among them: a window is only asked where it stands once
+        // the reader has told it to connect, and a field nobody filled in
+        // is then a connection that will never be made.
         matches!(
             self,
-            Self::Refused | Self::Unreachable | Self::Locked | Self::NoKeyring
+            Self::Unready
+                | Self::Refused
+                | Self::Declined
+                | Self::Unreachable
+                | Self::Locked
+                | Self::NoKeyring
         )
+    }
+}
+
+impl Event {
+    /// Where the connection has got to, and why, with the why capped.
+    #[must_use]
+    pub fn connection(state: State, why: Option<String>) -> Self {
+        Self::Connection {
+            state,
+            why: why.map(|why| capped(&why)),
+        }
+    }
+}
+
+/// How much of a reason is kept: enough for the sentence a platform says
+/// why in, and not a page of HTML from a proxy in front of it.
+const REASON_AT_MOST: usize = 160;
+
+fn capped(why: &str) -> String {
+    let why = why.trim();
+    match why.chars().nth(REASON_AT_MOST) {
+        None => why.to_string(),
+        Some(_) => {
+            let kept: String = why.chars().take(REASON_AT_MOST - 1).collect();
+            format!("{kept}\u{2026}")
+        }
     }
 }

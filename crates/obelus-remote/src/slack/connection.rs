@@ -53,12 +53,15 @@ async fn run(
     sink: Arc<dyn Sink<Event>>,
     mut said: tokio::sync::mpsc::UnboundedReceiver<Out>,
 ) {
-    let _ = sink.send(Event::Connection(State::Connecting));
+    let _ = sink.send(Event::connection(State::Connecting, None));
     let connector = match SlackClientHyperConnector::new() {
         Ok(connector) => connector,
         Err(error) => {
             tracing::warn!(%error, "no connector to reach Slack with");
-            let _ = sink.send(Event::Connection(State::Unreachable));
+            let _ = sink.send(Event::connection(
+                State::Unreachable,
+                Some(error.to_string()),
+            ));
             return;
         }
     };
@@ -73,11 +76,11 @@ async fn run(
     // a window letting go ends it.
     let mut waiting = crate::waiting::Waiting::default();
     let listener = loop {
-        let state = match connect(&client, &bot, &app, &sink).await {
+        let (state, why) = match connect(&client, &bot, &app, &sink).await {
             Ok(listener) => break listener,
-            Err(state) => state,
+            Err(wrong) => wrong,
         };
-        let _ = sink.send(Event::Connection(state));
+        let _ = sink.send(Event::connection(state, Some(why)));
         let again = match state {
             State::Refused => 60,
             _ => 10,
@@ -97,7 +100,7 @@ async fn run(
     // Connected once the socket is up, which `start` waits for. Slack's
     // own hello would say it a moment later, but the crate does not name
     // the type a listener for it would have to take.
-    let _ = sink.send(Event::Connection(State::Connected));
+    let _ = sink.send(Event::connection(State::Connected, None));
 
     let session = client.open_session(&bot);
     let mut waiting = waiting.drain().collect::<Vec<Out>>().into_iter();
@@ -199,22 +202,24 @@ async fn run(
     listener.shutdown().await;
 }
 
-/// The bot token checked and the socket up, or the state that says why not.
+/// The bot token checked and the socket up, or the state that says why not
+/// and what Slack said.
 async fn connect(
     client: &Arc<SlackHyperClient>,
     bot: &SlackApiToken,
     app: &SlackApiToken,
     sink: &Arc<dyn Sink<Event>>,
-) -> Result<SlackClientSocketModeListener<SlackClientHyperHttpsConnector>, State> {
+) -> Result<SlackClientSocketModeListener<SlackClientHyperHttpsConnector>, (State, String)> {
     // The bot token first, because a wrong one is the commonest way this
     // goes wrong and the socket would not say so: it is connected with the
     // other token, and a bad bot token is found out at the first reply.
     if let Err(error) = client.open_session(bot).auth_test().await {
         tracing::warn!(%error, "Slack refused the bot token, or could not be reached");
-        return Err(match refused(&error) {
+        let state = match refused(&error) {
             true => State::Refused,
             false => State::Unreachable,
-        });
+        };
+        return Err((state, error.to_string()));
     }
     let environment = Arc::new(
         SlackClientEventsListenerEnvironment::new(client.clone())
@@ -229,10 +234,11 @@ async fn connect(
     );
     if let Err(error) = listener.listen_for(app).await {
         tracing::warn!(%error, "Slack refused the app token, or could not be reached");
-        return Err(match refused(&error) {
+        let state = match refused(&error) {
             true => State::Refused,
             false => State::Unreachable,
-        });
+        };
+        return Err((state, error.to_string()));
     }
     listener.start().await;
     Ok(listener)
