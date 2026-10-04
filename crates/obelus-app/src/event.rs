@@ -176,6 +176,9 @@ pub enum Event {
     Held(u64, std::fs::File),
     /// The window that had it did not let go in time, for this asking.
     NotLetGo(u64),
+    /// The kernel would not take the lock at all for the thread waiting on
+    /// it, for this asking: no waiting is going on any more.
+    NotHeld(u64),
 }
 
 impl Event {
@@ -223,6 +226,7 @@ impl Event {
             Self::Reached(..) => "Reached",
             Self::Held(..) => "Held",
             Self::NotLetGo(_) => "NotLetGo",
+            Self::NotHeld(_) => "NotHeld",
         }
     }
 }

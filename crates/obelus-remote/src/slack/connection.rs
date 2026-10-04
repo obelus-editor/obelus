@@ -69,8 +69,9 @@ async fn run(
     // Tried until it is up, a refusal less often: a machine started before
     // its network is a machine that would otherwise never connect, and a
     // reader who mends a token starts a new connection anyway. What is to
-    // be said meanwhile waits, in order, and a window letting go ends it.
-    let mut waiting: Vec<Out> = Vec::new();
+    // be said meanwhile waits, in order -- as much of it as is kept -- and
+    // a window letting go ends it.
+    let mut waiting = crate::waiting::Waiting::default();
     let listener = loop {
         let state = match connect(&client, &bot, &app, &sink).await {
             Ok(listener) => break listener,
@@ -87,7 +88,7 @@ async fn run(
             tokio::select! {
                 () = &mut pause => break,
                 out = said.recv() => match out {
-                    Some(out) => waiting.push(out),
+                    Some(out) => waiting.keep(out, &sink),
                     None => return,
                 },
             }
@@ -99,7 +100,7 @@ async fn run(
     let _ = sink.send(Event::Connection(State::Connected));
 
     let session = client.open_session(&bot);
-    let mut waiting = waiting.into_iter();
+    let mut waiting = waiting.drain().collect::<Vec<Out>>().into_iter();
     while let Some(out) = match waiting.next() {
         Some(out) => Some(out),
         None => said.recv().await,
@@ -150,7 +151,10 @@ async fn run(
                     }
                     Err(error) => {
                         tracing::warn!(%error, "Slack would not start a thread");
-                        let _ = sink.send(Event::Unopened { asked });
+                        let _ = sink.send(Event::Unopened {
+                            asked,
+                            waited: false,
+                        });
                     }
                 }
             }

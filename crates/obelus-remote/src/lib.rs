@@ -21,6 +21,7 @@ pub mod model;
 pub mod platform;
 pub mod secrets;
 pub mod slack;
+mod waiting;
 
 /// What the work done for a chat comes back with.
 #[derive(Debug)]
@@ -84,6 +85,10 @@ pub enum Event {
     Unopened {
         /// The number it was asked for with.
         asked: u64,
+        /// Whether it was let go of here, waiting too long for a connection,
+        /// rather than refused by the platform: the conversation says which,
+        /// since only one of them is the platform's doing.
+        waited: bool,
     },
     /// What somebody is called.
     Named {
