@@ -117,6 +117,19 @@ pub enum Event {
     },
 }
 
+/// This process's mark, on every card it puts up: a question is numbered
+/// by the window that asked it, from one, so a card from a window since
+/// closed -- still there to be pressed -- named a question in the next one.
+pub(crate) fn this_process() -> &'static str {
+    static MARK: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    MARK.get_or_init(|| {
+        use std::hash::{BuildHasher as _, Hasher as _};
+        let mut hasher = std::hash::RandomState::new().build_hasher();
+        hasher.write_u32(std::process::id());
+        format!("{:x}", hasher.finish())
+    })
+}
+
 /// Where a window stands with the chat it talks to, as one answer.
 ///
 /// One, because the mark on its status row and the rows of the settings

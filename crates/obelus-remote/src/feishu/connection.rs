@@ -298,9 +298,10 @@ fn card(head: &Head) -> String {
 /// A question as a card: what it is about, calling the reader, and then a
 /// button for each answer where one press is the whole answer, or a form
 /// where it takes several, or words of the reader's own. Every press names
-/// the question by `asked`, which is all Obelus reads to know which.
+/// the question by `asked`, and the process that asked it by `by`.
 fn asking(asked: u64, question: &Question, to: &str) -> String {
     let asked = asked.to_string();
+    let by = crate::this_process();
     let mut elements = vec![json!({
         "tag": "markdown",
         "content": format!("<at id={to}></at> {}", question.about),
@@ -312,7 +313,7 @@ fn asking(asked: u64, question: &Question, to: &str) -> String {
                 "tag": "button",
                 "text": { "tag": "plain_text", "content": name },
                 "width": "fill",
-                "behaviors": [{ "type": "callback", "value": { "asked": asked, "chosen": id } }],
+                "behaviors": [{ "type": "callback", "value": { "asked": asked, "by": by, "chosen": id } }],
             }));
         }
     } else {
@@ -343,7 +344,7 @@ fn asking(asked: u64, question: &Question, to: &str) -> String {
             "text": { "tag": "plain_text", "content": "Send" },
             "type": "primary",
             "form_action_type": "submit",
-            "behaviors": [{ "type": "callback", "value": { "asked": asked } }],
+            "behaviors": [{ "type": "callback", "value": { "asked": asked, "by": by } }],
         }));
         elements.push(json!({ "tag": "form", "name": "answer", "elements": form }));
     }
@@ -743,27 +744,7 @@ async fn listened(
                 let Some(payload) = whole(&mut pieces, &frame) else {
                     continue;
                 };
-                let answer = match value_of(&frame.headers, "type") {
-                    Some("event") => {
-                        heard_event(&payload, seen, sink);
-                        json!({ "code": 200 })
-                    }
-                    // A press on a card, which is answered with what the
-                    // reader sees at once: whether it is taken is the
-                    // application's to say, by closing the card.
-                    Some("card") => {
-                        heard_press(&payload, seen, sink);
-                        let toast = json!({ "toast": { "type": "info", "content": "Sent" } });
-                        json!({
-                            "code": 200,
-                            "data": base64::Engine::encode(
-                                &base64::engine::general_purpose::STANDARD,
-                                toast.to_string(),
-                            ),
-                        })
-                    }
-                    _ => json!({ "code": 200 }),
-                };
+                let answer = heard_frame(&payload, seen, sink);
                 // Answered whatever it was, at once: an event not answered
                 // within three seconds is sent again, and what was done
                 // with it is the application's, which has it already.
@@ -775,6 +756,35 @@ async fn listened(
             }
         }
     }
+}
+
+/// What a data frame said, passed on, and what to answer it with.
+///
+/// Told apart by the event's own type and not by the frame's: a press on a
+/// card arrives over the long connection as an `event` frame like a message
+/// does, and reading the frame's type sent every press to the messages,
+/// which dropped it. A press is answered with what the reader sees at once;
+/// whether it is taken is the application's to say, by closing the card.
+fn heard_frame(
+    payload: &[u8],
+    seen: &mut std::collections::VecDeque<String>,
+    sink: &Arc<dyn Sink<Event>>,
+) -> Value {
+    let pressed = serde_json::from_slice::<Value>(payload)
+        .is_ok_and(|event| event["header"]["event_type"] == "card.action.trigger");
+    if !pressed {
+        heard_event(payload, seen, sink);
+        return json!({ "code": 200 });
+    }
+    heard_press(payload, seen, sink);
+    let toast = json!({ "toast": { "type": "info", "content": "Sent" } });
+    json!({
+        "code": 200,
+        "data": base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            toast.to_string(),
+        ),
+    })
 }
 
 fn header(key: &str, value: &str) -> Header {
@@ -915,6 +925,10 @@ fn heard_press(
     ) else {
         return;
     };
+    if action["value"]["by"].as_str() != Some(crate::this_process()) {
+        tracing::info!(asked, "a press on a card another window put up");
+        return;
+    }
     let form = &action["form_value"];
     let chosen: Vec<String> = match (action["value"]["chosen"].as_str(), &form["chosen"]) {
         (Some(id), _) => vec![id.to_string()],
@@ -1168,7 +1182,7 @@ mod tests {
         assert_eq!(elements[1]["tag"], "button", "{card:#}");
         assert_eq!(
             elements[1]["behaviors"][0]["value"],
-            json!({ "asked": "7", "chosen": "once" })
+            json!({ "asked": "7", "by": crate::this_process(), "chosen": "once" })
         );
         assert_eq!(elements.len(), 3, "{card:#}");
 
@@ -1181,23 +1195,29 @@ mod tests {
         assert_eq!(form["elements"][2]["form_action_type"], "submit");
         assert_eq!(
             form["elements"][2]["behaviors"][0]["value"],
-            json!({ "asked": "7" })
+            json!({ "asked": "7", "by": crate::this_process() })
         );
     }
 
-    /// A press is heard as the answer it makes: a button's one id, a form's
-    /// list -- one or several -- and the words in its box, trimmed and only
-    /// where there are any; and a press Feishu sends twice is heard once.
+    /// A press is heard as the answer it makes -- arriving, as Feishu sends
+    /// it over the long connection, as an event like any other: a button's
+    /// one id, a form's list -- one or several -- and the words in its box,
+    /// trimmed and only where there are any. A press Feishu sends twice is
+    /// heard once, and one on a card another window put up not at all.
     ///
-    /// Broken deliberately three ways. Reading only the button's value: the
-    /// form's choices arrived as nothing chosen. Reading a form's list only
-    /// as several: the single one chosen from a list was dropped. And not
-    /// keeping the ids of what was heard: the second sending answered twice.
+    /// Broken deliberately five ways. Telling a press by the frame rather
+    /// than by the event: every press went to the messages and was dropped.
+    /// Reading only the button's value: the form's choices arrived as nothing
+    /// chosen. Reading a form's list only as several: the single one chosen
+    /// from a list was dropped. Not keeping the ids of what was heard: the
+    /// second sending answered twice. And not reading whose card it was:
+    /// the press on the closed window's card answered this one's question.
     #[test]
     fn a_press_is_heard_as_its_answer() {
         let (sender, heard) = std::sync::mpsc::channel::<Event>();
         let sink: Arc<dyn Sink<Event>> = Arc::new(sender);
         let mut seen = std::collections::VecDeque::new();
+        let by = crate::this_process();
         let press = |id: &str, action: Value| {
             json!({
                 "schema": "2.0",
@@ -1223,20 +1243,33 @@ mod tests {
 
         let button = press(
             "e1",
-            json!({ "value": { "asked": "7", "chosen": "once" }, "tag": "button" }),
+            json!({ "value": { "asked": "7", "by": by, "chosen": "once" }, "tag": "button" }),
         );
-        heard_press(button.as_bytes(), &mut seen, &sink);
-        heard_press(button.as_bytes(), &mut seen, &sink);
+        let answered = heard_frame(button.as_bytes(), &mut seen, &sink);
+        assert!(
+            answered["data"].is_string(),
+            "the press had no toast: {answered}"
+        );
+        heard_frame(button.as_bytes(), &mut seen, &sink);
+        heard_frame(
+            press(
+                "e4",
+                json!({ "value": { "asked": "7", "by": "another", "chosen": "never" } }),
+            )
+            .as_bytes(),
+            &mut seen,
+            &sink,
+        );
         assert_eq!(
             answers(&heard),
             [("ou_1".to_string(), 7, vec!["once".to_string()], None)]
         );
 
-        heard_press(
+        heard_frame(
             press(
                 "e2",
                 json!({
-                    "value": { "asked": "8" },
+                    "value": { "asked": "8", "by": by },
                     "form_value": { "chosen": ["app", "ui"], "words": "  the docs too " },
                 }),
             )
@@ -1244,10 +1277,10 @@ mod tests {
             &mut seen,
             &sink,
         );
-        heard_press(
+        heard_frame(
             press(
                 "e3",
-                json!({ "value": { "asked": "9" }, "form_value": { "chosen": "app", "words": "" } }),
+                json!({ "value": { "asked": "9", "by": by }, "form_value": { "chosen": "app", "words": "" } }),
             )
             .as_bytes(),
             &mut seen,

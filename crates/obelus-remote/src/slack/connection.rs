@@ -362,8 +362,9 @@ async fn pushed(
 
 /// A question as blocks: what it is about, calling the reader, then a
 /// button for each answer where one press is the whole answer, or a list
-/// and a box with a button that sends them. Every press names the question
-/// by `asked` -- with the answer's id after a colon, on a button that is one.
+/// and a box with a button that sends them. Every press names the process
+/// that asked and the question, by `asked` -- with the answer's id after
+/// another colon, on a button that is one.
 fn asking(asked: u64, question: &Question, to: &str) -> Vec<SlackBlock> {
     let plain = |text: &str| json!({ "type": "plain_text", "text": text });
     let mut blocks = vec![json!({
@@ -380,7 +381,7 @@ fn asking(asked: u64, question: &Question, to: &str) -> Vec<SlackBlock> {
                     "type": "button",
                     "text": plain(name),
                     "action_id": format!("choice-{at}"),
-                    "value": format!("{asked}:{id}"),
+                    "value": format!("{}:{asked}:{id}", crate::this_process()),
                 })
             })
             .collect();
@@ -424,7 +425,7 @@ fn asking(asked: u64, question: &Question, to: &str) -> Vec<SlackBlock> {
                 "style": "primary",
                 "text": plain("Send"),
                 "action_id": "send",
-                "value": asked.to_string(),
+                "value": format!("{}:{asked}", crate::this_process()),
             }],
         }));
     }
@@ -464,9 +465,16 @@ async fn pressed(
 fn answer_of(event: &SlackInteractionBlockActionsEvent) -> Option<Event> {
     let from = event.user.as_ref()?.id.to_string();
     let value = event.actions.as_ref()?.first()?.value.clone()?;
+    let Some(value) = value
+        .strip_prefix(crate::this_process())
+        .and_then(|value| value.strip_prefix(':'))
+    else {
+        tracing::info!("a press on a message another window put up");
+        return None;
+    };
     let (asked, chosen) = match value.split_once(':') {
         Some((asked, id)) => (asked, vec![id.to_string()]),
-        None => (value.as_str(), Vec::new()),
+        None => (value, Vec::new()),
     };
     let asked = asked.parse().ok()?;
     let held = |block: &str| {
@@ -564,8 +572,9 @@ mod tests {
         let blocks = drawn(&question(false, None));
         assert_eq!(blocks[0]["text"]["text"], "<@U1> Read the file?");
         assert_eq!(blocks[1]["type"], "actions", "{blocks:#}");
-        assert_eq!(blocks[1]["elements"][0]["value"], "7:once");
-        assert_eq!(blocks[1]["elements"][1]["value"], "7:never");
+        let by = crate::this_process();
+        assert_eq!(blocks[1]["elements"][0]["value"], format!("{by}:7:once"));
+        assert_eq!(blocks[1]["elements"][1]["value"], format!("{by}:7:never"));
 
         let blocks = drawn(&question(true, Some(("Other".to_string(), false))));
         assert_eq!(blocks.as_array().map(Vec::len), Some(4), "{blocks:#}");
@@ -573,16 +582,18 @@ mod tests {
         assert_eq!(blocks[1]["element"]["options"][1]["value"], "never");
         assert_eq!(blocks[2]["element"]["type"], "plain_text_input");
         assert_eq!(blocks[2]["optional"], true);
-        assert_eq!(blocks[3]["elements"][0]["value"], "7");
+        assert_eq!(blocks[3]["elements"][0]["value"], format!("{by}:7"));
     }
 
     /// A press is heard as the answer it makes: a button's question and
     /// id, or the send button's question with what the list and the box
     /// held -- trimmed, and only where there is something in the box.
     ///
-    /// Broken deliberately twice. Reading only the button's value: what
-    /// the list held arrived as nothing chosen. And reading only several
-    /// from the list: the one chosen from a single list was dropped.
+    /// Broken deliberately three ways. Reading only the button's value: what
+    /// the list held arrived as nothing chosen. Reading only several from
+    /// the list: the one chosen from a single list was dropped. And not
+    /// reading whose message it was: the press on the closed window's
+    /// question answered this one's.
     #[test]
     fn a_press_is_heard_as_its_answer() {
         let press = |value: &str, state: Value| {
@@ -606,17 +617,19 @@ mod tests {
                     asked,
                     chosen,
                     words,
-                }) => (from, asked, chosen, words),
-                other => panic!("not an answer: {other:?}"),
+                }) => Some((from, asked, chosen, words)),
+                _ => None,
             }
         };
+        let by = crate::this_process();
+        assert_eq!(press("another:7:once", json!({})), None);
         assert_eq!(
-            press("7:once", json!({})),
-            ("U1".to_string(), 7, vec!["once".to_string()], None)
+            press(&format!("{by}:7:once"), json!({})),
+            Some(("U1".to_string(), 7, vec!["once".to_string()], None))
         );
         assert_eq!(
             press(
-                "8",
+                &format!("{by}:8"),
                 json!({
                     "chosen": { "chosen": { "type": "multi_static_select", "selected_options": [
                         { "text": { "type": "plain_text", "text": "App" }, "value": "app" },
@@ -625,23 +638,23 @@ mod tests {
                     "words": { "words": { "type": "plain_text_input", "value": " the docs too  " } },
                 })
             ),
-            (
+            Some((
                 "U1".to_string(),
                 8,
                 vec!["app".to_string(), "ui".to_string()],
                 Some("the docs too".to_string())
-            )
+            ))
         );
         assert_eq!(
             press(
-                "9",
+                &format!("{by}:9"),
                 json!({
                     "chosen": { "chosen": { "type": "static_select", "selected_option":
                         { "text": { "type": "plain_text", "text": "App" }, "value": "app" } } },
                     "words": { "words": { "type": "plain_text_input", "value": null } },
                 })
             ),
-            ("U1".to_string(), 9, vec!["app".to_string()], None)
+            Some(("U1".to_string(), 9, vec!["app".to_string()], None))
         );
     }
 }
