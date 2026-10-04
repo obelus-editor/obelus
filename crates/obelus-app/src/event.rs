@@ -169,6 +169,8 @@ pub enum Event {
     Summoned(Option<String>),
     /// Something about the chat this machine can be reached from.
     Remote(obelus_remote::Event),
+    /// Something one connection to it said, by the connection's number.
+    Reached(u64, obelus_remote::Event),
 }
 
 impl Event {
@@ -213,6 +215,7 @@ impl Event {
             Self::Released(_) => "Released",
             Self::Summoned(_) => "Summoned",
             Self::Remote(_) => "Remote",
+            Self::Reached(..) => "Reached",
         }
     }
 }

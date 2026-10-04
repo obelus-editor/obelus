@@ -78,6 +78,13 @@ pub enum Event {
         /// Where a reader can be sent to read it, where the platform says.
         link: Option<String>,
     },
+    /// A thread asked for did not open: the platform would not, or could
+    /// not be reached. Said so that the conversation is not left waiting
+    /// on it, and is asked for again on the next connection.
+    Unopened {
+        /// The number it was asked for with.
+        asked: u64,
+    },
     /// What somebody is called.
     Named {
         /// Their id.

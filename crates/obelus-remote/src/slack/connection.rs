@@ -148,7 +148,10 @@ async fn run(
                             link,
                         });
                     }
-                    Err(error) => tracing::warn!(%error, "Slack would not start a thread"),
+                    Err(error) => {
+                        tracing::warn!(%error, "Slack would not start a thread");
+                        let _ = sink.send(Event::Unopened { asked });
+                    }
                 }
             }
             // Slack edits a message for as long as it is there, so the

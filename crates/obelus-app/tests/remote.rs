@@ -1015,3 +1015,128 @@ fn a_question_is_answered_in_its_own_conversation() {
         in_thread(said, "F1", "and I was allowed")
     });
 }
+
+/// What a conversation says while the connection is on its way back up
+/// goes all the same -- the platform holds it until it is -- rather than
+/// being dropped for the five seconds it takes.
+///
+/// Broken deliberately by sending only while connected: the question was
+/// never said in the thread.
+#[test]
+fn what_is_said_while_reconnecting_still_goes() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-reconnecting");
+    let (mut app, events, _log) = paired_with_an_agent(&scratch);
+    let platform = the_platform();
+    let _ = platform.send(obelus_remote::Event::Connection(
+        obelus_remote::State::Connecting,
+    ));
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        text: "what is in here".to_string(),
+    });
+    said_until(&mut app, &events, "the question in the thread", |said| {
+        in_thread(said, "F1", "Allow once")
+    });
+}
+
+/// A thread that would not open is not asked for again on every frame --
+/// a platform that refused once refuses every time -- but is on the next
+/// connection, which may be one the reader has mended.
+///
+/// Broken deliberately twice. Not keeping what would not open: it was
+/// asked for again at once. And not letting go of that on a new
+/// connection: the new one was never asked.
+#[test]
+fn a_thread_that_would_not_open_is_asked_for_on_the_next_connection() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-unopened");
+    let (mut app, events, _log) = paired_with_an_agent(&scratch);
+    app.new_conversation();
+    app.open_a_session_for_test();
+    let said = said_until(&mut app, &events, "a thread to be asked for", |said| {
+        said.iter()
+            .any(|out| matches!(out, obelus_remote::model::Out::Open { .. }))
+    });
+    let asked = said
+        .iter()
+        .find_map(|out| match out {
+            obelus_remote::model::Out::Open { asked, .. } => Some(*asked),
+            _ => None,
+        })
+        .expect("asked for");
+    let platform = the_platform();
+    let _ = platform.send(obelus_remote::Event::Unopened { asked });
+    for _ in 0..10 {
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(30)) {
+            app.handle(event);
+        }
+        support::lay_out(&mut app, 76, 24);
+    }
+    assert!(
+        !said_since()
+            .iter()
+            .any(|out| matches!(out, obelus_remote::model::Out::Open { .. })),
+        "a thread that would not open was asked for again at once"
+    );
+
+    let (out, mut heard) = tokio::sync::mpsc::unbounded_channel();
+    let _ = platform.send(obelus_remote::Event::Started {
+        platform: "slack",
+        out,
+    });
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        if let Ok(obelus_remote::model::Out::Open { .. }) = heard.try_recv() {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < until,
+            "the new connection was never asked for the thread"
+        );
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(30)) {
+            app.handle(event);
+        }
+        support::lay_out(&mut app, 76, 24);
+    }
+}
+
+/// A connection that has been let go is not heard: what it says late is
+/// about a connection nobody wants, and not about the one that replaced
+/// it.
+///
+/// Broken deliberately by hearing every connection: the old one's late
+/// refusal was taken as the new one's, and the page said Slack had
+/// refused a token that was working.
+#[test]
+fn a_connection_let_go_is_not_heard() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-let-go");
+    let (mut app, events) = connected(&scratch);
+    let old = the_platform();
+    to_the_row(&mut app, "Platform");
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "Off");
+    support::press(&mut app, KeyCode::Enter);
+    support::lay_out(&mut app, 66, 20);
+    choose_slack(&mut app);
+    until(&mut app, &events, "the new connection", |app| {
+        app.remote_state_for_test() == obelus_remote::State::Connected
+    });
+    let _ = old.send(obelus_remote::Event::Connection(
+        obelus_remote::State::Refused,
+    ));
+    for _ in 0..10 {
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(30)) {
+            app.handle(event);
+        }
+        support::lay_out(&mut app, 66, 20);
+    }
+    assert_eq!(
+        app.remote_state_for_test(),
+        obelus_remote::State::Connected,
+        "the old connection's word was taken as the new one's"
+    );
+}

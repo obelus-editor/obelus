@@ -350,7 +350,7 @@ async fn say(api: &Api, sink: &Arc<dyn Sink<Event>>, out: Out) -> Result<(), Ref
             .await?;
         }
         Out::Open { asked, room, head } => {
-            let data = api
+            let opened = api
                 .call(
                     reqwest::Method::POST,
                     "/open-apis/im/v1/messages?receive_id_type=chat_id",
@@ -360,14 +360,20 @@ async fn say(api: &Api, sink: &Arc<dyn Sink<Event>>, out: Out) -> Result<(), Ref
                         "content": card(&head),
                     })),
                 )
-                .await?;
-            let thread = data["message_id"].as_str().unwrap_or_default().to_string();
-            if !thread.is_empty() {
-                let _ = sink.send(Event::Opened {
-                    asked,
-                    thread,
-                    link: None,
-                });
+                .await
+                .map(|data| data["message_id"].as_str().unwrap_or_default().to_string());
+            match opened {
+                Ok(thread) if !thread.is_empty() => {
+                    let _ = sink.send(Event::Opened {
+                        asked,
+                        thread,
+                        link: None,
+                    });
+                }
+                failed => {
+                    let _ = sink.send(Event::Unopened { asked });
+                    failed?;
+                }
             }
         }
         // A card's content replaced whole: the head is the card.

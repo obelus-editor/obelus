@@ -52,6 +52,11 @@ pub(super) struct Remote {
     /// The clock it runs out on. Dropped with the code, which stops it: a
     /// new code is a new clock, and a used one needs none.
     pairing_runs_out: Option<crate::event::Pause>,
+    /// The number of the connection now wanted: every connection's events
+    /// carry theirs, and one let go may still be saying something -- a late
+    /// `Connected`, a `Refused` for a token since mended -- that is not
+    /// about the one that replaced it.
+    number: u64,
     /// Somebody who sent the code, while the platform is asked what they
     /// are called: who, the group they sent it in, and the thread it began.
     naming: Option<(String, String, String)>,
@@ -233,6 +238,24 @@ impl App {
     }
 
     /// Hears what the keyring said.
+    /// What one connection said, heard only while it is the one wanted.
+    pub(super) fn reached_event(&mut self, number: u64, event: obelus_remote::Event) {
+        if number != self.remote.number || self.remote.reaching.is_none() {
+            tracing::info!(number, "a connection let go said something, not heard");
+            return;
+        }
+        self.remote_event(event);
+    }
+
+    /// Whether there is somewhere to send what is to be said: a connection
+    /// wanted and started, up or on its way back up. Not whether it is up
+    /// this moment -- what is sent while it reconnects waits for it, and a
+    /// turn that ended in those five seconds would otherwise never reach
+    /// the thread.
+    pub(super) fn chat_is_listening(&self) -> bool {
+        self.remote.out.is_some()
+    }
+
     pub(super) fn remote_event(&mut self, event: obelus_remote::Event) {
         match event {
             obelus_remote::Event::Kept {
@@ -243,6 +266,9 @@ impl App {
             obelus_remote::Event::Started { platform, out } => {
                 if self.remote.reaching == Some(platform) {
                     self.remote.out = Some(out);
+                    // A new connection knows nothing of what the old one
+                    // was asked: those threads are asked for again.
+                    self.forget_what_was_on_its_way();
                 }
             }
             obelus_remote::Event::Connection(state) => {
@@ -257,6 +283,7 @@ impl App {
             } => self.heard(&from, &room, &at, &text),
             obelus_remote::Event::Named { id, name } => self.let_in(id, name),
             obelus_remote::Event::Opened { asked, thread, .. } => self.thread_opened(asked, thread),
+            obelus_remote::Event::Unopened { asked } => self.thread_unopened(asked),
             obelus_remote::Event::PairingOver => {
                 self.remote.pairing = None;
                 self.remote.pairing_runs_out = None;
@@ -325,7 +352,15 @@ impl App {
             })
             .collect();
         tracing::info!(platform = platform.key, "reaching the chat");
-        obelus_remote::platform::reach(platform, settled, std::sync::Arc::new(sender));
+        self.remote.number += 1;
+        obelus_remote::platform::reach(
+            platform,
+            settled,
+            std::sync::Arc::new(Numbered {
+                number: self.remote.number,
+                sender,
+            }),
+        );
     }
 
     /// Lets go of the connection, which is dropping where to send things.
@@ -336,6 +371,7 @@ impl App {
         self.remote.out = None;
         self.remote.reaching = None;
         self.remote.connection = None;
+        self.forget_what_was_on_its_way();
         self.remote.pairing = None;
         self.remote.pairing_runs_out = None;
         self.remote.naming = None;
@@ -685,4 +721,18 @@ fn same_code(code: &str, sent: &str) -> bool {
             .collect::<String>()
     };
     plain(code) == plain(sent)
+}
+
+/// Where one connection's events go, with its number on them.
+struct Numbered {
+    number: u64,
+    sender: std::sync::mpsc::Sender<Event>,
+}
+
+impl obelus_sink::Sink<obelus_remote::Event> for Numbered {
+    fn send(&self, event: obelus_remote::Event) -> Result<(), obelus_sink::Gone> {
+        self.sender
+            .send(Event::Reached(self.number, event))
+            .map_err(|_| obelus_sink::Gone)
+    }
 }

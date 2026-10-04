@@ -28,6 +28,7 @@ obelus-remote.workspace = true
 obelus-row.workspace = true
 obelus-runtime.workspace = true
 obelus-search.workspace = true
+obelus-sink.workspace = true
 obelus-syntax.workspace = true
 obelus-text.workspace = true
 obelus-theme.workspace = true
@@ -60,6 +61,5 @@ unicode-width.workspace = true
 notify.workspace = true
 # For the remote tests, which stand in for a chat platform and have to be
 # handed what one is handed.
-obelus-sink.workspace = true
 obelus-ui.workspace = true
 ureq.workspace = true

@@ -62,6 +62,10 @@ pub(super) struct Mirror {
     /// The group the threads are in, which pairing chose: read with the
     /// table, and changed only by pairing again.
     room: Option<String>,
+    /// Conversations whose thread would not open, asked for again on the
+    /// next connection rather than on the next frame: a platform that
+    /// refused once -- a permission the app lacks -- refuses every time.
+    unopened: BTreeSet<String>,
     /// Conversations begun by a thread the reader started, by document,
     /// and that thread: theirs from the start, and named once the session
     /// arrives.
@@ -222,7 +226,7 @@ impl App {
     /// asked of every one is a lookup; the work is only for one that has
     /// no thread, which is a conversation that has just begun.
     pub(super) fn settle_the_threads(&mut self) {
-        if !self.remote_state().connected() {
+        if !self.chat_is_listening() {
             return;
         }
         let (Some(platform), Some(room), Some(to)) =
@@ -241,6 +245,7 @@ impl App {
             .filter(|chat| {
                 !self.mirror.threads.contains_key(chat)
                     && !self.mirror.opening.values().any(|opening| opening == chat)
+                    && !self.mirror.unopened.contains(chat)
             })
             .collect();
         if wanting.is_empty() {
@@ -314,7 +319,7 @@ impl App {
     /// name needs the notes, which are a file, and the moments are few --
     /// a turn starting, a question, an answer, an end, a title, a branch.
     pub(super) fn mirror_head(&mut self, whose: talking::Whose, state: Option<Turning>) {
-        if !self.remote_state().connected() {
+        if !self.chat_is_listening() {
             return;
         }
         let Some(chat) = self.chat_named(whose) else {
@@ -462,12 +467,35 @@ impl App {
             .map(|chat| chat.file_name())
     }
 
+    /// A thread that would not open: what was held for it let go, and the
+    /// conversation left to ask again on the next connection.
+    pub(super) fn thread_unopened(&mut self, asked: u64) {
+        if let Some(chat) = self.mirror.opening.remove(&asked) {
+            tracing::info!(chat, "its thread would not open");
+            self.mirror.held.remove(&chat);
+            self.mirror.unopened.insert(chat);
+        }
+    }
+
+    /// What was on its way to a connection that is being let go: threads
+    /// asked for that it will never answer, and what was held for them.
+    /// The next connection asks for them again, those that would not open
+    /// included.
+    pub(super) fn forget_what_was_on_its_way(&mut self) {
+        self.mirror.opening.clear();
+        self.mirror.held.clear();
+        self.mirror.unopened.clear();
+    }
+
     /// A thread the platform has opened: written down, and what was held for
     /// it said in it.
     pub(super) fn thread_opened(&mut self, asked: u64, thread: String) {
         let Some(chat) = self.mirror.opening.remove(&asked) else {
             return;
         };
+        // Taken now, so that a thread that cannot be written down does not
+        // keep what was held for it to say in the next one.
+        let held = self.mirror.held.remove(&chat).unwrap_or_default();
         let (Some(platform), Some(room), Some(to)) =
             (self.platform(), self.the_room(), self.whom())
         else {
@@ -488,7 +516,7 @@ impl App {
         if let Some(head) = self.mirror.heads.get(&chat).cloned() {
             self.retitle(&chat, head);
         }
-        for (text, notify) in self.mirror.held.remove(&chat).unwrap_or_default() {
+        for (text, notify) in held {
             self.say_in_thread(&chat, text, notify);
         }
     }
@@ -518,10 +546,10 @@ impl App {
         }
     }
 
-    /// The same, for the conversation `whose` names, where the chat is
-    /// connected at all.
+    /// The same, for the conversation `whose` names, where there is a
+    /// connection to send it on.
     fn mirror_in(&mut self, whose: talking::Whose, text: String, notify: bool) {
-        if !self.remote_state().connected() {
+        if !self.chat_is_listening() {
             return;
         }
         if let Some(chat) = self.chat_named(whose) {
@@ -531,7 +559,7 @@ impl App {
 
     /// Keeps what the agent said, for the end of its turn.
     pub(super) fn mirror_said(&mut self, whose: talking::Whose, text: &str) {
-        if !self.remote_state().connected() {
+        if !self.chat_is_listening() {
             return;
         }
         if let Some(chat) = self.chat_named(whose) {
@@ -620,7 +648,7 @@ impl App {
 
     /// Says in the thread that the conversation was closed here.
     pub(super) fn mirror_closed(&mut self, talk: &Conversation) {
-        if !self.remote_state().connected() {
+        if !self.chat_is_listening() {
             return;
         }
         if let Some(chat) = chat_of(talk).map(|chat| chat.file_name()) {

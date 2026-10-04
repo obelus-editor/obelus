@@ -2771,6 +2771,7 @@ impl App {
             Event::Closed => self.request_quit(),
             Event::Summoned(token) => self.summoned(token),
             Event::Remote(event) => self.remote_event(event),
+            Event::Reached(number, event) => self.reached_event(number, event),
             Event::Fonts { here, otherwise } => {
                 tracing::info!(
                     faces = here.len(),
