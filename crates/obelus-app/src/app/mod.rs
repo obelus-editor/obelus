@@ -3659,7 +3659,7 @@ impl App {
 
         let area = self.editor_area;
         let width = obelus_ui::chat::reading_width(area);
-        // Laid out once, and every question below asked of the one row.
+        // Laid out once, and every question below asked of the one place.
         let found = self.conversation().and_then(|talk| {
             let rows = talk.chat.rows(width);
             let place = obelus_ui::chat::ChatView::place_in_transcript(
@@ -3670,31 +3670,28 @@ impl App {
                 x,
                 y,
             )?;
-            let row = rows.into_iter().nth(place.row)?;
-            Some((place, row, talk.card.is_some()))
+            let spot = obelus_ui::chat::ChatView::spot_in_transcript(&rows, place);
+            let row = rows.get(place.row);
+            // Whether it landed on a heading that opens, which is a thing to
+            // do to the row rather than to the words in it.
+            //
+            // Free of the selection, and not by luck: every row that folds is
+            // one Obelus drew itself -- the heading over a run of tool calls,
+            // the one over a piece of thinking, the one over the agent's plan
+            // -- and none of them is anybody's words. A press on one already
+            // meant nothing but "let go", so opening it costs the reader
+            // nothing they had.
+            let folds = row.and_then(|row| row.folds);
+            // A cursor stands on a row, and the band under the last of them
+            // is not one; nor while a card is up, which has the keys -- a
+            // cursor moved under it would be found there afterwards.
+            let cursor = (row.is_some() && talk.card.is_none()).then_some(place);
+            Some((spot, folds, cursor))
         });
-        // A point in a row the reading drew rather than read -- a blank,
-        // the heading over a folded run, the row that says what is
-        // happening now -- is the place just after the last word above it.
-        // A drag has to go somewhere while it crosses one, and the words
-        // either side of it are what the reader is dragging between.
-        let spot = found
-            .as_ref()
-            .and_then(|(place, row, _)| row.spot_at(place.character));
-        // Whether it landed on a heading that opens, which is a thing to do
-        // to the row rather than to the words in it.
-        //
-        // Free of the selection, and not by luck: every row that folds is
-        // one Obelus drew itself -- the heading over a run of tool calls,
-        // the one over a piece of thinking, the one over the agent's plan
-        // -- and none of them is anybody's words. A press on one already
-        // meant nothing but "let go", so opening it costs the reader
-        // nothing they had.
-        let folds = found.as_ref().and_then(|(_, row, _)| row.folds);
+        let (spot, folds, cursor) = found.unwrap_or((None, None, None));
         // Where the cursor goes, for a press or a drag: the keys follow
         // the pointer, or the arrows after a press walk something the
-        // reader had not pointed at. Not while a card is up, which has the
-        // keys -- a cursor moved under it would be found there afterwards.
+        // reader had not pointed at.
         //
         // And a drag only carries a cursor the press put here. The box is
         // under the transcript's band, so a drag in the box is one held
@@ -3705,7 +3702,6 @@ impl App {
             || self.chat().is_some_and(|chat| {
                 matches!(chat.focus(), obelus_component::chat::Focus::Transcript(_))
             });
-        let cursor = found.and_then(|(place, _, carded)| (!carded).then_some(place));
         let Some(talk) = self.conversation_mut() else {
             return;
         };
@@ -3716,7 +3712,8 @@ impl App {
             talk.chat.stand_in_transcript(cursor);
         }
         match kind {
-            Pointer::Moved | Pointer::Released => {}
+            Pointer::Moved => {}
+            Pointer::Released => talk.chat.let_go_of_nothing(),
             Pointer::Pressed if folds.is_some() => {
                 if let Some(begins) = folds {
                     talk.chat.fold(begins);
