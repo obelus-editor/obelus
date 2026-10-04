@@ -52,6 +52,7 @@ impl App {
         // Open on the one that is on, so the list starts by saying which
         // theme this is rather than making the reader work it out.
         picker.prefer(self.theme_name().to_string());
+        picker.opened_by(Command::ThemeSelect);
         self.show_list(picker);
     }
 
@@ -115,7 +116,7 @@ impl App {
         // height it opened at rather than closing up under the query.
         picker.keeps_height();
         picker.aligns_details();
-        picker.lists_commands();
+        picker.opened_by(Command::CommandPalette);
         self.show_list(picker);
     }
 

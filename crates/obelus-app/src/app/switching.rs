@@ -13,8 +13,10 @@
 //! again with the words taken away.
 //!
 //! Which keys those are is `Command::takes_a_view_s_place`: every key that
-//! opens a view, and the palette's, because a reader inside a view who wants
-//! a command should not have to leave it to ask for one. And a list over the
+//! opens a view, and every one that opens a list over the file -- the
+//! palette, the menu about the name under the caret, the problems -- because
+//! a reader inside a view who wants one should not have to leave it to ask.
+//! And a list over the
 //! file rather than instead of it -- the palette, a menu, the conversations
 //! -- gives way to them the same: it once kept its keys, as somewhere the
 //! reader was choosing, and the cost was that `f1` did nothing in the very
@@ -98,16 +100,11 @@ impl App {
     /// other view.
     fn tab_for(&self, command: Command) -> Option<usize> {
         let picker = self.picker.as_ref()?;
-        // The palette is what `ctrl+p` opens, so it is where the reader
-        // already is, with what they have typed.
-        if picker.is_listing_commands() {
-            return (command == Command::CommandPalette).then(|| picker.tab());
-        }
-        // The list `f4` opens is the list it is in: the reader stays where
-        // they are, with what they typed, rather than being given the same
-        // list again empty.
-        if !self.conversing.agents.is_empty() {
-            return (command == Command::ConversationSelect).then(|| picker.tab());
+        // The key that opened the list showing is the list the reader is
+        // already in: they stay where they are, with what they typed, rather
+        // than being given the same list again empty.
+        if let Some(opener) = picker.opener() {
+            return (command == opener).then(|| picker.tab());
         }
         if !self.worktrees.tabs.is_empty() {
             return self.switching_tab_for(command);

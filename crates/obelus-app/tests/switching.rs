@@ -162,8 +162,8 @@ fn a_list_over_the_file_gives_way_to_a_view_s_key() {
 ///
 /// Broken deliberately twice. Answering only for a full-screen list in
 /// `gives_way_to_a_view`: `f1` is refused and the conversations stay. And
-/// taking the conversations out of `tab_for`: `f4` closes the list and
-/// opens it again, empty.
+/// taking `opened_by` out of `open_conversation_picker`: `f4` closes the
+/// list and opens it again, empty.
 #[test]
 fn the_conversations_give_way_and_f4_keeps_them() {
     let mut app = reading();
@@ -192,9 +192,9 @@ fn the_conversations_give_way_and_f4_keeps_them() {
 /// first. And `ctrl+p` in the palette is the palette, with what was typed.
 ///
 /// Broken deliberately twice. Taking the palette out of
-/// `Command::takes_a_view_s_place`: `ctrl+p` in the files is refused and the
-/// files stay. And taking the palette out of `tab_for`: `ctrl+p` in the
-/// palette closes it and opens it again, empty.
+/// `Command::opens_a_list`: `ctrl+p` in the files is refused and the files
+/// stay. And taking `opened_by` out of `open_command_palette`: `ctrl+p` in
+/// the palette closes it and opens it again, empty.
 #[test]
 fn the_palette_takes_a_view_s_place() {
     let mut app = reading();
@@ -202,7 +202,7 @@ fn the_palette_takes_a_view_s_place() {
     press_control(&mut app, 'p');
     assert!(
         app.picker()
-            .is_some_and(obelus_component::picker::Picker::is_listing_commands),
+            .is_some_and(|picker| picker.opener() == Some(Command::CommandPalette)),
         "ctrl+p in the files did not go to the palette"
     );
     type_text(&mut app, "sav");

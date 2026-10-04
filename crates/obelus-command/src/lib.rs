@@ -880,14 +880,96 @@ impl Command {
 
     /// Whether its key goes to it from inside a view, in the view's place.
     ///
-    /// Every command that opens a view, and the palette: the one list every
-    /// command is on, so a reader inside a view who wants one is not made to
-    /// leave it first in order to ask. Nothing else that opens over the file
-    /// -- a menu about the name under the caret, the themes -- because what
-    /// those are about is the file, and a view is in front of it.
+    /// Every command that opens a view, and every one that opens a list over
+    /// the file: a reader inside a view who wants the palette, or the menu
+    /// about the name under the caret, is not made to leave it first in order
+    /// to ask. The view is put away and the list comes up over the file, the
+    /// same as if they had asked from there.
     #[must_use]
     pub const fn takes_a_view_s_place(self) -> bool {
-        self.opens_a_view() || matches!(self, Self::CommandPalette)
+        self.opens_a_view() || self.opens_a_list()
+    }
+
+    /// Whether the command opens a list over the file: one of the compact
+    /// lists, the palette among them.
+    ///
+    /// What makes its key go in a view's place as well -- see
+    /// [`Command::takes_a_view_s_place`]. Spelled out per command, so a new
+    /// one has to say.
+    #[must_use]
+    pub const fn opens_a_list(self) -> bool {
+        match self {
+            Self::CommandPalette
+            | Self::ThemeSelect
+            | Self::SymbolMenu
+            | Self::CodeActions
+            | Self::SymbolTroubles
+            | Self::ConversationSelect => true,
+            Self::FileOpen
+            | Self::FileChanged
+            | Self::DocumentList
+            | Self::WorktreeList
+            | Self::SearchFile
+            | Self::SearchProject
+            | Self::SearchSymbols
+            | Self::SymbolOutline
+            | Self::HistoryFile
+            | Self::HistoryProject
+            | Self::CountLines
+            | Self::ConfigOpen
+            | Self::ConfigProject
+            | Self::ConversationNew
+            | Self::TodoOpen
+            | Self::FileReload
+            | Self::FileSave
+            | Self::DocumentClose
+            | Self::FileRename
+            | Self::FileNew
+            | Self::PreviewToggle
+            | Self::SymbolComplete
+            | Self::SymbolHover
+            | Self::SymbolSignature
+            | Self::SymbolRename
+            | Self::SymbolDefinition
+            | Self::SymbolTypeDefinition
+            | Self::SymbolImplementation
+            | Self::SymbolReferences
+            | Self::SymbolCalls
+            | Self::GoLine
+            | Self::GoBracket
+            | Self::HistoryLine
+            | Self::Fold
+            | Self::FoldAll
+            | Self::UnfoldAll
+            | Self::GitHunk
+            | Self::SymbolTroublePrevious
+            | Self::SymbolTroubleNext
+            | Self::GitPrevious
+            | Self::GitNext
+            | Self::SelectionCopy
+            | Self::SelectionCut
+            | Self::Paste
+            | Self::LineUp
+            | Self::LineDown
+            | Self::CommentToggle
+            | Self::ReplaceToggle
+            | Self::Undo
+            | Self::Redo
+            | Self::SelectionClear
+            | Self::SelectionAll
+            | Self::SelectionWiden
+            | Self::GoBack
+            | Self::GoForward
+            | Self::TodoAdd
+            | Self::ConfigFile
+            | Self::RemoteConnect
+            | Self::RemoteDisconnect
+            | Self::LogOpen
+            | Self::LogServers
+            | Self::LspRestart
+            | Self::LspStop
+            | Self::Quit => false,
+        }
     }
 
     /// Whether the command opens something that takes the whole screen.

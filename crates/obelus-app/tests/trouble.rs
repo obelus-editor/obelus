@@ -1797,3 +1797,35 @@ fn what_is_wrong_moves_with_the_text_it_is_about() {
         spans(&app)
     );
 }
+
+/// The problems go in a view's place, like any list over the file: a reader
+/// in the files who asks what is wrong is not made to leave them first. And
+/// the key in the problems is the problems, with what was typed.
+///
+/// Broken deliberately twice. Taking `SymbolTroubles` out of
+/// `Command::opens_a_list`: `alt+e` in the files is refused and the files
+/// stay. And taking `opened_by` out of `open_troubles`: `alt+e` in the
+/// problems closes them and opens them again, empty.
+#[test]
+fn the_problems_take_a_view_s_place() {
+    let (_scratch, mut app, path) = editing("trouble-swap", "fn main() {\n    nmae;\n}\n");
+    app.publish_for_test(published(&path, 1, 4, 8, 1));
+    support::press_function(&mut app, 1);
+    assert!(
+        app.picker().is_some_and(|picker| picker.is_listing()),
+        "the files did not open"
+    );
+    support::press_alt(&mut app, 'e');
+    assert!(
+        app.picker()
+            .is_some_and(|picker| picker.opener() == Some(obelus_command::Command::SymbolTroubles)),
+        "alt+e in the files did not go to the problems"
+    );
+    support::type_text(&mut app, "nm");
+    support::press_alt(&mut app, 'e');
+    assert_eq!(
+        app.picker().map(|picker| picker.query().to_string()),
+        Some("nm".to_string()),
+        "alt+e in the problems did not leave the reader where they were"
+    );
+}

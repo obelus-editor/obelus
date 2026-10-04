@@ -179,6 +179,7 @@ impl App {
         picker.keeps_order(true);
         picker.about("What the language server offers to do here");
         picker.before_typing("Filter what can be done");
+        picker.opened_by(Command::CodeActions);
         self.quiet();
         self.show_list(picker);
     }

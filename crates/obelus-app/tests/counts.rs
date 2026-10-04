@@ -433,8 +433,8 @@ fn nothing_of_obeluss_own_opens_over_the_counts() {
 /// The palette goes in the counts' place, like any view's key: one thing on
 /// screen, and escape goes back to the file.
 ///
-/// Broken deliberately by taking the palette out of
-/// `Command::takes_a_view_s_place`: `ctrl+p` is refused on the counts.
+/// Broken deliberately by taking the palette out of `Command::opens_a_list`:
+/// `ctrl+p` is refused on the counts.
 #[test]
 fn the_palette_takes_the_counts_place() {
     let mut app = open(76, 24);
@@ -442,7 +442,7 @@ fn the_palette_takes_the_counts_place() {
     assert!(app.counts().is_none(), "the counts are still showing");
     assert!(
         app.picker()
-            .is_some_and(obelus_component::picker::Picker::is_listing_commands),
+            .is_some_and(|picker| picker.opener() == Some(Command::CommandPalette)),
         "ctrl+p on the counts did not go to the palette"
     );
 }

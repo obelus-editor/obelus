@@ -300,10 +300,9 @@ impl App {
                 }
             })
             .collect();
-        self.show_list(Picker::new(
-            items,
-            PickerLayout::Compact { rows: COMPACT_ROWS },
-        ));
+        let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
+        picker.opened_by(Command::SymbolMenu);
+        self.show_list(picker);
     }
 
     /// Which questions about the name under the caret this server will
@@ -2009,6 +2008,7 @@ impl App {
         // file already there -- so nothing moves when they walk the tabs.
         picker.previews();
         picker.go_to_tab(tab);
+        picker.opened_by(Command::SymbolTroubles);
         self.show_list(picker);
         // After the list is shown, not before: showing one forgets what the
         // last one was, this included.
