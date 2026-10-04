@@ -43,9 +43,9 @@ pub struct Description {
     pub fields: &'static [Field],
     /// How a reader makes the app on the platform's side.
     pub setup: Setup,
-    /// Where a conversation is begun, said to the reader when they are let
-    /// in and whenever they write anywhere else: a thread they start is a
-    /// conversation, and where a thread can be started is the platform's.
+    /// How a conversation is begun in the room, said to the reader when
+    /// they are let in: a thread they start is a conversation, and what
+    /// starts a thread is the platform's.
     pub begin: &'static str,
     /// How it is connected to.
     pub connect: Connect,

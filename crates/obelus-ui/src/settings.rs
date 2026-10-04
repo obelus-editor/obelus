@@ -194,7 +194,10 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
         .flatten();
     let (enter, saying) = match remote {
         Some(Shown::Remote { row, .. }) => match row {
-            RemoteRow::Pair => ("Pair", "Make a code to send the bot from your own account"),
+            RemoteRow::Pair => (
+                "Pair",
+                "Make a code to send in the group you put the bot in",
+            ),
             RemoteRow::Setup(obelus_remote::platform::Setup::Copy { .. }) => {
                 ("Copy", "Copy it, to paste where the app is made")
             }

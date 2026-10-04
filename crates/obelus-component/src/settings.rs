@@ -424,7 +424,7 @@ impl Shown<'_> {
                 RemoteRow::Platform => "Which chat a note can be worked on from",
                 RemoteRow::Field(field) => field.about,
                 RemoteRow::People => "Who may talk to this machine through it",
-                RemoteRow::Pair => "A code to send the bot from your own account",
+                RemoteRow::Pair => "A code to send in the group you put the bot in",
                 RemoteRow::Setup(setup) => setup.about(),
             },
         }

@@ -3,7 +3,7 @@
 //!
 //! Written here rather than through a community SDK, which was tried: the
 //! one there is cannot reply in a topic -- the whole of how a conversation
-//! is told apart in a direct message -- connects only to Feishu's domain and
+//! is told apart in a group -- connects only to Feishu's domain and
 //! never Lark's, and reads a message as failed unless the app holds a
 //! permission it has no other use for. What is needed is the long
 //! connection, four calls and one event, and those are the next file.
@@ -47,7 +47,7 @@ pub static DESCRIPTION: Description = Description {
         about: "One app per machine: a custom app with the bot on, long connection for events",
         url: "https://open.feishu.cn/app",
     },
-    begin: "Start a topic in the Obelus group to talk to an agent.",
+    begin: "Start a topic here to talk to an agent.",
     connect: |told, sink| {
         let said = |key| told.get(key).cloned().unwrap_or_default();
         connection::start(said("app_id"), said("app_secret"), &said("domain"), sink)

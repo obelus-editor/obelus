@@ -57,11 +57,14 @@ pub enum Event {
     },
     /// The code to pair with has run out.
     PairingOver,
-    /// Somebody said something.
+    /// Somebody said something in a group the bot is in.
     Heard {
         /// Their id, which is what they are checked by.
         from: String,
-        /// Where they said it.
+        /// Which group, by the platform's id for it: the room once one is
+        /// kept, and any group while there is a code to pair with.
+        room: String,
+        /// Where in it.
         at: model::Where,
         /// What.
         text: String,
@@ -74,14 +77,6 @@ pub enum Event {
         thread: String,
         /// Where a reader can be sent to read it, where the platform says.
         link: Option<String>,
-    },
-    /// A room has been made for somebody's threads, to be kept for the
-    /// next connection.
-    Roomed {
-        /// Whose.
-        to: String,
-        /// What the platform calls it.
-        room: String,
     },
     /// What somebody is called.
     Named {

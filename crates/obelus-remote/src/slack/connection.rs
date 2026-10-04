@@ -6,12 +6,12 @@
 //! says goes out as `Event`s through the sink. Dropping the sender is how it
 //! is stopped: the task sees its channel close, shuts the socket and ends.
 //!
-//! **What is heard is only what a person wrote in a direct message.** The
+//! **What is heard is only what a person wrote in a channel.** The
 //! app's own messages come back to it as events too, and an edit, a join or
 //! a deleted message is a message with a subtype; none of those is somebody
 //! talking, so none of them is passed on.
 
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 use obelus_sink::Sink;
 use slack_morphism::{errors::SlackClientError, listener::HttpStatusCode, prelude::*};
@@ -110,46 +110,35 @@ async fn run(
     // the type a listener for it would have to take.
     let _ = sink.send(Event::Connection(State::Connected));
 
-    // Which direct message is whose, asked once a person: Slack names the
-    // conversation with somebody by an id of its own, and every message
-    // to them needs it.
-    let mut directs: HashMap<String, SlackChannelId> = HashMap::new();
     let session = client.open_session(&bot);
     while let Some(out) = said.recv().await {
         match out {
             Out::Say {
+                room,
+                thread,
                 to,
-                at,
                 text,
                 notify,
             } => {
-                let Some(channel) = direct(&session, &mut directs, &to).await else {
-                    continue;
-                };
                 let text = match notify {
                     true => format!("<@{to}> {text}"),
                     false => text,
                 };
-                let thread = match at {
-                    Where::Top => None,
-                    // Never said to: a fresh thread is only heard, and
-                    // Slack has no room to start one in.
-                    Where::Thread(thread) | Where::Fresh(thread) => Some(SlackTs::new(thread)),
-                };
                 if let Err(error) = session
-                    .chat_post_message(&posted(channel, text, thread))
+                    .chat_post_message(&posted(
+                        SlackChannelId::new(room),
+                        text,
+                        Some(SlackTs::new(thread)),
+                    ))
                     .await
                 {
                     tracing::warn!(%error, "Slack would not take a message");
                 }
             }
-            Out::Open { asked, to, head } => {
-                let text = head.in_words();
-                let Some(channel) = direct(&session, &mut directs, &to).await else {
-                    continue;
-                };
+            Out::Open { asked, room, head } => {
+                let channel = SlackChannelId::new(room);
                 match session
-                    .chat_post_message(&posted(channel.clone(), text, None))
+                    .chat_post_message(&posted(channel.clone(), head.in_words(), None))
                     .await
                 {
                     Ok(posted) => {
@@ -172,15 +161,12 @@ async fn run(
             }
             // Slack edits a message for as long as it is there, so the
             // head is the first message's text, said again.
-            Out::Retitle { to, thread, head } => {
-                let Some(channel) = direct(&session, &mut directs, &to).await else {
-                    continue;
-                };
+            Out::Retitle { room, thread, head } => {
                 let mut content = SlackMessageContent::new();
                 content.markdown_text = Some(head.in_words());
                 if let Err(error) = session
                     .chat_update(&SlackApiChatUpdateRequest::new(
-                        channel,
+                        SlackChannelId::new(room),
                         content,
                         SlackTs::new(thread),
                     ))
@@ -189,8 +175,6 @@ async fn run(
                     tracing::warn!(%error, "Slack would not say what a thread is again");
                 }
             }
-            // The threads stay in the direct message.
-            Out::Room { .. } => {}
             Out::Name { id } => {
                 match session
                     .users_info(&SlackApiUsersInfoRequest::new(SlackUserId::new(id.clone())))
@@ -229,30 +213,6 @@ fn posted(
     request
 }
 
-/// The direct message with somebody, opened the first time it is needed.
-async fn direct(
-    session: &SlackClientSession<'_, SlackClientHyperHttpsConnector>,
-    directs: &mut HashMap<String, SlackChannelId>,
-    to: &str,
-) -> Option<SlackChannelId> {
-    if let Some(channel) = directs.get(to) {
-        return Some(channel.clone());
-    }
-    let mut asked = SlackApiConversationsOpenRequest::new();
-    asked.users = Some(vec![SlackUserId::new(to.to_string())]);
-    match session.conversations_open(&asked).await {
-        Ok(opened) => {
-            let channel = opened.channel.id;
-            directs.insert(to.to_string(), channel.clone());
-            Some(channel)
-        }
-        Err(error) => {
-            tracing::warn!(%error, "Slack would not open a direct message");
-            None
-        }
-    }
-}
-
 /// Whether Slack said no to a token, rather than not being there to ask.
 fn refused(error: &SlackClientError) -> bool {
     matches!(
@@ -270,23 +230,24 @@ async fn pushed(
     let SlackEventCallbackBody::Message(message) = event.event else {
         return Ok(());
     };
-    // Somebody writing, in a direct message, and nothing else: see the
-    // module's own note.
+    // Somebody writing, in a channel, and nothing else: see the module's
+    // own note. Which channel is Obelus's to judge.
     if message.subtype.is_some()
         || message.sender.bot_id.is_some()
-        || message.origin.channel_type != Some(SlackChannelType::new("im".to_string()))
+        || message.origin.channel_type == Some(SlackChannelType::new("im".to_string()))
     {
         return Ok(());
     }
-    let (Some(from), Some(text)) = (
+    let (Some(from), Some(room), Some(text)) = (
         message.sender.user,
+        message.origin.channel,
         message.content.and_then(|content| content.text),
     ) else {
         return Ok(());
     };
     // A message outside any thread starts one, whose replies hang under
-    // it: Slack has no group of topics, and a direct message whose every
-    // message is a thread is the nearest thing to one.
+    // it: Slack has no group of topics, and a channel whose every message
+    // is a thread is the nearest thing to one.
     let at = match message.origin.thread_ts {
         Some(thread) => Where::Thread(thread.to_string()),
         None => Where::Fresh(message.origin.ts.to_string()),
@@ -294,6 +255,7 @@ async fn pushed(
     if let Some(listening) = states.read().await.get_user_state::<Listening>() {
         let _ = listening.sink.send(Event::Heard {
             from: from.to_string(),
+            room: room.to_string(),
             at,
             text,
         });

@@ -49,14 +49,14 @@ pub static DESCRIPTION: Description = Description {
 /// The app Obelus needs, as Slack's "from a manifest" takes it.
 ///
 /// Socket Mode, because the machine Obelus runs on has no address the
-/// internet can reach. The Messages tab and not the Home tab: every message
-/// in the direct message begins a conversation in the thread under it, and
-/// a page beside it would be a second place saying what is open. No
-/// interactivity: everything Obelus says is words and everything it is told is
-/// words, which is what every chat can carry. And the scopes
-/// for writing to a direct message and reading what is said in one -- nothing
-/// in any channel, because nothing here is said anywhere but between the
-/// reader and the app.
+/// internet can reach. No Home tab and no Messages tab: everything happens
+/// in a private channel the reader makes and invites the app to, where every
+/// message begins a conversation in the thread under it, and a page or a
+/// direct message beside it would be a second place for it to happen. No
+/// interactivity: everything Obelus says is words and everything it is told
+/// is words, which is what every chat can carry. And the scopes for reading
+/// and writing the channels it is invited to, private or not -- nothing
+/// where it has not been invited.
 #[must_use]
 pub fn manifest() -> String {
     let manifest = serde_json::json!({
@@ -68,8 +68,7 @@ pub fn manifest() -> String {
         "features": {
             "app_home": {
                 "home_tab_enabled": false,
-                "messages_tab_enabled": true,
-                "messages_tab_read_only_enabled": false,
+                "messages_tab_enabled": false,
             },
             "bot_user": {
                 "display_name": "Obelus",
@@ -78,12 +77,12 @@ pub fn manifest() -> String {
         },
         "oauth_config": {
             "scopes": {
-                "bot": ["chat:write", "im:history", "im:read", "im:write", "users:read"],
+                "bot": ["chat:write", "channels:history", "groups:history", "users:read"],
             },
         },
         "settings": {
             "event_subscriptions": {
-                "bot_events": ["message.im"],
+                "bot_events": ["message.channels", "message.groups"],
             },
             "interactivity": { "is_enabled": false },
             "org_deploy_enabled": false,

@@ -29,7 +29,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use obelus_agent::chats::ChatId;
 use obelus_component::composer::Part;
-use obelus_remote::model::{Head, Out, Turning, Where};
+use obelus_remote::model::{Head, Out, Turning};
 
 use super::*;
 use crate::conversation::{Conversation, Topic};
@@ -59,21 +59,21 @@ pub(super) struct Mirror {
     /// What each thread was last said to be, so that it is said again only
     /// when something on it has moved.
     heads: BTreeMap<String, Head>,
-    /// Whether the platform has been told where the threads go, on the
-    /// connection it has now: a new connection is a platform that knows
-    /// nothing yet.
-    pub(super) roomed: bool,
+    /// The group the threads are in, which pairing chose: read with the
+    /// table, and changed only by pairing again.
+    room: Option<String>,
     /// Conversations begun by a thread the reader started, by document,
     /// and that thread: theirs from the start, and named once the session
     /// arrives.
     starting: BTreeMap<usize, String>,
 }
 
-/// One conversation's thread: what the platform calls it, and whose direct
-/// message it is in.
+/// One conversation's thread: what the platform calls it, the group it is
+/// in, and whom it is with.
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Thread {
     thread: String,
+    room: String,
     to: String,
     /// Whether Obelus started it, with a head it can say again. One the
     /// reader started is headed by their own first words, which are theirs
@@ -119,6 +119,9 @@ fn read_the_table(platform: &str) -> BTreeMap<String, Thread> {
                 chat,
                 Thread {
                     thread: said("thread")?,
+                    // A thread from before there were rooms was in a direct
+                    // message, which nothing is heard in any more.
+                    room: said("room")?,
                     to: said("to")?,
                     // A table from before there was any other kind.
                     own: kept
@@ -142,6 +145,7 @@ fn write_the_table(platform: &str, threads: &BTreeMap<String, Thread>) {
         .map(|(chat, thread)| {
             let mut kept = toml::Table::new();
             kept.insert("thread".to_string(), thread.thread.clone().into());
+            kept.insert("room".to_string(), thread.room.clone().into());
             kept.insert("to".to_string(), thread.to.clone().into());
             kept.insert("own".to_string(), thread.own.into());
             (chat.clone(), toml::Value::Table(kept))
@@ -158,34 +162,30 @@ fn write_the_table(platform: &str, threads: &BTreeMap<String, Thread>) {
     }
 }
 
-/// Where the rooms a platform made for the threads are written down: whose
-/// each is, by the platform's id for them.
-fn rooms_for(platform: &str) -> Option<std::path::PathBuf> {
+/// Where the group a platform's threads are in is written down.
+fn room_file(platform: &str) -> Option<std::path::PathBuf> {
     Some(
         obelus_logging::state_directory()?
             .join("remote")
             .join(platform)
-            .join("rooms.toml"),
+            .join("room.toml"),
     )
 }
 
-/// The room kept for somebody's threads, if one was made.
-fn room_of(platform: &str, to: &str) -> Option<String> {
-    let text = std::fs::read_to_string(rooms_for(platform)?).ok()?;
+/// The group the threads are in, once somebody has paired in one.
+fn read_the_room(platform: &str) -> Option<String> {
+    let text = std::fs::read_to_string(room_file(platform)?).ok()?;
     let table = text.parse::<toml::Table>().ok()?;
-    table.get(to)?.as_str().map(str::to_string)
+    table.get("room")?.as_str().map(str::to_string)
 }
 
-/// Keeps a room made for somebody's threads, beside the rest.
-fn keep_the_room(platform: &str, to: &str, room: &str) {
-    let Some(path) = rooms_for(platform) else {
+/// And written, beside and renamed over.
+fn write_the_room(platform: &str, room: &str) {
+    let Some(path) = room_file(platform) else {
         return;
     };
-    let mut table = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|text| text.parse::<toml::Table>().ok())
-        .unwrap_or_default();
-    table.insert(to.to_string(), room.into());
+    let mut table = toml::Table::new();
+    table.insert("room".to_string(), room.into());
     let written = (|| {
         std::fs::create_dir_all(path.parent()?).ok()?;
         let beside = path.with_extension(format!("toml.{}", std::process::id()));
@@ -193,7 +193,7 @@ fn keep_the_room(platform: &str, to: &str, room: &str) {
         std::fs::rename(&beside, &path).ok()
     })();
     if written.is_none() {
-        tracing::warn!(platform, "the room for the threads was not written");
+        tracing::warn!(platform, "the room was not written");
     }
 }
 
@@ -225,26 +225,12 @@ impl App {
         if !self.remote_state().connected() {
             return;
         }
-        let (Some(platform), Some(to)) = (self.platform(), self.whom()) else {
+        let (Some(platform), Some(room), Some(to)) =
+            (self.platform(), self.the_room(), self.whom())
+        else {
             return;
         };
-        if self.mirror.read_for != Some(platform.key) {
-            self.mirror = Mirror {
-                threads: read_the_table(platform.key),
-                read_for: Some(platform.key),
-                ..Mirror::default()
-            };
-        }
-        // Where the threads go, before the first one is asked for: the
-        // channel keeps its order, so every `Open` after this goes there.
-        if !self.mirror.roomed {
-            self.mirror.roomed = true;
-            self.say_to(Out::Room {
-                to: to.clone(),
-                room: room_of(platform.key, &to),
-            });
-        }
-        self.adopt_what_the_reader_started(platform.key, &to);
+        self.adopt_what_the_reader_started(platform.key, &room, &to);
         let wanting: Vec<String> = self
             .documents
             .iter()
@@ -285,7 +271,7 @@ impl App {
             self.mirror.heads.insert(chat.clone(), head.clone());
             self.say_to(Out::Open {
                 asked,
-                to: to.clone(),
+                room: room.clone(),
                 head,
             });
         }
@@ -353,10 +339,34 @@ impl App {
         self.retitle(&chat, head);
     }
 
-    /// Keeps the room a platform made for somebody's threads.
-    pub(super) fn keep_the_room(&self, to: &str, room: &str) {
+    /// What this window keeps about the platform's threads, read when the
+    /// platform is not the one it was read for.
+    fn settle_the_mirror(&mut self) {
+        let Some(platform) = self.platform() else {
+            return;
+        };
+        if self.mirror.read_for != Some(platform.key) {
+            self.mirror = Mirror {
+                threads: read_the_table(platform.key),
+                room: read_the_room(platform.key),
+                read_for: Some(platform.key),
+                ..Mirror::default()
+            };
+        }
+    }
+
+    /// The group the threads are in, where somebody has paired in one.
+    pub(super) fn the_room(&mut self) -> Option<String> {
+        self.settle_the_mirror();
+        self.mirror.room.clone()
+    }
+
+    /// Takes the group somebody paired in as the room.
+    pub(super) fn keep_the_room(&mut self, room: &str) {
+        self.settle_the_mirror();
         if let Some(platform) = self.platform() {
-            keep_the_room(platform.key, to, room);
+            write_the_room(platform.key, room);
+            self.mirror.room = Some(room.to_string());
         }
     }
 
@@ -364,18 +374,19 @@ impl App {
     fn retitle(&self, chat: &str, head: Head) {
         if let Some(Thread {
             thread,
-            to,
+            room,
             own: true,
+            ..
         }) = self.mirror.threads.get(chat).cloned()
         {
-            self.say_to(Out::Retitle { to, thread, head });
+            self.say_to(Out::Retitle { room, thread, head });
         }
     }
 
     /// Writes down the threads the reader started, once the conversations
     /// they began are named -- which for one about nothing in particular is
     /// when its session arrives.
-    fn adopt_what_the_reader_started(&mut self, platform: &'static str, to: &str) {
+    fn adopt_what_the_reader_started(&mut self, platform: &'static str, room: &str, to: &str) {
         let named: Vec<(usize, String, String)> = self
             .mirror
             .starting
@@ -400,6 +411,7 @@ impl App {
                 chat,
                 Thread {
                     thread,
+                    room: room.to_string(),
                     to: to.to_string(),
                     own: false,
                 },
@@ -456,13 +468,16 @@ impl App {
         let Some(chat) = self.mirror.opening.remove(&asked) else {
             return;
         };
-        let (Some(platform), Some(to)) = (self.platform(), self.whom()) else {
+        let (Some(platform), Some(room), Some(to)) =
+            (self.platform(), self.the_room(), self.whom())
+        else {
             return;
         };
         self.mirror.threads.insert(
             chat.clone(),
             Thread {
                 thread,
+                room,
                 to,
                 own: true,
             },
@@ -481,10 +496,14 @@ impl App {
     /// Says something in a conversation's thread, or holds it for the
     /// thread that is on its way.
     fn say_in_thread(&mut self, chat: &str, text: String, notify: bool) {
-        if let Some(Thread { thread, to, .. }) = self.mirror.threads.get(chat).cloned() {
+        if let Some(Thread {
+            thread, room, to, ..
+        }) = self.mirror.threads.get(chat).cloned()
+        {
             self.say_to(Out::Say {
+                room,
+                thread,
                 to,
-                at: Where::Thread(thread),
                 text,
                 notify,
             });

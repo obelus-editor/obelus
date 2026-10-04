@@ -53,8 +53,8 @@ pub(super) struct Remote {
     /// new code is a new clock, and a used one needs none.
     pairing_runs_out: Option<crate::event::Pause>,
     /// Somebody who sent the code, while the platform is asked what they
-    /// are called.
-    naming: Option<String>,
+    /// are called: who, the group they sent it in, and the thread it began.
+    naming: Option<(String, String, String)>,
     /// Where to send what is to be said, while connected -- or connecting:
     /// the platform takes what is sent before it is up and says it once it
     /// is.
@@ -243,16 +243,19 @@ impl App {
             obelus_remote::Event::Started { platform, out } => {
                 if self.remote.reaching == Some(platform) {
                     self.remote.out = Some(out);
-                    self.mirror.roomed = false;
                 }
             }
             obelus_remote::Event::Connection(state) => {
                 tracing::info!(?state, "the chat says where it has got to");
                 self.remote.connection = Some(state);
             }
-            obelus_remote::Event::Heard { from, at, text } => self.heard(&from, &at, &text),
+            obelus_remote::Event::Heard {
+                from,
+                room,
+                at,
+                text,
+            } => self.heard(&from, &room, &at, &text),
             obelus_remote::Event::Named { id, name } => self.let_in(id, name),
-            obelus_remote::Event::Roomed { to, room } => self.keep_the_room(&to, &room),
             obelus_remote::Event::Opened { asked, thread, .. } => self.thread_opened(asked, thread),
             obelus_remote::Event::PairingOver => {
                 self.remote.pairing = None;
@@ -351,33 +354,34 @@ impl App {
     ///
     /// Nobody who is not on the list is answered -- not with "no", not with
     /// anything: a bot that answers strangers is a bot that says it is
-    /// there. The one thing a stranger may say is the code, while there is
-    /// one.
-    fn heard(&mut self, from: &str, at: &obelus_remote::model::Where, text: &str) {
+    /// there. And nothing outside the room is heard, from anybody. The one
+    /// thing that may come from anyone and anywhere is the code, while there
+    /// is one, and the group it is sent in becomes the room.
+    fn heard(&mut self, from: &str, room: &str, at: &obelus_remote::model::Where, text: &str) {
         let Some(platform) = self.platform() else {
             return;
         };
-        let known = self
-            .config()
-            .remote_of(platform.key)
-            .is_some_and(|remote| remote.people.iter().any(|person| person.id == from));
-        // Wherever a message can start: in the direct message on Feishu,
-        // and on Slack, where every message outside a thread starts one.
-        if matches!(
-            at,
-            obelus_remote::model::Where::Top | obelus_remote::model::Where::Fresh(_)
-        ) && let Some(code) = &self.remote.pairing
+        if let obelus_remote::model::Where::Fresh(thread) = at
+            && let Some(code) = &self.remote.pairing
             && same_code(code, text)
         {
             tracing::info!(platform = platform.key, "somebody sent the code");
             self.remote.pairing = None;
             self.remote.pairing_runs_out = None;
-            self.remote.naming = Some(from.to_string());
+            self.remote.naming = Some((from.to_string(), room.to_string(), thread.clone()));
             self.say_to(obelus_remote::model::Out::Name {
                 id: from.to_string(),
             });
             return;
         }
+        if self.the_room().as_deref() != Some(room) {
+            tracing::info!(platform = platform.key, "words outside the room, not heard");
+            return;
+        }
+        let known = self
+            .config()
+            .remote_of(platform.key)
+            .is_some_and(|remote| remote.people.iter().any(|person| person.id == from));
         if !known {
             tracing::info!(
                 platform = platform.key,
@@ -388,25 +392,19 @@ impl App {
         match at {
             obelus_remote::model::Where::Thread(thread) => self.heard_in_thread(thread, text),
             obelus_remote::model::Where::Fresh(thread) => self.heard_fresh(thread, text),
-            // Nothing is begun outside a thread: said where they are.
-            obelus_remote::model::Where::Top => self.say_to(obelus_remote::model::Out::Say {
-                to: from.to_string(),
-                at: obelus_remote::model::Where::Top,
-                text: platform.begin.to_string(),
-                notify: false,
-            }),
         }
     }
 
-    /// Lets in somebody who sent the code, now that their name is known.
+    /// Lets in somebody who sent the code, now that their name is known,
+    /// and takes the group they sent it in as the room.
     fn let_in(&mut self, id: String, name: String) {
-        if self.remote.naming.as_deref() != Some(id.as_str()) {
+        let Some((_, room, thread)) = self.remote.naming.take_if(|(naming, ..)| *naming == id)
+        else {
             return;
-        }
+        };
         let Some(platform) = self.platform() else {
             return;
         };
-        self.remote.naming = None;
         self.change_remote(|config| {
             config.add_person(
                 platform.key,
@@ -416,10 +414,12 @@ impl App {
                 },
             );
         });
+        self.keep_the_room(&room);
         self.say(format!("Paired {name}"));
         self.say_to(obelus_remote::model::Out::Say {
+            room,
+            thread,
             to: id,
-            at: obelus_remote::model::Where::Top,
             // And where to begin, now that there is somebody to begin: the
             // first thing a reader wonders after pairing is what to do next.
             text: format!(

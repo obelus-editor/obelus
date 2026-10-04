@@ -5,30 +5,36 @@
 //! said and where. Which is everything every chat can do, and so the whole of
 //! what a new platform has to be taught.
 
-/// Where in a direct message something is said.
+/// Where in the room something was said.
+///
+/// **A room is a group the reader made and put the bot in** -- a topic group
+/// on Feishu, a private channel on Slack -- and it is the only place Obelus
+/// hears anything. Every conversation is a thread in it, and every thread
+/// in it a conversation.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Where {
-    /// The direct message itself, outside any thread: where the reader
-    /// pairs, and where nothing else is begun.
-    Top,
     /// A thread, by the platform's own name for it -- which nothing here
     /// reads, only keeps and hands back.
     Thread(String),
-    /// A thread somebody has just started themselves, where the platform
-    /// starts threads, by the platform's name for it: a conversation that
-    /// has not begun yet. Only heard, never said to.
+    /// A message outside any thread, by the platform's name for it, which
+    /// is the thread that hangs off it: a conversation the reader is
+    /// beginning -- or, while there is a code to pair with, perhaps the
+    /// code.
     Fresh(String),
 }
 
 /// Something Obelus asks a platform to do.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Out {
-    /// Say something.
+    /// Say something in a thread.
     Say {
-        /// Whose direct message, by the platform's id for them.
+        /// Which room, by the platform's id for it.
+        room: String,
+        /// Which thread in it.
+        thread: String,
+        /// Whom the thread is with, by the platform's id for them, to call
+        /// them by name.
         to: String,
-        /// Where in it.
-        at: Where,
         /// What, in a little markdown: emphasis, code, a code block, a link.
         text: String,
         /// Whether to call them by name, which is what makes a phone ring:
@@ -40,32 +46,20 @@ pub enum Out {
     Open {
         /// Obelus's own number for the asking, handed back with the answer.
         asked: u64,
-        /// Whose direct message.
-        to: String,
+        /// Which room.
+        room: String,
         /// What the thread is, which is its first message.
         head: Head,
     },
     /// Say what a thread is again, because something about it moved: its
     /// name, its branch, where its turn has got to.
     Retitle {
-        /// Whose direct message.
-        to: String,
+        /// Which room.
+        room: String,
         /// Which thread, as the platform named it.
         thread: String,
         /// What it is now.
         head: Head,
-    },
-    /// Where the threads with somebody go: the room kept for them, or one
-    /// to be made -- see `Event::Roomed`. Said once a connection, before
-    /// any thread is asked for, so that every thread goes there.
-    ///
-    /// A platform with no room of its own to offer keeps the threads in the
-    /// direct message and answers nothing.
-    Room {
-        /// Whose.
-        to: String,
-        /// The room kept for them, where there is one.
-        room: Option<String>,
     },
     /// Find out what somebody is called, for the list of who may talk.
     Name {

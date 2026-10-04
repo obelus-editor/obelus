@@ -308,17 +308,27 @@ fn said_since() -> Vec<obelus_remote::model::Out> {
     said
 }
 
-/// Somebody saying something to the fake platform.
-fn somebody_says(from: &str, text: &str) {
+/// Somebody starting a thread in a group the bot is in, the thread named
+/// after what they said.
+fn somebody_says(from: &str, room: &str, text: &str) {
     let faked = FAKED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let faked = faked.as_ref().expect("connected");
     let _ = faked.sink.send(obelus_remote::Event::Heard {
         from: from.to_string(),
-        at: obelus_remote::model::Where::Top,
+        room: room.to_string(),
+        at: obelus_remote::model::Where::Fresh(format!("M-{text}")),
         text: text.to_string(),
     });
+}
+
+/// The room, as if somebody had paired in it: the group `C1`.
+fn a_room_kept() {
+    let state = obelus_logging::state_directory().expect("a state directory");
+    let at = state.join("remote").join("slack");
+    std::fs::create_dir_all(&at).expect("the directory");
+    std::fs::write(at.join("room.toml"), "room = \"C1\"\n").expect("the room");
 }
 
 /// A window set to Slack with both tokens kept, connected to the fake.
@@ -380,16 +390,17 @@ fn a_chat_that_is_set_is_connected_to() {
     );
 }
 
-/// Pairing: a code on the row, the code sent from the chat, the person on
-/// the list by the name the platform gives them, and a word back to them.
-/// A wrong code lets nobody in.
+/// Pairing: a code on the row, the code sent in a group, the person on the
+/// list by the name the platform gives them, a word back to them in the
+/// thread the code began, and that group kept as the room. A wrong code
+/// lets nobody in.
 ///
-/// Broken deliberately three times. Leaving where to begin out of the word
+/// Broken deliberately four times. Leaving where to begin out of the word
 /// back: they were told they were paired and nothing about what next.
 /// Comparing the code as it was typed: the code
-/// sent in small letters without its dash let nobody in. And taking any
+/// sent in small letters without its dash let nobody in. Taking any
 /// code: the stranger's wrong one was taken, and they were asked their
-/// name.
+/// name. And not keeping the group: there was no room afterwards.
 #[test]
 fn pairing_lets_in_whoever_sends_the_code() {
     let _turn = turn();
@@ -404,18 +415,16 @@ fn pairing_lets_in_whoever_sends_the_code() {
     let dump = support::render(&mut app, 66, 20);
     assert!(dump.contains(&code), "the code is not on the row:\n{dump}");
 
-    somebody_says("U0STRANGER", "hello?");
-    somebody_says("U0STRANGER", "ABC-DEF");
+    somebody_says("U0STRANGER", "C7", "hello?");
+    somebody_says("U0STRANGER", "C7", "ABC-DEF");
     let _ = support::render(&mut app, 66, 20);
     while let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(200)) {
         app.handle(event);
     }
     assert!(said_since().is_empty(), "a stranger was answered");
 
-    somebody_says(
-        "U04ABCDEF",
-        &format!("  {}  ", code.replace('-', "").to_lowercase()),
-    );
+    let sent = format!("  {}  ", code.replace('-', "").to_lowercase());
+    somebody_says("U04ABCDEF", "C7", &sent);
     until(
         &mut app,
         &events,
@@ -449,20 +458,21 @@ fn pairing_lets_in_whoever_sends_the_code() {
             .is_some_and(|remote| remote.people.iter().any(|person| person.name == "Sunli"))
     });
     assert_eq!(app.note(), Some("Paired Sunli"));
-    // What is said to them, apart from where their threads will go, which
-    // the platform is told the moment there is somebody to tell it about.
-    let said: Vec<obelus_remote::model::Out> = said_since()
-        .into_iter()
-        .filter(|out| !matches!(out, obelus_remote::model::Out::Room { .. }))
-        .collect();
+    let said = said_since();
+    let code_thread = format!("M-{sent}");
     assert!(
         matches!(
             said.as_slice(),
-            [obelus_remote::model::Out::Say { to, text, .. }]
-                if to == "U04ABCDEF" && text.contains(obelus_remote::slack::DESCRIPTION.begin)
+            [obelus_remote::model::Out::Say { room, thread, to, text, .. }]
+                if room == "C7" && *thread == code_thread && to == "U04ABCDEF"
+                    && text.contains(obelus_remote::slack::DESCRIPTION.begin)
         ),
         "they were not told, or not told what there is to say: {said:#?}"
     );
+    let room = obelus_logging::state_directory()
+        .and_then(|state| std::fs::read_to_string(state.join("remote/slack/room.toml")).ok())
+        .unwrap_or_default();
+    assert!(room.contains("\"C7\""), "the group was not kept: {room}");
     let written = std::fs::read_to_string(scratch.join("config.toml")).expect("the file");
     assert!(written.contains("U04ABCDEF"), "{written}");
     assert!(
@@ -503,7 +513,7 @@ fn in_thread(said: &[obelus_remote::model::Out], thread: &str, words: &str) -> b
     said.iter().any(|out| {
         matches!(
             out,
-            obelus_remote::model::Out::Say { at: obelus_remote::model::Where::Thread(at), text, .. }
+            obelus_remote::model::Out::Say { thread: at, text, .. }
                 if at == thread && text.contains(words)
         )
     })
@@ -538,6 +548,7 @@ fn a_conversation_and_its_thread_say_the_same_things() {
         "remote = \"slack\"\n[remotes.slack]\npeople = [{ id = \"U1\", name = \"Sunli\" }]\n",
     )
     .expect("the settings");
+    a_room_kept();
     obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
     obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
 
@@ -567,10 +578,10 @@ fn a_conversation_and_its_thread_say_the_same_things() {
     let asked = said
         .iter()
         .find_map(|out| match out {
-            obelus_remote::model::Out::Open { asked, to, .. } if to == "U1" => Some(*asked),
+            obelus_remote::model::Out::Open { asked, room, .. } if room == "C1" => Some(*asked),
             _ => None,
         })
-        .expect("a thread asked for in the reader's direct message");
+        .expect("a thread asked for in the room");
     let sink = FAKED
         .lock()
         .ok()
@@ -642,6 +653,7 @@ fn a_conversation_and_its_thread_say_the_same_things() {
     // A number from the chat answers it, and the rest of the turn follows.
     let _ = sink.send(obelus_remote::Event::Heard {
         from: "U1".to_string(),
+        room: "C1".to_string(),
         at: obelus_remote::model::Where::Thread("T1".to_string()),
         text: "1".to_string(),
     });
@@ -667,6 +679,7 @@ fn a_conversation_and_its_thread_say_the_same_things() {
     // Words from the chat go to the agent with a line saying where from.
     let _ = sink.send(obelus_remote::Event::Heard {
         from: "U1".to_string(),
+        room: "C1".to_string(),
         at: obelus_remote::model::Where::Thread("T1".to_string()),
         text: "and now?".to_string(),
     });
@@ -711,6 +724,7 @@ fn the_name_an_agent_gives_is_the_threads() {
         "remote = \"slack\"\n[remotes.slack]\npeople = [{ id = \"U1\", name = \"Sunli\" }]\n",
     )
     .expect("the settings");
+    a_room_kept();
     obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
     obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
     let mut app = App::new(Vec::new());
@@ -839,6 +853,7 @@ fn paired_with_an_agent(
         "remote = \"slack\"\n[remotes.slack]\npeople = [{ id = \"U1\", name = \"Sunli\" }]\n",
     )
     .expect("the settings");
+    a_room_kept();
     obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
     obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
     let log = scratch.join("asked.log");
@@ -871,67 +886,6 @@ fn the_platform() -> std::sync::Arc<dyn obelus_sink::Sink<obelus_remote::Event>>
         .expect("connected")
 }
 
-/// The platform is told where the threads go before the first is asked
-/// for -- nowhere yet, the first time -- and a room it makes is kept, so
-/// that the next connection tells it the same room.
-///
-/// Broken deliberately three ways. Saying the room after the threads: the
-/// `Open` came first, and on Feishu that thread would have gone to the
-/// direct message. Not keeping what came back: the next connection said no
-/// room, and Feishu would have made a second group. And telling the
-/// platform once a window rather than once a connection: the next
-/// connection, which knew nothing, was told nothing.
-#[test]
-fn the_threads_go_in_the_room_kept_for_them() {
-    let _turn = turn();
-    let scratch = support::Scratch::new("remote-room");
-    let (mut app, events, _log) = paired_with_an_agent(&scratch);
-    app.new_conversation();
-    app.open_a_session_for_test();
-    let said = said_until(&mut app, &events, "a thread to be asked for", |said| {
-        said.iter()
-            .any(|out| matches!(out, obelus_remote::model::Out::Open { .. }))
-    });
-    let room = said.iter().position(
-        |out| matches!(out, obelus_remote::model::Out::Room { to, room: None } if to == "U1"),
-    );
-    let open = said
-        .iter()
-        .position(|out| matches!(out, obelus_remote::model::Out::Open { .. }));
-    assert!(
-        room.is_some() && room < open,
-        "the room was not said before the thread: {said:#?}"
-    );
-    let platform = the_platform();
-    let _ = platform.send(obelus_remote::Event::Roomed {
-        to: "U1".to_string(),
-        room: "R1".to_string(),
-    });
-
-    // The connection made again: a platform that knows nothing, told the
-    // room that was kept.
-    let (out, mut heard) = tokio::sync::mpsc::unbounded_channel();
-    let _ = platform.send(obelus_remote::Event::Started {
-        platform: "slack",
-        out,
-    });
-    let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    let told = loop {
-        if let Ok(obelus_remote::model::Out::Room { to, room }) = heard.try_recv() {
-            break (to, room);
-        }
-        assert!(
-            std::time::Instant::now() < until,
-            "the new connection was told nothing about the room"
-        );
-        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(50)) {
-            app.handle(event);
-        }
-        support::lay_out(&mut app, 76, 24);
-    };
-    assert_eq!(told, ("U1".to_string(), Some("R1".to_string())));
-}
-
 /// A thread the reader starts in the room is a conversation: their words
 /// go to an agent as its first prompt, with the line saying where they came
 /// from, and what the agent says goes back to that thread -- with no other
@@ -949,6 +903,7 @@ fn a_thread_the_reader_starts_is_a_conversation() {
     let (mut app, events, log) = paired_with_an_agent(&scratch);
     let _ = the_platform().send(obelus_remote::Event::Heard {
         from: "U1".to_string(),
+        room: "C1".to_string(),
         at: obelus_remote::model::Where::Fresh("F1".to_string()),
         text: "what is in here".to_string(),
     });
@@ -969,41 +924,6 @@ fn a_thread_the_reader_starts_is_a_conversation() {
     );
 }
 
-/// Outside any thread nothing is begun: the direct message answers with
-/// where a conversation is, and opens nothing.
-///
-/// Broken deliberately by beginning one there as if it were a thread: an
-/// agent was started and a thread asked for, and nothing said where to go.
-#[test]
-fn the_direct_message_says_where_to_begin() {
-    let _turn = turn();
-    let scratch = support::Scratch::new("remote-top");
-    let (mut app, events, _log) = paired_with_an_agent(&scratch);
-    let _ = the_platform().send(obelus_remote::Event::Heard {
-        from: "U1".to_string(),
-        at: obelus_remote::model::Where::Top,
-        text: "notes".to_string(),
-    });
-    let said = said_until(&mut app, &events, "an answer at the top", |said| {
-        said.iter()
-            .any(|out| matches!(out, obelus_remote::model::Out::Say { .. }))
-    });
-    assert!(
-        said.iter().any(|out| matches!(
-            out,
-            obelus_remote::model::Out::Say { to, at: obelus_remote::model::Where::Top, text, .. }
-                if to == "U1" && text == obelus_remote::slack::DESCRIPTION.begin
-        )),
-        "the top did not say where to begin: {said:#?}"
-    );
-    assert!(
-        !said
-            .iter()
-            .any(|out| matches!(out, obelus_remote::model::Out::Open { .. })),
-        "something was begun at the top: {said:#?}"
-    );
-}
-
 /// What the agent says before it goes to call something goes to the thread
 /// then, quietly, and not when the turn is over -- which for a turn of
 /// minutes is minutes of nothing in the thread.
@@ -1018,6 +938,7 @@ fn what_is_said_before_a_call_goes_at_once() {
     let (mut app, events, _log) = paired_with_an_agent(&scratch);
     let _ = the_platform().send(obelus_remote::Event::Heard {
         from: "U1".to_string(),
+        room: "C1".to_string(),
         at: obelus_remote::model::Where::Fresh("F1".to_string()),
         text: "/pausing".to_string(),
     });
@@ -1030,5 +951,34 @@ fn what_is_said_before_a_call_goes_at_once() {
             obelus_remote::model::Out::Say { text, notify: false, .. } if text == "looking at it first"
         )),
         "the words went out calling the reader: {said:#?}"
+    );
+}
+
+/// Nothing outside the room is heard, even from somebody on the list: a
+/// thread they start in another group the bot is in begins nothing and is
+/// not answered.
+///
+/// Broken deliberately by hearing every group: the thread in the other
+/// group began a conversation, and the agent was asked.
+#[test]
+fn words_outside_the_room_are_not_heard() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-outside");
+    let (mut app, events, log) = paired_with_an_agent(&scratch);
+    somebody_says("U1", "C2", "what is in here");
+    for _ in 0..20 {
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(50)) {
+            app.handle(event);
+        }
+        support::lay_out(&mut app, 76, 24);
+    }
+    let logged = std::fs::read_to_string(&log).unwrap_or_default();
+    assert!(
+        !logged.contains("what is in here"),
+        "words from another group reached the agent:\n{logged}"
+    );
+    assert!(
+        said_since().is_empty(),
+        "words from another group were answered"
     );
 }
