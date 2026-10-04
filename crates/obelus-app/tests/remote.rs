@@ -1732,3 +1732,87 @@ fn an_asking_the_moment_the_chat_is_had_is_heard() {
         |first, second| !first.holds_the_remote_for_test() && second.holds_the_remote_for_test(),
     );
 }
+
+/// Asking again after giving up waits on the same thread as before: one
+/// thread a window, however often the reader asks a window that will not
+/// let go -- and the chat still comes to it when that window does.
+///
+/// Broken deliberately by starting a thread for every asking: the second
+/// asking set a second one waiting.
+#[test]
+fn asking_again_waits_on_the_same_thread() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-ask-again");
+    set_up_for_two(&scratch);
+    // Without a watcher, so it never hears the asking.
+    let (mut first, firsts) = a_window(&scratch);
+    dispatch::dispatch(&mut first, Command::RemoteConnect);
+    until(&mut first, &firsts, "the first to connect", |app| {
+        app.remote_state_for_test() == obelus_remote::State::Connected
+    });
+    let (mut second, seconds) = a_window(&scratch);
+    dispatch::dispatch(&mut second, Command::RemoteConnect);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while second.note() != Some("Another window would not let Slack go") {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the asking was never given up on"
+        );
+        if let Ok(event) = seconds.recv_timeout(std::time::Duration::from_millis(50)) {
+            second.handle(event);
+        }
+        support::lay_out(&mut second, 76, 24);
+    }
+    dispatch::dispatch(&mut second, Command::RemoteConnect);
+    assert_eq!(
+        second.waiters_for_test(),
+        1,
+        "asking again set another thread waiting"
+    );
+    dispatch::dispatch(&mut first, Command::RemoteDisconnect);
+    until(&mut second, &seconds, "the second to have it", |app| {
+        app.holds_the_remote_for_test()
+    });
+}
+
+/// A window whose chat is set to nothing lets go of it, so the next window
+/// to want it has it at once, without asking.
+///
+/// Broken deliberately by keeping the lock when the chat is set to nothing:
+/// the second window had to ask, and waited on a window with no chat.
+#[test]
+fn a_window_set_to_no_chat_lets_go_of_it() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-set-off");
+    set_up_for_two(&scratch);
+    // The first with a settings file of its own, so that setting its chat
+    // to nothing leaves the second's alone.
+    std::fs::copy(scratch.join("config.toml"), scratch.join("first.toml")).expect("a copy");
+    let mut first = App::new(vec![support::open_fixture("sample.rs")]);
+    first.config_file_for_test(scratch.join("first.toml"));
+    let firsts = support::drive(&mut first);
+    support::lay_out(&mut first, 66, 20);
+    dispatch::dispatch(&mut first, Command::RemoteConnect);
+    until(&mut first, &firsts, "the first to connect", |app| {
+        app.remote_state_for_test() == obelus_remote::State::Connected
+    });
+    dispatch::dispatch(&mut first, Command::ConfigOpen);
+    support::press(&mut first, KeyCode::Tab);
+    support::press(&mut first, KeyCode::Tab);
+    to_the_row(&mut first, "Platform");
+    support::press(&mut first, KeyCode::Enter);
+    support::type_text(&mut first, "Off");
+    support::press(&mut first, KeyCode::Enter);
+    assert_eq!(
+        first.config().remote,
+        None,
+        "the chat was not set to nothing"
+    );
+    support::lay_out(&mut first, 66, 20);
+    let (mut second, _seconds) = a_window(&scratch);
+    dispatch::dispatch(&mut second, Command::RemoteConnect);
+    assert!(
+        second.holds_the_remote_for_test(),
+        "the second had to ask a window with no chat"
+    );
+}

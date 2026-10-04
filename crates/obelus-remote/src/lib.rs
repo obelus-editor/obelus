@@ -21,6 +21,7 @@ pub mod model;
 pub mod platform;
 pub mod secrets;
 pub mod slack;
+mod waiting;
 
 /// What the work done for a chat comes back with.
 #[derive(Debug)]

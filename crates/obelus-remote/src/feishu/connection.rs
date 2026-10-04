@@ -285,8 +285,9 @@ async fn run(
     // again until they are taken, a refusal less often: a machine started
     // before its network is a machine that would otherwise never connect,
     // and what Feishu calls a refusal includes being busy. What is to be
-    // said meanwhile waits, in order, and a window letting go ends it.
-    let mut waiting: Vec<Out> = Vec::new();
+    // said meanwhile waits, in order -- as much of it as is kept -- and a
+    // window letting go ends it.
+    let mut waiting = crate::waiting::Waiting::default();
     loop {
         let (state, again) = match api.token().await {
             Ok(_) => break,
@@ -306,7 +307,7 @@ async fn run(
             tokio::select! {
                 () = &mut pause => break,
                 out = said.recv() => match out {
-                    Some(out) => waiting.push(out),
+                    Some(out) => waiting.keep(out, &sink),
                     None => return,
                 },
             }
@@ -315,7 +316,7 @@ async fn run(
     // The long connection, on a task of its own, and made again whenever it
     // drops: what it hears goes straight to the sink.
     let listening = obelus_runtime::handle().spawn(listen(api.clone(), sink.clone()));
-    for out in waiting {
+    for out in waiting.drain() {
         if let Err(why) = say(&api, &sink, out).await {
             tracing::warn!(%why, "Feishu would not take a message");
         }

@@ -88,6 +88,12 @@ pub(super) struct Remote {
     taking: Option<(u64, Option<crate::event::Pause>)>,
     /// The last such number handed out.
     asked: u64,
+    /// The number of the thread waiting in the kernel for the lock, while
+    /// one is. One at a time: an asking given up on leaves its thread
+    /// waiting, and asking again is the same wait with a new clock -- a new
+    /// thread each time was a thread more each time, all blocked on a
+    /// window that would not let go.
+    waiter: Option<u64>,
     /// An asking given up on because the other window did not answer in
     /// time -- not one the reader took back. Its request still stands, so
     /// a window that hears late and lets go leaves the chat here rather
@@ -816,6 +822,13 @@ impl App {
         self.holds_the_remote()
     }
 
+    /// How many threads this window has set waiting in the kernel for the
+    /// chat, for a test that asks again after giving up.
+    #[must_use]
+    pub fn waiters_for_test(&self) -> u64 {
+        self.remote.asked
+    }
+
     /// The chat and where it stands, for the status row of the window it
     /// talks to -- or is on its way to, which is connecting -- and nothing
     /// for any other.
@@ -861,8 +874,13 @@ impl App {
         // The other window hears this through its watch on the directory
         // and lets go; the lock comes back here when it has, or when its
         // process ends, which lets go of it too.
-        self.remote.asked += 1;
-        let number = self.remote.asked;
+        let number = match self.remote.waiter {
+            Some(waiting) => waiting,
+            None => {
+                self.remote.asked += 1;
+                self.remote.asked
+            }
+        };
         // Words nobody else could write: the process, the asking, and the
         // moment. Not the process alone, which two windows in one process
         // share.
@@ -879,7 +897,10 @@ impl App {
             tracing::warn!(%error, "could not ask the other window for the chat");
         }
         self.remote.wrote = Some(asking);
-        if let Some(events) = self.events.clone() {
+        if self.remote.waiter.is_none()
+            && let Some(events) = self.events.clone()
+        {
+            self.remote.waiter = Some(number);
             obelus_runtime::handle().spawn_blocking(move || {
                 if obelus_agent::chats::wait_to_hold(&lock) {
                     let _ = events.send(Event::Held(number, lock));
@@ -896,6 +917,9 @@ impl App {
 
     /// The lock, come back from the kernel.
     pub(super) fn held_the_remote(&mut self, number: u64, lock: std::fs::File) {
+        if self.remote.waiter == Some(number) {
+            self.remote.waiter = None;
+        }
         let asking = self.remote.taking.as_ref().map(|(asked, _)| *asked) == Some(number);
         // Or the asking that timed out, answered late: the other window let
         // go, so this one has it -- where nothing has happened since that
