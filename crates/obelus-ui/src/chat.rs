@@ -502,12 +502,12 @@ impl<'a> ChatView<'a> {
         x: u16,
         y: u16,
     ) -> Option<obelus_component::chat::Spot> {
-        let band = bands(area, chat, card).transcript;
-        if x < area.x || x >= area.right() || y < band.y || y >= band.bottom() {
+        if x < area.x || x >= area.right() {
             return None;
         }
+        let at = Self::row_under(area, chat, card, y)?;
         let rows = chat.rows(reading_width(area));
-        let at = (chat.top() + usize::from(y - band.y)).min(rows.len());
+        let at = at.min(rows.len());
         // Cells to characters here, characters to a place in the words
         // there: a cell is this drawing's own business -- a wide glyph is
         // two of them and an indent is several -- and what a character of a
@@ -545,12 +545,19 @@ impl<'a> ChatView<'a> {
         card: Option<&Card>,
         y: u16,
     ) -> Option<usize> {
+        let at = Self::row_under(area, chat, card, y)?;
+        (at < chat.rows(reading_width(area)).len()).then_some(at)
+    }
+
+    /// The same row, past the end of what has been said too: what a point
+    /// there means is each caller's own question, and which row it is
+    /// is not.
+    fn row_under(area: Rect, chat: &Chat, card: Option<&Card>, y: u16) -> Option<usize> {
         let band = bands(area, chat, card).transcript;
         if y < band.y || y >= band.bottom() {
             return None;
         }
-        let at = chat.top() + usize::from(y - band.y);
-        (at < chat.rows(reading_width(area)).len()).then_some(at)
+        Some(chat.top() + usize::from(y - band.y))
     }
 
     /// Where the terminal should put its caret: in the box, or in the
