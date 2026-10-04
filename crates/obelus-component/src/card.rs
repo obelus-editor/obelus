@@ -605,13 +605,17 @@ impl Card {
                 false => Ok((Vec::new(), Some(reply.to_string()))),
             };
         }
-        let separator = |character: char| character == ',' || character.is_whitespace();
+        // And what a Chinese input method types for the same: `1，2、3。`
+        // read as no numbers at all, and went to the agent as words.
+        let separator = |character: char| {
+            matches!(character, ',' | ';' | '，' | '、' | '；') || character.is_whitespace()
+        };
         let mut numbers: Vec<usize> = Vec::new();
         let mut rest = reply;
         loop {
             let word = rest.trim_start_matches(separator);
             let end = word.find(separator).unwrap_or(word.len());
-            match word[..end].trim_end_matches('.').parse() {
+            match word[..end].trim_end_matches(['.', '。']).parse() {
                 Ok(number) if end > 0 => {
                     numbers.push(number);
                     rest = &word[end..];
@@ -1117,11 +1121,12 @@ mod tests {
     /// several within what the agent will take, the reader's own words
     /// where the card takes some, and a sentence where it will not do.
     ///
-    /// Broken deliberately three ways. Not checking the count: two numbers
+    /// Broken deliberately four ways. Not checking the count: two numbers
     /// answered a question that takes one. Not checking the bounds: three
-    /// answered one that takes at most two. And taking words where the
-    /// card takes none: "the second" was sent as an answer nobody asked
-    /// for.
+    /// answered one that takes at most two. Taking words where the card
+    /// takes none: "the second" was sent as an answer nobody asked for.
+    /// And reading only the ASCII comma and full stop: `1，2，3。` from a
+    /// Chinese input method chose nothing, and went as words.
     #[test]
     fn a_reply_in_words_is_read_against_the_card() {
         let card = Card::new(answers(), false);
@@ -1148,6 +1153,23 @@ mod tests {
             Ok((vec!["one".to_string(), "three".to_string()], None))
         );
         assert_eq!(several.answered_by("1 2 3"), Err("At most 2".to_string()));
+        assert_eq!(
+            several.answered_by("1，3。"),
+            Ok((vec!["one".to_string(), "three".to_string()], None))
+        );
+        assert_eq!(
+            several.answered_by("1、3"),
+            Ok((vec!["one".to_string(), "three".to_string()], None))
+        );
+        let mut both = Card::new(answers(), true);
+        both.writing("Other", false, None);
+        assert_eq!(
+            both.answered_by("1，2，3。 另外加个荔枝"),
+            Ok((
+                vec!["one".to_string(), "two".to_string(), "three".to_string()],
+                Some("另外加个荔枝".to_string())
+            ))
+        );
 
         let words = Card::new(Vec::new(), false);
         assert_eq!(
