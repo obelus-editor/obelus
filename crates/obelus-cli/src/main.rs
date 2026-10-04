@@ -135,7 +135,9 @@ fn main() -> Result<()> {
 /// state, and a program that leaves them pushed leaves the reader's shell
 /// receiving escape sequences it does not expect.
 ///
-/// Nothing else in Obelus depends on the protocol.
+/// Nothing else in Obelus depends on the protocol but `ctrl+enter` in the
+/// same box, which sends into a running turn now rather than after it --
+/// and without the protocol arrives as enter, which waits for the turn.
 fn enable_keyboard() -> bool {
     use crossterm::event::{KeyboardEnhancementFlags, PushKeyboardEnhancementFlags};
 

@@ -55,6 +55,10 @@
 //! for them, and enter is the one key that sends. They still go in the
 //! order they were typed: a queue that let a later message overtake an
 //! earlier one would put their own words to the agent back to front.
+//!
+//! `ctrl+enter` is the escape and the enter in one press, and through the
+//! queue rather than past it: the box joins what is waiting, the turn is
+//! stopped, and all of it goes when the stop has ended the turn here.
 
 use obelus_agent::acp;
 use obelus_component::{card::Card, chat::Chat, picker::Picker};

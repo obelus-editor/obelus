@@ -555,6 +555,9 @@ pub enum ChatOutcome {
     Send(Vec<crate::composer::Part>),
     /// Ask the agent to stop.
     Interrupt,
+    /// Stop the turn the agent is on, and send this behind whatever was
+    /// waiting for it. Empty when only what was waiting has anything in it.
+    SendNow(Vec<crate::composer::Part>),
     /// Put these words back in the box: the reader took back something
     /// they had said that had not gone yet, or wants to say again
     /// something that had.
@@ -1063,6 +1066,16 @@ impl Chat {
             said.parts = parts.to_vec();
             said.unsent = true;
         }
+    }
+
+    /// Whether stopping the turn now would leave anything to say: words in
+    /// the box, or something waiting for the turn to end.
+    ///
+    /// The one answer to whether `ctrl+enter` sends now, which the key and
+    /// the row offering it both ask.
+    #[must_use]
+    pub fn would_send_now(&self) -> bool {
+        !self.input.is_blank() || self.said.iter().any(|said| said.unsent)
     }
 
     /// Everything the reader has said that has not gone, in the order they
@@ -2276,6 +2289,19 @@ impl Chat {
             self.focus = Focus::Writing;
             self.input.newline();
             return ChatOutcome::Consumed;
+        }
+        // Saying it now rather than after the turn: escape and then enter,
+        // in one press. Where nothing is running there is nothing to stop,
+        // and it is enter. Control rather than a third way to break a line,
+        // so like `shift+enter` it needs the kitty keyboard protocol -- and
+        // a terminal without it sends enter, which waits, which is the
+        // harmless half of what was asked.
+        if key.code == KeyCode::Enter && modifiers == KeyModifiers::CONTROL {
+            return match (thinking, self.input.is_blank()) {
+                (true, _) if self.would_send_now() => ChatOutcome::SendNow(self.input.take_parts()),
+                (false, false) => ChatOutcome::Send(self.input.take_parts()),
+                _ => ChatOutcome::Consumed,
+            };
         }
         // Everything else with a modifier on it is the application's:
         // a conversation is a document rather than something over one, so

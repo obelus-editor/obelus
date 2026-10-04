@@ -1715,6 +1715,28 @@ impl App {
         {
             talk.chat.put_back(parts);
         }
+        self.stop_the_turn(id);
+    }
+
+    /// Stops the turn and says what the reader had waiting, with this
+    /// behind it: escape and then enter, in one press.
+    ///
+    /// Through the queue rather than past it, so the prompt goes when the
+    /// turn has ended here and not a moment before -- zed's "send now" is
+    /// the cancellation awaited and *then* the prompt, for the reason
+    /// [`crate::conversation`] gives for queueing at all. What was waiting
+    /// stays on the page as the rows it was, and goes first.
+    pub(super) fn send_now(&mut self, id: DocumentId, parts: &[Part]) {
+        if !parts.is_empty()
+            && let Some(talk) = self.talk_mut(Whose::One(id))
+        {
+            talk.chat.will_say(parts);
+        }
+        self.stop_the_turn(id);
+    }
+
+    /// Tells the agent to stop, and stops what it left running here.
+    fn stop_the_turn(&mut self, id: DocumentId) {
         let running: Vec<String> = self
             .talk(Whose::One(id))
             .map(|talk| talk.chat.commands())
@@ -2046,6 +2068,12 @@ impl App {
             ChatOutcome::Interrupt => {
                 if let Some(id) = self.current {
                     self.interrupt_agent(id);
+                }
+                true
+            }
+            ChatOutcome::SendNow(parts) => {
+                if let Some(id) = self.current {
+                    self.send_now(id, &parts);
                 }
                 true
             }

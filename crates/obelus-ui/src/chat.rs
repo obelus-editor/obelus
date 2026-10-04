@@ -1095,12 +1095,21 @@ impl ChatView<'_> {
             // How to stop it, on the row that says it is going: the one
             // thing escape does here that a reader could not guess, and it
             // belongs beside the thing it would stop.
+            //
+            // And, with something to say, how to say it without waiting for
+            // the turn -- which is stopping it, so it goes beside the stop,
+            // and is the first to go when the row is short.
             if row.speaker == Speaker::Doing && self.state == Talking::Thinking {
-                let hint = "Esc stops it";
-                if let Ok(offset) =
+                let hints: &[&str] = match self.chat.would_send_now() {
+                    true => &["Ctrl+Enter sends it now  Esc stops it", "Esc stops it"],
+                    false => &["Esc stops it"],
+                };
+                if let Some((offset, hint)) = hints.iter().find_map(|hint| {
                     u16::try_from(usize::from(area.width).saturating_sub(text_width(hint) + 1))
-                    && area.x + offset > ended + 1
-                {
+                        .ok()
+                        .filter(|offset| area.x + offset > ended + 1)
+                        .map(|offset| (offset, hint))
+                }) {
                     write(cells, area.x + offset, y, hint, dim);
                 }
             }

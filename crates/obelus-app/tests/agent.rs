@@ -835,6 +835,138 @@ fn what_was_waiting_goes_as_one_prompt() {
     );
 }
 
+/// `ctrl+enter` into a running turn stops it and says what was waiting,
+/// with the box behind it: escape and then enter, in one press.
+///
+/// Through the queue and not past it -- nothing goes until the stop has
+/// ended the turn here, which is zed's order too -- and what was waiting
+/// stays on the page as the rows it was, rather than going back into the
+/// box the way escape puts it.
+///
+/// Broken deliberately three ways: dropping the `stop_the_turn` from
+/// `send_now` leaves `/forever` running with both rows waiting behind it,
+/// and `blocks=` never arrives; sending the box with `say_in` instead of
+/// `will_say` puts it out ahead of the stop, so it is not among what is
+/// waiting when the key returns; and `interrupt_agent` in place of
+/// `send_now`'s own stop puts the waiting row back into the box, which is
+/// then neither empty nor sent.
+#[test]
+fn ctrl_enter_stops_the_turn_and_says_what_was_waiting_at_once() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/forever");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to start thinking", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+    support::type_text(&mut app, "/blocks");
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "and this");
+
+    support::press_control_key(&mut app, KeyCode::Enter);
+    let words = |said: &str| vec![obelus_component::composer::Part::Words(said.to_string())];
+    assert_eq!(
+        app.chat().map(|chat| chat.unsent()),
+        Some(vec![words("/blocks"), words("and this")]),
+        "the box did not join what was waiting, behind it"
+    );
+    assert_eq!(
+        app.chat().map(|chat| chat.writing().text()),
+        Some(String::new()),
+        "what was typed is still in the box"
+    );
+
+    pump(&mut app, &events, "the answer to what was waiting", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text().contains("blocks="))
+        })
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Stopped"),
+        "the turn it was typed into was not stopped:
+{text}"
+    );
+    assert_eq!(
+        app.chat().map(|chat| chat.unsent()),
+        Some(Vec::new()),
+        "something is still waiting"
+    );
+}
+
+/// With nothing running, `ctrl+enter` is enter: there is no turn to stop,
+/// and the words go.
+///
+/// Broken deliberately by answering `(false, false)` with `Consumed` in
+/// `Chat::handle_key`: the key does nothing, and the words stay in the box.
+#[test]
+fn ctrl_enter_with_nothing_running_sends() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/blocks");
+    support::press_control_key(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text().contains("blocks="))
+        })
+    });
+    assert_eq!(
+        app.chat().map(|chat| chat.writing().text()),
+        Some(String::new()),
+        "the words are still in the box"
+    );
+}
+
+/// The row that says the agent is working offers `ctrl+enter` while there
+/// is something it would send, and only then.
+///
+/// Broken deliberately by offering it whatever `would_send_now` says: it
+/// is there over an empty box, beside a turn there is nothing to say into.
+/// And by asking only the box: once the words have gone to wait, the row
+/// stops offering the key that would send them.
+#[test]
+fn the_working_row_offers_to_send_now_only_with_something_to_send() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/forever");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to start thinking", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+    let doing = |app: &mut App| {
+        let dump = support::render(app, WIDTH, HEIGHT);
+        rows(&dump)
+            .into_iter()
+            .find(|row| row.contains("Esc stops it"))
+            .map(str::to_string)
+            .unwrap_or_else(|| panic!("nothing says how to stop it:\n{dump}"))
+    };
+    let offered = |row: &str| row.contains("Ctrl+Enter sends it now");
+    assert!(!offered(&doing(&mut app)), "offered over an empty box");
+
+    support::type_text(&mut app, "and this");
+    assert!(
+        offered(&doing(&mut app)),
+        "not offered with words in the box"
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    assert!(
+        offered(&doing(&mut app)),
+        "not offered with something waiting and the box empty"
+    );
+}
+
 /// Enter on something the reader said that has not gone takes it back.
 ///
 /// The one row in a transcript whose key hands something back rather than
