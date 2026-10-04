@@ -189,7 +189,7 @@
       </ol>
 
       <p>上面每一个问题都是对话里的一张卡片，用你手上本来就按着的那几个键回答。没有哪一次推送、合并、删除或打勾，是因为 agent 觉得「该做了」。</p>
-      <p class="quiet small">这就是 <code>feature-branch</code> 这个 workflow，默认就开着，除非你设成 <code>workflow = "none"</code>——<kbd>Ctrl+p</kbd> → <code>open-settings</code> → <code>Workflow</code>——那样 agent 就按它自己的方式改，通常直接改在你正在读的那份 checkout 里。项目可以替自己选；不是 git 仓库的项目没有分支可开，agent 就在原地改。Obelus 自己不跑任何 git：每一条命令都是 agent 的。</p>
+      <p class="quiet small">这就是 <code>feature-branch</code> 这个 workflow，默认就开着，除非你设成 <code>workflow = "none"</code>——<kbd>Ctrl+p</kbd> → <code>open-settings</code> → <code>Workflow</code>——那样 agent 就按它自己的方式改，通常直接改在你正在读的那份 checkout 里；<code>in-place</code> 介于两者之间，步骤一样，只是直接改你正在读的 checkout，每处改动都落在你眼前的文件里，<kbd>Ctrl+z</kbd> 就能撤掉。项目可以替自己选；不是 git 仓库的项目没有分支可开，agent 就在原地改。Obelus 自己不跑任何 git：每一条命令都是 agent 的。</p>
 
       <div class="feature">
         <div class="text">

@@ -540,7 +540,7 @@ const DELAYS: &[&str] = &["0", "200", "400", "800"];
 /// `none` is the agent's own way. What each one says -- to the reader in
 /// the list it is chosen from, and to the agent -- is a file in
 /// `obelus-app`, which a test there holds to this list.
-const WORKFLOWS: &[&str] = &["none", "feature-branch"];
+const WORKFLOWS: &[&str] = &["none", "in-place", "feature-branch"];
 
 /// Every setting Obelus has.
 pub const ALL: &[Setting] = &[
