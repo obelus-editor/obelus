@@ -143,6 +143,13 @@ impl State {
         matches!(self, Self::Connected)
     }
 
+    /// Whether it is connected or may be, by going on: a chat set and
+    /// told everything, or one that is on its way up.
+    #[must_use]
+    pub const fn may_connect(self) -> bool {
+        matches!(self, Self::Connecting | Self::Connected | Self::Unreachable)
+    }
+
     /// Whether something is wrong that the reader has to do something about.
     #[must_use]
     pub const fn wrong(self) -> bool {

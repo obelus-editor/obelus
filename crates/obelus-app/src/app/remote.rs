@@ -61,6 +61,8 @@ pub(super) struct Remote {
     /// The clock it runs out on. Dropped with the code, which stops it: a
     /// new code is a new clock, and a used one needs none.
     pairing_runs_out: Option<crate::event::Pause>,
+    /// A code asked for before the chat was here, made once it connects.
+    pair_once_connected: bool,
     /// The number of the connection now wanted: every connection's events
     /// carry theirs, and one let go may still be saying something -- a late
     /// `Connected`, a `Refused` for a token since mended -- that is not
@@ -339,6 +341,15 @@ impl App {
                 // refusal or a request that timed out, is asked for again.
                 if state == State::Connected {
                     self.threads_may_open_again();
+                }
+                match state {
+                    State::Connected if std::mem::take(&mut self.remote.pair_once_connected) => {
+                        self.pair();
+                    }
+                    // A code for a chat that will not have this window's
+                    // tokens is a code nobody will be asked for.
+                    State::Refused => self.remote.pair_once_connected = false,
+                    _ => {}
                 }
             }
             obelus_remote::Event::Heard {
@@ -741,17 +752,28 @@ impl App {
         tracing::debug!("the list of people is not drawn yet");
     }
 
-    /// Makes a code for somebody to pair with, where there is anything
-    /// listening for it.
+    /// Makes a code for somebody to pair with, taking the chat into this
+    /// window first where it is not here.
+    ///
+    /// Asked whether the chat could be reached rather than whether it is:
+    /// pairing is the first thing a reader does with a chat, so offering it
+    /// only once connected was a row that did nothing until they found
+    /// `connect-remote` -- and then one to press again.
     ///
     /// Good for five minutes, and then it is gone: a code is the one thing a
     /// stranger may send, so it is something that exists only while the
     /// reader is waiting for it. Run out by a clock of its own rather than a
     /// countdown on the row -- nothing on screen moves for it.
     fn pair(&mut self) {
-        // Silent where there is nothing to send it to: the row is drawn dim
-        // there, and a key does nothing where its row is dim.
-        if !self.remote_state().connected() {
+        // Silent where it could not be sent: the row is drawn dim there,
+        // and a key does nothing where its row is dim.
+        let state = self.remote_state();
+        if !state.may_connect() {
+            return;
+        }
+        if !state.connected() || !self.holds_the_remote() {
+            self.remote.pair_once_connected = true;
+            self.connect_remote();
             return;
         }
         self.remote.pairing = Some(a_code());
@@ -977,6 +999,7 @@ impl App {
     /// waiting going on, so the next asking starts it again, and one still
     /// going is over -- said, because nothing else will come for it.
     pub(super) fn not_held(&mut self, number: u64) {
+        self.remote.pair_once_connected = false;
         if self.remote.waiter == Some(number) {
             self.remote.waiter = None;
         }
@@ -996,6 +1019,7 @@ impl App {
         let Some((number, _)) = self.remote.taking.take() else {
             return;
         };
+        self.remote.pair_once_connected = false;
         self.remote.given_up = Some(number);
         if let Some(platform) = self.platform() {
             self.wrong(format!("Another window would not let {} go", platform.name));
@@ -1014,6 +1038,7 @@ impl App {
     /// Stops this window talking to the chat, which leaves it to no window
     /// until one asks.
     pub(super) fn disconnect_remote(&mut self) {
+        self.remote.pair_once_connected = false;
         // An asking, taken back: the request withdrawn, so that the window
         // that has the chat keeps it when it hears.
         if self.remote.taking.take().is_some() {
@@ -1044,6 +1069,7 @@ impl App {
     /// Another window has asked for the chat: let go, so that it can have
     /// it. Not this window's own asking, which it hears too.
     pub(super) fn somebody_wants_the_remote(&mut self) {
+        self.remote.pair_once_connected = false;
         if self.remote.holding.is_none() {
             return;
         }

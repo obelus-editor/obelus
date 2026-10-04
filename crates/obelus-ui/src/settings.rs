@@ -230,15 +230,15 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
             },
         ),
     };
-    // Pairing does nothing until the chat is connected, and a key that
-    // does nothing is not offered at the foot.
+    // Pairing does nothing where the chat could not be reached, and a key
+    // that does nothing is not offered at the foot.
     let pairing_waits = matches!(
         remote,
         Some(Shown::Remote {
             row: RemoteRow::Pair,
             ..
         })
-    ) && !settings.reached().state.connected();
+    ) && !settings.reached().state.may_connect();
     // Forgetting is for a field that has something to forget.
     let forgets = matches!(
         remote,
@@ -1259,16 +1259,16 @@ impl SettingsView<'_> {
                 },
                 true,
             ),
-            // Only with something to send it to: a code made while nothing
-            // is listening is a code nobody can use. Dim rather than gone,
-            // the way every row here that cannot be used is -- which takes
-            // a word to be dim, until there is a code to show instead.
+            // Only where it could be sent: a code for a chat that cannot be
+            // reached is a code nobody can use. Dim rather than gone, the
+            // way every row here that cannot be used is -- which takes a
+            // word to be dim, until there is a code to show instead.
             RemoteRow::Pair => Aside::Does(
                 reached
                     .pairing
                     .clone()
                     .unwrap_or_else(|| "Make a code".to_string()),
-                reached.state.connected(),
+                reached.state.may_connect(),
             ),
             RemoteRow::Setup(setup) => Aside::Does(
                 match setup {

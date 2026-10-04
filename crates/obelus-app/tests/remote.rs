@@ -256,22 +256,66 @@ fn the_manifest_is_copied() {
     assert!(copied.contains("\"socket_mode_enabled\": true"), "{copied}");
 }
 
-/// Pairing waits for something to send the code to.
+/// Pairing waits for a chat that could be reached: one told everything
+/// it has to be.
 ///
 /// Broken deliberately by offering it whatever the state: the foot offered
-/// `Pair` on a chat nothing is connected to.
+/// `Pair` on a chat with no tokens.
 #[test]
-fn pairing_waits_for_a_connection() {
+fn pairing_waits_for_a_chat_that_could_be_reached() {
     let _turn = turn();
     let scratch = support::Scratch::new("remote-pair");
-    let (mut app, _events) = on_the_remote_page(&scratch);
+    let (mut app, events) = on_the_remote_page(&scratch);
     choose_slack(&mut app);
+    until(
+        &mut app,
+        &events,
+        "the keyring to say there are no tokens",
+        |app| app.remote_state_for_test() == obelus_remote::State::Unready,
+    );
     to_the_row(&mut app, "Pair");
     let dump = support::render(&mut app, 66, 20);
     assert!(
         !dump.contains("Enter  Pair"),
         "pairing is offered with nothing to pair with:\n{dump}"
     );
+}
+
+/// Pairing in a window the chat is not in yet takes the chat, and the code
+/// comes once it has connected -- one press, not one to find
+/// `connect-remote` and another to press again.
+///
+/// Broken deliberately twice. Offering it only once connected: the foot
+/// did not offer `Pair`. And taking the chat without keeping what was
+/// asked for: it connected, and no code came.
+#[test]
+fn pairing_takes_the_chat_and_then_makes_the_code() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-pair-takes");
+    obelus_remote::platform::connect_for_test(fake_connect);
+    *FAKED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    std::fs::write(scratch.join("config.toml"), "remote = \"slack\"\n").expect("the settings");
+    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    let (mut app, events) = on_the_remote_page(&scratch);
+    until(&mut app, &events, "the tokens to be read", |app| {
+        app.settings()
+            .is_some_and(|settings| settings.reached().state.may_connect())
+    });
+    to_the_row(&mut app, "Pair");
+    let dump = support::render(&mut app, 66, 20);
+    assert!(
+        dump.contains("Enter  Pair"),
+        "pairing is not offered on a chat that could be reached:\n{dump}"
+    );
+    support::press(&mut app, KeyCode::Enter);
+    until(&mut app, &events, "a code on the row", |app| {
+        app.settings()
+            .is_some_and(|settings| settings.reached().pairing.is_some())
+    });
+    assert!(app.holds_the_remote_for_test(), "the chat is not here");
 }
 
 /// What the fake platform was handed: where it reports what it hears, and
