@@ -465,8 +465,11 @@ const SHEENED: u32 = 2048;
 /// three ways -- see `held` in the shader, and `Turn`.
 const HELD_PLATE: u32 = 4096;
 
-/// The soft edge outside a pane or a box.
-const SHADOW: u32 = 8192;
+/// The soft edge outside a pane or a box. Past the turns for the same
+/// reason the wedge is: at 8192 it was the low bit of a plate's top left
+/// turn, and the shader asks about a shadow first, so a hold whose row
+/// above reached further left was drawn as the shadow of nothing.
+const SHADOW: u32 = 8_388_608;
 
 /// Where those four turns sit in the flags, two bits each, in the order
 /// `Turn::corners` puts them.
@@ -5005,6 +5008,28 @@ mod tests {
     fn frosted_is_none_of_the_turns() {
         assert_eq!(FROSTED & (255 << HELD_TURNS), 0);
         assert_eq!(FROSTED & WEDGE, 0);
+    }
+
+    /// No turn a plate can carry is read as a shadow.
+    ///
+    /// Asked of what `Turn::corners` packs rather than of the bits, so a
+    /// shadow anywhere a real turn lands fails it. Deliberate break: put
+    /// `SHADOW` back at 8192, and a hold under a row reaching further
+    /// left -- `Other` at its top left -- is a shadow.
+    #[test]
+    fn a_shadow_is_none_of_the_turns() {
+        let row = |from: u16, to: u16| Some((from, to, Color::Reset));
+        for (above, below) in [
+            (row(0, 20), None),
+            (None, row(0, 20)),
+            (row(5, 20), row(5, 20)),
+        ] {
+            for cut in [(false, false), (true, false), (false, true)] {
+                let turns = Turn::corners(5, 10, above, below, cut);
+                assert_eq!((turns << HELD_TURNS) & SHADOW, 0, "{turns:08b}");
+            }
+        }
+        assert_eq!(SHADOW & (FROSTED | WEDGE), 0);
     }
 
     /// Which way a hold's corner turns is a fact about the row beside it.
