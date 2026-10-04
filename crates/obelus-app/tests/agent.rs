@@ -841,9 +841,11 @@ fn what_was_waiting_goes_as_one_prompt() {
 /// Through the queue and not past it -- nothing goes until the stop has
 /// ended the turn here, which is zed's order too -- and what was waiting
 /// stays on the page as the rows it was, rather than going back into the
-/// box the way escape puts it.
+/// box the way escape puts it. And the turn's end does not say `Stopped`
+/// above them: the reader's words are what comes next.
 ///
-/// Broken deliberately three ways: dropping the `stop_the_turn` from
+/// Broken deliberately four ways: dropping the `if to_say` arm from the
+/// turn's end puts `Stopped` on the page; dropping the `stop_the_turn` from
 /// `send_now` leaves `/forever` running with both rows waiting behind it,
 /// and `blocks=` never arrives; sending the box with `say_in` instead of
 /// `will_say` puts it out ahead of the stop, so it is not among what is
@@ -885,16 +887,56 @@ fn ctrl_enter_stops_the_turn_and_says_what_was_waiting_at_once() {
                 .any(|row| row.text().contains("blocks="))
         })
     });
+    // `blocks=` is what says the turn was stopped: `/forever` never ends
+    // on its own, and nothing waiting goes until it has.
     let text = screen(&mut app);
     assert!(
-        text.contains("Stopped"),
-        "the turn it was typed into was not stopped:
+        !text.contains("Stopped"),
+        "a stop made to say something said it stopped:
 {text}"
     );
     assert_eq!(
         app.chat().map(|chat| chat.unsent()),
         Some(Vec::new()),
         "something is still waiting"
+    );
+}
+
+/// Escape after `ctrl+enter`, before the stop has landed, is a stop again:
+/// what was going to be said goes back into the box, and the turn's end
+/// says `Stopped`.
+///
+/// Broken deliberately by taking the `stopped_to_say = false` out of
+/// `interrupt_agent`: the end says nothing, and the reader is left with
+/// their words back in the box and no word on the page that anything
+/// stopped.
+#[test]
+fn escape_after_ctrl_enter_says_it_stopped() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/forever");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to start thinking", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+    support::type_text(&mut app, "/blocks");
+
+    support::press_control_key(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Esc);
+    pump(&mut app, &events, "the turn to end", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Stopped"),
+        "it did not say it stopped:\n{text}"
+    );
+    assert_eq!(
+        app.chat().map(|chat| chat.writing().text()),
+        Some("/blocks".to_string()),
+        "what was going to be said is not back in the box"
     );
 }
 

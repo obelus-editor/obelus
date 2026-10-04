@@ -270,6 +270,13 @@ pub struct Conversation {
     /// reader's settings, which have not moved, and said again it is the
     /// same line down the page once for every visit.
     pub said_not_offered: std::collections::BTreeSet<(String, String)>,
+    /// Whether the turn running now was stopped to say what is waiting,
+    /// rather than stopped.
+    ///
+    /// Written down by the key rather than worked out from what is waiting
+    /// when the turn ends: a reader who presses escape and types before the
+    /// stop has landed has words waiting too, and they asked for a stop.
+    pub stopped_to_say: bool,
 }
 
 impl Conversation {

@@ -1727,10 +1727,14 @@ impl App {
     /// an agent closing its own is stopped too, and it may not be the one
     /// the reader is in.
     pub(super) fn interrupt_agent(&mut self, id: DocumentId) {
-        if let Some(talk) = self.talk_mut(Whose::One(id))
-            && let Some(parts) = talk.chat.take_back_waiting()
-        {
-            talk.chat.put_back(parts);
+        if let Some(talk) = self.talk_mut(Whose::One(id)) {
+            // Escape after `ctrl+enter` and before the stop has landed:
+            // what was going to be said is back in the box, so this one
+            // is a stop again.
+            talk.stopped_to_say = false;
+            if let Some(parts) = talk.chat.take_back_waiting() {
+                talk.chat.put_back(parts);
+            }
         }
         self.stop_the_turn(id);
     }
@@ -1743,11 +1747,16 @@ impl App {
     /// the cancellation awaited and *then* the prompt, for the reason
     /// [`crate::conversation`] gives for queueing at all. What was waiting
     /// stays on the page as the rows it was, and goes first.
+    ///
+    /// And the turn's end says nothing: what the reader said is the next
+    /// thing on the page, and `Stopped` above it says the half of the
+    /// press they did not mean.
     pub(super) fn send_now(&mut self, id: DocumentId, parts: &[Part]) {
-        if !parts.is_empty()
-            && let Some(talk) = self.talk_mut(Whose::One(id))
-        {
-            talk.chat.will_say(parts);
+        if let Some(talk) = self.talk_mut(Whose::One(id)) {
+            talk.stopped_to_say = true;
+            if !parts.is_empty() {
+                talk.chat.will_say(parts);
+            }
         }
         self.stop_the_turn(id);
     }
@@ -3391,9 +3400,14 @@ impl App {
             acp::Incoming::Ended { why: reason, .. } => {
                 // Only the ends that are not the ordinary one: a turn that
                 // finished has its answer above it, and "end turn" under
-                // every answer is noise.
+                // every answer is noise. Nor a stop made to say something,
+                // which the reader's words say (`send_now`).
+                let to_say = self
+                    .talk_mut(whose)
+                    .is_some_and(|talk| std::mem::take(&mut talk.stopped_to_say));
                 match reason.as_deref() {
                     Ok("end_turn") => {}
+                    Ok("cancelled") if to_say => {}
                     Ok("cancelled") => self.in_talk(whose, |chat| chat.note("Stopped")),
                     Ok("refusal") => {
                         self.in_talk(whose, |chat| chat.note("It declined to answer"));
