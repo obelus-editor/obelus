@@ -6956,6 +6956,111 @@ fn the_pointer_takes_hold_of_what_was_said() {
     assert_eq!(text, "heard", "the copy is not what was dragged across");
 }
 
+/// A drag can start on a blank of the transcript, as well as on words.
+///
+/// The rows between what was said, and the band under the last of it, are
+/// where a reader's pointer is when they mean "from here": the start of an
+/// answer is easiest to catch from the blank above it, the end of one from
+/// the empty screen below it. A press on either let go of everything and
+/// took hold of nothing, so the drag after it selected nothing at all.
+///
+/// Broken deliberately two ways, each failing its own half: handing back
+/// only what `spot_at` finds on the row under the pointer, which is what it
+/// did, and the blank comes out as the empty message in the box rather
+/// than a selection; and answering nothing past the last row, which does
+/// the same to the press under the transcript. And by letting the hold
+/// be on the button coming up, which leaves the click holding something;
+/// or letting go of every hold there, which takes the drags' copies too.
+#[test]
+fn a_drag_starts_on_a_blank_of_the_transcript() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/echo");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH - 5)
+                .iter()
+                .any(|row| row.text().contains("heard you"))
+        })
+    });
+
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let at = row_of(&dump, "heard you");
+    let start = support::column_of(rows(&dump)[usize::from(at)], "heard you");
+    let Ok(start) = u16::try_from(start) else {
+        panic!("the answer is off the screen:\n{dump}");
+    };
+    let above = at - 1;
+    assert!(
+        rows(&dump)[usize::from(above)]
+            .split_once('|')
+            .is_some_and(|(_, row)| row.trim().is_empty()),
+        "the row above the answer is not a blank:\n{dump}"
+    );
+    // Well below anything said, and above the box.
+    let below = row_of(&dump, "Thinking") + 3;
+    assert!(
+        rows(&dump)[usize::from(below)]
+            .split_once('|')
+            .is_some_and(|(_, row)| row.trim().is_empty()),
+        "the row below the transcript is not empty:\n{dump}"
+    );
+    let drag = |app: &mut App, from: (u16, u16), to: (u16, u16)| {
+        app.handle(Event::Pointer {
+            kind: obelus_app::event::Pointer::Pressed,
+            x: from.0,
+            y: from.1,
+        });
+        app.handle(Event::Pointer {
+            kind: obelus_app::event::Pointer::Dragged,
+            x: to.0,
+            y: to.1,
+        });
+        app.handle(Event::Pointer {
+            kind: obelus_app::event::Pointer::Released,
+            x: to.0,
+            y: to.1,
+        });
+        app.chat().expect("a conversation").copied(WIDTH - 5)
+    };
+
+    // Down from the blank above the answer, across its first word.
+    let (text, what) = drag(&mut app, (start, above), (start + 5, at));
+    assert_eq!(
+        what, "selection",
+        "a press on the blank took hold of nothing"
+    );
+    assert_eq!(text, "heard", "the copy is not what was dragged across");
+
+    // Up from the empty screen under it, to the start of the answer.
+    let (text, what) = drag(&mut app, (start, below), (start, at));
+    assert_eq!(
+        what, "selection",
+        "a press under the transcript took hold of nothing"
+    );
+    assert_eq!(text, "heard you", "the copy is not what was dragged across");
+
+    // And a press there that never became a drag holds nothing, which
+    // escape and a shifted arrow would otherwise go on finding.
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: start,
+        y: below,
+    });
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Released,
+        x: start,
+        y: below,
+    });
+    assert!(
+        !app.chat().expect("a conversation").holding(),
+        "a click on the empty screen left an empty hold behind"
+    );
+}
+
 /// A transcript scrolled away from its end says how to get back, and what
 /// arrived while the reader was not looking.
 ///

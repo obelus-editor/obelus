@@ -487,9 +487,14 @@ impl<'a> ChatView<'a> {
     ///
     /// A point in a row the reading drew rather than read -- a blank, the
     /// heading over a folded run, the row that says what is happening now
-    /// -- is the place just after the last word above it. A drag has to go
+    /// -- is the place just after the last word above it, or where there is
+    /// none, the place before the first word below. A drag has to go
     /// somewhere while it crosses one, and the words either side of it are
     /// what the reader is dragging between.
+    ///
+    /// And the band below the last row is the place after the last word of
+    /// all, for the same reason: it is where a reader starts a drag up
+    /// through the end of an answer.
     #[must_use]
     pub fn place_in_transcript(
         area: Rect,
@@ -501,15 +506,29 @@ impl<'a> ChatView<'a> {
         if x < area.x || x >= area.right() {
             return None;
         }
-        let at = Self::row_in_transcript(area, chat, card, y)?;
+        let at = Self::row_under(area, chat, card, y)?;
         let rows = chat.rows(reading_width(area));
-        let row = rows.get(at)?;
+        let at = at.min(rows.len());
         // Cells to characters here, characters to a place in the words
         // there: a cell is this drawing's own business -- a wide glyph is
         // two of them and an indent is several -- and what a character of a
         // row came from is the row's. Two halves of one seam, so that the
         // pointer and the cursor cross it by the same arithmetic.
-        row.spot_at(characters_at(row, x, area))
+        if let Some(spot) = rows
+            .get(at)
+            .and_then(|row| row.spot_at(characters_at(row, x, area)))
+        {
+            return Some(spot);
+        }
+        // Upwards first, where the cursor's nearest looks down, and nothing
+        // turns on it: what lies between the end of the words above and the
+        // start of those below is nobody's words, so a drag from either
+        // copies the same. Under the last row there is only above.
+        rows[..at]
+            .iter()
+            .rev()
+            .find_map(|row| row.spot_at(row.characters()))
+            .or_else(|| rows[at..].iter().find_map(|row| row.spot_at(0)))
     }
 
     /// Which row of the transcript a point on screen is on.
@@ -528,12 +547,19 @@ impl<'a> ChatView<'a> {
         card: Option<&Card>,
         y: u16,
     ) -> Option<usize> {
+        let at = Self::row_under(area, chat, card, y)?;
+        (at < chat.rows(reading_width(area)).len()).then_some(at)
+    }
+
+    /// The same row, past the end of what has been said too: what a point
+    /// there means is each caller's own question, and which row it is
+    /// is not.
+    fn row_under(area: Rect, chat: &Chat, card: Option<&Card>, y: u16) -> Option<usize> {
         let band = bands(area, chat, card).transcript;
         if y < band.y || y >= band.bottom() {
             return None;
         }
-        let at = chat.top() + usize::from(y - band.y);
-        (at < chat.rows(reading_width(area)).len()).then_some(at)
+        Some(chat.top() + usize::from(y - band.y))
     }
 
     /// Where the terminal should put its caret: in the box, or in the
