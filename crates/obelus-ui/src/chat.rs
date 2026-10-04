@@ -512,6 +512,34 @@ impl<'a> ChatView<'a> {
         row.spot_at(characters_at(row, x, area))
     }
 
+    /// Where the cursor would stand for a point on screen: the row and the
+    /// character of it, crossed by the same arithmetic as
+    /// [`ChatView::place_in_transcript`] so that the cursor a press puts
+    /// down is on the character the selection starts at.
+    ///
+    /// Unlike that, a row in nobody's words is a place too -- a blank, a
+    /// heading -- because the cursor stands on those and a selection does
+    /// not.
+    #[must_use]
+    pub fn cursor_in_transcript(
+        area: Rect,
+        chat: &Chat,
+        card: Option<&Card>,
+        x: u16,
+        y: u16,
+    ) -> Option<obelus_component::chat::Place> {
+        if x < area.x || x >= area.right() {
+            return None;
+        }
+        let at = Self::row_in_transcript(area, chat, card, y)?;
+        let rows = chat.rows(reading_width(area));
+        let row = rows.get(at)?;
+        Some(obelus_component::chat::Place {
+            row: at,
+            character: characters_at(row, x, area),
+        })
+    }
+
     /// Which row of the transcript a point on screen is on.
     ///
     /// The row rather than the place in the words: what is under the

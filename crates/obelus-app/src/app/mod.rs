@@ -3315,14 +3315,16 @@ impl App {
         let width = obelus_ui::chat::writing_width(area);
         let mut held = false;
         self.in_transcript(|chat| {
-            let writing = chat.writing_mut();
             match kind {
                 Pointer::Moved | Pointer::Released => {}
-                Pointer::Dragged => writing.place_at_cell(at.0, at.1, width, true),
+                Pointer::Dragged => chat.writing_mut().place_at_cell(at.0, at.1, width, true),
                 Pointer::Pressed => {
                     // One selection between the two halves, and this is
-                    // the other half taking hold.
+                    // the other half taking hold -- and the keys with it,
+                    // or the caret is put where nothing typed would go.
                     held = true;
+                    chat.stand_in_the_box();
+                    let writing = chat.writing_mut();
                     writing.place_at_cell(at.0, at.1, width, false);
                     match clicks {
                         2 => writing.hold_word(width),
@@ -3684,9 +3686,24 @@ impl App {
             )?;
             talk.chat.rows(width).get(at)?.folds
         });
+        // Where the cursor goes, for a press or a drag: the keys follow
+        // the pointer, or the arrows after a press walk something the
+        // reader had not pointed at. Not while a card is up, which has the
+        // keys -- a cursor moved under it would be found there afterwards.
+        let cursor = self
+            .conversation()
+            .filter(|talk| talk.card.is_none())
+            .and_then(|talk| {
+                obelus_ui::chat::ChatView::cursor_in_transcript(area, &talk.chat, None, x, y)
+            });
         let Some(talk) = self.conversation_mut() else {
             return;
         };
+        if matches!(kind, Pointer::Pressed | Pointer::Dragged)
+            && let Some(cursor) = cursor
+        {
+            talk.chat.stand_in_transcript(cursor);
+        }
         match kind {
             Pointer::Moved | Pointer::Released => {}
             Pointer::Pressed if folds.is_some() => {

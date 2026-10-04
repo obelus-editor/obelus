@@ -2085,6 +2085,28 @@ impl Chat {
         self.focus = Focus::Settings(at);
     }
 
+    /// Puts the keys on a place in the transcript, for a press there.
+    ///
+    /// Without it a press took hold of words and left the keys in the box,
+    /// so the arrows after it walked something the reader had not pointed
+    /// at.
+    pub fn stand_in_transcript(&mut self, at: Place) {
+        self.focus = Focus::Transcript(at);
+    }
+
+    /// Puts the keys back in the box, for a press on it.
+    ///
+    /// A caret placed in the box while the keys were in the transcript or
+    /// on the row of settings was a caret drawn where nothing typed would
+    /// go: the press moved it and the keys stayed where they were.
+    pub fn stand_in_the_box(&mut self) {
+        match self.focus {
+            Focus::Transcript(at) => self.leave_the_transcript(at),
+            Focus::Settings(_) => self.focus = Focus::Writing,
+            Focus::Writing => {}
+        }
+    }
+
     /// Lets go of whatever was held.
     pub const fn let_go(&mut self) {
         self.held = None;
