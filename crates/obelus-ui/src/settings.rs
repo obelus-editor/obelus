@@ -7,7 +7,7 @@
 
 use obelus_agent::Listed;
 use obelus_component::settings::{
-    DESCRIPTION_INDENT, GROUP_INDENT, HEADING_ROWS, Offering, Refused, Settings, Shown,
+    DESCRIPTION_INDENT, GROUP_INDENT, HEADING_ROWS, Offering, Refused, RemoteRow, Settings, Shown,
 };
 use obelus_config::{Config, Kind, Value};
 use obelus_text::text_width;
@@ -185,16 +185,62 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
                 }
             )
         });
-    vec![
-        Hint::common(bare(KeyCode::Enter), "Change")
-            .saying(match settings.on_keys() {
+    // And on the remote page, what the row the reader is on does: most
+    // rows there are not values to change but things to do, and "Change"
+    // over a row that copies a manifest is a key that says the wrong thing.
+    let remote = settings
+        .on_remote()
+        .then(|| settings.rows(offering).get(settings.focus()).copied())
+        .flatten();
+    let (enter, saying) = match remote {
+        Some(Shown::Remote { row, .. }) => match row {
+            RemoteRow::Pair => (
+                "Pair",
+                "Make a code to send in the group you put the bot in",
+            ),
+            RemoteRow::Setup(obelus_remote::platform::Setup::Copy { .. }) => {
+                ("Copy", "Copy it, to paste where the app is made")
+            }
+            RemoteRow::Setup(obelus_remote::platform::Setup::Steps { .. }) => {
+                ("Open", "Open the steps in the browser")
+            }
+            RemoteRow::Platform | RemoteRow::Field(_) | RemoteRow::People => {
+                ("Change", "Change it, or open what it can be")
+            }
+        },
+        _ => (
+            "Change",
+            match settings.on_keys() {
                 true => "Put this command on another key",
                 false => "Change it, or open what it can be",
-            })
+            },
+        ),
+    };
+    // Pairing does nothing until the chat is connected, and a key that
+    // does nothing is not offered at the foot.
+    let pairing_waits = matches!(
+        remote,
+        Some(Shown::Remote {
+            row: RemoteRow::Pair,
+            ..
+        })
+    ) && !settings.reached().state.connected();
+    // Forgetting is for a field that has something to forget.
+    let forgets = matches!(
+        remote,
+        Some(Shown::Remote { row: RemoteRow::Field(field), .. })
+            if settings.reached().kept.contains_key(field.key)
+    );
+    vec![
+        Hint::common(bare(KeyCode::Enter), enter)
+            .saying(saying)
             // Asked of whichever page is showing rather than of the
             // settings: the keys page has rows too, and enter does the same
             // sort of thing to one of them.
-            .when(settings.row_count(offering) > 0),
+            .when(settings.row_count(offering) > 0 && !pairing_waits),
+        Hint::common(bare(KeyCode::Delete), "Forget")
+            .saying("Take this out of the keyring, or out of the settings")
+            .when(forgets),
         // On an agent's row, and only while there is something to undo:
         // what `delete` leaves there is not a default of Obelus's but the
         // agent's own answer.
@@ -487,8 +533,9 @@ impl SettingsView<'_> {
                 // of row it is, so that anything with something wrong with
                 // it says so the same way -- and `Settings::setting_rows`
                 // counts the same rows for it.
-                row.warning = shown
-                    .warning()
+                row.warning = self
+                    .settings
+                    .warning_of(shown)
                     .map(|warning| self.settings.wrapped(&warning, width))
                     .unwrap_or_default();
                 row
@@ -579,6 +626,19 @@ impl SettingsView<'_> {
                     scope: None,
                 }
             }
+            Shown::Remote { row, opens } => Row {
+                opens: opens.map(|name| Heading::Remote(name.to_string())),
+                label: shown.label().to_string(),
+                matched: self.settings.matched_in(shown.label()),
+                detail: None,
+                body: self.settings.wrapped(shown.about(), width),
+                warning: Vec::new(),
+                aside: self.remote_aside(*row),
+                // The reader's alone, the whole page: there is no project
+                // that could have taken a row of it, and no layer to name.
+                pinned: None,
+                scope: None,
+            },
             Shown::Silent { saying, opens } => Row {
                 opens: Some(Heading::Agent((*opens).to_string())),
                 label: String::new(),
@@ -642,13 +702,16 @@ enum Heading {
     Group(obelus_config::Group),
     /// The active agent, by the name it goes by.
     Agent(String),
+    /// The chat this machine can be reached from, or the page's own word for
+    /// none -- with where it stands said at the right of the same row.
+    Remote(String),
 }
 
 impl Heading {
     /// How many rows it takes, the blank under it included.
     const fn rows(&self) -> u16 {
         match self {
-            Self::Group(_) => 2,
+            Self::Group(_) | Self::Remote(_) => 2,
             Self::Agent(_) => HEADING_ROWS,
         }
     }
@@ -713,6 +776,9 @@ enum Aside {
     Control(Kind, Value),
     /// Words -- the key a command is on, and nothing when it is on none.
     Words(String),
+    /// What pressing the row does or opens, and whether it can be pressed
+    /// here: the ink says which, and the background stays.
+    Does(String, bool),
 }
 
 impl SettingsView<'_> {
@@ -1013,6 +1079,27 @@ impl SettingsView<'_> {
                         plain.fg(self.theme.gutter).bg(background),
                     );
                 }
+                Aside::Does(word, usable) => {
+                    let after = write(
+                        cells,
+                        aside_at,
+                        y,
+                        &truncate_from_right(word, usize::from(CONTROL_WIDTH)),
+                        plain
+                            .fg(match usable {
+                                true => self.theme.foreground,
+                                false => self.theme.gutter,
+                            })
+                            .bg(background),
+                    );
+                    put(
+                        cells,
+                        arrow_at(aside_at, after),
+                        y,
+                        '\u{25b8}',
+                        plain.fg(self.theme.gutter).bg(background),
+                    );
+                }
                 // A row that is prose has nothing on the right: there is
                 // nothing to set.
                 Aside::Nothing => {}
@@ -1093,7 +1180,7 @@ impl SettingsView<'_> {
         fill(cells, area, plain);
         let name = match opens {
             Heading::Group(group) => group.label(),
-            Heading::Agent(name) => name.as_str(),
+            Heading::Agent(name) | Heading::Remote(name) => name.as_str(),
         };
         write(
             cells,
@@ -1116,6 +1203,54 @@ impl SettingsView<'_> {
                 &truncate_from_right(WHEN, usize::from(area.width.saturating_sub(2))),
                 plain.fg(self.theme.gutter),
             );
+        }
+    }
+
+    /// What a row of the remote page shows on the right.
+    ///
+    /// A word and an arrow on every one, because every one opens or does
+    /// something; and the words are what is so now -- the platform, the
+    /// ends of a token, who is paired, the code that is waiting.
+    fn remote_aside(&self, row: RemoteRow) -> Aside {
+        let reached = self.settings.reached();
+        match row {
+            RemoteRow::Platform => Aside::Does(
+                reached
+                    .platform
+                    .map_or("Off", |platform| platform.name)
+                    .to_string(),
+                true,
+            ),
+            RemoteRow::Field(field) => match reached.kept.get(field.key) {
+                Some(kept) => Aside::Does(kept.clone(), true),
+                None => Aside::Does("Not set".to_string(), true),
+            },
+            RemoteRow::People => Aside::Does(
+                match reached.people.is_empty() {
+                    true => "Nobody".to_string(),
+                    false => reached.people.join(", "),
+                },
+                true,
+            ),
+            // Only with something to send it to: a code made while nothing
+            // is listening is a code nobody can use. Dim rather than gone,
+            // the way every row here that cannot be used is -- which takes
+            // a word to be dim, until there is a code to show instead.
+            RemoteRow::Pair => Aside::Does(
+                reached
+                    .pairing
+                    .clone()
+                    .unwrap_or_else(|| "Make a code".to_string()),
+                reached.state.connected(),
+            ),
+            RemoteRow::Setup(setup) => Aside::Does(
+                match setup {
+                    obelus_remote::platform::Setup::Copy { .. } => "Copy",
+                    obelus_remote::platform::Setup::Steps { .. } => "Open",
+                }
+                .to_string(),
+                true,
+            ),
         }
     }
 

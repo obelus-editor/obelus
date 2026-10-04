@@ -1001,7 +1001,21 @@ impl App {
     /// is news to whoever generates from it. Which of them cares is the
     /// server's to decide, and the protocol is built that way -- the
     /// client reports, the server filters.
+    ///
+    /// Only for a file in the project. A server is about this tree, and
+    /// what Obelus watches outside it is its own -- the settings, which
+    /// window holds what, which window asks for the chat -- none of which
+    /// is a file any server has. Told about one anyway, rust-analyzer goes
+    /// to look, and its mark turns on a window whose code nobody touched.
+    /// Asked both ways, as the path was given and as it resolves, because
+    /// a watcher may report either.
     pub(super) fn told_servers_about(&mut self, path: &Path) {
+        let root = &self.working_directory;
+        let ours = path.starts_with(root)
+            || std::fs::canonicalize(root).is_ok_and(|root| path.starts_with(root));
+        if !ours {
+            return;
+        }
         let Some(params) = obelus_lsp::watched_change(path) else {
             return;
         };

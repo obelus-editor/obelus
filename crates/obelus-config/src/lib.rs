@@ -42,7 +42,10 @@
 //! would find it by accident; and `agents` is `ReaderOnly` for the first reason
 //! twice over -- what an agent may do without asking is the setting a
 //! downloaded project would most like to write. VS Code learned this one the
-//! same way and calls it `machine` scope.
+//! same way and calls it `machine` scope. `remote` and `remotes` are the
+//! reader's for a reason of their own: they say who may talk to this machine
+//! from a chat, and a project that could name a person there could hand a
+//! stranger the agent.
 //!
 //! The configuration file holds preferences, not state. `config.rs` is the
 //! whole of it — one table, `dirs` for where it lives, written the moment
@@ -215,6 +218,48 @@ pub struct Config {
     /// on the value the agent happened to be on last time, and the reason
     /// this is a map of what was said rather than a copy of a session.
     pub agents: std::collections::BTreeMap<String, std::collections::BTreeMap<String, String>>,
+    /// Which chat a note can be worked on from, by the platform's own key.
+    ///
+    /// One, or none, the way the agent is: a question put to two chats at
+    /// once is three places that can answer it, and which one did is a
+    /// thing nobody should have to work out.
+    pub remote: Option<String>,
+    /// What each chat keeps here, by the platform's key.
+    ///
+    /// Every platform's, not only the one in use: switching to another and
+    /// back is not a reason to set the first one up again. What is secret
+    /// is not here at all -- a token is in the keyring, and this file is one
+    /// a reader may well keep in a public repository of dotfiles.
+    pub remotes: std::collections::BTreeMap<String, Remote>,
+}
+
+/// What one chat platform keeps in the settings file.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Remote {
+    /// Its settings that are not secret, by the platform's own name for
+    /// each. Obelus understands none of them here: which there are is the
+    /// platform's, the way which settings an agent has is the agent's.
+    pub values: std::collections::BTreeMap<String, String>,
+    /// Who may talk to this machine through it.
+    pub people: Vec<Person>,
+}
+
+impl Remote {
+    /// Whether there is nothing in it, which is a table not worth writing.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty() && self.people.is_empty()
+    }
+}
+
+/// Somebody allowed to talk to this machine from a chat.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Person {
+    /// The platform's id for them, which is what a message is checked by.
+    /// A name can be changed by its owner; this cannot.
+    pub id: String,
+    /// What they are called, for a reader looking down the list.
+    pub name: String,
 }
 
 impl Default for Config {
@@ -281,6 +326,10 @@ impl Default for Config {
             // And nothing said about any agent: every conversation starts
             // where the agent starts it.
             agents: std::collections::BTreeMap::new(),
+            // No chat: a machine is not reachable from one until its
+            // reader says so.
+            remote: None,
+            remotes: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -749,6 +798,7 @@ impl Config {
             "new_versions" => Some(Value::Switch(self.new_versions)),
             "workflow" => Some(Value::Choice(self.workflow.clone())),
             "agent" => Some(Value::Choice(self.agent.clone().unwrap_or_default())),
+            "remote" => Some(Value::Choice(self.remote.clone().unwrap_or_default())),
             _ => None,
         }
     }
@@ -780,6 +830,10 @@ impl Config {
             // to an agent without a second setting meaning "off".
             ("agent", Value::Choice(word)) => {
                 self.agent = (!word.is_empty()).then(|| word.clone());
+            }
+            // The same: an empty word is no chat.
+            ("remote", Value::Choice(word)) => {
+                self.remote = (!word.is_empty()).then(|| word.clone());
             }
             _ => tracing::debug!(key, ?value, "a setting that does not take this"),
         }
@@ -825,6 +879,61 @@ impl Config {
         chosen.remove(setting);
         if chosen.is_empty() {
             self.agents.remove(agent);
+        }
+    }
+
+    /// What one chat platform keeps here, or nothing.
+    #[must_use]
+    pub fn remote_of(&self, platform: &str) -> Option<&Remote> {
+        self.remotes.get(platform)
+    }
+
+    /// One of a platform's settings that is not secret.
+    #[must_use]
+    pub fn remote_value(&self, platform: &str, field: &str) -> Option<&str> {
+        Some(self.remotes.get(platform)?.values.get(field)?.as_str())
+    }
+
+    /// Sets one of them, or with `None` takes it out.
+    ///
+    /// The platform's table goes when the last thing in it does, for the
+    /// reason an agent's does.
+    pub fn set_remote_value(&mut self, platform: &str, field: &str, value: Option<&str>) {
+        let remote = self.remotes.entry(platform.to_string()).or_default();
+        match value {
+            Some(value) => {
+                remote.values.insert(field.to_string(), value.to_string());
+            }
+            None => {
+                remote.values.remove(field);
+            }
+        }
+        self.drop_remote_if_empty(platform);
+    }
+
+    /// Lets somebody talk to this machine through a platform.
+    ///
+    /// By id: a person paired twice is the same person, under whichever name
+    /// they go by now.
+    pub fn add_person(&mut self, platform: &str, person: Person) {
+        let people = &mut self.remotes.entry(platform.to_string()).or_default().people;
+        match people.iter_mut().find(|known| known.id == person.id) {
+            Some(known) => known.name = person.name,
+            None => people.push(person),
+        }
+    }
+
+    /// Stops letting them.
+    pub fn remove_person(&mut self, platform: &str, id: &str) {
+        if let Some(remote) = self.remotes.get_mut(platform) {
+            remote.people.retain(|person| person.id != id);
+        }
+        self.drop_remote_if_empty(platform);
+    }
+
+    fn drop_remote_if_empty(&mut self, platform: &str) {
+        if self.remotes.get(platform).is_some_and(Remote::is_empty) {
+            self.remotes.remove(platform);
         }
     }
 }
@@ -1024,7 +1133,7 @@ pub fn reading_of(text: &str) -> Reading {
             let (config, applied) = from_table(&table);
             let spans = spans_in(text);
             Reading::Settings {
-                config,
+                config: Box::new(config),
                 named: applied.set,
                 ignored: settled(applied.ignored, &spans),
                 spans,
@@ -1064,8 +1173,9 @@ pub enum Reading {
     /// key binding that will not bind is decided by the keymap, long after
     /// the text has been let go of.
     Settings {
-        /// What the file says.
-        config: Config,
+        /// What the file says. Boxed, because it is most of the size of
+        /// this enum and the other three answers carry next to nothing.
+        config: Box<Config>,
         /// The settings it named. One it named is the reader's whether or
         /// not what they wrote differs from what Obelus would have done.
         named: Vec<&'static str>,
@@ -1120,7 +1230,7 @@ fn from_table(table: &toml::Table) -> (Config, Applied) {
 #[must_use]
 pub fn reach_of(key: &str) -> Reach {
     match key {
-        "agent" | "keys" | "agents" => Reach::ReaderOnly,
+        "agent" | "keys" | "agents" | "remote" | "remotes" => Reach::ReaderOnly,
         _ => Setting::named(key).map_or(Reach::ReaderOnly, |setting| setting.reach),
     }
 }
@@ -1306,6 +1416,49 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
             }
         }
     }
+    if let Some(word) = table.get("remote").and_then(toml::Value::as_str)
+        && allowed("remote")
+    {
+        config.remote = (!word.is_empty()).then(|| word.to_string());
+    }
+    if let Some(remotes) = table.get("remotes").and_then(toml::Value::as_table)
+        && allowed("remotes")
+    {
+        // A table per platform. Which platforms there are and which fields
+        // each takes are the remote crate's to know; here a string is a
+        // value and `people` is who may talk, and nothing else is read --
+        // which is not the same as taken out: see `lay`.
+        for (platform, kept) in remotes {
+            let Some(kept) = kept.as_table() else {
+                tracing::warn!(platform, "what this chat keeps is not a table");
+                not_a_table.push(format!("remotes.{platform}"));
+                continue;
+            };
+            let remote = config.remotes.entry(platform.clone()).or_default();
+            for (field, value) in kept {
+                if let Some(value) = value.as_str() {
+                    remote.values.insert(field.clone(), value.to_string());
+                }
+            }
+            for person in kept
+                .get("people")
+                .and_then(toml::Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                let said = |key: &str| person.get(key).and_then(toml::Value::as_str);
+                if let Some(id) = said("id").filter(|id| !id.is_empty()) {
+                    remote.people.push(Person {
+                        id: id.to_string(),
+                        name: said("name").unwrap_or(id).to_string(),
+                    });
+                }
+            }
+            if remote.is_empty() {
+                config.remotes.remove(platform);
+            }
+        }
+    }
 
     // And a word for the lines Obelus walked past. A key it has never heard
     // of -- a setting that has gone, a name that has changed, a word spelled
@@ -1327,7 +1480,11 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
     // them and how a reader would say where to look.
     for agent in not_a_table {
         applied.ignored.push(Ignored {
-            key: format!("agents.{agent}"),
+            // The remotes' arrive named in full; an agent's by its name.
+            key: match agent.starts_with("remotes.") {
+                true => agent,
+                false => format!("agents.{agent}"),
+            },
             why: Why::NotATable,
             at: None,
         });
@@ -1348,7 +1505,8 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
 /// writes by hand or sets somewhere else on the page, not settings Obelus
 /// has stopped having.
 fn known(key: &str) -> bool {
-    matches!(key, "agent" | "keys" | "agents") || Setting::named(key).is_some()
+    matches!(key, "agent" | "keys" | "agents" | "remote" | "remotes")
+        || Setting::named(key).is_some()
 }
 
 /// The file's contents for a config, with nothing else in it.
@@ -1515,6 +1673,11 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
         config.agent != default.agent,
         toml_edit::value(config.agent.clone().unwrap_or_default()),
     );
+    put(
+        "remote",
+        config.remote != default.remote,
+        toml_edit::value(config.remote.clone().unwrap_or_default()),
+    );
     // Only while the reader has moved something: an empty table in the file
     // says Obelus was thinking about keys, which it was not.
     if config.keys.is_empty() {
@@ -1552,7 +1715,97 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
         }
         document["agents"] = toml_edit::Item::Table(table);
     }
+    lay_remotes(&mut document, &config.remotes);
     document.to_string()
+}
+
+/// What each chat keeps, laid over the tables the file already has.
+///
+/// Edited in place rather than built afresh, the way the file itself is: a
+/// platform's table may hold a line this version does not read -- a field
+/// from a newer one, a key the reader wrote by hand -- and rebuilding it
+/// from what was read would take that out. What *is* taken out is what the
+/// config no longer has: a value the reader removed, the people when there
+/// are none left, and a platform's table when nothing is left in it.
+///
+/// A `remotes` entry that is not a table was never read, so it is not the
+/// config's to remove either; it stays where the reader put it.
+fn lay_remotes(
+    document: &mut toml_edit::DocumentMut,
+    remotes: &std::collections::BTreeMap<String, Remote>,
+) {
+    if !document.contains_key("remotes") {
+        if remotes.values().all(Remote::is_empty) {
+            return;
+        }
+        let mut table = toml_edit::Table::new();
+        // Implicit, so the file says `[remotes.slack]`: what a reader
+        // opening the file looks for is the platform's name.
+        table.set_implicit(true);
+        document["remotes"] = toml_edit::Item::Table(table);
+    }
+    let Some(table) = document["remotes"].as_table_like_mut() else {
+        return;
+    };
+    // Every platform the file has a table for as well as every one the
+    // config has: one the reader emptied is still a table here, and may
+    // still hold a line this version does not read.
+    let mut platforms: Vec<String> = table
+        .iter()
+        .filter(|(_, item)| item.is_table_like())
+        .map(|(platform, _)| platform.to_string())
+        .collect();
+    platforms.extend(
+        remotes
+            .iter()
+            .filter(|(platform, remote)| !remote.is_empty() && !table.contains_key(platform))
+            .map(|(platform, _)| platform.clone()),
+    );
+    let nothing = Remote::default();
+    for platform in platforms {
+        let remote = remotes.get(&platform).unwrap_or(&nothing);
+        if !table.contains_key(&platform) {
+            table.insert(&platform, toml_edit::Item::Table(toml_edit::Table::new()));
+        }
+        let Some(kept) = table
+            .get_mut(&platform)
+            .and_then(toml_edit::Item::as_table_like_mut)
+        else {
+            continue;
+        };
+        let unsaid: Vec<String> = kept
+            .iter()
+            .filter(|(field, item)| item.as_str().is_some() && !remote.values.contains_key(*field))
+            .map(|(field, _)| field.to_string())
+            .collect();
+        for field in unsaid {
+            kept.remove(&field);
+        }
+        for (field, value) in &remote.values {
+            kept.insert(field, toml_edit::value(value.clone()));
+        }
+        if remote.people.is_empty() {
+            kept.remove("people");
+        } else {
+            let people: toml_edit::Array = remote
+                .people
+                .iter()
+                .map(|person| {
+                    let mut said = toml_edit::InlineTable::new();
+                    said.insert("id", person.id.clone().into());
+                    said.insert("name", person.name.clone().into());
+                    toml_edit::Value::InlineTable(said)
+                })
+                .collect();
+            kept.insert("people", toml_edit::value(people));
+        }
+        if kept.is_empty() {
+            table.remove(&platform);
+        }
+    }
+    if table.is_empty() {
+        document.remove("remotes");
+    }
 }
 
 /// What a path really names, following any links.
@@ -1984,6 +2237,32 @@ mod tests {
             ]
             .into_iter()
             .collect(),
+            remote: Some("slack".to_string()),
+            // Two platforms, the one in use and one set up before it: a
+            // switch to the other and back must not cost the first.
+            remotes: [
+                (
+                    "slack".to_string(),
+                    super::Remote {
+                        values: std::collections::BTreeMap::new(),
+                        people: vec![super::Person {
+                            id: "U04ABCDEF".to_string(),
+                            name: "Sunli".to_string(),
+                        }],
+                    },
+                ),
+                (
+                    "feishu".to_string(),
+                    super::Remote {
+                        values: [("domain".to_string(), "lark".to_string())]
+                            .into_iter()
+                            .collect(),
+                        people: Vec::new(),
+                    },
+                ),
+            ]
+            .into_iter()
+            .collect(),
         };
         assert_eq!(from_toml(&to_toml(&config)), config);
         assert_eq!(
@@ -2146,6 +2425,109 @@ mod tests {
         let mut config = readers;
         apply(&mut config, &table, Whose::Reader);
         assert_eq!(config.agent_default("claude-code", "mode"), Some("yolo"));
+    }
+
+    /// What a chat keeps is the reader's alone.
+    ///
+    /// It says who may talk to this machine, so a project that could write
+    /// it could hand a stranger the agent.
+    ///
+    /// Broken deliberately by taking "remotes" and "remote" out of
+    /// `reach_of` and making the fallback `Anywhere`: the stranger came
+    /// back as one of the people, and the chat came back switched on.
+    #[test]
+    fn a_tree_may_not_say_who_may_talk_to_this_machine() {
+        let table = r#"
+            remote = "slack"
+            [remotes.slack]
+            people = [{ id = "U0STRANGER", name = "Somebody" }]
+        "#
+        .parse::<toml::Table>()
+        .expect("a table");
+
+        let mut config = Config::default();
+        apply(&mut config, &table, Whose::Project);
+        assert_eq!(config.remote, None, "a project switched a chat on");
+        assert!(
+            config.remote_of("slack").is_none(),
+            "a project said who may talk to this machine"
+        );
+
+        let mut config = Config::default();
+        apply(&mut config, &table, Whose::Reader);
+        assert_eq!(config.remote.as_deref(), Some("slack"));
+        assert_eq!(
+            config.remote_of("slack").map(|remote| remote.people.len()),
+            Some(1)
+        );
+    }
+
+    /// A line in a chat's table this version does not read survives a save,
+    /// and one the reader took out goes.
+    ///
+    /// The table is edited in place for the first reason, and has to notice
+    /// the second for the same one: rebuilding it from what was read would
+    /// lose the line it does not know, and laying over it without looking
+    /// would keep the line the reader removed.
+    ///
+    /// Broken deliberately by rebuilding the platform's table from the
+    /// config in `lay_remotes`: the line from a newer version went. And by
+    /// taking out the loop that removes what is unsaid: the removed value
+    /// stayed.
+    #[test]
+    fn a_chats_table_keeps_what_it_does_not_read_and_loses_what_was_removed() {
+        let existing = "[remotes.feishu]\ndomain = \"lark\"\napp_id = \"cli_1\"\nlater = 3\n";
+        let mut config = from_toml(existing);
+        assert_eq!(config.remote_value("feishu", "app_id"), Some("cli_1"));
+        config.set_remote_value("feishu", "app_id", None);
+        let written = over(existing, &config);
+        assert!(
+            written.contains("later = 3"),
+            "a line it does not read went: {written}"
+        );
+        assert!(
+            !written.contains("app_id"),
+            "a value the reader removed stayed: {written}"
+        );
+        assert!(written.contains("domain = \"lark\""), "{written}");
+
+        config.set_remote_value("feishu", "domain", None);
+        let written = over(&written, &config);
+        assert!(
+            written.contains("later = 3"),
+            "the platform's table went with a line still in it: {written}"
+        );
+    }
+
+    /// Somebody paired twice is one person, under their newer name, and the
+    /// last one out takes the table with them.
+    ///
+    /// Broken deliberately by pushing without looking for the id: the list
+    /// held them twice.
+    #[test]
+    fn a_person_is_known_by_their_id() {
+        let mut config = Config::default();
+        let person = |name: &str| super::Person {
+            id: "U04ABCDEF".to_string(),
+            name: name.to_string(),
+        };
+        config.add_person("slack", person("sunli"));
+        config.add_person("slack", person("Sunli"));
+        let people = &config.remote_of("slack").expect("a table").people;
+        assert_eq!(
+            people.len(),
+            1,
+            "one person, paired twice, is two: {people:?}"
+        );
+        assert_eq!(people[0].name, "Sunli");
+
+        config.remove_person("slack", "U04ABCDEF");
+        assert!(config.remote_of("slack").is_none(), "an empty table stayed");
+        assert!(
+            !to_toml(&config).contains("remotes"),
+            "{}",
+            to_toml(&config)
+        );
     }
 
     /// Unsetting the last of an agent's settings takes its table out.

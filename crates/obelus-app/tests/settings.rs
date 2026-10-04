@@ -417,7 +417,7 @@ fn every_setting_is_on_one_page_under_a_heading() {
         .iter()
         .map(|shown| match shown {
             Shown::Obelus { opens, .. } => opens.map(obelus_config::Group::label),
-            Shown::Agent { .. } | Shown::Silent { .. } => None,
+            Shown::Agent { .. } | Shown::Silent { .. } | Shown::Remote { .. } => None,
         })
         .collect();
     assert_eq!(opens[0], Some("Appearance"));
@@ -428,19 +428,25 @@ fn every_setting_is_on_one_page_under_a_heading() {
         "not one heading per group: {opens:?}"
     );
 
-    // And the tabs are the pages: the settings, the keys, the agents.
+    // And the tabs are the pages: the settings, the keys, the chat this
+    // machine can be reached from, the agents -- the agents last, so that
+    // shift and tab from the settings is still the way to them.
     assert_eq!(
         app.settings().expect("the settings").tabs(),
-        ["Settings", "Keys", "Agents"]
+        ["Settings", "Keys", "Remote", "Agents"]
     );
     support::press(&mut app, KeyCode::Tab);
     assert!(app.settings().expect("the settings").on_keys());
+    support::press(&mut app, KeyCode::Tab);
+    assert!(app.settings().expect("the settings").on_remote());
     support::press(&mut app, KeyCode::Tab);
     assert!(app.settings().expect("the settings").on_agents());
     assert!(
         rows(&app).is_empty(),
         "the agents page has settings rows on it"
     );
+    support::press(&mut app, KeyCode::BackTab);
+    assert!(app.settings().expect("the settings").on_remote());
     support::press(&mut app, KeyCode::BackTab);
     assert!(app.settings().expect("the settings").on_keys());
 
@@ -2455,7 +2461,7 @@ fn a_press_on_a_tab_goes_to_it() {
     // The tabs are the page's first row, and the third of them is two away
     // -- which the shorter way round makes one step, because they wrap.
     let names = app.settings().expect("the page").tabs();
-    assert_eq!(names.len(), 3, "the page does not have the three tabs");
+    assert_eq!(names.len(), 4, "the page does not have the four tabs");
     assert_eq!(app.settings().expect("the page").tab(), 0);
     let row = support::text_block(&dump)
         .lines()
@@ -2882,10 +2888,10 @@ fn the_projects_page_has_one_tab() {
         failure: None,
     }));
 
-    // The reader's own page has three.
+    // The reader's own page has four.
     assert_eq!(
         app.settings().expect("the settings").tabs(),
-        ["Settings", "Keys", "Agents"]
+        ["Settings", "Keys", "Remote", "Agents"]
     );
 
     dispatch::dispatch(&mut app, Command::ConfigProject);

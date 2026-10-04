@@ -244,6 +244,10 @@ pub struct Said {
     /// them at once, when they go together -- see [`Chat::sent`], where
     /// the ink stops being dim, which is the receipt.
     pub unsent: bool,
+    /// Whether it came from a chat rather than from the box here, while
+    /// it waits: what goes to the agent with it says where the reader is,
+    /// and that is decided when it goes, by what it went with.
+    pub afar: bool,
 }
 
 /// What the mark on a row opens and closes.
@@ -1074,6 +1078,25 @@ impl Chat {
         }
     }
 
+    /// The same, for words that came from a chat.
+    pub fn will_say_from_afar(&mut self, parts: &[crate::composer::Part]) {
+        self.will_say(parts);
+        if let Some(said) = self.said.last_mut() {
+            said.afar = true;
+        }
+    }
+
+    /// Of what has not gone, which came from a chat, in the same order as
+    /// [`Self::unsent`].
+    #[must_use]
+    pub fn unsent_afar(&self) -> Vec<bool> {
+        self.said
+            .iter()
+            .filter(|said| said.unsent)
+            .map(|said| said.afar)
+            .collect()
+    }
+
     /// Whether stopping the turn now would leave anything to say: words in
     /// the box, or something waiting for the turn to end.
     ///
@@ -1302,6 +1325,22 @@ impl Chat {
         }
     }
 
+    /// The last thing the agent said, whole, where it has said anything.
+    ///
+    /// For somewhere that cannot be shown the transcript -- a chat thread
+    /// opened on a conversation already going -- which wants the one
+    /// paragraph that says where things are, not the whole of how they got
+    /// there.
+    #[must_use]
+    pub fn lately(&self) -> Option<String> {
+        self.said
+            .iter()
+            .rev()
+            .find(|said| said.speaker == Speaker::Agent && said.tag.is_none())
+            .map(|said| said.text.trim().to_string())
+            .filter(|text| !text.is_empty())
+    }
+
     /// Says the reader was sent somewhere, and that what was to happen
     /// there has not happened yet.
     ///
@@ -1326,6 +1365,7 @@ impl Chat {
             opened: None,
             run_opened: None,
             unsent: false,
+            afar: false,
         });
     }
 
@@ -1446,6 +1486,7 @@ impl Chat {
                 opened: None,
                 run_opened: None,
                 unsent: false,
+                afar: false,
             });
             return;
         };
@@ -2672,6 +2713,7 @@ impl Chat {
             opened: None,
             run_opened: None,
             unsent: false,
+            afar: false,
         });
     }
 

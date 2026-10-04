@@ -167,6 +167,15 @@ pub enum Event {
     /// Another Obelus's reader asked to be brought to this window, with
     /// what that window was given to let it come forward.
     Summoned(Option<String>),
+    /// Something about the chat this machine can be reached from.
+    Remote(obelus_remote::Event),
+    /// Something one connection to it said, by the connection's number.
+    Reached(u64, obelus_remote::Event),
+    /// The lock that makes this the window the chat talks to, come back
+    /// from the window that had it, for the asking with this number.
+    Held(u64, std::fs::File),
+    /// The window that had it did not let go in time, for this asking.
+    NotLetGo(u64),
 }
 
 impl Event {
@@ -210,6 +219,10 @@ impl Event {
             Self::Reopened(_) => "Reopened",
             Self::Released(_) => "Released",
             Self::Summoned(_) => "Summoned",
+            Self::Remote(_) => "Remote",
+            Self::Reached(..) => "Reached",
+            Self::Held(..) => "Held",
+            Self::NotLetGo(_) => "NotLetGo",
         }
     }
 }
@@ -239,6 +252,7 @@ from_worker! {
     obelus_agent::Event => Agent,
     obelus_lsp::Message => Lsp,
     obelus_mcp::Asked => Tools,
+    obelus_remote::Event => Remote,
     Box<obelus_search::counts::Counted> => Counted,
     obelus_watch::Changed => Watched,
 }

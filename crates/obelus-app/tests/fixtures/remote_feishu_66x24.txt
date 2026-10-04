@@ -1,0 +1,60 @@
+screen 66x24  editor 66x22  status 66x1
+-- text --
+ 0|  Settings  Keys  Remote  Agents                              ⇤ ⇥ 
+ 1|──────────────────────────────────────────────────────────────────
+ 2| Feishu                                                           
+ 3|                                                                  
+ 4|   Platform                                      Feishu ▸         
+ 5|     Which chat a note can be worked on from                      
+ 6|                                                                  
+ 7|   App ID                                        Not set ▸        
+ 8|     From Credentials & Basic Info, on the app's page             
+ 9|                                                                  
+10|   App Secret                                    Not set ▸        
+11|     From the same page, beside the App ID                        
+12|                                                                  
+13|   Domain                                        feishu ▸         
+14|     feishu for Feishu, lark for Lark outside China               
+15|                                                                  
+16|   People                                        Nobody ▸         
+17|     Who may talk to this machine through it                      
+18|                                                                  
+19|   Pair                                          Make a code ▸    
+20|──────────────────────────────────────────────────────────────────
+21|   Enter  Change                                    Ctrl+k  Keys  
+22|──────────────────────────────────────────────────────────────────
+23| > Filter remote settings                                         
+-- style --
+ 0|aaaaaaaaaaaaaaaaabbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 2|cddddddccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 3|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbebbbbbbbbb
+ 5|bbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebbbbbbbbbbbbbbbbbbbbbb
+ 6|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+ 7|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccacccccccc
+ 8|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccc
+ 9|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+10|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccacccccccc
+11|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccccc
+12|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+13|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccaccccccccc
+14|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccc
+15|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+16|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccaccccccccc
+17|cccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccc
+18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+19|cccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaacacccc
+20|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+21|ccfffffffcaaaaaacccccccccccccccccccccccccccccccccccffffffffcaaaacc
+22|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+23|dddaaaaaaaaaaaaaaaaaaaaaaddddddddddddddddddddddddddddddddddddddddd
+-- legend --
+a fg=#52525b bg=#18181b
+b fg=#e4e4e7 bg=#27272a
+c fg=#e4e4e7 bg=#18181b
+d fg=#d4d4d8 bg=#18181b
+e fg=#52525b bg=#27272a
+f fg=#a1a1aa bg=#27272a
+-- cursor --
+none

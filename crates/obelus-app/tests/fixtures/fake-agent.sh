@@ -28,6 +28,8 @@
 #                            Obelus, tries to write one (which Obelus
 #                            refuses), uses a tool, and asks permission; the
 #                            turn ends once the answer to that arrives
+#   session/prompt "/titled"
+#                         -> names the conversation, and ends the turn
 #   session/prompt "/pair"
 #                         -> asks permission twice at once, and says what
 #                            each answer was
@@ -143,6 +145,7 @@ later=''
 # outside otherwise, and some of what Obelus owes an agent is a request --
 # a session it no longer wants, let go -- or the absence of one.
 log=''
+prompts=''
 for word in "$@"; do
     case "$word" in
         mode-as-option) both_ways='yes' ;;
@@ -154,6 +157,7 @@ for word in "$@"; do
         tells-settings) tells='yes' ;;
         options-later) later='yes' ;;
         log=*) log="${word#log=}" ;;
+        prompts) prompts='yes' ;;
     esac
 done
 
@@ -205,6 +209,13 @@ while IFS= read -r line; do
         url=$(printf '%s' "$line" | sed -n 's/.*"mcpServers":\[[^]]*"url":"\([^"]*\)".*/\1/p')
         if [ -n "$url" ]; then
             printf 'tools %s\n' "$url" >>"$log"
+        fi
+        # And with `prompts`, a prompt's own words, whole, on the line
+        # after: what Obelus puts in front of the reader's words -- where
+        # they came from -- is never on the page, so this is the only place
+        # a test can see it.
+        if [ -n "$prompts" ] && [ "$method" = 'session/prompt' ]; then
+            printf '%s\n' "$line" >>"$log"
         fi
     fi
     case "$line" in
@@ -797,6 +808,30 @@ while IFS= read -r line; do
             ;;
         *'"method":"session/prompt"'*'"text":"/broken'*)
             printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"nobody has signed in"}}\n' "$(id_of "$line")"
+            ;;
+        *'"method":"session/prompt"'*'"text":"/later'*)
+            # A turn that takes a moment and then ends having said little:
+            # long enough for words to be said into it, from here and from
+            # a chat, and to go when it is over.
+            set_turn "$session" "$(id_of "$line")"
+            sleep 2
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"done waiting"}}}}\n'
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
+        *'"method":"session/prompt"'*'"text":"/pausing'*)
+            # It says what it is about to do and goes to do it -- a call
+            # that never finishes, in a turn that never ends: what it said
+            # is all there is of the turn for as long as anybody watches.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"looking at it first"}}}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call","toolCallId":"p1","title":"Read the file","kind":"read","status":"in_progress"}}}\n'
+            ;;
+        *'"method":"session/prompt"'*'"text":"/titled'*)
+            # It names the conversation, the way an agent does once it has
+            # worked out what the conversation is about.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"session_info_update","title":"Renamed by the agent"}}}\n'
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
         *'"method":"session/prompt"'*'"text":"/'*)
             # A command: the text starts with a slash, and everything after

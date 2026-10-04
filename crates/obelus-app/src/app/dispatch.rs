@@ -75,6 +75,8 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::TodoOpen => app.open_todo(),
         Command::TodoAdd => app.add_todo(),
         Command::ConfigOpen => app.open_settings(),
+        Command::RemoteConnect => app.connect_remote(),
+        Command::RemoteDisconnect => app.disconnect_remote(),
         Command::ConfigProject => app.open_project_settings(),
         Command::ConfigFile => app.open_config_file(),
         Command::LogOpen => app.open_log(),

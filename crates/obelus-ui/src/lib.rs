@@ -391,6 +391,9 @@ pub trait Screen {
     fn server_working_on(&self) -> Option<&str>;
     /// Whether the server behind the file being read is busy with something.
     fn server_busy(&self) -> bool;
+    /// The chat, by name, and where this window stands with it -- `None`
+    /// where it is not the window the chat talks to.
+    fn remote(&self) -> Option<(&'static str, obelus_remote::State)>;
     /// The settings view, while it is open.
     fn settings(&self) -> Option<&Settings>;
     /// What the call the cursor is inside takes, while it is showing.
