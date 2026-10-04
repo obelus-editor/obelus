@@ -898,6 +898,77 @@ fn ctrl_enter_stops_the_turn_and_says_what_was_waiting_at_once() {
     );
 }
 
+/// `ctrl+enter` on a question does nothing: the box it sends from is under
+/// the card, and stopping the turn from under the question leaves it up
+/// with nobody waiting for its answer.
+///
+/// Broken deliberately by taking the arm that swallows it out of
+/// `Card::handle_key`: the key reaches the box, the turn is stopped, and
+/// what was waiting goes.
+#[test]
+fn ctrl_enter_on_a_question_does_nothing() {
+    let (mut app, events) = talking();
+    support::type_text(&mut app, "what is this file");
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "and this");
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        &events,
+        "the permission request",
+        App::is_asking_permission,
+    );
+    assert_eq!(
+        app.chat().map(|chat| chat.unsent().len()),
+        Some(1),
+        "nothing is waiting"
+    );
+
+    support::press_control_key(&mut app, KeyCode::Enter);
+    settle(&mut app, &events, Duration::from_millis(300));
+    assert!(app.is_asking_permission(), "the question went");
+    assert_eq!(
+        app.talking(),
+        obelus_agent::Talking::Thinking,
+        "the turn was stopped from under the question"
+    );
+    assert_eq!(
+        app.chat().map(|chat| chat.unsent().len()),
+        Some(1),
+        "what was waiting went"
+    );
+}
+
+/// A box of blanks is nothing to say: `ctrl+enter` sends what was waiting
+/// and adds no empty row of the reader's behind it.
+///
+/// Broken deliberately by sending the box whatever it holds: a row of two
+/// blanks joins what is waiting.
+#[test]
+fn ctrl_enter_on_a_box_of_blanks_sends_only_what_was_waiting() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/forever");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to start thinking", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+    support::type_text(&mut app, "/blocks");
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "  ");
+
+    support::press_control_key(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.chat().map(|chat| chat.unsent()),
+        Some(vec![vec![obelus_component::composer::Part::Words(
+            "/blocks".to_string()
+        )]]),
+        "the blanks joined what was waiting"
+    );
+}
+
 /// With nothing running, `ctrl+enter` is enter: there is no turn to stop,
 /// and the words go.
 ///
@@ -989,6 +1060,31 @@ fn the_box_offers_to_send_now_only_with_something_to_send() {
     assert!(
         offered.is_some(),
         "not offered with something waiting and the box empty:\n{dump}"
+    );
+}
+
+/// A terminal that sends `ctrl+enter` as enter is not offered it: the key
+/// would queue, and the offer would be a lie about the one thing it says.
+///
+/// Broken deliberately by leaving `ctrl_enter_arrives` out of what `prepare`
+/// tells the chat: the row is there for a key that cannot arrive.
+#[test]
+fn a_terminal_that_sends_ctrl_enter_as_enter_is_not_offered_it() {
+    let (mut app, events) = talking();
+    app.ctrl_enter_arrives(false);
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/forever");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to start thinking", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+    support::type_text(&mut app, "and this");
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        !dump.contains("Sends it now"),
+        "offered a key the terminal cannot send:\n{dump}"
     );
 }
 
@@ -1638,6 +1734,30 @@ fn escape_shuts_the_list_of_commands_and_leaves_the_words() {
         app.slash().is_some(),
         "the list never came back:\n{}",
         screen(&mut app)
+    );
+}
+
+/// `ctrl+enter` with the list of commands up settles the name, the way
+/// enter does: a half-typed name is nothing to send, and while a turn runs
+/// sending it would stop the turn for nothing.
+///
+/// Broken deliberately by taking `sending_now` out of `slash_key`: the key
+/// sends `/c` as it stands, and the box is empty.
+#[test]
+fn ctrl_enter_on_the_list_of_commands_chooses_from_it() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the commands", |app| {
+        !app.agent_orders().is_empty()
+    });
+    support::type_text(&mut app, "/c");
+    let _ = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(app.slash().is_some(), "no list while a name is typed");
+
+    support::press_control_key(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.chat().expect("the chat").writing().text(),
+        "/compact ",
+        "the name was not settled from the list"
     );
 }
 

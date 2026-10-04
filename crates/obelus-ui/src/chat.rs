@@ -305,12 +305,8 @@ fn cap_the_keys(at: u16, y: u16, hints: &[(String, &'static str)], theme: &Theme
     }
 }
 
-/// A key as it is written, with no modifier or with control.
-fn key(code: KeyCode, control: bool) -> String {
-    let modifiers = match control {
-        true => KeyModifiers::CONTROL,
-        false => KeyModifiers::NONE,
-    };
+/// A key as it is written.
+fn chord(code: KeyCode, modifiers: KeyModifiers) -> String {
     obelus_editing::keymap::KeyChord::new(code, modifiers).label()
 }
 
@@ -873,7 +869,7 @@ impl ChatView<'_> {
     /// working: what it sends is what is in the box, and the box is where
     /// the reader is looking while they write it.
     fn offer_to_send_now(&self, cells: &mut CellBuffer, y: u16, area: Rect, dim: Style) {
-        let keys = [(key(KeyCode::Enter, true), "Sends it now")];
+        let keys = [(chord(KeyCode::Enter, KeyModifiers::CONTROL), "Sends it now")];
         let Some(said) = joined(&keys) else {
             return;
         };
@@ -902,7 +898,7 @@ impl ChatView<'_> {
             1 => "1 new message".to_string(),
             many => format!("{many} new messages"),
         };
-        let keys = key(KeyCode::End, true);
+        let keys = chord(KeyCode::End, KeyModifiers::CONTROL);
         let label = format!("  {said}  {keys} \u{2193}  ");
         let width = text_width(&label);
         let Ok(width) = u16::try_from(width) else {
@@ -1184,7 +1180,7 @@ impl ChatView<'_> {
             // thing escape does here that a reader could not guess, and it
             // belongs beside the thing it would stop.
             if row.speaker == Speaker::Doing && self.state == Talking::Thinking {
-                let keys = [(key(KeyCode::Esc, false), "Stops it")];
+                let keys = [(chord(KeyCode::Esc, KeyModifiers::NONE), "Stops it")];
                 if let Some(said) = joined(&keys)
                     && let Ok(offset) =
                         u16::try_from(usize::from(area.width).saturating_sub(text_width(&said) + 1))
@@ -1527,8 +1523,6 @@ impl ChatView<'_> {
     /// front end that draws the shape has to be told which cells of that
     /// run are the key, and a run that had already been joined cannot say.
     fn status_keys(&self) -> Vec<(String, &'static str)> {
-        let chord =
-            |code, modifiers| obelus_editing::keymap::KeyChord::new(code, modifiers).label();
         let back = self
             .about_a_note
             .then(|| (chord(KeyCode::Char('t'), KeyModifiers::ALT), "The note"));
@@ -1711,7 +1705,7 @@ impl ChatView<'_> {
         // standing on it -- said on every row of theirs at once it would
         // be answering somebody who has not asked yet.
         let enter = |does| {
-            let keys = vec![(key(KeyCode::Enter, false), does)];
+            let keys = vec![(chord(KeyCode::Enter, KeyModifiers::NONE), does)];
             (2, joined(&keys).unwrap_or_default(), dim, keys)
         };
         if row.unsent.is_some() && standing {
@@ -2213,5 +2207,36 @@ mod caret {
         // And on the last character of the row, which is as near to after
         // it as there is room for.
         assert_eq!(caret.x, area.right() - 2);
+    }
+
+    /// A press on the box goes to the words while the box offers to send
+    /// now, and a press on the offer goes nowhere: the row is the box's,
+    /// and not one of its words.
+    ///
+    /// Broken deliberately by leaving `words_band` out of `place_at`: the
+    /// offer's row is a row of the words, and a box that scrolls puts the
+    /// press one row below where it landed.
+    #[test]
+    fn a_press_on_the_box_finds_the_words_and_not_the_offer() {
+        use obelus_component::chat::Chat;
+
+        let area = ratatui::layout::Rect::new(0, 0, 60, 20);
+        let mut chat = Chat::new();
+        chat.put("one\ntwo\nthree\nfour\nfive\nsix\nseven\neight");
+        chat.can_send_now(true);
+        assert!(chat.offers_sending_now(), "nothing to offer");
+
+        let writing = super::bands(area, &chat, None).writing;
+        let x = writing.x + super::MARGIN + super::INDENT;
+        let offer = writing.bottom() - 1;
+        assert_eq!(
+            super::ChatView::place_at(area, &chat, false, x, offer),
+            None,
+            "a press on the offer went into the words"
+        );
+        // The row above the offer is the last of the words, and the caret
+        // is on the last of them.
+        let last = super::ChatView::place_at(area, &chat, false, x, offer - 1);
+        assert_eq!(last.map(|(row, _)| row), Some(7), "not the last line");
     }
 }

@@ -714,11 +714,11 @@ pub struct Chat {
     /// go stale -- what is not stored cannot be left on screen saying
     /// something that has stopped being true.
     doing: Option<String>,
-    /// Whether a turn is running, read off the state every frame the way
-    /// [`Self::doing`] is: what decides whether the box offers to send now,
-    /// which is a row of the box and so has to be known wherever the box
-    /// is measured.
-    running: bool,
+    /// Whether a turn is running and `ctrl+enter` can reach it, read off
+    /// the state every frame the way [`Self::doing`] is: what decides
+    /// whether the box offers to send now, which is a row of the box and so
+    /// has to be known wherever the box is measured.
+    can_send_now: bool,
     /// What the agent means to do about this turn, while it is doing it.
     ///
     /// Never written into [`Self::said`]: a finished list of seven
@@ -907,7 +907,7 @@ impl Chat {
             said: Vec::new(),
             laid: std::cell::RefCell::new(None),
             doing: None,
-            running: false,
+            can_send_now: false,
             plan: Vec::new(),
             plan_open: false,
             input: Composer::new(),
@@ -1084,16 +1084,16 @@ impl Chat {
         !self.input.is_blank() || self.said.iter().any(|said| said.unsent)
     }
 
-    /// Says whether a turn is running.
-    pub const fn turn_is_running(&mut self, running: bool) {
-        self.running = running;
+    /// Says whether a turn is running that `ctrl+enter` can reach.
+    pub const fn can_send_now(&mut self, can: bool) {
+        self.can_send_now = can;
     }
 
-    /// Whether the box offers to send now: a turn is running, and stopping
-    /// it would leave something to say.
+    /// Whether the box offers to send now: a turn is running that the key
+    /// can reach, and stopping it would leave something to say.
     #[must_use]
     pub fn offers_sending_now(&self) -> bool {
-        self.running && self.would_send_now()
+        self.can_send_now && self.would_send_now()
     }
 
     /// Everything the reader has said that has not gone, in the order they
@@ -2316,7 +2316,13 @@ impl Chat {
         // harmless half of what was asked.
         if key.code == KeyCode::Enter && modifiers == KeyModifiers::CONTROL {
             return match (thinking, self.input.is_blank()) {
-                (true, _) if self.would_send_now() => ChatOutcome::SendNow(self.input.take_parts()),
+                // A box of blanks is nothing to say, and goes with the rest
+                // rather than as a row of nothing behind it.
+                (true, true) if self.would_send_now() => {
+                    let _ = self.input.take_parts();
+                    ChatOutcome::SendNow(Vec::new())
+                }
+                (true, false) => ChatOutcome::SendNow(self.input.take_parts()),
                 (false, false) => ChatOutcome::Send(self.input.take_parts()),
                 _ => ChatOutcome::Consumed,
             };

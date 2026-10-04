@@ -638,6 +638,12 @@ impl Card {
             }
             return CardOutcome::Consumed;
         }
+        // Sending now is the box's, and the box is under the card: let
+        // through, the key stopped the turn from under a question and left
+        // the question up with nobody waiting for its answer.
+        if key.code == KeyCode::Enter && modifiers == KeyModifiers::CONTROL {
+            return CardOutcome::Consumed;
+        }
         if modifiers != KeyModifiers::NONE && modifiers != KeyModifiers::SHIFT {
             return CardOutcome::Ignored;
         }

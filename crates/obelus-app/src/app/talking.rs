@@ -1941,7 +1941,11 @@ impl App {
         let Some(modifiers) = keymap::modifiers_of(key) else {
             return false;
         };
-        if modifiers != KeyModifiers::NONE {
+        // And `ctrl+enter`, which is enter with the turn stopped first:
+        // the name is not settled yet, so there is nothing to send, and a
+        // half-typed one sent to the agent would stop its turn for nothing.
+        let sending_now = key.code == KeyCode::Enter && modifiers == KeyModifiers::CONTROL;
+        if modifiers != KeyModifiers::NONE && !sending_now {
             return false;
         }
         match key.code {

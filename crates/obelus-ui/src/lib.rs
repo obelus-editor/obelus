@@ -2171,11 +2171,12 @@ fn capped(cells: &mut CellBuffer, x: u16, y: u16, keys: &str, theme: &Theme) -> 
 ///
 /// The foot writes its own cap, because a run of cells a shade off the page
 /// is the only cap a terminal has and the foot is a row of keys among
-/// words. The other two places a key is shown have no ground to give it and
-/// need none: on the card and on the keys page the key is *a column*, and
-/// being in that column is what says it is a key. So the cells stay exactly
-/// as they are, and the shape is said around them -- over the blank either
-/// side, which is where a cap's own blanks would have been.
+/// words. Everywhere else a key is shown it has no ground to give it and
+/// needs none: on the card and on the keys page the key is *a column*, and
+/// in a conversation it is a word set apart from the words beside it by
+/// the gaps either side. So the cells stay exactly as they are, and the
+/// shape is said around them -- over the blank either side, which is where
+/// a cap's own blanks would have been.
 ///
 /// Which is the whole channel's rule in the one case it is easiest to get
 /// wrong: what is said here may not be the only thing saying it.
