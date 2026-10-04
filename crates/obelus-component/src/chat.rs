@@ -27,20 +27,19 @@
 //! rebuilt from that update would lose its kind, its title and its place at the
 //! moment it succeeded.
 //!
-//! The transcript has a cursor, and it stands only on rows that do
-//! something. A tool call names a file; prose does not. The cursor steps over
-//! what cannot be opened -- the rule a list follows for a row that cannot be
-//! chosen -- so a reader walking a conversation never lands somewhere enter
-//! does nothing, and the lit row is the promise: what is marked is what opens.
+//! The transcript has a cursor, and it walks the words; tab goes to what
+//! acts. The arrows move it a character and a row at a time, over every row
+//! drawn -- prose, a blank, a heading -- because a reader taking a copy of a
+//! sentence has to be able to stand in it, and a press puts it where the
+//! pointer landed. Tab and shift and tab step to the next row that does
+//! something: a tool call names a file, a heading opens what is under it.
+//! Only those rows are lit while the cursor is on them, and that is the
+//! promise: what is lit is what enter opens.
 //!
-//! The arrows move the nearest thing that can still move. Where there is a row
-//! to stand on they walk to it and the view follows; where there is none they
-//! scroll a row, which is what they have always done and what a conversation of
-//! nothing but words still needs. Enter opens what the row names -- in a
-//! buffer, and the conversation hides itself, because going somewhere means
-//! seeing it. Escape comes back out to the box without closing anything, and
-//! typing goes to the box wherever the cursor was, because a reader who starts
-//! typing means to type.
+//! Enter opens what the row names -- in a buffer, and the conversation hides
+//! itself, because going somewhere means seeing it. Escape comes back out to
+//! the box without closing anything, and typing goes to the box wherever the
+//! cursor was, because a reader who starts typing means to type.
 //!
 //! Shift extends, and control goes to the ends. Shift and a motion holds
 //! what the motion passed over, in the box as in the transcript, because
@@ -406,14 +405,12 @@ const MOST_TITLE_ROWS: usize = 3;
 pub const DEEPER: u16 = 2;
 
 impl Row {
-    /// Whether the cursor can stand on this row.
+    /// Whether enter does something on this row.
     ///
-    /// Only rows that do something when they are chosen: a tool call names
-    /// a file and enter opens it, a heading opens what is under it, a row
-    /// the reader was sent away by sends them again. Prose is stepped over
-    /// rather than landed on -- the same rule a list follows for a row that
-    /// cannot be chosen -- so a reader walking the transcript never reaches
-    /// a row where enter does nothing.
+    /// A tool call names a file and enter opens it, a heading opens what is
+    /// under it, a row the reader was sent away by sends them again. The
+    /// cursor stands on any row; these are the ones tab goes to, and the
+    /// ones lit while it is on them, so that what is lit is what opens.
     ///
     /// The list is the one the key's own `match` answers, and the two have
     /// to say the same thing: a row this lets the cursor stand on and that

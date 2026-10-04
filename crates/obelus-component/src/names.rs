@@ -74,8 +74,7 @@ pub enum Row {
     /// The boundary between what is chosen and what is on offer.
     ///
     /// Also a row, for the same reason -- and one the focus steps over,
-    /// the way a transcript's cursor stands only on rows that do
-    /// something.
+    /// the way tab in a transcript goes only to rows that do something.
     Boundary,
 }
 
