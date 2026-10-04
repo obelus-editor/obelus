@@ -161,6 +161,23 @@ impl Remembered {
             .retain(|(which, _, _), _| which.note().is_none_or(|note| notes.contains(note)));
     }
 
+    /// Forgets every conversation whose checkout has gone.
+    ///
+    /// Nothing else would: the agent keeps a conversation under the
+    /// directory it was told, so one had in a worktree that was removed can
+    /// be taken up from nowhere, and its row sat dim in every other
+    /// checkout's list for ever. Done as the file is read rather than as it
+    /// is written, so the list stops offering it the moment the tree goes
+    /// and the next write takes it out of the file -- the same moment the
+    /// notes' sweep is made.
+    ///
+    /// Only a tree that is certainly not there: one the filesystem would
+    /// not answer about is not one that has gone.
+    fn forget_trees_that_are_gone(&mut self) {
+        self.kept
+            .retain(|(_, _, tree), _| !obelus_git::is_gone(tree));
+    }
+
     /// Every session it holds, for asking an agent which it still knows.
     pub fn sessions(&self) -> impl Iterator<Item = &str> {
         self.kept.values().map(|kept| kept.session.as_str())
@@ -250,7 +267,11 @@ pub fn read(root: &Path) -> Reading {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Reading::Nothing,
         Err(error) => return Reading::Unreadable(error.to_string()),
     };
-    read_from(&text)
+    let mut reading = read_from(&text);
+    if let Reading::Remembered(remembered) = &mut reading {
+        remembered.forget_trees_that_are_gone();
+    }
+    reading
 }
 
 /// The same, from the text rather than the file.
@@ -633,6 +654,65 @@ mod tests {
             std::fs::read_to_string(&path).expect("the table"),
             half,
             "the table Obelus could not read was written over"
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A conversation whose checkout has gone is not read, and the next
+    /// write takes it out of the file.
+    ///
+    /// Broken deliberately by taking the sweep out of `read`: the removed
+    /// worktree's row comes back.
+    #[test]
+    fn a_conversation_whose_checkout_has_gone_is_collected() {
+        obelus_logging::state_directory_for_test(
+            std::env::temp_dir().join(format!("obelus-sessions-state-{}", std::process::id())),
+        );
+        let Some(state) = obelus_logging::state_directory() else {
+            return;
+        };
+        let root = state.join("sessions-gone-tree-test");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("the directory");
+        let there = state.join("sessions-gone-tree-test-two");
+        std::fs::create_dir_all(&there).expect("the other checkout");
+        let kept = |session: &str| Kept {
+            session: session.to_string(),
+            title: None,
+            told: None,
+            introduced: false,
+            last: None,
+        };
+        change(&root, None, |remembered| {
+            remembered.put(&note("ABCDEFGH"), "claude-acp", &root, kept("here"));
+            remembered.put(&note("ABCDEFGH"), "claude-acp", &there, kept("there"));
+        });
+        let both = read(&root).remembered().expect("the table");
+        assert!(
+            both.get(&note("ABCDEFGH"), "claude-acp", &there).is_some(),
+            "a checkout that is there was forgotten"
+        );
+
+        std::fs::remove_dir_all(&there).expect("the checkout goes");
+        let read_back = read(&root).remembered().expect("the table");
+        assert!(
+            read_back
+                .get(&note("ABCDEFGH"), "claude-acp", &root)
+                .is_some(),
+            "this checkout's conversation went with the other"
+        );
+        assert!(
+            read_back
+                .get(&note("ABCDEFGH"), "claude-acp", &there)
+                .is_none(),
+            "a conversation from a checkout that has gone was read"
+        );
+        change(&root, None, |_| {});
+        let written = std::fs::read_to_string(path(&root).expect("the table")).expect("the table");
+        assert!(
+            !written.contains("sessions-gone-tree-test-two"),
+            "a conversation from a checkout that has gone was written back:\n{written}"
         );
 
         let _ = std::fs::remove_dir_all(&root);
