@@ -5307,6 +5307,42 @@ fn a_chosen_workflow_is_pointed_at_in_the_first_message() {
     );
 }
 
+/// The agent is told what to call itself, which is `Obelus` until the
+/// reader says otherwise: their own messages say "I" on the same page.
+///
+/// Broken deliberately three ways: leaving `{name}` unfilled in `opening`,
+/// which reads no `as=` at all; taking the paragraph out of `always.txt`,
+/// the same; and filling it with `DEFAULT_SPEAKS_AS` rather than the
+/// setting, which reads `as=Obelus` where the reader said Ada.
+#[test]
+fn the_agent_is_told_what_to_call_itself() {
+    for (name, said) in [(None, "as=Obelus"), (Some("Ada"), "as=Ada")] {
+        let (mut app, events) = talking();
+        if let Some(name) = name {
+            let mut config = app.config().clone();
+            config.speaks_as = name.to_string();
+            app.configure(config, vec!["speaks_as"]);
+        }
+        pump(&mut app, &events, "the session", |app| {
+            app.talking() == obelus_agent::Talking::Ready
+        });
+        support::type_text(&mut app, "/blocks");
+        support::press(&mut app, KeyCode::Enter);
+        pump(&mut app, &events, "what it got", |app| {
+            app.chat().is_some_and(|chat| {
+                chat.rows(WIDTH)
+                    .iter()
+                    .any(|row| row.text().contains("blocks="))
+            })
+        });
+        let text = screen(&mut app);
+        assert!(
+            text.contains(said),
+            "the agent was not told to call itself {name:?}:\n{text}"
+        );
+    }
+}
+
 /// And a project that has chosen none says nothing about one: the line
 /// would send the agent to a tool that answers that there is nothing to
 /// follow.

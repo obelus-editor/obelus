@@ -46,6 +46,9 @@ pub enum PromptKind {
     /// get this wrong -- and the end says whether it was the one meant; the
     /// rest is the part a reader sharing their screen would not want shown.
     Told(&'static obelus_remote::platform::Field),
+    /// What one of Obelus's own settings is, where it is typed rather than
+    /// chosen: by the setting's key.
+    Setting(&'static str),
 }
 
 impl PromptKind {
@@ -57,6 +60,10 @@ impl PromptKind {
     pub fn label(self) -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(match self {
             Self::Told(field) => return format!("{}: ", field.name).into(),
+            Self::Setting(key) => {
+                let name = obelus_config::Setting::named(key).map_or(key, |setting| setting.name);
+                return format!("{name}: ").into();
+            }
             Self::Line => "Line: ",
             Self::Name => "Rename to: ",
             // Not "Rename to: ", which is what a symbol's prompt says:
@@ -97,6 +104,10 @@ impl PromptKind {
             // A token or an id is one word, and a paste that brought a
             // newline or a space along with it should not keep them.
             Self::Told(_) => !character.is_whitespace(),
+            // A name may have a blank in it -- a reader may well want the
+            // agent to be "the assistant" -- and only the key that answers
+            // is refused.
+            Self::Setting(_) => character != '\n' && character != '\r',
         }
     }
 
@@ -111,6 +122,7 @@ impl PromptKind {
             Self::Name => |character| !character.is_whitespace(),
             Self::Path | Self::NewPath => |character| character != '\n' && character != '\r',
             Self::Told(_) => |character| !character.is_whitespace(),
+            Self::Setting(_) => |character| character != '\n' && character != '\r',
         }
     }
 }

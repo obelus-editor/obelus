@@ -65,6 +65,9 @@ use obelus_text::coordinates::Span;
 /// theme -- and the list of names Obelus will accept is already next door.
 pub const DEFAULT_THEME: &str = "dark";
 
+/// What an agent calls itself for a reader who has not said.
+pub const DEFAULT_SPEAKS_AS: &str = "Obelus";
+
 /// Everything the reader can decide.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Config {
@@ -193,6 +196,14 @@ pub struct Config {
     /// turning one into a list later would leave every file that wrote
     /// the switch with a line that did nothing.
     pub workflow: String,
+    /// What an agent calls itself in a conversation.
+    ///
+    /// A name rather than "I", because the reader's own messages say "I"
+    /// on the same page, and a reader who cannot tell whose "I" a sentence
+    /// is cannot tell who did the thing it says was done. `Obelus` unless
+    /// the reader says otherwise: to them the agent is part of the editor
+    /// they are in.
+    pub speaks_as: String,
     /// Which agent Obelus talks to, by the registry's own name for it.
     ///
     /// One, or none. Two would mean every question having to say which
@@ -318,6 +329,7 @@ impl Default for Config {
             // what lets them see the change arrive and decide what becomes
             // of it.
             workflow: "feature-branch".to_string(),
+            speaks_as: DEFAULT_SPEAKS_AS.to_string(),
             // None until the reader installs one: Obelus does not choose an
             // agent for anybody.
             agent: None,
@@ -353,6 +365,8 @@ pub enum Value {
     /// tried in, first to last. A set would lose the only thing the reader
     /// said.
     Names(Vec<String>),
+    /// Whatever the reader typed.
+    Text(String),
 }
 
 /// What sort of control a setting gets.
@@ -376,6 +390,12 @@ pub enum Kind {
     /// another. So the control offers what is here and takes what is
     /// typed.
     Names,
+    /// A line the reader types, asked for on the status row.
+    ///
+    /// No list at all: what may go in is anything a reader would call
+    /// something, and a list of the names Obelus thought of would be a
+    /// list of names that are not theirs.
+    Text,
 }
 
 /// Where a setting means anything.
@@ -769,6 +789,18 @@ pub const ALL: &[Setting] = &[
         kind: Kind::Choice(WORKFLOWS),
         drawn: Drawn::Anywhere,
     },
+    Setting {
+        key: "speaks_as",
+        name: "Speaks as",
+        about: "What an agent calls itself in a conversation, so that an \"I\" there is always yours",
+        group: Group::Agent,
+        // A project's too: what an agent is called is no more than a word
+        // in its sentences, and a project that names its own is not
+        // starting or allowing anything.
+        reach: Reach::Anywhere,
+        kind: Kind::Text,
+        drawn: Drawn::Anywhere,
+    },
 ];
 
 impl Config {
@@ -797,6 +829,7 @@ impl Config {
             "reopen" => Some(Value::Switch(self.reopen)),
             "new_versions" => Some(Value::Switch(self.new_versions)),
             "workflow" => Some(Value::Choice(self.workflow.clone())),
+            "speaks_as" => Some(Value::Text(self.speaks_as.clone())),
             "agent" => Some(Value::Choice(self.agent.clone().unwrap_or_default())),
             "remote" => Some(Value::Choice(self.remote.clone().unwrap_or_default())),
             _ => None,
@@ -826,6 +859,7 @@ impl Config {
             ("reopen", Value::Switch(on)) => self.reopen = *on,
             ("new_versions", Value::Switch(on)) => self.new_versions = *on,
             ("workflow", Value::Choice(word)) => self.workflow = word.clone(),
+            ("speaks_as", Value::Text(name)) => self.speaks_as = speaks_as(name),
             // An empty word is nobody, which is how a reader stops talking
             // to an agent without a second setting meaning "off".
             ("agent", Value::Choice(word)) => {
@@ -1377,6 +1411,11 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
             config.workflow = word.to_string();
         }
     }
+    if let Some(name) = table.get("speaks_as").and_then(toml::Value::as_str)
+        && allowed("speaks_as")
+    {
+        config.speaks_as = speaks_as(name);
+    }
     if let Some(word) = table.get("agent").and_then(toml::Value::as_str)
         && allowed("agent")
     {
@@ -1669,6 +1708,11 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
         toml_edit::value(config.workflow.clone()),
     );
     put(
+        "speaks_as",
+        config.speaks_as != default.speaks_as,
+        toml_edit::value(config.speaks_as.clone()),
+    );
+    put(
         "agent",
         config.agent != default.agent,
         toml_edit::value(config.agent.clone().unwrap_or_default()),
@@ -1828,6 +1872,18 @@ pub fn resolved(path: &Path) -> PathBuf {
     std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
+/// The name an agent is to call itself, from what somebody wrote.
+///
+/// A blank one is the default rather than nothing: an agent told to call
+/// itself "" is told nothing it can follow, and a reader who cleared the
+/// line has said they want no name of their own.
+fn speaks_as(name: &str) -> String {
+    match name.trim() {
+        "" => DEFAULT_SPEAKS_AS.to_string(),
+        name => name.to_string(),
+    }
+}
+
 /// Sets or removes one key in a project's own settings file.
 ///
 /// Edited rather than rewritten, like the reader's own ([`over`]). A
@@ -1853,7 +1909,9 @@ pub fn write_project(path: &Path, key: &str, value: Option<&Value>) -> std::io::
 
     match value {
         Some(Value::Switch(on)) => document[key] = toml_edit::value(*on),
-        Some(Value::Choice(word)) => document[key] = toml_edit::value(word.clone()),
+        Some(Value::Choice(word) | Value::Text(word)) => {
+            document[key] = toml_edit::value(word.clone());
+        }
         Some(Value::Count(count)) => {
             document[key] = toml_edit::value(i64::try_from(*count).unwrap_or(0));
         }
@@ -2209,6 +2267,7 @@ mod tests {
             reopen: false,
             new_versions: false,
             workflow: "none".to_string(),
+            speaks_as: "Ada".to_string(),
             agent: Some("claude-acp".to_string()),
             // A key moved and a key taken away: both are decisions, and
             // both have to survive the file or the reader makes them again
@@ -2342,6 +2401,11 @@ mod tests {
                 (super::Kind::Names, Value::Names(names)) => assert!(
                     names.is_empty(),
                     "{} defaults to {names:?}, which is a guess about somebody's machine",
+                    setting.key
+                ),
+                (super::Kind::Text, Value::Text(text)) => assert!(
+                    !text.trim().is_empty(),
+                    "{} defaults to nothing, which says nothing",
                     setting.key
                 ),
                 (kind, value) => {

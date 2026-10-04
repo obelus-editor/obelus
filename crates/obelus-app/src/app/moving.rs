@@ -797,6 +797,10 @@ impl App {
             PromptKind::NewPath => self.make_file(std::path::Path::new(text.trim())),
             // What one of a chat's fields is, from the remote page.
             PromptKind::Told(field) => self.tell_the_remote(field, Some(text)),
+            // One of Obelus's own that is typed, from the settings page.
+            PromptKind::Setting(key) => {
+                self.change_setting(key, &obelus_config::Value::Text(text.to_string()));
+            }
             PromptKind::Line => {
                 let Ok(line) = text.trim().parse::<usize>() else {
                     self.wrong(format!("{text:?} is not a line number"));
