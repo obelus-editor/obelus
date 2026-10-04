@@ -443,18 +443,6 @@ impl App {
         write_the_table(platform, &self.mirror.threads);
     }
 
-    /// The chat the conversation on screen is mirrored to, while it is:
-    /// asked of the table and the state, which are both kept, so a frame
-    /// can ask it.
-    pub(super) fn conversation_mirrored_to(&self) -> Option<&'static str> {
-        let chat = chat_of(self.conversation()?)?.file_name();
-        let platform = self.platform()?;
-        (self.remote_state().connected()
-            && self.mirror.read_for == Some(platform.key)
-            && self.mirror.threads.contains_key(&chat))
-        .then_some(platform.name)
-    }
-
     /// The conversation open here by its name elsewhere.
     fn talk_named(&self, chat: &str) -> Option<&Conversation> {
         self.document_named(chat)
@@ -533,6 +521,16 @@ impl App {
         if let Some(chat) = self.mirror.opening.remove(&asked) {
             tracing::info!(chat, "its thread would not open");
             self.mirror.held.remove(&chat);
+            // Said in the conversation, which is where the reader is when it
+            // matters: the one place that could have said it otherwise was a
+            // word on the header that every other conversation also had.
+            if let (Some(id), Some(platform)) = (self.document_named(&chat), self.platform()) {
+                let said = format!(
+                    "{} would not start a thread for this conversation",
+                    platform.name
+                );
+                self.in_talk(talking::Whose::One(id), |talk| talk.note(&said));
+            }
             self.mirror.unopened.insert(chat);
         }
     }

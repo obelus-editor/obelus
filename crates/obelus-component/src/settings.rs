@@ -175,8 +175,6 @@ pub struct Reached {
     /// end of a secret, the whole of anything else. A field that is not here
     /// has not been set.
     pub kept: std::collections::BTreeMap<&'static str, String>,
-    /// What is wrong with a field, by its key, where something is.
-    pub troubles: std::collections::BTreeMap<&'static str, String>,
     /// Who may talk to this machine, by name.
     pub people: Vec<String>,
     /// The code waiting to be sent to the bot, while there is one.
@@ -646,10 +644,35 @@ impl Settings {
     #[must_use]
     pub fn warning_of(&self, shown: &Shown) -> Option<String> {
         match shown {
+            // What is wrong with the chat is said on the row whose value
+            // it is wrong about, and only there: the page holds what the
+            // reader set, and whether it is connected is the status row's.
+            // A secret refused, or one the keyring will not give up, is a
+            // value the reader can do something about here; a chat that
+            // cannot be reached is not, and is not said.
             Shown::Remote {
                 row: RemoteRow::Field(field),
                 ..
-            } => self.reached.troubles.get(field.key).cloned(),
+            } => {
+                let secret = matches!(
+                    field.kind,
+                    obelus_remote::platform::FieldKind::Secret { .. }
+                );
+                let name = self
+                    .reached
+                    .platform
+                    .map_or("The chat", |platform| platform.name);
+                match self.reached.state {
+                    obelus_remote::State::Refused if secret => Some(format!("Refused by {name}")),
+                    obelus_remote::State::Locked if secret => {
+                        Some("The keyring is locked".to_string())
+                    }
+                    obelus_remote::State::NoKeyring if secret => {
+                        Some("No keyring on this machine".to_string())
+                    }
+                    _ => None,
+                }
+            }
             shown => shown.warning(),
         }
     }

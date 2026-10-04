@@ -2,7 +2,7 @@ screen 66x20  editor 66x18  status 66x1
 -- text --
  0|  Settings  Keys  Remote  Agents                              ⇤ ⇥ 
  1|──────────────────────────────────────────────────────────────────
- 2| Slack                                                 Not set up 
+ 2| Slack                                                            
  3|                                                                  
  4|   Platform                                      Slack ▸          
  5|     Which chat a note can be worked on from                      
@@ -23,7 +23,7 @@ screen 66x20  editor 66x18  status 66x1
 -- style --
  0|aaaaaaaaaaaaaaaaabbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 2|cdddddcccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaac
+ 2|cdddddcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  3|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbebbbbbbbbbb
  5|bbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebbbbbbbbbbbbbbbbbbbbbb

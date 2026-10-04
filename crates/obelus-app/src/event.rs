@@ -171,6 +171,11 @@ pub enum Event {
     Remote(obelus_remote::Event),
     /// Something one connection to it said, by the connection's number.
     Reached(u64, obelus_remote::Event),
+    /// The lock that makes this the window the chat talks to, come back
+    /// from the window that had it, for the asking with this number.
+    Held(u64, std::fs::File),
+    /// The window that had it did not let go in time, for this asking.
+    NotLetGo(u64),
 }
 
 impl Event {
@@ -216,6 +221,8 @@ impl Event {
             Self::Summoned(_) => "Summoned",
             Self::Remote(_) => "Remote",
             Self::Reached(..) => "Reached",
+            Self::Held(..) => "Held",
+            Self::NotLetGo(_) => "NotLetGo",
         }
     }
 }

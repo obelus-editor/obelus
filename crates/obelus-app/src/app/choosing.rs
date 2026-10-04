@@ -167,6 +167,8 @@ impl App {
             // once the one it was has gone.
             Requires::AProject => self.has_a_project(),
             Requires::AnotherWorktree => self.another_worktree(),
+            Requires::ARemote => self.platform().is_some() && !self.holds_the_remote(),
+            Requires::TheRemote => self.holds_the_remote(),
             Requires::AFileOpen => buffer.is_some(),
             Requires::AFileOnDisk => buffer.is_some_and(|buffer| buffer.content().is_file()),
             // A file, or a box a reader is typing into. The same places a

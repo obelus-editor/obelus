@@ -89,8 +89,10 @@ pub(super) const TABLE: usize = 1;
 pub(super) const NOTES: usize = 2;
 /// Which windows are on which of the repository's trees.
 pub(super) const WINDOWS: usize = 3;
+/// Whether another window has asked for the chat.
+pub(super) const REMOTE: usize = 4;
 /// How many of them there are.
-pub(super) const WATCHED: usize = 4;
+pub(super) const WATCHED: usize = 5;
 
 /// One of the things Obelus watches, and whether it managed to.
 ///
@@ -744,6 +746,16 @@ impl App {
             worktrees,
             How::Directory,
             super::worktrees::directory,
+        );
+        // And the chat, while this window is the one it talks to: another
+        // asking for it is a file written beside the lock. Not the project's,
+        // and not given up with it.
+        let holding = self.holds_the_remote();
+        self.settle_a_watch(
+            REMOTE,
+            holding,
+            How::Directory,
+            super::remote::remote_directory,
         );
     }
 

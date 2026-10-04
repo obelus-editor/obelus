@@ -94,11 +94,11 @@ pub enum Event {
     },
 }
 
-/// Where this machine stands with the chat it is set to, as one answer.
+/// Where a window stands with the chat it talks to, as one answer.
 ///
-/// One, because there is one place it is said on the settings page and one
-/// mark on the status row, and two answers there would be the two drifting
-/// apart.
+/// One, because the mark on its status row and the rows of the settings
+/// page that say what is wrong both read it, and two answers there would be
+/// the two drifting apart.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum State {
     /// No chat is set.
@@ -108,11 +108,8 @@ pub enum State {
     Unready,
     /// Connecting, or trying again.
     Connecting,
-    /// Connected, by this window.
+    /// Connected.
     Connected,
-    /// Connected, by another Obelus on this machine, which passes on what is
-    /// this window's.
-    Through,
     /// The platform turned a token down.
     Refused,
     /// The platform could not be reached; Obelus goes on trying.
@@ -124,26 +121,10 @@ pub enum State {
 }
 
 impl State {
-    /// What it is, in words, for a platform called `name`.
-    #[must_use]
-    pub fn words(self, name: &str) -> String {
-        match self {
-            Self::Off => "Off".to_string(),
-            Self::Unready => "Not set up".to_string(),
-            Self::Connecting => "Connecting".to_string(),
-            Self::Connected => "Connected".to_string(),
-            Self::Through => "Through another window".to_string(),
-            Self::Refused => format!("{name} refused a token"),
-            Self::Unreachable => format!("Cannot reach {name}"),
-            Self::Locked => "The keyring is locked".to_string(),
-            Self::NoKeyring => "No keyring on this machine".to_string(),
-        }
-    }
-
-    /// Whether messages are getting through, by this window or another.
+    /// Whether messages are getting through.
     #[must_use]
     pub const fn connected(self) -> bool {
-        matches!(self, Self::Connected | Self::Through)
+        matches!(self, Self::Connected)
     }
 
     /// Whether something is wrong that the reader has to do something about.

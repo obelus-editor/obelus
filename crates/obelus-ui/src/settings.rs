@@ -1182,34 +1182,6 @@ impl SettingsView<'_> {
             Heading::Group(group) => group.label(),
             Heading::Agent(name) | Heading::Remote(name) => name.as_str(),
         };
-        // Where this machine stands with the chat, at the right of its name:
-        // the one fact about the whole page, said once where the page
-        // starts rather than on a row of its own the focus would have to
-        // walk over.
-        if matches!(opens, Heading::Remote(_)) {
-            let reached = self.settings.reached();
-            let state = reached.state;
-            let words = state.words(reached.platform.map_or("", |platform| platform.name));
-            let words = match state {
-                obelus_remote::State::Connected => format!("\u{25cf} {words}"),
-                _ => words,
-            };
-            let colour = match state {
-                obelus_remote::State::Connected | obelus_remote::State::Through => {
-                    self.theme.change_added
-                }
-                state if state.wrong() => self.theme.change_removed,
-                _ => self.theme.gutter,
-            };
-            let width = u16::try_from(text_width(&words)).unwrap_or(0);
-            write(
-                cells,
-                area.right().saturating_sub(width + 1),
-                area.y,
-                &words,
-                plain.fg(colour),
-            );
-        }
         write(
             cells,
             area.x + 1,

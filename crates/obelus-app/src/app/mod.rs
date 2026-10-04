@@ -2034,6 +2034,8 @@ impl App {
             // are the same message, and a mark standing still says the
             // second.
             || self.server_busy()
+            // And the chat's mark, while the window it talks to connects.
+            || self.remote_turning()
             // And a drag held against an edge, which is the one of these
             // that is waiting on the reader's hand rather than on
             // something happening by itself. It is here for the same
@@ -2772,6 +2774,8 @@ impl App {
             Event::Summoned(token) => self.summoned(token),
             Event::Remote(event) => self.remote_event(event),
             Event::Reached(number, event) => self.reached_event(number, event),
+            Event::Held(number, lock) => self.held_the_remote(number, lock),
+            Event::NotLetGo(number) => self.not_let_go(number),
             Event::Fonts { here, otherwise } => {
                 tracing::info!(
                     faces = here.len(),
@@ -2852,6 +2856,9 @@ impl App {
                     // moved to another tree -- which the list of worktrees
                     // draws while it is up.
                     self.reread_the_windows();
+                } else if self.is_the_remote_wanted(&path) {
+                    // Another window asking for the chat this one has.
+                    self.somebody_wants_the_remote();
                 } else if ours && self.is_a_claim(&path) {
                     // A conversation taken up or let go in another window
                     // -- including one let go by that window dying, which
@@ -4674,13 +4681,9 @@ impl Screen for App {
     fn server_working_on(&self) -> Option<&str> {
         App::server_working_on(self)
     }
-    fn mirrored_to(&self) -> Option<&'static str> {
-        self.conversation_mirrored_to()
-    }
 
     fn remote(&self) -> Option<(&'static str, obelus_remote::State)> {
-        self.platform()
-            .map(|platform| (platform.name, self.remote_state()))
+        App::remote_badge(self)
     }
 
     fn server_busy(&self) -> bool {

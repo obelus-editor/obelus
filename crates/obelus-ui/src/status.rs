@@ -302,19 +302,24 @@ fn server_badge(server: Option<(&'static str, ServerState)>, busy: Option<u32>) 
         .unwrap_or_default()
 }
 
-/// The chat this machine can be reached from, by name, and a mark for
-/// where it stands: the mark a server gets for the same three answers.
+/// The chat, by name, and a mark for where it stands -- only in the window
+/// it talks to, which is the one thing it says about every other window:
+/// nothing.
 ///
-/// Which of the wrong things it is goes unsaid: the remote page says that,
-/// and this is the one cell that says to go and look.
+/// Turning while it connects, and again while it connects again, which is
+/// a wait with an end and the one thing on the row that is not settled.
+/// Which of the wrong things it is goes unsaid: the row on the settings
+/// page whose value is wrong says that, and this is the one cell that says
+/// to go and look.
 #[must_use]
-fn remote_badge(remote: Option<(&'static str, obelus_remote::State)>) -> String {
+fn remote_badge(remote: Option<(&'static str, obelus_remote::State)>, phase: u32) -> String {
     let Some((name, state)) = remote else {
         return String::new();
     };
     let mark = match state {
         state if state.connected() => '\u{25cf}',
         state if state.wrong() => '\u{2715}',
+        obelus_remote::State::Connecting => crate::spinning(phase),
         _ => '\u{25cb}',
     };
     format!("{mark} {name}  ")
@@ -779,7 +784,7 @@ impl StatusView<'_> {
 
         let badge = server_badge(self.server, self.busy.then_some(self.phase));
         let badge_width = text_width(&badge);
-        let remote = remote_badge(self.remote);
+        let remote = remote_badge(self.remote, self.phase);
         let remote_width = text_width(&remote);
 
         // What is wrong with the file, as a count of each kind: a reader
@@ -1201,6 +1206,32 @@ mod tests {
     use obelus_theme::builtin::DARK;
 
     use super::*;
+
+    /// The chat's mark turns while it connects -- and while it connects
+    /// again -- and stands still once it has, or once something is wrong;
+    /// and a window the chat does not talk to says nothing about it at all.
+    ///
+    /// Broken deliberately by giving connecting the still ring the other
+    /// waits have: the mark said nothing was happening while it connected.
+    #[test]
+    fn the_chat_mark_turns_while_it_connects() {
+        assert_eq!(remote_badge(None, 0), "");
+        let connecting = remote_badge(Some(("Feishu", obelus_remote::State::Connecting)), 3);
+        assert!(connecting.starts_with(crate::spinning(3)), "{connecting:?}");
+        assert_ne!(
+            remote_badge(Some(("Feishu", obelus_remote::State::Connecting)), 4),
+            connecting,
+            "the mark did not move from one frame to the next"
+        );
+        assert!(
+            remote_badge(Some(("Feishu", obelus_remote::State::Connected)), 3)
+                .starts_with('\u{25cf}')
+        );
+        assert!(
+            remote_badge(Some(("Feishu", obelus_remote::State::Refused)), 3)
+                .starts_with('\u{2715}')
+        );
+    }
 
     /// The three states have to be told apart at a glance, and the one that
     /// says nothing is running has to say nothing at all: a badge for a

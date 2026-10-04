@@ -396,6 +396,11 @@ pub fn for_command(command: obelus_command::Command) -> char {
         // Sliders, because a cog is what everything else in this list would
         // fall back to and two rows with the same picture say less than one.
         Command::ConfigOpen => '\u{f062e}',
+        // A link, and the link broken: what the pair of them does between
+        // this window and the chat. Not the plugs the server's mark is
+        // drawn with, which say something else on the same row.
+        Command::RemoteConnect => '\u{f0337}',
+        Command::RemoteDisconnect => '\u{f0338}',
         // A folder with a cog on it: the same settings, belonging to the
         // tree rather than to the reader -- the folder is what says which.
         Command::ConfigProject => '\u{f0ee5}',

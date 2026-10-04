@@ -375,6 +375,50 @@ pub fn held_by_somebody_else(file: &File) -> bool {
     }
 }
 
+/// Takes the lock on `file`, waiting for whoever has it to let go.
+///
+/// For a lock that is handed over rather than refused: the one asking has
+/// told the holder it wants it, and waits here for the kernel to wake it
+/// when the holder lets go -- or when the holder's process ends, which lets
+/// go of everything it held. Nothing is asked again and again: the waiting
+/// is the kernel's. On a thread of its own, since it can be a while.
+///
+/// `false` where the lock could not be taken at all, which is not the same
+/// as somebody holding it.
+#[cfg(unix)]
+pub fn wait_to_hold(file: &File) -> bool {
+    use std::os::fd::AsRawFd as _;
+
+    // Safety: as above.
+    unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) == 0 }
+}
+
+/// The same, on the byte the other platform's lock is taken on -- see
+/// [`held_by_somebody_else`].
+#[cfg(windows)]
+pub fn wait_to_hold(file: &File) -> bool {
+    use std::os::windows::io::AsRawHandle as _;
+
+    use windows_sys::Win32::{
+        Storage::FileSystem::{LOCKFILE_EXCLUSIVE_LOCK, LockFileEx},
+        System::IO::OVERLAPPED,
+    };
+
+    // Safety: as above.
+    unsafe {
+        let mut overlapped: OVERLAPPED = std::mem::zeroed();
+        overlapped.Anonymous.Anonymous.OffsetHigh = u32::MAX;
+        LockFileEx(
+            file.as_raw_handle(),
+            LOCKFILE_EXCLUSIVE_LOCK,
+            0,
+            1,
+            0,
+            &raw mut overlapped,
+        ) != 0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

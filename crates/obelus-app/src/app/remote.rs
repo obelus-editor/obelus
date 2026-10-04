@@ -11,8 +11,19 @@
 //! something a keystroke waits for.
 //!
 //! **A setting the reader turned on is not a reason to refuse them.** A chat
-//! chosen with no tokens is a chat that says so, at the top of the page, and
-//! waits for them -- not a choice taken back.
+//! chosen with no tokens is a chat whose rows say so, and waits for them --
+//! not a choice taken back.
+//!
+//! **One window talks to the chat, and the reader says which.** A bot has
+//! one connection, and a platform hands each message to one of an app's
+//! connections at random, so two windows connected is two windows each
+//! hearing half. So none connects until told to, with `connect-remote`; the
+//! window that is told holds a lock the kernel gives up with its process,
+//! and one told while another holds it asks that one to let go -- a file
+//! written beside the lock, which the holder watches -- and waits in the
+//! kernel for it to. Where the chat stands is said on the status row of
+//! that window and of no other: the settings page holds what the reader
+//! set, and says only what is wrong with it.
 
 use std::collections::BTreeMap;
 
@@ -45,8 +56,6 @@ pub(super) struct Remote {
     read_for: Option<&'static str>,
     /// Why the keyring would not answer, where it would not.
     trouble: Option<Trouble>,
-    /// What is wrong with a field, by its key.
-    troubles: BTreeMap<&'static str, String>,
     /// The code waiting to be sent to the bot, while there is one.
     pairing: Option<String>,
     /// The clock it runs out on. Dropped with the code, which stops it: a
@@ -68,6 +77,20 @@ pub(super) struct Remote {
     reaching: Option<&'static str>,
     /// What the platform last said about the connection, for `reaching`.
     connection: Option<State>,
+    /// The lock that makes this the one window on the machine the chat
+    /// talks to, while it is: one bot can have one connection, and which
+    /// window has it is the reader's to say, with `connect-remote`.
+    holding: Option<std::fs::File>,
+    /// The number of the last asking for it from a window that had it,
+    /// and the clock that asking gives up on. The lock comes back on a
+    /// thread waiting in the kernel, and one that comes back for an asking
+    /// since given up on is let go again at once.
+    taking: Option<(u64, Option<crate::event::Pause>)>,
+    /// The last such number handed out.
+    asked: u64,
+    /// What this window last wrote to ask for the chat, which it hears too
+    /// and must not take as somebody else asking.
+    wrote: Option<String>,
 }
 
 /// What a secret is drawn as on its row: the platform's prefix where it
@@ -164,7 +187,6 @@ impl App {
             platform,
             state: self.remote_state(),
             kept,
-            troubles: self.remote.troubles.clone(),
             people: platform
                 .and_then(|platform| self.config().remote_of(platform.key))
                 .map(|remote| {
@@ -325,7 +347,13 @@ impl App {
     /// on and off from the places that changed it would outlive its reason
     /// the first time one of them forgot.
     pub(super) fn settle_the_connection(&mut self) {
-        let wanted = self.platform();
+        // A chat set to nothing holds nothing: the next window to want it
+        // should not have to ask this one.
+        if self.platform().is_none() {
+            self.remote.holding = None;
+            self.remote.taking = None;
+        }
+        let wanted = self.platform().filter(|_| self.remote.holding.is_some());
         if self.remote.reaching != wanted.map(|platform| platform.key) {
             self.let_the_chat_go();
         }
@@ -734,5 +762,183 @@ impl obelus_sink::Sink<obelus_remote::Event> for Numbered {
         self.sender
             .send(Event::Reached(self.number, event))
             .map_err(|_| obelus_sink::Gone)
+    }
+}
+
+/// Where the one window the chat talks to holds it, and where another asks
+/// for it. One of each for the machine rather than the project or the
+/// platform: a bot has one connection, whichever chat it is.
+pub(super) fn remote_directory(_: &std::path::Path) -> Option<std::path::PathBuf> {
+    Some(obelus_logging::state_directory()?.join("remote"))
+}
+
+/// The file whose lock is the connection. Never read: on Windows a lock
+/// keeps others from reading even the byte it is on.
+fn the_lock() -> Option<std::fs::File> {
+    let path = remote_directory(std::path::Path::new(""))?.join("talking.lock");
+    std::fs::create_dir_all(path.parent()?).ok()?;
+    std::fs::File::options()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(path)
+        .ok()
+}
+
+/// The file a window writes its number into to ask for the connection.
+fn the_wanting() -> Option<std::path::PathBuf> {
+    Some(remote_directory(std::path::Path::new(""))?.join("wanted"))
+}
+
+impl App {
+    /// Whether this is the window the chat talks to.
+    pub(super) fn holds_the_remote(&self) -> bool {
+        self.remote.holding.is_some()
+    }
+
+    /// The same, for a test with two windows.
+    #[must_use]
+    pub fn holds_the_remote_for_test(&self) -> bool {
+        self.holds_the_remote()
+    }
+
+    /// The chat and where it stands, for the status row of the window it
+    /// talks to -- or is on its way to, which is connecting -- and nothing
+    /// for any other.
+    pub(super) fn remote_badge(&self) -> Option<(&'static str, State)> {
+        let platform = self.platform()?;
+        match (&self.remote.holding, &self.remote.taking) {
+            (Some(_), _) => Some((platform.name, self.remote_state())),
+            (None, Some(_)) => Some((platform.name, State::Connecting)),
+            (None, None) => None,
+        }
+    }
+
+    /// Whether the chat's mark is turning.
+    pub(super) fn remote_turning(&self) -> bool {
+        self.remote_badge()
+            .is_some_and(|(_, state)| state == State::Connecting)
+    }
+
+    /// Whether this window is the one the chat talks to, or is on its way
+    /// to being.
+    pub(super) fn has_the_remote(&self) -> bool {
+        self.remote.holding.is_some() || self.remote.taking.is_some()
+    }
+
+    /// Makes this the window the chat talks to: at once where no other
+    /// window has it, and where one has, by asking it to let go and waiting
+    /// for the kernel to say it has.
+    pub(super) fn connect_remote(&mut self) {
+        if self.has_the_remote() {
+            return;
+        }
+        let Some(platform) = self.platform() else {
+            return;
+        };
+        let Some(lock) = the_lock() else {
+            self.wrong(format!("Nowhere to hold {} from", platform.name));
+            return;
+        };
+        if !obelus_agent::chats::held_by_somebody_else(&lock) {
+            self.take_the_remote(lock);
+            return;
+        }
+        // The other window hears this through its watch on the directory
+        // and lets go; the lock comes back here when it has, or when its
+        // process ends, which lets go of it too.
+        self.remote.asked += 1;
+        let number = self.remote.asked;
+        // Words nobody else could write: the process, the asking, and the
+        // moment. Not the process alone, which two windows in one process
+        // share.
+        let asking = format!(
+            "{} {number} {}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |since| since.as_nanos())
+        );
+        if let Some(path) = the_wanting()
+            && let Err(error) = std::fs::write(&path, &asking)
+        {
+            tracing::warn!(%error, "could not ask the other window for the chat");
+        }
+        self.remote.wrote = Some(asking);
+        if let Some(events) = self.events.clone() {
+            obelus_runtime::handle().spawn_blocking(move || {
+                if obelus_agent::chats::wait_to_hold(&lock) {
+                    let _ = events.send(Event::Held(number, lock));
+                }
+            });
+        }
+        // Given up on after a while, because the asking travels by a watch,
+        // and a watch is freshness rather than a promise: a window that
+        // never heard would leave this one turning for ever.
+        let runs_out =
+            self.come_back_in(std::time::Duration::from_secs(10), Event::NotLetGo(number));
+        self.remote.taking = Some((number, runs_out));
+    }
+
+    /// The lock, come back from the kernel.
+    pub(super) fn held_the_remote(&mut self, number: u64, lock: std::fs::File) {
+        if self.remote.taking.as_ref().map(|(asked, _)| *asked) != Some(number) {
+            // An asking given up on: dropped here, which lets go again.
+            return;
+        }
+        self.take_the_remote(lock);
+    }
+
+    /// The other window never let go.
+    pub(super) fn not_let_go(&mut self, number: u64) {
+        if self.remote.taking.as_ref().map(|(asked, _)| *asked) != Some(number) {
+            return;
+        }
+        self.remote.taking = None;
+        if let Some(platform) = self.platform() {
+            self.wrong(format!("Another window would not let {} go", platform.name));
+        }
+    }
+
+    fn take_the_remote(&mut self, lock: std::fs::File) {
+        self.remote.taking = None;
+        self.remote.holding = Some(lock);
+        if let Some(platform) = self.platform() {
+            self.say(format!("{} talks to this window now", platform.name));
+        }
+    }
+
+    /// Stops this window talking to the chat, which leaves it to no window
+    /// until one asks.
+    pub(super) fn disconnect_remote(&mut self) {
+        if self.remote.holding.take().is_none() {
+            return;
+        }
+        self.let_the_chat_go();
+        if let Some(platform) = self.platform() {
+            self.say(format!("{} talks to no window now", platform.name));
+        }
+    }
+
+    /// Whether a path that changed is another window asking for the chat.
+    pub(super) fn is_the_remote_wanted(&self, path: &std::path::Path) -> bool {
+        the_wanting().is_some_and(|wanting| wanting == path)
+    }
+
+    /// Another window has asked for the chat: let go, so that it can have
+    /// it. Not this window's own asking, which it hears too.
+    pub(super) fn somebody_wants_the_remote(&mut self) {
+        if self.remote.holding.is_none() {
+            return;
+        }
+        let asker = the_wanting().and_then(|path| std::fs::read_to_string(path).ok());
+        if asker.is_some() && asker == self.remote.wrote {
+            return;
+        }
+        self.remote.holding = None;
+        self.let_the_chat_go();
+        if let Some(platform) = self.platform() {
+            self.say(format!("{} went to another window", platform.name));
+        }
     }
 }

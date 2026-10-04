@@ -435,8 +435,6 @@ pub struct ChatView<'a> {
     /// anywhere, and an agent told to work on a branch of its own is out
     /// of sight of the status row, which says the reader's.
     branch: Option<&'a obelus_git::Head>,
-    /// The chat this conversation is mirrored to, by name, while it is.
-    mirrored: Option<&'static str>,
     /// Whether it is about a note that is still there, for the key back to
     /// it.
     about_a_note: bool,
@@ -472,7 +470,6 @@ impl<'a> ChatView<'a> {
             root: app.working_directory(),
             phase: app.phase(),
             branch: app.branch_this_conversation_works_on(),
-            mirrored: app.mirrored_to(),
             about_a_note: app.is_about_a_note(),
             note: app.note(),
             note_is_wrong: app.note_is_wrong(),
@@ -1554,32 +1551,12 @@ impl ChatView<'_> {
             put(cells, column, area.y, obelus_icons::ui::AGENT, dim);
             column += INDENT;
         }
-        // Where else this conversation is, at the right of the row and
-        // measured first: a header says what a thing is, and what this one
-        // is now includes a thread somewhere else that the reader's
-        // answers may come from. Its room is kept before the name and the
-        // branch get theirs, so a long branch cannot push it off.
-        let right = area.x + area.width;
-        let right = match self.mirrored {
-            Some(name) => {
-                let wide = u16::try_from(text_width(name)).unwrap_or(0);
-                let at = right.saturating_sub(MARGIN + wide);
-                write(cells, at, area.y, name, dim);
-                at.saturating_sub(2)
-            }
-            None => right,
-        };
-        // The agent's name is the registry's, and as long as it likes: cut
-        // to what is left, so it cannot write over the platform's.
-        let name = super::truncate_from_right(
-            self.name.unwrap_or("No agent"),
-            usize::from(right.saturating_sub(column)),
-        );
+        let name = self.name.unwrap_or("No agent");
         column = write(
             cells,
             column,
             area.y,
-            &name,
+            name,
             plain.fg(self.theme.gutter_current),
         );
         // The branch, dimmed after it, in the badge the status row gives
@@ -1587,7 +1564,7 @@ impl ChatView<'_> {
         // that row follows: half a branch name is worse than none.
         let branch = crate::status::branch_badge(self.branch);
         let wide = 2 + text_width(branch.trim_end());
-        if branch.is_empty() || usize::from(column) + wide > usize::from(right) {
+        if branch.is_empty() || usize::from(column) + wide > usize::from(area.x + area.width) {
             return;
         }
         column = write(cells, column, area.y, "  ", dim);
@@ -1929,7 +1906,6 @@ mod tests {
                 note: None,
                 note_is_wrong: false,
                 usage: None,
-                mirrored: None,
             };
             let mut cells = ratatui::buffer::Buffer::empty(area);
             ratatui::widgets::Widget::render(view, area, &mut cells);
@@ -1971,42 +1947,6 @@ mod caret {
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use obelus_component::chat::{Chat, Room, Speaker};
     use ratatui::layout::Rect;
-
-    /// The header keeps the platform's name at the right however long the
-    /// agent's name is: the agent's is cut to what is left.
-    ///
-    /// Broken deliberately by writing the agent's name whole: it ran over
-    /// `Slack`, and the row no longer said where else the conversation is.
-    #[test]
-    fn a_long_name_gives_way_to_where_else_it_is() {
-        let area = ratatui::layout::Rect::new(0, 0, 30, 6);
-        let chat = obelus_component::chat::Chat::new();
-        let view = super::ChatView {
-            chat: &chat,
-            theme: &obelus_theme::builtin::DARK,
-            state: obelus_agent::Talking::Ready,
-            name: Some("An agent with a very long name indeed"),
-            settings: &[],
-            focus: obelus_component::chat::Focus::Writing,
-            card: None,
-            in_front: true,
-            root: std::path::Path::new("/"),
-            phase: 0,
-            branch: None,
-            about_a_note: false,
-            note: None,
-            note_is_wrong: false,
-            usage: None,
-            mirrored: Some("Slack"),
-        };
-        let mut cells = ratatui::buffer::Buffer::empty(area);
-        ratatui::widgets::Widget::render(view, area, &mut cells);
-        let row: String = (area.x..area.right())
-            .map(|x| cells[(x, area.y)].symbol().to_string())
-            .collect();
-        assert!(row.trim_end().ends_with("Slack"), "{row:?}");
-        assert!(row.contains("An agent"), "{row:?}");
-    }
 
     /// Nothing a row carries is written in the scrollbar's column.
     ///
@@ -2093,7 +2033,6 @@ mod caret {
                         root: std::path::Path::new("/"),
                         phase: 0,
                         branch: None,
-                        mirrored: None,
                         about_a_note: false,
                         note: None,
                         note_is_wrong: false,

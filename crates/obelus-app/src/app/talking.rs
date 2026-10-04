@@ -2956,7 +2956,11 @@ impl App {
     /// The counterpart of [`Self::in_transcript`], which writes in the one
     /// on screen: what the agent sends belongs to the conversation it was
     /// sent about, and that is not always the one being read.
-    fn in_talk(&mut self, whose: Whose, what: impl FnOnce(&mut obelus_component::chat::Chat)) {
+    pub(super) fn in_talk(
+        &mut self,
+        whose: Whose,
+        what: impl FnOnce(&mut obelus_component::chat::Chat),
+    ) {
         if let Some(talk) = self.talk_mut(whose) {
             what(&mut talk.chat);
         }

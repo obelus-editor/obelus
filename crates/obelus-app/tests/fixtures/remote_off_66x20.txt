@@ -2,7 +2,7 @@ screen 66x20  editor 66x18  status 66x1
 -- text --
  0|  Settings  Keys  Remote  Agents                              ⇤ ⇥ 
  1|──────────────────────────────────────────────────────────────────
- 2| Remote                                                       Off 
+ 2| Remote                                                           
  3|                                                                  
  4|   Platform                                      Off ▸            
  5|     Which chat a note can be worked on from                      
@@ -23,7 +23,7 @@ screen 66x20  editor 66x18  status 66x1
 -- style --
  0|aaaaaaaaaaaaaaaaabbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 2|cddddddcccccccccccccccccccccccccccccccccccccccccccccccccccccccaaac
+ 2|cddddddccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  3|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbebbbbbbbbbbbb
  5|bbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebbbbbbbbbbbbbbbbbbbbbb

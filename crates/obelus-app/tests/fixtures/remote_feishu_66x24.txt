@@ -2,7 +2,7 @@ screen 66x24  editor 66x22  status 66x1
 -- text --
  0|  Settings  Keys  Remote  Agents                              ⇤ ⇥ 
  1|──────────────────────────────────────────────────────────────────
- 2| Feishu                                                Not set up 
+ 2| Feishu                                                           
  3|                                                                  
  4|   Platform                                      Feishu ▸         
  5|     Which chat a note can be worked on from                      
@@ -27,7 +27,7 @@ screen 66x24  editor 66x22  status 66x1
 -- style --
  0|aaaaaaaaaaaaaaaaabbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  1|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 2|cddddddccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaac
+ 2|cddddddccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  3|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  4|bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbebbbbbbbbb
  5|bbbbbeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeebbbbbbbbbbbbbbbbbbbbbb
