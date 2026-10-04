@@ -899,7 +899,14 @@ impl ChatView<'_> {
             many => format!("{many} new messages"),
         };
         let keys = chord(KeyCode::End, KeyModifiers::CONTROL);
-        let label = format!("  {said}  {keys} \u{2193}  ");
+        // Two blanks before the arrow in a window, where the cap is laid
+        // over the first and the arrow would sit against its edge -- the
+        // welcome screen's `beside`, for the same reason.
+        let gap = match obelus_config::in_a_window() {
+            true => "  ",
+            false => " ",
+        };
+        let label = format!("  {said}  {keys}{gap}\u{2193}  ");
         let width = text_width(&label);
         let Ok(width) = u16::try_from(width) else {
             return;

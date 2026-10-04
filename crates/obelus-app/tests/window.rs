@@ -197,7 +197,8 @@ fn a_window_offers_what_only_a_window_can_do() {
 /// of `offer_to_send_now`, out of the tail's loop, or the `cap_around` out
 /// of `the_way_back` -- each
 /// leaves its key with no cap, and this names which. And counting one
-/// blank fewer before the way back's key puts its cap a cell to the left.
+/// blank fewer before the way back's key puts its cap a cell to the left,
+/// and one blank before its arrow puts the arrow against the cap.
 #[test]
 fn the_keys_a_conversation_names_wear_caps() {
     use crossterm::event::KeyCode;
@@ -256,7 +257,8 @@ fn the_keys_a_conversation_names_wear_caps() {
             .cloned()
             .collect();
         // Round the key, and not the cell beside it: a cap is said over
-        // the blank either side of what it holds.
+        // the blank either side of what it holds. And with air after it,
+        // or what follows sits against its edge.
         for (keys, area) in &keys {
             let under: String = rows[y]
                 .chars()
@@ -266,6 +268,12 @@ fn the_keys_a_conversation_names_wear_caps() {
             assert_eq!(
                 &under, keys,
                 "the cap at {area:?} is not round its key:\n{dump}"
+            );
+            let after = rows[y].chars().nth(usize::from(area.right()));
+            assert_eq!(
+                after,
+                Some(' '),
+                "the cap at {area:?} touches what follows:\n{dump}"
             );
         }
         keys.into_iter().map(|(keys, _)| keys).collect()
