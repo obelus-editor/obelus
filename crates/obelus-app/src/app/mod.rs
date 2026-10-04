@@ -3658,15 +3658,29 @@ impl App {
         use crate::event::Pointer;
 
         let area = self.editor_area;
-        let spot = self.conversation().and_then(|talk| {
-            obelus_ui::chat::ChatView::place_in_transcript(
+        let width = obelus_ui::chat::reading_width(area);
+        // Laid out once, and every question below asked of the one row.
+        let found = self.conversation().and_then(|talk| {
+            let rows = talk.chat.rows(width);
+            let place = obelus_ui::chat::ChatView::place_in_transcript(
                 area,
                 &talk.chat,
                 talk.card.as_ref(),
+                &rows,
                 x,
                 y,
-            )
+            )?;
+            let row = rows.into_iter().nth(place.row)?;
+            Some((place, row, talk.card.is_some()))
         });
+        // A point in a row the reading drew rather than read -- a blank,
+        // the heading over a folded run, the row that says what is
+        // happening now -- is the place just after the last word above it.
+        // A drag has to go somewhere while it crosses one, and the words
+        // either side of it are what the reader is dragging between.
+        let spot = found
+            .as_ref()
+            .and_then(|(place, row, _)| row.spot_at(place.character));
         // Whether it landed on a heading that opens, which is a thing to do
         // to the row rather than to the words in it.
         //
@@ -3676,16 +3690,7 @@ impl App {
         // -- and none of them is anybody's words. A press on one already
         // meant nothing but "let go", so opening it costs the reader
         // nothing they had.
-        let width = obelus_ui::chat::reading_width(area);
-        let folds = self.conversation().and_then(|talk| {
-            let at = obelus_ui::chat::ChatView::row_in_transcript(
-                area,
-                &talk.chat,
-                talk.card.as_ref(),
-                y,
-            )?;
-            talk.chat.rows(width).get(at)?.folds
-        });
+        let folds = found.as_ref().and_then(|(_, row, _)| row.folds);
         // Where the cursor goes, for a press or a drag: the keys follow
         // the pointer, or the arrows after a press walk something the
         // reader had not pointed at. Not while a card is up, which has the
@@ -3700,12 +3705,7 @@ impl App {
             || self.chat().is_some_and(|chat| {
                 matches!(chat.focus(), obelus_component::chat::Focus::Transcript(_))
             });
-        let cursor = self
-            .conversation()
-            .filter(|talk| talk.card.is_none())
-            .and_then(|talk| {
-                obelus_ui::chat::ChatView::cursor_in_transcript(area, &talk.chat, None, x, y)
-            });
+        let cursor = found.and_then(|(place, _, carded)| (!carded).then_some(place));
         let Some(talk) = self.conversation_mut() else {
             return;
         };
