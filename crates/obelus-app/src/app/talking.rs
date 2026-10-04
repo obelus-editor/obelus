@@ -238,19 +238,6 @@ impl App {
     /// says it.
     pub(super) fn talk_about(&mut self, note: &obelus_git::todo::NoteId) {
         self.make_room(Room::Region);
-        if let Some(at) = self.open_about(note) {
-            self.go_to_document(DocumentId::new(at));
-        }
-    }
-
-    /// The conversation about a note, opened where there is none: where it
-    /// is in the list of what is open, or nothing where another Obelus has
-    /// it.
-    ///
-    /// Without going to it, which is the caller's: from a chat there is
-    /// nobody at this screen, and the screen is not taken from whatever it
-    /// had.
-    pub(super) fn open_about(&mut self, note: &obelus_git::todo::NoteId) -> Option<usize> {
         let wanted = Topic::Note(note.clone());
         let at = self.documents.iter().position(|document| {
             document
@@ -275,7 +262,7 @@ impl App {
                     // while the reader is standing there. A note here
                     // would be a second answer to a question the page has
                     // answered.
-                    return None;
+                    return;
                 };
                 // What the note says, for the box: read as this opens,
                 // for the reason the notes page reads what it is drawn
@@ -294,7 +281,7 @@ impl App {
                 self.documents.len() - 1
             }
         };
-        Some(at)
+        self.go_to_document(DocumentId::new(at));
     }
 
     /// Asks for a session for the conversation on screen, and lets go of the
@@ -406,7 +393,7 @@ impl App {
                 continue;
             };
             talk.asked_while_shown = false;
-            if !talk.minted || talk.chat.anything_said() || talk.from_afar {
+            if !talk.minted || talk.chat.anything_said() {
                 continue;
             }
             let Some(session) = talk.session.take() else {
@@ -3310,6 +3297,7 @@ impl App {
                 // of it Obelus cannot write itself.
                 acp::Update::Heard(text) => self.in_talk(whose, |chat| chat.heard(&text)),
                 acp::Update::Tool { call, status } => {
+                    self.mirror_paused(whose);
                     self.in_talk(whose, |chat| chat.tool(&call, &status));
                     self.hear_where_it_wrote(whose, &call.id);
                 }

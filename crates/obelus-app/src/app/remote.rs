@@ -361,8 +361,12 @@ impl App {
             .config()
             .remote_of(platform.key)
             .is_some_and(|remote| remote.people.iter().any(|person| person.id == from));
-        if *at == obelus_remote::model::Where::Top
-            && let Some(code) = &self.remote.pairing
+        // Wherever a message can start: in the direct message on Feishu,
+        // and on Slack, where every message outside a thread starts one.
+        if matches!(
+            at,
+            obelus_remote::model::Where::Top | obelus_remote::model::Where::Fresh(_)
+        ) && let Some(code) = &self.remote.pairing
             && same_code(code, text)
         {
             tracing::info!(platform = platform.key, "somebody sent the code");
@@ -384,7 +388,13 @@ impl App {
         match at {
             obelus_remote::model::Where::Thread(thread) => self.heard_in_thread(thread, text),
             obelus_remote::model::Where::Fresh(thread) => self.heard_fresh(thread, text),
-            obelus_remote::model::Where::Top => self.heard_at_top(from, text),
+            // Nothing is begun outside a thread: said where they are.
+            obelus_remote::model::Where::Top => self.say_to(obelus_remote::model::Out::Say {
+                to: from.to_string(),
+                at: obelus_remote::model::Where::Top,
+                text: platform.begin.to_string(),
+                notify: false,
+            }),
         }
     }
 
@@ -410,12 +420,11 @@ impl App {
         self.say_to(obelus_remote::model::Out::Say {
             to: id,
             at: obelus_remote::model::Where::Top,
-            // And what there is to say, now that there is somebody to say
-            // it: the first thing a reader wonders after pairing is what
-            // the bot answers to.
+            // And where to begin, now that there is somebody to begin: the
+            // first thing a reader wonders after pairing is what to do next.
             text: format!(
                 "Paired. This machine takes notes from you now.\n{}",
-                super::control::HELP
+                platform.begin
             ),
             notify: false,
         });

@@ -284,9 +284,12 @@ async fn pushed(
     ) else {
         return Ok(());
     };
+    // A message outside any thread starts one, whose replies hang under
+    // it: Slack has no group of topics, and a direct message whose every
+    // message is a thread is the nearest thing to one.
     let at = match message.origin.thread_ts {
         Some(thread) => Where::Thread(thread.to_string()),
-        None => Where::Top,
+        None => Where::Fresh(message.origin.ts.to_string()),
     };
     if let Some(listening) = states.read().await.get_user_state::<Listening>() {
         let _ = listening.sink.send(Event::Heard {

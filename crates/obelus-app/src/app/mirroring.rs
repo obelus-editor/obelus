@@ -9,14 +9,16 @@
 //! goes on in the thread it had.
 //!
 //! **Both halves of what is said are in both places.** The agent's words go
-//! to the thread when its turn is over -- once, whole, rather than as it
-//! types, which in a chat is a message edited forty times or forty
-//! messages -- and so do the questions it asks, as the card would ask them
-//! in words. What the reader types here goes there too, marked as said on
-//! this machine; what they say there arrives here like anything they typed,
-//! with a line in front of it for the agent saying where it came from. What
-//! the agent's tools did does not go: a chat is not a transcript, and a run
-//! of calls is the part of a turn nobody reads on a phone.
+//! to the thread a stretch at a time -- whatever it said before it went off
+//! to call something, and what it said last when the turn is over -- rather
+//! than as it types, which in a chat is a message edited forty times or
+//! forty messages; and only the end of the turn calls the reader. So do the
+//! questions it asks, as the card would ask them in words. What the reader
+//! types here goes there too, marked as said on this machine; what they say
+//! there arrives here like anything they typed, with a line in front of it for
+//! the agent saying where it came from. What the agent's tools did does not go:
+//! a chat is not a transcript, and a run of calls is the part of a turn nobody
+//! reads on a phone.
 //!
 //! **A reply is an answer while something is asked, and the next words
 //! otherwise.** The conversation is waiting on the reader while a card is
@@ -65,9 +67,6 @@ pub(super) struct Mirror {
     /// and that thread: theirs from the start, and named once the session
     /// arrives.
     starting: BTreeMap<usize, String>,
-    /// The notes the top was last offered, in the order they were
-    /// numbered: a number sent back means the note that had it then.
-    pub(super) offered: Vec<obelus_git::todo::NoteId>,
 }
 
 /// One conversation's thread: what the platform calls it, and whose direct
@@ -525,8 +524,22 @@ impl App {
         }
     }
 
-    /// The turn is over: what the agent said in it goes to the thread, and
-    /// the reader is called -- this is the moment it wants them.
+    /// The agent has gone to do something: what it said before it went goes
+    /// to the thread now, quietly. A turn that takes minutes was minutes of
+    /// nothing there while its words waited for the end; a call is where
+    /// the agent stops talking, so what it said up to one is said whole.
+    pub(super) fn mirror_paused(&mut self, whose: talking::Whose) {
+        let Some(chat) = self.chat_named(whose) else {
+            return;
+        };
+        let said = self.mirror.this_turn.remove(&chat).unwrap_or_default();
+        if !said.trim().is_empty() {
+            self.mirror_in(whose, said.trim().to_string(), false);
+        }
+    }
+
+    /// The turn is over: what the agent said since its last call goes to the
+    /// thread, and the reader is called -- this is the moment it wants them.
     pub(super) fn mirror_turn_over(&mut self, whose: talking::Whose) {
         let Some(chat) = self.chat_named(whose) else {
             return;
@@ -551,13 +564,7 @@ impl App {
         };
         // What it said before it asked goes out before the question does:
         // an answer here would be to a question nobody there had read yet.
-        let chat = self.chat_named(whose);
-        let said = chat
-            .and_then(|chat| self.mirror.this_turn.remove(&chat))
-            .unwrap_or_default();
-        if !said.trim().is_empty() {
-            self.mirror_in(whose, said.trim().to_string(), false);
-        }
+        self.mirror_paused(whose);
         self.mirror_in(whose, asked, true);
         self.mirror_head(whose, Some(Turning::Waiting));
     }
@@ -628,6 +635,26 @@ impl App {
             let platform = self.platform().map_or("a chat", |platform| platform.name);
             AFAR.replace("{platform}", platform)
         })
+    }
+
+    /// A conversation begun from the chat, and its session asked for.
+    ///
+    /// Said into before anything else happens -- see `heard_fresh` -- so it
+    /// is never one of the conversations opened here and left without a
+    /// word, which the next frame lets go.
+    fn a_conversation_from_afar(&mut self) -> DocumentId {
+        self.documents.push(Some(Conversation::default().into()));
+        let id = DocumentId::new(self.documents.len() - 1);
+        if self
+            .talker
+            .as_ref()
+            .is_none_or(obelus_agent::acp::Talk::has_exited)
+        {
+            self.stop_agent();
+            self.start_agent();
+        }
+        self.ask_for_a_session(talking::Whose::One(id), None);
+        id
     }
 
     /// Somebody on the list started a thread in the room the threads are

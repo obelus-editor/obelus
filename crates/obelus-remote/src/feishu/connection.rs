@@ -16,15 +16,14 @@
 //! after it is a reply to that one with `reply_in_thread`, and what the
 //! reader writes in it arrives naming that message as its root.
 //!
-//! **The topics are in a group of their own, and the direct message is the
-//! top.** In a direct message a topic hangs off a message in it, so every
-//! conversation put a card into the stream the top is talked in, and the
-//! two were one tangle. A group in topic mode is nothing but topics -- a
-//! list of them, each opened to read -- so the conversations go in one, made
-//! for the reader with only them and the bot in it, and the direct message
-//! keeps the top to itself. A topic the reader starts there is a
-//! conversation they are starting. Where the app may not make a group, the
-//! topics stay in the direct message as they were.
+//! **The topics are in a group of their own.** In a direct message a topic
+//! hangs off a message in it, so every conversation put a card into one
+//! stream with everything else said there, and it was a tangle. A group in
+//! topic mode is nothing but topics -- a list of them, each opened to read --
+//! so the conversations go in one, made for the reader with only them and
+//! the bot in it, and a topic the reader starts there is a conversation they
+//! are starting. The direct message is where they pair. Where the app may
+//! not make a group, the topics stay in the direct message.
 
 use std::{collections::HashMap, sync::Arc, time::Duration};
 

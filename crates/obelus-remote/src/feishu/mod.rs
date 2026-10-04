@@ -47,6 +47,7 @@ pub static DESCRIPTION: Description = Description {
         about: "One app per machine: a custom app with the bot on, long connection for events",
         url: "https://open.feishu.cn/app",
     },
+    begin: "Start a topic in the Obelus group to talk to an agent.",
     connect: |told, sink| {
         let said = |key| told.get(key).cloned().unwrap_or_default();
         connection::start(said("app_id"), said("app_secret"), &said("domain"), sink)

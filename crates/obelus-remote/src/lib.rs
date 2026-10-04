@@ -3,8 +3,7 @@
 //! A reader away from their screen talks to Obelus through a chat they
 //! already have on their phone -- Slack first, others after it -- and what
 //! they find there is the same conversations their windows hold: one thread
-//! a conversation, and at the top a conversation of its own with the agent
-//! that finds notes and starts the rest.
+//! a conversation, and a thread they start a conversation begun.
 //!
 //! **Words are the floor.** Most chats cannot be given a screen of their own,
 //! so everything Obelus says there is text and everything it is told is

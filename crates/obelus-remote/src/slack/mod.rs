@@ -39,6 +39,7 @@ pub static DESCRIPTION: Description = Description {
         what: "the manifest",
         text: manifest,
     },
+    begin: "Send a message here to talk to an agent; it answers in the thread under it.",
     connect: |told, sink| {
         let said = |key| told.get(key).cloned().unwrap_or_default();
         connection::start(said("app_token"), said("bot_token"), sink)
@@ -48,12 +49,11 @@ pub static DESCRIPTION: Description = Description {
 /// The app Obelus needs, as Slack's "from a manifest" takes it.
 ///
 /// Socket Mode, because the machine Obelus runs on has no address the
-/// internet can reach. The Messages tab and not the Home tab: the top of the
-/// direct message is a conversation of its own, with the agent that finds
-/// notes and opens the rest, and a page beside it would be a second place
-/// saying what is open. No interactivity: everything Obelus says is words
-/// and everything it is told is words, which is what every chat can carry.
-/// And the scopes
+/// internet can reach. The Messages tab and not the Home tab: every message
+/// in the direct message begins a conversation in the thread under it, and
+/// a page beside it would be a second place saying what is open. No
+/// interactivity: everything Obelus says is words and everything it is told is
+/// words, which is what every chat can carry. And the scopes
 /// for writing to a direct message and reading what is said in one -- nothing
 /// in any channel, because nothing here is said anywhere but between the
 /// reader and the app.

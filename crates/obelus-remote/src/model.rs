@@ -8,15 +8,15 @@
 /// Where in a direct message something is said.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Where {
-    /// The conversation itself, outside any thread: where the agent that
-    /// finds notes and starts the rest is talked to.
+    /// The direct message itself, outside any thread: where the reader
+    /// pairs, and where nothing else is begun.
     Top,
     /// A thread, by the platform's own name for it -- which nothing here
     /// reads, only keeps and hands back.
     Thread(String),
-    /// A thread somebody has just started themselves, in the room the
-    /// conversations are in, by the platform's name for it: a conversation
-    /// that has not begun yet. Only heard, never said to.
+    /// A thread somebody has just started themselves, where the platform
+    /// starts threads, by the platform's name for it: a conversation that
+    /// has not begun yet. Only heard, never said to.
     Fresh(String),
 }
 

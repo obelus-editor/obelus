@@ -266,14 +266,6 @@ pub struct Conversation {
     /// reader's settings, which have not moved, and said again it is the
     /// same line down the page once for every visit.
     pub said_not_offered: std::collections::BTreeSet<(String, String)>,
-    /// Whether it was started from a chat, with the reader's words still to
-    /// come there.
-    ///
-    /// Which makes it theirs before anything is said in it: a conversation
-    /// opened here and left without a word is let go, but this one is
-    /// sitting in a thread on their phone, named by the session it was
-    /// given, waiting for them to write in it.
-    pub from_afar: bool,
 }
 
 impl Conversation {

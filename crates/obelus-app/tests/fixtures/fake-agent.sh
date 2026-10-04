@@ -809,6 +809,14 @@ while IFS= read -r line; do
         *'"method":"session/prompt"'*'"text":"/broken'*)
             printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"nobody has signed in"}}\n' "$(id_of "$line")"
             ;;
+        *'"method":"session/prompt"'*'"text":"/pausing'*)
+            # It says what it is about to do and goes to do it -- a call
+            # that never finishes, in a turn that never ends: what it said
+            # is all there is of the turn for as long as anybody watches.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"looking at it first"}}}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call","toolCallId":"p1","title":"Read the file","kind":"read","status":"in_progress"}}}\n'
+            ;;
         *'"method":"session/prompt"'*'"text":"/titled'*)
             # It names the conversation, the way an agent does once it has
             # worked out what the conversation is about.
