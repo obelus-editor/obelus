@@ -185,15 +185,17 @@ fn a_window_offers_what_only_a_window_can_do() {
 }
 
 /// Every key a conversation names in words wears a cap in a window: the
-/// two beside the row that says it is working, enter on a row it hands
-/// back, and the way back to the end -- each on the row it is written on.
+/// one beside the row that says it is working, the one in the box, enter
+/// on a row it hands back, and the way back to the end -- each on the row
+/// it is written on.
 ///
 /// They were plain words in the gutter's ink, so in a window the one key
 /// a reader could not guess was the one key on the page not drawn as a
 /// key.
 ///
 /// Deliberate break: take the `cap_the_keys` out of the working row, out
-/// of the tail's loop, or the `cap_around` out of `the_way_back` -- each
+/// of `offer_to_send_now`, out of the tail's loop, or the `cap_around` out
+/// of `the_way_back` -- each
 /// leaves its key with no cap, and this names which. And counting one
 /// blank fewer before the way back's key puts its cap a cell to the left.
 #[test]
@@ -298,8 +300,13 @@ fn the_keys_a_conversation_names_wear_caps() {
     support::press(&mut app, KeyCode::Enter);
     assert_eq!(
         capped_beside(&mut app, "Stops it"),
-        ["Ctrl+Enter", "Esc"],
-        "the keys beside the working row"
+        ["Esc"],
+        "the key beside the working row"
+    );
+    assert_eq!(
+        capped_beside(&mut app, "Sends it now"),
+        ["Ctrl+Enter"],
+        "the key in the box"
     );
 
     // Up, a row at a time, to the row waiting: the cursor walks the words,

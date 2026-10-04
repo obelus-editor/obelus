@@ -925,15 +925,17 @@ fn ctrl_enter_with_nothing_running_sends() {
     );
 }
 
-/// The row that says the agent is working offers `ctrl+enter` while there
-/// is something it would send, and only then.
+/// The box offers `ctrl+enter` on a row of its own under the words, while
+/// a turn is running and there is something it would send -- and only
+/// then. The words keep the row they were on, and the caret with them.
 ///
-/// Broken deliberately by offering it whatever `would_send_now` says: it
-/// is there over an empty box, beside a turn there is nothing to say into.
-/// And by asking only the box: once the words have gone to wait, the row
-/// stops offering the key that would send them.
+/// Broken deliberately by offering it whenever a turn is running: it is
+/// there over an empty box, beside a turn there is nothing to say into.
+/// By asking only the box: once the words have gone to wait, the row stops
+/// offering the key that would send them. And by leaving `words_band` out
+/// of `ChatView::caret`: the caret goes down onto the offer.
 #[test]
-fn the_working_row_offers_to_send_now_only_with_something_to_send() {
+fn the_box_offers_to_send_now_only_with_something_to_send() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the handshake", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -943,27 +945,50 @@ fn the_working_row_offers_to_send_now_only_with_something_to_send() {
     pump(&mut app, &events, "it to start thinking", |app| {
         app.talking() == obelus_agent::Talking::Thinking
     });
-    let doing = |app: &mut App| {
+    // The row the offer is on, and where the caret is.
+    let offer = |app: &mut App| {
         let dump = support::render(app, WIDTH, HEIGHT);
-        rows(&dump)
-            .into_iter()
-            .find(|row| row.contains("Esc  Stops it"))
-            .map(str::to_string)
-            .unwrap_or_else(|| panic!("nothing says how to stop it:\n{dump}"))
+        let offered = rows(&dump)
+            .iter()
+            .position(|row| row.contains("Sends it now"));
+        (
+            offered,
+            support::cursor_line(&dump).to_string(),
+            dump.clone(),
+        )
     };
-    let offered = |row: &str| row.contains("Ctrl+Enter  Sends it now");
-    assert!(!offered(&doing(&mut app)), "offered over an empty box");
+    let (offered, _, dump) = offer(&mut app);
+    assert_eq!(offered, None, "offered over an empty box:\n{dump}");
 
-    support::type_text(&mut app, "and this");
+    // More lines than the box has rows, so it scrolls: the last of them
+    // is the caret's, and is above the offer rather than under it.
+    for line in 1..=8 {
+        if line > 1 {
+            support::press_alt_key(&mut app, KeyCode::Enter);
+        }
+        support::type_text(&mut app, &format!("line {line}"));
+    }
+    let (offered, cursor, dump) = offer(&mut app);
+    let offered = offered.unwrap_or_else(|| panic!("not offered with words in the box:\n{dump}"));
+    let words = rows(&dump)
+        .iter()
+        .position(|row| row.contains("line 8"))
+        .unwrap_or_else(|| panic!("the last line is not in the box:\n{dump}"));
+    assert_eq!(
+        offered,
+        words + 1,
+        "not on the row under the words:\n{dump}"
+    );
     assert!(
-        offered(&doing(&mut app)),
-        "not offered with words in the box"
+        cursor.ends_with(&format!(",{words}")),
+        "the caret is not on the words' row ({cursor}):\n{dump}"
     );
 
     support::press(&mut app, KeyCode::Enter);
+    let (offered, _, dump) = offer(&mut app);
     assert!(
-        offered(&doing(&mut app)),
-        "not offered with something waiting and the box empty"
+        offered.is_some(),
+        "not offered with something waiting and the box empty:\n{dump}"
     );
 }
 

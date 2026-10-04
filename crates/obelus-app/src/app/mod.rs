@@ -2536,7 +2536,11 @@ impl App {
             Talking::Thinking => Some("Thinking\u{2026}"),
             Talking::Nobody | Talking::Idle | Talking::Ready | Talking::Gone => None,
         };
-        self.in_transcript(|chat| chat.doing(doing));
+        let running = self.talking() == Talking::Thinking;
+        self.in_transcript(|chat| {
+            chat.doing(doing);
+            chat.turn_is_running(running);
+        });
         self.show_what_is_running();
         // Only the animation, which is what the ticker is for. Everything
         // else that once rode this question waits on a clock of its own:

@@ -37,6 +37,7 @@
 
 use std::path::Path;
 
+use crossterm::event::{KeyCode, KeyModifiers};
 use obelus_agent::{Talking, acp};
 use obelus_component::{
     card::Card,
@@ -195,7 +196,26 @@ const fn most_for_a_card(area: Rect) -> u16 {
 pub fn bands(area: Rect, chat: &Chat, card: Option<&Card>) -> Regions {
     match card {
         Some(card) => bands_for(area, card),
-        None => regions(area, chat.writing().rows(writing_width(area)).len()),
+        None => regions(area, box_rows(area, chat)),
+    }
+}
+
+/// The rows the box takes: what is written in it, and under that the row
+/// offering to send it now, while that would do something.
+fn box_rows(area: Rect, chat: &Chat) -> usize {
+    chat.writing().rows(writing_width(area)).len() + usize::from(chat.offers_sending_now())
+}
+
+/// The rows of the box the words have: all of it but the row offering to
+/// send now, where there is room for both.
+///
+/// Asked by the drawing, the caret and a click alike, so the words are
+/// where all three say they are.
+fn words_band(writing: Rect, chat: &Chat) -> Rect {
+    let offered = chat.offers_sending_now() && writing.height > 1;
+    Rect {
+        height: writing.height - u16::from(offered),
+        ..writing
     }
 }
 
@@ -286,10 +306,10 @@ fn cap_the_keys(at: u16, y: u16, hints: &[(String, &'static str)], theme: &Theme
 }
 
 /// A key as it is written, with no modifier or with control.
-fn key(code: crossterm::event::KeyCode, control: bool) -> String {
+fn key(code: KeyCode, control: bool) -> String {
     let modifiers = match control {
-        true => crossterm::event::KeyModifiers::CONTROL,
-        false => crossterm::event::KeyModifiers::NONE,
+        true => KeyModifiers::CONTROL,
+        false => KeyModifiers::NONE,
     };
     obelus_editing::keymap::KeyChord::new(code, modifiers).label()
 }
@@ -625,16 +645,14 @@ impl<'a> ChatView<'a> {
             Focus::Settings(_) => return None,
         }
         let width = writing_width(area);
-        let rows = chat.writing().rows(width);
-        let regions = regions(area, rows.len());
+        let writing = words_band(regions(area, box_rows(area, chat)).writing, chat);
         let (row, cell) = chat.writing().caret(width);
         // A box scrolled to keep the caret in it: what is drawn starts at
         // the same row the caret arithmetic starts at.
-        let first = row.saturating_sub(usize::from(regions.writing.height).saturating_sub(1));
-        let y = regions.writing.y + u16::try_from(row - first).unwrap_or(0);
-        (y < regions.writing.bottom()).then(|| ratatui::layout::Position {
-            x: (regions.writing.x + MARGIN + INDENT + cell.get())
-                .min(regions.writing.right().saturating_sub(1)),
+        let first = row.saturating_sub(usize::from(writing.height).saturating_sub(1));
+        let y = writing.y + u16::try_from(row - first).unwrap_or(0);
+        (y < writing.bottom()).then(|| ratatui::layout::Position {
+            x: (writing.x + MARGIN + INDENT + cell.get()).min(writing.right().saturating_sub(1)),
             y,
         })
     }
@@ -658,22 +676,17 @@ impl<'a> ChatView<'a> {
             return None;
         }
         let width = writing_width(area);
-        let rows = chat.writing().rows(width);
-        let regions = regions(area, rows.len());
-        let box_x = regions.writing.x + MARGIN + INDENT;
-        if y < regions.writing.y
-            || y >= regions.writing.bottom()
-            || x < box_x
-            || x >= regions.writing.right()
-        {
+        let writing = words_band(regions(area, box_rows(area, chat)).writing, chat);
+        let box_x = writing.x + MARGIN + INDENT;
+        if y < writing.y || y >= writing.bottom() || x < box_x || x >= writing.right() {
             return None;
         }
         // The same scrolling the caret is placed under: a box taller than
         // its band shows its last rows, so the row on screen counts from
         // there rather than from the first row of the text.
         let (caret_row, _) = chat.writing().caret(width);
-        let first = caret_row.saturating_sub(usize::from(regions.writing.height).saturating_sub(1));
-        let row = first + usize::from(y - regions.writing.y);
+        let first = caret_row.saturating_sub(usize::from(writing.height).saturating_sub(1));
+        let row = first + usize::from(y - writing.y);
         Some((u16::try_from(row).unwrap_or(u16::MAX), x - box_x))
     }
 }
@@ -841,12 +854,39 @@ impl Widget for ChatView<'_> {
                 self.in_front.then(|| card.on()),
                 self.theme,
             ),
-            None => self.writing(cells, regions.writing, &rows, plain, dim),
+            None => {
+                let words = words_band(regions.writing, self.chat);
+                self.writing(cells, words, &rows, plain, dim);
+                if words.height < regions.writing.height {
+                    self.offer_to_send_now(cells, regions.writing.bottom() - 1, area, dim);
+                }
+            }
         }
     }
 }
 
 impl ChatView<'_> {
+    /// Offers to send what the box has now, on the box's last row, under
+    /// the words it would send.
+    ///
+    /// In the box rather than beside the row that says the agent is
+    /// working: what it sends is what is in the box, and the box is where
+    /// the reader is looking while they write it.
+    fn offer_to_send_now(&self, cells: &mut CellBuffer, y: u16, area: Rect, dim: Style) {
+        let keys = [(key(KeyCode::Enter, true), "Sends it now")];
+        let Some(said) = joined(&keys) else {
+            return;
+        };
+        let Ok(offset) =
+            u16::try_from(usize::from(area.width).saturating_sub(text_width(&said) + 1))
+        else {
+            return;
+        };
+        let at = area.x + offset;
+        write(cells, at, y, &said, dim);
+        cap_the_keys(at, y, &keys, self.theme);
+    }
+
     /// Says how to get back to the end, where the reader has left it.
     ///
     /// And what has arrived since, where the agent has said anything: the
@@ -862,7 +902,7 @@ impl ChatView<'_> {
             1 => "1 new message".to_string(),
             many => format!("{many} new messages"),
         };
-        let keys = key(crossterm::event::KeyCode::End, true);
+        let keys = key(KeyCode::End, true);
         let label = format!("  {said}  {keys} \u{2193}  ");
         let width = text_width(&label);
         let Ok(width) = u16::try_from(width) else {
@@ -1143,26 +1183,15 @@ impl ChatView<'_> {
             // How to stop it, on the row that says it is going: the one
             // thing escape does here that a reader could not guess, and it
             // belongs beside the thing it would stop.
-            //
-            // And, with something to say, how to say it without waiting for
-            // the turn -- which is stopping it, so it goes beside the stop,
-            // and is the first to go when the row is short.
             if row.speaker == Speaker::Doing && self.state == Talking::Thinking {
-                let stop = (key(crossterm::event::KeyCode::Esc, false), "Stops it");
-                let now = (key(crossterm::event::KeyCode::Enter, true), "Sends it now");
-                let rows = match self.chat.would_send_now() {
-                    true => vec![vec![now, stop.clone()], vec![stop]],
-                    false => vec![vec![stop]],
-                };
-                if let Some((at, said, keys)) = rows.into_iter().find_map(|keys| {
-                    let said = joined(&keys)?;
-                    u16::try_from(usize::from(area.width).saturating_sub(text_width(&said) + 1))
-                        .ok()
-                        .filter(|offset| area.x + offset > ended + 1)
-                        .map(|offset| (area.x + offset, said, keys))
-                }) {
-                    write(cells, at, y, &said, dim);
-                    cap_the_keys(at, y, &keys, self.theme);
+                let keys = [(key(KeyCode::Esc, false), "Stops it")];
+                if let Some(said) = joined(&keys)
+                    && let Ok(offset) =
+                        u16::try_from(usize::from(area.width).saturating_sub(text_width(&said) + 1))
+                    && area.x + offset > ended + 1
+                {
+                    write(cells, area.x + offset, y, &said, dim);
+                    cap_the_keys(area.x + offset, y, &keys, self.theme);
                 }
             }
         }
@@ -1498,34 +1527,23 @@ impl ChatView<'_> {
     /// front end that draws the shape has to be told which cells of that
     /// run are the key, and a run that had already been joined cannot say.
     fn status_keys(&self) -> Vec<(String, &'static str)> {
-        let back = self.about_a_note.then(|| {
-            let keys = match obelus_icons::enabled() {
-                true => format!("{}t", obelus_icons::key::ALT),
-                false => "alt+t".to_string(),
-            };
-            (keys, "The note")
-        });
+        let chord =
+            |code, modifiers| obelus_editing::keymap::KeyChord::new(code, modifiers).label();
+        let back = self
+            .about_a_note
+            .then(|| (chord(KeyCode::Char('t'), KeyModifiers::ALT), "The note"));
         let mode = self
             .mode()
             .is_some_and(|mode| mode.values.len() > 1)
-            .then(|| {
-                let keys = match obelus_icons::enabled() {
-                    true => format!("{}{}", obelus_icons::key::SHIFT, obelus_icons::key::TAB),
-                    false => "shift+tab".to_string(),
-                };
-                (keys, "Mode")
-            });
+            .then(|| (chord(KeyCode::Tab, KeyModifiers::SHIFT), "Mode"));
         // The arrow, while there is something for it to put in the box:
         // nothing on the box says that grey words can be taken, and they
         // are taken by a key that does nothing on an empty box anywhere
         // else.
-        let suggested = self.chat.suggestion().map(|_| {
-            let keys = obelus_editing::keymap::KeyChord::new(
-                crossterm::event::KeyCode::Right,
-                crossterm::event::KeyModifiers::NONE,
-            );
-            (keys.label(), "Fill it in")
-        });
+        let suggested = self
+            .chat
+            .suggestion()
+            .map(|_| (chord(KeyCode::Right, KeyModifiers::NONE), "Fill it in"));
         [suggested, back, mode].into_iter().flatten().collect()
     }
 
@@ -1693,7 +1711,7 @@ impl ChatView<'_> {
         // standing on it -- said on every row of theirs at once it would
         // be answering somebody who has not asked yet.
         let enter = |does| {
-            let keys = vec![(key(crossterm::event::KeyCode::Enter, false), does)];
+            let keys = vec![(key(KeyCode::Enter, false), does)];
             (2, joined(&keys).unwrap_or_default(), dim, keys)
         };
         if row.unsent.is_some() && standing {

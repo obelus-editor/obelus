@@ -109,11 +109,16 @@ impl KeyChord {
     /// The same, with the glyphs asked for or refused.
     ///
     /// Takes the switch rather than reading it, so both ways of writing a
-    /// chord can be tested. With glyphs, a key that is a *word* -- `PageDown`
-    /// is eight columns -- becomes one column, and the modifiers stop being
-    /// prefixes; the arrow keys stay arrows either way, being symbols
-    /// already. Every glyph is followed by a blank column, because a Nerd
+    /// chord can be tested. With glyphs the modifiers stop being prefixes
+    /// and become their glyph, followed by a blank column, because a Nerd
     /// Font's non-`Mono` variants draw them two cells wide.
+    ///
+    /// Only the modifiers. The key itself is written as its word whichever
+    /// way, and the arrows as arrows: a key that is a word was a picture
+    /// once -- `End` a bar with an arrow at it, `F10` a keycap -- and
+    /// `Ctrl+End` drawn as two pictures was a chord nobody could read. The
+    /// modifiers are the three pictures every keyboard prints, and the ones
+    /// a chord repeats, so they are where the columns are saved.
     ///
     /// A key that is a word is written the way keys are written everywhere
     /// -- `Ctrl`, `F1`, `PageDown` -- and this is the *only* spelling: it
@@ -147,32 +152,23 @@ impl KeyChord {
             }
         }
 
-        let named: Option<(&str, char)> = match self.code {
-            KeyCode::Char(' ') => Some(("Space", obelus_icons::key::SPACE)),
-            KeyCode::Enter => Some(("Enter", obelus_icons::key::ENTER)),
-            KeyCode::Esc => Some(("Esc", obelus_icons::key::ESCAPE)),
-            KeyCode::Home => Some(("Home", obelus_icons::key::HOME)),
-            KeyCode::End => Some(("End", obelus_icons::key::END)),
-            KeyCode::PageUp => Some(("PageUp", obelus_icons::key::PAGE_UP)),
-            KeyCode::PageDown => Some(("PageDown", obelus_icons::key::PAGE_DOWN)),
-            KeyCode::Backspace => Some(("Backspace", obelus_icons::key::BACKSPACE)),
-            KeyCode::Delete => Some(("Delete", obelus_icons::key::DELETE)),
-            KeyCode::Tab => Some(("Tab", obelus_icons::key::TAB)),
+        let named = match self.code {
+            KeyCode::Char(' ') => Some("Space"),
+            KeyCode::Enter => Some("Enter"),
+            KeyCode::Esc => Some("Esc"),
+            KeyCode::Home => Some("Home"),
+            KeyCode::End => Some("End"),
+            KeyCode::PageUp => Some("PageUp"),
+            KeyCode::PageDown => Some("PageDown"),
+            KeyCode::Backspace => Some("Backspace"),
+            KeyCode::Delete => Some("Delete"),
+            KeyCode::Tab => Some("Tab"),
             _ => None,
         };
-        // A function key gets its own keycap, which a patched font has one
-        // of for each of the twelve. Spelled out otherwise -- `F(1)` is the
-        // compiler's word for it rather than anybody's.
-        if let KeyCode::F(number) = self.code {
-            match obelus_icons::key::function(number).filter(|_| glyphs) {
-                Some(keycap) => label.push(keycap),
-                None => label.push_str(&format!("F{number}")),
-            }
-            return label;
-        }
         match (named, self.code) {
-            (Some((_, glyph)), _) if glyphs => label.push(glyph),
-            (Some((name, _)), _) => label.push_str(name),
+            (Some(name), _) => label.push_str(name),
+            // `F(1)` is the compiler's word for it rather than anybody's.
+            (None, KeyCode::F(number)) => label.push_str(&format!("F{number}")),
             (None, KeyCode::Char(character)) => label.push(character),
             (None, KeyCode::Left) => label.push('\u{2190}'),
             (None, KeyCode::Up) => label.push('\u{2191}'),

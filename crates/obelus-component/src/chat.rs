@@ -714,6 +714,11 @@ pub struct Chat {
     /// go stale -- what is not stored cannot be left on screen saying
     /// something that has stopped being true.
     doing: Option<String>,
+    /// Whether a turn is running, read off the state every frame the way
+    /// [`Self::doing`] is: what decides whether the box offers to send now,
+    /// which is a row of the box and so has to be known wherever the box
+    /// is measured.
+    running: bool,
     /// What the agent means to do about this turn, while it is doing it.
     ///
     /// Never written into [`Self::said`]: a finished list of seven
@@ -902,6 +907,7 @@ impl Chat {
             said: Vec::new(),
             laid: std::cell::RefCell::new(None),
             doing: None,
+            running: false,
             plan: Vec::new(),
             plan_open: false,
             input: Composer::new(),
@@ -1076,6 +1082,18 @@ impl Chat {
     #[must_use]
     pub fn would_send_now(&self) -> bool {
         !self.input.is_blank() || self.said.iter().any(|said| said.unsent)
+    }
+
+    /// Says whether a turn is running.
+    pub const fn turn_is_running(&mut self, running: bool) {
+        self.running = running;
+    }
+
+    /// Whether the box offers to send now: a turn is running, and stopping
+    /// it would leave something to say.
+    #[must_use]
+    pub fn offers_sending_now(&self) -> bool {
+        self.running && self.would_send_now()
     }
 
     /// Everything the reader has said that has not gone, in the order they
