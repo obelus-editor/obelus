@@ -6968,7 +6968,9 @@ fn the_pointer_takes_hold_of_what_was_said() {
 /// only what `spot_at` finds on the row under the pointer, which is what it
 /// did, and the blank comes out as the empty message in the box rather
 /// than a selection; and answering nothing past the last row, which does
-/// the same to the press under the transcript.
+/// the same to the press under the transcript. And by letting the hold
+/// be on the button coming up, which leaves the click holding something;
+/// or letting go of every hold there, which takes the drags' copies too.
 #[test]
 fn a_drag_starts_on_a_blank_of_the_transcript() {
     let (mut app, events) = talking();
@@ -7017,6 +7019,11 @@ fn a_drag_starts_on_a_blank_of_the_transcript() {
             x: to.0,
             y: to.1,
         });
+        app.handle(Event::Pointer {
+            kind: obelus_app::event::Pointer::Released,
+            x: to.0,
+            y: to.1,
+        });
         app.chat().expect("a conversation").copied(WIDTH - 5)
     };
 
@@ -7035,6 +7042,23 @@ fn a_drag_starts_on_a_blank_of_the_transcript() {
         "a press under the transcript took hold of nothing"
     );
     assert_eq!(text, "heard you", "the copy is not what was dragged across");
+
+    // And a press there that never became a drag holds nothing, which
+    // escape and a shifted arrow would otherwise go on finding.
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: start,
+        y: below,
+    });
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Released,
+        x: start,
+        y: below,
+    });
+    assert!(
+        !app.chat().expect("a conversation").holding(),
+        "a click on the empty screen left an empty hold behind"
+    );
 }
 
 /// A transcript scrolled away from its end says how to get back, and what

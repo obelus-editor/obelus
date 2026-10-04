@@ -2090,6 +2090,19 @@ impl Chat {
         self.held = None;
     }
 
+    /// Lets go of a hold with nothing in it, which is what a press that
+    /// never became a drag leaves.
+    ///
+    /// Nothing is drawn for one, and it was not nothing: escape spent its
+    /// first press letting go of it rather than emptying the box, and a
+    /// shift and an arrow held from where the pointer had been rather than
+    /// from the cursor.
+    pub fn let_go_of_nothing(&mut self) {
+        if self.held.is_some_and(|(from, to)| from == to) {
+            self.held = None;
+        }
+    }
+
     /// Whether anything in the transcript is held.
     #[must_use]
     pub const fn holding(&self) -> bool {

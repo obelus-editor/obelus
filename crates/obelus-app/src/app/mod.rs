@@ -3688,7 +3688,8 @@ impl App {
             return;
         };
         match kind {
-            Pointer::Moved | Pointer::Released => {}
+            Pointer::Moved => {}
+            Pointer::Released => talk.chat.let_go_of_nothing(),
             Pointer::Pressed if folds.is_some() => {
                 if let Some(begins) = folds {
                     talk.chat.fold(begins);
