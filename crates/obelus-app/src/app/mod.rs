@@ -3315,14 +3315,16 @@ impl App {
         let width = obelus_ui::chat::writing_width(area);
         let mut held = false;
         self.in_transcript(|chat| {
-            let writing = chat.writing_mut();
             match kind {
                 Pointer::Moved | Pointer::Released => {}
-                Pointer::Dragged => writing.place_at_cell(at.0, at.1, width, true),
+                Pointer::Dragged => chat.writing_mut().place_at_cell(at.0, at.1, width, true),
                 Pointer::Pressed => {
                     // One selection between the two halves, and this is
-                    // the other half taking hold.
+                    // the other half taking hold -- and the keys with it,
+                    // or the caret is put where nothing typed would go.
                     held = true;
+                    chat.stand_in_the_box();
+                    let writing = chat.writing_mut();
                     writing.place_at_cell(at.0, at.1, width, false);
                     match clicks {
                         2 => writing.hold_word(width),
@@ -3656,37 +3658,59 @@ impl App {
         use crate::event::Pointer;
 
         let area = self.editor_area;
-        let spot = self.conversation().and_then(|talk| {
-            obelus_ui::chat::ChatView::place_in_transcript(
+        let width = obelus_ui::chat::reading_width(area);
+        // Laid out once, and every question below asked of the one place.
+        let found = self.conversation().and_then(|talk| {
+            let rows = talk.chat.rows(width);
+            let place = obelus_ui::chat::ChatView::place_in_transcript(
                 area,
                 &talk.chat,
                 talk.card.as_ref(),
+                &rows,
                 x,
                 y,
-            )
-        });
-        // Whether it landed on a heading that opens, which is a thing to do
-        // to the row rather than to the words in it.
-        //
-        // Free of the selection, and not by luck: every row that folds is
-        // one Obelus drew itself -- the heading over a run of tool calls,
-        // the one over a piece of thinking, the one over the agent's plan
-        // -- and none of them is anybody's words. A press on one already
-        // meant nothing but "let go", so opening it costs the reader
-        // nothing they had.
-        let width = obelus_ui::chat::reading_width(area);
-        let folds = self.conversation().and_then(|talk| {
-            let at = obelus_ui::chat::ChatView::row_in_transcript(
-                area,
-                &talk.chat,
-                talk.card.as_ref(),
-                y,
             )?;
-            talk.chat.rows(width).get(at)?.folds
+            let spot = obelus_ui::chat::ChatView::spot_in_transcript(&rows, place);
+            let row = rows.get(place.row);
+            // Whether it landed on a heading that opens, which is a thing to
+            // do to the row rather than to the words in it.
+            //
+            // Free of the selection, and not by luck: every row that folds is
+            // one Obelus drew itself -- the heading over a run of tool calls,
+            // the one over a piece of thinking, the one over the agent's plan
+            // -- and none of them is anybody's words. A press on one already
+            // meant nothing but "let go", so opening it costs the reader
+            // nothing they had.
+            let folds = row.and_then(|row| row.folds);
+            // A cursor stands on a row, and the band under the last of them
+            // is not one; nor while a card is up, which has the keys -- a
+            // cursor moved under it would be found there afterwards.
+            let cursor = (row.is_some() && talk.card.is_none()).then_some(place);
+            Some((spot, folds, cursor))
         });
+        let (spot, folds, cursor) = found.unwrap_or((None, None, None));
+        // Where the cursor goes, for a press or a drag: the keys follow
+        // the pointer, or the arrows after a press walk something the
+        // reader had not pointed at.
+        //
+        // And a drag only carries a cursor the press put here. The box is
+        // under the transcript's band, so a drag in the box is one held
+        // past its edge, and every tick hands it on as a drag on the
+        // transcript's last row: one that moved the cursor took the keys
+        // out of the box while the reader was selecting in it.
+        let carried = kind == Pointer::Pressed
+            || self.chat().is_some_and(|chat| {
+                matches!(chat.focus(), obelus_component::chat::Focus::Transcript(_))
+            });
         let Some(talk) = self.conversation_mut() else {
             return;
         };
+        if matches!(kind, Pointer::Pressed | Pointer::Dragged)
+            && carried
+            && let Some(cursor) = cursor
+        {
+            talk.chat.stand_in_transcript(cursor);
+        }
         match kind {
             Pointer::Moved => {}
             Pointer::Released => talk.chat.let_go_of_nothing(),

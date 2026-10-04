@@ -478,12 +478,56 @@ impl<'a> ChatView<'a> {
     }
 
     /// Where in the transcript a point on the screen is, if it is in one
-    /// at all.
+    /// at all: the row, and the character of it.
+    ///
+    /// A row and a character rather than a place in what was said, because
+    /// three things are asked of one press and they are all asked of the
+    /// row: whether it is a heading to open, where the cursor stands --
+    /// which may be a row in nobody's words, a blank or a heading -- and,
+    /// through [`ChatView::spot_in_transcript`], where a selection takes
+    /// hold. One piece of code, so that the three cannot land on different
+    /// rows.
+    ///
+    /// `rows` are the transcript's, laid out at [`reading_width`] by the
+    /// caller, which has the rest of those questions to ask of them: laying
+    /// them out is a copy of the whole transcript.
+    ///
+    /// The band below the last row is the row after it, which no cursor
+    /// can stand on and a selection can start from. `None` for a point
+    /// outside the transcript's own band.
+    #[must_use]
+    pub fn place_in_transcript(
+        area: Rect,
+        chat: &Chat,
+        card: Option<&Card>,
+        rows: &[Row],
+        x: u16,
+        y: u16,
+    ) -> Option<obelus_component::chat::Place> {
+        if x < area.x || x >= area.right() {
+            return None;
+        }
+        let band = bands(area, chat, card).transcript;
+        if y < band.y || y >= band.bottom() {
+            return None;
+        }
+        let at = (chat.top() + usize::from(y - band.y)).min(rows.len());
+        // Cells to characters here, characters to a place in the words
+        // there: a cell is this drawing's own business -- a wide glyph is
+        // two of them and an indent is several -- and what a character of a
+        // row came from is the row's. Two halves of one seam, so that the
+        // pointer and the cursor cross it by the same arithmetic.
+        Some(obelus_component::chat::Place {
+            row: at,
+            character: rows.get(at).map_or(0, |row| characters_at(row, x, area)),
+        })
+    }
+
+    /// Where in what was said a place in the transcript is, for a selection
+    /// to take hold of.
     ///
     /// A place in what was said rather than the row and column it was
-    /// pointed at with, because that is what a selection keeps -- and this
-    /// is the only piece of Obelus that knows both, the rows having just
-    /// been laid out at the width the screen has.
+    /// pointed at with, because that is what a selection keeps.
     ///
     /// A point in a row the reading drew rather than read -- a blank, the
     /// heading over a folded run, the row that says what is happening now
@@ -496,30 +540,17 @@ impl<'a> ChatView<'a> {
     /// all, for the same reason: it is where a reader starts a drag up
     /// through the end of an answer.
     #[must_use]
-    pub fn place_in_transcript(
-        area: Rect,
-        chat: &Chat,
-        card: Option<&Card>,
-        x: u16,
-        y: u16,
+    pub fn spot_in_transcript(
+        rows: &[Row],
+        place: obelus_component::chat::Place,
     ) -> Option<obelus_component::chat::Spot> {
-        if x < area.x || x >= area.right() {
-            return None;
-        }
-        let at = Self::row_under(area, chat, card, y)?;
-        let rows = chat.rows(reading_width(area));
-        let at = at.min(rows.len());
-        // Cells to characters here, characters to a place in the words
-        // there: a cell is this drawing's own business -- a wide glyph is
-        // two of them and an indent is several -- and what a character of a
-        // row came from is the row's. Two halves of one seam, so that the
-        // pointer and the cursor cross it by the same arithmetic.
         if let Some(spot) = rows
-            .get(at)
-            .and_then(|row| row.spot_at(characters_at(row, x, area)))
+            .get(place.row)
+            .and_then(|row| row.spot_at(place.character))
         {
             return Some(spot);
         }
+        let at = place.row.min(rows.len());
         // Upwards first, where the cursor's nearest looks down, and nothing
         // turns on it: what lies between the end of the words above and the
         // start of those below is nobody's words, so a drag from either
@@ -529,37 +560,6 @@ impl<'a> ChatView<'a> {
             .rev()
             .find_map(|row| row.spot_at(row.characters()))
             .or_else(|| rows[at..].iter().find_map(|row| row.spot_at(0)))
-    }
-
-    /// Which row of the transcript a point on screen is on.
-    ///
-    /// The row rather than the place in the words: what is under the
-    /// pointer is a row, and whether that row is a heading to open or words
-    /// to take hold of is a question about the row. One piece of code, so
-    /// that the two cannot land on different rows.
-    ///
-    /// `None` for a point outside the transcript's own band, or past the
-    /// end of what has been said.
-    #[must_use]
-    pub fn row_in_transcript(
-        area: Rect,
-        chat: &Chat,
-        card: Option<&Card>,
-        y: u16,
-    ) -> Option<usize> {
-        let at = Self::row_under(area, chat, card, y)?;
-        (at < chat.rows(reading_width(area)).len()).then_some(at)
-    }
-
-    /// The same row, past the end of what has been said too: what a point
-    /// there means is each caller's own question, and which row it is
-    /// is not.
-    fn row_under(area: Rect, chat: &Chat, card: Option<&Card>, y: u16) -> Option<usize> {
-        let band = bands(area, chat, card).transcript;
-        if y < band.y || y >= band.bottom() {
-            return None;
-        }
-        Some(chat.top() + usize::from(y - band.y))
     }
 
     /// Where the terminal should put its caret: in the box, or in the
