@@ -490,6 +490,10 @@ impl<'a> ChatView<'a> {
     /// -- is the place just after the last word above it. A drag has to go
     /// somewhere while it crosses one, and the words either side of it are
     /// what the reader is dragging between.
+    ///
+    /// And the band below the last row is the place after the last word of
+    /// all, for the same reason: it is where a reader starts a drag up
+    /// through the end of an answer.
     #[must_use]
     pub fn place_in_transcript(
         area: Rect,
@@ -498,18 +502,31 @@ impl<'a> ChatView<'a> {
         x: u16,
         y: u16,
     ) -> Option<obelus_component::chat::Spot> {
-        if x < area.x || x >= area.right() {
+        let band = bands(area, chat, card).transcript;
+        if x < area.x || x >= area.right() || y < band.y || y >= band.bottom() {
             return None;
         }
-        let at = Self::row_in_transcript(area, chat, card, y)?;
         let rows = chat.rows(reading_width(area));
-        let row = rows.get(at)?;
+        let at = (chat.top() + usize::from(y - band.y)).min(rows.len());
         // Cells to characters here, characters to a place in the words
         // there: a cell is this drawing's own business -- a wide glyph is
         // two of them and an indent is several -- and what a character of a
         // row came from is the row's. Two halves of one seam, so that the
         // pointer and the cursor cross it by the same arithmetic.
-        row.spot_at(characters_at(row, x, area))
+        if let Some(spot) = rows
+            .get(at)
+            .and_then(|row| row.spot_at(characters_at(row, x, area)))
+        {
+            return Some(spot);
+        }
+        // Upwards first, unlike the cursor's nearest: a drag that starts on
+        // a blank and goes down means the words below it, and one anchored
+        // at the end of those above takes them whole.
+        rows[..at]
+            .iter()
+            .rev()
+            .find_map(|row| row.spot_at(row.characters()))
+            .or_else(|| rows[at..].iter().find_map(|row| row.spot_at(0)))
     }
 
     /// Which row of the transcript a point on screen is on.
