@@ -309,7 +309,8 @@ impl App {
         notes: &obelus_git::todo::Todo,
         state: Option<Turning>,
     ) -> Head {
-        let title = Self::conversation_name(talk, self.talker.as_ref(), notes)
+        let title = self
+            .conversation_name(talk, notes)
             .unwrap_or_else(|| "A conversation".to_string());
         let mut place = self
             .working_directory

@@ -1691,7 +1691,7 @@ impl App {
             let notes = obelus_git::todo::read(&self.working_directory)
                 .notes()
                 .unwrap_or_default();
-            Self::conversation_name(talk, self.talker.as_ref(), &notes)
+            self.conversation_name(talk, &notes)
         });
         self.close(id);
         self.say(match named {
