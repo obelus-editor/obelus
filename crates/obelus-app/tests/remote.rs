@@ -285,8 +285,9 @@ fn fake_connect(
     sink: std::sync::Arc<dyn obelus_sink::Sink<obelus_remote::Event>>,
 ) -> tokio::sync::mpsc::UnboundedSender<obelus_remote::model::Out> {
     let (out, said) = tokio::sync::mpsc::unbounded_channel();
-    let _ = sink.send(obelus_remote::Event::Connection(
+    let _ = sink.send(obelus_remote::Event::connection(
         obelus_remote::State::Connected,
+        None,
     ));
     *FAKED
         .lock()
@@ -1053,8 +1054,9 @@ fn what_is_said_while_reconnecting_still_goes() {
     let scratch = support::Scratch::new("remote-reconnecting");
     let (mut app, events, _log) = paired_with_an_agent(&scratch);
     let platform = the_platform();
-    let _ = platform.send(obelus_remote::Event::Connection(
+    let _ = platform.send(obelus_remote::Event::connection(
         obelus_remote::State::Connecting,
+        None,
     ));
     let _ = platform.send(obelus_remote::Event::Heard {
         from: "U1".to_string(),
@@ -1117,8 +1119,9 @@ fn a_thread_that_would_not_open_is_asked_for_on_the_next_connection() {
     // Asked for again once the connection says it is up -- a socket made
     // again inside one connection, which is when a request that timed out
     // is worth making again.
-    let _ = platform.send(obelus_remote::Event::Connection(
+    let _ = platform.send(obelus_remote::Event::connection(
         obelus_remote::State::Connected,
+        None,
     ));
     let said = said_until(&mut app, &events, "the thread asked for again", |said| {
         said.iter()
@@ -1199,8 +1202,9 @@ fn a_connection_let_go_is_not_heard() {
     until(&mut app, &events, "the new connection", |app| {
         app.remote_state_for_test() == obelus_remote::State::Connected
     });
-    let _ = old.send(obelus_remote::Event::Connection(
+    let _ = old.send(obelus_remote::Event::connection(
         obelus_remote::State::Refused,
+        None,
     ));
     for _ in 0..10 {
         if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(30)) {
@@ -1680,8 +1684,9 @@ fn a_refused_token_is_said_on_its_row() {
     let _turn = turn();
     let scratch = support::Scratch::new("remote-refused");
     let (mut app, events) = connected(&scratch);
-    let _ = the_platform().send(obelus_remote::Event::Connection(
+    let _ = the_platform().send(obelus_remote::Event::connection(
         obelus_remote::State::Refused,
+        None,
     ));
     until(&mut app, &events, "the refusal", |app| {
         app.remote_state_for_test() == obelus_remote::State::Refused
@@ -1931,4 +1936,166 @@ fn an_asking_taken_back_after_giving_up_stays_taken_back() {
         !second.holds_the_remote_for_test(),
         "a window took the chat after being told to stop asking"
     );
+}
+
+/// The last row on the screen, which is the status row.
+fn status_row(app: &mut App) -> String {
+    let dump = support::render(app, 76, 24);
+    support::text_block(&dump)
+        .lines()
+        .last()
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// Handles whatever comes back for a moment, for a test asserting that
+/// something did *not* happen.
+fn settle(app: &mut App, events: &std::sync::mpsc::Receiver<Event>) {
+    for _ in 0..10 {
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(30)) {
+            app.handle(event);
+        }
+    }
+}
+
+/// A window with no file open -- the welcome screen -- set to Slack with
+/// both tokens kept and connected to the fake.
+fn connected_on_nothing(scratch: &support::Scratch) -> (App, std::sync::mpsc::Receiver<Event>) {
+    obelus_remote::platform::connect_for_test(fake_connect);
+    *FAKED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    std::fs::write(scratch.join("config.toml"), "remote = \"slack\"\n").expect("the settings");
+    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    let mut app = App::new(Vec::new());
+    app.config_file_for_test(scratch.join("config.toml"));
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 76, 24);
+    dispatch::dispatch(&mut app, Command::RemoteConnect);
+    // And the fake's sink kept, which it does after saying it is connected.
+    until(&mut app, &events, "the connection", |app| {
+        app.remote_state_for_test() == obelus_remote::State::Connected
+            && FAKED
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .is_some()
+    });
+    (app, events)
+}
+
+/// Where the chat stands is on every status row of the window that has it:
+/// the welcome screen's, the notes', and a conversation's -- which is the
+/// row a reader working from a chat is most often on.
+///
+/// Broken deliberately three ways, one row at a time: dropping the mark
+/// from the conversation's row, from the notes' and from the welcome
+/// screen's each left that row saying nothing about the chat -- which is
+/// how the connection going wrong went unseen. The row that is only words,
+/// with no file under them, is `a_chat_that_goes_wrong_says_why_once`'s.
+#[test]
+fn the_chat_is_marked_on_every_status_row() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-every-row");
+    let (mut app, _events) = connected_on_nothing(&scratch);
+    // A key, to take away what connecting said: with words on it, the row
+    // is the words' and not the welcome screen's.
+    support::press(&mut app, KeyCode::Down);
+    assert_eq!(app.note(), None);
+    let line = status_row(&mut app);
+    assert!(line.contains("● Slack"), "the welcome screen's row: {line}");
+    dispatch::dispatch(&mut app, Command::TodoOpen);
+    assert!(app.notes().is_some(), "the notes did not open");
+    let line = status_row(&mut app);
+    assert!(line.contains("● Slack"), "the notes' row: {line}");
+    drop(app);
+
+    let scratch = support::Scratch::new("remote-every-row-chat");
+    let (mut app, _events, _log) = paired_with_an_agent(&scratch);
+    dispatch::dispatch(&mut app, Command::ConversationNew);
+    assert!(app.chat().is_some(), "no conversation on screen");
+    let line = status_row(&mut app);
+    assert!(line.contains("● Slack"), "the conversation's row: {line}");
+}
+
+/// A connection that goes wrong says why on the status row, once, as it
+/// goes -- not again each time it is tried and goes wrong the same way, and
+/// again when it goes wrong some other way -- and the mark stays. What no
+/// row of the settings page is about is said on the chat's own row there,
+/// in the platform's words.
+///
+/// Broken deliberately five ways. Not saying it: the row had the mark and
+/// no words. Saying it every time: the second refusal put the words back
+/// after the reader's key had taken them away. Saying it only on the way
+/// from right to wrong: the second kind of wrong was never said. Dropping
+/// the mark from a row that is only words, with no file under them: the
+/// words were there and the mark was not. And leaving the platform's row
+/// on the page without a warning: nothing there said why.
+#[test]
+fn a_chat_that_goes_wrong_says_why_once() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-says-why");
+    let (mut app, events) = connected_on_nothing(&scratch);
+    let unreachable = || {
+        the_platform().send(obelus_remote::Event::connection(
+            obelus_remote::State::Unreachable,
+            Some("dns error".to_string()),
+        ))
+    };
+    let _ = unreachable();
+    until(&mut app, &events, "the words", |app| {
+        app.note() == Some("Not connected to Slack: dns error")
+    });
+    let line = status_row(&mut app);
+    assert!(line.contains("Not connected to Slack: dns error"), "{line}");
+    assert!(line.contains("✕ Slack"), "{line}");
+
+    support::press(&mut app, KeyCode::Down);
+    assert_eq!(app.note(), None, "a key did not take the words away");
+    let _ = unreachable();
+    settle(&mut app, &events);
+    assert_eq!(app.note(), None, "said again for the same thing");
+    assert!(status_row(&mut app).contains("✕ Slack"));
+
+    let _ = the_platform().send(obelus_remote::Event::connection(
+        obelus_remote::State::Declined,
+        Some("the app has no long connection".to_string()),
+    ));
+    until(&mut app, &events, "the second words", |app| {
+        app.note() == Some("Not connected to Slack: the app has no long connection")
+    });
+
+    dispatch::dispatch(&mut app, Command::ConfigOpen);
+    support::press(&mut app, KeyCode::Tab);
+    support::press(&mut app, KeyCode::Tab);
+    assert!(
+        app.settings().expect("the settings").on_remote(),
+        "not on the remote page"
+    );
+    let dump = support::render(&mut app, 76, 24);
+    assert!(dump.contains("the app has no long connection"), "{dump}");
+}
+
+/// A chat told to connect with something it has to be told left untold is
+/// wrong, not off, and says which thing.
+///
+/// Broken deliberately by sending `Unready` with no reason: the row said it
+/// was not connected and not why.
+#[test]
+fn a_chat_with_something_untold_says_what() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-untold");
+    obelus_remote::platform::connect_for_test(fake_connect);
+    std::fs::write(scratch.join("config.toml"), "remote = \"slack\"\n").expect("the settings");
+    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    let mut app = App::new(Vec::new());
+    app.config_file_for_test(scratch.join("config.toml"));
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 76, 24);
+    dispatch::dispatch(&mut app, Command::RemoteConnect);
+    until(&mut app, &events, "the words", |app| {
+        app.note() == Some("Not connected to Slack: no Bot token is set")
+    });
+    let line = status_row(&mut app);
+    assert!(line.contains("✕ Slack"), "{line}");
 }

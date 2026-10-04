@@ -77,6 +77,8 @@ pub(super) struct Remote {
     reaching: Option<&'static str>,
     /// What the platform last said about the connection, for `reaching`.
     connection: Option<State>,
+    /// And why, where it said something was wrong and why.
+    why: Option<String>,
     /// The lock that makes this the one window on the machine the chat
     /// talks to, while it is: one bot can have one connection, and which
     /// window has it is the reader's to say, with `connect-remote`.
@@ -205,6 +207,9 @@ impl App {
         Reached {
             platform,
             state: self.remote_state(),
+            why: platform
+                .filter(|platform| self.remote.reaching == Some(platform.key))
+                .and(self.remote.why.clone()),
             kept,
             people: platform
                 .and_then(|platform| self.config().remote_of(platform.key))
@@ -312,9 +317,23 @@ impl App {
                     self.forget_what_was_on_its_way();
                 }
             }
-            obelus_remote::Event::Connection(state) => {
-                tracing::info!(?state, "the chat says where it has got to");
-                self.remote.connection = Some(state);
+            obelus_remote::Event::Connection { state, why } => {
+                tracing::info!(?state, ?why, "the chat says where it has got to");
+                let was = self.remote.connection.replace(state);
+                // Said on the status row once, on the way into it: a
+                // connection tried again every few seconds that put the
+                // same words up every time would be a row nobody could use
+                // for anything else. The mark beside it stays.
+                if state.wrong()
+                    && was != Some(state)
+                    && let Some(platform) = self.platform()
+                {
+                    self.wrong(match &why {
+                        Some(why) => format!("Not connected to {}: {why}", platform.name),
+                        None => format!("Not connected to {}", platform.name),
+                    });
+                }
+                self.remote.why = why;
                 // Up again -- a socket made again inside one connection is
                 // not a new connection -- so what would not open, whether a
                 // refusal or a request that timed out, is asked for again.
@@ -426,6 +445,7 @@ impl App {
         self.remote.out = None;
         self.remote.reaching = None;
         self.remote.connection = None;
+        self.remote.why = None;
         self.forget_what_was_on_its_way();
         self.remote.pairing = None;
         self.remote.pairing_runs_out = None;

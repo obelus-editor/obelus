@@ -91,6 +91,9 @@ struct Api {
 enum Refusal {
     /// It turned the app's id or secret down.
     Credentials(String),
+    /// It took them, and would not give this app a long connection: the
+    /// app is not set up for one on Feishu's side.
+    Setup(String),
     /// It could not be reached, or said something else.
     Other(String),
 }
@@ -98,7 +101,9 @@ enum Refusal {
 impl std::fmt::Display for Refusal {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Credentials(why) | Self::Other(why) => formatter.write_str(why),
+            Self::Credentials(why) | Self::Setup(why) | Self::Other(why) => {
+                formatter.write_str(why)
+            }
         }
     }
 }
@@ -199,12 +204,18 @@ impl Api {
             .map_err(|error| Refusal::Other(error.to_string()))
             .map(read)?
             .await?;
+        // Feishu's own client gives up on every code but two, and tries
+        // those again: one is busy and the other is its own fault. Every
+        // other is about the app -- its long connection not switched on, or
+        // its events not subscribed to -- and asking again will not mend it.
         match answer["code"].as_i64() {
             Some(0) => {}
-            _ => {
-                return Err(Refusal::Other(
-                    answer["msg"].as_str().unwrap_or("refused").to_string(),
-                ));
+            code => {
+                let why = answer["msg"].as_str().unwrap_or("refused").to_string();
+                return Err(match code {
+                    Some(1 | 1_000_040_343) | None => Refusal::Other(why),
+                    Some(_) => Refusal::Setup(why),
+                });
             }
         }
         let url = answer["data"]["URL"]
@@ -279,7 +290,7 @@ async fn run(
     sink: Arc<dyn Sink<Event>>,
     mut said: tokio::sync::mpsc::UnboundedReceiver<Out>,
 ) {
-    let _ = sink.send(Event::Connection(State::Connecting));
+    let _ = sink.send(Event::connection(State::Connecting, None));
     // The id and secret first, by asking for a token: the long connection
     // would refuse them too, but in words that do not say which. Asked
     // again until they are taken, a refusal less often: a machine started
@@ -289,18 +300,18 @@ async fn run(
     // window letting go ends it.
     let mut waiting = crate::waiting::Waiting::default();
     loop {
-        let (state, again) = match api.token().await {
+        let (state, why, again) = match api.token().await {
             Ok(_) => break,
             Err(Refusal::Credentials(why)) => {
                 tracing::warn!(%why, "Feishu refused the app's id or secret");
-                (State::Refused, 60)
+                (State::Refused, why, 60)
             }
-            Err(Refusal::Other(why)) => {
+            Err(Refusal::Setup(why) | Refusal::Other(why)) => {
                 tracing::warn!(%why, "Feishu could not be reached");
-                (State::Unreachable, 10)
+                (State::Unreachable, why, 10)
             }
         };
-        let _ = sink.send(Event::Connection(state));
+        let _ = sink.send(Event::connection(state, Some(why)));
         let pause = tokio::time::sleep(Duration::from_secs(again));
         tokio::pin!(pause);
         loop {
@@ -417,21 +428,40 @@ async fn listen(api: Arc<Api>, sink: Arc<dyn Sink<Event>>) {
     // heard twice is a question answered twice.
     let mut seen: std::collections::VecDeque<String> = std::collections::VecDeque::new();
     loop {
-        let state = match api.endpoint().await {
-            Ok((url, ping)) => {
-                if let Err(why) = connected(&url, ping, &mut seen, &sink).await {
+        // Connecting again only where it was up a moment ago: a socket that
+        // never opened is not on its way back, and saying it was turned
+        // the mark for as long as Feishu went on refusing it.
+        let (state, why, again) = match api.endpoint().await {
+            Ok((url, ping)) => match connected(&url, ping, &mut seen, &sink).await {
+                Lost::Dropped(why) => {
                     tracing::warn!(%why, "the long connection to Feishu dropped");
+                    (State::Connecting, None, 5)
                 }
-                State::Connecting
+                Lost::Unmade(why) => {
+                    tracing::warn!(%why, "the long connection to Feishu would not open");
+                    (State::Unreachable, Some(why), 5)
+                }
+            },
+            Err(Refusal::Setup(why)) => {
+                tracing::warn!(%why, "Feishu would not give this app a long connection");
+                (State::Declined, Some(why), 60)
             }
             Err(why) => {
                 tracing::warn!(%why, "Feishu gave no long connection");
-                State::Unreachable
+                (State::Unreachable, Some(why.to_string()), 5)
             }
         };
-        let _ = sink.send(Event::Connection(state));
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        let _ = sink.send(Event::connection(state, why));
+        tokio::time::sleep(Duration::from_secs(again)).await;
     }
+}
+
+/// How a long connection ended.
+enum Lost {
+    /// It never opened.
+    Unmade(String),
+    /// It was open, and went.
+    Dropped(String),
 }
 
 /// One long connection, until it drops.
@@ -440,7 +470,7 @@ async fn connected(
     ping: Duration,
     seen: &mut std::collections::VecDeque<String>,
     sink: &Arc<dyn Sink<Event>>,
-) -> Result<(), String> {
+) -> Lost {
     let service: i32 = url::Url::parse(url)
         .ok()
         .and_then(|url| {
@@ -449,15 +479,35 @@ async fn connected(
                 .and_then(|(_, value)| value.parse().ok())
         })
         .unwrap_or(0);
-    let (socket, _) = tokio::time::timeout(
+    let socket = match tokio::time::timeout(
         Duration::from_secs(15),
         tokio_tungstenite::connect_async(url),
     )
     .await
-    .map_err(|_| "no answer".to_string())?
-    .map_err(|error| error.to_string())?;
+    {
+        Ok(Ok((socket, _))) => socket,
+        Ok(Err(error)) => return Lost::Unmade(error.to_string()),
+        Err(_) => return Lost::Unmade("no answer".to_string()),
+    };
     let (mut out, mut heard) = socket.split();
-    let _ = sink.send(Event::Connection(State::Connected));
+    let _ = sink.send(Event::connection(State::Connected, None));
+    match listened(&mut out, &mut heard, service, ping, seen, sink).await {
+        Ok(()) => Lost::Dropped("closed".to_string()),
+        Err(why) => Lost::Dropped(why),
+    }
+}
+
+/// Hears what comes in on a long connection that is open, until it drops.
+async fn listened(
+    out: &mut (impl futures::Sink<Message, Error = tokio_tungstenite::tungstenite::Error> + Unpin),
+    heard: &mut (
+             impl futures::Stream<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin
+         ),
+    service: i32,
+    ping: Duration,
+    seen: &mut std::collections::VecDeque<String>,
+    sink: &Arc<dyn Sink<Event>>,
+) -> Result<(), String> {
     let mut pings = tokio::time::interval(ping);
     // When anything last came back. A ping goes into a socket that is
     // already dead without complaint -- after the machine sleeps, or the
