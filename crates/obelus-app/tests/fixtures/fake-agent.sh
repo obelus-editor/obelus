@@ -37,6 +37,9 @@
 #                         -> asks permission and takes the question back
 #   session/prompt "/secondback"
 #                         -> asks permission twice and takes the second back
+#   session/prompt "/endwith <reason>"
+#                         -> asks permission twice and ends the turn with
+#                            that stop reason, unanswered
 #   session/prompt "/ask" -> asks the reader three things through
 #                            `elicitation/create` -- one of a list, a switch,
 #                            and a number -- and says what came back
@@ -591,6 +594,29 @@ while IFS= read -r line; do
             ;;
         *'"id":943'*)
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
+        *'"method":"session/prompt"'*'"text":"/endwith '*)
+            # Two questions at once, and then the turn ends under them
+            # with the stop reason named after the command, nobody having
+            # answered -- an agent that ran out of room, or one whose turn
+            # ended for a reason of its own with a question still out.
+            set_turn "$session" "$(id_of "$line")"
+            reason=$(printf '%s' "$line" | sed -En 's/.*"text":"\/endwith ([a-z_]*).*/\1/p')
+            printf '{"jsonrpc":"2.0","id":946,"method":"session/request_permission","params":{"sessionId":"%s","toolCall":{"toolCallId":"q5","title":"Read the fifth file","kind":"read"},"options":[{"optionId":"once","name":"Allow once","kind":"allow_once"},{"optionId":"never","name":"Reject","kind":"reject_once"}]}}\n' "$session"
+            printf '{"jsonrpc":"2.0","id":947,"method":"session/request_permission","params":{"sessionId":"%s","toolCall":{"toolCallId":"q6","title":"Read the sixth file","kind":"read"},"options":[{"optionId":"once","name":"Allow once","kind":"allow_once"},{"optionId":"never","name":"Reject","kind":"reject_once"}]}}\n' "$session"
+            sleep 0.3
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"%s"}}\n' "$(turn_of "$session")" "$reason"
+            ;;
+        *'"id":946'*|*'"id":947'*)
+            case "$line" in
+                *'"outcome":"cancelled"'*) answered='cancelled' ;;
+                *) answered='answered' ;;
+            esac
+            case "$line" in
+                *'"id":946'*) which='fifth' ;;
+                *) which='sixth' ;;
+            esac
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"the %s was [%s] "}}}}\n' "$which" "$answered"
             ;;
         *'"method":"session/prompt"'*'"text":"/abandon'*)
             # The same, with the turn going on after it and nothing said
