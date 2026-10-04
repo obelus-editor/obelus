@@ -417,10 +417,11 @@ the selection chosen until a key moves it (`component::window`).
 **Wherever enter means something else, a line is `shift+enter` *and*
 `alt+enter`.** Both, every time: `shift+enter` arrives only from a terminal
 that speaks the kitty keyboard protocol -- `main` pushes its narrowest flag
-for this, and nothing else in Obelus depends on it -- and `alt+enter` arrives
-from the rest, because alt is the escape prefix. A place that took one left
-the other falling through to whatever was underneath, so the pair is taken
-together, and before the modifier check (`component::composer`).
+for this, and nothing else in Obelus depends on it but `ctrl+enter`, which is
+plain enter without it -- and `alt+enter` arrives from the rest, because alt
+is the escape prefix. A place that took one left the other falling through to
+whatever was underneath, so the pair is taken together, and before the
+modifier check (`component::composer`).
 
 **`dispatch` has no wildcard arm** and warns on one, so a new `Command` fails
 to compile until it is handled. Same idea in `theme`: only fields with readers.
@@ -619,11 +620,11 @@ crates/
                       a card, not a picker, enter acts on the row the reader is
                       on, and a question the reader did not start says what it
                       is about (card); a tool call is somewhere to go, the
-                      transcript's cursor stands only on rows that do
-                      something, a run of tool calls is one row, a change that
-                      has happened is the working tree's and one that has not
-                      is the agent's to show, thinking is not folded away, a
-                      call's title is three rows shut (chat); folding is one
+                      transcript has a cursor and it walks the words, tab goes
+                      to what acts, a run of tool calls is one row, a change
+                      that has happened is the working tree's and one that has
+                      not is the agent's to show, thinking is not folded away,
+                      a call's title is three rows shut (chat); folding is one
                       act and the notes are the fourth place it happens, a note
                       somebody else is talking about is read here and not
                       changed, and a box is the reader's once they have put
@@ -728,7 +729,7 @@ crates/
                       there is nothing to own, so a terminal offers Obelus's
                       own shape too (native)
   obelus-cli/       the `ob` binary: Obelus drawn on a terminal
-                    · one key needed the terminal's permission, and nothing
+                    · two keys need the terminal's permission, and nothing
                       else depends on the protocol (main)
   obelus-gui/       the `obg` binary, and the window: what a screenful of
                     cells becomes when it is not a terminal -- the grid on

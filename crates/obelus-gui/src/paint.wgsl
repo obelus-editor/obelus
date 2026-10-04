@@ -479,7 +479,7 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
     // the page casts from its one free edge, which is the same half
     // plane `outside` gives its glass; a box joined to nothing casts
     // from all four, round its corners.
-    if ((in.flags & 8192u) != 0u) {
+    if ((in.flags & 8388608u) != 0u) {
         let half = (in.box.zw - in.box.xy) * 0.5;
         let middle = in.position.xy - (in.box.xy + half);
         var joined = 0.0;

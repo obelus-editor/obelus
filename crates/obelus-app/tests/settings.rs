@@ -3753,10 +3753,11 @@ fn what_a_project_may_not_set_is_marked_on_the_projects_file() {
 /// detail to two rows unless it is told otherwise, and those are Obelus's
 /// own words cut off half-way.
 ///
-/// Broken deliberately four ways: the choices with no detail, which
+/// Broken deliberately five ways: the choices with no detail, which
 /// leaves neither on screen; the list not wrapping, which leaves one row of
-/// each; the list without `details_whole`, which loses the last words; and
-/// the list at the ordinary height, which leaves `Feature branch` off it.
+/// each; the list without `details_whole`, which loses the last words;
+/// the list at the ordinary height, which leaves `Feature branch` off it;
+/// and at twice that, which leaves `No workflow` off the top.
 #[test]
 fn each_workflow_says_what_it_does_where_it_is_chosen() {
     let _turn = SETTINGS
@@ -3767,8 +3768,8 @@ fn each_workflow_says_what_it_does_where_it_is_chosen() {
     support::type_text(&mut app, "workflow");
     support::press(&mut app, KeyCode::Enter);
     assert!(app.picker().is_some(), "the workflows did not open");
-    // Sixty columns, where the two together are taller than an ordinary
-    // compact list: it draws a choice whole or not at all, so the second
+    // Sixty columns, where the three together are taller than an ordinary
+    // compact list: it draws a choice whole or not at all, so one of them
     // would be a blank.
     let dump = support::render(&mut app, 60, 36);
     // The rows joined, because at this width a sentence breaks wherever
@@ -3783,7 +3784,10 @@ fn each_workflow_says_what_it_does_where_it_is_chosen() {
         "straight in the checkout you are reading.",
         "The agent works on a branch",
         "taken away only when you say so.",
+        "The agent changes the checkout you are reading",
+        "until you say so.",
         "No workflow",
+        "In place",
         "Feature branch",
     ] {
         assert!(text.contains(said), "{said:?} is not on the list:\n{dump}");
@@ -3840,13 +3844,14 @@ fn a_workflow_is_called_by_its_title_and_written_by_its_name() {
     support::press(&mut app, KeyCode::Enter);
     let picker = app.picker().expect("the workflows did not open");
     let labels: Vec<String> = picker.matches().map(|item| item.label.clone()).collect();
-    assert_eq!(labels, ["No workflow", "Feature branch"]);
+    assert_eq!(labels, ["No workflow", "In place", "Feature branch"]);
     assert_eq!(
         picker.selected_item().map(|item| item.label.as_str()),
         Some("Feature branch"),
         "the list did not open on the one in force"
     );
 
+    support::press(&mut app, KeyCode::Up);
     support::press(&mut app, KeyCode::Up);
     support::press(&mut app, KeyCode::Enter);
     assert!(app.picker().is_none(), "choosing did not close the list");

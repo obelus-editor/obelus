@@ -835,6 +835,259 @@ fn what_was_waiting_goes_as_one_prompt() {
     );
 }
 
+/// `ctrl+enter` into a running turn stops it and says what was waiting,
+/// with the box behind it: escape and then enter, in one press.
+///
+/// Through the queue and not past it -- nothing goes until the stop has
+/// ended the turn here, which is zed's order too -- and what was waiting
+/// stays on the page as the rows it was, rather than going back into the
+/// box the way escape puts it.
+///
+/// Broken deliberately three ways: dropping the `stop_the_turn` from
+/// `send_now` leaves `/forever` running with both rows waiting behind it,
+/// and `blocks=` never arrives; sending the box with `say_in` instead of
+/// `will_say` puts it out ahead of the stop, so it is not among what is
+/// waiting when the key returns; and `interrupt_agent` in place of
+/// `send_now`'s own stop puts the waiting row back into the box, which is
+/// then neither empty nor sent.
+#[test]
+fn ctrl_enter_stops_the_turn_and_says_what_was_waiting_at_once() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/forever");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to start thinking", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+    support::type_text(&mut app, "/blocks");
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "and this");
+
+    support::press_control_key(&mut app, KeyCode::Enter);
+    let words = |said: &str| vec![obelus_component::composer::Part::Words(said.to_string())];
+    assert_eq!(
+        app.chat().map(|chat| chat.unsent()),
+        Some(vec![words("/blocks"), words("and this")]),
+        "the box did not join what was waiting, behind it"
+    );
+    assert_eq!(
+        app.chat().map(|chat| chat.writing().text()),
+        Some(String::new()),
+        "what was typed is still in the box"
+    );
+
+    pump(&mut app, &events, "the answer to what was waiting", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text().contains("blocks="))
+        })
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Stopped"),
+        "the turn it was typed into was not stopped:
+{text}"
+    );
+    assert_eq!(
+        app.chat().map(|chat| chat.unsent()),
+        Some(Vec::new()),
+        "something is still waiting"
+    );
+}
+
+/// `ctrl+enter` on a question does nothing: the box it sends from is under
+/// the card, and stopping the turn from under the question leaves it up
+/// with nobody waiting for its answer.
+///
+/// Broken deliberately by taking the arm that swallows it out of
+/// `Card::handle_key`: the key reaches the box, the turn is stopped, and
+/// what was waiting goes.
+#[test]
+fn ctrl_enter_on_a_question_does_nothing() {
+    let (mut app, events) = talking();
+    support::type_text(&mut app, "what is this file");
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "and this");
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        &events,
+        "the permission request",
+        App::is_asking_permission,
+    );
+    assert_eq!(
+        app.chat().map(|chat| chat.unsent().len()),
+        Some(1),
+        "nothing is waiting"
+    );
+
+    support::press_control_key(&mut app, KeyCode::Enter);
+    settle(&mut app, &events, Duration::from_millis(300));
+    assert!(app.is_asking_permission(), "the question went");
+    assert_eq!(
+        app.talking(),
+        obelus_agent::Talking::Thinking,
+        "the turn was stopped from under the question"
+    );
+    assert_eq!(
+        app.chat().map(|chat| chat.unsent().len()),
+        Some(1),
+        "what was waiting went"
+    );
+}
+
+/// A box of blanks is nothing to say: `ctrl+enter` sends what was waiting
+/// and adds no empty row of the reader's behind it.
+///
+/// Broken deliberately by sending the box whatever it holds: a row of two
+/// blanks joins what is waiting.
+#[test]
+fn ctrl_enter_on_a_box_of_blanks_sends_only_what_was_waiting() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/forever");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to start thinking", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+    support::type_text(&mut app, "/blocks");
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "  ");
+
+    support::press_control_key(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.chat().map(|chat| chat.unsent()),
+        Some(vec![vec![obelus_component::composer::Part::Words(
+            "/blocks".to_string()
+        )]]),
+        "the blanks joined what was waiting"
+    );
+}
+
+/// With nothing running, `ctrl+enter` is enter: there is no turn to stop,
+/// and the words go.
+///
+/// Broken deliberately by answering `(false, false)` with `Consumed` in
+/// `Chat::handle_key`: the key does nothing, and the words stay in the box.
+#[test]
+fn ctrl_enter_with_nothing_running_sends() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/blocks");
+    support::press_control_key(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text().contains("blocks="))
+        })
+    });
+    assert_eq!(
+        app.chat().map(|chat| chat.writing().text()),
+        Some(String::new()),
+        "the words are still in the box"
+    );
+}
+
+/// The box offers `ctrl+enter` on a row of its own under the words, while
+/// a turn is running and there is something it would send -- and only
+/// then. The words keep the row they were on, and the caret with them.
+///
+/// Broken deliberately by offering it whenever a turn is running: it is
+/// there over an empty box, beside a turn there is nothing to say into.
+/// By asking only the box: once the words have gone to wait, the row stops
+/// offering the key that would send them. And by leaving `words_band` out
+/// of `ChatView::caret`: the caret goes down onto the offer.
+#[test]
+fn the_box_offers_to_send_now_only_with_something_to_send() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/forever");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to start thinking", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+    // The row the offer is on, and where the caret is.
+    let offer = |app: &mut App| {
+        let dump = support::render(app, WIDTH, HEIGHT);
+        let offered = rows(&dump)
+            .iter()
+            .position(|row| row.contains("Sends it now"));
+        (
+            offered,
+            support::cursor_line(&dump).to_string(),
+            dump.clone(),
+        )
+    };
+    let (offered, _, dump) = offer(&mut app);
+    assert_eq!(offered, None, "offered over an empty box:\n{dump}");
+
+    // More lines than the box has rows, so it scrolls: the last of them
+    // is the caret's, and is above the offer rather than under it.
+    for line in 1..=8 {
+        if line > 1 {
+            support::press_alt_key(&mut app, KeyCode::Enter);
+        }
+        support::type_text(&mut app, &format!("line {line}"));
+    }
+    let (offered, cursor, dump) = offer(&mut app);
+    let offered = offered.unwrap_or_else(|| panic!("not offered with words in the box:\n{dump}"));
+    let words = rows(&dump)
+        .iter()
+        .position(|row| row.contains("line 8"))
+        .unwrap_or_else(|| panic!("the last line is not in the box:\n{dump}"));
+    assert_eq!(
+        offered,
+        words + 1,
+        "not on the row under the words:\n{dump}"
+    );
+    assert!(
+        cursor.ends_with(&format!(",{words}")),
+        "the caret is not on the words' row ({cursor}):\n{dump}"
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    let (offered, _, dump) = offer(&mut app);
+    assert!(
+        offered.is_some(),
+        "not offered with something waiting and the box empty:\n{dump}"
+    );
+}
+
+/// A terminal that sends `ctrl+enter` as enter is not offered it: the key
+/// would queue, and the offer would be a lie about the one thing it says.
+///
+/// Broken deliberately by leaving `ctrl_enter_arrives` out of what `prepare`
+/// tells the chat: the row is there for a key that cannot arrive.
+#[test]
+fn a_terminal_that_sends_ctrl_enter_as_enter_is_not_offered_it() {
+    let (mut app, events) = talking();
+    app.ctrl_enter_arrives(false);
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/forever");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to start thinking", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+    support::type_text(&mut app, "and this");
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        !dump.contains("Sends it now"),
+        "offered a key the terminal cannot send:\n{dump}"
+    );
+}
+
 /// Enter on something the reader said that has not gone takes it back.
 ///
 /// The one row in a transcript whose key hands something back rather than
@@ -873,7 +1126,7 @@ fn enter_on_something_not_yet_sent_takes_it_back() {
     // out: this is the one row in a transcript that hands something back.
     let text = screen(&mut app);
     assert!(
-        text.contains("Enter takes it back"),
+        text.contains("Enter  Takes it back"),
         "the row says nothing about the key standing on it:\n{text}"
     );
     support::press(&mut app, KeyCode::Enter);
@@ -924,7 +1177,7 @@ fn enter_on_something_already_said_copies_it_to_the_box() {
     support::press(&mut app, KeyCode::Up);
     let text = screen(&mut app);
     assert!(
-        text.contains("Enter copies it to the box"),
+        text.contains("Enter  Copies it to the box"),
         "the row says nothing about the key standing on it:\n{text}"
     );
     support::press(&mut app, KeyCode::Enter);
@@ -1481,6 +1734,30 @@ fn escape_shuts_the_list_of_commands_and_leaves_the_words() {
         app.slash().is_some(),
         "the list never came back:\n{}",
         screen(&mut app)
+    );
+}
+
+/// `ctrl+enter` with the list of commands up settles the name, the way
+/// enter does: a half-typed name is nothing to send, and while a turn runs
+/// sending it would stop the turn for nothing.
+///
+/// Broken deliberately by taking `sending_now` out of `slash_key`: the key
+/// sends `/c` as it stands, and the box is empty.
+#[test]
+fn ctrl_enter_on_the_list_of_commands_chooses_from_it() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the commands", |app| {
+        !app.agent_orders().is_empty()
+    });
+    support::type_text(&mut app, "/c");
+    let _ = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(app.slash().is_some(), "no list while a name is typed");
+
+    support::press_control_key(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.chat().expect("the chat").writing().text(),
+        "/compact ",
+        "the name was not settled from the list"
     );
 }
 
@@ -3382,7 +3659,7 @@ fn what_is_happening_is_in_the_transcript_and_not_in_the_header() {
         .position(|row| row.contains("Thinking\u{2026}"))
         .unwrap_or_else(|| panic!("nothing says it is working:\n{dump}"));
     assert!(
-        shown[doing].contains("Esc stops it"),
+        shown[doing].contains("Esc  Stops it"),
         "how to stop it is not beside the thing it stops:\n{dump}"
     );
 
@@ -5560,7 +5837,7 @@ fn what_the_agent_means_to_do_is_one_row_that_opens() {
     assert_eq!(
         screen
             .iter()
-            .filter(|row| row.contains("Esc stops it"))
+            .filter(|row| row.contains("Esc  Stops it"))
             .count(),
         1,
         "the hint is on more than the row it is about:\n{dump}"
@@ -6956,6 +7233,111 @@ fn the_pointer_takes_hold_of_what_was_said() {
     assert_eq!(text, "heard", "the copy is not what was dragged across");
 }
 
+/// A drag can start on a blank of the transcript, as well as on words.
+///
+/// The rows between what was said, and the band under the last of it, are
+/// where a reader's pointer is when they mean "from here": the start of an
+/// answer is easiest to catch from the blank above it, the end of one from
+/// the empty screen below it. A press on either let go of everything and
+/// took hold of nothing, so the drag after it selected nothing at all.
+///
+/// Broken deliberately two ways, each failing its own half: handing back
+/// only what `spot_at` finds on the row under the pointer, which is what it
+/// did, and the blank comes out as the empty message in the box rather
+/// than a selection; and answering nothing past the last row, which does
+/// the same to the press under the transcript. And by letting the hold
+/// be on the button coming up, which leaves the click holding something;
+/// or letting go of every hold there, which takes the drags' copies too.
+#[test]
+fn a_drag_starts_on_a_blank_of_the_transcript() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/echo");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH - 5)
+                .iter()
+                .any(|row| row.text().contains("heard you"))
+        })
+    });
+
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let at = row_of(&dump, "heard you");
+    let start = support::column_of(rows(&dump)[usize::from(at)], "heard you");
+    let Ok(start) = u16::try_from(start) else {
+        panic!("the answer is off the screen:\n{dump}");
+    };
+    let above = at - 1;
+    assert!(
+        rows(&dump)[usize::from(above)]
+            .split_once('|')
+            .is_some_and(|(_, row)| row.trim().is_empty()),
+        "the row above the answer is not a blank:\n{dump}"
+    );
+    // Well below anything said, and above the box.
+    let below = row_of(&dump, "Thinking") + 3;
+    assert!(
+        rows(&dump)[usize::from(below)]
+            .split_once('|')
+            .is_some_and(|(_, row)| row.trim().is_empty()),
+        "the row below the transcript is not empty:\n{dump}"
+    );
+    let drag = |app: &mut App, from: (u16, u16), to: (u16, u16)| {
+        app.handle(Event::Pointer {
+            kind: obelus_app::event::Pointer::Pressed,
+            x: from.0,
+            y: from.1,
+        });
+        app.handle(Event::Pointer {
+            kind: obelus_app::event::Pointer::Dragged,
+            x: to.0,
+            y: to.1,
+        });
+        app.handle(Event::Pointer {
+            kind: obelus_app::event::Pointer::Released,
+            x: to.0,
+            y: to.1,
+        });
+        app.chat().expect("a conversation").copied(WIDTH - 5)
+    };
+
+    // Down from the blank above the answer, across its first word.
+    let (text, what) = drag(&mut app, (start, above), (start + 5, at));
+    assert_eq!(
+        what, "selection",
+        "a press on the blank took hold of nothing"
+    );
+    assert_eq!(text, "heard", "the copy is not what was dragged across");
+
+    // Up from the empty screen under it, to the start of the answer.
+    let (text, what) = drag(&mut app, (start, below), (start, at));
+    assert_eq!(
+        what, "selection",
+        "a press under the transcript took hold of nothing"
+    );
+    assert_eq!(text, "heard you", "the copy is not what was dragged across");
+
+    // And a press there that never became a drag holds nothing, which
+    // escape and a shifted arrow would otherwise go on finding.
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: start,
+        y: below,
+    });
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Released,
+        x: start,
+        y: below,
+    });
+    assert!(
+        !app.chat().expect("a conversation").holding(),
+        "a click on the empty screen left an empty hold behind"
+    );
+}
+
 /// A transcript scrolled away from its end says how to get back, and what
 /// arrived while the reader was not looking.
 ///
@@ -6986,7 +7368,7 @@ fn a_transcript_scrolled_up_says_how_to_get_back() {
     // At the end, which is where it sits: nothing to say.
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     assert!(
-        !rows(&dump).iter().any(|row| row.contains("ctrl+end")),
+        !rows(&dump).iter().any(|row| row.contains("Ctrl+End")),
         "a conversation nobody has scrolled offers a way back:\n{dump}"
     );
 
@@ -7024,7 +7406,7 @@ fn a_transcript_scrolled_up_says_how_to_get_back() {
     support::press_control_key(&mut app, KeyCode::End);
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     assert!(
-        !rows(&dump).iter().any(|row| row.contains("ctrl+end")),
+        !rows(&dump).iter().any(|row| row.contains("Ctrl+End")),
         "the way back is still offered at the end:\n{dump}"
     );
 }
@@ -8523,6 +8905,23 @@ fn a_conversation_another_obelus_has_open_is_not_opened_again() {
             .is_some_and(|status| status.contains("Talked about in another window")),
         "the status row does not say the note is talked about elsewhere:\n{dump}"
     );
+    // The lock, and not the mark that says the key takes a conversation up
+    // here: the other window may be on another checkout or another agent,
+    // and then this one has nothing to take up. Broken deliberately by
+    // drawing that mark for `Talked::Elsewhere` again.
+    let (lock, here) = match obelus_icons::enabled() {
+        true => (obelus_icons::ui::ELSEWHERE, obelus_icons::ui::AGENT),
+        false => ('-', '*'),
+    };
+    let marks = text
+        .lines()
+        .find_map(|line| line.split_once("somebody else has this"))
+        .map(|(before, _)| before)
+        .unwrap_or_default();
+    assert!(
+        marks.contains(lock) && !marks.contains(here),
+        "a note somebody else is talking about is marked as talked about here:\n{dump}"
+    );
 
     // Given up, it is the reader's again: they closed it in the other
     // window and this one does not have to be restarted. Heard rather than
@@ -9546,11 +9945,15 @@ fn another_checkouts_conversations_are_listed_and_cannot_be_taken_up() {
         Vec::new(),
     );
     remember_a_conversation(&scratch, "fake", "s-here", "here", Some(2_000));
+    // There, because a conversation from a checkout that has gone is not
+    // read at all.
+    let there = scratch.path().join("worktree-two");
+    std::fs::create_dir_all(&there).expect("the other checkout");
     obelus_agent::acp::sessions::change(scratch.path(), None, |remembered| {
         remembered.put(
             &obelus_agent::chats::ChatId::Loose("s-there".to_string()),
             "fake",
-            &scratch.path().join("worktree-two"),
+            &there,
             obelus_agent::acp::sessions::Kept {
                 session: "s-there".to_string(),
                 title: Some("there".to_string()),
@@ -9591,6 +9994,63 @@ fn another_checkouts_conversations_are_listed_and_cannot_be_taken_up() {
     );
 }
 
+/// A conversation had in a checkout that has since gone is not listed.
+///
+/// It can be taken up from nowhere -- the agent keeps it under the directory
+/// it was told -- so its row was a dim line naming somewhere that is not
+/// there, in every other checkout's list, for ever.
+///
+/// Broken deliberately by taking the sweep out of `sessions::read`: the
+/// removed worktree's row is listed, dim.
+#[test]
+fn a_conversation_from_a_checkout_that_has_gone_is_not_listed() {
+    let scratch = support::Scratch::new("agent-conversation-gone-checkout");
+    let (mut app, _events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    remember_a_conversation(&scratch, "fake", "s-here", "here", Some(2_000));
+    let there = scratch.path().join("worktree-two");
+    std::fs::create_dir_all(&there).expect("the other checkout");
+    obelus_agent::acp::sessions::change(scratch.path(), None, |remembered| {
+        remembered.put(
+            &obelus_agent::chats::ChatId::Loose("s-there".to_string()),
+            "fake",
+            &there,
+            obelus_agent::acp::sessions::Kept {
+                session: "s-there".to_string(),
+                title: Some("there".to_string()),
+                told: None,
+                introduced: false,
+                last: Some(1_000),
+            },
+        );
+    });
+    std::fs::remove_dir_all(&there).expect("the checkout goes");
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
+    let rows: Vec<String> = listed_conversations(&app)
+        .into_iter()
+        .map(|item| item.label.clone())
+        .collect();
+    assert_eq!(
+        rows,
+        ["here".to_string()],
+        "a conversation from a checkout that has gone is listed"
+    );
+    assert!(
+        app.picker()
+            .and_then(|picker| picker.what_about())
+            .is_none_or(|said| !said.contains("checkout it was had in")),
+        "the list says why rows cannot be chosen when none is there"
+    );
+}
+
 /// A note's conversation from another checkout is not asked for here, and
 /// is still there for the checkout that had it.
 ///
@@ -9611,6 +10071,7 @@ fn a_notes_conversation_from_another_checkout_is_not_asked_for() {
     )
     .expect("the notes");
     let there = scratch.path().join("worktree-two");
+    std::fs::create_dir_all(&there).expect("the other checkout");
     let id = obelus_git::todo::NoteId::read("0123456W").expect("a name");
     obelus_agent::acp::sessions::change(
         scratch.path(),
@@ -11755,5 +12216,233 @@ fn a_loose_conversation_that_comes_back_is_taken_up_once() {
         app.chat_session_for_test().as_deref(),
         Some("s-old"),
         "the old conversation was taken up a second time"
+    );
+}
+
+/// A turn the fake agent answers with "heard you", and the reader back at
+/// the box once it has.
+fn answered() -> (App, Receiver<Event>) {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the settings", |app| {
+        !app.agent_settings().is_empty()
+    });
+    support::type_text(&mut app, "/echo");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+            && app.chat().is_some_and(|chat| {
+                chat.rows(WIDTH)
+                    .iter()
+                    .any(|row| row.text().contains("heard you"))
+            })
+    });
+    (app, events)
+}
+
+/// Presses `past` cells into the first place `needle` is drawn.
+fn press_on(app: &mut App, needle: &str, past: usize) {
+    let dump = support::render(app, WIDTH, HEIGHT);
+    let y = row_of(&dump, needle);
+    let x = support::column_of(rows(&dump)[usize::from(y)], needle) + past;
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x: u16::try_from(x).expect("a column"),
+        y,
+    });
+}
+
+/// A press in the box gives it the keys, from wherever they were.
+///
+/// The keys are in one of three places in a conversation -- the
+/// transcript, the box, the row of settings -- and a press in the box
+/// moved its caret and left the keys where they were: the caret was put
+/// where nothing typed would go, and the arrows went on walking the
+/// transcript.
+///
+/// And back through the door the keys use, which remembers the column the
+/// cursor left the transcript at, so up from the box goes back to it.
+///
+/// Broken deliberately by taking `stand_in_the_box` out of the press, which
+/// leaves the keys on the row and then in the transcript; and by giving the
+/// box the keys without `leave_the_transcript`, which brings up from the
+/// box back to the end of the row.
+#[test]
+fn a_press_in_the_box_takes_the_keys_back() {
+    use obelus_component::chat::Focus;
+
+    let (mut app, _events) = answered();
+    support::type_text(&mut app, "a draft");
+    let focus = |app: &App| app.chat().expect("the chat").focus();
+
+    // The row first: down reaches it only while the transcript is at its
+    // end, and a walk up the transcript is free to leave it elsewhere.
+    support::press(&mut app, KeyCode::Down);
+    assert_eq!(
+        focus(&app),
+        Focus::Settings(0),
+        "down did not reach the row"
+    );
+    // At the end of the line, where up has nowhere to go in the box and
+    // goes on into the transcript.
+    press_on(&mut app, "a draft", 7);
+    assert_eq!(
+        focus(&app),
+        Focus::Writing,
+        "a press in the box left the keys on the row of settings"
+    );
+
+    support::press(&mut app, KeyCode::Up);
+    assert!(
+        matches!(focus(&app), Focus::Transcript(_)),
+        "up did not reach the transcript"
+    );
+    // Off the end of the row, which is where up from the box would put it
+    // if nothing were remembered.
+    support::press(&mut app, KeyCode::Left);
+    support::press(&mut app, KeyCode::Left);
+    let Focus::Transcript(left) = focus(&app) else {
+        panic!("left took the keys out of the transcript");
+    };
+    // Somewhere else in the box: a second press on the same cell is a
+    // double click, which holds the word under it.
+    press_on(&mut app, "a draft", 3);
+    assert_eq!(
+        focus(&app),
+        Focus::Writing,
+        "a press in the box left the keys in the transcript"
+    );
+
+    // From the end of the line again, so up leaves the box.
+    support::press(&mut app, KeyCode::End);
+    support::press(&mut app, KeyCode::Up);
+    let Focus::Transcript(back) = focus(&app) else {
+        panic!("up did not reach the transcript again");
+    };
+    assert_eq!(
+        back.character, left.character,
+        "up from the box forgot the column the press took the keys from"
+    );
+}
+
+/// A press in the transcript puts the cursor where it landed.
+///
+/// It took hold of the words there and left the keys in the box, so the
+/// arrows after it moved a caret the reader had just pointed away from.
+///
+/// And a drag carries it, so the keys are where the selection's far end
+/// is, the way a shift-motion leaves them.
+///
+/// Broken deliberately by taking `stand_in_transcript` out of the press,
+/// which leaves the keys in the box; by putting the cursor at the start of
+/// the row, which lands it on "heard" rather than "you"; and by moving it
+/// for a press alone, which leaves it on "heard" where the drag began.
+#[test]
+fn a_press_in_the_transcript_puts_the_cursor_where_it_landed() {
+    use obelus_component::chat::Focus;
+
+    let (mut app, _events) = answered();
+    press_on(&mut app, "heard", 0);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let y = row_of(&dump, "heard you");
+    let x = support::column_of(rows(&dump)[usize::from(y)], "you");
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Dragged,
+        x: u16::try_from(x).expect("a column"),
+        y,
+    });
+
+    let chat = app.chat().expect("the chat");
+    let Focus::Transcript(place) = chat.focus() else {
+        panic!("the press left the keys at {:?}", chat.focus());
+    };
+    let width = obelus_ui::chat::reading_width(app.editor_area_for_test());
+    let from: String = chat.rows(width)[place.row]
+        .text()
+        .chars()
+        .skip(place.character)
+        .collect();
+    assert!(
+        from.starts_with("you"),
+        "the cursor is not where the press landed, but before {from:?}"
+    );
+}
+
+/// A drag in the box leaves the keys in the box, however long it is held.
+///
+/// The box is under the transcript's band, so a drag in it is a drag held
+/// past the band's bottom edge, and every tick carries it on against that
+/// edge -- a drag on the transcript's last row. Which put the cursor there:
+/// a reader selecting a word of their own message and holding still for a
+/// moment found enter acting on a row of the transcript instead of sending.
+///
+/// Broken deliberately by letting every drag in the transcript move the
+/// cursor, which is what it did.
+#[test]
+fn a_drag_in_the_box_keeps_the_keys_there() {
+    use obelus_component::chat::Focus;
+
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // Rows enough to fill the band, so the edge has a row of transcript
+    // against it.
+    support::type_text(&mut app, "/filler");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "something to fill the band", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+            && app
+                .chat()
+                .is_some_and(|chat| chat.rows(WIDTH).len() > usize::from(HEIGHT))
+    });
+    support::type_text(&mut app, "a draft");
+    // Up from the end, with the wheel, which leaves the keys in the box: at
+    // the end, the tick's scroll carries the window past the last row and
+    // the drag it hands on lands on nothing.
+    app.handle(Event::Scroll(-9));
+
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let y = row_of(&dump, "a draft");
+    let x = u16::try_from(support::column_of(rows(&dump)[usize::from(y)], "a draft"))
+        .expect("a column");
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x,
+        y,
+    });
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Dragged,
+        x: x + 5,
+        y,
+    });
+    app.handle(Event::Tick);
+    assert_eq!(
+        app.chat().expect("the chat").focus(),
+        Focus::Writing,
+        "a drag held in the box took the keys into the transcript"
+    );
+}
+
+/// A press in the transcript while a card is up leaves the cursor alone.
+///
+/// The card has the keys, and a cursor moved under it would be found in
+/// the transcript once it was answered -- with the reader's next keys going
+/// somewhere they had not pointed since.
+///
+/// Broken deliberately by moving the cursor whether a card is up or not.
+#[test]
+fn a_press_in_the_transcript_under_a_card_leaves_the_keys_alone() {
+    use obelus_component::chat::Focus;
+
+    let (mut app, events) = answered();
+    support::type_text(&mut app, "/twice");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", App::is_asking_permission);
+
+    press_on(&mut app, "heard you", 6);
+    assert_eq!(
+        app.chat().expect("the chat").focus(),
+        Focus::Writing,
+        "a press under a card moved the cursor into the transcript"
     );
 }

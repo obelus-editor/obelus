@@ -466,9 +466,10 @@ impl App {
             .collect();
         // Taller for the workflows, whose choices are a few rows each: the
         // list only ever draws a choice whole, so at the ordinary height the
-        // second of two left a blank where it should have been.
+        // second of two left a blank where it should have been, and the
+        // first of three went off the top.
         let rows = match key {
-            "workflow" => COMPACT_ROWS * 2,
+            "workflow" => COMPACT_ROWS * 3,
             _ => COMPACT_ROWS,
         };
         let mut picker = Picker::new(items, PickerLayout::Compact { rows });

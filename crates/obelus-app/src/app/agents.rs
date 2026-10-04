@@ -320,6 +320,16 @@ impl App {
         self.agents.images = images;
     }
 
+    /// Says whether `ctrl+enter` arrives as itself, for a terminal that
+    /// was asked and said no.
+    ///
+    /// From `main`, for the reason [`Self::use_images`] is: asking means
+    /// writing to the terminal and reading the answer before the alternate
+    /// screen. Nothing else asks, so a window and a test have it.
+    pub const fn ctrl_enter_arrives(&mut self, arrives: bool) {
+        self.ctrl_enter_arrives = arrives;
+    }
+
     /// Says what is drawing Obelus, so that it can be told the settings it
     /// is the only one that can act on.
     ///

@@ -55,12 +55,14 @@ pub fn enabled() -> bool {
     NERD_FONT.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// The glyphs for keys, for whatever shows a binding.
+/// The glyphs for the modifiers, for whatever shows a binding.
 ///
-/// The win here is the *words*: `pagedown` is eight columns and one glyph,
-/// and a column of keys is right-aligned, so those columns come off the
-/// width of everything else on the row. The arrow keys are left as arrows --
-/// they are already symbols, and they are in every font.
+/// Only these three. The keys that are words had glyphs too, and a chord
+/// of two pictures -- `End` as a bar with an arrow at it, behind the one
+/// for control -- was a chord nobody could read; the words are what is on
+/// the keyboard. A modifier is printed as its picture on most of them, and
+/// is the part of a chord that repeats down a column of keys, so it is
+/// where a glyph saves columns and costs nothing to read.
 pub mod key {
     /// `ctrl`.
     pub const CONTROL: char = '\u{f0634}';
@@ -68,47 +70,6 @@ pub mod key {
     pub const ALT: char = '\u{f0635}';
     /// `shift`.
     pub const SHIFT: char = '\u{f0636}';
-    /// `enter`.
-    pub const ENTER: char = '\u{f0311}';
-    /// `esc`.
-    pub const ESCAPE: char = '\u{f12b7}';
-    /// `backspace`.
-    pub const BACKSPACE: char = '\u{f030d}';
-    /// `delete`.
-    ///
-    /// Ordinary Unicode -- "erase to the right" -- because a Nerd Font has
-    /// no key glyph for this one, and the symbol on the keycap is exactly
-    /// this character.
-    pub const DELETE: char = '\u{2326}';
-    /// `tab`.
-    pub const TAB: char = '\u{f0312}';
-    /// `space`.
-    pub const SPACE: char = '\u{f1050}';
-    /// `pageup`.
-    pub const PAGE_UP: char = '\u{f013f}';
-    /// `pagedown`.
-    pub const PAGE_DOWN: char = '\u{f013c}';
-    /// `home`.
-    pub const HOME: char = '\u{f0600}';
-    /// `end`.
-    pub const END: char = '\u{f0601}';
-
-    /// `f1`, and the eleven after it in order.
-    ///
-    /// One keycap glyph each, which is what a function key deserves: the
-    /// twelve of them are the first thing a reader's eye goes to in a list
-    /// of keys, and `f10` spelled out is three columns of text among
-    /// one-column pictures.
-    const FIRST_FUNCTION: u32 = 0xf12ab;
-
-    /// The keycap for a function key, if it is one a keyboard has.
-    #[must_use]
-    pub fn function(number: u8) -> Option<char> {
-        (1..=12)
-            .contains(&number)
-            .then(|| char::from_u32(FIRST_FUNCTION + u32::from(number) - 1))
-            .flatten()
-    }
 }
 
 /// The glyphs the views use for things that are not files.

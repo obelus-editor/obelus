@@ -57,6 +57,7 @@ const WORKFLOW: &str = include_str!("workflow.txt");
 /// the two lists the same list.
 const WORKFLOWS: &[(&str, &str)] = &[
     ("none", include_str!("workflows/none.txt")),
+    ("in-place", include_str!("workflows/in-place.txt")),
     (
         "feature-branch",
         include_str!("workflows/feature-branch.txt"),
@@ -320,7 +321,9 @@ mod tests {
     /// its `----` out of `feature-branch.txt`, which moves every piece up
     /// one and hands the agent nothing, and by taking the line between the
     /// title and the description out of `none.txt`, which runs the two
-    /// together into a title of two lines.
+    /// together into a title of two lines. And by giving `in-place.txt`
+    /// the feature branch's last part, which tells the agent to make a
+    /// worktree.
     #[test]
     fn every_workflow_the_setting_accepts_is_written_here() {
         let accepted = match obelus_config::Setting::named("workflow").map(|setting| setting.kind) {
@@ -344,11 +347,21 @@ mod tests {
             super::read_workflow(super::WORKFLOWS[0].1).2.is_none(),
             "none asks something of the agent"
         );
+        let asked = |name: &str| {
+            let (_, file) = super::WORKFLOWS
+                .iter()
+                .find(|(each, _)| *each == name)
+                .expect("a workflow by that name");
+            super::read_workflow(file).2
+        };
         assert!(
-            super::read_workflow(super::WORKFLOWS[1].1)
-                .2
-                .is_some_and(|asked| asked.contains("git worktree add")),
+            asked("feature-branch").is_some_and(|asked| asked.contains("git worktree add")),
             "feature-branch hands the agent nothing"
+        );
+        assert!(
+            asked("in-place")
+                .is_some_and(|asked| asked.contains("git add") && !asked.contains("worktree")),
+            "in-place does not say to change the checkout itself"
         );
     }
 }
