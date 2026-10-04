@@ -478,6 +478,13 @@ pub struct App {
     listening: Option<obelus_mcp::Listening>,
     /// The agent Obelus is talking to, once something has needed it.
     talker: Option<obelus_agent::acp::Talk>,
+    /// Whether `ctrl+enter` arrives as itself rather than as enter.
+    ///
+    /// A window's keys always do; a terminal's only where it speaks the
+    /// kitty keyboard protocol, which `main` asks before the alternate
+    /// screen. What it decides is whether the box offers to send now: an
+    /// offer of a key that arrives as enter is an offer that queues.
+    ctrl_enter_arrives: bool,
     /// The commands an agent asked to run, while they run.
     ///
     /// On the loop rather than on the connection's thread, because a
@@ -919,6 +926,7 @@ impl App {
             tools_url: None,
             listening: None,
             talker: None,
+            ctrl_enter_arrives: true,
             runs: obelus_agent::running::Runs::default(),
             waiting_on: Vec::new(),
             settled: preferences::Settled::default(),
@@ -2536,7 +2544,11 @@ impl App {
             Talking::Thinking => Some("Thinking\u{2026}"),
             Talking::Nobody | Talking::Idle | Talking::Ready | Talking::Gone => None,
         };
-        self.in_transcript(|chat| chat.doing(doing));
+        let can = self.talking() == Talking::Thinking && self.ctrl_enter_arrives;
+        self.in_transcript(|chat| {
+            chat.doing(doing);
+            chat.can_send_now(can);
+        });
         self.show_what_is_running();
         // Only the animation, which is what the ticker is for. Everything
         // else that once rode this question waits on a clock of its own:

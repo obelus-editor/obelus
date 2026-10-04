@@ -417,10 +417,11 @@ the selection chosen until a key moves it (`component::window`).
 **Wherever enter means something else, a line is `shift+enter` *and*
 `alt+enter`.** Both, every time: `shift+enter` arrives only from a terminal
 that speaks the kitty keyboard protocol -- `main` pushes its narrowest flag
-for this, and nothing else in Obelus depends on it -- and `alt+enter` arrives
-from the rest, because alt is the escape prefix. A place that took one left
-the other falling through to whatever was underneath, so the pair is taken
-together, and before the modifier check (`component::composer`).
+for this, and nothing else in Obelus depends on it but `ctrl+enter`, which is
+plain enter without it -- and `alt+enter` arrives from the rest, because alt
+is the escape prefix. A place that took one left the other falling through to
+whatever was underneath, so the pair is taken together, and before the
+modifier check (`component::composer`).
 
 **`dispatch` has no wildcard arm** and warns on one, so a new `Command` fails
 to compile until it is handled. Same idea in `theme`: only fields with readers.
@@ -728,7 +729,7 @@ crates/
                       there is nothing to own, so a terminal offers Obelus's
                       own shape too (native)
   obelus-cli/       the `ob` binary: Obelus drawn on a terminal
-                    · one key needed the terminal's permission, and nothing
+                    · two keys need the terminal's permission, and nothing
                       else depends on the protocol (main)
   obelus-gui/       the `obg` binary, and the window: what a screenful of
                     cells becomes when it is not a terminal -- the grid on

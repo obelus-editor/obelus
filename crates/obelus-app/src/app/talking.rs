@@ -1715,6 +1715,28 @@ impl App {
         {
             talk.chat.put_back(parts);
         }
+        self.stop_the_turn(id);
+    }
+
+    /// Stops the turn and says what the reader had waiting, with this
+    /// behind it: escape and then enter, in one press.
+    ///
+    /// Through the queue rather than past it, so the prompt goes when the
+    /// turn has ended here and not a moment before -- zed's "send now" is
+    /// the cancellation awaited and *then* the prompt, for the reason
+    /// [`crate::conversation`] gives for queueing at all. What was waiting
+    /// stays on the page as the rows it was, and goes first.
+    pub(super) fn send_now(&mut self, id: DocumentId, parts: &[Part]) {
+        if !parts.is_empty()
+            && let Some(talk) = self.talk_mut(Whose::One(id))
+        {
+            talk.chat.will_say(parts);
+        }
+        self.stop_the_turn(id);
+    }
+
+    /// Tells the agent to stop, and stops what it left running here.
+    fn stop_the_turn(&mut self, id: DocumentId) {
         let running: Vec<String> = self
             .talk(Whose::One(id))
             .map(|talk| talk.chat.commands())
@@ -1919,7 +1941,11 @@ impl App {
         let Some(modifiers) = keymap::modifiers_of(key) else {
             return false;
         };
-        if modifiers != KeyModifiers::NONE {
+        // And `ctrl+enter`, which is enter with the turn stopped first:
+        // the name is not settled yet, so there is nothing to send, and a
+        // half-typed one sent to the agent would stop its turn for nothing.
+        let sending_now = key.code == KeyCode::Enter && modifiers == KeyModifiers::CONTROL;
+        if modifiers != KeyModifiers::NONE && !sending_now {
             return false;
         }
         match key.code {
@@ -2046,6 +2072,12 @@ impl App {
             ChatOutcome::Interrupt => {
                 if let Some(id) = self.current {
                     self.interrupt_agent(id);
+                }
+                true
+            }
+            ChatOutcome::SendNow(parts) => {
+                if let Some(id) = self.current {
+                    self.send_now(id, &parts);
                 }
                 true
             }

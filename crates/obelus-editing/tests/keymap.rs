@@ -167,12 +167,14 @@ fn a_modifier_obelus_does_not_know_disqualifies_the_key() {
 }
 
 /// Both ways of writing a chord. With glyphs the modifiers stop being
-/// prefixes and a key that is a word becomes one column, which is the point:
-/// `Ctrl+PageDown` is thirteen columns of a right-aligned key column, and
-/// every one of them comes off the room the description has.
+/// prefixes and become their glyph; the key itself is its word either way,
+/// because `Ctrl+End` drawn as two pictures was a chord nobody could read.
 ///
 /// A key that is a word is written the way keys are written everywhere;
 /// a letter is left alone, because a shifted letter *is* the capital.
+///
+/// Broken deliberately by putting the `End` and `F10` glyphs back: the key
+/// is a picture again and the two `label_in(true)` below are not words.
 #[test]
 fn a_chord_is_written_with_glyphs_or_spelled_out() {
     let control_f = control('f');
@@ -193,32 +195,19 @@ fn a_chord_is_written_with_glyphs_or_spelled_out() {
     assert_eq!(page.label_in(false), "Ctrl+PageDown");
     assert_eq!(
         page.label_in(true),
-        format!(
-            "{} {}",
-            obelus_icons::key::CONTROL,
-            obelus_icons::key::PAGE_DOWN
-        )
+        format!("{} PageDown", obelus_icons::key::CONTROL)
     );
-    // Which is the whole argument for the glyphs: five columns instead of
-    // thirteen.
-    assert!(page.label_in(true).chars().count() < page.label_in(false).chars().count());
+    let end = KeyChord::new(KeyCode::End, KeyModifiers::CONTROL);
+    assert_eq!(
+        end.label_in(true),
+        format!("{} End", obelus_icons::key::CONTROL),
+        "the key under the modifier is a picture"
+    );
 
-    // A function key has a keycap of its own, which is one column where
-    // `f10` is three -- and the twelve of them are the first keys a reader
-    // looks for.
+    // And a function key is its name, glyphs or not.
     let function = obelus_editing::keymap::function(10);
     assert_eq!(function.label_in(false), "F10");
-    assert_eq!(
-        function.label_in(true),
-        obelus_icons::key::function(10)
-            .expect("a keycap")
-            .to_string()
-    );
-    assert_eq!(
-        obelus_icons::key::function(13),
-        None,
-        "a keycap was invented for a key most keyboards do not have"
-    );
+    assert_eq!(function.label_in(true), "F10");
     // Which still reads back as itself, and so does the way it used to be
     // written: the file is written in the spelled form, a reader types it
     // by hand, and a settings file from before this was capitalised is

@@ -37,6 +37,7 @@
 
 use std::path::Path;
 
+use crossterm::event::{KeyCode, KeyModifiers};
 use obelus_agent::{Talking, acp};
 use obelus_component::{
     card::Card,
@@ -195,7 +196,26 @@ const fn most_for_a_card(area: Rect) -> u16 {
 pub fn bands(area: Rect, chat: &Chat, card: Option<&Card>) -> Regions {
     match card {
         Some(card) => bands_for(area, card),
-        None => regions(area, chat.writing().rows(writing_width(area)).len()),
+        None => regions(area, box_rows(area, chat)),
+    }
+}
+
+/// The rows the box takes: what is written in it, and under that the row
+/// offering to send it now, while that would do something.
+fn box_rows(area: Rect, chat: &Chat) -> usize {
+    chat.writing().rows(writing_width(area)).len() + usize::from(chat.offers_sending_now())
+}
+
+/// The rows of the box the words have: all of it but the row offering to
+/// send now, where there is room for both.
+///
+/// Asked by the drawing, the caret and a click alike, so the words are
+/// where all three say they are.
+fn words_band(writing: Rect, chat: &Chat) -> Rect {
+    let offered = chat.offers_sending_now() && writing.height > 1;
+    Rect {
+        height: writing.height - u16::from(offered),
+        ..writing
     }
 }
 
@@ -215,6 +235,10 @@ pub fn bands_for(area: Rect, card: &Card) -> Regions {
 pub fn regions(area: Rect, needed: usize) -> Regions {
     regions_capped(area, needed, MOST_WRITING)
 }
+
+/// A piece of what a row says about itself, after its words: the gap
+/// before it, what it says, its colour, and the keys it is made of.
+type Tail = (u16, String, Style, Vec<(String, &'static str)>);
 
 /// The blanks between a key and the word for what it does.
 const GAP_IN_A_HINT: usize = 2;
@@ -258,6 +282,32 @@ fn joined(hints: &[(String, &'static str)]) -> Option<String> {
                 .join(&" ".repeat(GAP_BETWEEN_HINTS)),
         ),
     }
+}
+
+/// Says which cells of a row of keys written at `at` are the keys.
+///
+/// Nothing is written: the run `joined` made is the whole of what a
+/// terminal draws, and this says what shape a window may draw round part
+/// of it -- the same cap the foot's keys wear.
+fn cap_the_keys(at: u16, y: u16, hints: &[(String, &'static str)], theme: &Theme) {
+    for (along, (keys, _)) in where_the_keys_are(hints).into_iter().zip(hints) {
+        if let Ok(x) = u16::try_from(usize::from(at) + along) {
+            crate::cap_around(
+                x,
+                y,
+                keys,
+                text_width(keys),
+                theme.background,
+                theme.background,
+                theme.gutter,
+            );
+        }
+    }
+}
+
+/// A key as it is written.
+fn chord(code: KeyCode, modifiers: KeyModifiers) -> String {
+    obelus_editing::keymap::KeyChord::new(code, modifiers).label()
 }
 
 /// The same, for a foot of the region with a cap of its own.
@@ -591,16 +641,14 @@ impl<'a> ChatView<'a> {
             Focus::Settings(_) => return None,
         }
         let width = writing_width(area);
-        let rows = chat.writing().rows(width);
-        let regions = regions(area, rows.len());
+        let writing = words_band(regions(area, box_rows(area, chat)).writing, chat);
         let (row, cell) = chat.writing().caret(width);
         // A box scrolled to keep the caret in it: what is drawn starts at
         // the same row the caret arithmetic starts at.
-        let first = row.saturating_sub(usize::from(regions.writing.height).saturating_sub(1));
-        let y = regions.writing.y + u16::try_from(row - first).unwrap_or(0);
-        (y < regions.writing.bottom()).then(|| ratatui::layout::Position {
-            x: (regions.writing.x + MARGIN + INDENT + cell.get())
-                .min(regions.writing.right().saturating_sub(1)),
+        let first = row.saturating_sub(usize::from(writing.height).saturating_sub(1));
+        let y = writing.y + u16::try_from(row - first).unwrap_or(0);
+        (y < writing.bottom()).then(|| ratatui::layout::Position {
+            x: (writing.x + MARGIN + INDENT + cell.get()).min(writing.right().saturating_sub(1)),
             y,
         })
     }
@@ -624,22 +672,17 @@ impl<'a> ChatView<'a> {
             return None;
         }
         let width = writing_width(area);
-        let rows = chat.writing().rows(width);
-        let regions = regions(area, rows.len());
-        let box_x = regions.writing.x + MARGIN + INDENT;
-        if y < regions.writing.y
-            || y >= regions.writing.bottom()
-            || x < box_x
-            || x >= regions.writing.right()
-        {
+        let writing = words_band(regions(area, box_rows(area, chat)).writing, chat);
+        let box_x = writing.x + MARGIN + INDENT;
+        if y < writing.y || y >= writing.bottom() || x < box_x || x >= writing.right() {
             return None;
         }
         // The same scrolling the caret is placed under: a box taller than
         // its band shows its last rows, so the row on screen counts from
         // there rather than from the first row of the text.
         let (caret_row, _) = chat.writing().caret(width);
-        let first = caret_row.saturating_sub(usize::from(regions.writing.height).saturating_sub(1));
-        let row = first + usize::from(y - regions.writing.y);
+        let first = caret_row.saturating_sub(usize::from(writing.height).saturating_sub(1));
+        let row = first + usize::from(y - writing.y);
         Some((u16::try_from(row).unwrap_or(u16::MAX), x - box_x))
     }
 }
@@ -807,12 +850,39 @@ impl Widget for ChatView<'_> {
                 self.in_front.then(|| card.on()),
                 self.theme,
             ),
-            None => self.writing(cells, regions.writing, &rows, plain, dim),
+            None => {
+                let words = words_band(regions.writing, self.chat);
+                self.writing(cells, words, &rows, plain, dim);
+                if words.height < regions.writing.height {
+                    self.offer_to_send_now(cells, regions.writing.bottom() - 1, area, dim);
+                }
+            }
         }
     }
 }
 
 impl ChatView<'_> {
+    /// Offers to send what the box has now, on the box's last row, under
+    /// the words it would send.
+    ///
+    /// In the box rather than beside the row that says the agent is
+    /// working: what it sends is what is in the box, and the box is where
+    /// the reader is looking while they write it.
+    fn offer_to_send_now(&self, cells: &mut CellBuffer, y: u16, area: Rect, dim: Style) {
+        let keys = [(chord(KeyCode::Enter, KeyModifiers::CONTROL), "Sends it now")];
+        let Some(said) = joined(&keys) else {
+            return;
+        };
+        let Ok(offset) =
+            u16::try_from(usize::from(area.width).saturating_sub(text_width(&said) + 1))
+        else {
+            return;
+        };
+        let at = area.x + offset;
+        write(cells, at, y, &said, dim);
+        cap_the_keys(at, y, &keys, self.theme);
+    }
+
     /// Says how to get back to the end, where the reader has left it.
     ///
     /// And what has arrived since, where the agent has said anything: the
@@ -828,7 +898,15 @@ impl ChatView<'_> {
             1 => "1 new message".to_string(),
             many => format!("{many} new messages"),
         };
-        let label = format!("  {said}  ctrl+end \u{2193}  ");
+        let keys = chord(KeyCode::End, KeyModifiers::CONTROL);
+        // Two blanks before the arrow in a window, where the cap is laid
+        // over the first and the arrow would sit against its edge -- the
+        // welcome screen's `beside`, for the same reason.
+        let gap = match obelus_config::in_a_window() {
+            true => "  ",
+            false => " ",
+        };
+        let label = format!("  {said}  {keys}{gap}\u{2193}  ");
         let width = text_width(&label);
         let Ok(width) = u16::try_from(width) else {
             return;
@@ -848,6 +926,17 @@ impl ChatView<'_> {
                 .fg(self.theme.foreground)
                 .bg(self.theme.background),
         );
+        if let Ok(along) = u16::try_from(2 + text_width(&said) + 2) {
+            crate::cap_around(
+                x + along,
+                y,
+                &keys,
+                text_width(&keys),
+                self.theme.background,
+                self.theme.background,
+                self.theme.gutter,
+            );
+        }
     }
 
     /// What has been said, and the commands being completed over it.
@@ -1057,7 +1146,7 @@ impl ChatView<'_> {
             let tail = self.tail_of(row, dim, here);
             let kept: usize = tail
                 .iter()
-                .map(|(gap, said, _)| usize::from(*gap) + text_width(said))
+                .map(|(gap, said, _, _)| usize::from(*gap) + text_width(said))
                 .sum();
             let stop = (words_end(area) + 1).saturating_sub(u16::try_from(kept).unwrap_or(0));
             // Whether they fit, asked of the words rather than of where the
@@ -1089,19 +1178,23 @@ impl ChatView<'_> {
             if clipped {
                 ended = write_within(cells, stop.saturating_sub(1), y, "\u{2026}", dim, stop);
             }
-            for (gap, said, style) in tail {
-                ended = write_within(cells, ended + gap, y, &said, style, words_end(area) + 1);
+            for (gap, said, style, keys) in tail {
+                let at = ended + gap;
+                ended = write_within(cells, at, y, &said, style, words_end(area) + 1);
+                cap_the_keys(at, y, &keys, self.theme);
             }
             // How to stop it, on the row that says it is going: the one
             // thing escape does here that a reader could not guess, and it
             // belongs beside the thing it would stop.
             if row.speaker == Speaker::Doing && self.state == Talking::Thinking {
-                let hint = "Esc stops it";
-                if let Ok(offset) =
-                    u16::try_from(usize::from(area.width).saturating_sub(text_width(hint) + 1))
+                let keys = [(chord(KeyCode::Esc, KeyModifiers::NONE), "Stops it")];
+                if let Some(said) = joined(&keys)
+                    && let Ok(offset) =
+                        u16::try_from(usize::from(area.width).saturating_sub(text_width(&said) + 1))
                     && area.x + offset > ended + 1
                 {
-                    write(cells, area.x + offset, y, hint, dim);
+                    write(cells, area.x + offset, y, &said, dim);
+                    cap_the_keys(area.x + offset, y, &keys, self.theme);
                 }
             }
         }
@@ -1196,22 +1289,7 @@ impl ChatView<'_> {
         {
             let at = area.x + offset;
             write(cells, at, area.y, hint, plain.fg(self.theme.gutter));
-            // And which cells of that run are the key. Nothing is written
-            // twice: the run above is the whole of what a terminal draws,
-            // and this says what shape a window may draw round part of it.
-            for (along, (keys, _)) in where_the_keys_are(&keys).into_iter().zip(&keys) {
-                if let Ok(x) = u16::try_from(usize::from(at) + along) {
-                    crate::cap_around(
-                        x,
-                        area.y,
-                        keys,
-                        text_width(keys),
-                        self.theme.background,
-                        self.theme.background,
-                        self.theme.gutter,
-                    );
-                }
-            }
+            cap_the_keys(at, area.y, &keys, self.theme);
         }
 
         // How full the agent's memory is, beside the hints rather than
@@ -1452,34 +1530,21 @@ impl ChatView<'_> {
     /// front end that draws the shape has to be told which cells of that
     /// run are the key, and a run that had already been joined cannot say.
     fn status_keys(&self) -> Vec<(String, &'static str)> {
-        let back = self.about_a_note.then(|| {
-            let keys = match obelus_icons::enabled() {
-                true => format!("{}t", obelus_icons::key::ALT),
-                false => "alt+t".to_string(),
-            };
-            (keys, "The note")
-        });
+        let back = self
+            .about_a_note
+            .then(|| (chord(KeyCode::Char('t'), KeyModifiers::ALT), "The note"));
         let mode = self
             .mode()
             .is_some_and(|mode| mode.values.len() > 1)
-            .then(|| {
-                let keys = match obelus_icons::enabled() {
-                    true => format!("{}{}", obelus_icons::key::SHIFT, obelus_icons::key::TAB),
-                    false => "shift+tab".to_string(),
-                };
-                (keys, "Mode")
-            });
+            .then(|| (chord(KeyCode::Tab, KeyModifiers::SHIFT), "Mode"));
         // The arrow, while there is something for it to put in the box:
         // nothing on the box says that grey words can be taken, and they
         // are taken by a key that does nothing on an empty box anywhere
         // else.
-        let suggested = self.chat.suggestion().map(|_| {
-            let keys = obelus_editing::keymap::KeyChord::new(
-                crossterm::event::KeyCode::Right,
-                crossterm::event::KeyModifiers::NONE,
-            );
-            (keys.label(), "Fill it in")
-        });
+        let suggested = self
+            .chat
+            .suggestion()
+            .map(|_| (chord(KeyCode::Right, KeyModifiers::NONE), "Fill it in"));
         [suggested, back, mode].into_iter().flatten().collect()
     }
 
@@ -1636,18 +1701,25 @@ impl ChatView<'_> {
     /// need has to be known *before* the words are drawn and what is drawn
     /// has to be the same thing that was measured. Two answers to "what
     /// goes at the end of this row" is how the end of a row goes missing.
-    fn tail_of(&self, row: &Row, dim: Style, standing: bool) -> Vec<(u16, String, Style)> {
+    ///
+    /// And the keys a piece is made of, for the cap round each: none, for
+    /// a piece that is only words.
+    fn tail_of(&self, row: &Row, dim: Style, standing: bool) -> Vec<Tail> {
         let mut tail = Vec::new();
         // What enter does here, on the row it would do it to: the rows in
         // a transcript whose key hands something back rather than opening
         // it, so a reader has no way to guess it. Only while they are
         // standing on it -- said on every row of theirs at once it would
         // be answering somebody who has not asked yet.
+        let enter = |does| {
+            let keys = vec![(chord(KeyCode::Enter, KeyModifiers::NONE), does)];
+            (2, joined(&keys).unwrap_or_default(), dim, keys)
+        };
         if row.unsent.is_some() && standing {
-            tail.push((2, "Enter takes it back".to_string(), dim));
+            tail.push(enter("Takes it back"));
         }
         if row.again.is_some() && standing {
-            tail.push((2, "Enter copies it to the box".to_string(), dim));
+            tail.push(enter("Copies it to the box"));
         }
         // Where it said it was working. The path is its own affordance:
         // Obelus opens files, so a row that names one is a row that goes
@@ -1655,19 +1727,19 @@ impl ChatView<'_> {
         if let Some((place, more)) = &row.place {
             let said = said_place(&row.text(), place, self.root, *more);
             if !said.is_empty() {
-                tail.push((2, said, dim));
+                tail.push((2, said, dim, Vec::new()));
             }
         }
         // What says there is more behind this row than it is showing: the
         // same mark a settings row and a card use for the same promise,
         // turned down when what it holds is open.
         if row.folds.is_some() {
-            tail.push((1, opens(row.open).to_string(), dim));
+            tail.push((1, opens(row.open).to_string(), dim, Vec::new()));
         }
         // How much it changes, which is what a reader reads first: the
         // shape of the change before any of its lines.
         if let Some((added, removed)) = row.changed {
-            tail.push((2, format!("+{added} \u{2212}{removed}"), dim));
+            tail.push((2, format!("+{added} \u{2212}{removed}"), dim, Vec::new()));
         }
         // A tool call's state goes after its title rather than in front of
         // it: the title is what a reader is scanning, and the state changes
@@ -1683,7 +1755,8 @@ impl ChatView<'_> {
             && row.speaker != Speaker::Step
             && !self.turns(row)
         {
-            tail.push(self.state_said(state, dim));
+            let (gap, said, style) = self.state_said(state, dim);
+            tail.push((gap, said, style, Vec::new()));
         }
         tail
     }
@@ -2141,5 +2214,36 @@ mod caret {
         // And on the last character of the row, which is as near to after
         // it as there is room for.
         assert_eq!(caret.x, area.right() - 2);
+    }
+
+    /// A press on the box goes to the words while the box offers to send
+    /// now, and a press on the offer goes nowhere: the row is the box's,
+    /// and not one of its words.
+    ///
+    /// Broken deliberately by leaving `words_band` out of `place_at`: the
+    /// offer's row is a row of the words, and a box that scrolls puts the
+    /// press one row below where it landed.
+    #[test]
+    fn a_press_on_the_box_finds_the_words_and_not_the_offer() {
+        use obelus_component::chat::Chat;
+
+        let area = ratatui::layout::Rect::new(0, 0, 60, 20);
+        let mut chat = Chat::new();
+        chat.put("one\ntwo\nthree\nfour\nfive\nsix\nseven\neight");
+        chat.can_send_now(true);
+        assert!(chat.offers_sending_now(), "nothing to offer");
+
+        let writing = super::bands(area, &chat, None).writing;
+        let x = writing.x + super::MARGIN + super::INDENT;
+        let offer = writing.bottom() - 1;
+        assert_eq!(
+            super::ChatView::place_at(area, &chat, false, x, offer),
+            None,
+            "a press on the offer went into the words"
+        );
+        // The row above the offer is the last of the words, and the caret
+        // is on the last of them.
+        let last = super::ChatView::place_at(area, &chat, false, x, offer - 1);
+        assert_eq!(last.map(|(row, _)| row), Some(7), "not the last line");
     }
 }

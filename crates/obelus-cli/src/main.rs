@@ -54,6 +54,9 @@ fn main() -> Result<()> {
     // what it writes back. A terminal that answers can draw an agent's own
     // mark on the agents page; one that does not gets a glyph.
     let images = obelus_ui::image::Images::detect(obelus_app::event::remote());
+    // And whether `ctrl+enter` will arrive as itself, which the box offers
+    // only where it will.
+    let ctrl_enter = ctrl_enter_arrives();
 
     // `ratatui::try_init` enters the alternate screen, turns on raw mode, and
     // chains a panic hook that undoes both before the previous hook runs.
@@ -85,6 +88,7 @@ fn main() -> Result<()> {
     // cannot otherwise report.
     let keyboard = enable_keyboard();
     app.use_images(images);
+    app.ctrl_enter_arrives(ctrl_enter);
 
     // The channel is made here, and the thread that fills it with what the
     // terminal says is started here, because that thread is the terminal's
@@ -115,6 +119,29 @@ fn main() -> Result<()> {
     outcome
 }
 
+/// Whether the terminal will report `ctrl+enter` as itself.
+///
+/// Asked rather than assumed from pushing the flag below, which only says
+/// the request was written: tmux without `extended-keys` and the VTE
+/// terminals take it and go on sending a carriage return, and an offer of
+/// the key there is an offer that queues. The query is the one kitty's
+/// protocol describes -- its flags, then the device attributes every
+/// terminal answers -- so a terminal that does not speak it says so at
+/// once rather than after a timeout.
+///
+/// Windows reads the console's own key records, which carry the
+/// modifiers, so there is nothing to ask; crossterm answers `false` there
+/// for the protocol, which is the wrong question.
+fn ctrl_enter_arrives() -> bool {
+    if cfg!(windows) {
+        return true;
+    }
+    crossterm::terminal::supports_keyboard_enhancement().unwrap_or_else(|error| {
+        tracing::debug!(%error, "the keyboard protocol was not answered");
+        false
+    })
+}
+
 /// Asks the terminal to tell Obelus which key was pressed, and says whether
 /// the request went out.
 ///
@@ -135,7 +162,9 @@ fn main() -> Result<()> {
 /// state, and a program that leaves them pushed leaves the reader's shell
 /// receiving escape sequences it does not expect.
 ///
-/// Nothing else in Obelus depends on the protocol.
+/// Nothing else in Obelus depends on the protocol but `ctrl+enter` in the
+/// same box, which sends into a running turn now rather than after it --
+/// and without the protocol arrives as enter, which waits for the turn.
 fn enable_keyboard() -> bool {
     use crossterm::event::{KeyboardEnhancementFlags, PushKeyboardEnhancementFlags};
 
