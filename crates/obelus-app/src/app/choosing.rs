@@ -114,6 +114,7 @@ impl App {
         // offers is what the reader came to find out, so the block stays the
         // height it opened at rather than closing up under the query.
         picker.keeps_height();
+        picker.aligns_details();
         self.show_list(picker);
     }
 

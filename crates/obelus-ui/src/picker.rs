@@ -1007,6 +1007,7 @@ impl PickerView<'_> {
         // ends there: a commit subject stopping mid-word reads as a subject
         // whose author stopped mid-word.
         let room = usize::from(limit.saturating_sub(column));
+        let label_at = column;
         let total = item.label.chars().count();
         let (dropped, elided) = match item.prose {
             true => (0, drop_from_right(&item.label, room)),
@@ -1061,10 +1062,15 @@ impl PickerView<'_> {
 
         let dim = style.fg(self.theme.gutter);
         if let Some(detail) = &item.detail {
+            // In the list's one column where it asked for one, and never over
+            // the label: a label cut short still ends before it.
+            let from = self.picker.detail_column().map_or(column, |widest| {
+                column.max(label_at.saturating_add(u16::try_from(widest).unwrap_or(u16::MAX)))
+            });
             column = at(
                 cells,
                 inner,
-                column.saturating_add(2),
+                from.saturating_add(2),
                 y,
                 detail,
                 dim,
