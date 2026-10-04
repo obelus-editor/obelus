@@ -41,8 +41,8 @@ use winit::window::Window;
 use crate::{
     font::{self, CellSize, Fonts, Size},
     grid::{
-        Barred, Behind, Capped, Look, Marked, Page, Parted, Rolled, Ruled, Said, Spelling, Stroked,
-        Ticked,
+        Barred, Behind, Capped, Going, Look, Marked, Page, Parted, Rolled, Ruled, Said, Spelling,
+        Stroked, Ticked,
     },
     motion::Moving,
 };
@@ -205,6 +205,16 @@ pub(crate) struct Painter {
     /// The bindings that read that one, for the two quads that put it back
     /// on the screen.
     showing_bindings: wgpu::BindGroup,
+    /// The screen as it was when a pane went from it, drawn once at that
+    /// moment: the page is what Obelus said, and a pane that has gone is
+    /// on no page, so this is the one place it is still to be found -- and
+    /// what it is drawn leaving out of (`keep`).
+    left: wgpu::TextureView,
+    /// The bindings that read that one.
+    left_bindings: wgpu::BindGroup,
+    /// Where each pane that went stood in it -- its glass, which is where
+    /// it was cut from the screen under it -- and the edge it goes along.
+    gone: Vec<([f32; 4], Joined)>,
     /// The same bindings with something else in the backdrop's place, for
     /// the pass that *draws* it: a texture cannot be read and written in
     /// one pass, and what goes in the slot is never sampled there.
@@ -261,6 +271,13 @@ struct Placed {
     /// And with the pieces a sliding pane is put back in, which is where
     /// the blurs start.
     moved: usize,
+    /// Whether the screen is put back together out of a picture of the
+    /// frame: a pane arriving, or a band catching up.
+    composed: bool,
+    /// The panes that went, put back out of the screen they left -- see
+    /// `Painter::keep`. Among the pieces where the screen is composed, and
+    /// over the frame where it is not.
+    going: Option<Range<usize>>,
     /// Where a band under the first pane is catching up: the rows of it
     /// above the pane, which the slide brings in under it, and the quads
     /// that put what is behind the pane back together with the band slid.
@@ -301,6 +318,9 @@ struct Level {
     rect: [f32; 4],
     /// Whether it is a pane rather than a box.
     pane: bool,
+    /// The cells it was said over, which is how a pane that goes is found
+    /// again among them.
+    area: Rect,
     /// The first quad of its blur's pair.
     blur: usize,
 }
@@ -353,6 +373,8 @@ enum Reads {
     /// One level's, which its glass reads -- and, for the box coming up,
     /// what is laid back over it.
     Level(usize),
+    /// The screen a pane went from.
+    Left,
 }
 
 /// The quads the screen draws, each with whatever it reads.
@@ -416,12 +438,19 @@ fn put_over(levels: &[Level], level: usize) -> Vec<(Range<usize>, Reads)> {
 /// is moving, each with whatever it reads: the frame, and the glass where
 /// a list's rows have not arrived -- see `Placed::gaps`.
 fn catching(placed: &Placed) -> Vec<(Range<usize>, Reads)> {
+    let mut reading: Vec<(Range<usize>, Reads)> = placed
+        .gaps
+        .iter()
+        .map(|&(glass, level)| (glass..glass + 1, Reads::Level(level)))
+        .chain(placed.going.clone().map(|going| (going, Reads::Left)))
+        .collect();
+    reading.sort_by_key(|(quads, _)| quads.start);
     let mut plan = Vec::new();
     let mut at = placed.drawn;
-    for &(glass, level) in &placed.gaps {
-        plan.push((at..glass, Reads::Nothing));
-        plan.push((glass..glass + 1, Reads::Level(level)));
-        at = glass + 1;
+    for (quads, reads) in reading {
+        plan.push((at..quads.start, Reads::Nothing));
+        at = quads.end;
+        plan.push((quads, reads));
     }
     plan.push((at..placed.moved, Reads::Nothing));
     plan.retain(|(quads, _)| !quads.is_empty());
@@ -1014,6 +1043,8 @@ impl Painter {
         let scratch_bindings = binder.bound(&scratch, &nothing);
         let picture = made_to_draw_into(&device, view, width, height);
         let showing_bindings = binder.bound(&picture, &nothing);
+        let left = made_to_draw_into(&device, view, width, height);
+        let left_bindings = binder.bound(&left, &nothing);
         let plain_bindings = binder.bound(&nothing, &nothing);
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -1101,6 +1132,9 @@ impl Painter {
             scratch_bindings,
             picture,
             showing_bindings,
+            left,
+            left_bindings,
+            gone: Vec::new(),
             plain_bindings,
             nothing,
         })
@@ -1140,9 +1174,15 @@ impl Painter {
         let scratch_bindings = binder.bound(&scratch, &self.nothing);
         let picture = made_to_draw_into(&self.device, self.view, width, height);
         let showing_bindings = binder.bound(&picture, &self.nothing);
+        let left = made_to_draw_into(&self.device, self.view, width, height);
+        let left_bindings = binder.bound(&left, &self.nothing);
         self.levels = levels;
         (self.scratch, self.scratch_bindings) = (scratch, scratch_bindings);
         (self.picture, self.showing_bindings) = (picture, showing_bindings);
+        // A picture of the window at its old size is a pane leaving from the
+        // wrong place, so what was leaving is simply gone.
+        (self.left, self.left_bindings) = (left, left_bindings);
+        self.gone.clear();
     }
 
     /// Every bind group again, over the same pictures, because the atlas
@@ -1156,12 +1196,14 @@ impl Painter {
             .collect();
         let scratch = binder.bound(&self.scratch, &self.nothing);
         let showing = binder.bound(&self.picture, &self.nothing);
+        let left = binder.bound(&self.left, &self.nothing);
         let plain = binder.bound(&self.nothing, &self.nothing);
         for (seen, bindings) in self.levels.iter_mut().zip(levels) {
             seen.bindings = bindings;
         }
         self.scratch_bindings = scratch;
         self.showing_bindings = showing;
+        self.left_bindings = left;
         self.plain_bindings = plain;
     }
 
@@ -1213,6 +1255,106 @@ impl Painter {
         moving: Moving,
         said: Said<'_>,
     ) -> Result<()> {
+        self.lay(page, fonts, spelling, moving, said);
+        let acquiring = Instant::now();
+        let acquired = self.surface.get_current_texture();
+        let waited = acquiring.elapsed();
+        if waited >= crate::window::SLOW {
+            tracing::warn!(?waited, "the surface took this long to give up a frame");
+        }
+        let frame = match acquired {
+            wgpu::CurrentSurfaceTexture::Success(frame)
+            | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
+            // The surface went out from under the frame -- the window was
+            // resized, a monitor changed -- which is not an error to stop
+            // for: it is put back, and the frame that was being drawn is
+            // drawn again by the redraw the resize itself asks for.
+            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
+                self.surface.configure(&self.device, &self.configured);
+                return Ok(());
+            }
+            // Nobody can see it: the window is hidden, or the driver did
+            // not answer in time. Both are reasons to skip a frame rather
+            // than to stop.
+            wgpu::CurrentSurfaceTexture::Occluded | wgpu::CurrentSurfaceTexture::Timeout => {
+                return Ok(());
+            }
+            wgpu::CurrentSurfaceTexture::Validation => {
+                anyhow::bail!("the surface refused to give up a frame to draw into")
+            }
+        };
+        let target = frame.texture.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(self.view),
+            ..Default::default()
+        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("obelus"),
+            });
+        self.encode(&mut encoder, &target);
+        self.queue.submit([encoder.finish()]);
+        // Only where a frame really goes: the callback this asks for comes
+        // with a commit, and one asked for with nothing committed is a
+        // redraw winit holds back for ever.
+        self.window.pre_present_notify();
+        let presenting = Instant::now();
+        self.queue.present(frame);
+        let waited = presenting.elapsed();
+        if waited >= crate::window::SLOW {
+            tracing::warn!(?waited, "the surface took this long to take a frame");
+        }
+        Ok(())
+    }
+
+    /// The screen as it is, kept as a picture to draw the panes that have
+    /// just gone from it leaving out of.
+    ///
+    /// Drawn once, at the moment they went, from the page and what was said
+    /// about it then -- which the window kept, because the frame that took
+    /// them away has nothing of them on it. Laid out the way every frame is,
+    /// glass and all, so what leaves is what was on the screen; and into a
+    /// picture of its own, which nothing else draws into, so that every
+    /// frame of the leaving reads the same one.
+    pub(crate) fn keep(&mut self, page: &Page, fonts: &mut Fonts, said: Said<'_>, going: &[Going]) {
+        let cell = fonts.cell();
+        self.lay(page, fonts, None, Moving::still(), said);
+        // Cut where its glass is, which is where it was cut from what was
+        // under it: the half row above a list's rule is the file, and taken
+        // along it would be a strip of the file going down with the list.
+        self.gone = going
+            .iter()
+            .map(|gone| {
+                let level = self
+                    .placed
+                    .levels
+                    .iter()
+                    .find(|level| level.pane && level.area == gone.area);
+                (
+                    level.map_or_else(|| box_of(gone.area, cell), |level| level.rect),
+                    gone.joined,
+                )
+            })
+            .collect();
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("obelus kept"),
+            });
+        self.encode(&mut encoder, &self.left);
+        self.queue.submit([encoder.finish()]);
+    }
+
+    /// Lays a page out as the quads that draw it, and hands them to the
+    /// device.
+    fn lay(
+        &mut self,
+        page: &Page,
+        fonts: &mut Fonts,
+        spelling: Option<&Spelling>,
+        moving: Moving,
+        said: Said<'_>,
+    ) {
         let cell = fonts.cell();
         // Before anything is placed, which is the one moment starting the
         // glyphs again is safe: nothing from the last frame is read after it.
@@ -1291,6 +1433,7 @@ impl Painter {
                 end: self.quads.len(),
                 rect,
                 pane: !over.is_a_box(),
+                area: over.area,
                 blur: 0,
             });
         }
@@ -1419,7 +1562,11 @@ impl Painter {
                 _ => -1.0,
             };
             let shift = away * (1.0 - along) * height * TRAVEL;
+            self.placed.composed = true;
             self.covering(&[pane]);
+            // Under the one arriving, which comes over it: the files come
+            // down over the palette going.
+            self.going(moving.leaving);
             self.slid(pane, shift, along);
             // And the shadow, here rather than in the frame -- see
             // `shadows`. It falls from the edge the pane has *reached*,
@@ -1446,7 +1593,11 @@ impl Painter {
                 .filter(|over| !over.is_a_box())
                 .map(|over| box_of(over.area, cell))
                 .collect();
+            self.placed.composed = true;
             self.catching_up(catching_up, &panes, &stack, fonts);
+            self.going(moving.leaving);
+        } else {
+            self.going(moving.leaving);
         }
         // Last, because none of it is drawn on the screen: the blurs are
         // passes of their own, before any of the above.
@@ -1526,44 +1677,12 @@ impl Painter {
         self.queue
             .write_buffer(&self.instances, 0, bytemuck::cast_slice(&self.quads));
 
-        let acquiring = Instant::now();
-        let acquired = self.surface.get_current_texture();
-        let waited = acquiring.elapsed();
-        if waited >= crate::window::SLOW {
-            tracing::warn!(?waited, "the surface took this long to give up a frame");
-        }
-        let frame = match acquired {
-            wgpu::CurrentSurfaceTexture::Success(frame)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(frame) => frame,
-            // The surface went out from under the frame -- the window was
-            // resized, a monitor changed -- which is not an error to stop
-            // for: it is put back, and the frame that was being drawn is
-            // drawn again by the redraw the resize itself asks for.
-            wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
-                self.surface.configure(&self.device, &self.configured);
-                return Ok(());
-            }
-            // Nobody can see it: the window is hidden, or the driver did
-            // not answer in time. Both are reasons to skip a frame rather
-            // than to stop.
-            wgpu::CurrentSurfaceTexture::Occluded | wgpu::CurrentSurfaceTexture::Timeout => {
-                return Ok(());
-            }
-            wgpu::CurrentSurfaceTexture::Validation => {
-                anyhow::bail!("the surface refused to give up a frame to draw into")
-            }
-        };
-        let target = frame.texture.create_view(&wgpu::TextureViewDescriptor {
-            format: Some(self.view),
-            ..Default::default()
-        });
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("obelus"),
-            });
+        self.levels_for(self.placed.levels.len());
+    }
+
+    /// What the passes that draw the laid-out frame are, into `target`.
+    fn encode(&self, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView) {
         let placed = self.placed.clone();
-        self.levels_for(placed.levels.len());
         // What is behind the first pane, into a picture of its own. Only the
         // front of the buffer, which is exactly those cells -- and only
         // where there is a pane at all, so a window with nothing over the
@@ -1577,18 +1696,17 @@ impl Painter {
             // what is round it.
             Some((above, put_back)) => {
                 {
-                    let mut pass =
-                        self.pass(&mut encoder, "obelus behind, standing", &self.picture);
+                    let mut pass = self.pass(encoder, "obelus behind, standing", &self.picture);
                     pass.set_bind_group(0, &self.plain_bindings, &[]);
                     drawing(&mut pass, 0..placed.behind());
                     drawing(&mut pass, above);
                 }
-                let mut pass = self.pass(&mut encoder, "obelus behind", &self.levels[0].backdrop);
+                let mut pass = self.pass(encoder, "obelus behind", &self.levels[0].backdrop);
                 pass.set_bind_group(0, &self.showing_bindings, &[]);
                 drawing(&mut pass, put_back);
             }
             None if !placed.levels.is_empty() => {
-                let mut pass = self.pass(&mut encoder, "obelus behind", &self.levels[0].backdrop);
+                let mut pass = self.pass(encoder, "obelus behind", &self.levels[0].backdrop);
                 self.beneath(&mut pass, 0);
             }
             None => {}
@@ -1599,31 +1717,28 @@ impl Painter {
         // another, which is two textures and allowed.
         for (at, level) in placed.levels.iter().enumerate() {
             if at > 0 {
-                let mut pass = self.pass(
-                    &mut encoder,
-                    "obelus behind the next",
-                    &self.levels[at].backdrop,
-                );
+                let mut pass =
+                    self.pass(encoder, "obelus behind the next", &self.levels[at].backdrop);
                 self.beneath(&mut pass, at);
             }
-            self.blurring(&mut encoder, level.blur, &self.levels[at]);
+            self.blurring(encoder, level.blur, &self.levels[at]);
         }
         // A pane on its way in: the frame goes into a picture of its own
         // first, and the screen is put together out of it below. Only
         // while one is moving -- an arrived pane is drawn straight to the
         // screen like everything else.
-        let composing = placed.moved > placed.drawn;
+        let composing = placed.composed;
         if composing {
             // The glass is drawn in here, and what it reads is the
             // backdrop -- which this pass is not writing to.
-            let mut pass = self.pass(&mut encoder, "obelus frame", &self.picture);
+            let mut pass = self.pass(encoder, "obelus frame", &self.picture);
             self.the_frame(&mut pass);
         }
         {
             // Cleared to black, which is never seen: the first quad of
             // every frame is the whole window in the page's own ground,
             // and the cells are drawn over that.
-            let mut pass = self.pass(&mut encoder, "obelus", &target);
+            let mut pass = self.pass(encoder, "obelus", target);
             match composing {
                 // The page first, and nothing of the pane: the glass is
                 // part of the pane and arrives with it. Left standing in
@@ -1637,21 +1752,16 @@ impl Painter {
                     }
                     self.follow(&mut pass, &catching(&placed), &self.showing_bindings);
                 }
-                false => self.the_frame(&mut pass),
+                // And a pane that went, over the frame it went from.
+                false => {
+                    self.the_frame(&mut pass);
+                    if let Some(going) = placed.going {
+                        pass.set_bind_group(0, &self.left_bindings, &[]);
+                        drawing(&mut pass, going);
+                    }
+                }
             }
         }
-        self.queue.submit([encoder.finish()]);
-        // Only where a frame really goes: the callback this asks for comes
-        // with a commit, and one asked for with nothing committed is a
-        // redraw winit holds back for ever.
-        self.window.pre_present_notify();
-        let presenting = Instant::now();
-        self.queue.present(frame);
-        let waited = presenting.elapsed();
-        if waited >= crate::window::SLOW {
-            tracing::warn!(?waited, "the surface took this long to take a frame");
-        }
-        Ok(())
     }
 
     /// The colour behind the text, as few rectangles as it takes.
@@ -2206,6 +2316,32 @@ impl Painter {
                 layer: 0,
                 lower: 0.0,
             });
+        }
+    }
+
+    /// The panes that went, each put back out of the screen it left and on
+    /// its way into the edge it came from: the arriving the other way
+    /// round, over the same distance, fading as it goes.
+    ///
+    /// Out of a picture rather than drawn from cells, for the reason a bar
+    /// catching up is: a pane is glass, and its cells carry its own colour
+    /// where the glass let what was behind show through.
+    fn going(&mut self, along: Option<f32>) {
+        let Some(along) = along else {
+            return;
+        };
+        let start = self.quads.len();
+        for at in 0..self.gone.len() {
+            let (pane, joined) = self.gone[at];
+            let toward = match joined {
+                Joined::Below => 1.0,
+                _ => -1.0,
+            };
+            let height = pane[3] - pane[1];
+            self.slid(pane, toward * along * height * TRAVEL, 1.0 - along);
+        }
+        if self.quads.len() > start {
+            self.placed.going = Some(start..self.quads.len());
         }
     }
 
@@ -3284,6 +3420,7 @@ impl Painter {
             let bindings = match reads {
                 Reads::Nothing => otherwise,
                 Reads::Level(level) => &self.levels[*level].bindings,
+                Reads::Left => &self.left_bindings,
             };
             pass.set_bind_group(0, bindings, &[]);
             drawing(pass, quads.clone());
@@ -4936,6 +5073,7 @@ mod tests {
                 end,
                 rect: [0.0; 4],
                 pane: true,
+                area: Rect::default(),
                 blur: 0,
             };
             Placed {
@@ -5091,6 +5229,7 @@ mod tests {
                 end,
                 rect: [0.0; 4],
                 pane: true,
+                area: Rect::default(),
                 blur: 0,
             };
             let placed = Placed {
@@ -5123,6 +5262,33 @@ mod tests {
             );
         }
 
+        /// A pane that went is put back out of the screen it went from,
+        /// among the pieces of the one it left -- and between them, where a
+        /// pane arriving in its place is drawn after it.
+        ///
+        /// Deliberate break: leave `going` out of `catching`. The pane that
+        /// went is then drawn out of the frame's own picture, which is the
+        /// files that took its place, so the palette going down is a strip
+        /// of the files going down.
+        #[test]
+        fn a_pane_that_went_is_drawn_out_of_the_screen_it_left() {
+            let placed = Placed {
+                drawn: 20,
+                moved: 30,
+                composed: true,
+                going: Some(23..25),
+                ..Placed::default()
+            };
+            assert_eq!(
+                catching(&placed),
+                vec![
+                    (20..23, Reads::Nothing),
+                    (23..25, Reads::Left),
+                    (25..30, Reads::Nothing),
+                ]
+            );
+        }
+
         /// What a level was put over is the glass of every level under it
         /// and what it was put over -- and never its own picture, which is
         /// the one being drawn into.
@@ -5138,6 +5304,7 @@ mod tests {
                     plan.iter().all(|(_, reads)| match reads {
                         Reads::Nothing => true,
                         Reads::Level(read) => *read < level,
+                        Reads::Left => false,
                     }),
                     "level {level} reads its own picture or one over it: {plan:?}"
                 );

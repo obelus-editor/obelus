@@ -751,9 +751,10 @@ crates/
                       has four, a line is drawn where its glyph would be and
                       the glass starts at the line, glass is a bend and a light
                       before it is a blur, a region of the frame is put
-                      back somewhere else rather than drawn again, and every
-                      pane and every box is glass over everything said
-                      before it (paint); a
+                      back somewhere else rather than drawn again, a pane
+                      that has gone leaves out of a picture of the screen it
+                      went from, and every pane and every box is glass over
+                      everything said before it (paint); a
                       mark is one cell here and two in a terminal, so a column
                       asks which front end it is for, and a key's cap is the
                       one place the grid is not what a cell is measured in

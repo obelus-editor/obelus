@@ -344,6 +344,9 @@ pub(crate) struct Moving {
     /// window that took the second path every frame would pay for an
     /// animation nobody is watching.
     pub(crate) pane: Option<f32>,
+    /// And how far along a pane that has gone is on its way out, the same
+    /// way: from where it stood to gone, or `None` where none is leaving.
+    pub(crate) leaving: Option<f32>,
     /// And how much of the box with a frame round it is there, or `None`
     /// for one that is simply there. The same reason for the same shape.
     pub(crate) card: Option<f32>,
@@ -363,6 +366,22 @@ pub(crate) struct Moving {
     /// dragged to a screen of another density -- and a distance in pixels
     /// would put the caret somewhere it never was.
     pub(crate) drift: (f32, f32),
+}
+
+impl Moving {
+    /// Nothing moving and no caret: a screen as it is kept for a pane that
+    /// has gone to be drawn leaving out of. The caret is not the pane's --
+    /// it is in the box on the status row, which does not go anywhere.
+    pub(crate) const fn still() -> Self {
+        Self {
+            caret: false,
+            pane: None,
+            leaving: None,
+            card: None,
+            sheen: None,
+            drift: (0.0, 0.0),
+        }
+    }
 }
 
 /// The caret on its way from where it was to where it is.
@@ -749,6 +768,12 @@ pub(crate) struct Motion {
     blink: Blinking,
     caret: Glide,
     pane: Arriving,
+    /// A pane that has gone from the page, on its way out.
+    ///
+    /// The same clock as the one arriving, and started by the same frame
+    /// when one takes the other's place: the two are one movement, and a
+    /// list that went before the view came was a list that blinked out.
+    leaving: Arriving,
     card: Arriving,
     bands: Bands,
     bars: Bars,
@@ -781,6 +806,10 @@ impl Motion {
                 opened: None,
                 takes: SLIDE,
             },
+            leaving: Arriving {
+                opened: None,
+                takes: SLIDE,
+            },
             card: Arriving {
                 opened: None,
                 takes: FADE,
@@ -802,6 +831,7 @@ impl Motion {
         if !on {
             self.caret.from = None;
             self.pane.opened = None;
+            self.leaving.opened = None;
             self.card.opened = None;
             self.bands.seen.clear();
         }
@@ -862,7 +892,7 @@ impl Motion {
 
     /// A pane opened over the page.
     ///
-    /// Only the opening: a pane that is closed leaves nothing to draw, and
+    /// The opening: a pane that is closed is `panes_laid`'s to see go, and
     /// one that is still there while another opens over it is a pane that
     /// has not moved.
     pub(crate) fn pane_opened(&mut self, now: Instant) {
@@ -885,7 +915,19 @@ impl Motion {
     /// the second slid the settings in again every time a choice was made.
     /// So what arrives is a pile that is not what the one before it was
     /// with something taken off the top.
-    pub(crate) fn panes_laid(&mut self, was: &[Joined], now: &[Joined], at: Instant) {
+    ///
+    /// And what goes is whatever of the old pile is not at the bottom of
+    /// the new one: a list closed with escape, a setting's choices made, and
+    /// the palette as the files take its place. Answers how many at the
+    /// bottom stayed, where any went -- the window keeps the screen they
+    /// went from, which is the one place a pane that has gone is still
+    /// drawn -- and `None` where none did, or where nothing moves at all.
+    pub(crate) fn panes_laid(
+        &mut self,
+        was: &[Joined],
+        now: &[Joined],
+        at: Instant,
+    ) -> Option<usize> {
         if now.is_empty() || (now.len() < was.len() && was.starts_with(now)) {
             // Shut rather than left alone where one is uncovered: what is
             // under a pane that went had arrived before it was covered, and
@@ -895,6 +937,19 @@ impl Motion {
         } else if now != was {
             self.pane_opened(at);
         }
+        // By the edge each is joined along, which is all a pile says: the
+        // files in place of the search are two panes of one shape, and
+        // neither goes anywhere -- the same answer the arriving gives them.
+        let stayed = was
+            .iter()
+            .zip(now)
+            .take_while(|(was, now)| was == now)
+            .count();
+        if !self.animates || stayed == was.len() {
+            return None;
+        }
+        self.leaving.opened = Some(at);
+        Some(stayed)
     }
 
     /// A box with a frame round it opened over the page.
@@ -923,9 +978,10 @@ impl Motion {
         let flew = self.caret.settle(now);
         let caught = self.bands.settle(now);
         let slid = self.pane.settle(now);
+        let left = self.leaving.settle(now);
         let faded = self.card.settle(now);
         let blinked = self.blink.advance(now, caret);
-        flew || caught || slid || faded || blinked
+        flew || caught || slid || left || faded || blinked
     }
 
     /// When the window wants the loop back, or `None` for nothing moving.
@@ -935,6 +991,7 @@ impl Motion {
     pub(crate) fn wake(&self, now: Instant, caret: bool) -> Option<Wake> {
         if self.caret.moving(now)
             || self.pane.moving(now)
+            || self.leaving.moving(now)
             || self.card.moving(now)
             || self.bands.moving(now)
             || (self.animates && self.bars.moving(now))
@@ -1009,6 +1066,7 @@ impl Motion {
             caret: self.blink.lit || self.caret.moving(now),
             drift: self.caret.drift(now),
             pane: self.pane.along(now),
+            leaving: self.leaving.along(now),
             card: self.card.along(now),
             sheen: self.sheen(now),
         }
@@ -1561,6 +1619,71 @@ mod tests {
         let half_way = later + SLIDE / 2;
         motion.panes_laid(&settings, &settings, half_way);
         assert!(motion.moving(half_way).pane.is_some(), "still arriving");
+    }
+
+    /// A pane that goes leaves, and then is gone -- whichever way it goes.
+    ///
+    /// Break: start the leaving clock only where nothing arrives in its
+    /// place, and the palette giving way to the files is a palette that
+    /// blinks out while the files slide in, which the second half notices.
+    #[test]
+    fn a_pane_that_goes_leaves_and_then_is_gone() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        assert_eq!(motion.panes_laid(&[Joined::Below], &[], base), Some(0));
+        assert_eq!(motion.moving(base).leaving, Some(0.0));
+        let half = motion.moving(base + SLIDE / 2).leaving.expect("on its way");
+        assert!(half > 0.0 && half < 1.0, "{half}");
+        assert_eq!(motion.moving(base + SLIDE).leaving, None, "gone");
+        assert_eq!(motion.wake(base + SLIDE, true), None);
+
+        // One in another's place: the two are one movement, on one clock.
+        let later = base + SLIDE * 2;
+        assert_eq!(
+            motion.panes_laid(&[Joined::Below], &[Joined::Above], later),
+            Some(0)
+        );
+        let moving = motion.moving(later + SLIDE / 3);
+        assert!(moving.leaving.is_some(), "the palette blinked out");
+        assert_eq!(moving.leaving, moving.pane, "not one movement");
+        assert_eq!(motion.wake(later, true), Some(Wake::EveryFrame));
+    }
+
+    /// What stays is not what goes: a setting's choices closing leave the
+    /// settings where they are, and a pane opening over another takes
+    /// nothing away.
+    ///
+    /// Break: count none as having stayed -- the whole old pile gone
+    /// whenever any of it went -- and the window draws the settings leaving
+    /// every time a choice is made, which the first half notices.
+    #[test]
+    fn only_what_is_not_still_there_leaves() {
+        let base = Instant::now();
+        let settings = [Joined::Screen];
+        let a_choice = [Joined::Screen, Joined::Below];
+        let mut motion = Motion::new(None);
+        assert_eq!(motion.panes_laid(&a_choice, &settings, base), Some(1));
+        let mut motion = Motion::new(None);
+        assert_eq!(motion.panes_laid(&settings, &a_choice, base), None);
+        assert_eq!(motion.moving(base).leaving, None, "the settings left");
+        // The files in the search's place: one shape for the other, and
+        // neither arrives, so neither leaves.
+        assert_eq!(
+            motion.panes_laid(&[Joined::Above], &[Joined::Above], base),
+            None
+        );
+    }
+
+    /// Break: start the leaving clock whatever the reader has said, and a
+    /// window told nothing moves keeps a copy of the screen and draws a
+    /// list sinking out of it anyway.
+    #[test]
+    fn nothing_leaves_where_nothing_moves() {
+        let base = Instant::now();
+        let mut motion = Motion::new(None);
+        motion.animates(false);
+        assert_eq!(motion.panes_laid(&[Joined::Below], &[], base), None);
+        assert_eq!(motion.moving(base).leaving, None);
     }
 
     /// A band of rows, which is the area a list is drawn in, with no pane

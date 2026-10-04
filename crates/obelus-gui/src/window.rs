@@ -70,8 +70,8 @@ use crate::{
     blink::Blink,
     font::Fonts,
     grid::{
-        Barred, Behind, Capped, Cells, Marked, Marking, Measured, Page, Parted, Rolled, Ruled,
-        Said, Sheened, Spelling, Stroked, Ticked, Update,
+        Barred, Behind, Capped, Cells, Going, Marked, Marking, Measured, Page, Parted, Rolled,
+        Ruled, Said, Sheened, Spelling, Stroked, Ticked, Update,
     },
     keys,
     motion::{Lane, Motion, Wake},
@@ -112,6 +112,65 @@ pub(crate) fn show(app: App) -> Result<()> {
     let mut showing = Showing::new(app, events.create_proxy());
     events.run_app(&mut showing).context("the window stopped")?;
     showing.outcome()
+}
+
+/// The screen a pane went from, kept until the painter has a picture of
+/// it -- see `Painter::keep`.
+///
+/// What the frame said about the page as well as the page, because a pane is
+/// drawn from both: its caps, its bars and its rules are said beside its
+/// cells rather than in them. Taken rather than copied, at the frame that
+/// replaced them, which is the one moment they are let go of anyway.
+struct Left {
+    page: Arc<Page>,
+    marked: Vec<Marked>,
+    capped: Vec<Capped>,
+    ticked: Vec<Ticked>,
+    showing: Vec<Barred>,
+    ruled: Vec<Ruled>,
+    sheened: Option<Sheened>,
+    parted: Vec<Parted>,
+    stroked: Vec<Stroked>,
+    stack: Vec<Behind>,
+    /// Which of its panes went.
+    going: Vec<Going>,
+}
+
+impl Left {
+    /// What it said, the way a frame being drawn says it.
+    fn said(&self) -> Said<'_> {
+        Said {
+            marked: &self.marked,
+            capped: &self.capped,
+            ticked: &self.ticked,
+            barred: &self.showing,
+            ruled: &self.ruled,
+            sheened: self.sheened.as_ref(),
+            parted: &self.parted,
+            stroked: &self.stroked,
+            stack: &self.stack,
+            bands: &[],
+        }
+    }
+
+    /// The panes of its pile above the ones that stayed, less any inside
+    /// another that went: that one is in the picture of the one under it,
+    /// and goes with it.
+    fn going(stack: &[Behind], stayed: usize) -> Vec<Going> {
+        let mut going: Vec<Going> = Vec::new();
+        for over in stack.iter().filter(|over| !over.is_a_box()).skip(stayed) {
+            if !going
+                .iter()
+                .any(|gone| gone.area.intersection(over.area) == over.area)
+            {
+                going.push(Going {
+                    area: over.area,
+                    joined: over.joined,
+                });
+            }
+        }
+        going
+    }
 }
 
 /// A band of rows on the frame: a list, and where it has got to.
@@ -315,6 +374,8 @@ struct Showing {
     /// Every pane on the frame being shown, by the edge it is joined
     /// along, furthest first -- see `Motion::panes_laid`.
     panes: Vec<Joined>,
+    /// The screen a pane has just gone from, until the painter has kept it.
+    left: Option<Left>,
     /// And on the frame being laid out.
     paning: Vec<Joined>,
     /// And the ones the frame being laid out has asked for so far.
@@ -406,6 +467,7 @@ impl Showing {
             stack: Vec::new(),
             stacking: Vec::new(),
             panes: Vec::new(),
+            left: None,
             paning: Vec::new(),
             // The blink is asked once, on the way up: it is a question
             // about the system rather than about this window.
@@ -860,9 +922,13 @@ impl ApplicationHandler<Waking> for Showing {
                 // has nothing to compare against -- and one the drawing
                 // stops asking about in the middle of its slide.
                 let was_at = self.scrolled.clone();
-                // Kept only where a band could move, because that is the
-                // only thing it is for.
-                let before = (!was_at.is_empty()).then(|| Arc::new(self.page.clone()));
+                // Kept only where a band could move or a pane could go,
+                // because those are the only things it is for.
+                let before = (!was_at.is_empty() || !were_panes.is_empty())
+                    .then(|| Arc::new(self.page.clone()));
+                // And what the first frame in this drain replaced, where a
+                // pane could go: the rest of what the reader last saw.
+                let mut left = None;
                 let mut drew = false;
                 let mut sized = None;
                 let mut faces = None;
@@ -966,6 +1032,24 @@ impl ApplicationHandler<Waking> for Showing {
                             edge,
                         }),
                         Update::Frame => {
+                            if left.is_none()
+                                && let Some(page) = before.clone()
+                                && !were_panes.is_empty()
+                            {
+                                left = Some(Left {
+                                    page,
+                                    marked: std::mem::take(&mut self.marked),
+                                    capped: std::mem::take(&mut self.capped),
+                                    ticked: std::mem::take(&mut self.ticked),
+                                    showing: self.showing.clone(),
+                                    ruled: std::mem::take(&mut self.ruled),
+                                    sheened: self.sheened.take(),
+                                    parted: std::mem::take(&mut self.parted),
+                                    stroked: std::mem::take(&mut self.stroked),
+                                    stack: std::mem::take(&mut self.stack),
+                                    going: Vec::new(),
+                                });
+                            }
                             // The frame is over: what it asked for is what
                             // is on screen until the next one says
                             // otherwise.
@@ -1042,8 +1126,17 @@ impl ApplicationHandler<Waking> for Showing {
                 // which is every full-screen dialog there is. And the whole
                 // pile rather than its top, because a pane closing over
                 // another changes the top too -- see `Motion::panes_laid`.
-                self.motion
-                    .panes_laid(&were_panes, &self.panes, Instant::now());
+                //
+                // And whatever of the old pile is not in the new one went,
+                // and is drawn going out of the screen it went from.
+                if let Some(stayed) =
+                    self.motion
+                        .panes_laid(&were_panes, &self.panes, Instant::now())
+                    && let Some(mut left) = left
+                {
+                    left.going = Left::going(&left.stack, stayed);
+                    self.left = Some(left);
+                }
                 // And a box over the page, the same way and for the same
                 // reason. Whether there is one rather than which one:
                 // a completion list redrawn on every character the reader
@@ -1276,6 +1369,9 @@ impl ApplicationHandler<Waking> for Showing {
                 painter.drawn_on(self.ground);
                 painter.titled(self.titled);
                 painter.holding(self.holding);
+                if let Some(left) = self.left.take() {
+                    painter.keep(&left.page, fonts, left.said(), &left.going);
+                }
                 if let Err(error) = painter.paint(
                     &self.page,
                     fonts,
@@ -1298,6 +1394,9 @@ impl ApplicationHandler<Waking> for Showing {
                 }
             }
             WindowEvent::Resized(size) => {
+                // A screen of the old size, which a pane would leave from
+                // the wrong place: what was leaving is simply gone.
+                self.left = None;
                 if let Some(painter) = self.painter.as_mut() {
                     painter.resized(size.width, size.height);
                 }
