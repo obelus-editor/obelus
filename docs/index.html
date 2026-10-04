@@ -189,7 +189,7 @@
       </ol>
 
       <p>Every one of those questions is a card in the conversation, answered with the keys you are already holding. Nothing is pushed, merged, deleted or ticked off because the agent thought it was time.</p>
-      <p class="quiet small">This is the <code>feature-branch</code> workflow, and it is on unless you set <code>workflow = "none"</code> — <kbd>Ctrl+p</kbd> → <code>open-settings</code> → <code>Workflow</code> — after which the agent changes things its own way, usually straight in the checkout you are reading. A project may choose for itself, and one that is not a git repository has no branch to work on, so the agent changes the files where they are. Obelus itself runs no git: every command is the agent's.</p>
+      <p class="quiet small">This is the <code>feature-branch</code> workflow, and it is on unless you set <code>workflow = "none"</code> — <kbd>Ctrl+p</kbd> → <code>open-settings</code> → <code>Workflow</code> — after which the agent changes things its own way, usually straight in the checkout you are reading; <code>in-place</code> is in between, the same steps in the checkout you are reading, so each change arrives in the file in front of you and undoes with <kbd>Ctrl+z</kbd>. A project may choose for itself, and one that is not a git repository has no branch to work on, so the agent changes the files where they are. Obelus itself runs no git: every command is the agent's.</p>
 
       <div class="feature">
         <div class="text">
