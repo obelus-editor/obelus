@@ -18,6 +18,7 @@ use ratatui::{buffer::Cell, layout::Rect, style::Color};
 struct Heard {
     caps: Mutex<Vec<Rect>>,
     keys: Mutex<Vec<(String, Rect)>>,
+    grounds: Mutex<Vec<(String, Rect, Color)>>,
 }
 
 impl obelus_ui::shapes::Shapes for Heard {
@@ -29,9 +30,12 @@ impl obelus_ui::shapes::Shapes for Heard {
 
     fn ruled(&self, _area: Rect) {}
 
-    fn capped(&self, keys: &str, area: Rect, _cap: Color, _page: Color, _edge: Color) {
+    fn capped(&self, keys: &str, area: Rect, cap: Color, _page: Color, _edge: Color) {
         if let Ok(mut caps) = self.caps.lock() {
             caps.push(area);
+        }
+        if let Ok(mut grounds) = self.grounds.lock() {
+            grounds.push((keys.to_string(), area, cap));
         }
         if let Ok(mut heard) = self.keys.lock() {
             heard.push((keys.to_string(), area));
@@ -343,4 +347,22 @@ fn the_keys_a_conversation_names_wear_caps() {
         ["Enter"],
         "the key on a row that hands something back"
     );
+
+    // And in the colour of the row it is on. That key is offered only on
+    // the row the reader is on, so a cap in the page's colour cut a hole
+    // in the one mark saying where the keys are. Asked of the cells under
+    // the key, which a terminal draws, rather than of the theme.
+    //
+    // Deliberate break: `cap_the_keys` given `self.theme.background` for
+    // its ground again, and the cap is the page's colour on a lit row.
+    heard.grounds.lock().expect("the grounds").clear();
+    let cells = support::cells_of(&mut app, width, height);
+    let grounds = heard.grounds.lock().expect("the grounds").clone();
+    let (_, area, cap) = grounds
+        .iter()
+        .find(|(keys, _, _)| keys == "Enter")
+        .expect("a cap round enter");
+    let row = cells[(area.x + 1, area.y)].bg;
+    assert_ne!(row, Color::Reset, "the row with the key is not lit");
+    assert_eq!(*cap, row, "the cap is not the colour of its row");
 }

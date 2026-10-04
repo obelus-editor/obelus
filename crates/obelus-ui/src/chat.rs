@@ -359,18 +359,14 @@ fn joined(hints: &[(String, &'static str)]) -> Option<String> {
 /// Nothing is written: the run `joined` made is the whole of what a
 /// terminal draws, and this says what shape a window may draw round part
 /// of it -- the same cap the foot's keys wear.
-fn cap_the_keys(at: u16, y: u16, hints: &[(String, &'static str)], theme: &Theme) {
+///
+/// On `ground`, the colour of the row it is on, as the settings' caps are:
+/// a key a row hands back is offered only on the row the reader is on, and
+/// a cap in the page's colour cut a hole in the mark that says so.
+fn cap_the_keys(at: u16, y: u16, hints: &[(String, &'static str)], ground: Color, theme: &Theme) {
     for (along, (keys, _)) in where_the_keys_are(hints).into_iter().zip(hints) {
         if let Ok(x) = u16::try_from(usize::from(at) + along) {
-            crate::cap_around(
-                x,
-                y,
-                keys,
-                text_width(keys),
-                theme.background,
-                theme.background,
-                theme.gutter,
-            );
+            crate::cap_around(x, y, keys, text_width(keys), ground, ground, theme.gutter);
         }
     }
 }
@@ -959,7 +955,7 @@ impl ChatView<'_> {
             return;
         };
         write(cells, at, y, &said, dim);
-        cap_the_keys(at, y, &keys, self.theme);
+        cap_the_keys(at, y, &keys, self.theme.background, self.theme);
     }
 
     /// Says how to get back to the end, where the reader has left it.
@@ -1257,10 +1253,11 @@ impl ChatView<'_> {
             if clipped {
                 ended = write_within(cells, stop.saturating_sub(1), y, "\u{2026}", dim, stop);
             }
+            let ground = style.bg.unwrap_or(self.theme.background);
             for (gap, said, style, keys) in tail {
                 let at = ended + gap;
                 ended = write_within(cells, at, y, &said, style, words_end(area) + 1);
-                cap_the_keys(at, y, &keys, self.theme);
+                cap_the_keys(at, y, &keys, ground, self.theme);
             }
             // How to stop it, on the row that says it is going: the one
             // thing escape does here that a reader could not guess, and it
@@ -1273,7 +1270,7 @@ impl ChatView<'_> {
                     && area.x + offset > ended + 1
                 {
                     write(cells, area.x + offset, y, &said, dim);
-                    cap_the_keys(area.x + offset, y, &keys, self.theme);
+                    cap_the_keys(area.x + offset, y, &keys, ground, self.theme);
                 }
             }
         }
@@ -1368,7 +1365,7 @@ impl ChatView<'_> {
         {
             let at = area.x + offset;
             write(cells, at, area.y, hint, plain.fg(self.theme.gutter));
-            cap_the_keys(at, area.y, &keys, self.theme);
+            cap_the_keys(at, area.y, &keys, self.theme.background, self.theme);
         }
 
         // How full the agent's memory is, beside the hints rather than
