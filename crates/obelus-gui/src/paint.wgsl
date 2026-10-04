@@ -45,7 +45,8 @@ struct Screen {
 struct Quad {
     // Where it goes, in pixels: left, top, width, height.
     @location(0) rect: vec4<f32>,
-    // And where its picture is in the atlas: left, top, right, bottom.
+    // And where its picture is in the atlas: left, top, right, bottom --
+    // or for glass, in pixels, the rectangle it is drawn inside.
     @location(1) uv: vec4<f32>,
     @location(2) colour: vec4<f32>,
     // 1: a solid colour. 2: a picture with colours of its own.
