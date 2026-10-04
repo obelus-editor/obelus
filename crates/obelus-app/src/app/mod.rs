@@ -2788,6 +2788,7 @@ impl App {
             Event::Reached(number, event) => self.reached_event(number, event),
             Event::Held(number, lock) => self.held_the_remote(number, lock),
             Event::NotLetGo(number) => self.not_let_go(number),
+            Event::NotHeld(number) => self.not_held(number),
             Event::Fonts { here, otherwise } => {
                 tracing::info!(
                     faces = here.len(),

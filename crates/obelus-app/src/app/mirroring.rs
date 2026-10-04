@@ -518,18 +518,26 @@ impl App {
 
     /// A thread that would not open: what was held for it let go, and the
     /// conversation left to ask again on the next connection.
-    pub(super) fn thread_unopened(&mut self, asked: u64) {
+    pub(super) fn thread_unopened(&mut self, asked: u64, waited: bool) {
         if let Some(chat) = self.mirror.opening.remove(&asked) {
-            tracing::info!(chat, "its thread would not open");
+            tracing::info!(chat, waited, "its thread would not open");
             self.mirror.held.remove(&chat);
             // Said in the conversation, which is where the reader is when it
             // matters: the one place that could have said it otherwise was a
             // word on the header that every other conversation also had.
+            // And said as what it was: a thread let go of here, while the
+            // connection was down too long, is nothing the platform did.
             if let (Some(id), Some(platform)) = (self.document_named(&chat), self.platform()) {
-                let said = format!(
-                    "{} would not start a thread for this conversation",
-                    platform.name
-                );
+                let said = match waited {
+                    true => format!(
+                        "{} was not reached in time to start a thread for this conversation",
+                        platform.name
+                    ),
+                    false => format!(
+                        "{} would not start a thread for this conversation",
+                        platform.name
+                    ),
+                };
                 self.in_talk(talking::Whose::One(id), |talk| talk.note(&said));
             }
             self.mirror.unopened.insert(chat);

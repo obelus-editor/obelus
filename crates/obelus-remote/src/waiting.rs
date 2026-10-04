@@ -37,7 +37,10 @@ impl Waiting {
                 self.dropped = true;
             }
             if let Out::Open { asked, .. } = oldest {
-                let _ = sink.send(Event::Unopened { asked });
+                let _ = sink.send(Event::Unopened {
+                    asked,
+                    waited: true,
+                });
             }
         }
         self.outs.push_back(out);
@@ -56,9 +59,11 @@ mod tests {
     /// Only so much is kept, the newest of it, and a thread asked for and
     /// let go of is said not to have opened.
     ///
-    /// Broken deliberately twice. Keeping everything: the queue held all
-    /// three hundred. And letting an asked-for thread go in silence: no
-    /// `Unopened` came, and its conversation would have waited for ever.
+    /// Broken deliberately three times. Keeping everything: the queue held
+    /// all three hundred. Letting an asked-for thread go in silence: no
+    /// `Unopened` came, and its conversation would have waited for ever. And
+    /// saying it as the platform's refusal: the conversation blamed the
+    /// platform for what was let go of here.
     #[test]
     fn only_the_newest_is_kept_and_a_thread_let_go_is_said_not_to_open() {
         let (sender, heard) = std::sync::mpsc::channel::<Event>();
@@ -93,9 +98,13 @@ mod tests {
             })
         );
         assert!(
-            heard
-                .try_iter()
-                .any(|event| matches!(event, Event::Unopened { asked: 7 })),
+            heard.try_iter().any(|event| matches!(
+                event,
+                Event::Unopened {
+                    asked: 7,
+                    waited: true
+                }
+            )),
             "the thread let go of was not said not to open"
         );
     }

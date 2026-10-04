@@ -372,7 +372,10 @@ async fn say(api: &Api, sink: &Arc<dyn Sink<Event>>, out: Out) -> Result<(), Ref
                     });
                 }
                 failed => {
-                    let _ = sink.send(Event::Unopened { asked });
+                    let _ = sink.send(Event::Unopened {
+                        asked,
+                        waited: false,
+                    });
                     failed?;
                 }
             }

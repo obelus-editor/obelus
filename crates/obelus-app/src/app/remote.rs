@@ -94,6 +94,9 @@ pub(super) struct Remote {
     /// thread each time was a thread more each time, all blocked on a
     /// window that would not let go.
     waiter: Option<u64>,
+    /// How many such threads this window has started, ever: what a test
+    /// counts to see that asking again did not start another.
+    waiters: u64,
     /// An asking given up on because the other window did not answer in
     /// time -- not one the reader took back. Its request still stands, so
     /// a window that hears late and lets go leaves the chat here rather
@@ -322,7 +325,9 @@ impl App {
             } => self.heard(&from, &room, &at, &text),
             obelus_remote::Event::Named { id, name } => self.let_in(id, name),
             obelus_remote::Event::Opened { asked, thread, .. } => self.thread_opened(asked, thread),
-            obelus_remote::Event::Unopened { asked } => self.thread_unopened(asked),
+            obelus_remote::Event::Unopened { asked, waited } => {
+                self.thread_unopened(asked, waited);
+            }
             obelus_remote::Event::PairingOver => {
                 self.remote.pairing = None;
                 self.remote.pairing_runs_out = None;
@@ -822,11 +827,11 @@ impl App {
         self.holds_the_remote()
     }
 
-    /// How many threads this window has set waiting in the kernel for the
-    /// chat, for a test that asks again after giving up.
+    /// How many threads this window has started waiting in the kernel for
+    /// the chat, for a test that asks again after giving up.
     #[must_use]
     pub fn waiters_for_test(&self) -> u64 {
-        self.remote.asked
+        self.remote.waiters
     }
 
     /// The chat and where it stands, for the status row of the window it
@@ -901,10 +906,14 @@ impl App {
             && let Some(events) = self.events.clone()
         {
             self.remote.waiter = Some(number);
+            self.remote.waiters += 1;
             obelus_runtime::handle().spawn_blocking(move || {
-                if obelus_agent::chats::wait_to_hold(&lock) {
-                    let _ = events.send(Event::Held(number, lock));
-                }
+                // Said either way: a thread that ended in silence would be
+                // waited on for ever, by every asking after it.
+                let _ = match obelus_agent::chats::wait_to_hold(&lock) {
+                    true => events.send(Event::Held(number, lock)),
+                    false => events.send(Event::NotHeld(number)),
+                };
             });
         }
         // Given up on after a while, because the asking travels by a watch,
@@ -934,6 +943,21 @@ impl App {
             return;
         }
         self.take_the_remote(lock);
+    }
+
+    /// The thread waiting for the lock could not wait at all: there is no
+    /// waiting going on, so the next asking starts it again, and one still
+    /// going is over -- said, because nothing else will come for it.
+    pub(super) fn not_held(&mut self, number: u64) {
+        if self.remote.waiter == Some(number) {
+            self.remote.waiter = None;
+        }
+        if self.remote.taking.as_ref().map(|(asked, _)| *asked) == Some(number) {
+            self.remote.taking = None;
+            if let Some(platform) = self.platform() {
+                self.wrong(format!("Could not wait for {} to come here", platform.name));
+            }
+        }
     }
 
     /// The other window never let go.
@@ -967,6 +991,10 @@ impl App {
                 let _ = std::fs::write(path, WITHDRAWN);
             }
             self.remote.wrote = None;
+            // And whatever it was asked for before, given up on and still
+            // waiting: taken back with it, or a holder that lets go later
+            // would hand over a chat the reader said they did not want.
+            self.remote.given_up = None;
             return;
         }
         if self.remote.holding.take().is_none() {

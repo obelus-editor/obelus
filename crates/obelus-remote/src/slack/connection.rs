@@ -151,7 +151,10 @@ async fn run(
                     }
                     Err(error) => {
                         tracing::warn!(%error, "Slack would not start a thread");
-                        let _ = sink.send(Event::Unopened { asked });
+                        let _ = sink.send(Event::Unopened {
+                            asked,
+                            waited: false,
+                        });
                     }
                 }
             }

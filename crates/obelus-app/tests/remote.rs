@@ -1072,11 +1072,13 @@ fn what_is_said_while_reconnecting_still_goes() {
 /// connection is up again, and on the next connection, which may be one the
 /// reader has mended.
 ///
-/// Broken deliberately four times. Not keeping what would not open: it
+/// Broken deliberately five times. Not keeping what would not open: it
 /// was asked for again at once. Not letting go of that when the connection
 /// is up again: it was never asked for again on it. Not letting go of that
-/// on a new connection: the new one was never asked. And not saying so in the
-/// conversation: the reader was left to wonder where its thread was.
+/// on a new connection: the new one was never asked. Not saying so in the
+/// conversation: the reader was left to wonder where its thread was. And
+/// saying the one thing for both: a thread let go of while waiting was
+/// blamed on the platform.
 #[test]
 fn a_thread_that_would_not_open_is_asked_for_on_the_next_connection() {
     let _turn = turn();
@@ -1096,7 +1098,10 @@ fn a_thread_that_would_not_open_is_asked_for_on_the_next_connection() {
         })
         .expect("asked for");
     let platform = the_platform();
-    let _ = platform.send(obelus_remote::Event::Unopened { asked });
+    let _ = platform.send(obelus_remote::Event::Unopened {
+        asked,
+        waited: false,
+    });
     for _ in 0..10 {
         if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(30)) {
             app.handle(event);
@@ -1115,7 +1120,7 @@ fn a_thread_that_would_not_open_is_asked_for_on_the_next_connection() {
     let _ = platform.send(obelus_remote::Event::Connection(
         obelus_remote::State::Connected,
     ));
-    said_until(&mut app, &events, "the thread asked for again", |said| {
+    let said = said_until(&mut app, &events, "the thread asked for again", |said| {
         said.iter()
             .any(|out| matches!(out, obelus_remote::model::Out::Open { .. }))
     });
@@ -1124,6 +1129,30 @@ fn a_thread_that_would_not_open_is_asked_for_on_the_next_connection() {
     assert!(
         dump.contains("Slack would not start a thread"),
         "the conversation said nothing:\n{dump}"
+    );
+    // And says what it was when it was let go of here, waiting too long
+    // for a connection: nothing the platform did.
+    let again = said
+        .iter()
+        .find_map(|out| match out {
+            obelus_remote::model::Out::Open { asked, .. } => Some(*asked),
+            _ => None,
+        })
+        .expect("asked for again");
+    let _ = platform.send(obelus_remote::Event::Unopened {
+        asked: again,
+        waited: true,
+    });
+    for _ in 0..10 {
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(30)) {
+            app.handle(event);
+        }
+        support::lay_out(&mut app, 76, 24);
+    }
+    let dump = support::render(&mut app, 76, 24);
+    assert!(
+        dump.contains("Slack was not reached in time"),
+        "a thread let go of here was blamed on the platform:\n{dump}"
     );
 
     let (out, mut heard) = tokio::sync::mpsc::unbounded_channel();
@@ -1814,5 +1843,50 @@ fn a_window_set_to_no_chat_lets_go_of_it() {
     assert!(
         second.holds_the_remote_for_test(),
         "the second had to ask a window with no chat"
+    );
+}
+
+/// An asking taken back stays taken back, even when it was asking again
+/// after giving up once: the window that had the chat letting go later
+/// leaves it with nobody, not with the window the reader told to stop.
+///
+/// Broken deliberately by keeping what was given up on when taking the
+/// asking back: the late answer to it handed the chat over anyway.
+#[test]
+fn an_asking_taken_back_after_giving_up_stays_taken_back() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-take-back-again");
+    set_up_for_two(&scratch);
+    // Without a watcher, so it never hears the asking.
+    let (mut first, firsts) = a_window(&scratch);
+    dispatch::dispatch(&mut first, Command::RemoteConnect);
+    until(&mut first, &firsts, "the first to connect", |app| {
+        app.remote_state_for_test() == obelus_remote::State::Connected
+    });
+    let (mut second, seconds) = a_window(&scratch);
+    dispatch::dispatch(&mut second, Command::RemoteConnect);
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while second.note() != Some("Another window would not let Slack go") {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the asking was never given up on"
+        );
+        if let Ok(event) = seconds.recv_timeout(std::time::Duration::from_millis(50)) {
+            second.handle(event);
+        }
+        support::lay_out(&mut second, 76, 24);
+    }
+    dispatch::dispatch(&mut second, Command::RemoteConnect);
+    dispatch::dispatch(&mut second, Command::RemoteDisconnect);
+    dispatch::dispatch(&mut first, Command::RemoteDisconnect);
+    for _ in 0..20 {
+        if let Ok(event) = seconds.recv_timeout(std::time::Duration::from_millis(30)) {
+            second.handle(event);
+        }
+        support::lay_out(&mut second, 76, 24);
+    }
+    assert!(
+        !second.holds_the_remote_for_test(),
+        "a window took the chat after being told to stop asking"
     );
 }
