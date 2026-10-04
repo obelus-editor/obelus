@@ -11949,3 +11949,59 @@ fn a_press_in_the_transcript_puts_the_cursor_where_it_landed() {
         "the cursor is not where the press landed, but before {from:?}"
     );
 }
+
+/// A drag in the box leaves the keys in the box, however long it is held.
+///
+/// The box is under the transcript's band, so a drag in it is a drag held
+/// past the band's bottom edge, and every tick carries it on against that
+/// edge -- a drag on the transcript's last row. Which put the cursor there:
+/// a reader selecting a word of their own message and holding still for a
+/// moment found enter acting on a row of the transcript instead of sending.
+///
+/// Broken deliberately by letting every drag in the transcript move the
+/// cursor, which is what it did.
+#[test]
+fn a_drag_in_the_box_keeps_the_keys_there() {
+    use obelus_component::chat::Focus;
+
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // Rows enough to fill the band, so the edge has a row of transcript
+    // against it.
+    support::type_text(&mut app, "/filler");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "something to fill the band", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+            && app
+                .chat()
+                .is_some_and(|chat| chat.rows(WIDTH).len() > usize::from(HEIGHT))
+    });
+    support::type_text(&mut app, "a draft");
+    // Up from the end, with the wheel, which leaves the keys in the box: at
+    // the end, the tick's scroll carries the window past the last row and
+    // the drag it hands on lands on nothing.
+    app.handle(Event::Scroll(-9));
+
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let y = row_of(&dump, "a draft");
+    let x = u16::try_from(support::column_of(rows(&dump)[usize::from(y)], "a draft"))
+        .expect("a column");
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Pressed,
+        x,
+        y,
+    });
+    app.handle(Event::Pointer {
+        kind: obelus_app::event::Pointer::Dragged,
+        x: x + 5,
+        y,
+    });
+    app.handle(Event::Tick);
+    assert_eq!(
+        app.chat().expect("the chat").focus(),
+        Focus::Writing,
+        "a drag held in the box took the keys into the transcript"
+    );
+}

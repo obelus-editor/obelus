@@ -3690,6 +3690,16 @@ impl App {
         // the pointer, or the arrows after a press walk something the
         // reader had not pointed at. Not while a card is up, which has the
         // keys -- a cursor moved under it would be found there afterwards.
+        //
+        // And a drag only carries a cursor the press put here. The box is
+        // under the transcript's band, so a drag in the box is one held
+        // past its edge, and every tick hands it on as a drag on the
+        // transcript's last row: one that moved the cursor took the keys
+        // out of the box while the reader was selecting in it.
+        let carried = kind == Pointer::Pressed
+            || self.chat().is_some_and(|chat| {
+                matches!(chat.focus(), obelus_component::chat::Focus::Transcript(_))
+            });
         let cursor = self
             .conversation()
             .filter(|talk| talk.card.is_none())
@@ -3700,6 +3710,7 @@ impl App {
             return;
         };
         if matches!(kind, Pointer::Pressed | Pointer::Dragged)
+            && carried
             && let Some(cursor) = cursor
         {
             talk.chat.stand_in_transcript(cursor);
