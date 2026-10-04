@@ -1,0 +1,50 @@
+# The site, as of the release a reader can download.
+#
+# The site describes Obelus, and the Obelus a reader can install is the
+# latest release, not `master`: built from every push, the site told them
+# about keys and pages that no download had yet. So it goes up when a
+# release is *published* -- the decision to tell people, which a draft is
+# not (`release.yml`) -- from `docs/` at that release's tag.
+#
+# Two things outside this file hold it up. Pages must take its site from
+# GitHub Actions rather than from a branch, or `master`'s `docs/` is still
+# built on every push beside this. And the `github-pages` environment must
+# let a `v*` tag deploy, because a release's run is on its tag and the
+# environment only lets the branches it names through.
+name: Pages
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+# Two releases published close together go up in order; a deploy cut off
+# halfway would leave whichever one Pages had last.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: The site
+    # A prerelease is not what a reader is offered, so the site does not
+    # describe it.
+    if: ${{ !github.event.release.prerelease }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/configure-pages@v6
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: docs
+      - id: deployment
+        uses: actions/deploy-pages@v5
