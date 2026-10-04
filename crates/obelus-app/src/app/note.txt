@@ -2,4 +2,4 @@ This conversation is about one of Obelus's notes, which says:
 
 {said}
 
-Its name is {name}.{at}
+Its name is {name}, which is for Obelus's tools and nothing else: the reader has never seen it, so when you mention this note to them, use its own words.{at}

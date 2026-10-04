@@ -274,7 +274,8 @@ impl Obelus {
         lines under it are the rest of what that one says. A note indented \
         under another hangs under it, and finishing the one above is about \
         the whole of it. The name is what the other tools take, and only \
-        them: nothing on the reader's screen shows it."
+        them: nothing on the reader's screen shows it, so a note you mention \
+        to the reader is mentioned in its own words."
     )]
     fn todo_list(&self) -> Result<CallToolResult, ErrorData> {
         tracing::info!("an agent asked for the notes");
