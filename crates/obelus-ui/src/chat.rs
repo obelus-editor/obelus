@@ -216,6 +216,10 @@ pub fn regions(area: Rect, needed: usize) -> Regions {
     regions_capped(area, needed, MOST_WRITING)
 }
 
+/// A piece of what a row says about itself, after its words: the gap
+/// before it, what it says, its colour, and the keys it is made of.
+type Tail = (u16, String, Style, Vec<(String, &'static str)>);
+
 /// The blanks between a key and the word for what it does.
 const GAP_IN_A_HINT: usize = 2;
 /// And between one of those and the next.
@@ -258,6 +262,36 @@ fn joined(hints: &[(String, &'static str)]) -> Option<String> {
                 .join(&" ".repeat(GAP_BETWEEN_HINTS)),
         ),
     }
+}
+
+/// Says which cells of a row of keys written at `at` are the keys.
+///
+/// Nothing is written: the run `joined` made is the whole of what a
+/// terminal draws, and this says what shape a window may draw round part
+/// of it -- the same cap the foot's keys wear.
+fn cap_the_keys(at: u16, y: u16, hints: &[(String, &'static str)], theme: &Theme) {
+    for (along, (keys, _)) in where_the_keys_are(hints).into_iter().zip(hints) {
+        if let Ok(x) = u16::try_from(usize::from(at) + along) {
+            crate::cap_around(
+                x,
+                y,
+                keys,
+                text_width(keys),
+                theme.background,
+                theme.background,
+                theme.gutter,
+            );
+        }
+    }
+}
+
+/// A key as it is written, with no modifier or with control.
+fn key(code: crossterm::event::KeyCode, control: bool) -> String {
+    let modifiers = match control {
+        true => crossterm::event::KeyModifiers::CONTROL,
+        false => crossterm::event::KeyModifiers::NONE,
+    };
+    obelus_editing::keymap::KeyChord::new(code, modifiers).label()
 }
 
 /// The same, for a foot of the region with a cap of its own.
@@ -828,7 +862,8 @@ impl ChatView<'_> {
             1 => "1 new message".to_string(),
             many => format!("{many} new messages"),
         };
-        let label = format!("  {said}  ctrl+end \u{2193}  ");
+        let keys = key(crossterm::event::KeyCode::End, true);
+        let label = format!("  {said}  {keys} \u{2193}  ");
         let width = text_width(&label);
         let Ok(width) = u16::try_from(width) else {
             return;
@@ -848,6 +883,17 @@ impl ChatView<'_> {
                 .fg(self.theme.foreground)
                 .bg(self.theme.background),
         );
+        if let Ok(along) = u16::try_from(2 + text_width(&said) + 2) {
+            crate::cap_around(
+                x + along,
+                y,
+                &keys,
+                text_width(&keys),
+                self.theme.background,
+                self.theme.background,
+                self.theme.gutter,
+            );
+        }
     }
 
     /// What has been said, and the commands being completed over it.
@@ -1057,7 +1103,7 @@ impl ChatView<'_> {
             let tail = self.tail_of(row, dim, here);
             let kept: usize = tail
                 .iter()
-                .map(|(gap, said, _)| usize::from(*gap) + text_width(said))
+                .map(|(gap, said, _, _)| usize::from(*gap) + text_width(said))
                 .sum();
             let stop = (words_end(area) + 1).saturating_sub(u16::try_from(kept).unwrap_or(0));
             // Whether they fit, asked of the words rather than of where the
@@ -1089,8 +1135,10 @@ impl ChatView<'_> {
             if clipped {
                 ended = write_within(cells, stop.saturating_sub(1), y, "\u{2026}", dim, stop);
             }
-            for (gap, said, style) in tail {
-                ended = write_within(cells, ended + gap, y, &said, style, words_end(area) + 1);
+            for (gap, said, style, keys) in tail {
+                let at = ended + gap;
+                ended = write_within(cells, at, y, &said, style, words_end(area) + 1);
+                cap_the_keys(at, y, &keys, self.theme);
             }
             // How to stop it, on the row that says it is going: the one
             // thing escape does here that a reader could not guess, and it
@@ -1100,17 +1148,21 @@ impl ChatView<'_> {
             // the turn -- which is stopping it, so it goes beside the stop,
             // and is the first to go when the row is short.
             if row.speaker == Speaker::Doing && self.state == Talking::Thinking {
-                let hints: &[&str] = match self.chat.would_send_now() {
-                    true => &["Ctrl+Enter sends it now  Esc stops it", "Esc stops it"],
-                    false => &["Esc stops it"],
+                let stop = (key(crossterm::event::KeyCode::Esc, false), "Stops it");
+                let now = (key(crossterm::event::KeyCode::Enter, true), "Sends it now");
+                let rows = match self.chat.would_send_now() {
+                    true => vec![vec![now, stop.clone()], vec![stop]],
+                    false => vec![vec![stop]],
                 };
-                if let Some((offset, hint)) = hints.iter().find_map(|hint| {
-                    u16::try_from(usize::from(area.width).saturating_sub(text_width(hint) + 1))
+                if let Some((at, said, keys)) = rows.into_iter().find_map(|keys| {
+                    let said = joined(&keys)?;
+                    u16::try_from(usize::from(area.width).saturating_sub(text_width(&said) + 1))
                         .ok()
                         .filter(|offset| area.x + offset > ended + 1)
-                        .map(|offset| (offset, hint))
+                        .map(|offset| (area.x + offset, said, keys))
                 }) {
-                    write(cells, area.x + offset, y, hint, dim);
+                    write(cells, at, y, &said, dim);
+                    cap_the_keys(at, y, &keys, self.theme);
                 }
             }
         }
@@ -1205,22 +1257,7 @@ impl ChatView<'_> {
         {
             let at = area.x + offset;
             write(cells, at, area.y, hint, plain.fg(self.theme.gutter));
-            // And which cells of that run are the key. Nothing is written
-            // twice: the run above is the whole of what a terminal draws,
-            // and this says what shape a window may draw round part of it.
-            for (along, (keys, _)) in where_the_keys_are(&keys).into_iter().zip(&keys) {
-                if let Ok(x) = u16::try_from(usize::from(at) + along) {
-                    crate::cap_around(
-                        x,
-                        area.y,
-                        keys,
-                        text_width(keys),
-                        self.theme.background,
-                        self.theme.background,
-                        self.theme.gutter,
-                    );
-                }
-            }
+            cap_the_keys(at, area.y, &keys, self.theme);
         }
 
         // How full the agent's memory is, beside the hints rather than
@@ -1645,18 +1682,25 @@ impl ChatView<'_> {
     /// need has to be known *before* the words are drawn and what is drawn
     /// has to be the same thing that was measured. Two answers to "what
     /// goes at the end of this row" is how the end of a row goes missing.
-    fn tail_of(&self, row: &Row, dim: Style, standing: bool) -> Vec<(u16, String, Style)> {
+    ///
+    /// And the keys a piece is made of, for the cap round each: none, for
+    /// a piece that is only words.
+    fn tail_of(&self, row: &Row, dim: Style, standing: bool) -> Vec<Tail> {
         let mut tail = Vec::new();
         // What enter does here, on the row it would do it to: the rows in
         // a transcript whose key hands something back rather than opening
         // it, so a reader has no way to guess it. Only while they are
         // standing on it -- said on every row of theirs at once it would
         // be answering somebody who has not asked yet.
+        let enter = |does| {
+            let keys = vec![(key(crossterm::event::KeyCode::Enter, false), does)];
+            (2, joined(&keys).unwrap_or_default(), dim, keys)
+        };
         if row.unsent.is_some() && standing {
-            tail.push((2, "Enter takes it back".to_string(), dim));
+            tail.push(enter("Takes it back"));
         }
         if row.again.is_some() && standing {
-            tail.push((2, "Enter copies it to the box".to_string(), dim));
+            tail.push(enter("Copies it to the box"));
         }
         // Where it said it was working. The path is its own affordance:
         // Obelus opens files, so a row that names one is a row that goes
@@ -1664,19 +1708,19 @@ impl ChatView<'_> {
         if let Some((place, more)) = &row.place {
             let said = said_place(&row.text(), place, self.root, *more);
             if !said.is_empty() {
-                tail.push((2, said, dim));
+                tail.push((2, said, dim, Vec::new()));
             }
         }
         // What says there is more behind this row than it is showing: the
         // same mark a settings row and a card use for the same promise,
         // turned down when what it holds is open.
         if row.folds.is_some() {
-            tail.push((1, opens(row.open).to_string(), dim));
+            tail.push((1, opens(row.open).to_string(), dim, Vec::new()));
         }
         // How much it changes, which is what a reader reads first: the
         // shape of the change before any of its lines.
         if let Some((added, removed)) = row.changed {
-            tail.push((2, format!("+{added} \u{2212}{removed}"), dim));
+            tail.push((2, format!("+{added} \u{2212}{removed}"), dim, Vec::new()));
         }
         // A tool call's state goes after its title rather than in front of
         // it: the title is what a reader is scanning, and the state changes
@@ -1692,7 +1736,8 @@ impl ChatView<'_> {
             && row.speaker != Speaker::Step
             && !self.turns(row)
         {
-            tail.push(self.state_said(state, dim));
+            let (gap, said, style) = self.state_said(state, dim);
+            tail.push((gap, said, style, Vec::new()));
         }
         tail
     }

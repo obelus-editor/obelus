@@ -17,6 +17,7 @@ use ratatui::{buffer::Cell, layout::Rect, style::Color};
 #[derive(Default)]
 struct Heard {
     caps: Mutex<Vec<Rect>>,
+    keys: Mutex<Vec<(String, Rect)>>,
 }
 
 impl obelus_ui::shapes::Shapes for Heard {
@@ -28,9 +29,12 @@ impl obelus_ui::shapes::Shapes for Heard {
 
     fn ruled(&self, _area: Rect) {}
 
-    fn capped(&self, _keys: &str, area: Rect, _cap: Color, _page: Color, _edge: Color) {
+    fn capped(&self, keys: &str, area: Rect, _cap: Color, _page: Color, _edge: Color) {
         if let Ok(mut caps) = self.caps.lock() {
             caps.push(area);
+        }
+        if let Ok(mut heard) = self.keys.lock() {
+            heard.push((keys.to_string(), area));
         }
     }
 
@@ -177,5 +181,146 @@ fn a_window_offers_what_only_a_window_can_do() {
     assert!(
         keys.contains(&obelus_command::Command::WorktreeList),
         "a window's keys page has no row for switch-worktree"
+    );
+}
+
+/// Every key a conversation names in words wears a cap in a window: the
+/// two beside the row that says it is working, enter on a row it hands
+/// back, and the way back to the end -- each on the row it is written on.
+///
+/// They were plain words in the gutter's ink, so in a window the one key
+/// a reader could not guess was the one key on the page not drawn as a
+/// key.
+///
+/// Deliberate break: take the `cap_the_keys` out of the working row, out
+/// of the tail's loop, or the `cap_around` out of `the_way_back` -- each
+/// leaves its key with no cap, and this names which. And counting one
+/// blank fewer before the way back's key puts its cap a cell to the left.
+#[test]
+fn the_keys_a_conversation_names_wear_caps() {
+    use crossterm::event::KeyCode;
+
+    let _turn = turn();
+    obelus_config::drawn_in_a_window();
+    obelus_icons::use_glyphs(false);
+    let heard = heard();
+
+    let (sender, events) = std::sync::mpsc::channel();
+    let mut app = App::new(Vec::new());
+    app.events_for_test(sender);
+    app.agents_root_for_test(
+        std::env::temp_dir().join(format!("obelus-window-tests-{}", std::process::id())),
+    );
+    let (width, height) = (76, 24);
+    support::lay_out(&mut app, width, height);
+    app.talk_to(
+        "fake",
+        std::path::Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.new_conversation();
+    app.open_a_session_for_test();
+    let pump = |app: &mut App, what: &str, until: &dyn Fn(&App) -> bool| {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        while !until(app) {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            assert!(!left.is_zero(), "gave up waiting for {what}");
+            let event = events
+                .recv_timeout(left)
+                .unwrap_or_else(|_| panic!("nothing arrived while waiting for {what}"));
+            app.handle(event);
+            support::lay_out(app, width, height);
+        }
+    };
+    // Which keys were capped on the row that says `words`, in one frame.
+    let capped_beside = |app: &mut App, words: &str| -> Vec<String> {
+        heard.keys.lock().expect("the keys").clear();
+        let dump = support::render(app, width, height);
+        let rows: Vec<String> = support::text_block(&dump)
+            .lines()
+            .filter_map(|row| row.split_once('|'))
+            .map(|(_, cells)| cells.to_string())
+            .collect();
+        let y = rows
+            .iter()
+            .position(|row| row.contains(words))
+            .unwrap_or_else(|| panic!("nothing says {words:?}:\n{dump}"));
+        let keys: Vec<(String, Rect)> = heard
+            .keys
+            .lock()
+            .expect("the keys")
+            .iter()
+            .filter(|(_, area)| usize::from(area.y) == y)
+            .cloned()
+            .collect();
+        // Round the key, and not the cell beside it: a cap is said over
+        // the blank either side of what it holds.
+        for (keys, area) in &keys {
+            let under: String = rows[y]
+                .chars()
+                .skip(usize::from(area.x) + 1)
+                .take(keys.chars().count())
+                .collect();
+            assert_eq!(
+                &under, keys,
+                "the cap at {area:?} is not round its key:\n{dump}"
+            );
+        }
+        keys.into_iter().map(|(keys, _)| keys).collect()
+    };
+
+    pump(&mut app, "the handshake", &|app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/filler");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, "something to scroll", &|app| {
+        app.chat()
+            .is_some_and(|chat| chat.rows(width - 5).len() > usize::from(height))
+    });
+    pump(&mut app, "that turn to end", &|app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::press_control_key(&mut app, KeyCode::Home);
+    assert_eq!(
+        capped_beside(&mut app, "To the end"),
+        ["Ctrl+End"],
+        "the way back to the end"
+    );
+    support::press_control_key(&mut app, KeyCode::End);
+
+    support::type_text(&mut app, "/forever");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, "it to start thinking", &|app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+    support::type_text(&mut app, "and this");
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        capped_beside(&mut app, "Stops it"),
+        ["Ctrl+Enter", "Esc"],
+        "the keys beside the working row"
+    );
+
+    // Up, a row at a time, to the row waiting: the cursor walks the words,
+    // the row that says it is working and the blank above it among them.
+    for _ in 0..4 {
+        let on = app.chat().map(obelus_component::chat::Chat::focus);
+        if let Some(obelus_component::chat::Focus::Transcript(place)) = on
+            && app.chat().is_some_and(|chat| {
+                chat.rows(width - 5)
+                    .get(place.row)
+                    .is_some_and(|row| row.unsent.is_some())
+            })
+        {
+            break;
+        }
+        support::press(&mut app, KeyCode::Up);
+        support::render(&mut app, width, height);
+    }
+    assert_eq!(
+        capped_beside(&mut app, "Takes it back"),
+        ["Enter"],
+        "the key on a row that hands something back"
     );
 }

@@ -4,7 +4,7 @@ screen 76x24  editor 76x22  status 76x1
  1|────────────────────────────────────────────────────────────────────────────
  2| >  /pick                                                                   
  3|                                                                            
- 4| ⠋  Thinking…                                                  Esc stops it 
+ 4| ⠋  Thinking…                                                 Esc  Stops it 
  5|                                                                            
  6|                                                                            
  7|                                                                            
@@ -29,7 +29,7 @@ screen 76x24  editor 76x22  status 76x1
  1|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  2|abaabbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  3|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 4|abaabbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccccccccca
+ 4|abaabbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccca
  5|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  6|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  7|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

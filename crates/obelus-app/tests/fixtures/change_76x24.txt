@@ -11,7 +11,7 @@ screen 76x24  editor 76x22  status 76x1
  8|     ▐fn step_rows(row: ScreenRow) -> usize {                               
  9|     ▐    row.get()                                                         
 10|                                                                            
-11| ⠋  Thinking…                                                  Esc stops it 
+11| ⠋  Thinking…                                                 Esc  Stops it 
 12|                                                                            
 13|                                                                            
 14|                                                                            
@@ -36,7 +36,7 @@ screen 76x24  editor 76x22  status 76x1
  8|aaaaafggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggga
  9|aaaaafggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggga
 10|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-11|abaabbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccccccccca
+11|abaabbbbbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccca
 12|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 13|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 14|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

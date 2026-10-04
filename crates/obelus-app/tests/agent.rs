@@ -947,11 +947,11 @@ fn the_working_row_offers_to_send_now_only_with_something_to_send() {
         let dump = support::render(app, WIDTH, HEIGHT);
         rows(&dump)
             .into_iter()
-            .find(|row| row.contains("Esc stops it"))
+            .find(|row| row.contains("Esc  Stops it"))
             .map(str::to_string)
             .unwrap_or_else(|| panic!("nothing says how to stop it:\n{dump}"))
     };
-    let offered = |row: &str| row.contains("Ctrl+Enter sends it now");
+    let offered = |row: &str| row.contains("Ctrl+Enter  Sends it now");
     assert!(!offered(&doing(&mut app)), "offered over an empty box");
 
     support::type_text(&mut app, "and this");
@@ -1005,7 +1005,7 @@ fn enter_on_something_not_yet_sent_takes_it_back() {
     // out: this is the one row in a transcript that hands something back.
     let text = screen(&mut app);
     assert!(
-        text.contains("Enter takes it back"),
+        text.contains("Enter  Takes it back"),
         "the row says nothing about the key standing on it:\n{text}"
     );
     support::press(&mut app, KeyCode::Enter);
@@ -1056,7 +1056,7 @@ fn enter_on_something_already_said_copies_it_to_the_box() {
     support::press(&mut app, KeyCode::Up);
     let text = screen(&mut app);
     assert!(
-        text.contains("Enter copies it to the box"),
+        text.contains("Enter  Copies it to the box"),
         "the row says nothing about the key standing on it:\n{text}"
     );
     support::press(&mut app, KeyCode::Enter);
@@ -3514,7 +3514,7 @@ fn what_is_happening_is_in_the_transcript_and_not_in_the_header() {
         .position(|row| row.contains("Thinking\u{2026}"))
         .unwrap_or_else(|| panic!("nothing says it is working:\n{dump}"));
     assert!(
-        shown[doing].contains("Esc stops it"),
+        shown[doing].contains("Esc  Stops it"),
         "how to stop it is not beside the thing it stops:\n{dump}"
     );
 
@@ -5692,7 +5692,7 @@ fn what_the_agent_means_to_do_is_one_row_that_opens() {
     assert_eq!(
         screen
             .iter()
-            .filter(|row| row.contains("Esc stops it"))
+            .filter(|row| row.contains("Esc  Stops it"))
             .count(),
         1,
         "the hint is on more than the row it is about:\n{dump}"
@@ -7223,7 +7223,7 @@ fn a_transcript_scrolled_up_says_how_to_get_back() {
     // At the end, which is where it sits: nothing to say.
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     assert!(
-        !rows(&dump).iter().any(|row| row.contains("ctrl+end")),
+        !rows(&dump).iter().any(|row| row.contains("Ctrl+End")),
         "a conversation nobody has scrolled offers a way back:\n{dump}"
     );
 
@@ -7261,7 +7261,7 @@ fn a_transcript_scrolled_up_says_how_to_get_back() {
     support::press_control_key(&mut app, KeyCode::End);
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     assert!(
-        !rows(&dump).iter().any(|row| row.contains("ctrl+end")),
+        !rows(&dump).iter().any(|row| row.contains("Ctrl+End")),
         "the way back is still offered at the end:\n{dump}"
     );
 }
