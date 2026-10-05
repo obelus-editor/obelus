@@ -177,14 +177,10 @@ impl App {
             // Whose conversation it is. The same slot a commit's short id
             // uses, for the same reason: two rows that differ in who is
             // answering are two rows a reader cannot otherwise tell apart.
-            // By what the agent calls itself, as the conversation's header
-            // does: the id is a word for the settings file, and the
-            // registry is read only once the agents page has asked for it.
-            trailing: talker.map(|talker| {
-                talker
-                    .info()
-                    .map_or_else(|| self.agent_called(talker.id()), str::to_string)
-            }),
+            // By the name the conversation's header calls it, and through
+            // the same function, so the two cannot drift: the id is a word
+            // for the settings file.
+            trailing: talker.and(self.agent_name()).map(str::to_string),
             changed: None,
             value: PickerValue::Document(DocumentId::new(index)),
             enabled: true,
