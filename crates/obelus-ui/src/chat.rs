@@ -47,7 +47,7 @@ use obelus_text::text_width;
 use obelus_theme::Theme;
 use ratatui::{
     buffer::Buffer as CellBuffer,
-    layout::Rect,
+    layout::{Position, Rect},
     style::{Color, Style},
     widgets::Widget,
 };
@@ -276,6 +276,68 @@ fn offer(area: Rect, chat: &Chat) -> Offer {
         }
         _ => Offer::Under,
     }
+}
+
+/// The way back to the end, while the reader has left it: what it says, and
+/// where.
+struct WayBack {
+    /// The words before the key.
+    said: String,
+    /// The key, spelled.
+    keys: String,
+    /// The whole of it, as drawn.
+    label: String,
+    /// The cells it covers, on the rule over the box.
+    at: Rect,
+}
+
+/// Where the way back is, if it is on screen at all.
+fn way_back(area: Rect, chat: &Chat, card: Option<&Card>) -> Option<WayBack> {
+    // What `render` draws nothing in, so nothing to press either.
+    if chat.at_the_end() || area.height < 5 || area.width < 20 {
+        return None;
+    }
+    let said = match chat.said_since() {
+        0 => "To the end".to_string(),
+        1 => "1 new message".to_string(),
+        many => format!("{many} new messages"),
+    };
+    let keys = chord(KeyCode::End, KeyModifiers::CONTROL);
+    // Two blanks before the arrow in a window, where the cap is laid
+    // over the first and the arrow would sit against its edge -- the
+    // welcome screen's `beside`, for the same reason.
+    let gap = match obelus_config::in_a_window() {
+        true => "  ",
+        false => " ",
+    };
+    let label = format!("  {said}  {keys}{gap}\u{2193}  ");
+    let width = u16::try_from(text_width(&label)).ok()?;
+    if width >= area.width {
+        return None;
+    }
+    // Centred, which is where a thing that belongs to the whole width
+    // goes -- and where the eye is already, the box being under it.
+    let at = Rect {
+        x: area.x + (area.width - width) / 2,
+        y: bands(area, chat, card).writing.y - 1,
+        width,
+        height: 1,
+    };
+    Some(WayBack {
+        said,
+        keys,
+        label,
+        at,
+    })
+}
+
+/// The cells the way back to the end covers, while it is on screen.
+///
+/// Asked by the drawing and by a press alike, so what is raised under the
+/// pointer is exactly what a press there takes.
+#[must_use]
+pub fn way_back_at(area: Rect, chat: &Chat, card: Option<&Card>) -> Option<Rect> {
+    way_back(area, chat, card).map(|back| back.at)
 }
 
 /// The rows of the box the words have: all of it but the row offering to
@@ -538,6 +600,8 @@ pub struct ChatView<'a> {
     /// Whether nothing is over it, which is whether it may mark where the
     /// keys are -- see [`crate::in_front`].
     in_front: bool,
+    /// Where the pointer is, for the one thing here a press does.
+    pointer: Option<(u16, u16)>,
     /// The project Obelus was opened on, for writing the paths an agent names
     /// the way a reader writes them.
     root: &'a Path,
@@ -587,6 +651,7 @@ impl<'a> ChatView<'a> {
             focus: app.chat()?.focus(),
             card: app.card(),
             in_front: crate::in_front(app, None),
+            pointer: app.pointer(),
             root: app.working_directory(),
             phase: app.phase(),
             branch: app.branch_this_conversation_works_on(),
@@ -914,7 +979,7 @@ impl Widget for ChatView<'_> {
         // table refuses, because the editor takes it before the table is
         // reached -- so the one key Obelus will not let a reader rebind is
         // the one it has to name here.
-        self.the_way_back(cells, regions.writing.y - 1, area);
+        self.the_way_back(cells, area);
         // The card where the box would be: while the agent is waiting on
         // an answer there is no message to send, so the row the reader
         // would type it in is the room the question needs.
@@ -964,51 +1029,39 @@ impl ChatView<'_> {
     /// question somebody who scrolled up actually has is whether it has
     /// answered them yet, and the scrollbar beside them can only say how
     /// much there is -- never whether any of it is new.
-    fn the_way_back(&self, cells: &mut CellBuffer, y: u16, area: Rect) {
-        if self.chat.at_the_end() {
-            return;
-        }
-        let said = match self.chat.said_since() {
-            0 => "To the end".to_string(),
-            1 => "1 new message".to_string(),
-            many => format!("{many} new messages"),
-        };
-        let keys = chord(KeyCode::End, KeyModifiers::CONTROL);
-        // Two blanks before the arrow in a window, where the cap is laid
-        // over the first and the arrow would sit against its edge -- the
-        // welcome screen's `beside`, for the same reason.
-        let gap = match obelus_config::in_a_window() {
-            true => "  ",
-            false => " ",
-        };
-        let label = format!("  {said}  {keys}{gap}\u{2193}  ");
-        let width = text_width(&label);
-        let Ok(width) = u16::try_from(width) else {
+    ///
+    /// Raised while the pointer is over it, because a press there is the
+    /// key it names: the one place on this screen a press does something
+    /// other than put a caret down or take hold of words, and nothing else
+    /// would say so before the press.
+    fn the_way_back(&self, cells: &mut CellBuffer, area: Rect) {
+        let Some(back) = way_back(area, self.chat, self.card) else {
             return;
         };
-        if width >= area.width {
-            return;
-        }
-        // Centred, which is where a thing that belongs to the whole width
-        // goes -- and where the eye is already, the box being under it.
-        let x = area.x + (area.width - width) / 2;
+        let pointed = self.in_front
+            && self
+                .pointer
+                .is_some_and(|(x, y)| back.at.contains(Position { x, y }));
+        let ground = match pointed {
+            true => self.theme.raised_background,
+            false => self.theme.background,
+        };
+        let Rect { x, y, .. } = back.at;
         write(
             cells,
             x,
             y,
-            &label,
-            Style::new()
-                .fg(self.theme.foreground)
-                .bg(self.theme.background),
+            &back.label,
+            Style::new().fg(self.theme.foreground).bg(ground),
         );
-        if let Ok(along) = u16::try_from(2 + text_width(&said) + 2) {
+        if let Ok(along) = u16::try_from(2 + text_width(&back.said) + 2) {
             crate::cap_around(
                 x + along,
                 y,
-                &keys,
-                text_width(&keys),
-                self.theme.background,
-                self.theme.background,
+                &back.keys,
+                text_width(&back.keys),
+                ground,
+                ground,
                 self.theme.gutter,
             );
         }
@@ -2156,6 +2209,7 @@ mod tests {
                 focus: obelus_component::chat::Focus::Writing,
                 card,
                 in_front: true,
+                pointer: None,
                 root: std::path::Path::new("/"),
                 phase: 0,
                 branch: None,
@@ -2288,6 +2342,7 @@ mod caret {
                         ),
                         card: None,
                         in_front: true,
+                        pointer: None,
                         root: std::path::Path::new("/"),
                         phase: 0,
                         branch: None,

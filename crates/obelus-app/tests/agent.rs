@@ -7851,6 +7851,95 @@ fn a_transcript_scrolled_up_says_how_to_get_back() {
     );
 }
 
+/// The way back is pressed as well as typed, and says so under the pointer.
+///
+/// It names `ctrl+end`, and a reader with a hand on the mouse reaches for
+/// the words rather than the key. Raised while the pointer is over it and
+/// only then, because it is the one place on this screen where a press
+/// does something other than put a caret down -- and a press beside it on
+/// the same rule is still nothing.
+///
+/// Broken deliberately three ways. Taking out the arm in
+/// `pointer_in_chat` leaves the press on the words doing nothing, and the
+/// transcript where it was. Making the arm take the whole row instead of
+/// the label's cells sends the press beside it to the end too. And giving
+/// `the_way_back` the page's colour whatever the pointer is doing leaves
+/// nothing raised under it.
+#[test]
+fn the_way_back_is_pressed_and_raised_under_the_pointer() {
+    use obelus_app::event::Pointer;
+
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/filler");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "something to scroll", |app| {
+        app.chat()
+            .is_some_and(|chat| chat.rows(WIDTH - 5).len() > usize::from(HEIGHT))
+    });
+    support::press_control_key(&mut app, KeyCode::Home);
+
+    // Found where it is drawn, not asked of the arithmetic that places it.
+    let cells = support::cells_of(&mut app, WIDTH, HEIGHT);
+    let (x, y) = (0..HEIGHT)
+        .find_map(|y| {
+            let row: String = (0..WIDTH).map(|x| cells[(x, y)].symbol()).collect();
+            let from = row.find("To the end")?;
+            Some((u16::try_from(row[..from].chars().count()).ok()?, y))
+        })
+        .expect("nothing says how to get back");
+    let ground_under = |app: &mut App, at: (u16, u16)| support::cells_of(app, WIDTH, HEIGHT)[at].bg;
+    let point = |app: &mut App, kind: Pointer, x: u16, y: u16| {
+        app.handle(Event::Pointer { kind, x, y });
+    };
+
+    let page = app.theme().background;
+    let raised = app.theme().raised_background;
+    assert_ne!(
+        page, raised,
+        "a theme where the two are one says nothing here"
+    );
+    assert_eq!(
+        ground_under(&mut app, (x, y)),
+        page,
+        "raised before the pointer came"
+    );
+    point(&mut app, Pointer::Moved, x + 3, y);
+    assert_eq!(
+        ground_under(&mut app, (x, y)),
+        raised,
+        "nothing is raised under the pointer"
+    );
+    point(&mut app, Pointer::Moved, x, y - 3);
+    assert_eq!(
+        ground_under(&mut app, (x, y)),
+        page,
+        "still raised after the pointer left"
+    );
+
+    // Beside it, on the same rule, is nothing.
+    point(&mut app, Pointer::Pressed, 1, y);
+    point(&mut app, Pointer::Released, 1, y);
+    assert!(
+        !app.chat().expect("the chat").at_the_end(),
+        "a press beside the way back went to the end"
+    );
+
+    point(&mut app, Pointer::Pressed, x + 3, y);
+    point(&mut app, Pointer::Released, x + 3, y);
+    assert!(
+        app.chat().expect("the chat").at_the_end(),
+        "a press on the way back did not go to the end"
+    );
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        !rows(&dump).iter().any(|row| row.contains("To the end")),
+        "the way back is still offered at the end:\n{dump}"
+    );
+}
+
 /// A long conversation still says when the agent is working.
 ///
 /// The row that says what is happening now is the last row of the
