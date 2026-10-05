@@ -4999,7 +4999,7 @@ fn a_list_over_a_question_covers_it_until_it_goes() {
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentList);
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     assert!(
-        rows(&dump).iter().any(|row| row.contains("A conversation")),
+        rows(&dump).iter().any(|row| row.contains("/twice")),
         "the list of open documents did not open:\n{dump}"
     );
     assert!(
@@ -5631,6 +5631,90 @@ fn a_conversation_an_agent_closes_is_named_and_leaves_the_list() {
     assert!(
         !listed,
         "the closed conversation is still a row of the list"
+    );
+}
+
+/// A conversation about no note goes by the reader's first words in the
+/// list of what is open until its agent names it, and by the agent's name
+/// after.
+///
+/// The agent names one at the end of its first turn, and a first turn can
+/// run for minutes: two of them side by side were two rows both saying
+/// `A conversation`.
+///
+/// Broken deliberately twice in `App::conversation_name`: without the first
+/// words the row reads `A conversation`; and asking for them before the
+/// agent's name keeps them after it has named the conversation.
+#[test]
+fn a_conversation_goes_by_its_first_words_until_it_is_named() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    fn labels(app: &mut App) -> Vec<String> {
+        obelus_app::app::dispatch::dispatch(app, obelus_command::Command::DocumentList);
+        let labels = app
+            .picker()
+            .expect("the list of what is open")
+            .matches()
+            .map(|item| item.label.clone())
+            .collect();
+        support::press(app, KeyCode::Esc);
+        labels
+    }
+
+    support::type_text(&mut app, "/titled   about the   counts");
+    support::press(&mut app, KeyCode::Enter);
+    let before = labels(&mut app);
+    assert!(
+        before
+            .iter()
+            .any(|label| label == "/titled about the counts"),
+        "the conversation does not go by what the reader first said: {before:?}"
+    );
+
+    pump(&mut app, &events, "the turn to end", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    let after = labels(&mut app);
+    assert!(
+        after.iter().any(|label| label == "Renamed by the agent"),
+        "the agent's name did not take over from the first words: {after:?}"
+    );
+}
+
+/// Where the conversation an agent closes goes by a long name, the line
+/// saying so cuts the name rather than going unsaid.
+///
+/// The name can be a whole line of the reader's, and the status row drops
+/// a sentence it cannot hold -- after squeezing the file's name out of the
+/// row to make room for it.
+///
+/// Broken deliberately by saying the name whole in
+/// `close_the_conversation`.
+#[test]
+fn a_long_name_is_cut_where_its_closing_is_said() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    let long = format!("/cost {}", "and the counts ".repeat(10));
+    support::type_text(&mut app, &long);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer", |app| {
+        said_in_transcript(app, "ran cost") && app.talking() == obelus_agent::Talking::Ready
+    });
+
+    assert_eq!(close_it(&mut app, 0), "closed");
+    let said = app.note().expect("nothing said about the closing");
+    assert!(
+        said.starts_with("Closed /cost and the counts") && said.ends_with('\u{2026}'),
+        "the closing named it some other way: {said:?}"
+    );
+    assert!(
+        // Characters for columns, which this name's are.
+        said.chars().count() <= "Closed ".len() + 40,
+        "the name went on the row whole: {said:?}"
     );
 }
 
@@ -7165,7 +7249,7 @@ fn the_list_of_open_documents_says_what_is_happening_now() {
     let row = |dump: &str| {
         rows(dump)
             .iter()
-            .find(|row| row.contains("A conversation"))
+            .find(|row| row.contains("/run"))
             .unwrap_or_else(|| panic!("no row for the conversation:\n{dump}"))
             .to_string()
     };

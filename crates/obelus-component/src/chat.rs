@@ -989,6 +989,39 @@ impl Chat {
         self.said.iter().any(|said| said.speaker != Speaker::Note)
     }
 
+    /// The first line of the first thing the reader said, its blanks run
+    /// together, for a conversation nobody has named yet.
+    ///
+    /// The first line rather than the whole message, because what comes
+    /// after it is mostly pasted code or a log. And its words rather than
+    /// its spelling where it has parts: a picture's label is Obelus's word
+    /// for the picture, not the reader's for the conversation. A row taken
+    /// up again has no parts, and is its words already.
+    ///
+    /// Not cut to any length: whatever draws it knows how much room it has.
+    #[must_use]
+    pub fn first_words(&self) -> Option<String> {
+        let said = self
+            .said
+            .iter()
+            .find(|said| said.speaker == Speaker::Reader)?;
+        let words = match said.parts.is_empty() {
+            true => said.text.clone(),
+            false => said
+                .parts
+                .iter()
+                .filter_map(|part| match part {
+                    crate::composer::Part::Words(words) => Some(words.as_str()),
+                    crate::composer::Part::Picture(_) => None,
+                })
+                .collect(),
+        };
+        words
+            .lines()
+            .map(|line| line.split_whitespace().collect::<Vec<_>>().join(" "))
+            .find(|line| !line.is_empty())
+    }
+
     /// Puts pasted text in the box, wherever the caret is.
     ///
     /// Into the box and nowhere else: a transcript is what was said, and the
@@ -3160,6 +3193,37 @@ mod tests {
             ]],
             "what waits lost the picture between its words"
         );
+    }
+
+    /// A conversation's first words are the first line the reader wrote in
+    /// it, blanks run together -- not Obelus's remark before it, not a
+    /// picture's label, and not what they said next.
+    ///
+    /// Broken deliberately four ways: answering the first row of anybody's
+    /// reads `Starting again`; answering the row's `text` reads `[Image 1]`;
+    /// taking the whole message rather than its first line keeps the second
+    /// line; and leaving the blanks as they came keeps the run of spaces.
+    #[test]
+    fn the_first_words_are_the_first_line_the_reader_wrote() {
+        let picture = Part::Picture(crate::composer::Attached {
+            mime: "image/png".to_string(),
+            bytes: vec![1, 2, 3],
+        });
+        let mut chat = Chat::new();
+        assert_eq!(chat.first_words(), None);
+        chat.note("Starting again");
+        chat.asked(&[
+            picture,
+            Part::Words("\n  fix   the counts\nand everything after them".to_string()),
+        ]);
+        chat.asked(&[Part::Words("and then this".to_string())]);
+        assert_eq!(chat.first_words().as_deref(), Some("fix the counts"));
+
+        // Taken up again, where what the reader said is the agent's copy
+        // and has no parts.
+        let mut chat = Chat::new();
+        chat.heard("what   next\nsecond");
+        assert_eq!(chat.first_words().as_deref(), Some("what next"));
     }
 
     #[test]
