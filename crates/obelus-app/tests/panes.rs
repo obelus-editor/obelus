@@ -32,6 +32,9 @@ struct Heard {
     /// The change marks, with the thread that said them: the editor says
     /// its margin in other tests' frames too.
     strokes: Mutex<Vec<(ThreadId, obelus_ui::shapes::Stroke)>>,
+    /// What was under each pane, with the thread that said it: the glass
+    /// is drawn from these cells, so a cell nobody wrote is a hole in it.
+    under: Mutex<Vec<(ThreadId, Rect, Vec<Cell>)>>,
 }
 
 /// A band or a pane, as it was said.
@@ -50,8 +53,11 @@ impl Heard {
 }
 
 impl obelus_ui::shapes::Shapes for Heard {
-    fn behind(&self, area: Rect, joined: Joined, _ground: Color, _cells: &[Cell]) {
+    fn behind(&self, area: Rect, joined: Joined, _ground: Color, cells: &[Cell]) {
         self.told(Told::Pane(area, joined));
+        if let Ok(mut under) = self.under.lock() {
+            under.push((std::thread::current().id(), area, cells.to_vec()));
+        }
     }
 
     fn scrolled(&self, area: Rect, _top: i64, _bar: Option<obelus_ui::shapes::Bar>) {
@@ -297,6 +303,77 @@ fn a_band_under_the_settings_is_said_before_them() {
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConfigOpen);
     let (_, joined) = the_file_is_said_before_the_pane(&mut app, "Theme", true);
     assert_eq!(joined, Joined::Screen, "the settings are the whole screen");
+}
+
+/// The status row under the settings is the page's colour before the glass
+/// is laid over it, while a setting's words are being typed into that row
+/// as much as while the page's filter is.
+///
+/// The row is written last, by whoever owns it, so a cell grid is the same
+/// either way: what differed was only what the glass was drawn from. It was
+/// filled only when the nearest thing took the row, and the line a setting
+/// is typed on does not take the row -- it is the row -- so the glass read
+/// cells nobody had written and drew a grey band with a dark edge under
+/// the box.
+///
+/// Broken deliberately by asking `layers.taking_the_status_row()` again
+/// before the fill in `obelus_ui::draw`: the row under the pane comes back
+/// unwritten.
+#[test]
+fn the_row_a_setting_is_typed_on_is_there_under_the_glass() {
+    let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    app.statuses_for_test(std::collections::HashMap::new());
+    app.config_file_for_test(
+        std::env::temp_dir()
+            .join(format!("obelus-panes-typed-{}", std::process::id()))
+            .join("config.toml"),
+    );
+    support::lay_out(&mut app, 60, 24);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConfigOpen);
+    support::type_text(&mut app, "speaks");
+    support::press(&mut app, crossterm::event::KeyCode::Enter);
+    let since = heard_under_so_far();
+    let cells = support::cells_of(&mut app, 60, 24);
+    let row: String = (0..60).map(|x| cells[(x, 23)].symbol()).collect();
+    assert!(
+        row.contains("Speaks as"),
+        "the setting is not being typed: {row:?}"
+    );
+
+    let me = std::thread::current().id();
+    let under = heard().under.lock().expect("nothing poisoned it");
+    let (pane, cells) = under
+        .iter()
+        .filter(|(whose, ..)| *whose == me)
+        .skip(since)
+        .map(|(_, pane, cells)| (*pane, cells))
+        .last()
+        .expect("the settings said their pane");
+    assert_eq!(
+        pane.bottom(),
+        24,
+        "the pane reaches the status row: {pane:?}"
+    );
+    let width = usize::from(pane.width);
+    let last = cells.chunks(width).last().expect("the pane has rows");
+    let page = app.theme().background;
+    assert!(
+        last.iter().all(|cell| cell.bg == page),
+        "the row under the glass is not the page: {:?}",
+        last.iter().map(|cell| cell.bg).collect::<Vec<_>>()
+    );
+}
+
+/// How many panes this thread has said what is under so far.
+fn heard_under_so_far() -> usize {
+    let me = std::thread::current().id();
+    heard()
+        .under
+        .lock()
+        .expect("nothing poisoned it")
+        .iter()
+        .filter(|(whose, ..)| *whose == me)
+        .count()
 }
 
 /// The counts, which take the whole screen as well.

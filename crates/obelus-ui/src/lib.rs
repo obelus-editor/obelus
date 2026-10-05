@@ -885,7 +885,15 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     // hole showed as a grey band across the foot of the counts and of the
     // settings, which is the blur behind the glass reading the nothing
     // under it.
-    if layers.taking_the_status_row() {
+    //
+    // Any of them showing, not the nearest: a setting's words are typed on
+    // the status row, and that line *is* the row rather than taking it, so
+    // asking the nearest left the settings' glass over a hole for as long
+    // as the reader was typing -- the same band, under the box.
+    if layers
+        .furthest_first()
+        .any(|layer| !matches!(layer.room(), layers::Room::Row))
+    {
         fill(
             cells,
             regions.status,
