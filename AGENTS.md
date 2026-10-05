@@ -16,17 +16,21 @@ part of it, rather than one competing on features.
 ## Commands
 
 ```
-cargo build
-cargo test
-cargo +nightly fmt              # NOT `cargo fmt`
-cargo clippy --all-features --all-targets
-cargo run -- crates/obelus-app/src/app/mod.rs               # ob, here
-cargo run -p obelus-gui -- crates/obelus-app/src/app/mod.rs # obg, in a window
-UPDATE_FIXTURES=1 cargo test    # regenerate golden cell grids
-cargo test -- --ignored         # the slow real-server tests, and the diff sweep
-OBELUS_REQUIRE_LSP=1 cargo test # a missing rust-analyzer fails rather than skips
-OBELUS_PATIENCE=10 cargo test   # an agent test that fails gives up in 10s, not 180
+cargo build --workspace
+cargo test --workspace
+cargo +nightly fmt --all        # NOT `cargo fmt`
+cargo clippy --workspace --all-features --all-targets
+cargo run -- crates/obelus-app/src/app/mod.rs           # obg, in a window
+cargo run --bin ob -- crates/obelus-app/src/app/mod.rs  # ob, here
+UPDATE_FIXTURES=1 cargo test --workspace    # regenerate golden cell grids
+cargo test --workspace -- --ignored         # the slow real-server tests, and the diff sweep
+OBELUS_REQUIRE_LSP=1 cargo test --workspace # a missing rust-analyzer fails rather than skips
+OBELUS_PATIENCE=10 cargo test --workspace   # an agent test that fails gives up in 10s, not 180
 ```
+
+`obg` is the workspace's `default-members`, so a bare `cargo run` is the
+window -- and a bare `build`, `test` or `clippy` is only `obg` and what it is
+made of. **Always `--workspace`** for those.
 
 `.rustfmt.toml` uses five nightly-only options. Stable `cargo fmt` silently
 ignores them, and mixing the two makes the formatting oscillate. **Always

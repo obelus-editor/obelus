@@ -102,12 +102,12 @@ so it never asks.
 ## Building
 
 ```
-cargo build                     # stable
-cargo +nightly fmt              # nightly only: the rustfmt options require it
-cargo clippy --all-features --all-targets
-cargo test
-UPDATE_FIXTURES=1 cargo test    # after an intended rendering change
-cargo test -- --ignored         # the slow real-server tests, and the diff sweep
+cargo build --workspace                  # stable
+cargo +nightly fmt --all                 # nightly only: the rustfmt options require it
+cargo clippy --workspace --all-features --all-targets
+cargo test --workspace
+UPDATE_FIXTURES=1 cargo test --workspace # after an intended rendering change
+cargo test --workspace -- --ignored      # the slow real-server tests, and the diff sweep
 ```
 
 Tests assert on the terminal cell grid, colours included: a widget can write
