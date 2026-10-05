@@ -32,7 +32,13 @@ struct Heard {
     /// The change marks, with the thread that said them: the editor says
     /// its margin in other tests' frames too.
     strokes: Mutex<Vec<(ThreadId, obelus_ui::shapes::Stroke)>>,
+    /// What was under each pane, with the thread that said it: the glass
+    /// is drawn from these cells, so a cell nobody wrote is a hole in it.
+    under: Mutex<Vec<Under>>,
 }
+
+/// A pane, what was under it, and the thread that said it.
+type Under = (ThreadId, Rect, Joined, Vec<Cell>);
 
 /// A band or a pane, as it was said.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -50,8 +56,11 @@ impl Heard {
 }
 
 impl obelus_ui::shapes::Shapes for Heard {
-    fn behind(&self, area: Rect, joined: Joined, _ground: Color, _cells: &[Cell]) {
+    fn behind(&self, area: Rect, joined: Joined, _ground: Color, cells: &[Cell]) {
         self.told(Told::Pane(area, joined));
+        if let Ok(mut under) = self.under.lock() {
+            under.push((std::thread::current().id(), area, joined, cells.to_vec()));
+        }
     }
 
     fn scrolled(&self, area: Rect, _top: i64, _bar: Option<obelus_ui::shapes::Bar>) {
@@ -297,6 +306,134 @@ fn a_band_under_the_settings_is_said_before_them() {
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConfigOpen);
     let (_, joined) = the_file_is_said_before_the_pane(&mut app, "Theme", true);
     assert_eq!(joined, Joined::Screen, "the settings are the whole screen");
+}
+
+/// The status row under the settings is the page's colour before the glass
+/// is laid over it, while a setting's words are being typed into that row
+/// as much as while the page's filter is.
+///
+/// The row is written last, by whoever owns it, so a cell grid is the same
+/// either way: what differed was only what the glass was drawn from. It was
+/// filled only when the nearest thing took the row, and the line a setting
+/// is typed on does not take the row -- it is the row -- so the glass read
+/// cells nobody had written and drew a grey band with a dark edge under
+/// the box.
+///
+/// Broken deliberately by asking `layers.taking_the_status_row()` again
+/// before the fill in `obelus_ui::draw`: the row under the pane comes back
+/// unwritten.
+#[test]
+fn the_row_a_setting_is_typed_on_is_there_under_the_glass() {
+    let mut app = App::new(vec![support::open_fixture("long.rs")]);
+    app.statuses_for_test(std::collections::HashMap::new());
+    app.config_file_for_test(
+        std::env::temp_dir()
+            .join(format!("obelus-panes-typed-{}", std::process::id()))
+            .join("config.toml"),
+    );
+    support::lay_out(&mut app, 60, 24);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConfigOpen);
+    support::type_text(&mut app, "speaks");
+    support::press(&mut app, crossterm::event::KeyCode::Enter);
+    the_status_row_is_under_the_glass(&mut app, "Speaks as", Joined::Screen);
+}
+
+/// And the same under a list, which a question on the status row opens
+/// over without putting it away: renaming the row the reader is on in the
+/// file list. The list's pane runs down to the row it types into, so the
+/// glass is over the status row here as well.
+///
+/// Broken deliberately the same way, by asking
+/// `layers.taking_the_status_row()` before the fill: the question is
+/// nearest, it does not take the row, and the row under the list's pane
+/// comes back unwritten.
+#[test]
+fn the_row_a_rename_is_typed_on_is_there_under_a_list() {
+    let scratch = support::Scratch::new("panes-rename");
+    scratch.write("src/hint.rs", "fn hint() {}\n");
+    scratch.write("src/main.rs", "fn main() {}\n");
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&scratch.join("src/hint.rs")).expect("opening it"),
+    ]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.statuses_for_test(std::collections::HashMap::new());
+    support::lay_out(&mut app, 60, 24);
+    support::press_function(&mut app, 1);
+    let joined = {
+        let since = heard_under_so_far();
+        let _ = support::cells_of(&mut app, 60, 24);
+        last_pane_since(since).1
+    };
+    support::press_alt_key(&mut app, crossterm::event::KeyCode::Char('n'));
+    assert!(app.picker().is_some(), "the question put the list away");
+    the_status_row_is_under_the_glass(&mut app, "hint.rs", joined);
+}
+
+/// Draws a frame with `word` on its status row and says that the last
+/// pane of the kind `joined` says reached that row and had the page's
+/// colour under it there.
+///
+/// The kind and not merely the last, because a panel beside the caret is
+/// a pane too, and one drawn after the dialog's would be taken for it.
+fn the_status_row_is_under_the_glass(app: &mut App, word: &str, joined: Joined) {
+    let since = heard_under_so_far();
+    let cells = support::cells_of(app, 60, 24);
+    let row: String = (0..60).map(|x| cells[(x, 23)].symbol()).collect();
+    assert!(
+        row.contains(word),
+        "nothing is being typed on the row: {row:?}"
+    );
+
+    let me = std::thread::current().id();
+    let under = heard().under.lock().expect("nothing poisoned it");
+    let (pane, cells) = under
+        .iter()
+        .filter(|(whose, ..)| *whose == me)
+        .skip(since)
+        .filter(|(_, _, said, _)| *said == joined)
+        .map(|(_, pane, _, cells)| (*pane, cells))
+        .last()
+        .unwrap_or_else(|| panic!("no {joined:?} pane was said"));
+    assert_eq!(
+        pane.bottom(),
+        24,
+        "the pane reaches the status row: {pane:?}"
+    );
+    let width = usize::from(pane.width);
+    let last = cells.chunks(width).last().expect("the pane has rows");
+    let page = app.theme().background;
+    assert!(
+        last.iter().all(|cell| cell.bg == page),
+        "the row under the glass is not the page: {:?}",
+        last.iter().map(|cell| cell.bg).collect::<Vec<_>>()
+    );
+}
+
+/// The last pane this thread said after `since` of them, and its kind.
+fn last_pane_since(since: usize) -> (Rect, Joined) {
+    let me = std::thread::current().id();
+    heard()
+        .under
+        .lock()
+        .expect("nothing poisoned it")
+        .iter()
+        .filter(|(whose, ..)| *whose == me)
+        .skip(since)
+        .map(|(_, pane, joined, _)| (*pane, *joined))
+        .last()
+        .expect("a pane was said")
+}
+
+/// How many panes this thread has said what is under so far.
+fn heard_under_so_far() -> usize {
+    let me = std::thread::current().id();
+    heard()
+        .under
+        .lock()
+        .expect("nothing poisoned it")
+        .iter()
+        .filter(|(whose, ..)| *whose == me)
+        .count()
 }
 
 /// The counts, which take the whole screen as well.
