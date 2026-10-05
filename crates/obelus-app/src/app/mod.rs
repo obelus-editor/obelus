@@ -4591,7 +4591,7 @@ impl Screen for App {
     fn agent_offering(&self) -> Option<obelus_component::settings::Offering> {
         App::agent_offering(self)
     }
-    fn called(&self, key: &str, word: &str) -> Option<&'static str> {
+    fn called(&self, key: &str, word: &str) -> Option<std::borrow::Cow<'static, str>> {
         App::called(self, key, word)
     }
     fn agent_usage(&self) -> Option<&acp::Usage> {

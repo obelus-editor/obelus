@@ -468,12 +468,17 @@ impl App {
         let tree = self.reopening.tree.clone();
         // Which conversation is which, read once for all of them. Asked of
         // the agent in use, because a session is a name one agent minted.
+        //
+        // Nothing forgotten for being old: every row asked for here is one
+        // the reader left on screen, which is the conversation being read
+        // that the forgetting spares -- and nothing has claimed it yet to
+        // say so, because coming back is what claims it.
         let agent = self.settled.config.agent.clone();
         let sessions = record
             .open
             .iter()
             .any(|open| matches!(open, Open::Conversation(_)))
-            .then(|| obelus_agent::acp::sessions::read(&self.working_directory).remembered())
+            .then(|| obelus_agent::acp::sessions::read(&self.working_directory, 0).remembered())
             .flatten();
         let mut landed: Vec<Option<DocumentId>> = Vec::new();
         let mut talked = false;

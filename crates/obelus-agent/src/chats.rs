@@ -238,6 +238,24 @@ pub fn held(root: &Path) -> BTreeMap<ChatId, Option<PathBuf>> {
         .collect()
 }
 
+/// Whether somebody has the conversation `which` names open, this Obelus
+/// included.
+///
+/// [`held`] for one conversation, for a caller that has a few in mind: that
+/// one tries the lock on every claim in the project, and each try is an
+/// instant in which a claim asked for elsewhere is refused.
+#[must_use]
+pub fn is_held(root: &Path, which: &ChatId) -> bool {
+    directory(root)
+        .and_then(|directory| {
+            File::options()
+                .read(true)
+                .open(directory.join(which.file_name()))
+                .ok()
+        })
+        .is_some_and(|file| held_by_somebody_else(&file))
+}
+
 /// A conversation this Obelus has open, which it gives up by being dropped.
 ///
 /// Dropped rather than given up by hand, for the reason the install's claim

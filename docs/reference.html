@@ -243,7 +243,7 @@
       <p class="quiet small">And it tells you <em>where</em>. A settings file that will not parse, a key that binds nothing, a setting a project is not allowed to set, a theme named that no file answers to — each is marked on its own line, in the same list a language server's problems go in, so <kbd>Alt+e</kbd> and <kbd>Alt+[</kbd> <kbd>Alt+]</kbd> walk them like any other. Obelus writes the file, so Obelus has to be able to say which line it could not read.</p>
 
       <div class="aside">
-        <p><strong>Four a project may not set:</strong> <code>agent</code>, <code>keys</code>, <code>agents</code> and <code>new_versions</code>. A program starting because a downloaded project said so is a decision that belongs to the person at the keyboard; a project that could rebind keys could put <code>quit</code> where you would find it by accident; and what an agent may do without asking is the setting a downloaded project would most like to write; and whether Obelus asks the network about a newer version is yours to decide, not a downloaded project's.</p>
+        <p><strong>Five a project may not set:</strong> <code>agent</code>, <code>keys</code>, <code>agents</code>, <code>new_versions</code> and <code>conversation_days</code>. A program starting because a downloaded project said so is a decision that belongs to the person at the keyboard; a project that could rebind keys could put <code>quit</code> where you would find it by accident; and what an agent may do without asking is the setting a downloaded project would most like to write; and whether Obelus asks the network about a newer version is yours to decide, not a downloaded project's; and a project that could shorten how long your conversations are kept would be a downloaded file emptying your list.</p>
       </div>
 
       <h3>The settings</h3>
@@ -273,6 +273,7 @@
           <tr><td><code>hidden_files</code></td><td><code>false</code></td><td>Whether the file list offers hidden files too — a name beginning with a dot, and on Windows the attribute as well</td></tr>
           <tr><td><code>new_versions</code></td><td><code>true</code></td><td>Ask GitHub once a day whether a newer Obelus is out, and say so on the welcome screen</td></tr>
           <tr><td><code>workflow</code></td><td><code>"feature-branch"</code></td><td>How an agent goes about changing the project. <code>feature-branch</code> is a branch in a worktree of its own; <code>in-place</code> is the checkout you are reading, with the same steps; <code>none</code> is the agent's own way — see <a href="index.html#how">how it works</a>. A project may set it</td></tr>
+          <tr><td><code>conversation_days</code></td><td><code>30</code></td><td>How many days after anything was last said in it a conversation about no note is forgotten. <code>0</code> forgets none. The agent still has it, but Obelus forgets the way back, and making this longer does not bring it back. One about a note goes when the note does, and one open in any window is kept</td></tr>
         </tbody>
       </table>
       </div>

@@ -181,6 +181,15 @@ pub struct Config {
     /// wants it slow enough never to appear by accident, and one reading
     /// somebody else's wants it as fast as their hand stops.
     pub hover_delay: usize,
+    /// How many days a conversation about no note in particular is
+    /// remembered after anything was last said in it.
+    ///
+    /// Zero forgets none. Only those, because one about a note already goes
+    /// when the note does, and a note still there is work not yet done --
+    /// coming back to it a season later is coming back to that
+    /// conversation. What is forgotten is Obelus's own line about it: the
+    /// agent keeps every word, and nothing is asked of it.
+    pub conversation_days: usize,
     /// Whether Obelus asks, once a day, whether a newer version is out.
     ///
     /// The one thing Obelus asks the network for that the reader did not
@@ -321,6 +330,10 @@ impl Default for Config {
             // stopped does not wonder whether Obelus noticed. The figure
             // every editor with a mouse uses.
             hover_delay: 400,
+            // A month: long enough that a conversation left over a holiday
+            // is still there, short enough that the list is of what the
+            // reader is doing rather than of everything they ever asked.
+            conversation_days: 30,
             // On, because a reader who installed Obelus from a release has
             // no other way to hear of the next one.
             new_versions: true,
@@ -604,6 +617,11 @@ pub const DEFAULT_FONT_SIZE: usize = 14;
 /// the same thing.
 const DELAYS: &[&str] = &["0", "200", "400", "800"];
 
+/// How long a conversation is remembered, in days, as the few anybody picks.
+///
+/// Zero is never forgetting, the way it is off for a rest.
+const DAYS: &[&str] = &["0", "7", "30", "90", "365"];
+
 /// The workflows an agent can be asked to follow.
 ///
 /// `none` is the agent's own way. What each one says -- to the reader in
@@ -801,6 +819,18 @@ pub const ALL: &[Setting] = &[
         kind: Kind::Text,
         drawn: Drawn::Anywhere,
     },
+    Setting {
+        key: "conversation_days",
+        name: "Forget conversations",
+        about: "How long after anything was last said in it a conversation about no note is forgotten. The agent still has it, but Obelus forgets the way back, and making this longer does not bring it back. One about a note goes when the note does",
+        group: Group::Agent,
+        // The reader's alone: it decides what Obelus forgets of theirs, and
+        // a project that could shorten it would be a downloaded file
+        // emptying their list.
+        reach: Reach::ReaderOnly,
+        kind: Kind::Count(DAYS),
+        drawn: Drawn::Anywhere,
+    },
 ];
 
 impl Config {
@@ -819,6 +849,7 @@ impl Config {
             "font_size" => Some(Value::Count(self.font_size)),
             "fonts" => Some(Value::Names(self.fonts.clone())),
             "hover_delay" => Some(Value::Count(self.hover_delay)),
+            "conversation_days" => Some(Value::Count(self.conversation_days)),
             "animation" => Some(Value::Switch(self.animation)),
             "format_on_save" => Some(Value::Switch(self.format_on_save)),
             "code_actions_on_save" => Some(Value::Switch(self.code_actions_on_save)),
@@ -847,6 +878,7 @@ impl Config {
             // somebody typed `0` into should not make every tab nothing.
             ("tab_width", Value::Count(width)) => self.tab_width = *width,
             ("hover_delay", Value::Count(delay)) => self.hover_delay = *delay,
+            ("conversation_days", Value::Count(days)) => self.conversation_days = *days,
             ("font_size", Value::Count(points)) => self.font_size = *points,
             ("fonts", Value::Names(names)) => self.fonts = names.clone(),
             ("animation", Value::Switch(on)) => self.animation = *on,
@@ -1331,6 +1363,13 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
     {
         config.hover_delay = usize::try_from(delay).unwrap_or(0);
     }
+    if let Some(days) = table
+        .get("conversation_days")
+        .and_then(toml::Value::as_integer)
+        && allowed("conversation_days")
+    {
+        config.conversation_days = usize::try_from(days).unwrap_or(0);
+    }
     if let Some(points) = table.get("font_size").and_then(toml::Value::as_integer)
         && allowed("font_size")
     {
@@ -1656,6 +1695,11 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
         "hover_delay",
         config.hover_delay != default.hover_delay,
         toml_edit::value(i64::try_from(config.hover_delay).unwrap_or(400)),
+    );
+    put(
+        "conversation_days",
+        config.conversation_days != default.conversation_days,
+        toml_edit::value(i64::try_from(config.conversation_days).unwrap_or(30)),
     );
     put(
         "animation",
@@ -2258,6 +2302,7 @@ mod tests {
             fonts: vec!["JetBrains Mono".to_string(), "Noto Sans CJK SC".to_string()],
             font_size: 18,
             hover_delay: 800,
+            conversation_days: 90,
             format_on_save: true,
             code_actions_on_save: true,
             inlay_hints: true,

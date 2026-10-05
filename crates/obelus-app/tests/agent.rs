@@ -174,7 +174,7 @@ fn remember_a_conversation(
     title: &str,
     last: Option<i64>,
 ) {
-    obelus_agent::acp::sessions::change(scratch.path(), None, |remembered| {
+    obelus_agent::acp::sessions::change(scratch.path(), 0, None, |remembered| {
         remembered.put(
             &obelus_agent::chats::ChatId::Loose(session.to_string()),
             agent,
@@ -188,6 +188,18 @@ fn remember_a_conversation(
             },
         );
     });
+}
+
+/// A moment `at` seconds into the last few hours.
+///
+/// What these tests ask of a time is its order, and a time from 1970 is a
+/// conversation the month `conversation_days` keeps has long forgotten: the
+/// list would have lost it before it was drawn.
+fn lately(at: i64) -> i64 {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs() as i64);
+    now - 10_000 + at
 }
 
 /// Says what a watcher says when a claim appears, goes, or is closed by the
@@ -215,7 +227,7 @@ fn remember_a_note_conversation(scratch: &support::Scratch, note: &str, session:
 
 /// The same, with the agent already told what the note said.
 fn remember_telling(scratch: &support::Scratch, note: &str, session: &str, told: Option<&str>) {
-    obelus_agent::acp::sessions::change(scratch.path(), None, |remembered| {
+    obelus_agent::acp::sessions::change(scratch.path(), 0, None, |remembered| {
         remembered.put(
             &obelus_agent::chats::ChatId::Note(
                 obelus_git::todo::NoteId::read(note).expect("a name"),
@@ -5600,7 +5612,7 @@ fn notes_that_will_not_read_do_not_forget_the_conversations() {
     });
     let id = obelus_git::todo::NoteId::read(note).expect("a name");
     assert!(
-        obelus_agent::acp::sessions::read(scratch.path())
+        obelus_agent::acp::sessions::read(scratch.path(), 0)
             .remembered()
             .expect("the table")
             .get(
@@ -5624,7 +5636,7 @@ fn notes_that_will_not_read_do_not_forget_the_conversations() {
     });
 
     assert!(
-        obelus_agent::acp::sessions::read(scratch.path())
+        obelus_agent::acp::sessions::read(scratch.path(), 0)
             .remembered()
             .expect("the table")
             .get(
@@ -5757,6 +5769,7 @@ fn a_conversation_the_agent_has_forgotten_is_started_again() {
     let id = obelus_git::todo::NoteId::read(note).expect("a name");
     obelus_agent::acp::sessions::change(
         scratch.path(),
+        0,
         Some(std::slice::from_ref(&id)),
         |remembered| {
             remembered.put(
@@ -6626,6 +6639,7 @@ fn remembering_how(
     let id = obelus_git::todo::NoteId::read(note).expect("a name");
     obelus_agent::acp::sessions::change(
         scratch.path(),
+        0,
         Some(std::slice::from_ref(&id)),
         |remembered| {
             remembered.put(
@@ -6698,6 +6712,7 @@ fn a_note_says_whether_anybody_has_talked_about_it() {
     let id = obelus_git::todo::NoteId::read("0123456Q").expect("a name");
     obelus_agent::acp::sessions::change(
         scratch.path(),
+        0,
         Some(std::slice::from_ref(&id)),
         |remembered| {
             remembered.put(
@@ -7174,6 +7189,7 @@ fn the_first_conversation_opened_after_a_restart_is_taken_up() {
     let id = obelus_git::todo::NoteId::read("0123456P").expect("a name");
     obelus_agent::acp::sessions::change(
         scratch.path(),
+        0,
         Some(std::slice::from_ref(&id)),
         |remembered| {
             remembered.put(
@@ -7258,6 +7274,7 @@ fn a_conversation_taken_up_again_keeps_its_name() {
     let which = obelus_agent::chats::ChatId::Note(id.clone());
     obelus_agent::acp::sessions::change(
         scratch.path(),
+        0,
         Some(std::slice::from_ref(&id)),
         |remembered| {
             remembered.put(
@@ -7297,7 +7314,7 @@ fn a_conversation_taken_up_again_keeps_its_name() {
     support::press(&mut app, KeyCode::Esc);
 
     say_something(&mut app, &events);
-    let kept = obelus_agent::acp::sessions::read(scratch.path())
+    let kept = obelus_agent::acp::sessions::read(scratch.path(), 0)
         .remembered()
         .expect("the table");
     let kept = kept
@@ -7363,7 +7380,7 @@ fn a_conversation_the_agent_has_not_got_is_forgotten_rather_than_replaced() {
     // is gone, because the agent said it has no such thing, and the one
     // opened in its place has nothing said in it to come back to.
     let id = obelus_git::todo::NoteId::read("0123456S").expect("a name");
-    let kept = obelus_agent::acp::sessions::read(scratch.path())
+    let kept = obelus_agent::acp::sessions::read(scratch.path(), 0)
         .remembered()
         .expect("the table");
     assert_eq!(
@@ -7388,7 +7405,7 @@ fn a_conversation_the_agent_has_not_got_is_forgotten_rather_than_replaced() {
                 .any(|row| row.text().contains("hello"))
         })
     });
-    let kept = obelus_agent::acp::sessions::read(scratch.path())
+    let kept = obelus_agent::acp::sessions::read(scratch.path(), 0)
         .remembered()
         .expect("the table");
     assert!(
@@ -9618,7 +9635,7 @@ fn a_note_s_conversation_left_without_a_word_keeps_nothing() {
     support::lay_out(&mut app, WIDTH, HEIGHT);
     asked(&mut app, &events, &log, "session/delete s-1");
     let id = obelus_git::todo::NoteId::read("0123456P").expect("a name");
-    let kept = obelus_agent::acp::sessions::read(scratch.path())
+    let kept = obelus_agent::acp::sessions::read(scratch.path(), 0)
         .remembered()
         .and_then(|remembered| {
             remembered
@@ -9729,8 +9746,20 @@ fn the_list_offers_the_conversations_this_project_has_had() {
         Path::new("sh"),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
-    remember_a_conversation(&scratch, "fake", "s-old", "count the lines", Some(1_000));
-    remember_a_conversation(&scratch, "fake", "s-new", "the margin lies", Some(2_000));
+    remember_a_conversation(
+        &scratch,
+        "fake",
+        "s-old",
+        "count the lines",
+        Some(lately(1_000)),
+    );
+    remember_a_conversation(
+        &scratch,
+        "fake",
+        "s-new",
+        "the margin lies",
+        Some(lately(2_000)),
+    );
 
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationNew);
     // The key rather than the command, because the key is half of it: `f4`
@@ -9925,7 +9954,7 @@ fn the_list_of_conversations_is_read_whole_in_runs_by_day() {
         "fake",
         "s-old",
         "count the lines",
-        Some(now - 40 * 86_400),
+        Some(now - 20 * 86_400),
     );
 
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationNew);
@@ -10010,8 +10039,20 @@ fn a_conversation_another_obelus_has_open_cannot_be_taken_up_from_the_list() {
         },
         Vec::new(),
     );
-    remember_a_conversation(&scratch, "fake", "s-held", "somebody has this", Some(2_000));
-    remember_a_conversation(&scratch, "fake", "s-free", "nobody has this", Some(1_000));
+    remember_a_conversation(
+        &scratch,
+        "fake",
+        "s-held",
+        "somebody has this",
+        Some(lately(2_000)),
+    );
+    remember_a_conversation(
+        &scratch,
+        "fake",
+        "s-free",
+        "nobody has this",
+        Some(lately(1_000)),
+    );
 
     // The other Obelus, holding it for as long as this is held. A lock
     // belongs to the open file rather than to the process, so one taken
@@ -10109,8 +10150,8 @@ fn another_agents_conversations_get_a_tab_and_cannot_be_taken_up() {
         },
         Vec::new(),
     );
-    remember_a_conversation(&scratch, "fake", "s-mine", "mine", Some(2_000));
-    remember_a_conversation(&scratch, "other", "s-theirs", "theirs", Some(1_000));
+    remember_a_conversation(&scratch, "fake", "s-mine", "mine", Some(lately(2_000)));
+    remember_a_conversation(&scratch, "other", "s-theirs", "theirs", Some(lately(1_000)));
 
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationNew);
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
@@ -10170,12 +10211,12 @@ fn another_checkouts_conversations_are_listed_and_cannot_be_taken_up() {
         },
         Vec::new(),
     );
-    remember_a_conversation(&scratch, "fake", "s-here", "here", Some(2_000));
+    remember_a_conversation(&scratch, "fake", "s-here", "here", Some(lately(2_000)));
     // There, because a conversation from a checkout that has gone is not
     // read at all.
     let there = scratch.path().join("worktree-two");
     std::fs::create_dir_all(&there).expect("the other checkout");
-    obelus_agent::acp::sessions::change(scratch.path(), None, |remembered| {
+    obelus_agent::acp::sessions::change(scratch.path(), 0, None, |remembered| {
         remembered.put(
             &obelus_agent::chats::ChatId::Loose("s-there".to_string()),
             "fake",
@@ -10185,7 +10226,7 @@ fn another_checkouts_conversations_are_listed_and_cannot_be_taken_up() {
                 title: Some("there".to_string()),
                 told: None,
                 introduced: false,
-                last: Some(1_000),
+                last: Some(lately(1_000)),
             },
         );
     });
@@ -10240,10 +10281,10 @@ fn a_conversation_from_a_checkout_that_has_gone_is_not_listed() {
         },
         Vec::new(),
     );
-    remember_a_conversation(&scratch, "fake", "s-here", "here", Some(2_000));
+    remember_a_conversation(&scratch, "fake", "s-here", "here", Some(lately(2_000)));
     let there = scratch.path().join("worktree-two");
     std::fs::create_dir_all(&there).expect("the other checkout");
-    obelus_agent::acp::sessions::change(scratch.path(), None, |remembered| {
+    obelus_agent::acp::sessions::change(scratch.path(), 0, None, |remembered| {
         remembered.put(
             &obelus_agent::chats::ChatId::Loose("s-there".to_string()),
             "fake",
@@ -10253,7 +10294,7 @@ fn a_conversation_from_a_checkout_that_has_gone_is_not_listed() {
                 title: Some("there".to_string()),
                 told: None,
                 introduced: false,
-                last: Some(1_000),
+                last: Some(lately(1_000)),
             },
         );
     });
@@ -10274,6 +10315,136 @@ fn a_conversation_from_a_checkout_that_has_gone_is_not_listed() {
             .and_then(|picker| picker.what_about())
             .is_none_or(|said| !said.contains("checkout it was had in")),
         "the list says why rows cannot be chosen when none is there"
+    );
+}
+
+/// A conversation about no note that nothing has been said in for longer
+/// than the reader keeps them is not listed, and is again when they keep
+/// every one.
+///
+/// The second half is what says the setting reached the list rather than a
+/// number of the list's own: with nothing forgotten, the old one is back.
+///
+/// Broken deliberately by handing the list's reading `0` in place of the
+/// setting: the month-old row is listed under the default.
+#[test]
+fn a_conversation_nobody_has_talked_in_for_longer_than_the_setting_is_not_listed() {
+    let scratch = support::Scratch::new("agent-conversation-expired");
+    let (mut app, _events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    let now = lately(10_000);
+    remember_a_conversation(&scratch, "fake", "s-new", "this week's", Some(now - 86_400));
+    remember_a_conversation(
+        &scratch,
+        "fake",
+        "s-old",
+        "last season's",
+        Some(now - 40 * 86_400),
+    );
+    let listed = |app: &mut App, days: usize| -> Vec<String> {
+        app.configure(
+            obelus_config::Config {
+                agent: Some("fake".to_string()),
+                conversation_days: days,
+                ..obelus_config::Config::default()
+            },
+            Vec::new(),
+        );
+        obelus_app::app::dispatch::dispatch(app, obelus_command::Command::ConversationSelect);
+        let rows = listed_conversations(app)
+            .into_iter()
+            .map(|item| item.label.clone())
+            .collect();
+        support::press(app, KeyCode::Esc);
+        rows
+    };
+
+    assert_eq!(
+        listed(&mut app, obelus_config::Config::default().conversation_days),
+        ["this week's".to_string()],
+        "a conversation nobody has talked in for forty days is listed"
+    );
+    assert_eq!(
+        listed(&mut app, 0),
+        ["this week's".to_string(), "last season's".to_string()],
+        "keeping every conversation did not bring the old one back"
+    );
+}
+
+/// What nobody has talked in for longer than the reader keeps it goes from
+/// the file the next time Obelus writes it, and what somebody has open does
+/// not.
+///
+/// The list hides an old row as it reads; this is the half that keeps the
+/// file from growing for ever, and the half that spares a conversation being
+/// read in another window -- both as Obelus really writes, after a turn.
+///
+/// Broken deliberately twice: `App::change_the_sessions` handing `change`
+/// `0` in place of the setting leaves `s-stale` in the file; and
+/// `chats::is_held` answering `false` without trying the lock takes `s-held`
+/// out of it.
+#[test]
+fn what_nobody_has_talked_in_goes_from_the_file_and_what_is_open_does_not() {
+    let scratch = support::Scratch::new("agent-conversation-stale-written");
+    let long_ago = lately(0) - 40 * 86_400;
+    remember_a_conversation(
+        &scratch,
+        "fake",
+        "s-stale",
+        "nobody has this",
+        Some(long_ago),
+    );
+    remember_a_conversation(
+        &scratch,
+        "fake",
+        "s-held",
+        "somebody has this",
+        Some(long_ago),
+    );
+    // The other Obelus, holding it for as long as this is held.
+    let _theirs = obelus_agent::chats::claim(
+        scratch.path(),
+        &obelus_agent::chats::ChatId::Loose("s-held".to_string()),
+    )
+    .expect("their claim");
+
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.new_conversation();
+    app.open_a_session_for_test();
+    pump(&mut app, &events, "a session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // Said once, which is one of the moments the table is written.
+    support::type_text(&mut app, "/echo");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+
+    let kept = obelus_agent::acp::sessions::read(scratch.path(), 0)
+        .remembered()
+        .expect("the table");
+    let sessions: Vec<&str> = kept.sessions().collect();
+    let mine = app
+        .chat_session_for_test()
+        .expect("this conversation's session");
+    assert!(
+        sessions.contains(&mine.as_str()),
+        "this conversation was never written down, so this proves nothing: {sessions:?}"
+    );
+    assert!(
+        !sessions.contains(&"s-stale"),
+        "a conversation nobody has talked in for forty days is still in the file"
+    );
+    assert!(
+        sessions.contains(&"s-held"),
+        "a conversation another Obelus has open went from the file"
     );
 }
 
@@ -10301,6 +10472,7 @@ fn a_notes_conversation_from_another_checkout_is_not_asked_for() {
     let id = obelus_git::todo::NoteId::read("0123456W").expect("a name");
     obelus_agent::acp::sessions::change(
         scratch.path(),
+        0,
         Some(std::slice::from_ref(&id)),
         |remembered| {
             remembered.put(
@@ -10347,7 +10519,7 @@ fn a_notes_conversation_from_another_checkout_is_not_asked_for() {
         "another checkout's conversation was asked for here:\n{asked}"
     );
     assert!(
-        obelus_agent::acp::sessions::read(scratch.path())
+        obelus_agent::acp::sessions::read(scratch.path(), 0)
             .remembered()
             .expect("the table")
             .get(&obelus_agent::chats::ChatId::Note(id), "fake", &there)
@@ -10443,7 +10615,7 @@ fn with_no_agent_chosen_the_first_tab_says_so() {
     let (mut app, _events) = wired();
     app.working_directory_for_test(scratch.path().to_path_buf());
     app.configure(obelus_config::Config::default(), Vec::new());
-    remember_a_conversation(&scratch, "other", "s-theirs", "theirs", Some(1_000));
+    remember_a_conversation(&scratch, "other", "s-theirs", "theirs", Some(lately(1_000)));
 
     support::press(&mut app, KeyCode::F(4));
     let picker = app.picker().expect("the list");
@@ -10602,8 +10774,8 @@ fn a_conversation_taken_up_elsewhere_says_so_while_the_reader_looks_at_it() {
         },
         Vec::new(),
     );
-    remember_a_conversation(&scratch, "fake", "s-one", "the first", Some(2_000));
-    remember_a_conversation(&scratch, "fake", "s-two", "the second", Some(1_000));
+    remember_a_conversation(&scratch, "fake", "s-one", "the first", Some(lately(2_000)));
+    remember_a_conversation(&scratch, "fake", "s-two", "the second", Some(lately(1_000)));
 
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationNew);
     support::press(&mut app, KeyCode::F(4));
@@ -10752,7 +10924,7 @@ fn the_notes_hear_a_conversation_written_down_by_another_window() {
     );
 
     // The other Obelus writes one down, and this one hears the file.
-    obelus_agent::acp::sessions::change(scratch.path(), None, |kept| {
+    obelus_agent::acp::sessions::change(scratch.path(), 0, None, |kept| {
         kept.put(
             &obelus_agent::chats::ChatId::Note(
                 obelus_git::todo::NoteId::read("0123456V").expect("a name"),
@@ -11161,7 +11333,7 @@ fn the_notes_hear_the_table_through_a_watch_they_took_themselves() {
         "the note claims a conversation nobody has had"
     );
 
-    obelus_agent::acp::sessions::change(scratch.path(), None, |kept| {
+    obelus_agent::acp::sessions::change(scratch.path(), 0, None, |kept| {
         kept.put(
             &obelus_agent::chats::ChatId::Note(
                 obelus_git::todo::NoteId::read("0123456Y").expect("a name"),
@@ -12482,7 +12654,13 @@ fn a_conversation_that_comes_back_takes_up_the_one_it_was() {
 #[test]
 fn a_loose_conversation_that_comes_back_is_taken_up_once() {
     let scratch = support::Scratch::new("agent-reopened-loose");
-    remember_a_conversation(&scratch, "fake", "s-old", "count the lines", Some(1_000));
+    remember_a_conversation(
+        &scratch,
+        "fake",
+        "s-old",
+        "count the lines",
+        Some(lately(1_000)),
+    );
 
     let (mut app, events) = reopened_on(
         &scratch,
@@ -12512,6 +12690,35 @@ fn a_loose_conversation_that_comes_back_is_taken_up_once() {
         Some("s-old"),
         "the old conversation was taken up a second time"
     );
+}
+
+/// A conversation about nothing in particular that was left on screen comes
+/// back however long ago anything was said in it.
+///
+/// It is the conversation being read, which is what the forgetting spares --
+/// but nothing has claimed it yet when the table is read, because coming
+/// back is what claims it.
+///
+/// Broken deliberately by reading the table in `take_up_what_was_open` with
+/// the setting rather than `0`: this gave up waiting for `s-old`.
+#[test]
+fn a_loose_conversation_left_open_comes_back_however_old_it_is() {
+    let scratch = support::Scratch::new("agent-reopened-old");
+    remember_a_conversation(
+        &scratch,
+        "fake",
+        "s-old",
+        "count the lines",
+        Some(lately(0) - 40 * 86_400),
+    );
+
+    let (mut app, events) = reopened_on(
+        &scratch,
+        &obelus_agent::chats::ChatId::Loose("s-old".to_string()).file_name(),
+    );
+    pump(&mut app, &events, "the conversation it was", |app| {
+        app.chat_session_for_test().as_deref() == Some("s-old")
+    });
 }
 
 /// A turn the fake agent answers with "heard you", and the reader back at

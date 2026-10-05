@@ -402,7 +402,7 @@ fn a_conversation_comes_back_unless_another_window_has_it() {
          done = false\ndepth = 0\n",
     )
     .expect("the notes");
-    obelus_agent::acp::sessions::change(root, None, |remembered| {
+    obelus_agent::acp::sessions::change(root, 0, None, |remembered| {
         remembered.put(
             &obelus_agent::chats::ChatId::Note(note.clone()),
             "fake",
@@ -497,7 +497,7 @@ fn a_conversation_that_comes_back_keeps_its_name() {
          done = false\ndepth = 0\n",
     )
     .expect("the notes");
-    obelus_agent::acp::sessions::change(root, None, |remembered| {
+    obelus_agent::acp::sessions::change(root, 0, None, |remembered| {
         remembered.put(
             &obelus_agent::chats::ChatId::Note(note.clone()),
             "fake",
