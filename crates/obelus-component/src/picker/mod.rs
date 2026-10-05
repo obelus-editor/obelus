@@ -2244,6 +2244,9 @@ impl Picker {
                 self.keys = false;
                 PickerOutcome::Consumed
             }
+            // Then what is held in the query, which is nearer than the
+            // list it is part of.
+            KeyCode::Esc if bare && self.query.let_go() => PickerOutcome::Consumed,
             KeyCode::Esc if bare => PickerOutcome::Cancelled,
             _ if self.footed && obelus_editing::keymap::is_keys_card(key) => {
                 self.keys = !self.keys;

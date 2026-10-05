@@ -391,6 +391,7 @@ impl App {
         let setting = *setting;
         match names.handle_key(key, page) {
             obelus_component::names::Outcome::Consumed => true,
+            obelus_component::names::Outcome::Ignored => false,
             obelus_component::names::Outcome::Changed => {
                 let chosen = names.chosen().to_vec();
                 self.change_setting(setting, &obelus_config::Value::Names(chosen));

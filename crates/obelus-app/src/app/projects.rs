@@ -847,6 +847,7 @@ impl super::App {
             top: chooser.top(),
             typed: chooser.typing().said(),
             caret: chooser.typing().caret().get(),
+            held: chooser.typing().held(),
             naming: chooser.is_naming(),
             there: self.named_is_there,
             offering: self.naming_list.is_some(),

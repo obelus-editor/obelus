@@ -281,6 +281,8 @@ impl Prompt {
         let bare = modifiers.is_empty();
 
         match key.code {
+            // What is held first, which is nearer than the question.
+            KeyCode::Esc if bare && self.text.let_go() => PromptOutcome::Consumed,
             KeyCode::Esc if bare => PromptOutcome::Cancelled,
             // An empty answer is not an answer: it is a reader pressing
             // enter on an empty prompt, which should do nothing rather than

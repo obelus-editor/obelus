@@ -2397,6 +2397,23 @@ impl Chat {
         // nothing: the guard turned it away before the arm that was
         // waiting for it, and in a conversation there is no file for the
         // editor to take it instead, so the key did nothing at all.
+        //
+        // And holding with control and shift, which is the box's: a word
+        // at a time, or the whole message to either end. Control alone
+        // keeps the ends of the transcript; shift is what says hold, here
+        // as everywhere, so with it the ends are the message's -- one
+        // selection between the two halves, so the transcript lets go.
+        if self.focus == Focus::Writing
+            && modifiers == KeyModifiers::CONTROL | KeyModifiers::SHIFT
+            && matches!(
+                key.code,
+                KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End
+            )
+        {
+            self.let_go();
+            self.input.handle_key(key, room.writing);
+            return ChatOutcome::Consumed;
+        }
         let ends = matches!(key.code, KeyCode::Home | KeyCode::End);
         if !ends && modifiers != KeyModifiers::NONE && modifiers != KeyModifiers::SHIFT {
             return ChatOutcome::Ignored;

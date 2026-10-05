@@ -237,6 +237,16 @@ impl Field {
         self.writing.select_all(ROOM);
     }
 
+    /// Lets go of what is held, and says whether anything was.
+    ///
+    /// What escape does first in every box: a selection is nearer than
+    /// the question the box is part of.
+    pub fn let_go(&mut self) -> bool {
+        let held = self.writing.has_selection();
+        self.writing.clear_selection();
+        held
+    }
+
     /// What a copy takes from it, and what to call it.
     ///
     /// What is held, or the whole line where nothing is -- the rule the

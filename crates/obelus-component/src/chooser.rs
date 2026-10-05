@@ -168,6 +168,30 @@ impl Chooser {
         }
     }
 
+    /// The same, to change.
+    fn typing_mut(&mut self) -> &mut Field {
+        match &mut self.doing {
+            Doing::Choosing => &mut self.filter,
+            Doing::Naming(naming) => &mut naming.typed,
+        }
+    }
+
+    /// Puts the caret of the box at the foot where a cell of its row is.
+    ///
+    /// Only the caret, so nothing the box says changes and nothing has to
+    /// be asked again.
+    pub fn place_in_typing(&mut self, cell: u16, extend: bool) {
+        self.typing_mut().place_at_cell(cell, extend);
+    }
+
+    /// Takes hold of the word under the caret, or of all of the box.
+    pub fn hold_in_typing(&mut self, all: bool) {
+        match all {
+            true => self.typing_mut().hold_all(),
+            false => self.typing_mut().hold_word(),
+        }
+    }
+
     /// The projects the filter leaves, newest first.
     ///
     /// Worked out rather than kept, because what it is worked out from is
@@ -289,6 +313,8 @@ impl Chooser {
             // give up on. Clearing the filter is what escape means where
             // there is one, and a reader who has narrowed to nothing has
             // exactly one key they would reach for.
+            // What is held first: nearer than the filter it is in.
+            KeyCode::Esc if self.filter.let_go() => Outcome::Taken,
             KeyCode::Esc if !self.filter.is_empty() => {
                 self.filter.clear();
                 self.at = 0;
@@ -321,7 +347,9 @@ impl Chooser {
             // Something nearer to give up on than the screen, so escape
             // does here what it does everywhere: the path box goes and
             // the projects are underneath it again. The list in front of
-            // *it* has already had its turn at this key.
+            // *it* has already had its turn at this key, and what is held
+            // in the box is nearer than the box.
+            KeyCode::Esc if self.typing_mut().let_go() => Outcome::Taken,
             KeyCode::Esc => {
                 self.doing = Doing::Choosing;
                 // Back on the row the box was opened from.

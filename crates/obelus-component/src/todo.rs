@@ -1393,6 +1393,21 @@ impl TodoView {
         let alt = key.modifiers == KeyModifiers::ALT;
         let control = key.modifiers == KeyModifiers::CONTROL;
         match key.code {
+            // What is held in the box first, which is nearer than the note:
+            // a reader letting go of a selection is not done writing.
+            KeyCode::Esc
+                if bare
+                    && self
+                        .writing
+                        .as_ref()
+                        .is_some_and(|(_, composer)| composer.selected().is_some()) =>
+            {
+                if let Some((_, composer)) = self.writing.as_mut() {
+                    composer.let_go();
+                }
+                self.rebuild();
+                TodoOutcome::Consumed
+            }
             // Writes down what has been typed, and stays where it is.
             //
             // Escape leaves whatever is *over* what is being read, and
@@ -1728,13 +1743,7 @@ impl TodoView {
                 false => TodoOutcome::Paste,
             },
             KeyCode::Char('a') if control => {
-                let room = self.caret_width();
-                let Some((_, composer)) = self.writing.as_mut() else {
-                    return TodoOutcome::Consumed;
-                };
-                composer.select_all(room);
-                self.rebuild();
-                self.follow_caret();
+                self.select_all();
                 TodoOutcome::Consumed
             }
 
@@ -1762,6 +1771,18 @@ impl TodoView {
                 TodoOutcome::Consumed
             }
         }
+    }
+
+    /// Takes hold of all of the note being written, which is what
+    /// `select-all` means wherever the keys are on this page.
+    pub fn select_all(&mut self) {
+        let room = self.caret_width();
+        let Some((_, composer)) = self.writing.as_mut() else {
+            return;
+        };
+        composer.select_all(room);
+        self.rebuild();
+        self.follow_caret();
     }
 
     /// The width the caret is measured against: the row's, where the text

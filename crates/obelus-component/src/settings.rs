@@ -1196,6 +1196,17 @@ impl Settings {
         let Some(modifiers) = obelus_editing::keymap::modifiers_of(key) else {
             return SettingsOutcome::Ignored;
         };
+        // Except holding a word, or all the way to an end, which is the
+        // filter's and nothing else's here: control and shift together.
+        if modifiers == KeyModifiers::CONTROL | KeyModifiers::SHIFT
+            && matches!(
+                key.code,
+                KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End
+            )
+        {
+            self.query.handle_key(key);
+            return SettingsOutcome::Consumed;
+        }
         if modifiers != KeyModifiers::NONE && modifiers != KeyModifiers::SHIFT {
             return SettingsOutcome::Ignored;
         }
@@ -1228,6 +1239,9 @@ impl Settings {
                 self.keys_showing = false;
                 SettingsOutcome::Consumed
             }
+            // Then what is held in the filter, which is nearer than the
+            // page it is on.
+            KeyCode::Esc if bare && self.query.let_go() => SettingsOutcome::Consumed,
             KeyCode::Esc if bare => SettingsOutcome::Cancelled,
             // The ends, with and without control: the same keys reach the
             // ends of a document, a list and a rendering, and a key should
@@ -1237,9 +1251,13 @@ impl Settings {
             // in a picker. The arrows need a bare key because the left and
             // right ones walk the tabs; paging and the ends have no other
             // meaning here.
+            //
+            // Bare only. With shift they are the filter's, holding what the
+            // caret passes over the way shift does in every box in Obelus:
+            // here they took the page to its ends instead.
             code if count > 0
-                && let Some(movement) = Move::of(code)
-                && (bare || !matches!(movement, Move::Up | Move::Down)) =>
+                && bare
+                && let Some(movement) = Move::of(code) =>
             {
                 self.window
                     .apply(movement, u16::try_from(page).unwrap_or(1), Wrap::Yes);

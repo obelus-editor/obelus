@@ -123,6 +123,8 @@ pub enum Outcome {
     Changed,
     /// The reader is done with it.
     Leave,
+    /// Not this list's, and so for the table.
+    Ignored,
 }
 
 /// A list of names, and what else there is.
@@ -346,6 +348,41 @@ impl Names {
     /// the list exactly as typing it would have.
     pub fn put_in_query(&mut self, what: &str) {
         self.query.put(what);
+        self.retyped();
+    }
+
+    /// What a copy takes from the query: what is held, or all of it.
+    #[must_use]
+    pub fn copy_query(&self) -> (String, &'static str) {
+        self.query.copied()
+    }
+
+    /// The same, and takes it out -- through the same door typing goes
+    /// through, because what is left is a different list.
+    pub fn cut_query(&mut self) -> (String, &'static str) {
+        let cut = self.query.cut();
+        self.retyped();
+        cut
+    }
+
+    /// Puts the query's caret where a cell of its row is.
+    pub fn place_in_query(&mut self, cell: u16, extend: bool) {
+        self.query.place_at_cell(cell, extend);
+    }
+
+    /// Takes hold of the word under the caret, or of the whole query.
+    pub fn hold_in_query(&mut self, all: bool) {
+        match all {
+            true => self.query.hold_all(),
+            false => self.query.hold_word(),
+        }
+    }
+
+    /// A different query is a different list, and the row the reader was
+    /// on is not the row they are on now. On the first thing they can
+    /// press, which is the first offer: what they are typing is a search
+    /// for one.
+    fn retyped(&mut self) {
         self.settle();
         self.window.set_focus(self.taken());
         self.stand(true);
@@ -365,7 +402,11 @@ impl Names {
             };
             return self.shift(by);
         }
-        if let Some(movement) = Move::of(key.code) {
+        // Bare, because with shift the keys are the query's: holding what
+        // the caret passes over, the way they do in every box in Obelus.
+        if key.modifiers.is_empty()
+            && let Some(movement) = Move::of(key.code)
+        {
             // It does not wrap: the two sections are one list with an
             // order to it, and walking off the last offer to land on the
             // first chosen name is a jump nobody asked for.
@@ -375,6 +416,9 @@ impl Names {
             return Outcome::Consumed;
         }
         match key.code {
+            // What is held in the query first, which is nearer than the
+            // list.
+            KeyCode::Esc if self.query.let_go() => Outcome::Consumed,
             KeyCode::Esc => Outcome::Leave,
             // On one of the reader's own: take it out. On one that is
             // offered: put it in. Which is the same key doing the same
@@ -396,17 +440,17 @@ impl Names {
             // delete has nothing to take.
             KeyCode::Delete => self.take_out(),
             KeyCode::Backspace if self.query.said().is_empty() => self.take_out(),
+            // What the query refuses goes on to the table, which is how
+            // copying, cutting and taking all of it reach the box: a box a
+            // reader can select in but not copy out of has half a
+            // selection.
             _ => {
                 let said = self.query.said();
-                self.query.handle_key(key);
+                if !self.query.handle_key(key) {
+                    return Outcome::Ignored;
+                }
                 if self.query.said() != said {
-                    // A different query is a different list, and the row
-                    // the reader was on is not the row they are on now. On
-                    // the first thing they can press, which is the first
-                    // offer: what they are typing is a search for one.
-                    self.settle();
-                    self.window.set_focus(self.taken());
-                    self.stand(true);
+                    self.retyped();
                 }
                 Outcome::Consumed
             }
