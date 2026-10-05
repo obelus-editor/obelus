@@ -29,7 +29,7 @@ screen 76x24  editor 76x22  status 76x1
  1|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  2|abaabbbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  3|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 4|ddddddddddddddddddddddddddddddddddddddddeeddddddddddddddddddddeeeeeeeeeeeeea
+ 4|deddeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeedffdaaaaaaaaaaaaaaaaaaaccccccccccccca
  5|aaacccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  6|aaabbbcccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  7|aaacccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -53,7 +53,8 @@ screen 76x24  editor 76x22  status 76x1
 a fg=#e4e4e7 bg=#18181b
 b fg=#a1a1aa bg=#18181b
 c fg=#52525b bg=#18181b
-d fg=#a1a1aa bg=#27272a
-e fg=#52525b bg=#27272a
+d fg=#e4e4e7 bg=#27272a
+e fg=#a1a1aa bg=#27272a
+f fg=#52525b bg=#27272a
 -- cursor --
 39,4

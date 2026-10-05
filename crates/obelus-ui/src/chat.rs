@@ -1062,6 +1062,10 @@ impl ChatView<'_> {
         // The last row of what a key acts on, where it is on screen: where
         // its words end, and the colour it is drawn in.
         let mut foot = None;
+        // Where the light goes, once the rows under it have said how far
+        // their words reach: the top row on screen, how many, and the
+        // columns.
+        let mut light: Option<Rect> = None;
         for (offset, row) in rows.iter().skip(first).enumerate() {
             let Ok(offset) = u16::try_from(offset) else {
                 break;
@@ -1111,6 +1115,7 @@ impl ChatView<'_> {
                 }
                 None => (style, dim),
             };
+            let unlit = dim;
             let (style, dim) = match here {
                 true => (
                     style.bg(self.theme.selected_row_background),
@@ -1118,21 +1123,6 @@ impl ChatView<'_> {
                 ),
                 false => (style, dim),
             };
-            if here {
-                fill(
-                    cells,
-                    Rect {
-                        y,
-                        height: 1,
-                        // Up to the words' last column and no further: a
-                        // fill blanks what it covers, so a row tinted to
-                        // the edge of the band rubs out the scrollbar.
-                        width: (words_end(area) + 1).saturating_sub(area.x),
-                        ..area
-                    },
-                    style,
-                );
-            }
             // The tint runs to the edge, as it does behind an opened hunk
             // in a file: a block of colour that stopped where the words
             // stop would be ragged down its right side, and the block is
@@ -1267,9 +1257,32 @@ impl ChatView<'_> {
             if clipped {
                 ended = write_within(cells, stop.saturating_sub(1), y, "\u{2026}", dim, stop);
             }
-            let ground = style.bg.unwrap_or(self.theme.background);
             for (gap, said, style) in tail {
                 ended = write_within(cells, ended + gap, y, &said, style, words_end(area) + 1);
+            }
+            // A box round the words rather than a band across the row: as
+            // wide as the longest of its rows and a cell either side, which
+            // is the column the margin leaves in front of the glyph. A band
+            // to the edge said the row was lit; it also put a block of
+            // colour behind nothing, wider than the thing enter opens.
+            if here {
+                let right = (ended + 1).min(words_end(area) + 1);
+                light = Some(match light {
+                    Some(lit) => Rect {
+                        width: right.max(lit.right()).saturating_sub(lit.x),
+                        height: lit.height + 1,
+                        ..lit
+                    },
+                    None => {
+                        let x = area.x + u16::from(row.depth) * DEEPER;
+                        Rect {
+                            x,
+                            y,
+                            width: right.saturating_sub(x),
+                            height: 1,
+                        }
+                    }
+                });
             }
             if acting.as_ref().is_some_and(|on| at + 1 == on.end) {
                 foot = Some((y, ended, dim));
@@ -1284,8 +1297,24 @@ impl ChatView<'_> {
                         u16::try_from(usize::from(area.width).saturating_sub(text_width(&said) + 1))
                     && area.x + offset > ended + 1
                 {
-                    write(cells, area.x + offset, y, &said, dim);
+                    // Outside the light, so on the page's own colour.
+                    let ground = unlit.bg.unwrap_or(self.theme.background);
+                    write(cells, area.x + offset, y, &said, unlit);
                     cap_the_keys(area.x + offset, y, &keys, ground, self.theme);
+                }
+            }
+        }
+        // Behind what the rows left on the page's colour and nothing else:
+        // the words are already drawn on the light, and what is drawn on a
+        // colour of its own -- what the reader has hold of -- keeps it.
+        if let Some(light) = light {
+            for y in light.top()..light.bottom() {
+                for x in light.left()..light.right() {
+                    if let Some(cell) = cells.cell_mut((x, y))
+                        && cell.bg == self.theme.background
+                    {
+                        cell.set_bg(self.theme.selected_row_background);
+                    }
                 }
             }
         }

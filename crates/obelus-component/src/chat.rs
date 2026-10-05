@@ -431,20 +431,21 @@ impl Row {
     /// The rows a key pressed on `row` acts on, or none where it does
     /// nothing.
     ///
-    /// One row, mostly. What the reader said is one thing however many
-    /// rows it wraps to, and enter on any of them takes back or copies all
-    /// of it, answered from the first of them, which carries `unsent` and
-    /// `again` and the word for the key. Only the first used to answer:
-    /// enter on the rest of the message did nothing.
+    /// The words of a thing said are one thing however many rows they wrap
+    /// to, and enter on any of them answers from the first of them, which
+    /// carries `unsent`, `again`, the fold and the place. Only the first
+    /// used to answer: enter on the rest of a message did nothing, and a
+    /// command three rows long was lit on its first row alone, a light
+    /// round a third of the thing it opened.
+    ///
+    /// The words and nothing under them: what an opened call carries is
+    /// deeper and from somewhere else, and is not the call.
     #[must_use]
     pub fn acting(rows: &[Self], row: usize) -> Option<std::ops::Range<usize>> {
         let here = rows.get(row)?;
-        if here.speaker == Speaker::Reader
-            && let Some((said, _)) = here.from
-        {
-            let same = |row: &&Self| {
-                row.speaker == Speaker::Reader && row.from.is_some_and(|(at, _)| at == said)
-            };
+        if let Some((said, Source::Text)) = here.from {
+            let same =
+                |row: &&Self| row.from == Some((said, Source::Text)) && row.depth == here.depth;
             let start = row - rows[..row].iter().rev().take_while(same).count();
             let end = row + rows[row..].iter().take_while(same).count();
             if rows[start].acts() {
@@ -3396,6 +3397,39 @@ mod tests {
             rows.iter().any(|row| row == "what it printed"),
             "opening it did not bring back what the command printed: {rows:?}"
         );
+    }
+
+    /// A key on any row of a call's title acts on the whole title, and on
+    /// nothing the opened call carries under it.
+    ///
+    /// Broken deliberately by putting back the `Speaker::Reader` test on
+    /// the walk in `acting`: the second row of the command acts on nothing.
+    /// And by walking every row from the same thing said, whatever part of
+    /// it: the call's output joins its title.
+    #[test]
+    fn every_row_of_a_call_s_title_acts_on_the_call() {
+        let script = "python3 - <<'PY'\nimport pathlib\nPY";
+        let mut chat = Chat::new();
+        chat.tool(&saying("c1", script, &["what it printed"]), "completed");
+        let rows = chat.rows(ROOM.reading);
+        assert_eq!(
+            rows.len(),
+            3,
+            "{:?}",
+            rows.iter().map(Row::text).collect::<Vec<_>>()
+        );
+        for row in 0..3 {
+            assert_eq!(Row::acting(&rows, row), Some(0..3), "from row {row}");
+        }
+
+        chat.fold(Folds::Said(0));
+        let rows = chat.rows(ROOM.reading);
+        let printed = rows
+            .iter()
+            .position(|row| row.text() == "what it printed")
+            .expect("what it printed");
+        assert_eq!(Row::acting(&rows, 1), Some(0..3));
+        assert_eq!(Row::acting(&rows, printed), None, "what it printed acts");
     }
 
     /// A call's title is wrapped whether or not it carries anything.
