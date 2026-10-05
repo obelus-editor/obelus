@@ -311,11 +311,16 @@ fn the_keys_a_conversation_names_wear_caps() {
         ["Esc"],
         "the key beside the working row"
     );
+    // Words in the box, which is what it offers to send.
+    support::type_text(&mut app, "more");
     assert_eq!(
         capped_beside(&mut app, "Sends it now"),
         ["Ctrl+Enter"],
         "the key in the box"
     );
+    for _ in 0.."more".len() {
+        support::press(&mut app, KeyCode::Backspace);
+    }
 
     // Up, a row at a time, to the row waiting: the cursor walks the words,
     // the row that says it is working and the blank above it among them.

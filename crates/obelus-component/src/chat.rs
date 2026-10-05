@@ -1097,26 +1097,21 @@ impl Chat {
             .collect()
     }
 
-    /// Whether stopping the turn now would leave anything to say: words in
-    /// the box, or something waiting for the turn to end.
-    ///
-    /// The one answer to whether `ctrl+enter` sends now, which the key and
-    /// the row offering it both ask.
-    #[must_use]
-    pub fn would_send_now(&self) -> bool {
-        !self.input.is_blank() || self.said.iter().any(|said| said.unsent)
-    }
-
     /// Says whether a turn is running that `ctrl+enter` can reach.
     pub const fn can_send_now(&mut self, can: bool) {
         self.can_send_now = can;
     }
 
     /// Whether the box offers to send now: a turn is running that the key
-    /// can reach, and stopping it would leave something to say.
+    /// can reach, and there are words in the box for it to send.
+    ///
+    /// The box and not what is waiting: the offer is about what is being
+    /// written, and over an empty box it reads as a key for nothing. What
+    /// is waiting goes with the words when there are some, and goes back
+    /// into the box with escape when there are not.
     #[must_use]
     pub fn offers_sending_now(&self) -> bool {
-        self.can_send_now && self.would_send_now()
+        self.can_send_now && !self.input.is_blank()
     }
 
     /// Everything the reader has said that has not gone, in the order they
@@ -2357,12 +2352,6 @@ impl Chat {
         // harmless half of what was asked.
         if key.code == KeyCode::Enter && modifiers == KeyModifiers::CONTROL {
             return match (thinking, self.input.is_blank()) {
-                // A box of blanks is nothing to say, and goes with the rest
-                // rather than as a row of nothing behind it.
-                (true, true) if self.would_send_now() => {
-                    let _ = self.input.take_parts();
-                    ChatOutcome::SendNow(Vec::new())
-                }
                 (true, false) => ChatOutcome::SendNow(self.input.take_parts()),
                 (false, false) => ChatOutcome::Send(self.input.take_parts()),
                 _ => ChatOutcome::Consumed,
