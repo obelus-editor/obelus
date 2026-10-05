@@ -13195,10 +13195,15 @@ fn a_picture_dragged_onto_the_terminal_is_the_picture() {
     let notes = scratch.write("notes.txt", "words");
     let (mut app, _events) = not_yet_asked();
 
-    // Escaped with backslashes, as Ghostty writes it, and with a second
-    // file that is not a picture after it.
-    let escaped = picture.to_string_lossy().replace(' ', "\\ ");
-    app.handle(Event::Paste(format!("{escaped} {} ", notes.display())));
+    // As the terminals of this system write it -- escaped with backslashes,
+    // as Ghostty does, or quoted, as Windows Terminal does, whose paths
+    // have backslashes of their own -- and with a second file that is not
+    // a picture after it.
+    let typed = match cfg!(windows) {
+        true => format!("\"{}\"", picture.display()),
+        false => picture.to_string_lossy().replace(' ', "\\ "),
+    };
+    app.handle(Event::Paste(format!("{typed} {} ", notes.display())));
     assert_eq!(
         in_the_box(&app),
         ["<image/png>".to_string(), format!("{} ", notes.display())],
