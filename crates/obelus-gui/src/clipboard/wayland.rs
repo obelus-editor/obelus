@@ -33,10 +33,17 @@
 //! *is* the wake and the flag is what it wakes it for. The same request a
 //! roundtrip is made of -- and `take` already waits on one, so a
 //! compositor that would not answer it is one Obelus never starts on.
+//!
+//! **A file dropped on the window is heard here too**, because winit hears
+//! none on Wayland and a drop arrives on the same data device a selection
+//! does. Only files are taken, as the `text/uri-list` every file manager
+//! offers them in; each is told to the window, which tells Obelus what a
+//! drop is told on X11, Windows and macOS.
 
 use std::{
-    io::Write,
-    os::fd::OwnedFd,
+    io::{Read, Write},
+    os::fd::{AsFd, OwnedFd},
+    path::PathBuf,
     ptr::NonNull,
     sync::{
         Arc, Mutex,
@@ -53,8 +60,8 @@ use wayland_client::{
     protocol::{
         wl_callback::{self, WlCallback},
         wl_data_device::{self, WlDataDevice},
-        wl_data_device_manager::WlDataDeviceManager,
-        wl_data_offer::WlDataOffer,
+        wl_data_device_manager::{DndAction, WlDataDeviceManager},
+        wl_data_offer::{self, WlDataOffer},
         wl_data_source::{self, WlDataSource},
         wl_keyboard::{self, WlKeyboard},
         wl_registry::{self, WlRegistry},
@@ -86,10 +93,23 @@ struct Held {
     serial: u32,
 }
 
+/// What is told of each file dropped on the window.
+pub(crate) type Dropped = Arc<dyn Fn(PathBuf) + Send + Sync>;
+
+/// The shapes something on offer -- the selection, or a drag -- can be had
+/// in, as the compositor lists them before it says what the offer is for.
+type Shapes = Mutex<Vec<String>>;
+
+/// The one shape a drop is taken in: a list of the files dropped.
+const FILES: &str = "text/uri-list";
+
 /// The state the listening thread dispatches into.
 struct Watching {
     held: Arc<Mutex<Held>>,
     seat: Option<WlSeat>,
+    /// What is being dragged over the window, and whether it is files.
+    dragged: Option<(WlDataOffer, bool)>,
+    dropped: Dropped,
 }
 
 /// What it takes to stop the listening thread, kept where the way out can
@@ -149,7 +169,10 @@ impl Clipboard {
     /// `display` must be a live `wl_display` that outlives this process's
     /// use of the clipboard, which winit's is: the event loop holds it for
     /// as long as there is a window.
-    pub(crate) unsafe fn take(display: NonNull<std::ffi::c_void>) -> Option<Self> {
+    pub(crate) unsafe fn take(
+        display: NonNull<std::ffi::c_void>,
+        dropped: Dropped,
+    ) -> Option<Self> {
         // Adopted, not owned: dropping this backend must not disconnect the
         // display winit is still drawing on.
         let backend = unsafe { Backend::from_foreign_display(display.as_ptr().cast()) };
@@ -160,6 +183,8 @@ impl Clipboard {
         let mut watching = Watching {
             held: Arc::clone(&held),
             seat: None,
+            dragged: None,
+            dropped,
         };
 
         let _registry = connection.display().get_registry(&handle, ());
@@ -368,36 +393,131 @@ impl Dispatch<WlDataDeviceManager, ()> for Watching {
 
 impl Dispatch<WlDataDevice, ()> for Watching {
     fn event(
-        _state: &mut Self,
+        state: &mut Self,
         _device: &WlDataDevice,
         event: wl_data_device::Event,
         (): &(),
-        _connection: &Connection,
+        connection: &Connection,
         _queue: &QueueHandle<Self>,
     ) {
-        // What somebody else is offering is not read here -- that is what
-        // the programs are for -- but the compositor makes an object for
-        // every selection anybody sets, and one that is never destroyed is
-        // one that stays in the connection's table for the session.
-        if let wl_data_device::Event::Selection { id: Some(offer) } = event {
-            offer.destroy();
+        match event {
+            // What somebody else is offering is not read here -- that is
+            // what the programs are for -- but the compositor makes an
+            // object for every selection anybody sets, and one that is
+            // never destroyed is one that stays in the connection's table
+            // for the session.
+            wl_data_device::Event::Selection { id: Some(offer) } => offer.destroy(),
+            // A drag has come over the window. Taken only as files: the
+            // compositor shows the reader whether the window would take it
+            // from what is said here, and a drop is never sent to a window
+            // that took nothing.
+            wl_data_device::Event::Enter {
+                serial,
+                id: Some(offer),
+                ..
+            } => {
+                let files = offer
+                    .data::<Shapes>()
+                    .and_then(|shapes| shapes.lock().ok())
+                    .is_some_and(|shapes| shapes.iter().any(|shape| shape == FILES));
+                offer.accept(serial, files.then(|| FILES.to_string()));
+                // Three is where a drag gained its actions; before it, an
+                // accepted shape was the whole of the answer.
+                if files && offer.version() >= 3 {
+                    offer.set_actions(DndAction::Copy, DndAction::Copy);
+                }
+                if let Some((was, _)) = state.dragged.replace((offer, files)) {
+                    was.destroy();
+                }
+            }
+            wl_data_device::Event::Leave => {
+                if let Some((offer, _)) = state.dragged.take() {
+                    offer.destroy();
+                }
+            }
+            wl_data_device::Event::Drop => {
+                let Some((offer, files)) = state.dragged.take() else {
+                    return;
+                };
+                if !files {
+                    offer.destroy();
+                    return;
+                }
+                receive_the_files(&offer, connection, Arc::clone(&state.dropped));
+            }
+            _ => {}
         }
     }
 
     event_created_child!(Watching, WlDataDevice, [
-        wl_data_device::EVT_DATA_OFFER_OPCODE => (WlDataOffer, ()),
+        wl_data_device::EVT_DATA_OFFER_OPCODE => (WlDataOffer, Shapes::default()),
     ]);
 }
 
-impl Dispatch<WlDataOffer, ()> for Watching {
+impl Dispatch<WlDataOffer, Shapes> for Watching {
     fn event(
         _state: &mut Self,
         _offer: &WlDataOffer,
-        _event: <WlDataOffer as Proxy>::Event,
-        (): &(),
+        event: wl_data_offer::Event,
+        shapes: &Shapes,
         _connection: &Connection,
         _queue: &QueueHandle<Self>,
     ) {
+        if let wl_data_offer::Event::Offer { mime_type } = event
+            && let Ok(mut shapes) = shapes.lock()
+        {
+            shapes.push(mime_type);
+        }
+    }
+}
+
+/// Asks for the list of files dropped, and tells of each once it is in.
+///
+/// The list comes down a pipe, from the program the drag started in, and is
+/// read on a thread of its own for the reason a copy is written on one: it
+/// is somebody else's to write, whenever they get round to it, and the
+/// listening thread has the rest of the clipboard to answer meanwhile.
+fn receive_the_files(offer: &WlDataOffer, connection: &Connection, dropped: Dropped) {
+    let (mut reading, writing) = match std::io::pipe() {
+        Ok(pipe) => pipe,
+        Err(error) => {
+            tracing::warn!(%error, "no pipe to take a drop through");
+            offer.destroy();
+            return;
+        }
+    };
+    offer.receive(FILES.to_string(), writing.as_fd());
+    // The request carries the pipe's writing end with it, and goes when the
+    // connection is flushed; only then may this end of it be closed -- and
+    // it has to be, or the read below waits for an end that never comes.
+    if let Err(error) = connection.flush() {
+        tracing::warn!(%error, "asking for what was dropped");
+    }
+    drop(writing);
+    let offer = offer.clone();
+    let connection = connection.clone();
+    let started = std::thread::Builder::new()
+        .name("obelus drop".to_string())
+        .spawn(move || {
+            let mut list = Vec::new();
+            if let Err(error) = reading.read_to_end(&mut list) {
+                tracing::warn!(%error, "reading what was dropped");
+            }
+            // Said done only once it is, which is what lets the program it
+            // came from finish its half: a move deletes the file then.
+            if offer.version() >= 3 {
+                offer.finish();
+            }
+            offer.destroy();
+            if let Err(error) = connection.flush() {
+                tracing::warn!(%error, "saying a drop is done");
+            }
+            for path in obelus_clipboard::files(&list) {
+                dropped(path);
+            }
+        });
+    if let Err(error) = started {
+        tracing::warn!(%error, "no thread to take a drop on");
     }
 }
 
@@ -436,7 +556,7 @@ impl Dispatch<WlDataSource, Offering> for Watching {
                     held.mine = None;
                 }
             }
-            // The rest is drag and drop, which Obelus does not do.
+            // The rest is a drag Obelus started, which it never does.
             _ => {}
         }
     }

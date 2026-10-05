@@ -1056,6 +1056,15 @@ impl App {
         if covered {
             return;
         }
+        // A path to a picture is the picture. A terminal has no event for a
+        // file dragged onto it, only the words for its path, and a reader
+        // dragging a screenshot meant the screenshot. Only where a picture
+        // from the clipboard would go: not under a card, which takes words,
+        // and not to an agent that said it takes none.
+        let carded = self.conversation().is_some_and(|talk| talk.card.is_some());
+        if !carded && self.can_take_a_picture() && self.attach_what_is_named(what) {
+            return;
+        }
         // Each against the width its own rows are drawn at, which is what
         // the wrapping is worked out from: a card's rows are inset inside
         // the band the box would have had.
@@ -1077,6 +1086,59 @@ impl App {
             }
             _ => talk.chat.paste(what, width),
         }
+    }
+
+    /// Puts in the pictures a paste names, and the rest of it as words.
+    ///
+    /// `false`, having put in nothing, where it names no picture that is
+    /// there: then the paste is the words it was, untouched, rather than
+    /// cut into lines at every path it seemed to have in it. A piece named
+    /// like a picture that is not one is words like any other.
+    fn attach_what_is_named(&mut self, what: &str) -> bool {
+        use obelus_clipboard::dropped::{Piece, picture_at};
+        let mut pictures = Vec::new();
+        let mut words = Vec::new();
+        for piece in obelus_clipboard::dropped::pieces(what) {
+            match piece {
+                Piece::Words(said) => words.push(said),
+                Piece::Picture { said, path } => match picture_at(&path) {
+                    Some((mime, bytes)) => {
+                        pictures.push(obelus_component::composer::Attached { mime, bytes });
+                    }
+                    None => words.push(said),
+                },
+            }
+        }
+        if pictures.is_empty() {
+            return false;
+        }
+        let room = obelus_ui::chat::writing_width(self.editor_area);
+        let Some(talk) = self.conversation_mut() else {
+            return false;
+        };
+        for picture in pictures {
+            talk.chat.writing_mut().attach(picture, room);
+        }
+        if !words.is_empty() {
+            talk.chat.paste(&words.join("\n"), room);
+        }
+        true
+    }
+
+    /// A file dropped on the window, put in as a terminal would have put it.
+    ///
+    /// Into the box a message is written in and nowhere else: a file dropped
+    /// on the file being read is not an edit anybody meant, and a drop is
+    /// the one paste with no key behind it to have been pressed on purpose.
+    pub(super) fn dropped(&mut self, path: &std::path::Path) {
+        if !self.conversation_takes_text() {
+            self.wrong("A file goes in a message to an agent".to_string());
+            return;
+        }
+        // The space after it is the terminal's too: several dropped at once
+        // arrive one at a time, and their paths must not run together.
+        let typed = format!("{} ", obelus_clipboard::dropped::as_typed(path));
+        self.paste_into_conversation(&typed);
     }
 
     /// The conversation, while it is what the reader is looking at.

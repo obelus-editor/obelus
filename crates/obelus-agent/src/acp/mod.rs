@@ -58,6 +58,7 @@
 //! second is about what arrives.
 
 pub mod link;
+mod picture;
 pub mod sessions;
 
 use std::path::Path;

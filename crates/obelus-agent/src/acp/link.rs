@@ -320,15 +320,20 @@ pub struct Carries {
 ///
 /// Base64 here and nowhere earlier: this is the one place that knows the
 /// wire takes a string, and a picture that crossed three layers already
-/// encoded would be a megabyte of text being copied about for nothing.
+/// encoded would be a megabyte of text being copied about for nothing. A
+/// picture too large to send is made smaller here for the same reason, and
+/// because this is off the thread the keys are answered on.
 fn block_of(said: Said) -> ContentBlock {
     use base64::Engine as _;
     match said {
         Said::Words(words) => ContentBlock::Text(TextContent::new(words)),
-        Said::Picture(picture) => ContentBlock::Image(ImageContent::new(
-            base64::engine::general_purpose::STANDARD.encode(&picture.bytes),
-            picture.mime,
-        )),
+        Said::Picture(picture) => {
+            let (mime, bytes) = super::picture::fitted(picture.mime, picture.bytes);
+            ContentBlock::Image(ImageContent::new(
+                base64::engine::general_purpose::STANDARD.encode(&bytes),
+                mime,
+            ))
+        }
     }
 }
 

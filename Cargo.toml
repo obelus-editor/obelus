@@ -273,11 +273,13 @@ zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
 # a sixteen-pixel mark pressed into two half-block cells is four coloured
 # squares.
 ratatui-image = { version = "11.0.8", default-features = false, features = ["crossterm"] }
-# The pixels themselves. `png` is the buffer type `ratatui-image` takes and
-# nothing is decoded with it. `ico` is decoded, in one place: the window
-# reads its own icon out of the very file Windows reads it out of, so what
-# a title bar draws and what a taskbar draws cannot become two pictures.
-image = { version = "0.25.10", default-features = false, features = ["png", "ico"] }
+# The pixels themselves. `png` is the buffer type `ratatui-image` takes.
+# `ico` is decoded, in one place: the window reads its own icon out of the
+# very file Windows reads it out of, so what a title bar draws and what a
+# taskbar draws cannot become two pictures. And the four shapes a picture
+# goes to an agent in are decoded, and PNG and JPEG written, for one picture
+# too large to send as it is -- see `obelus_agent::acp::picture`.
+image = { version = "0.25.10", default-features = false, features = ["png", "ico", "jpeg", "gif", "webp"] }
 # The registry's marks are SVG, so something has to draw them. Without its
 # default features: no text, no system fonts, no raster images inside an SVG.
 # These are single-path drawings, and the text support alone is a font stack

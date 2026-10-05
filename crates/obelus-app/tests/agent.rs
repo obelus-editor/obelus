@@ -13145,3 +13145,137 @@ fn a_press_in_the_transcript_under_a_card_leaves_the_keys_alone() {
         "a press under a card moved the cursor into the transcript"
     );
 }
+
+/// A conversation whose agent has not been asked anything yet, which is
+/// where a reader dragging a screenshot in usually is: a picture is taken
+/// until the agent says it takes none.
+fn not_yet_asked() -> (App, Receiver<Event>) {
+    let (mut app, events) = wired();
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.new_conversation();
+    (app, events)
+}
+
+/// A file that starts the way a PNG does, which is all that is asked of
+/// one before it is sent.
+fn a_png(scratch: &support::Scratch, name: &str) -> std::path::PathBuf {
+    let path = scratch.join(name);
+    std::fs::write(&path, b"\x89PNG\r\n\x1a\n and the rest of it").expect("a picture");
+    path
+}
+
+/// What is in the box: a picture, or the words.
+fn in_the_box(app: &App) -> Vec<String> {
+    use obelus_component::composer::Part;
+    app.chat()
+        .expect("the chat")
+        .writing()
+        .parts()
+        .into_iter()
+        .map(|part| match part {
+            Part::Words(words) => words,
+            Part::Picture(picture) => format!("<{}>", picture.mime),
+        })
+        .collect()
+}
+
+/// A path to a picture, pasted the way a terminal types a file dragged onto
+/// it, is the picture -- and what else came with it is words.
+///
+/// Deliberate break: pasting the text as it came, without looking for
+/// pictures in it, leaves the escaped path in the box.
+#[test]
+fn a_picture_dragged_onto_the_terminal_is_the_picture() {
+    let scratch = support::Scratch::new("dragged-onto-the-terminal");
+    let picture = a_png(&scratch, "two words.png");
+    let notes = scratch.write("notes.txt", "words");
+    let (mut app, _events) = not_yet_asked();
+
+    // Escaped with backslashes, as Ghostty writes it, and with a second
+    // file that is not a picture after it.
+    let escaped = picture.to_string_lossy().replace(' ', "\\ ");
+    app.handle(Event::Paste(format!("{escaped} {} ", notes.display())));
+    assert_eq!(
+        in_the_box(&app),
+        ["<image/png>".to_string(), format!("{} ", notes.display())],
+        "the dragged picture is not in the box"
+    );
+}
+
+/// A path that only looks like a picture's is the words that were pasted,
+/// untouched: a file that is not there, or is not a picture.
+///
+/// Deliberate break: taking the name for the picture attaches a picture
+/// that is a text file.
+#[test]
+fn a_path_named_like_a_picture_that_is_not_one_is_words() {
+    let scratch = support::Scratch::new("named-like-a-picture");
+    let liar = scratch.write("liar.png", "not a picture");
+    let gone = scratch.join("gone.png");
+    let (mut app, _events) = not_yet_asked();
+
+    let pasted = format!("{} {}", liar.display(), gone.display());
+    app.handle(Event::Paste(pasted.clone()));
+    assert_eq!(
+        in_the_box(&app),
+        [pasted],
+        "the paste was not left as it came"
+    );
+}
+
+/// A picture dropped on the window goes in as a picture, and anything else
+/// dropped goes in as its path.
+///
+/// Deliberate break: telling the window's drop to nobody leaves the box
+/// empty.
+#[test]
+fn a_file_dropped_on_the_window_goes_in_the_box() {
+    let scratch = support::Scratch::new("dropped-on-the-window");
+    let picture = a_png(&scratch, "shot.png");
+    let notes = scratch.write("notes.txt", "words");
+    let (mut app, _events) = not_yet_asked();
+
+    app.handle(Event::Dropped(picture));
+    app.handle(Event::Dropped(notes.clone()));
+    assert_eq!(
+        in_the_box(&app),
+        ["<image/png>".to_string(), format!("{} ", notes.display())]
+    );
+}
+
+/// An agent that said it takes no pictures is given the path instead, the
+/// way the terminal typed it.
+///
+/// Deliberate break: not asking whether the agent takes pictures attaches
+/// one it will say nothing about.
+#[test]
+fn an_agent_that_takes_no_pictures_is_given_the_path() {
+    let scratch = support::Scratch::new("takes-no-pictures");
+    let picture = a_png(&scratch, "shot.png");
+    let (mut app, events) = talking();
+    // The fake agent says nothing about pictures, which is saying no.
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+
+    app.handle(Event::Paste(picture.display().to_string()));
+    assert_eq!(in_the_box(&app), [picture.display().to_string()]);
+}
+
+/// A file dropped where nothing is being written goes nowhere, and says so.
+///
+/// Deliberate break: dropping the refusal leaves the reader with a drop
+/// that did nothing and nothing to say why.
+#[test]
+fn a_file_dropped_outside_a_conversation_goes_nowhere() {
+    let scratch = support::Scratch::new("dropped-outside");
+    let picture = a_png(&scratch, "shot.png");
+    let (mut app, _events) = wired();
+
+    app.handle(Event::Dropped(picture));
+    assert_eq!(app.note(), Some("A file goes in a message to an agent"));
+}

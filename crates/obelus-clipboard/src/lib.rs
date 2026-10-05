@@ -28,6 +28,7 @@
 //! then the client that has gone. Making a copy outlive everything is a
 //! clipboard manager's job, not an editor's.
 
+pub mod dropped;
 pub mod links;
 mod native;
 
