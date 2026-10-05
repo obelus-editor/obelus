@@ -1050,11 +1050,12 @@ impl ChatView<'_> {
             Focus::Transcript(place) if self.in_front => Row::acting(&rows, place.row),
             _ => None,
         };
-        // Except what the reader said, which is not lit at all: it is the
-        // one thing here a key acts on that is more than a row, and a light
+        // Except what the reader said, which is not lit at all: a light
         // round several rows of their own words was a block of colour over
-        // the very thing they were reading. The caret says where they are
-        // and the key at the end of it says what enter does.
+        // the very thing they were reading. A call's title is lit however
+        // many rows it takes, because it is a handle on the call; a message
+        // is read for itself. The caret says where they are and the key at
+        // the end of it says what enter does.
         let lit = acting.clone().filter(|on| {
             rows.get(on.start)
                 .is_some_and(|row| row.speaker != Speaker::Reader)
@@ -1078,10 +1079,10 @@ impl ChatView<'_> {
             // so that a run reads as one thing rather than as a stretch of
             // rows that happen to look alike.
             let words = words + u16::from(row.depth) * DEEPER;
-            // The row the cursor is on, lit the way every list in Obelus
-            // lights one -- but only where the row does something, because
-            // that is what the light promises: what is lit is what enter
-            // opens.
+            // The row the cursor is on, lit in the colour every list in
+            // Obelus marks its row with -- but only where the row does
+            // something, because that is what the light promises: what is
+            // lit is what enter opens.
             //
             // Where the cursor is is said by the caret instead. The cursor
             // can stand anywhere now, so a light that followed it would be

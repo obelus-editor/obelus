@@ -433,10 +433,10 @@ impl Row {
     ///
     /// The words of a thing said are one thing however many rows they wrap
     /// to, and enter on any of them answers from the first of them, which
-    /// carries `unsent`, `again`, the fold and the place. Only the first
-    /// used to answer: enter on the rest of a message did nothing, and a
-    /// command three rows long was lit on its first row alone, a light
-    /// round a third of the thing it opened.
+    /// carries `unsent`, `again`, the fold, the place and the address. Only
+    /// the first used to answer: enter on the rest of a message did
+    /// nothing, and a command three rows long was lit on its first row
+    /// alone, a light round a third of the thing it opened.
     ///
     /// The words and nothing under them: what an opened call carries is
     /// deeper and from somewhere else, and is not the call.
