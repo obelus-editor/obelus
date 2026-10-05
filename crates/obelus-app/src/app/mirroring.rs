@@ -793,6 +793,12 @@ impl App {
         self.settle_the_question(whose, "The agent stopped asking.".to_string());
     }
 
+    /// A question the platform would not take as a card, and said in words
+    /// instead: the thread has no card to point a reply at.
+    pub(super) fn question_not_put(&mut self, asked: u64) {
+        self.mirror.questions.retain(|_, up| *up != asked);
+    }
+
     /// Whether the conversation a thread is has a question up, for a test
     /// that cannot put a conversation begun from the chat on the screen.
     #[must_use]
@@ -886,6 +892,11 @@ impl App {
             return;
         }
         if let Some(chat) = chat_of(talk).map(|chat| chat.file_name()) {
+            // The question it was waiting on goes with it, and its card is
+            // closed: left, it was pressed into nothing.
+            if let Some(asked) = self.mirror.questions.remove(&chat) {
+                self.say_to_thread(&chat, Saying::Settle(asked, "Closed.".to_string()));
+            }
             self.say_in_thread(&chat, "Closed.".to_string(), false);
             // Said here rather than through `mirror_head`, which asks the
             // conversation -- and by now the document has gone.

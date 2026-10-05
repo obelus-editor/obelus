@@ -122,6 +122,22 @@ impl Out {
     }
 }
 
+impl Question {
+    /// The question in words, for a thread whose platform would not take
+    /// its card: what it asks, and that it is answered on the machine,
+    /// since nothing in the thread can be.
+    #[must_use]
+    pub fn in_words(&self) -> String {
+        let mut said = format!("\u{2753} {}", self.about);
+        for (_, name) in &self.choices {
+            said.push_str("\n- ");
+            said.push_str(name);
+        }
+        said.push_str("\nThis could not be put here as a card; answer it on the machine.");
+        said
+    }
+}
+
 /// A question the agent is waiting on, as a chat is given it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Question {
@@ -196,5 +212,33 @@ impl Head {
     #[must_use]
     pub fn in_words(&self) -> String {
         format!("**{}**\n{}", self.titled(), self.place)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A question no card could carry is said whole, and says where it is
+    /// answered: nothing in the thread can answer it.
+    ///
+    /// Broken deliberately by leaving out the answers: the thread was asked
+    /// something with nothing to choose from.
+    #[test]
+    fn a_question_in_words_says_where_it_is_answered() {
+        let question = Question {
+            about: "Read the file?".to_string(),
+            choices: vec![
+                ("once".to_string(), "Allow once".to_string()),
+                ("never".to_string(), "Reject".to_string()),
+            ],
+            several: false,
+            needed: true,
+            words: None,
+        };
+        assert_eq!(
+            question.in_words(),
+            "\u{2753} Read the file?\n- Allow once\n- Reject\nThis could not be put here as a card; answer it on the machine."
+        );
     }
 }

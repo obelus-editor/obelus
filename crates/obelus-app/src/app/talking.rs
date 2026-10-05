@@ -1823,8 +1823,9 @@ impl App {
     /// reason on the page for either. Which is the whole of what a reader
     /// who was somewhere else would have to go on.
     fn forget_the_question(&mut self) {
-        for document in self.documents.iter_mut().flatten() {
-            let Some(talk) = Document::chat_mut(document) else {
+        let mut forgotten = Vec::new();
+        for (at, document) in self.documents.iter_mut().enumerate() {
+            let Some(talk) = document.as_mut().and_then(Document::chat_mut) else {
                 continue;
             };
             // The card rather than the channels: it is what the reader
@@ -1837,7 +1838,13 @@ impl App {
             talk.card = None;
             if asked {
                 talk.chat.note("It stopped waiting for an answer");
+                forgotten.push(DocumentId::new(at));
             }
+        }
+        // And the same card in a chat is closed, or it is pressed into
+        // nothing.
+        for id in forgotten {
+            self.mirror_withdrawn(Whose::One(id));
         }
     }
 

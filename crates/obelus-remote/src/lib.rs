@@ -104,6 +104,12 @@ pub enum Event {
         /// The name they go by.
         name: String,
     },
+    /// A question's card was not taken by the platform, so it was said in
+    /// words instead, and nothing in the thread can answer it.
+    Unasked {
+        /// The number it was asked with.
+        asked: u64,
+    },
     /// Somebody answered a question on its card.
     Answered {
         /// Their id, which is what they are checked by.
@@ -128,6 +134,20 @@ pub(crate) fn this_process() -> &'static str {
         hasher.write_u32(std::process::id());
         format!("{:x}", hasher.finish())
     })
+}
+
+/// Somebody else's words cut to fit where a platform puts them: a card
+/// with one line past a platform's limit is a card the platform refuses
+/// whole, and the reader is left with no question at all.
+pub(crate) fn capped(text: &str, most: usize) -> String {
+    match text.chars().nth(most) {
+        None => text.to_string(),
+        Some(_) => {
+            let mut cut: String = text.chars().take(most.saturating_sub(1)).collect();
+            cut.push('\u{2026}');
+            cut
+        }
+    }
 }
 
 /// Where a window stands with the chat it talks to, as one answer.
@@ -198,7 +218,7 @@ impl Event {
     pub fn connection(state: State, why: Option<String>) -> Self {
         Self::Connection {
             state,
-            why: why.map(|why| capped(&why)),
+            why: why.map(|why| capped(why.trim(), REASON_AT_MOST)),
         }
     }
 }
@@ -207,13 +227,21 @@ impl Event {
 /// why in, and not a page of HTML from a proxy in front of it.
 const REASON_AT_MOST: usize = 160;
 
-fn capped(why: &str) -> String {
-    let why = why.trim();
-    match why.chars().nth(REASON_AT_MOST) {
-        None => why.to_string(),
-        Some(_) => {
-            let kept: String = why.chars().take(REASON_AT_MOST - 1).collect();
-            format!("{kept}\u{2026}")
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Somebody else's words fit where they are put, cut with a mark that
+    /// says so, and words that fit are left alone.
+    ///
+    /// Broken deliberately by not cutting: the long name came back whole.
+    #[test]
+    fn somebody_else_s_words_are_capped() {
+        assert_eq!(capped("Allow once", 75), "Allow once");
+        let long = "x".repeat(200);
+        let cut = capped(&long, 75);
+        assert_eq!(cut.chars().count(), 75);
+        assert!(cut.ends_with('\u{2026}'), "{cut}");
+        assert_eq!(capped(&"\u{732b}".repeat(80), 75).chars().count(), 75);
     }
 }

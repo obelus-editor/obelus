@@ -1421,6 +1421,111 @@ fn a_question_the_chat_was_never_given_is_said_to_be_the_machines() {
     );
 }
 
+/// A question the platform would not take as a card is said in words by
+/// the platform, and the thread is not pointed at a card it never got.
+///
+/// Broken deliberately by not hearing that the card was refused: the
+/// reader was told to answer on a card above that was never there.
+#[test]
+fn a_card_the_platform_refused_is_not_pointed_at() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-refused-card");
+    let (mut app, events, _log) = paired_with_an_agent(&scratch);
+    let platform = the_platform();
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        text: "what is in here".to_string(),
+    });
+    let said = said_until(&mut app, &events, "the question", |said| {
+        asked_with(said, "F1", "Allow once").is_some()
+    });
+    let asked = asked_with(&said, "F1", "Allow once").expect("asked");
+    let _ = platform.send(obelus_remote::Event::Unasked { asked });
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Thread("F1".to_string()),
+        text: "yes".to_string(),
+    });
+    let said = said_until(&mut app, &events, "the words answered", |said| {
+        in_thread(said, "F1", "on the machine") || in_thread(said, "F1", "card above")
+    });
+    assert!(
+        in_thread(&said, "F1", "can only be answered on the machine"),
+        "the thread was pointed at a card it never got: {said:#?}"
+    );
+}
+
+/// A question's card in the chat is closed when nothing is waiting on it any
+/// more: the conversation closed here, or the agent behind it gone.
+///
+/// Broken deliberately twice. Not closing the card with the conversation:
+/// no `Settle` came, and it could still be pressed. And not with the agent:
+/// the same, when the agent died with a question up.
+#[test]
+fn a_card_closes_when_nothing_waits_on_it() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-card-closes");
+    let (mut app, events, _log) = paired_with_an_agent(&scratch);
+    let platform = the_platform();
+    let closed = |said: &[obelus_remote::model::Out], which: u64, words: &str| {
+        said.iter().any(|out| {
+            matches!(out, obelus_remote::model::Out::Settle { asked, said, .. }
+                if *asked == which && said.contains(words))
+        })
+    };
+
+    // A conversation closed here with a question up.
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        text: "what is in here".to_string(),
+    });
+    let said = said_until(&mut app, &events, "the first question", |said| {
+        asked_with(said, "F1", "Allow once").is_some()
+    });
+    let first = asked_with(&said, "F1", "Allow once").expect("asked");
+    let last = app.document_count_for_test() - 1;
+    app.go_to_document_for_test(obelus_buffer::DocumentId::new(last));
+    dispatch::dispatch(&mut app, Command::DocumentClose);
+    dispatch::dispatch(&mut app, Command::DocumentClose);
+    said_until(
+        &mut app,
+        &events,
+        "the card closed with the conversation",
+        |said| closed(said, first, "Closed"),
+    );
+
+    // And the agent gone, with a question up in another conversation:
+    // a third, begun from the chat, tells it to die. Last, because what
+    // starts again after it is the agent the settings name, not the fake.
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F2".to_string()),
+        text: "what is in here".to_string(),
+    });
+    let said = said_until(&mut app, &events, "the next question", |said| {
+        asked_with(said, "F2", "Allow once").is_some()
+    });
+    let next = asked_with(&said, "F2", "Allow once").expect("asked");
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F3".to_string()),
+        text: "/die".to_string(),
+    });
+    said_until(
+        &mut app,
+        &events,
+        "the card closed with the agent",
+        |said| closed(said, next, "stopped asking"),
+    );
+}
+
 /// What a conversation says while the connection is on its way back up
 /// goes all the same -- the platform holds it until it is -- rather than
 /// being dropped for the five seconds it takes.

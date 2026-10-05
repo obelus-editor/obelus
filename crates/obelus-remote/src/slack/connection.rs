@@ -232,7 +232,19 @@ async fn run(
                     Ok(posted) => {
                         cards.insert(asked, (channel, posted.ts, question.about));
                     }
-                    Err(error) => tracing::warn!(%error, asked, "Slack would not take a question"),
+                    // Said in words rather than not at all: see Feishu's.
+                    Err(error) => {
+                        tracing::warn!(%error, asked, "Slack would not take a question");
+                        let _ = sink.send(Event::Unasked { asked });
+                        let words = posted(
+                            channel,
+                            format!("<@{to}> {}", question.in_words()),
+                            request.thread_ts.clone(),
+                        );
+                        if let Err(error) = session.chat_post_message(&words).await {
+                            tracing::warn!(%error, asked, "nor the question in words");
+                        }
+                    }
                 }
             }
             Out::Settle { asked, said, .. } => {
@@ -360,6 +372,11 @@ async fn pushed(
     Ok(())
 }
 
+/// What Slack takes in a section's text, less room for calling the reader,
+/// and in a button's or an option's: a message past either is refused whole.
+const ABOUT: usize = 2900;
+const NAME: usize = 75;
+
 /// A question as blocks: what it is about, calling the reader, then a
 /// button for each answer where one press is the whole answer, or a list
 /// and a box with a button that sends them. Every press names the process
@@ -369,7 +386,10 @@ fn asking(asked: u64, question: &Question, to: &str) -> Vec<SlackBlock> {
     let plain = |text: &str| json!({ "type": "plain_text", "text": text });
     let mut blocks = vec![json!({
         "type": "section",
-        "text": { "type": "mrkdwn", "text": format!("<@{to}> {}", question.about) },
+        "text": {
+            "type": "mrkdwn",
+            "text": format!("<@{to}> {}", crate::capped(&question.about, ABOUT)),
+        },
     })];
     if !question.several && question.words.is_none() && !question.choices.is_empty() {
         let buttons: Vec<Value> = question
@@ -379,7 +399,7 @@ fn asking(asked: u64, question: &Question, to: &str) -> Vec<SlackBlock> {
             .map(|(at, (id, name))| {
                 json!({
                     "type": "button",
-                    "text": plain(name),
+                    "text": plain(&crate::capped(name, NAME)),
                     "action_id": format!("choice-{at}"),
                     "value": format!("{}:{asked}:{id}", crate::this_process()),
                 })
@@ -391,7 +411,7 @@ fn asking(asked: u64, question: &Question, to: &str) -> Vec<SlackBlock> {
             let options: Vec<Value> = question
                 .choices
                 .iter()
-                .map(|(id, name)| json!({ "text": plain(name), "value": id }))
+                .map(|(id, name)| json!({ "text": plain(&crate::capped(name, NAME)), "value": id }))
                 .collect();
             blocks.push(json!({
                 "type": "input",
@@ -413,7 +433,7 @@ fn asking(asked: u64, question: &Question, to: &str) -> Vec<SlackBlock> {
                 "type": "input",
                 "block_id": "words",
                 "optional": !required,
-                "label": plain(name),
+                "label": plain(&crate::capped(name, NAME)),
                 "element": { "type": "plain_text_input", "action_id": "words" },
             }));
         }
@@ -435,11 +455,18 @@ fn asking(asked: u64, question: &Question, to: &str) -> Vec<SlackBlock> {
 /// The same question closed: what it was about, and what became of it in
 /// place of anything to press.
 fn settled(about: &str, said: &str) -> Vec<SlackBlock> {
-    serde_json::from_value(json!([
-        { "type": "section", "text": { "type": "mrkdwn", "text": about } },
-        { "type": "context", "elements": [{ "type": "mrkdwn", "text": said }] },
-    ]))
-    .unwrap_or_default()
+    // Nothing for a question with nothing said about it -- a permission
+    // whose call said it already -- because Slack refuses a section with no
+    // text, and the message would stay open.
+    let mut blocks = Vec::new();
+    if !about.is_empty() {
+        blocks.push(json!({
+            "type": "section",
+            "text": { "type": "mrkdwn", "text": crate::capped(about, ABOUT) },
+        }));
+    }
+    blocks.push(json!({ "type": "context", "elements": [{ "type": "mrkdwn", "text": said }] }));
+    serde_json::from_value(Value::Array(blocks)).unwrap_or_default()
 }
 
 async fn pressed(
@@ -583,6 +610,22 @@ mod tests {
         assert_eq!(blocks[2]["element"]["type"], "plain_text_input");
         assert_eq!(blocks[2]["optional"], true);
         assert_eq!(blocks[3]["elements"][0]["value"], format!("{by}:7"));
+
+        // Closed, a question with nothing said about it is the line saying
+        // what became of it and no empty section, which Slack refuses.
+        let closed = serde_json::to_value(settled("", "\u{2714} Allow once")).expect("blocks");
+        assert_eq!(closed.as_array().map(Vec::len), Some(1), "{closed:#}");
+        assert_eq!(closed[0]["type"], "context");
+
+        // A name past what Slack takes on a button is cut to fit, or the
+        // whole question is refused.
+        let mut long = question(false, None);
+        long.choices[0].1 = "a".repeat(200);
+        let blocks = drawn(&long);
+        let shown = blocks[1]["elements"][0]["text"]["text"]
+            .as_str()
+            .unwrap_or_default();
+        assert_eq!(shown.chars().count(), 75, "{blocks:#}");
     }
 
     /// A press is heard as the answer it makes: a button's question and

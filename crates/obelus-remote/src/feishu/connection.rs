@@ -295,6 +295,12 @@ fn card(head: &Head) -> String {
     .to_string()
 }
 
+/// How much of what a question is about goes on its card, and of each
+/// answer's name: Feishu does not say where it stops, so these are Slack's
+/// own limits -- the stricter of the two -- rather than a guess at its.
+const ABOUT: usize = 2900;
+const NAME: usize = 75;
+
 /// A question as a card: what it is about, calling the reader, and then a
 /// button for each answer where one press is the whole answer, or a form
 /// where it takes several, or words of the reader's own. Every press names
@@ -304,14 +310,14 @@ fn asking(asked: u64, question: &Question, to: &str) -> String {
     let by = crate::this_process();
     let mut elements = vec![json!({
         "tag": "markdown",
-        "content": format!("<at id={to}></at> {}", question.about),
+        "content": format!("<at id={to}></at> {}", crate::capped(&question.about, ABOUT)),
     })];
-    let named = |(id, name): &(String, String)| json!({ "text": { "tag": "plain_text", "content": name }, "value": id });
+    let named = |(id, name): &(String, String)| json!({ "text": { "tag": "plain_text", "content": crate::capped(name, NAME) }, "value": id });
     if !question.several && question.words.is_none() && !question.choices.is_empty() {
         for (id, name) in &question.choices {
             elements.push(json!({
                 "tag": "button",
-                "text": { "tag": "plain_text", "content": name },
+                "text": { "tag": "plain_text", "content": crate::capped(name, NAME) },
                 "width": "fill",
                 "behaviors": [{ "type": "callback", "value": { "asked": asked, "by": by, "chosen": id } }],
             }));
@@ -334,7 +340,7 @@ fn asking(asked: u64, question: &Question, to: &str) -> String {
             form.push(json!({
                 "tag": "input",
                 "name": "words",
-                "placeholder": { "tag": "plain_text", "content": name },
+                "placeholder": { "tag": "plain_text", "content": crate::capped(name, NAME) },
                 "required": required,
             }));
         }
@@ -359,15 +365,17 @@ fn asking(asked: u64, question: &Question, to: &str) -> String {
 /// The same card closed: what it was about, and what became of it in
 /// place of anything to press.
 fn settled(about: &str, said: &str) -> String {
+    // Nothing for a question with nothing said about it -- a permission
+    // whose call said it already -- rather than an empty element.
+    let mut elements = Vec::new();
+    if !about.is_empty() {
+        elements.push(json!({ "tag": "markdown", "content": crate::capped(about, ABOUT) }));
+    }
+    elements.push(json!({ "tag": "markdown", "content": said, "text_size": "notation" }));
     json!({
         "schema": "2.0",
         "config": { "update_multi": true },
-        "body": {
-            "elements": [
-                { "tag": "markdown", "content": about },
-                { "tag": "markdown", "content": said, "text_size": "notation" },
-            ]
-        }
+        "body": { "elements": elements },
     })
     .to_string()
 }
@@ -439,11 +447,11 @@ async fn say(
 ) -> Result<(), Refusal> {
     match out {
         Out::Ask {
+            room,
             thread,
             to,
             asked,
             question,
-            ..
         } => {
             let posted = api
                 .call(
@@ -455,11 +463,34 @@ async fn say(
                         "reply_in_thread": true,
                     })),
                 )
-                .await
-                .inspect_err(|why| tracing::warn!(thread, asked, %why, "a question not put"))?;
-            if let Some(message) = posted["message_id"].as_str() {
-                tracing::info!(thread, asked, message, "a question put");
-                cards.insert(asked, (message.to_string(), question.about));
+                .await;
+            match posted {
+                Ok(posted) => {
+                    if let Some(message) = posted["message_id"].as_str() {
+                        tracing::info!(thread, asked, message, "a question put");
+                        cards.insert(asked, (message.to_string(), question.about));
+                    }
+                }
+                // Said in words rather than not at all: the reader away from
+                // the machine is otherwise left with an agent waiting on a
+                // question they never see.
+                Err(why) => {
+                    tracing::warn!(thread, asked, %why, "a question not put");
+                    let _ = sink.send(Event::Unasked { asked });
+                    Box::pin(say(
+                        api,
+                        sink,
+                        cards,
+                        Out::Say {
+                            room,
+                            thread,
+                            to,
+                            text: question.in_words(),
+                            notify: true,
+                        },
+                    ))
+                    .await?;
+                }
             }
         }
         Out::Settle {
@@ -1197,6 +1228,25 @@ mod tests {
             form["elements"][2]["behaviors"][0]["value"],
             json!({ "asked": "7", "by": crate::this_process() })
         );
+
+        // Closed, a question with nothing said about it has no empty
+        // element above what became of it.
+        let closed: Value =
+            serde_json::from_str(&settled("", "\u{2714} Allow once")).expect("a card");
+        assert_eq!(
+            closed["body"]["elements"].as_array().map(Vec::len),
+            Some(1),
+            "{closed:#}"
+        );
+
+        // A name past what a button takes is cut to fit.
+        let mut long = question(false, None);
+        long.choices[0].1 = "a".repeat(200);
+        let card = drawn(&long);
+        let shown = card["body"]["elements"][1]["text"]["content"]
+            .as_str()
+            .unwrap_or_default();
+        assert_eq!(shown.chars().count(), 75, "{card:#}");
     }
 
     /// A press is heard as the answer it makes -- arriving, as Feishu sends
