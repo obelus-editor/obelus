@@ -329,6 +329,14 @@ pub struct App {
     /// asking is remembered because a pointer left on a word that has no
     /// answer must ask about it once rather than twelve times a second.
     resting: Option<Resting>,
+    /// The cell the pointer was last reported over, wherever it was and
+    /// whatever it did there.
+    ///
+    /// Not `resting`, which is the file's alone and is about how long it
+    /// has been still: this is for what is raised under the pointer, which
+    /// has to follow it everywhere and at once. Never forgotten, because a
+    /// terminal says nothing when the pointer leaves it.
+    pointer: Option<(u16, u16)>,
     /// The holes left by a snippet, while the reader is filling them in.
     ///
     /// Character offsets into the document, moved by every edit. A snippet
@@ -903,6 +911,7 @@ impl App {
             code_actions: Vec::new(),
             uses: Vec::new(),
             resting: None,
+            pointer: None,
             settling: None,
             troubles: HashMap::new(),
             reported: HashMap::new(),
@@ -3352,6 +3361,22 @@ impl App {
         // Worked out before the conversation is borrowed to change: the
         // card is the application's and the box is the conversation's.
         let carded = self.card().is_some();
+        // The way back to the end, on the rule over the box: a press on it
+        // is the key it names, through the same door the key goes through,
+        // so the two cannot come to mean different things -- with the
+        // cursor in the transcript, `ctrl+end` takes the cursor along.
+        if kind == Pointer::Pressed
+            && self
+                .conversation()
+                .and_then(|talk| obelus_ui::chat::way_back_at(area, &talk.chat, talk.card.as_ref()))
+                .is_some_and(|at| at.contains(ratatui::layout::Position { x, y }))
+        {
+            self.chat_key(&crossterm::event::KeyEvent::new(
+                crossterm::event::KeyCode::End,
+                crossterm::event::KeyModifiers::CONTROL,
+            ));
+            return;
+        }
         // The card first, where one is up: it is what covers the box, and
         // every row of it is a thing the reader answers with. What lands
         // above it is still the transcript, so a question on screen does
@@ -3988,6 +4013,7 @@ impl App {
     fn on_pointer(&mut self, kind: crate::event::Pointer, x: u16, y: u16) {
         use crate::event::Pointer;
 
+        self.pointer = Some((x, y));
         // A bar first, and whatever it is beside: a press on one is about
         // the bar and nothing under it, and while it is held every move is
         // the bar's -- wherever the pointer has wandered, the way a bar
@@ -4721,6 +4747,9 @@ impl Screen for App {
 
     fn phase(&self) -> u32 {
         App::phase(self)
+    }
+    fn pointer(&self) -> Option<(u16, u16)> {
+        self.pointer
     }
     fn picker(&self) -> Option<&Picker> {
         App::picker(self)

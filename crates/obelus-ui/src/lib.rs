@@ -334,6 +334,8 @@ pub trait Screen {
     fn opened_hunks(&self) -> Vec<LineNumber>;
     /// How far along the welcome screen's colours have travelled, in ticks.
     fn phase(&self) -> u32;
+    /// The cell the pointer was last reported over, if it has been.
+    fn pointer(&self) -> Option<(u16, u16)>;
     /// What is being asked, while Obelus is asking which project. `None`
     /// on every start that was told one.
     fn choosing(&self) -> Option<Choosing>;
