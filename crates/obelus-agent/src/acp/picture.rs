@@ -17,12 +17,17 @@
 //! in anyway for a photograph, which is what is this large.
 //!
 //! Here, at the moment it is sent, rather than when it is put in the box:
-//! the box keeps what the reader gave it, and the work is done once and
-//! off the thread the keys are answered on.
+//! the box keeps what the reader gave it, and the work is done once, on a
+//! thread of its own.
+//!
+//! **A picture decoded is turned the way its camera said.** A phone writes
+//! a portrait photograph sideways and says so in the EXIF, which a picture
+//! written again does not carry -- so one past a limit, which is most
+//! photographs, would reach the model on its side.
 
 use std::io::Cursor;
 
-use image::{DynamicImage, ImageFormat, ImageReader, imageops::FilterType};
+use image::{DynamicImage, ImageDecoder, ImageFormat, ImageReader, imageops::FilterType};
 
 /// The longest a side may be.
 const SIDE: u32 = 2000;
@@ -41,7 +46,7 @@ pub(crate) fn fitted(mime: String, bytes: Vec<u8>) -> (String, Vec<u8>) {
     if bytes.len() <= BYTES && width <= SIDE && height <= SIDE {
         return (mime, bytes);
     }
-    let picture = match image::load_from_memory(&bytes) {
+    let picture = match upright(&bytes) {
         Ok(picture) => picture,
         Err(error) => {
             tracing::warn!(%error, mime, "a picture too large to send could not be read");
@@ -83,6 +88,17 @@ pub(crate) fn fitted(mime: String, bytes: Vec<u8>) -> (String, Vec<u8>) {
         Some(jpeg) => ("image/jpeg".to_string(), jpeg),
         None => (mime, bytes),
     }
+}
+
+/// The picture decoded, and turned the way its EXIF says it was taken.
+fn upright(bytes: &[u8]) -> image::ImageResult<DynamicImage> {
+    let mut decoder = ImageReader::new(Cursor::new(bytes))
+        .with_guessed_format()?
+        .into_decoder()?;
+    let orientation = decoder.orientation()?;
+    let mut picture = DynamicImage::from_decoder(decoder)?;
+    picture.apply_orientation(orientation);
+    Ok(picture)
 }
 
 /// How large a picture is, from its header alone.
@@ -149,6 +165,28 @@ mod tests {
         let (mime, sent) = fitted("image/png".to_string(), png(2400, 600, false));
         assert_eq!(mime, "image/png");
         assert_eq!(size_of(&sent), Some((2000, 500)));
+    }
+
+    /// A photograph its camera said is on its side is sent upright.
+    ///
+    /// Deliberate break: decoding without asking the orientation sends it
+    /// 2000 wide and 500 tall, the way the sensor wrote it.
+    #[test]
+    fn a_photograph_on_its_side_is_sent_upright() {
+        use image::ImageEncoder as _;
+        // EXIF as a TIFF, big-endian: one entry, orientation (0x0112), a
+        // short, six -- turned a quarter clockwise to be seen upright.
+        let exif = b"MM\x00\x2a\x00\x00\x00\x08\x00\x01\x01\x12\x00\x03\x00\x00\x00\x01\x00\x06\x00\x00\x00\x00\x00\x00".to_vec();
+        let sideways = image::RgbImage::from_pixel(2400, 600, image::Rgb([200, 100, 50]));
+        let mut bytes = Vec::new();
+        let mut encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut bytes, 90);
+        encoder.set_exif_metadata(exif).expect("exif in a jpeg");
+        encoder
+            .write_image(&sideways, 2400, 600, image::ExtendedColorType::Rgb8)
+            .expect("a jpeg");
+
+        let (_, sent) = fitted("image/jpeg".to_string(), bytes);
+        assert_eq!(size_of(&sent), Some((500, 2000)));
     }
 
     /// One too heavy is made light enough, and is a JPEG.

@@ -321,8 +321,8 @@ pub struct Carries {
 /// Base64 here and nowhere earlier: this is the one place that knows the
 /// wire takes a string, and a picture that crossed three layers already
 /// encoded would be a megabyte of text being copied about for nothing. A
-/// picture too large to send is made smaller here for the same reason, and
-/// because this is off the thread the keys are answered on.
+/// picture too large to send is made smaller here for the same reason --
+/// which is work, so this is called on a thread of its own.
 fn block_of(said: Said) -> ContentBlock {
     use base64::Engine as _;
     match said {
@@ -1868,13 +1868,27 @@ async fn talk(
                         } => {
                             let told = events.clone();
                             let whose = session.clone();
+                            // On a thread of the runtime's blocking pool, and
+                            // waited for here: a picture too large to send is
+                            // decoded and written again, which is work rather
+                            // than waiting -- and waiting for it keeps the
+                            // order, so an interruption asked meanwhile goes
+                            // after the prompt it interrupts.
+                            let blocks = tokio::task::spawn_blocking(move || {
+                                said.into_iter().map(block_of).collect::<Vec<_>>()
+                            })
+                            .await
+                            .map_err(|error| {
+                                agent_client_protocol::Error::internal_error()
+                                    .data(serde_json::json!(error.to_string()))
+                            })?;
                             connection
                                 .send_request(PromptRequest::new(
                                     session,
                                     opening
                                         .into_iter()
                                         .map(|words| ContentBlock::Text(TextContent::new(words)))
-                                        .chain(said.into_iter().map(block_of))
+                                        .chain(blocks)
                                         .collect(),
                                 ))
                                 .on_receiving_result(move |asked| {
