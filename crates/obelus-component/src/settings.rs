@@ -1207,7 +1207,10 @@ impl Settings {
             self.query.handle_key(key);
             return SettingsOutcome::Consumed;
         }
-        if modifiers != KeyModifiers::NONE && modifiers != KeyModifiers::SHIFT {
+        // And the page's two ends, which are control's here, because bare
+        // they are the filter's caret's.
+        let ends = Move::under_a_box(key).filter(|_| modifiers == KeyModifiers::CONTROL);
+        if modifiers != KeyModifiers::NONE && modifiers != KeyModifiers::SHIFT && ends.is_none() {
             return SettingsOutcome::Ignored;
         }
         let bare = modifiers == KeyModifiers::NONE;
@@ -1252,12 +1255,12 @@ impl Settings {
             // right ones walk the tabs; paging and the ends have no other
             // meaning here.
             //
-            // Bare only. With shift they are the filter's, holding what the
-            // caret passes over the way shift does in every box in Obelus:
-            // here they took the page to its ends instead.
-            code if count > 0
-                && bare
-                && let Some(movement) = Move::of(code) =>
+            // As a list under a box has them: with shift they are the
+            // filter's, holding what the caret passes over, and bare home
+            // and end are where its caret goes -- so the page's ends are
+            // control's.
+            _ if count > 0
+                && let Some(movement) = Move::under_a_box(key) =>
             {
                 self.window
                     .apply(movement, u16::try_from(page).unwrap_or(1), Wrap::Yes);

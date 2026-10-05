@@ -39,10 +39,10 @@ fn asking() -> App {
 
 /// Goes to the row that opens a project not in the list, and opens it.
 ///
-/// `End`, because that row is the last: under the projects, which the
-/// reader starts on.
+/// `ctrl+end`, because that row is the last: under the projects, which
+/// the reader starts on. Bare `end` is the filter's caret's.
 fn open_another(app: &mut App) {
-    press(app, KeyCode::End);
+    support::press_control_key(app, KeyCode::End);
     press(app, KeyCode::Enter);
 }
 

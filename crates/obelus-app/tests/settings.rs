@@ -1279,14 +1279,15 @@ fn the_ends_and_the_pages_are_reachable() {
     let mut app = open(&file);
     let focus = |app: &App| app.settings().expect("the settings").focus();
 
-    // Every setting on one page: End reaches the last, Home the first, and
-    // neither wraps past its end.
+    // Every setting on one page: control and end reach the last, control
+    // and home the first, and neither wraps past its end. Bare, the two
+    // are the filter's caret's, as they are in a list's query.
     let last = shown() - 1;
-    support::press(&mut app, KeyCode::End);
+    support::press_control_key(&mut app, KeyCode::End);
     assert_eq!(focus(&app), last, "End did not reach the last row");
-    support::press(&mut app, KeyCode::End);
+    support::press_control_key(&mut app, KeyCode::End);
     assert_eq!(focus(&app), last, "End walked past the end");
-    support::press(&mut app, KeyCode::Home);
+    support::press_control_key(&mut app, KeyCode::Home);
     assert_eq!(focus(&app), 0);
 
     // A page is what the page shows, and paging is clamped rather than
@@ -1394,7 +1395,7 @@ fn the_agents_page_is_a_list_of_cards() {
     );
 
     // End reaches the last card, and it is on screen.
-    support::press(&mut app, KeyCode::End);
+    support::press_control_key(&mut app, KeyCode::End);
     let dump = support::render(&mut app, 76, 16);
     assert!(
         support::text_block(&dump).contains("Agent 11"),
@@ -2620,7 +2621,7 @@ fn an_agent_that_has_not_said_what_it_offers_says_so_rather_than_nothing() {
     let (_scratch, mut app) = with_an_agent("agent-silence", &[]);
 
     // The group is last, so the end of the page is where it is.
-    support::press(&mut app, KeyCode::End);
+    support::press_control_key(&mut app, KeyCode::End);
     let dump = support::render(&mut app, 66, 12);
     assert!(
         support::text_block(&dump).contains("Nothing has been heard"),
@@ -2728,7 +2729,7 @@ fn a_warning_is_counted_where_the_page_decides_what_is_on_it() {
     );
 
     support::type_text(&mut app, "way ");
-    support::press(&mut app, KeyCode::End);
+    support::press_control_key(&mut app, KeyCode::End);
     let dump = support::render(&mut app, 66, 16);
     assert!(
         support::text_block(&dump).contains("Way four"),
@@ -3025,7 +3026,7 @@ fn walking_the_cards_rewrites_marks_and_a_still_frame_does_not() {
 
     // And the end of the list, which the window has to follow: every mark
     // on the page lands on a new row.
-    support::press(&mut app, KeyCode::End);
+    support::press_control_key(&mut app, KeyCode::End);
     assert!(
         app.picture_moved_for_test(editor),
         "the window scrolled to the last card without moving a mark"

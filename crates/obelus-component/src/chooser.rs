@@ -45,7 +45,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::{
     field::Field,
@@ -322,13 +322,17 @@ impl Chooser {
             }
             KeyCode::Esc => Outcome::Ignored,
             _ => {
+                let said = self.filter.said();
                 if self.filter.handle_key(&key) {
                     // The rows underneath have moved, so standing on the
                     // fifth of them is standing on a different project.
                     // Back to the top, which is the newest that matched --
                     // or, where nothing did, the opening row, which is
-                    // then the only one.
-                    self.at = 0;
+                    // then the only one. Only where they have: a caret
+                    // moved along the filter moved no row.
+                    if self.filter.said() != said {
+                        self.at = 0;
+                    }
                     return Outcome::Taken;
                 }
                 Outcome::Ignored
@@ -558,11 +562,8 @@ fn expanded(said: &str) -> String {
 /// is here.
 #[must_use]
 fn movement(key: KeyEvent) -> Option<Move> {
-    // Modifiers judged exactly, and before the code is looked at:
-    // `shift+up` extends a selection elsewhere in Obelus and means nothing
-    // here, and a key that answered to any modifier would swallow it.
-    if key.modifiers != KeyModifiers::NONE {
-        return None;
-    }
-    Move::of(key.code)
+    // As a list under a box has them: `shift+up` extends a selection
+    // elsewhere in Obelus, and bare home and end are where the filter's
+    // caret goes, so the ends of the list are control's.
+    Move::under_a_box(&key)
 }

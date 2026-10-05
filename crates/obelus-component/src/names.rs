@@ -402,11 +402,7 @@ impl Names {
             };
             return self.shift(by);
         }
-        // Bare, because with shift the keys are the query's: holding what
-        // the caret passes over, the way they do in every box in Obelus.
-        if key.modifiers.is_empty()
-            && let Some(movement) = Move::of(key.code)
-        {
+        if let Some(movement) = Move::under_a_box(key) {
             // It does not wrap: the two sections are one list with an
             // order to it, and walking off the last offer to land on the
             // first chosen name is a jump nobody asked for.

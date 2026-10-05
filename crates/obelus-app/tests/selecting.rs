@@ -138,7 +138,7 @@ fn places() -> Vec<Place> {
             name: "a project's path",
             open: |scratch| {
                 let mut app = asking(scratch);
-                support::press(&mut app, KeyCode::End);
+                support::press_control_key(&mut app, KeyCode::End);
                 support::press(&mut app, KeyCode::Enter);
                 app
             },
@@ -211,6 +211,8 @@ const CONTROL_SHIFT: KeyModifiers = KeyModifiers::CONTROL.union(KeyModifiers::SH
 /// - the message box without its `ctrl+shift` arm: the word is not held.
 /// - `select_all` back to the file alone, or `ctrl+a` unbound in a dialog: it
 ///   holds nothing in the list's query.
+/// - `Move::under_a_box` giving bare home and end to the list again: the list
+///   of names walks its rows and its query's caret stays put.
 /// - any one box's escape arm taken out -- the list's, the settings', the
 ///   question's, the names', the two projects' boxes', the note's: that box is
 ///   given up on, or emptied, with something held.
@@ -277,6 +279,19 @@ fn every_box_holds_with_the_same_keys() {
             app.current_buffer()
                 .is_none_or(|buffer| !buffer.has_selection()),
             "control and a took hold of the file behind {name}"
+        );
+
+        // And bare home is where the caret goes, in a list's box as in any
+        // other: the list's own ends are control's. From the end, with
+        // nothing held, or a home that went to the list would leave the
+        // hold control and a made for shift and end to keep.
+        support::press(&mut app, KeyCode::Esc);
+        support::press(&mut app, KeyCode::Home);
+        chord(&mut app, KeyCode::End, KeyModifiers::SHIFT);
+        assert_eq!(
+            (place.held)(&app).as_deref(),
+            Some(SAID),
+            "home did not take the caret to the start of {name}"
         );
     }
 }
@@ -373,8 +388,9 @@ fn a_drag_holds_in_any_box() {
 /// to walk -- which is the case the table above cannot reach, because what
 /// it types leaves the page with no rows at all.
 ///
-/// Deliberate break: `bare ||` back on the settings' arm that walks the
-/// page, so that shift and end go to its last row: nothing is held.
+/// Deliberate breaks: `bare ||` back on the settings' arm that walks the
+/// page, so that shift and end go to its last row: nothing is held; and
+/// `Move::under_a_box` giving bare home to the page: the caret stays put.
 #[test]
 fn shift_and_an_end_hold_in_the_settings_over_their_rows() {
     let scratch = support::Scratch::new("selecting-settings-rows");
@@ -388,10 +404,24 @@ fn shift_and_an_end_hold_in_the_settings_over_their_rows() {
     chord(&mut app, KeyCode::Home, CONTROL_SHIFT);
     support::press(&mut app, KeyCode::Esc);
     chord(&mut app, KeyCode::End, KeyModifiers::SHIFT);
-    let settings = app.settings().expect("the settings");
+    let held = |app: &App| {
+        let settings = app.settings().expect("the settings");
+        run_of(&settings.query(), settings.query_held())
+    };
     assert_eq!(
-        run_of(&settings.query(), settings.query_held()).as_deref(),
+        held(&app).as_deref(),
         Some("theme"),
         "shift and end went to the page rather than holding the filter"
+    );
+    // And bare, the caret's, which is the arrangement a list's query has --
+    // from the end and with nothing held, so that a home which went to the
+    // page leaves nothing for shift and end to hold.
+    support::press(&mut app, KeyCode::Esc);
+    support::press(&mut app, KeyCode::Home);
+    chord(&mut app, KeyCode::End, KeyModifiers::SHIFT);
+    assert_eq!(
+        held(&app).as_deref(),
+        Some("theme"),
+        "home went to the page rather than to the start of the filter"
     );
 }
