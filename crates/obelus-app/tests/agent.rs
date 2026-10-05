@@ -440,18 +440,22 @@ fn an_agent_not_yet_started_is_called_what_the_registry_calls_it() {
     assert_eq!(app.agent_name(), Some("Claude Agent"));
 }
 
-/// The list of what is open says whose a conversation is by the
-/// registry's name for the agent, as the list of conversations does.
+/// The list of what is open says whose a conversation is by what the
+/// agent calls itself, as the conversation's header does.
 ///
-/// Broken deliberately by putting `talker.id()` back in `trailing` in
-/// `App::conversation_row`: the row reads `fake`.
+/// With no registry read, which is how a window starts: it is read only
+/// once the agents page asks for it, so a name taken from it alone is the
+/// id on every screen that has not been to that page.
+///
+/// Broken deliberately twice in `App::conversation_row`: putting
+/// `talker.id()` back in `trailing`, and answering with `agent_called`
+/// alone -- both read `fake`.
 #[test]
-fn an_open_conversation_says_whose_it_is_by_the_registrys_name() {
+fn an_open_conversation_says_whose_it_is_by_the_agents_own_name() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the handshake", |app| {
         app.talking() == obelus_agent::Talking::Ready
     });
-    the_fixture_is_listed(&mut app);
 
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentList);
     let whose: Vec<Option<&str>> = app
@@ -461,7 +465,7 @@ fn an_open_conversation_says_whose_it_is_by_the_registrys_name() {
         .filter(|item| item.label == "A conversation")
         .map(|item| item.trailing.as_deref())
         .collect();
-    assert_eq!(whose, [Some("The fixture")]);
+    assert_eq!(whose, [Some("Fake Agent")]);
 }
 
 /// One whole turn: the handshake, a prompt, what comes back while it works,
