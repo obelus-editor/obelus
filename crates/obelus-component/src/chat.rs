@@ -1001,6 +1001,20 @@ impl Chat {
     /// never reached the keys that would have taken the focus back. Left
     /// where it was, the word went into a box the caret was not in.
     pub fn paste(&mut self, what: &str, width: u16) {
+        self.take_the_keys_back();
+        self.input.write_in(what, width);
+    }
+
+    /// Puts a picture in the box, wherever the caret is -- taking the keys
+    /// back the way a paste does, because a picture dragged in is a paste
+    /// of its path.
+    pub fn attach(&mut self, picture: crate::composer::Attached, width: u16) {
+        self.take_the_keys_back();
+        self.input.attach(picture, width);
+    }
+
+    /// The keys back in the box, from wherever in the conversation they were.
+    fn take_the_keys_back(&mut self) {
         match self.focus {
             Focus::Transcript(at) => {
                 self.let_go();
@@ -1009,7 +1023,6 @@ impl Chat {
             Focus::Settings(_) => self.focus = Focus::Writing,
             Focus::Writing => {}
         }
-        self.input.write_in(what, width);
     }
 
     /// Says what the box offers while it is empty, or that it offers

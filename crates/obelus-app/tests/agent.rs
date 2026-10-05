@@ -13279,3 +13279,63 @@ fn a_file_dropped_outside_a_conversation_goes_nowhere() {
     app.handle(Event::Dropped(picture));
     assert_eq!(app.note(), Some("A file goes in a message to an agent"));
 }
+
+/// A file dropped while a list is open over the conversation is refused,
+/// rather than put in the box behind the list.
+///
+/// Deliberate break: asking only whether there is a conversation puts the
+/// picture in a box the reader cannot see.
+#[test]
+fn a_file_dropped_with_a_list_in_front_goes_nowhere() {
+    let scratch = support::Scratch::new("dropped-under-a-list");
+    let picture = a_png(&scratch, "shot.png");
+    let (mut app, _events) = not_yet_asked();
+    support::press_control(&mut app, 'p');
+    assert!(app.picker().is_some(), "the palette did not open");
+
+    app.handle(Event::Dropped(picture));
+    assert_eq!(app.note(), Some("A file goes in a message to an agent"));
+    assert!(in_the_box(&app).is_empty(), "the drop went behind the list");
+}
+
+/// A picture dropped while the keys are in the transcript goes in the box
+/// all the same, and takes the keys back there -- as a paste of its path
+/// does in a terminal.
+///
+/// Deliberate break: asking whether the box has the keys refuses the drop,
+/// and a terminal's paste of the same path goes in as words.
+#[test]
+fn a_picture_dropped_from_the_transcript_goes_in_the_box() {
+    use obelus_component::chat::Focus;
+    let scratch = support::Scratch::new("dropped-from-the-transcript");
+    let picture = a_png(&scratch, "shot.png");
+    let (mut app, events) = playing(&["pictures"]);
+    support::type_text(&mut app, "/hello");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the end of the turn", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::press(&mut app, KeyCode::Up);
+    let focus = |app: &App| app.chat().expect("the chat").focus();
+    assert!(
+        matches!(focus(&app), Focus::Transcript(_)),
+        "not in the transcript"
+    );
+
+    app.handle(Event::Dropped(picture.clone()));
+    assert_eq!(in_the_box(&app), ["<image/png>"]);
+    assert_eq!(
+        focus(&app),
+        Focus::Writing,
+        "the keys stayed in the transcript"
+    );
+
+    // And a terminal's paste of it, from the same place.
+    support::press(&mut app, KeyCode::Up);
+    assert!(
+        matches!(focus(&app), Focus::Transcript(_)),
+        "not in the transcript"
+    );
+    app.handle(Event::Paste(picture.display().to_string()));
+    assert_eq!(in_the_box(&app), ["<image/png>", "<image/png>"]);
+}

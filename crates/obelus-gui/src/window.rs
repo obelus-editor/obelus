@@ -104,6 +104,7 @@ pub(crate) enum Waking {
     ComeForward(Option<String>),
     /// A file was dropped on the window, and only the display connection
     /// Obelus listens on itself heard it: winit hears none on Wayland.
+    #[cfg(target_os = "linux")]
     Dropped(std::path::PathBuf),
 }
 
@@ -1267,6 +1268,7 @@ impl ApplicationHandler<Waking> for Showing {
                     here.come_forward(window, token);
                 }
             }
+            #[cfg(target_os = "linux")]
             Waking::Dropped(path) => self.tell(Event::Dropped(path)),
         }
     }

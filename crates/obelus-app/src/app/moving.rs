@@ -612,10 +612,13 @@ impl App {
     /// agent has to have said in the handshake that a prompt may carry a
     /// picture. The second is what `Carries::image` was put there for.
     #[must_use]
-    pub(super) fn can_take_a_picture(&self) -> bool {
-        if !self.conversation_takes_text() {
-            return false;
-        }
+    fn can_take_a_picture(&self) -> bool {
+        self.conversation_takes_text() && self.agent_takes_pictures()
+    }
+
+    /// Whether the agent has not said a prompt to it cannot carry a picture.
+    #[must_use]
+    pub(super) fn agent_takes_pictures(&self) -> bool {
         match self
             .talker
             .as_ref()

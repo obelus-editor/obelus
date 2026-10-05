@@ -1058,11 +1058,12 @@ impl App {
         }
         // A path to a picture is the picture. A terminal has no event for a
         // file dragged onto it, only the words for its path, and a reader
-        // dragging a screenshot meant the screenshot. Only where a picture
-        // from the clipboard would go: not under a card, which takes words,
-        // and not to an agent that said it takes none.
+        // dragging a screenshot meant the screenshot. Not under a card,
+        // which takes words, and not to an agent that said it takes none --
+        // but wherever the keys are in the conversation, because a paste
+        // takes them back to the box.
         let carded = self.conversation().is_some_and(|talk| talk.card.is_some());
-        if !carded && self.can_take_a_picture() && self.attach_what_is_named(what) {
+        if !carded && self.agent_takes_pictures() && self.attach_what_is_named(what) {
             return;
         }
         // Each against the width its own rows are drawn at, which is what
@@ -1117,7 +1118,7 @@ impl App {
             return false;
         };
         for picture in pictures {
-            talk.chat.writing_mut().attach(picture, room);
+            talk.chat.attach(picture, room);
         }
         if !words.is_empty() {
             talk.chat.paste(&words.join("\n"), room);
@@ -1130,8 +1131,16 @@ impl App {
     /// Into the box a message is written in and nowhere else: a file dropped
     /// on the file being read is not an edit anybody meant, and a drop is
     /// the one paste with no key behind it to have been pressed on purpose.
+    /// So it goes where [`App::paste_text`] would put it only when that is a
+    /// conversation -- nothing in front of it, and no card over the box
+    /// that takes no words -- and is refused everywhere else.
     pub(super) fn dropped(&mut self, path: &std::path::Path) {
-        if !self.conversation_takes_text() {
+        let into_a_conversation = self.layers().nearest().is_none()
+            && self.chooser.is_none()
+            && self
+                .conversation()
+                .is_some_and(|talk| talk.card.as_ref().is_none_or(Card::takes_words));
+        if !into_a_conversation {
             self.wrong("A file goes in a message to an agent".to_string());
             return;
         }
