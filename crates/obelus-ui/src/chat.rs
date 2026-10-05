@@ -1046,6 +1046,10 @@ impl ChatView<'_> {
             );
         }
         let first = self.chat.top().min(rows.len());
+        let lit = match self.focus {
+            Focus::Transcript(place) if self.in_front => Row::acting(&rows, place.row),
+            _ => None,
+        };
         for (offset, row) in rows.iter().skip(first).enumerate() {
             let Ok(offset) = u16::try_from(offset) else {
                 break;
@@ -1061,16 +1065,14 @@ impl ChatView<'_> {
             // The row the cursor is on, lit the way every list in Obelus
             // lights one -- but only where the row does something, because
             // that is what the light promises: what is lit is what enter
-            // opens.
+            // opens. All of it, where that is more than one row.
             //
             // Where the cursor is is said by the caret instead. The cursor
             // can stand anywhere now, so a light that followed it would be
             // a promise kept on one row in twenty; two marks saying two
             // different things is the honest way round.
             let at = first + usize::from(offset);
-            let here = self.in_front
-                && row.acts()
-                && matches!(self.focus, Focus::Transcript(place) if place.row == at);
+            let here = lit.as_ref().is_some_and(|lit| lit.contains(&at));
             let (glyph, style) = self.voice(row, plain, dim);
             // What has not gone yet is said in the ink: the reader's own
             // words, dim, until the turn in front of them ends. Not by

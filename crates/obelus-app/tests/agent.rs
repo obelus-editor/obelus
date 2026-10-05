@@ -1272,6 +1272,75 @@ fn enter_on_something_already_said_copies_it_to_the_box() {
     );
 }
 
+/// Something already said is lit on every row of it, and enter on any of
+/// them copies all of it.
+///
+/// `again` is on the first row alone, so the light and the key were both
+/// read off that row: a message that wrapped was lit for one row of two,
+/// and enter on the second did nothing.
+///
+/// Broken deliberately twice: lighting a row by `row.acts()` on the
+/// cursor's own row again leaves the second row unlit, and answering enter
+/// from `laid.get(at.row)` again leaves the box empty.
+#[test]
+fn something_already_said_is_lit_and_copied_from_every_row_of_it() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    let words = "/forever and words that run on long enough to need a second row of \
+                 the transcript, and the end of them";
+    support::type_text(&mut app, words);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to start thinking", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+    assert_eq!(app.chat().map(|chat| chat.unsent().len()), Some(0));
+
+    let ground_of = |app: &mut App, needle: &str| {
+        let cells = support::cells_of(app, WIDTH, HEIGHT);
+        (0..HEIGHT)
+            .find_map(|y| {
+                let row: String = (0..WIDTH).map(|x| cells[(x, y)].symbol()).collect();
+                let from = row.find(needle)?;
+                let x = u16::try_from(row[..from].chars().count()).ok()?;
+                Some(cells[(x, y)].bg)
+            })
+            .unwrap_or_else(|| panic!("{needle:?} is not on the screen"))
+    };
+    let unlit = ground_of(&mut app, "end of them");
+
+    // Up to the message's last row, which is the one the key used to
+    // ignore.
+    for _ in 0..8 {
+        let on = app.chat().and_then(|chat| match chat.focus() {
+            obelus_component::chat::Focus::Transcript(place) => chat
+                .rows(WIDTH - 5)
+                .get(place.row)
+                .map(obelus_component::chat::Row::text),
+            _ => None,
+        });
+        if on.is_some_and(|text| text.contains("end of them")) {
+            break;
+        }
+        support::press(&mut app, KeyCode::Up);
+    }
+    let first = ground_of(&mut app, "/forever and");
+    let rest = ground_of(&mut app, "end of them");
+    assert_ne!(rest, unlit, "the row the cursor is on is not lit");
+    assert_eq!(
+        first, rest,
+        "one thing said is lit on one row and not the other: {first:?} and {rest:?}"
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.chat().map(|chat| chat.writing().text()),
+        Some(words.to_string()),
+        "the words were not put in the box"
+    );
+}
+
 /// Something waiting is dim on every row of it, not only the first.
 ///
 /// `Row::unsent` is on the first row alone, because that is where the key
