@@ -431,10 +431,11 @@ impl Names {
             // correcting what they typed who had stepped up onto their own
             // list would lose a face for a letter. Asked of the text as it
             // is rather than whether it is blank, because a query of one
-            // space still has a space to take back. Delete needs no such
-            // guard -- the query's caret is always at its end, where
-            // delete has nothing to take.
-            KeyCode::Delete => self.take_out(),
+            // space still has a space to take back. Delete is the query's
+            // the same way, once there is something in front of its caret
+            // or held in it -- which there never was while the caret could
+            // only sit at the end.
+            KeyCode::Delete if !self.query.takes_a_delete() => self.take_out(),
             KeyCode::Backspace if self.query.said().is_empty() => self.take_out(),
             // What the query refuses goes on to the table, which is how
             // copying, cutting and taking all of it reach the box: a box a

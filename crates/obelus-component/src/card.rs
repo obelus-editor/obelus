@@ -963,6 +963,25 @@ impl Card {
                 self.write(|composer| composer.insert(character));
                 CardOutcome::Consumed
             }
+            // And rubbing out is writing too, so it goes where typing goes
+            // -- where there is anything written to rub out. Otherwise it
+            // is swallowed, for the reason a character is on a card with no
+            // box: what is under a card is the box a message is written in,
+            // and a backspace that fell through took a letter out of a
+            // message nobody could see.
+            KeyCode::Backspace | KeyCode::Delete if bare => {
+                if self.blank() {
+                    return CardOutcome::Consumed;
+                }
+                if !self.writing_wanted() {
+                    self.tick_words();
+                }
+                self.focus(On::Words);
+                self.write(|composer| {
+                    composer.handle_key(key, room);
+                });
+                CardOutcome::Consumed
+            }
             _ => CardOutcome::Ignored,
         }
     }
@@ -1287,6 +1306,58 @@ mod tests {
                 words: None,
             }
         );
+    }
+
+    /// Backspace and delete are the card's from wherever the reader is on
+    /// it, the way typing is: they rub out what is written, and on a card
+    /// with nothing written -- or nowhere to write -- they are swallowed.
+    ///
+    /// Either way they are not let through. What is under a card is the box
+    /// a message is written in, and a backspace pressed on an answer's row
+    /// took a letter out of that message, where nobody could see it go.
+    ///
+    /// Deliberate break: the arm for the two taken out, and both are
+    /// `Ignored` on an answer's row.
+    #[test]
+    fn backspace_and_delete_rub_out_from_anywhere_on_the_card() {
+        let mut card = Card::new(answers(), false);
+        card.writing("Other", false, None);
+        // On an answer, with nothing written: swallowed.
+        assert_eq!(card.on(), On::Choice(0));
+        for code in [KeyCode::Backspace, KeyCode::Delete] {
+            assert_eq!(card.handle_key(&key(code), ROOM), CardOutcome::Consumed);
+        }
+
+        for character in "abc".chars() {
+            card.handle_key(&key(KeyCode::Char(character)), ROOM);
+        }
+        card.handle_key(&key(KeyCode::Up), ROOM);
+        assert_ne!(card.on(), On::Words, "up did not leave the box");
+        assert_eq!(
+            card.handle_key(&key(KeyCode::Backspace), ROOM),
+            CardOutcome::Consumed
+        );
+        assert_eq!(card.on(), On::Words, "backspace did not go to the box");
+        card.handle_key(&key(KeyCode::Home), ROOM);
+        card.handle_key(&key(KeyCode::Up), ROOM);
+        assert_eq!(
+            card.handle_key(&key(KeyCode::Delete), ROOM),
+            CardOutcome::Consumed
+        );
+        assert_eq!(
+            card.written(ROOM)
+                .into_iter()
+                .map(|row| row.said)
+                .collect::<Vec<_>>(),
+            ["b"],
+            "backspace and delete did not rub out what is written"
+        );
+
+        // A card with no box at all swallows them as well.
+        let mut card = Card::new(answers(), false);
+        for code in [KeyCode::Backspace, KeyCode::Delete] {
+            assert_eq!(card.handle_key(&key(code), ROOM), CardOutcome::Consumed);
+        }
     }
 
     /// A line in the box is asked for the way it is asked for in the box a

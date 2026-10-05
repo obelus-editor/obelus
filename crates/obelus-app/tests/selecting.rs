@@ -36,6 +36,8 @@ struct Place {
     open: fn(&support::Scratch) -> App,
     /// What the reader has hold of in it.
     held: fn(&App) -> Option<String>,
+    /// What is in it.
+    said: fn(&App) -> Option<String>,
     /// Whether it is still on screen.
     showing: fn(&App) -> bool,
 }
@@ -83,6 +85,7 @@ fn places() -> Vec<Place> {
                 let picker = app.picker()?;
                 run_of(&picker.query(), picker.query_held())
             },
+            said: |app| Some(app.picker()?.query()),
             showing: |app| app.picker().is_some(),
         },
         Place {
@@ -96,6 +99,7 @@ fn places() -> Vec<Place> {
                 let settings = app.settings()?;
                 run_of(&settings.query(), settings.query_held())
             },
+            said: |app| Some(app.settings()?.query()),
             showing: |app| app.settings().is_some(),
         },
         Place {
@@ -109,6 +113,7 @@ fn places() -> Vec<Place> {
                 let prompt = app.prompt()?;
                 run_of(&prompt.text(), prompt.held())
             },
+            said: |app| Some(app.prompt()?.text()),
             showing: |app| app.prompt().is_some(),
         },
         Place {
@@ -123,6 +128,7 @@ fn places() -> Vec<Place> {
                 app
             },
             held: |app| app.names()?.query().selected(),
+            said: |app| Some(app.names()?.query().said()),
             showing: |app| app.names().is_some(),
         },
         Place {
@@ -132,6 +138,7 @@ fn places() -> Vec<Place> {
                 let choosing = app.choosing()?;
                 run_of(&choosing.typed, choosing.held)
             },
+            said: |app| Some(app.choosing()?.typed),
             showing: |app| app.choosing().is_some_and(|choosing| !choosing.naming),
         },
         Place {
@@ -146,6 +153,7 @@ fn places() -> Vec<Place> {
                 let choosing = app.choosing()?;
                 run_of(&choosing.typed, choosing.held)
             },
+            said: |app| Some(app.choosing()?.typed),
             showing: |app| app.choosing().is_some_and(|choosing| choosing.naming),
         },
         Place {
@@ -156,6 +164,7 @@ fn places() -> Vec<Place> {
                 app
             },
             held: |app| app.chat()?.writing().selected(),
+            said: |app| Some(app.chat()?.writing().text()),
             showing: |app| app.chat().is_some(),
         },
         Place {
@@ -169,6 +178,7 @@ fn places() -> Vec<Place> {
                 app
             },
             held: |app| app.notes()?.writing()?.selected(),
+            said: |app| Some(app.notes()?.writing()?.text()),
             showing: |app| app.notes().is_some_and(|notes| notes.writing().is_some()),
         },
     ]
@@ -213,6 +223,8 @@ const CONTROL_SHIFT: KeyModifiers = KeyModifiers::CONTROL.union(KeyModifiers::SH
 ///   holds nothing in the list's query.
 /// - `Move::under_a_box` giving bare home and end to the list again: the list
 ///   of names walks its rows and its query's caret stays put.
+/// - the list of names taking delete for its rows whatever is in its query, as
+///   it did: the character stays.
 /// - any one box's escape arm taken out -- the list's, the settings', the
 ///   question's, the names', the two projects' boxes', the note's: that box is
 ///   given up on, or emptied, with something held.
@@ -292,6 +304,25 @@ fn every_box_holds_with_the_same_keys() {
             (place.held)(&app).as_deref(),
             Some(SAID),
             "home did not take the caret to the start of {name}"
+        );
+
+        // Delete takes what is in front of the caret, and then what is
+        // held: a box over a list shares the key with its rows, and it is
+        // the box's while the box has something for it.
+        support::press(&mut app, KeyCode::Esc);
+        support::press(&mut app, KeyCode::Home);
+        support::press(&mut app, KeyCode::Delete);
+        assert_eq!(
+            (place.said)(&app).as_deref(),
+            Some("ne two three"),
+            "delete did not take the character in front of the caret in {name}"
+        );
+        support::press_control(&mut app, 'a');
+        support::press(&mut app, KeyCode::Delete);
+        assert_eq!(
+            (place.said)(&app).as_deref(),
+            Some(""),
+            "delete did not take what was held in {name}"
         );
     }
 }

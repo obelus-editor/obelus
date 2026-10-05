@@ -955,6 +955,50 @@ fn delete_takes_a_setting_out_and_leaves_the_heading() {
     assert!(!app.config().wrap, "the project still has it");
 }
 
+/// Delete is the filter's while the filter has something for it, and the
+/// row's after.
+///
+/// The filter shares the key with the row it is over: on the project's page
+/// delete takes a setting out of its file. While the caret could only sit
+/// at the end of what was typed there was nothing for it to take in the
+/// filter, so the row could have it outright -- but the caret walks the
+/// filter now, and a delete pressed to take a letter out took a setting
+/// out instead.
+///
+/// Deliberate break: the `takes_a_delete` guard taken off the project's
+/// arm, and the first delete takes `wrap` out of the file.
+#[test]
+fn delete_takes_a_letter_out_of_the_filter_before_a_setting_out_of_the_file() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let root = project(
+        "Unset-filter",
+        "wrap = true
+blame_margin = true
+",
+    );
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.configure(obelus_config::Config::default(), Vec::new());
+    app.working_directory_for_test(root.path().to_path_buf());
+    support::lay_out(&mut app, 76, 16);
+    dispatch::dispatch(&mut app, Command::ConfigProject);
+    support::type_text(&mut app, "wrap");
+    let written =
+        || std::fs::read_to_string(root.join(".obelus").join("config.toml")).expect("the file");
+
+    support::press(&mut app, KeyCode::Home);
+    support::press(&mut app, KeyCode::Delete);
+    assert_eq!(app.settings().expect("the settings").query(), "rap");
+    assert!(written().contains("wrap = true"), "a letter cost a setting");
+
+    // With nothing in front of the caret, it is the row's again.
+    support::press(&mut app, KeyCode::End);
+    support::press(&mut app, KeyCode::Delete);
+    assert!(!written().contains("wrap"), "still there: {:?}", written());
+}
+
 /// A project that has no settings file gets one the moment something is set.
 ///
 /// Broken deliberately by refusing to write when the file is not there:
