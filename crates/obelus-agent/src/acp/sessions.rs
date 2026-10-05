@@ -185,8 +185,9 @@ impl Remembered {
     /// a note still there is work a reader may come back to after any
     /// length of time. And not one that is open, in this Obelus or another:
     /// that one is being read, and the next thing said in it would write it
-    /// back -- `held` is asked only where something has expired, because it
-    /// is a lock tried per claim and most readings have nothing to forget.
+    /// back -- `held` is asked only about one that has expired, because it
+    /// is a lock tried on that claim, and a try is an instant in which
+    /// another window asking for it is refused.
     ///
     /// One with no time at all is kept. It was written before the time was,
     /// and saying it is old would be the made-up time [`Kept::last`] refuses
@@ -195,7 +196,7 @@ impl Remembered {
         &mut self,
         days: usize,
         now: i64,
-        held: impl FnOnce() -> BTreeMap<ChatId, Option<PathBuf>>,
+        held: impl Fn(&ChatId) -> bool,
     ) {
         if days == 0 {
             return;
@@ -205,16 +206,8 @@ impl Remembered {
         let expired = |which: &ChatId, kept: &Kept| {
             which.note().is_none() && kept.last.is_some_and(|last| last < since)
         };
-        if !self
-            .kept
-            .iter()
-            .any(|((which, _, _), kept)| expired(which, kept))
-        {
-            return;
-        }
-        let held = held();
         self.kept
-            .retain(|(which, _, _), kept| !expired(which, kept) || held.contains_key(which));
+            .retain(|(which, _, _), kept| !expired(which, kept) || held(which));
     }
 
     /// Every session it holds, for asking an agent which it still knows.
@@ -297,8 +290,9 @@ impl Reading {
 ///
 /// Forgotten as it is read, the way a tree that has gone is: the list stops
 /// offering it the moment it expires, and the next write takes it out of
-/// the file. Zero forgets none, which is also what a caller that is only
-/// looking at the file passes.
+/// the file. Zero forgets none, which is what coming back to what was open
+/// passes: what the reader left on screen is the conversation being read,
+/// and nothing has claimed it yet to say so.
 #[must_use]
 pub fn read(root: &Path, days: usize) -> Reading {
     let Some(path) = path(root) else {
@@ -319,7 +313,9 @@ pub fn read(root: &Path, days: usize) -> Reading {
             .ok()
             .and_then(|since| i64::try_from(since.as_secs()).ok())
             .unwrap_or(0);
-        remembered.forget_what_nobody_has_talked_in(days, now, || crate::chats::held(root));
+        remembered.forget_what_nobody_has_talked_in(days, now, |which| {
+            crate::chats::is_held(root, which)
+        });
     }
     reading
 }
@@ -960,7 +956,7 @@ mod tests {
             here(),
             kept("noted", Some(now - 31 * DAY)),
         );
-        let held = || BTreeMap::from([(loose("open"), None)]);
+        let held = |which: &ChatId| *which == loose("open");
 
         let mut never = remembered.clone();
         never.forget_what_nobody_has_talked_in(0, now, held);
@@ -987,11 +983,12 @@ mod tests {
         );
     }
 
-    /// Nobody is asked who holds what when nothing has expired: the claims
-    /// are a lock tried per file, and most readings forget nothing.
+    /// Nobody is asked whether a conversation that has not expired is held:
+    /// the question is a lock tried on its claim, and a try is an instant in
+    /// which another window asking for it is refused.
     ///
-    /// Broken deliberately by taking out the early return that asks whether
-    /// anything has expired: `held` is called.
+    /// Broken deliberately by asking `held` before `expired` in the
+    /// `retain`: it is asked about this one.
     #[test]
     fn nobody_is_asked_who_holds_what_when_nothing_has_expired() {
         let mut remembered = Remembered::default();
@@ -1007,8 +1004,8 @@ mod tests {
                 last: Some(1_000),
             },
         );
-        remembered.forget_what_nobody_has_talked_in(30, 1_000, || {
-            panic!("asked who holds what with nothing to forget")
+        remembered.forget_what_nobody_has_talked_in(30, 1_000, |_| {
+            panic!("asked who holds a conversation that has not expired")
         });
     }
 }

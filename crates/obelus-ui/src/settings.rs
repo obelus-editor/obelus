@@ -105,7 +105,10 @@ pub struct SettingsView<'a> {
     in_front: bool,
     /// What each setting's words are called on screen, where that is
     /// something other than the word: the setting, the word, and the title.
-    called: Vec<(&'static str, &'static str, &'static str)>,
+    ///
+    /// The word in force as well as the ones offered, because a file can
+    /// say a number the list does not.
+    called: Vec<(&'static str, String, String)>,
 }
 
 impl<'a> SettingsView<'a> {
@@ -141,12 +144,23 @@ impl<'a> SettingsView<'a> {
             called: obelus_config::ALL
                 .iter()
                 .flat_map(|setting| {
-                    match setting.kind {
+                    let words = match setting.kind {
                         Kind::Choice(words) | Kind::Count(words) => words,
                         _ => &[],
-                    }
-                    .iter()
-                    .filter_map(|word| Some((setting.key, *word, app.called(setting.key, word)?)))
+                    };
+                    let in_force = match app.config().value_of(setting.key) {
+                        Some(Value::Choice(word)) => Some(word),
+                        Some(Value::Count(count)) => Some(count.to_string()),
+                        _ => None,
+                    };
+                    words
+                        .iter()
+                        .map(|word| (*word).to_string())
+                        .chain(in_force)
+                        .filter_map(|word| {
+                            let title = app.called(setting.key, &word)?.into_owned();
+                            Some((setting.key, word, title))
+                        })
                 })
                 .collect(),
         })
@@ -553,8 +567,8 @@ impl SettingsView<'_> {
         let title = |word: &str| {
             self.called
                 .iter()
-                .find(|(key, said, _)| *key == setting.key && *said == word)
-                .map(|(.., title)| (*title).to_string())
+                .find(|(key, said, _)| *key == setting.key && said == word)
+                .map(|(.., title)| title.clone())
         };
         match Settings::value_of(setting, self.config) {
             Value::Choice(word) => Value::Choice(title(&word).unwrap_or(word)),

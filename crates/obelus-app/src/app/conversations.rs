@@ -262,12 +262,17 @@ impl App {
         // happens next and not what was already there -- and the rows are
         // made here, before the frame that takes the watch.
         self.reread_who_holds_what();
-        let remembered = obelus_agent::acp::sessions::read(
+        // Once, for the tabs and the rows both: what is said over the list
+        // and the rows under it have to come from one reading, and each
+        // reading may try the lock on a claim.
+        let reading = obelus_agent::acp::sessions::read(
             &self.working_directory,
             self.config().conversation_days,
-        )
-        .remembered()
-        .unwrap_or_default();
+        );
+        self.conversing.unreadable =
+            matches!(reading, obelus_agent::acp::sessions::Reading::Unreadable(_));
+        let table = reading.remembered();
+        let remembered = table.clone().unwrap_or_default();
         // A fourth reason the kept copy is read, and the one that costs
         // nothing: this has the table in its hands. Without it a
         // conversation taken up from here would be told about its note
@@ -309,7 +314,7 @@ impl App {
         // they are put back after it -- the same order `open_troubles`
         // takes with its radii, and for the same reason.
         self.conversing.agents = agents;
-        let rows = self.conversation_rows(0);
+        let rows = self.conversation_rows(0, table);
         // Where the list starts: on the conversation the reader is in,
         // where they are in one, and on the new one otherwise, which is the
         // first row.
@@ -365,7 +370,16 @@ impl App {
         let Some(tab) = self.picker.as_ref().map(Picker::tab) else {
             return;
         };
-        let rows = self.conversation_rows(tab);
+        // Read with the rows rather than beside them, so that what is said
+        // over the list and the rows under it come from one reading: two
+        // readings of a file another window writes can disagree.
+        let reading = obelus_agent::acp::sessions::read(
+            &self.working_directory,
+            self.config().conversation_days,
+        );
+        self.conversing.unreadable =
+            matches!(reading, obelus_agent::acp::sessions::Reading::Unreadable(_));
+        let rows = self.conversation_rows(tab, reading.remembered());
         let Some(mut picker) = self.picker.take() else {
             return;
         };
@@ -409,8 +423,13 @@ impl App {
         picker.about(&said);
     }
 
-    /// The rows of one tab, newest first.
-    fn conversation_rows(&mut self, tab: usize) -> Vec<PickerItem> {
+    /// The rows of one tab, newest first, from a reading of the table --
+    /// `None` where it would not read.
+    fn conversation_rows(
+        &mut self,
+        tab: usize,
+        remembered: Option<obelus_agent::acp::sessions::Remembered>,
+    ) -> Vec<PickerItem> {
         self.conversing.rows.clear();
         let Some(whose) = self.conversing.agents.get(tab).cloned() else {
             return Vec::new();
@@ -438,19 +457,10 @@ impl App {
             section: None,
             value: PickerValue::Command(obelus_command::Command::ConversationNew),
         });
-        // Read with the rows rather than beside them, so that what is said
-        // over the list and the rows under it come from one reading: two
-        // readings of a file another window writes can disagree. Three
-        // answers and not two, because a table Obelus cannot read is not a
-        // project nobody has said anything about, and the new row alone
-        // would tell the reader it is.
-        let reading = obelus_agent::acp::sessions::read(
-            &self.working_directory,
-            self.config().conversation_days,
-        );
-        self.conversing.unreadable =
-            matches!(reading, obelus_agent::acp::sessions::Reading::Unreadable(_));
-        let Some(remembered) = reading.remembered() else {
+        // Three answers and not two, because a table Obelus cannot read is
+        // not a project nobody has said anything about, and the new row
+        // alone would tell the reader it is.
+        let Some(remembered) = remembered else {
             return fresh.into_iter().collect();
         };
         // Every conversation somebody has open, as Obelus last looked --

@@ -443,7 +443,10 @@ impl App {
                 .map(|choice| ((*choice).to_string(), None))
                 .collect(),
         };
-        let label = |word: &str| self.called(key, word).unwrap_or(word).to_string();
+        let label = |word: &str| {
+            self.called(key, word)
+                .map_or_else(|| word.to_string(), std::borrow::Cow::into_owned)
+        };
         // The one in force, as the list says it: it finds what to open on
         // by the label rather than the word the file has.
         let preferred = label(word);
@@ -651,25 +654,31 @@ impl App {
     /// names. A word like `feature-branch` is the setting's, written in the
     /// reader's file, and a name rather than copy -- and a number of days is
     /// a number in the file and a length of time on the page, because `30`
-    /// alone does not say thirty of what.
+    /// alone does not say thirty of what. Any number of them, not only the
+    /// ones offered: a reader who wrote `14` into the file by hand is owed
+    /// the same answer.
     #[must_use]
-    pub fn called(&self, key: &str, word: &str) -> Option<&'static str> {
+    pub fn called(&self, key: &str, word: &str) -> Option<std::borrow::Cow<'static, str>> {
         match key {
             "workflow" => super::opening::workflows()
                 .find(|(name, ..)| *name == word)
-                .map(|(_, title, _)| title),
+                .map(|(_, title, _)| title.into()),
             // A platform by its name, and none by the page's word for it.
             "remote" => match word {
-                "" => Some("Off"),
-                key => obelus_remote::platform::named(key).map(|platform| platform.name),
+                "" => Some("Off".into()),
+                key => obelus_remote::platform::named(key).map(|platform| platform.name.into()),
             },
             "conversation_days" => match word {
-                "0" => Some("Never"),
-                "7" => Some("A week"),
-                "30" => Some("A month"),
-                "90" => Some("Three months"),
-                "365" => Some("A year"),
-                _ => None,
+                "0" => Some("Never".into()),
+                "7" => Some("A week".into()),
+                "30" => Some("A month".into()),
+                "90" => Some("Three months".into()),
+                "365" => Some("A year".into()),
+                "1" => Some("1 day".into()),
+                days => days
+                    .parse::<usize>()
+                    .ok()
+                    .map(|days| format!("{days} days").into()),
             },
             _ => None,
         }

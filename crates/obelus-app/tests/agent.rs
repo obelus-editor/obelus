@@ -10258,6 +10258,83 @@ fn a_conversation_nobody_has_talked_in_for_longer_than_the_setting_is_not_listed
     );
 }
 
+/// What nobody has talked in for longer than the reader keeps it goes from
+/// the file the next time Obelus writes it, and what somebody has open does
+/// not.
+///
+/// The list hides an old row as it reads; this is the half that keeps the
+/// file from growing for ever, and the half that spares a conversation being
+/// read in another window -- both as Obelus really writes, after a turn.
+///
+/// Broken deliberately twice: `App::change_the_sessions` handing `change`
+/// `0` in place of the setting leaves `s-stale` in the file; and
+/// `chats::is_held` answering `false` without trying the lock takes `s-held`
+/// out of it.
+#[test]
+fn what_nobody_has_talked_in_goes_from_the_file_and_what_is_open_does_not() {
+    let scratch = support::Scratch::new("agent-conversation-stale-written");
+    let long_ago = lately(0) - 40 * 86_400;
+    remember_a_conversation(
+        &scratch,
+        "fake",
+        "s-stale",
+        "nobody has this",
+        Some(long_ago),
+    );
+    remember_a_conversation(
+        &scratch,
+        "fake",
+        "s-held",
+        "somebody has this",
+        Some(long_ago),
+    );
+    // The other Obelus, holding it for as long as this is held.
+    let _theirs = obelus_agent::chats::claim(
+        scratch.path(),
+        &obelus_agent::chats::ChatId::Loose("s-held".to_string()),
+    )
+    .expect("their claim");
+
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.new_conversation();
+    app.open_a_session_for_test();
+    pump(&mut app, &events, "a session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // Said once, which is one of the moments the table is written.
+    support::type_text(&mut app, "/echo");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+
+    let kept = obelus_agent::acp::sessions::read(scratch.path(), 0)
+        .remembered()
+        .expect("the table");
+    let sessions: Vec<&str> = kept.sessions().collect();
+    let mine = app
+        .chat_session_for_test()
+        .expect("this conversation's session");
+    assert!(
+        sessions.contains(&mine.as_str()),
+        "this conversation was never written down, so this proves nothing: {sessions:?}"
+    );
+    assert!(
+        !sessions.contains(&"s-stale"),
+        "a conversation nobody has talked in for forty days is still in the file"
+    );
+    assert!(
+        sessions.contains(&"s-held"),
+        "a conversation another Obelus has open went from the file"
+    );
+}
+
 /// A note's conversation from another checkout is not asked for here, and
 /// is still there for the checkout that had it.
 ///
@@ -12500,6 +12577,35 @@ fn a_loose_conversation_that_comes_back_is_taken_up_once() {
         Some("s-old"),
         "the old conversation was taken up a second time"
     );
+}
+
+/// A conversation about nothing in particular that was left on screen comes
+/// back however long ago anything was said in it.
+///
+/// It is the conversation being read, which is what the forgetting spares --
+/// but nothing has claimed it yet when the table is read, because coming
+/// back is what claims it.
+///
+/// Broken deliberately by reading the table in `take_up_what_was_open` with
+/// the setting rather than `0`: this gave up waiting for `s-old`.
+#[test]
+fn a_loose_conversation_left_open_comes_back_however_old_it_is() {
+    let scratch = support::Scratch::new("agent-reopened-old");
+    remember_a_conversation(
+        &scratch,
+        "fake",
+        "s-old",
+        "count the lines",
+        Some(lately(0) - 40 * 86_400),
+    );
+
+    let (mut app, events) = reopened_on(
+        &scratch,
+        &obelus_agent::chats::ChatId::Loose("s-old".to_string()).file_name(),
+    );
+    pump(&mut app, &events, "the conversation it was", |app| {
+        app.chat_session_for_test().as_deref() == Some("s-old")
+    });
 }
 
 /// A turn the fake agent answers with "heard you", and the reader back at

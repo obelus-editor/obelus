@@ -803,6 +803,29 @@ impl App {
         let Some(agent) = self.talker.as_ref().map(|talker| talker.id().to_string()) else {
             return;
         };
+        let here = self.working_directory.clone();
+        self.change_the_sessions(|kept| {
+            kept.forget(
+                &obelus_agent::chats::ChatId::Note(note.clone()),
+                &agent,
+                &here,
+            );
+        });
+    }
+
+    /// Reads which conversation is which, changes it, and writes it back.
+    ///
+    /// The one way Obelus writes that table, so that what goes with every
+    /// write goes with every write: the notes swept against, and what has
+    /// not been talked in for longer than the reader keeps it.
+    fn change_the_sessions(
+        &mut self,
+        what: impl FnOnce(&mut obelus_agent::acp::sessions::Remembered),
+    ) {
+        // The notes as the file has them, so that anything about a note
+        // somebody has taken away goes at the same time. A note can go
+        // without Obelus watching, so the collecting is done on the way past
+        // rather than when one is deleted.
         // `None` where the file will not read, so that nothing is swept
         // against a list Obelus does not have: what is remembered here is
         // keyed to notes, and an empty list of names would forget every
@@ -811,22 +834,14 @@ impl App {
             obelus_git::todo::read(&self.working_directory)
                 .notes()
                 .map(|todo| todo.notes.into_iter().map(|note| note.id).collect());
-        let notes = notes.as_deref();
         // Kept, rather than read back: what `change` hands over is the
         // table it has just written, and reading the file again for it
         // would be paying the dear half of this twice.
-        let here = self.working_directory.clone();
         let written = obelus_agent::acp::sessions::change(
             &self.working_directory,
             self.config().conversation_days,
-            notes,
-            |kept| {
-                kept.forget(
-                    &obelus_agent::chats::ChatId::Note(note.clone()),
-                    &agent,
-                    &here,
-                );
-            },
+            notes.as_deref(),
+            what,
         );
         if written.is_some() {
             self.sessions_kept = written;
@@ -907,37 +922,14 @@ impl App {
         if mine.is_empty() {
             return;
         }
-        // The notes as the file has them, so that anything about a note
-        // somebody has taken away goes at the same time. A note can go
-        // without Obelus watching, so the collecting is done on the way past
-        // rather than when one is deleted.
-        // `None` where the file will not read, so that nothing is swept
-        // against a list Obelus does not have: what is remembered here is
-        // keyed to notes, and an empty list of names would forget every
-        // conversation this project has.
-        let notes: Option<Vec<obelus_git::todo::NoteId>> =
-            obelus_git::todo::read(&self.working_directory)
-                .notes()
-                .map(|todo| todo.notes.into_iter().map(|note| note.id).collect());
-        let notes = notes.as_deref();
-        // The same again: this is one of the three reasons the kept copy
-        // is read, and the only one that does not have to read anything.
         // In the checkout the agent was told, which is the one it will
         // take the conversation up in and no other.
         let here = self.working_directory.clone();
-        let written = obelus_agent::acp::sessions::change(
-            &self.working_directory,
-            self.config().conversation_days,
-            notes,
-            |kept| {
-                for (which, what) in mine {
-                    kept.put(&which, &agent, &here, what);
-                }
-            },
-        );
-        if written.is_some() {
-            self.sessions_kept = written;
-        }
+        self.change_the_sessions(|kept| {
+            for (which, what) in mine {
+                kept.put(&which, &agent, &here, what);
+            }
+        });
     }
 
     /// Whether the conversation being read is about a note that is still

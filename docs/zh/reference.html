@@ -243,7 +243,7 @@
       <p class="quiet small">而且它会说清楚是<em>哪一行</em>。配置文件解析不了、某个键绑不上、某一项项目无权设、主题名字没有文件对应——每一条都标在它自己那一行上，进的是语言服务器的诊断同一个列表，所以 <kbd>Alt+e</kbd> 和 <kbd>Alt+[</kbd> <kbd>Alt+]</kbd> 照常能走它们。文件是 Obelus 写的，那它就得说得出自己哪一行读不懂。</p>
 
       <div class="aside">
-        <p><strong>项目不能设的四项：</strong><code>agent</code>、<code>keys</code>、<code>agents</code>、<code>new_versions</code>。一个下载来的项目不该决定你的机器上启动哪个程序；能改键的项目也就能把 <code>quit</code> 挪到你会误触的地方；而「agent 不用问就能做什么」正是一个陌生项目最想写的那一项；Obelus 要不要联网问有没有新版本，也该由你定，不该由下载来的项目定。</p>
+        <p><strong>项目不能设的五项：</strong><code>agent</code>、<code>keys</code>、<code>agents</code>、<code>new_versions</code>、<code>conversation_days</code>。一个下载来的项目不该决定你的机器上启动哪个程序；能改键的项目也就能把 <code>quit</code> 挪到你会误触的地方；而「agent 不用问就能做什么」正是一个陌生项目最想写的那一项；Obelus 要不要联网问有没有新版本，也该由你定，不该由下载来的项目定；能把会话保留时间调短的项目，等于让一个下载来的文件清空你的会话列表。</p>
       </div>
 
       <h3>能设的项</h3>
@@ -273,6 +273,7 @@
           <tr><td><code>hidden_files</code></td><td><code>false</code></td><td>文件列表里要不要也给出隐藏文件——名字以点开头的，Windows 上还有带隐藏属性的</td></tr>
           <tr><td><code>new_versions</code></td><td><code>true</code></td><td>每天问一次 GitHub 有没有更新的 Obelus，有的话在欢迎页上说一声</td></tr>
           <tr><td><code>workflow</code></td><td><code>"feature-branch"</code></td><td>agent 怎么改这个项目。<code>feature-branch</code> 是在自己的 worktree 分支上改；<code>in-place</code> 是直接改你正在读的 checkout，步骤一样；<code>none</code> 是按它自己的方式——见<a href="index.html#how">它怎么走一遍</a>。项目可以设</td></tr>
+          <tr><td><code>conversation_days</code></td><td><code>30</code></td><td>一段不针对哪条笔记的会话，最后一次说话之后过多少天被忘掉；<code>0</code> 表示从不忘。agent 那边对话还在，只是 Obelus 不再记得回去的路，事后把天数调长也找不回来。挂在笔记上的会话随笔记一起走；任何窗口正开着的会话不会被忘</td></tr>
         </tbody>
       </table>
       </div>

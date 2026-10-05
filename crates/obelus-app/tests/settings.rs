@@ -3959,6 +3959,36 @@ fn how_long_a_conversation_is_kept_is_said_as_a_length_of_time() {
     );
 }
 
+/// A number of days the list does not offer, written into the file by hand,
+/// is said as days rather than as a bare number.
+///
+/// Broken deliberately twice: `App::called` answering only the offered
+/// numbers, which leaves `14 ▸` on the row; and the settings view asking
+/// only about the offered words and not the one in force, which does the
+/// same.
+#[test]
+fn a_number_of_days_the_list_does_not_offer_is_said_as_days() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("conversation-days-by-hand");
+    let file = settings_file(&scratch);
+    std::fs::write(&file, "conversation_days = 14\n").expect("the settings");
+    let mut app = open(&file);
+    assert_eq!(
+        app.config().conversation_days,
+        14,
+        "the file was not read, so this proves nothing"
+    );
+    support::type_text(&mut app, "forget");
+
+    let dump = support::render(&mut app, 100, 24);
+    assert!(
+        support::text_block(&dump).contains("14 days \u{25b8}"),
+        "the row does not say days:\n{dump}"
+    );
+}
+
 /// A workflow nothing answers to is marked on the line that names it.
 ///
 /// On a project's file, because that is where a workflow is most often
