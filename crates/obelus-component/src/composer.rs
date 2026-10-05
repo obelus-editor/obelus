@@ -565,6 +565,21 @@ impl Composer {
             .sum();
         (before + row, cell)
     }
+
+    /// How many cells into its last row the text ends: where the caret
+    /// would stand at the end of it.
+    ///
+    /// Counted the way [`Self::caret`] is rather than from the row's words,
+    /// because a tab and a wrapped line's indent take cells the words do
+    /// not say they take, and what is measured against this is where the
+    /// caret can go.
+    #[must_use]
+    pub fn ends_at(&self, width: u16) -> DisplayColumn {
+        let text = self.writing.text();
+        let last = text.last_line();
+        text.visual_position(last, text.line_length(last), width.max(1))
+            .1
+    }
 }
 
 /// `text` in rows of `width`, the way a box lays out what is in it.

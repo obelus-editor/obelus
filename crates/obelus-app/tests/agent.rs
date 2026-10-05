@@ -981,13 +981,13 @@ fn ctrl_enter_on_a_question_does_nothing() {
     );
 }
 
-/// A box of blanks is nothing to say: `ctrl+enter` sends what was waiting
-/// and adds no empty row of the reader's behind it.
+/// `ctrl+enter` on a box of blanks does nothing: there is nothing in it to
+/// send, so the turn goes on and what was waiting waits for it.
 ///
-/// Broken deliberately by sending the box whatever it holds: a row of two
-/// blanks joins what is waiting.
+/// Broken deliberately by putting back the arm that sent what was waiting
+/// from an empty box: the turn is stopped and `/blocks` goes.
 #[test]
-fn ctrl_enter_on_a_box_of_blanks_sends_only_what_was_waiting() {
+fn ctrl_enter_on_a_box_of_blanks_does_nothing() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the handshake", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -1002,12 +1002,18 @@ fn ctrl_enter_on_a_box_of_blanks_sends_only_what_was_waiting() {
     support::type_text(&mut app, "  ");
 
     support::press_control_key(&mut app, KeyCode::Enter);
+    settle(&mut app, &events, Duration::from_millis(300));
     assert_eq!(
         app.chat().map(|chat| chat.unsent()),
         Some(vec![vec![obelus_component::composer::Part::Words(
             "/blocks".to_string()
         )]]),
-        "the blanks joined what was waiting"
+        "what was waiting went"
+    );
+    assert_eq!(
+        app.talking(),
+        obelus_agent::Talking::Thinking,
+        "the turn was stopped"
     );
 }
 
@@ -1038,17 +1044,20 @@ fn ctrl_enter_with_nothing_running_sends() {
     );
 }
 
-/// The box offers `ctrl+enter` on a row of its own under the words, while
-/// a turn is running and there is something it would send -- and only
-/// then. The words keep the row they were on, and the caret with them.
+/// The box offers `ctrl+enter` while a turn is running and there are
+/// words in it to send -- and only then. Beside the words, where the row at
+/// the foot of the box leaves room for it, and on a row of its own under
+/// them where it does not; and the box that grew for that row keeps it
+/// when the words wrap onto it, with the offer back beside them.
 ///
-/// Broken deliberately by offering it whenever a turn is running: it is
-/// there over an empty box, beside a turn there is nothing to say into.
-/// By asking only the box: once the words have gone to wait, the row stops
-/// offering the key that would send them. And by leaving `words_band` out
-/// of `ChatView::caret`: the caret goes down onto the offer.
+/// Broken deliberately four ways. By offering it whenever a turn is
+/// running: it is there over the empty box. By asking what is waiting as
+/// well as the box: once the words have gone to wait, it is still offered
+/// over nothing. By answering `Offer::Under` always: it is not on the
+/// words' row. And by answering `Offer::Beside` always: it never leaves
+/// the words' row, and is drawn over them.
 #[test]
-fn the_box_offers_to_send_now_only_with_something_to_send() {
+fn the_box_offers_to_send_now_beside_its_words_where_there_is_room() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the handshake", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -1058,50 +1067,76 @@ fn the_box_offers_to_send_now_only_with_something_to_send() {
     pump(&mut app, &events, "it to start thinking", |app| {
         app.talking() == obelus_agent::Talking::Thinking
     });
-    // The row the offer is on, and where the caret is.
+    // The row the offer is on, the row the words start on, the caret, and
+    // the screen they were read off.
     let offer = |app: &mut App| {
         let dump = support::render(app, WIDTH, HEIGHT);
-        let offered = rows(&dump)
-            .iter()
-            .position(|row| row.contains("Sends it now"));
+        let rows = rows(&dump);
+        let offered = rows.iter().position(|row| row.contains("Sends it now"));
+        let words = rows.iter().position(|row| row.contains("short"));
+        let rows = rows.iter().map(ToString::to_string).collect::<Vec<_>>();
         (
             offered,
+            words,
             support::cursor_line(&dump).to_string(),
+            rows,
             dump.clone(),
         )
     };
-    let (offered, _, dump) = offer(&mut app);
+    let (offered, _, _, _, dump) = offer(&mut app);
     assert_eq!(offered, None, "offered over an empty box:\n{dump}");
 
-    // More lines than the box has rows, so it scrolls: the last of them
-    // is the caret's, and is above the offer rather than under it.
-    for line in 1..=8 {
-        if line > 1 {
-            support::press_alt_key(&mut app, KeyCode::Enter);
-        }
-        support::type_text(&mut app, &format!("line {line}"));
-    }
-    let (offered, cursor, dump) = offer(&mut app);
-    let offered = offered.unwrap_or_else(|| panic!("not offered with words in the box:\n{dump}"));
-    let words = rows(&dump)
-        .iter()
-        .position(|row| row.contains("line 8"))
-        .unwrap_or_else(|| panic!("the last line is not in the box:\n{dump}"));
-    assert_eq!(
-        offered,
-        words + 1,
-        "not on the row under the words:\n{dump}"
-    );
+    support::type_text(&mut app, "short");
+    let (offered, words, cursor, _, dump) = offer(&mut app);
+    let words = words.unwrap_or_else(|| panic!("the words are not in the box:\n{dump}"));
+    assert_eq!(offered, Some(words), "not beside the words:\n{dump}");
     assert!(
         cursor.ends_with(&format!(",{words}")),
         "the caret is not on the words' row ({cursor}):\n{dump}"
     );
 
+    // Up to the offer, and it goes under the words before they wrap.
+    let under = (0..WIDTH)
+        .find_map(|_| {
+            support::type_text(&mut app, "x");
+            let (offered, words, cursor, rows, dump) = offer(&mut app);
+            let (offered, words) = (offered?, words?);
+            (offered != words).then(|| {
+                assert_eq!(offered, words + 1, "not under the words:\n{dump}");
+                assert!(
+                    !rows[offered].contains('x'),
+                    "the words wrapped before the offer moved:\n{dump}"
+                );
+                assert!(
+                    cursor.ends_with(&format!(",{words}")),
+                    "the caret is not on the words' row ({cursor}):\n{dump}"
+                );
+                words
+            })
+        })
+        .expect("the offer never went under the words");
+
+    // On over the edge, and the row they wrap onto has the offer beside
+    // them, in the row the box grew for.
+    let (offered, words, _, _, dump) = (0..WIDTH)
+        .map(|_| {
+            support::type_text(&mut app, "x");
+            offer(&mut app)
+        })
+        .find(|(_, _, _, rows, _)| rows.get(under + 1).is_some_and(|row| row.contains('x')))
+        .expect("the words never wrapped");
+    assert_eq!(words, Some(under), "the box changed height:\n{dump}");
+    assert_eq!(
+        offered,
+        Some(under + 1),
+        "not beside the row the words wrapped onto:\n{dump}"
+    );
+
     support::press(&mut app, KeyCode::Enter);
-    let (offered, _, dump) = offer(&mut app);
-    assert!(
-        offered.is_some(),
-        "not offered with something waiting and the box empty:\n{dump}"
+    let (offered, _, _, _, dump) = offer(&mut app);
+    assert_eq!(
+        offered, None,
+        "offered over an empty box with something waiting:\n{dump}"
     );
 }
 

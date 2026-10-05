@@ -206,18 +206,83 @@ pub fn bands(area: Rect, chat: &Chat, card: Option<&Card>) -> Regions {
 }
 
 /// The rows the box takes: what is written in it, and under that the row
-/// offering to send it now, while that would do something.
+/// offering to send it now, where the offer needs a row of its own.
 fn box_rows(area: Rect, chat: &Chat) -> usize {
-    chat.writing().rows(writing_width(area)).len() + usize::from(chat.offers_sending_now())
+    chat.writing().rows(writing_width(area)).len() + usize::from(offer(area, chat) == Offer::Under)
+}
+
+/// Where the box offers to send now.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Offer {
+    /// It does not: nothing is running, or the box is empty.
+    Nowhere,
+    /// At the end of the row at the foot of the box, which leaves room
+    /// for it.
+    Beside,
+    /// On a row of its own under the words.
+    Under,
+}
+
+/// What the offer to send now says.
+fn the_offer() -> [(String, &'static str); 1] {
+    [(chord(KeyCode::Enter, KeyModifiers::CONTROL), "Sends it now")]
+}
+
+/// The column the offer starts in, which is its width from the right.
+fn offer_at(area: Rect) -> Option<u16> {
+    let said = joined(&the_offer())?;
+    let offset =
+        u16::try_from(usize::from(area.width).saturating_sub(text_width(&said) + 1)).ok()?;
+    Some(area.x + offset)
+}
+
+/// Where the box offers to send now, which is beside the words wherever
+/// it can be.
+///
+/// A row of its own grows the box by a row for a few words of the
+/// reader's, and the row at the foot of the box is usually the one being
+/// typed: short, with the room the offer needs at its end. Asked of that
+/// row only where it *is* the one at the foot -- a box scrolled up to a
+/// caret above its last row has some other row there, and one judged on
+/// the last would be drawn over by the offer.
+///
+/// Typing grows the box and never shrinks it: the words reaching the offer
+/// push it under them, and the row they wrap onto has room for it again,
+/// so the offer goes back up beside the words in the row it had.
+///
+/// One answer, asked by the rows the box takes, the drawing, the caret and
+/// a click alike, so the words are where all of them say they are.
+fn offer(area: Rect, chat: &Chat) -> Offer {
+    if !chat.offers_sending_now() {
+        return Offer::Nowhere;
+    }
+    let width = writing_width(area);
+    let rows = chat.writing().rows(width);
+    // The band the words would have with the offer beside them, and the
+    // first row of the words it would show -- the scrolling `writing` and
+    // the caret are both drawn under.
+    let height = usize::from(regions(area, rows.len()).writing.height);
+    let (caret, _) = chat.writing().caret(width);
+    let first = caret.saturating_sub(height.saturating_sub(1));
+    let at_the_foot = first + height >= rows.len();
+    // None where the region is too narrow to have the offer beside even an
+    // empty row: it would be drawn over the caret.
+    let room = offer_at(area).and_then(|at| {
+        usize::from(at - area.x).checked_sub(usize::from(MARGIN + INDENT) + GAP_BETWEEN_HINTS)
+    });
+    match room {
+        Some(room) if at_the_foot && usize::from(chat.writing().ends_at(width).get()) <= room => {
+            Offer::Beside
+        }
+        _ => Offer::Under,
+    }
 }
 
 /// The rows of the box the words have: all of it but the row offering to
-/// send now, where there is room for both.
-///
-/// Asked by the drawing, the caret and a click alike, so the words are
-/// where all three say they are.
-fn words_band(writing: Rect, chat: &Chat) -> Rect {
-    let offered = chat.offers_sending_now() && writing.height > 1;
+/// send now, where the offer has a row of its own and there is room for
+/// both.
+fn words_band(area: Rect, writing: Rect, chat: &Chat) -> Rect {
+    let offered = offer(area, chat) == Offer::Under && writing.height > 1;
     Rect {
         height: writing.height - u16::from(offered),
         ..writing
@@ -651,7 +716,7 @@ impl<'a> ChatView<'a> {
             Focus::Settings(_) => return None,
         }
         let width = writing_width(area);
-        let writing = words_band(regions(area, box_rows(area, chat)).writing, chat);
+        let writing = words_band(area, regions(area, box_rows(area, chat)).writing, chat);
         let (row, cell) = chat.writing().caret(width);
         // A box scrolled to keep the caret in it: what is drawn starts at
         // the same row the caret arithmetic starts at.
@@ -682,9 +747,14 @@ impl<'a> ChatView<'a> {
             return None;
         }
         let width = writing_width(area);
-        let writing = words_band(regions(area, box_rows(area, chat)).writing, chat);
+        let writing = words_band(area, regions(area, box_rows(area, chat)).writing, chat);
         let box_x = writing.x + MARGIN + INDENT;
         if y < writing.y || y >= writing.bottom() || x < box_x || x >= writing.right() {
+            return None;
+        }
+        // The offer beside the words is not one of them.
+        let beside = offer(area, chat) == Offer::Beside && y == writing.bottom() - 1;
+        if beside && offer_at(area).is_some_and(|at| x >= at) {
             return None;
         }
         // The same scrolling the caret is placed under: a box taller than
@@ -861,9 +931,14 @@ impl Widget for ChatView<'_> {
                 self.theme,
             ),
             None => {
-                let words = words_band(regions.writing, self.chat);
+                let words = words_band(area, regions.writing, self.chat);
                 self.writing(cells, words, &rows, plain, dim);
-                if words.height < regions.writing.height {
+                let offered = match offer(area, self.chat) {
+                    Offer::Nowhere => false,
+                    Offer::Beside => true,
+                    Offer::Under => words.height < regions.writing.height,
+                };
+                if offered {
                     self.offer_to_send_now(cells, regions.writing.bottom() - 1, area, dim);
                 }
             }
@@ -872,23 +947,17 @@ impl Widget for ChatView<'_> {
 }
 
 impl ChatView<'_> {
-    /// Offers to send what the box has now, on the box's last row, under
-    /// the words it would send.
+    /// Offers to send what the box has now, on the box's last row: beside
+    /// the words it would send or under them ([`offer`]).
     ///
     /// In the box rather than beside the row that says the agent is
     /// working: what it sends is what is in the box, and the box is where
     /// the reader is looking while they write it.
     fn offer_to_send_now(&self, cells: &mut CellBuffer, y: u16, area: Rect, dim: Style) {
-        let keys = [(chord(KeyCode::Enter, KeyModifiers::CONTROL), "Sends it now")];
-        let Some(said) = joined(&keys) else {
+        let keys = the_offer();
+        let (Some(said), Some(at)) = (joined(&keys), offer_at(area)) else {
             return;
         };
-        let Ok(offset) =
-            u16::try_from(usize::from(area.width).saturating_sub(text_width(&said) + 1))
-        else {
-            return;
-        };
-        let at = area.x + offset;
         write(cells, at, y, &said, dim);
         cap_the_keys(at, y, &keys, self.theme);
     }
@@ -2252,22 +2321,96 @@ mod caret {
         assert_eq!(caret.x, area.right() - 2);
     }
 
+    /// The offer goes beside the words only where it cannot be drawn over
+    /// them or over the caret: the row at the foot of the box is the last
+    /// of the words, the region is wide enough to have it beside even an
+    /// empty row, and the last row ends -- counted where the caret stands,
+    /// not in the words' own width -- with room for it.
+    ///
+    /// Broken deliberately three ways. By answering `at_the_foot` with
+    /// `true`: a box scrolled up to a caret above its short last row has
+    /// the offer beside some other row. By letting `room` saturate to
+    /// nothing rather than refusing it: a narrow region has the offer over
+    /// the caret. And by measuring the last row with `text_width` of its
+    /// words: a tab counts for nothing and a wrapped row's indent is not
+    /// in them, so the caret lands on the offer.
+    #[test]
+    fn the_offer_is_beside_the_words_only_clear_of_them() {
+        let offered = |area: Rect, words: &str, ups: usize| {
+            let mut chat = Chat::new();
+            chat.put(words);
+            chat.can_send_now(true);
+            let room = Room {
+                transcript: 10,
+                reading: super::reading_width(area),
+                writing: super::writing_width(area),
+            };
+            for _ in 0..ups {
+                chat.handle_key(
+                    &KeyEvent::new(KeyCode::Up, KeyModifiers::NONE),
+                    true,
+                    room,
+                    &[],
+                );
+            }
+            let caret = super::ChatView::caret(area, &chat, None).expect("a caret in the box");
+            (super::offer(area, &chat), caret.x)
+        };
+        let area = Rect::new(0, 0, 60, 20);
+        let at = super::offer_at(area).expect("nowhere for the offer");
+
+        // Eight lines and a short last one: beside it with the caret on it,
+        // and under the words with the caret three rows up, where the row
+        // at the foot of the scrolled box is not the last.
+        let lines = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight";
+        assert_eq!(offered(area, lines, 0).0, super::Offer::Beside);
+        assert_eq!(
+            offered(area, lines, 3).0,
+            super::Offer::Under,
+            "beside a row that is not the last"
+        );
+
+        // Too narrow to have it beside even an empty row.
+        let narrow = Rect::new(0, 0, 30, 20);
+        assert_eq!(
+            offered(narrow, "hello\n", 0).0,
+            super::Offer::Under,
+            "beside an empty row with no room for it"
+        );
+
+        // A tab, and the indent a wrapped line keeps: cells the words do not
+        // say they take, which the caret stands after all the same.
+        let wrapped = format!("        {}", "a".repeat(72));
+        for words in ["\t\t\t\t\t\t\t\tfoo", wrapped.as_str()] {
+            let (offer, x) = offered(area, words, 0);
+            assert!(
+                offer == super::Offer::Under || x + 3 <= at,
+                "the caret at {x} is against the offer at {at}: {words:?}"
+            );
+        }
+    }
+
     /// A press on the box goes to the words while the box offers to send
-    /// now, and a press on the offer goes nowhere: the row is the box's,
-    /// and not one of its words.
+    /// now, and a press on the offer goes nowhere -- under the words or
+    /// beside them: the offer is the box's, and not one of its words.
     ///
     /// Broken deliberately by leaving `words_band` out of `place_at`: the
     /// offer's row is a row of the words, and a box that scrolls puts the
-    /// press one row below where it landed.
+    /// press one row below where it landed -- and out of `ChatView::caret`,
+    /// which puts the caret down on the offer. And by taking the `beside`
+    /// check out of `place_at`: a press on the offer beside the words goes
+    /// into them.
     #[test]
     fn a_press_on_the_box_finds_the_words_and_not_the_offer() {
         use obelus_component::chat::Chat;
 
         let area = ratatui::layout::Rect::new(0, 0, 60, 20);
         let mut chat = Chat::new();
-        chat.put("one\ntwo\nthree\nfour\nfive\nsix\nseven\neight");
+        // A last line long enough to reach the offer, which puts it under.
+        let long = "e".repeat(40);
+        chat.put(&format!("one\ntwo\nthree\nfour\nfive\nsix\nseven\n{long}"));
         chat.can_send_now(true);
-        assert!(chat.offers_sending_now(), "nothing to offer");
+        assert_eq!(super::offer(area, &chat), super::Offer::Under);
 
         let writing = super::bands(area, &chat, None).writing;
         let x = writing.x + super::MARGIN + super::INDENT;
@@ -2281,5 +2424,21 @@ mod caret {
         // is on the last of them.
         let last = super::ChatView::place_at(area, &chat, false, x, offer - 1);
         assert_eq!(last.map(|(row, _)| row), Some(7), "not the last line");
+        let caret = super::ChatView::caret(area, &chat, None).map(|caret| caret.y);
+        assert_eq!(caret, Some(offer - 1), "the caret is not on the last line");
+
+        // Short words, and the offer beside them on the row they are on.
+        chat.put("one\ntwo");
+        assert_eq!(super::offer(area, &chat), super::Offer::Beside);
+        let writing = super::bands(area, &chat, None).writing;
+        let at = super::offer_at(area).expect("nowhere for the offer");
+        let row = writing.bottom() - 1;
+        assert_eq!(
+            super::ChatView::place_at(area, &chat, false, at, row),
+            None,
+            "a press on the offer beside the words went into them"
+        );
+        let words = super::ChatView::place_at(area, &chat, false, x, row);
+        assert_eq!(words.map(|(row, _)| row), Some(1), "not the words' row");
     }
 }
