@@ -1279,9 +1279,11 @@ fn enter_on_something_already_said_copies_it_to_the_box() {
 /// read off that row: a message that wrapped was lit for one row of two,
 /// and enter on the second did nothing.
 ///
-/// Broken deliberately twice: lighting a row by `row.acts()` on the
-/// cursor's own row again leaves the second row unlit, and answering enter
-/// from `laid.get(at.row)` again leaves the box empty.
+/// Broken deliberately three times: lighting a row by `row.acts()` on the
+/// cursor's own row again leaves the second row unlit; answering enter
+/// from `laid.get(at.row)` again leaves the box empty; and taking the foot
+/// from the first lit row rather than the last puts the key under that
+/// row, on the page's ground rather than the light's.
 #[test]
 fn something_already_said_is_lit_and_copied_from_every_row_of_it() {
     let (mut app, events) = talking();
@@ -1327,6 +1329,19 @@ fn something_already_said_is_lit_and_copied_from_every_row_of_it() {
     }
     let first = ground_of(&mut app, "/forever and");
     let rest = ground_of(&mut app, "end of them");
+    // And the key after the last of it, which has the room: the first row
+    // is full of words.
+    let text = screen(&mut app);
+    assert!(
+        text.lines()
+            .any(|row| row.contains("end of them") && row.contains("Enter  Copies it")),
+        "the key is not at the end of the last row:\n{text}"
+    );
+    assert_eq!(
+        ground_of(&mut app, "Copies it"),
+        rest,
+        "the key is beside the words and not on the lit row"
+    );
     assert_ne!(rest, unlit, "the row the cursor is on is not lit");
     assert_eq!(
         first, rest,
@@ -1338,6 +1353,39 @@ fn something_already_said_is_lit_and_copied_from_every_row_of_it() {
         app.chat().map(|chat| chat.writing().text()),
         Some(words.to_string()),
         "the words were not put in the box"
+    );
+}
+
+/// What enter does to something said goes under it where its last row
+/// has no room, the way the box's offer to send now does.
+///
+/// Deliberate break: answer `beside` in `offer_enter` without asking
+/// whether the words leave room. The key is then written over the end of
+/// the words.
+#[test]
+fn the_key_on_something_said_goes_under_it_where_there_is_no_room() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // As wide as a row of the transcript, and not a cell wider.
+    let words = format!("/forever {}", "x".repeat(usize::from(WIDTH - 5) - 9));
+    support::type_text(&mut app, &words);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to start thinking", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+    support::press(&mut app, KeyCode::Up);
+    let text = screen(&mut app);
+    let rows: Vec<&str> = text.lines().collect();
+    let at = rows
+        .iter()
+        .position(|row| row.contains(&words))
+        .unwrap_or_else(|| panic!("the words are not on one row:\n{text}"));
+    assert!(
+        rows.get(at + 1)
+            .is_some_and(|row| row.contains("Enter  Copies it to the box")),
+        "the key is not on the row under the words:\n{text}"
     );
 }
 
