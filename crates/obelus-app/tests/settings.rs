@@ -3908,6 +3908,57 @@ fn a_workflow_is_called_by_its_title_and_written_by_its_name() {
     );
 }
 
+/// How long a conversation is kept is said as a length of time wherever it
+/// is drawn, and written down as a number of days.
+///
+/// `30` on its own does not say thirty of what, and the list it is chosen
+/// from said nothing else.
+///
+/// Broken deliberately three ways: `App::called` without its arm for this
+/// setting, which leaves `30` on the row and the numbers on the list; the
+/// settings row's `value_of` handing back the number, which leaves `30 ▸`
+/// on the page; and the picked word parsed from the title rather than the
+/// number, which writes nothing a week long.
+#[test]
+fn how_long_a_conversation_is_kept_is_said_as_a_length_of_time() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("conversation-days");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+    support::type_text(&mut app, "forget");
+
+    let dump = support::render(&mut app, 100, 24);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("A month \u{25b8}"),
+        "the row does not say a month:\n{dump}"
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    let picker = app.picker().expect("the lengths did not open");
+    let labels: Vec<String> = picker.matches().map(|item| item.label.clone()).collect();
+    assert_eq!(
+        labels,
+        ["Never", "A week", "A month", "Three months", "A year"]
+    );
+    assert_eq!(
+        picker.selected_item().map(|item| item.label.as_str()),
+        Some("A month"),
+        "the list did not open on the one in force"
+    );
+
+    support::press(&mut app, KeyCode::Up);
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.config().conversation_days, 7);
+    let written = std::fs::read_to_string(&file).expect("the file was written");
+    assert!(
+        written.contains("conversation_days = 7"),
+        "the file does not say so in days: {written:?}"
+    );
+}
+
 /// A workflow nothing answers to is marked on the line that names it.
 ///
 /// On a project's file, because that is where a workflow is most often

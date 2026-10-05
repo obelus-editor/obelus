@@ -142,7 +142,7 @@ impl<'a> SettingsView<'a> {
                 .iter()
                 .flat_map(|setting| {
                     match setting.kind {
-                        Kind::Choice(words) => words,
+                        Kind::Choice(words) | Kind::Count(words) => words,
                         _ => &[],
                     }
                     .iter()
@@ -547,15 +547,20 @@ impl SettingsView<'_> {
     ///
     /// A word by its title where it has one: the list it is chosen from
     /// says the title, and a row that went back to the word would be a
-    /// second name for the one choice.
+    /// second name for the one choice. A number with a title is drawn as
+    /// its title, which is a word.
     fn value_of(&self, setting: &obelus_config::Setting) -> Value {
+        let title = |word: &str| {
+            self.called
+                .iter()
+                .find(|(key, said, _)| *key == setting.key && *said == word)
+                .map(|(.., title)| (*title).to_string())
+        };
         match Settings::value_of(setting, self.config) {
-            Value::Choice(word) => Value::Choice(
-                self.called
-                    .iter()
-                    .find(|(key, said, _)| *key == setting.key && *said == word)
-                    .map_or(word, |(.., title)| (*title).to_string()),
-            ),
+            Value::Choice(word) => Value::Choice(title(&word).unwrap_or(word)),
+            Value::Count(count) => {
+                title(&count.to_string()).map_or(Value::Count(count), Value::Choice)
+            }
             value => value,
         }
     }
@@ -1708,7 +1713,7 @@ fn draw_control(
                 style.fg(ink),
             );
         }
-        (Kind::Choice(_), Value::Choice(word)) => {
+        (Kind::Choice(_) | Kind::Count(_), Value::Choice(word)) => {
             let after = write(
                 cells,
                 x,

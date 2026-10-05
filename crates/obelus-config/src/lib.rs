@@ -822,7 +822,7 @@ pub const ALL: &[Setting] = &[
     Setting {
         key: "conversation_days",
         name: "Forget conversations",
-        about: "How many days after anything was last said in it a conversation about no note is forgotten -- zero forgets none. One about a note goes when the note does",
+        about: "How long after anything was last said in it a conversation about no note is forgotten. One about a note goes when the note does",
         group: Group::Agent,
         // The reader's alone: it decides what Obelus forgets of theirs, and
         // a project that could shorten it would be a downloaded file

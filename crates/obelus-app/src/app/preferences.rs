@@ -648,9 +648,10 @@ impl App {
     ///
     /// The one answer the list a word is chosen from and the settings row
     /// it goes back to both read, so the two cannot call one choice by two
-    /// names. Only the workflows have titles: a word like `feature-branch`
-    /// is the setting's, written in the reader's file, and a name rather
-    /// than copy.
+    /// names. A word like `feature-branch` is the setting's, written in the
+    /// reader's file, and a name rather than copy -- and a number of days is
+    /// a number in the file and a length of time on the page, because `30`
+    /// alone does not say thirty of what.
     #[must_use]
     pub fn called(&self, key: &str, word: &str) -> Option<&'static str> {
         match key {
@@ -661,6 +662,14 @@ impl App {
             "remote" => match word {
                 "" => Some("Off"),
                 key => obelus_remote::platform::named(key).map(|platform| platform.name),
+            },
+            "conversation_days" => match word {
+                "0" => Some("Never"),
+                "7" => Some("A week"),
+                "30" => Some("A month"),
+                "90" => Some("Three months"),
+                "365" => Some("A year"),
+                _ => None,
             },
             _ => None,
         }
