@@ -447,9 +447,9 @@ fn an_agent_not_yet_started_is_called_what_the_registry_calls_it() {
 /// once the agents page asks for it, so a name taken from it alone is the
 /// id on every screen that has not been to that page.
 ///
-/// Broken deliberately twice in `App::conversation_row`: putting
-/// `talker.id()` back in `trailing`, and answering with
-/// `agent_called(talker.id())` -- both read `fake`.
+/// Broken deliberately twice in `App::whose_conversation`: answering with
+/// `talker.id()`, and with `agent_called(talker.id())` -- both read
+/// `fake`.
 #[test]
 fn an_open_conversation_says_whose_it_is_by_the_agents_own_name() {
     let (mut app, events) = talking();
@@ -469,13 +469,19 @@ fn an_open_conversation_says_whose_it_is_by_the_agents_own_name() {
 }
 
 /// Before the agent has said who it is, the row calls it what the registry
-/// does, as the header does then.
+/// does, as the header does then -- and once it has said, the row says
+/// that, while the list is still up.
 ///
-/// Broken deliberately by answering `talker.info()` or the id in
-/// `App::conversation_row`, skipping the registry: the row reads `fake`.
+/// The list is open across the handshake because that is the moment the
+/// name moves, and rows are built once when a list opens.
+///
+/// Broken deliberately twice: answering `talker.info()` or the id in
+/// `App::whose_conversation`, skipping the registry, reads `fake` before
+/// the handshake; and dropping `item.trailing = now.trailing` from
+/// `Picker::remark` leaves `The fixture` after it.
 #[test]
-fn an_open_conversation_is_called_what_the_registry_calls_its_agent_until_it_says() {
-    let (mut app, _events) = talking();
+fn an_open_conversation_is_called_what_its_agent_is_called_now() {
+    let (mut app, events) = talking();
     // The agent chosen, which is whose registry entry is asked for; and no
     // pump, so the handshake that would name it has not been heard.
     app.configure(
@@ -486,16 +492,27 @@ fn an_open_conversation_is_called_what_the_registry_calls_its_agent_until_it_say
         Vec::new(),
     );
     the_fixture_is_listed(&mut app);
+    fn whose(app: &App) -> Vec<Option<String>> {
+        app.picker()
+            .expect("the list of what is open")
+            .matches()
+            .filter(|item| item.label == "A conversation")
+            .map(|item| item.trailing.clone())
+            .collect()
+    }
 
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentList);
-    let whose: Vec<Option<&str>> = app
-        .picker()
-        .expect("the list of what is open")
-        .matches()
-        .filter(|item| item.label == "A conversation")
-        .map(|item| item.trailing.as_deref())
-        .collect();
-    assert_eq!(whose, [Some("The fixture")]);
+    assert_eq!(whose(&app), [Some("The fixture".to_string())]);
+
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        whose(&app),
+        [Some("Fake Agent".to_string())],
+        "the row went on saying what it said before the agent named itself"
+    );
 }
 
 /// One whole turn: the handshake, a prompt, what comes back while it works,

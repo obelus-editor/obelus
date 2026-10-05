@@ -381,7 +381,11 @@ impl App {
                     _ => obelus_ui::with_home_as_tilde(path),
                 };
                 let here = same_tree(path, &tree);
-                let Said { marker, enabled } = said(listed, here);
+                let Said {
+                    marker,
+                    enabled,
+                    trailing,
+                } = said(listed, here);
                 PickerItem {
                     icon: obelus_icons::enabled().then_some(obelus_icons::ui::TREE),
                     label,
@@ -391,11 +395,7 @@ impl App {
                     }),
                     prose: false,
                     marker,
-                    trailing: match (here, listed.tree.there) {
-                        (true, _) => Some("This window".to_string()),
-                        (false, false) => Some("Missing".to_string()),
-                        (false, true) => None,
-                    },
+                    trailing,
                     changed: None,
                     value: PickerValue::Worktree(at),
                     depth: 0,
@@ -500,6 +500,11 @@ fn said(listed: &Listed, here: bool) -> Said {
         }),
         // This one is where the reader is, which is the list closing.
         enabled: here || listed.tree.there,
+        trailing: match (here, listed.tree.there) {
+            (true, _) => Some("This window".to_string()),
+            (false, false) => Some("Missing".to_string()),
+            (false, true) => None,
+        },
     }
 }
 
