@@ -297,6 +297,16 @@ pub(crate) struct Rolled<'a> {
     pub(crate) bar: Option<(Rect, f32)>,
 }
 
+/// A pane that has gone from the page, and the way it goes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Going {
+    /// The cells it stood on.
+    pub(crate) area: Rect,
+    /// The edge it was joined to, which it goes back into: a pane leaves
+    /// the way it came.
+    pub(crate) joined: Joined,
+}
+
 /// What is behind the pane on the frame being drawn.
 #[derive(Clone, Debug)]
 pub(crate) struct Behind {

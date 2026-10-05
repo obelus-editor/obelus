@@ -1870,6 +1870,7 @@ impl App {
         // Read, not chosen from: its rows go nowhere, so no row is the
         // reader's to be on and nothing is typed to narrow them.
         picker.only_read();
+        picker.will_not_give_way();
         picker.ask("What went wrong starting up");
         self.show_list(picker);
         true
@@ -3176,12 +3177,20 @@ impl App {
         // used to open a list of nothing and say so on the status row,
         // which is a sentence nobody asked for.
         //
-        // Except for a key that names another whole-screen view, from inside
-        // one: that goes to the view it names, in place of this one, rather
-        // than being refused because a dialog is showing. What a key means in
+        // Except for a key that opens a view or a list over the file, from
+        // inside a view or from a list the reader opened: that goes to what
+        // it opens, in place of this one, rather than being refused because a
+        // dialog is showing (`app/switching`). What a key means in
         // a file is what it means here -- the table is asked as though the
-        // file were what is showing -- and only the keys that open a view
-        // are let through, so nothing opens over anything.
+        // file were what is showing -- and only those keys are let through,
+        // so nothing opens over anything.
+        //
+        // Not enter, however it is held. Every list and page takes enter
+        // itself, which is why it is never bound (`keymap::why_not`), and
+        // with a modifier it is still that list's key: `alt+enter` is "go
+        // there" in a history, and in the search, which has no use for it,
+        // it was the menu about the name under the caret in the file behind
+        // -- the search thrown away for a key nobody meant to leave it by.
         //
         // Unless the view showing has bound that key itself, which is a
         // view saying what the key means *here* -- and that beats what it
@@ -3191,10 +3200,11 @@ impl App {
         // meant "which one" inside one, and it swapped the conversation for
         // itself; it is the list everywhere now, and this stays for the
         // next view that takes a key of its own.
-        if self.in_a_whole_view()
+        if self.gives_way_to_a_view()
+            && key.code != KeyCode::Enter
             && self.keymap.bound_here(&key, self.context()).is_none()
             && let Some(command) = self.keymap.lookup(&key, Context::Normal)
-            && command.opens_a_view()
+            && command.takes_a_view_s_place()
         {
             self.switch_view(command);
             return;

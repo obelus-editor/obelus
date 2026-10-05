@@ -380,9 +380,12 @@ each takes the keys bound *in* its context and nothing else, so a global key
 cannot open a second thing over the first. A new dialog gets a context, and a
 key it should keep gets a binding in it -- not a fall-through
 (`keymap::Context`). Except a key that names another whole view: from inside
-one it swaps the two rather than stacking them, so there is still one thing on
-screen and one escape back to the file -- and a view that has bound the key
-itself beats the swap (`app/switching`).
+one, or from a list the reader opened over the file, it swaps the two rather
+than stacking them, so there is still one thing on screen and one escape back
+to the file -- and a view that has bound the key itself beats the swap, and a
+list waiting on the reader, a question, does not give way. The palette's key
+swaps the same way, and so does every key that opens a list over the file --
+the menu about the name under the caret, the problems (`app/switching`).
 
 **One mark for "the keys are here", and it says nothing else.** Every list,
 page and card in Obelus puts `selected_row_background` behind the row the
@@ -750,9 +753,10 @@ crates/
                       has four, a line is drawn where its glyph would be and
                       the glass starts at the line, glass is a bend and a light
                       before it is a blur, a region of the frame is put
-                      back somewhere else rather than drawn again, and every
-                      pane and every box is glass over everything said
-                      before it (paint); a
+                      back somewhere else rather than drawn again, a pane
+                      that has gone leaves out of a picture of the screen it
+                      went from, and every pane and every box is glass over
+                      everything said before it (paint); a
                       mark is one cell here and two in a terminal, so a column
                       asks which front end it is for, and a key's cap is the
                       one place the grid is not what a cell is measured in

@@ -407,19 +407,44 @@ fn the_tree_is_counted_on_a_thread_and_the_answer_comes_back() {
 /// key bound in a dialog is not one of theirs.
 ///
 /// Broken deliberately by taking the counts out of `App::is_showing_dialog`:
-/// the key table was then reached from a view that has one open, `ctrl+p`
-/// put the command palette on top of the table, and this failed. (Letting
-/// the keys fall through *without* that is not enough to break it, which is
-/// the point: what makes a dialog a dialog is that question, not the
-/// component refusing keys.)
+/// the key table was then reached from a view that has one open, and the box
+/// for a line came up over the table. (Letting the keys fall through
+/// *without* that is not enough to break it, which is the point: what makes
+/// a dialog a dialog is that question, not the component refusing keys.) It
+/// was asked with `ctrl+p` once, which now goes in the counts' place rather
+/// than over them -- see the next one.
 #[test]
 fn nothing_of_obeluss_own_opens_over_the_counts() {
+    // Over a file, so that the box for a line is offered: with no file open
+    // there is nothing it could be about, and a key that is dim proves
+    // nothing about where it goes.
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    support::lay_out(&mut app, 76, 24);
+    dispatch::dispatch(&mut app, Command::CountLines);
+    app.handle(Event::Counted(Box::new(counted())));
+    assert!(app.counts().is_some(), "the counts did not open");
+    let before = support::text_block(&support::render(&mut app, 76, 24)).to_string();
+    support::press_control(&mut app, 'l');
+    let after = support::text_block(&support::render(&mut app, 76, 24)).to_string();
+    assert_eq!(before, after, "something opened over the counts");
+}
+
+/// The palette goes in the counts' place, like any view's key: one thing on
+/// screen, and escape goes back to the file.
+///
+/// Broken deliberately by taking the palette out of `Command::opens_a_list`:
+/// `ctrl+p` is refused on the counts.
+#[test]
+fn the_palette_takes_the_counts_place() {
     let mut app = open(76, 24);
-    for key in ['o', 'e', 'p'] {
-        support::press_control(&mut app, key);
-    }
-    assert!(app.picker().is_none(), "a list opened over the counts");
-    assert!(app.counts().is_some(), "the counts closed themselves");
+    support::press_control(&mut app, 'p');
+    assert!(app.counts().is_none(), "the counts are still showing");
+    assert!(
+        app.picker()
+            .is_some_and(|picker| picker.opener() == Some(Command::CommandPalette)),
+        "ctrl+p on the counts did not go to the palette"
+    );
 }
 
 /// The counts say what their keys do: `alt+f` cannot be guessed, and enter

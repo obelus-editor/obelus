@@ -316,28 +316,34 @@ fn choosing_a_theme_changes_the_colours() {
 /// say which of the two a key would reach. The way out is escape, and the
 /// key works again after it.
 ///
-/// Asked with the keys that would open something, which is what the rule is
-/// about. It used to be asked with `ctrl+q`, which was convenient -- one
-/// flag to read instead of two screens to compare -- and stopped being
-/// true: leaving is the one key whose reaching the table costs nothing,
-/// because it opens nothing, and it is bound in a dialog on purpose now.
-/// See `leaving_is_asked_for_from_inside_a_dialog`.
+/// Asked with a key that would open something over the file, which is what
+/// the rule is about. It used to be asked with `ctrl+q`, which was
+/// convenient -- one flag to read instead of two screens to compare -- and
+/// stopped being true: leaving is the one key whose reaching the table costs
+/// nothing, because it opens nothing, and it is bound in a dialog on purpose
+/// now. See `leaving_is_asked_for_from_inside_a_dialog`. Then with `f1`,
+/// which stopped being true too: a key naming a view goes to it in place of
+/// the list (`app/switching`), so it is `ctrl+l` and the box it opens.
+///
+/// Broken deliberately by having `Keymap::lookup` fall back from
+/// `Context::Dialog` to a file's table, the way a conversation does: the box
+/// for a line opens over the palette.
 #[test]
 fn a_key_the_picker_does_not_want_goes_nowhere() {
     let mut app = app();
     press_control(&mut app, 'p');
     let palette = support::render(&mut app, 60, 12);
 
-    press_function(&mut app, 1);
+    press_control(&mut app, 'l');
     let after = support::render(&mut app, 60, 12);
     assert_eq!(
         support::text_block(&palette),
         support::text_block(&after),
-        "a second list opened over the first"
+        "something opened over the list"
     );
 
     press(&mut app, KeyCode::Esc);
-    press_function(&mut app, 1);
+    press_control(&mut app, 'l');
     let back = support::render(&mut app, 60, 12);
     assert_ne!(
         support::text_block(&palette),
@@ -347,15 +353,21 @@ fn a_key_the_picker_does_not_want_goes_nowhere() {
 }
 
 /// The one key the list of open files adds does not bring the others.
+///
+/// Asked with the box for a line, which a file opens over itself: from here
+/// it would be a second thing over the list, so it does not open at all. It
+/// was asked with the palette once, which goes in the list's place now
+/// rather than over it (`app/switching`).
+///
+/// Broken deliberately by having `Keymap::lookup` fall back from
+/// `Context::Documents` to a file's table: the box opens over the list.
 #[test]
 fn the_document_list_takes_its_own_key_and_not_the_global_ones() {
     let mut app = app();
     press_function(&mut app, 2);
     let documents = support::render(&mut app, 60, 12);
 
-    // The palette, which every other context opens: from here it is a
-    // second list over the first, so it does not open at all.
-    press_control(&mut app, 'p');
+    press_control(&mut app, 'l');
     let after = support::render(&mut app, 60, 12);
     assert_eq!(
         support::text_block(&documents),

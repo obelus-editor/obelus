@@ -349,6 +349,7 @@ impl App {
             picker.with_scopes(&names);
         }
         self.say_whose_conversations(&mut picker, 0);
+        picker.opened_by(Command::ConversationSelect);
         if let Some(row) = here {
             picker.select_item(row);
         }

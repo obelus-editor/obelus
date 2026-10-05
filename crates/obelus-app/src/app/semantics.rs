@@ -300,10 +300,9 @@ impl App {
                 }
             })
             .collect();
-        self.show_list(Picker::new(
-            items,
-            PickerLayout::Compact { rows: COMPACT_ROWS },
-        ));
+        let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
+        picker.opened_by(Command::SymbolMenu);
+        self.show_list(picker);
     }
 
     /// Which questions about the name under the caret this server will
@@ -1964,14 +1963,12 @@ impl App {
     /// who finds this file clean is one row of tabs away from finding out
     /// the project is not.
     pub fn open_troubles(&mut self) {
-        let here = self
-            .reading()
-            .map_or(0, |path| self.wrong_with(path).count());
+        let here = self.wrong_here();
         // Nothing anywhere is not a list. What it is instead is whatever
         // makes it true: a server that has looked and found nothing, one
         // that is not answering, or none at all -- which is the difference
         // between "this is fine" and "nobody has said".
-        if here == 0 && self.troubled().is_empty() {
+        if !self.anything_wrong() {
             // A server that looked and found nothing is good news, and
             // the other two are the key not having been answered at all --
             // which is the difference this match was already about.
@@ -2009,6 +2006,7 @@ impl App {
         // file already there -- so nothing moves when they walk the tabs.
         picker.previews();
         picker.go_to_tab(tab);
+        picker.opened_by(Command::SymbolTroubles);
         self.show_list(picker);
         // After the list is shown, not before: showing one forgets what the
         // last one was, this included.
@@ -2248,6 +2246,19 @@ impl App {
 
     /// Every file something is wrong with, in the order a project is read
     /// in.
+    /// How many problems the file being read has.
+    fn wrong_here(&self) -> usize {
+        self.reading()
+            .map_or(0, |path| self.wrong_with(path).count())
+    }
+
+    /// Whether the problems would be a list, anywhere: the one question
+    /// `open_troubles` answers with a sentence instead, and asked before a
+    /// view is put away for it (`app/switching`).
+    pub(super) fn anything_wrong(&self) -> bool {
+        self.wrong_here() > 0 || !self.troubled().is_empty()
+    }
+
     fn troubled(&self) -> Vec<PathBuf> {
         let mut paths: Vec<PathBuf> = self
             .reported

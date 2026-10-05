@@ -12,10 +12,21 @@
 //! kept: `f3` from `f1`'s list is its other tab, not the same list opened
 //! again with the words taken away.
 //!
-//! Which keys those are is `Command::opens_a_view`, and only from a view
-//! that takes the whole screen. A list over the file rather than instead of
-//! it -- the palette, a menu -- keeps its keys: it is somewhere the reader
-//! is choosing, and a function key is not a way out of it.
+//! Which keys those are is `Command::takes_a_view_s_place`: every key that
+//! opens a view, and every one that opens a list over the file -- the
+//! palette, the menu about the name under the caret, the problems -- because
+//! a reader inside a view who wants one should not have to leave it to ask.
+//! And a list over the
+//! file rather than instead of it -- the palette, a menu, the conversations
+//! -- gives way to them the same: it once kept its keys, as somewhere the
+//! reader was choosing, and the cost was that `f1` did nothing in the very
+//! palette `open-file` is a row of, and `f4`'s list was the one view `f1`
+//! could not be reached from. A key naming a view is the reader choosing
+//! that instead. What does not give way is what is waiting on the reader --
+//! a question, and what went wrong on the way up -- because leaving one by
+//! another key is an answer nobody gave (`Picker::gives_way`); nor what is
+//! being typed into, a box or a list of names, which a key that goes
+//! elsewhere would throw away.
 //!
 //! **A view that has bound the key itself beats the swap.** `App::handle_key`
 //! asked the swap first once, so a key the showing view had taken was
@@ -30,21 +41,19 @@
 use super::*;
 
 impl App {
-    /// Whether what the reader is in takes the whole screen.
+    /// Whether what the reader is in gives way to a key that opens a view.
     ///
     /// The nearest layer only. A list open over the settings is a list, and
-    /// a key in it is about the list.
-    pub(super) fn in_a_whole_view(&self) -> bool {
+    /// a key in it is about the list -- which gives way, and takes the
+    /// settings with it.
+    pub(super) fn gives_way_to_a_view(&self) -> bool {
         match self.layers().nearest() {
             Some(Layer::Settings | Layer::Counts) => true,
-            // A list is a band of the screen by its room, whichever layout it
-            // was given, so the layout is what says it is a whole view.
-            Some(Layer::Picker) => self
-                .picker
-                .as_ref()
-                .is_some_and(|picker| picker.layout() == PickerLayout::FullArea),
-            // A band, like a compact list: the page that opened it is
-            // still behind it.
+            // Whichever layout it was given: a band over the file is as much
+            // somewhere the reader chose to be as a list instead of it.
+            Some(Layer::Picker) => self.picker.as_ref().is_some_and(Picker::gives_way),
+            // Something being typed, which a key that went elsewhere would
+            // throw away. And nothing at all, which is the file's own table.
             Some(Layer::Names) | Some(Layer::Prompt) | None => false,
             // Never asked: the page saying the project has gone takes every
             // key before a swap is looked for, and swaps with nothing.
@@ -68,17 +77,52 @@ impl App {
             });
             return;
         }
-        // Left the way escape leaves each of them, which is what puts back
-        // what a view had changed while it was open: a theme it previewed, a
-        // question it was asking for an agent, where the file was scrolled
-        // to under a preview.
+        // A list that turns out to have nothing in it is a sentence on the
+        // status row instead, and the reader is still where they were, with
+        // what they had typed: closing the view first answered "nothing
+        // wrong with this file" by throwing their search away.
+        if !self.would_list(command) {
+            dispatch::dispatch(self, command);
+            return;
+        }
+        self.put_away_the_views();
+        dispatch::dispatch(self, command);
+    }
+
+    /// Whether a command would put something on screen, asked before a view
+    /// is put away for it.
+    ///
+    /// Every view does, and most lists: the palette, the themes, the
+    /// conversations are never empty. Three lists answer some questions with
+    /// a sentence instead, and those are asked first.
+    fn would_list(&mut self, command: Command) -> bool {
+        match command {
+            Command::SymbolTroubles => self.anything_wrong(),
+            Command::SymbolMenu => {
+                // What `open_symbol_menu` settles before asking, so the two
+                // are asked about the same tree.
+                self.settle_syntax();
+                self.symbol_actions().is_ok()
+            }
+            // Asked of a server, and only its answer says. The answer puts
+            // the view away itself when it comes back with a list
+            // (`on_code_actions`).
+            Command::CodeActions => false,
+            _ => true,
+        }
+    }
+
+    /// Leaves what is showing the way escape leaves each of it, which is
+    /// what puts back what a view had changed while it was open: a theme it
+    /// previewed, a question it was asking for an agent, where the file was
+    /// scrolled to under a preview.
+    pub(super) fn put_away_the_views(&mut self) {
         let showing: Vec<Layer> = self.layers().nearest_first().collect();
         for layer in showing {
             if layer.context() == Context::Dialog {
                 self.leave(layer);
             }
         }
-        dispatch::dispatch(self, command);
     }
 
     /// Which tab of the view on screen a command names, if it names one.
@@ -91,6 +135,12 @@ impl App {
     /// other view.
     fn tab_for(&self, command: Command) -> Option<usize> {
         let picker = self.picker.as_ref()?;
+        // The key that opened the list showing is the list the reader is
+        // already in: they stay where they are, with what they typed, rather
+        // than being given the same list again empty.
+        if let Some(opener) = picker.opener() {
+            return (command == opener).then(|| picker.tab());
+        }
         if !self.worktrees.tabs.is_empty() {
             return self.switching_tab_for(command);
         }

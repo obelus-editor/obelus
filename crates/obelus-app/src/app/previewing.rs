@@ -210,6 +210,28 @@ impl App {
         }
     }
 
+    /// Puts the file a list was opened over back where it was, wherever the
+    /// reader has gone since.
+    ///
+    /// For a list left by choosing a row. What the file was scrolled by while
+    /// the list was up was the list's -- a list on the status bar shortens
+    /// the editor, and the file scrolls to keep the caret above it -- and a
+    /// row that runs a command, makes a change or opens a conversation is
+    /// not the reader moving the file. Left where the list put it, the file
+    /// stayed a few rows up after the list had gone, and at the end of a file
+    /// with a run of nothing under the last line. Unlike `look_back`, not
+    /// only while it is the file in front: a conversation chosen from a list
+    /// is a reader who will come back to this file, and it should be as they
+    /// left it.
+    pub(super) fn put_the_file_back(&mut self) {
+        let Some((id, viewport)) = self.looked_from.take() else {
+            return;
+        };
+        if let Some(buffer) = self.file_mut(id) {
+            buffer.look_back(viewport);
+        }
+    }
+
     /// Reads whatever the picker's selection names, and points it at the line
     /// the selection is about.
     pub(super) fn refresh_preview(&mut self, editor_area: Rect) {
