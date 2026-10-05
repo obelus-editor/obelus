@@ -10,7 +10,9 @@
 #
 # It plays one conversation:
 #
-#   initialize            -> what it is, and protocol version 1
+#   initialize            -> what it is, and protocol version 1. Run it with
+#                            `pictures` and it says a prompt may carry one;
+#                            without, it says nothing, which is saying no
 #   session/new           -> a session, two modes, a dozen slash commands (more
 #                            than the list of them is tall) and two
 #                            settings. Run it with `mode-as-option` and it
@@ -149,6 +151,7 @@ later=''
 # a session it no longer wants, let go -- or the absence of one.
 log=''
 prompts=''
+pictures=''
 for word in "$@"; do
     case "$word" in
         mode-as-option) both_ways='yes' ;;
@@ -161,6 +164,7 @@ for word in "$@"; do
         options-later) later='yes' ;;
         log=*) log="${word#log=}" ;;
         prompts) prompts='yes' ;;
+        pictures) pictures='yes' ;;
     esac
 done
 
@@ -256,6 +260,9 @@ while IFS= read -r line; do
                 resume) able='"sessionCapabilities":{"resume":{}},' ;;
                 *) able='' ;;
             esac
+            if [ -n "$pictures" ]; then
+                able="$able"'"promptCapabilities":{"image":true},'
+            fi
             # And that it takes tools over HTTP, which is what the real one
             # says and what decides whether Obelus offers it any: a client
             # that hands an address to an agent which cannot fetch it has

@@ -102,6 +102,10 @@ pub(crate) enum Waking {
     Going(crate::elsewhere::Going),
     /// Another Obelus's reader asked to be brought to this window.
     ComeForward(Option<String>),
+    /// A file was dropped on the window, and only the display connection
+    /// Obelus listens on itself heard it: winit hears none on Wayland.
+    #[cfg(target_os = "linux")]
+    Dropped(std::path::PathBuf),
 }
 
 /// Runs Obelus in a window until the reader leaves.
@@ -800,7 +804,7 @@ impl ApplicationHandler<Waking> for Showing {
         };
         // Once there is a window, which is the first moment there is a
         // display connection to adopt.
-        crate::clipboard::take(events);
+        crate::clipboard::take(events, self.proxy.clone());
         // And the other windows, for the same reason: what brings one
         // forward is asked on this display.
         let here = crate::elsewhere::Here::take(events);
@@ -1264,6 +1268,8 @@ impl ApplicationHandler<Waking> for Showing {
                     here.come_forward(window, token);
                 }
             }
+            #[cfg(target_os = "linux")]
+            Waking::Dropped(path) => self.tell(Event::Dropped(path)),
         }
     }
 
@@ -1322,6 +1328,10 @@ impl ApplicationHandler<Waking> for Showing {
             // here: Obelus is asked, and the window goes when Obelus says
             // it is done.
             WindowEvent::CloseRequested => self.tell(Event::Closed),
+            // One for each file, where several are dropped at once. Never
+            // on Wayland, where winit does not take part in a drop and the
+            // clipboard's own connection hears it instead.
+            WindowEvent::DroppedFile(path) => self.tell(Event::Dropped(path)),
             WindowEvent::ActivationTokenDone { serial, token } => {
                 if let Some(at) = self.going.iter().position(|(asked, _)| *asked == serial) {
                     let (_, going) = self.going.remove(at);

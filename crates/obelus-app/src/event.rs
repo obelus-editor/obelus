@@ -96,6 +96,13 @@ pub enum Event {
     /// Obelus copies *with* cannot be read back, so the terminal reading the
     /// clipboard is the way in.
     Paste(String),
+    /// A file was dropped on the window.
+    ///
+    /// Only a window hears one: a terminal types the file's path instead,
+    /// and that arrives as a [`Event::Paste`] -- which is where this goes
+    /// too, written the way a terminal would have written it
+    /// (`obelus_clipboard::dropped`).
+    Dropped(std::path::PathBuf),
     /// Time passed, and something on screen moves with it.
     ///
     /// The animation's and nothing else's: a phase and a drag. What moves is
@@ -206,6 +213,7 @@ impl Event {
             Self::Scroll(_) => "Scroll",
             Self::Pointer { .. } => "Pointer",
             Self::Paste(_) => "Paste",
+            Self::Dropped(_) => "Dropped",
             Self::Tick => "Tick",
             Self::NotesSettled => "NotesSettled",
             Self::SyntaxSettled => "SyntaxSettled",

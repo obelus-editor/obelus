@@ -688,7 +688,8 @@ crates/
                       namespace while a setting is Obelus's to draw (acp/link);
                       an agent that stopped is started again by talking to it,
                       every word says which connection it came from, and Obelus
-                      numbers its own turns (acp/mod)
+                      numbers its own turns (acp/mod); almost every picture
+                      goes as it came (acp/picture)
   obelus-mcp/       the tools Obelus offers an agent -- and why none of them
                     asks the reader anything itself
                     · a server is about one tree, and stops listening when
@@ -729,12 +730,13 @@ crates/
   obelus-program/   whether this machine has a program, and starting what it
                     turned out to be, which are two questions on Windows
   obelus-clipboard/ the clipboard through whatever the machine actually has,
-                    and opening a link
+                    opening a link, and a file dropped on Obelus
                     · a copy in several shapes needs a client that owns the
                       selection, and the programs stay because an owner dies
                       with its process (lib); where the clipboard is a service
                       there is nothing to own, so a terminal offers Obelus's
-                      own shape too (native)
+                      own shape too (native); what is taken for a picture is
+                      a file that is one (dropped)
   obelus-cli/       the `ob` binary: Obelus drawn on a terminal
                     · two keys need the terminal's permission, and nothing
                       else depends on the protocol (main)
@@ -767,7 +769,8 @@ crates/
                       (font); a window owns the selection and hands the words
                       over on the way out (clipboard); a thread that borrows
                       somebody else's connection stops before the owner takes
-                      it back (clipboard/wayland); a window may not put itself
+                      it back, and a file dropped on the window is heard
+                      there too (clipboard/wayland); a window may not put itself
                       in front of the reader, so whatever comes forward comes
                       on the permission of the window they are in (elsewhere)
   */tests/          integration tests, most of them `obelus-app`'s, plus

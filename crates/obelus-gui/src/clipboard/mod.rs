@@ -24,9 +24,13 @@ mod x11;
 /// Takes the clipboard, if this machine is one Obelus can take it on.
 ///
 /// Called once the window exists, which is the first moment there is a
-/// display connection to adopt.
+/// display connection to adopt. On Wayland what is dropped on the window is
+/// heard on the same connection, and is handed to `proxy`.
 #[cfg(target_os = "linux")]
-pub(crate) fn take(events: &winit::event_loop::ActiveEventLoop) {
+pub(crate) fn take(
+    events: &winit::event_loop::ActiveEventLoop,
+    proxy: winit::event_loop::EventLoopProxy<crate::window::Waking>,
+) {
     use winit::raw_window_handle::{HasDisplayHandle, RawDisplayHandle};
 
     let handle = match events.display_handle() {
@@ -41,7 +45,10 @@ pub(crate) fn take(events: &winit::event_loop::ActiveEventLoop) {
         // long as there is a window -- and the window outlives Obelus's
         // loop, which is what closes it.
         RawDisplayHandle::Wayland(wayland) => {
-            if let Some(clipboard) = unsafe { wayland::Clipboard::take(wayland.display) } {
+            let dropped: wayland::Dropped = std::sync::Arc::new(move |path| {
+                let _ = proxy.send_event(crate::window::Waking::Dropped(path));
+            });
+            if let Some(clipboard) = unsafe { wayland::Clipboard::take(wayland.display, dropped) } {
                 obelus_clipboard::owned_by(Box::new(clipboard));
                 tracing::info!(on = "wayland", "the clipboard is Obelus's own");
             }
@@ -73,7 +80,11 @@ pub(crate) fn let_go() {
 
 /// And on the platforms where it is not taken at all.
 #[cfg(not(target_os = "linux"))]
-pub(crate) fn take(_events: &winit::event_loop::ActiveEventLoop) {}
+pub(crate) fn take(
+    _events: &winit::event_loop::ActiveEventLoop,
+    _proxy: winit::event_loop::EventLoopProxy<crate::window::Waking>,
+) {
+}
 
 /// Nor given back.
 #[cfg(not(target_os = "linux"))]
