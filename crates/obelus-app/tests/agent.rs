@@ -1272,6 +1272,119 @@ fn enter_on_something_already_said_copies_it_to_the_box() {
     );
 }
 
+/// Something already said answers enter on every row of it, with the key
+/// after the last of them and no light round any.
+///
+/// `again` is on the first row alone, so the key was read off that row:
+/// enter on the second row of a message did nothing, and the key's word
+/// sat after the first row, in the middle of the message. And the reader's
+/// own words are not lit: several rows of them in a block of colour was
+/// the light standing over what they were reading.
+///
+/// Broken deliberately three times: lighting what the reader said again
+/// (dropping the `Speaker::Reader` filter on `lit`) puts a colour behind
+/// both rows; answering enter from `laid.get(at.row)` again leaves the box
+/// empty; and taking the foot from the first row rather than the last puts
+/// the key after the first line, which has the room for it.
+#[test]
+fn something_already_said_answers_enter_from_every_row_of_it() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/forever and a first line");
+    support::press_alt_key(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "and the end of them");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to start thinking", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+    assert_eq!(app.chat().map(|chat| chat.unsent().len()), Some(0));
+
+    let ground_of = |app: &mut App, needle: &str| {
+        let cells = support::cells_of(app, WIDTH, HEIGHT);
+        (0..HEIGHT)
+            .find_map(|y| {
+                let row: String = (0..WIDTH).map(|x| cells[(x, y)].symbol()).collect();
+                let from = row.find(needle)?;
+                let x = u16::try_from(row[..from].chars().count()).ok()?;
+                Some(cells[(x, y)].bg)
+            })
+            .unwrap_or_else(|| panic!("{needle:?} is not on the screen"))
+    };
+    let unlit = ground_of(&mut app, "end of them");
+
+    // Up to the message's last row, which is the one the key used to
+    // ignore.
+    for _ in 0..8 {
+        let on = app.chat().and_then(|chat| match chat.focus() {
+            obelus_component::chat::Focus::Transcript(place) => chat
+                .rows(WIDTH - 5)
+                .get(place.row)
+                .map(obelus_component::chat::Row::text),
+            _ => None,
+        });
+        if on.is_some_and(|text| text.contains("end of them")) {
+            break;
+        }
+        support::press(&mut app, KeyCode::Up);
+    }
+    assert_eq!(
+        (
+            ground_of(&mut app, "first line"),
+            ground_of(&mut app, "end of them")
+        ),
+        (unlit, unlit),
+        "what the reader said is lit"
+    );
+    let text = screen(&mut app);
+    assert!(
+        text.lines()
+            .any(|row| row.contains("end of them") && row.contains("Enter  Copies it")),
+        "the key is not at the end of the last row:\n{text}"
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.chat().map(|chat| chat.writing().text()),
+        Some("/forever and a first line\nand the end of them".to_string()),
+        "the words were not put in the box"
+    );
+}
+
+/// What enter does to something said goes under it where its last row
+/// has no room, the way the box's offer to send now does.
+///
+/// Deliberate break: answer `beside` in `offer_enter` without asking
+/// whether the words leave room. The key is then written over the end of
+/// the words.
+#[test]
+fn the_key_on_something_said_goes_under_it_where_there_is_no_room() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // As wide as a row of the transcript, and not a cell wider.
+    let words = format!("/forever {}", "x".repeat(usize::from(WIDTH - 5) - 9));
+    support::type_text(&mut app, &words);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "it to start thinking", |app| {
+        app.talking() == obelus_agent::Talking::Thinking
+    });
+    support::press(&mut app, KeyCode::Up);
+    let text = screen(&mut app);
+    let rows: Vec<&str> = text.lines().collect();
+    let at = rows
+        .iter()
+        .position(|row| row.contains(&words))
+        .unwrap_or_else(|| panic!("the words are not on one row:\n{text}"));
+    assert!(
+        rows.get(at + 1)
+            .is_some_and(|row| row.contains("Enter  Copies it to the box")),
+        "the key is not on the row under the words:\n{text}"
+    );
+}
+
 /// Something waiting is dim on every row of it, not only the first.
 ///
 /// `Row::unsent` is on the first row alone, because that is where the key

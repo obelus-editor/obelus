@@ -428,6 +428,32 @@ impl Row {
             || self.again.is_some()
     }
 
+    /// The rows a key pressed on `row` acts on, or none where it does
+    /// nothing.
+    ///
+    /// One row, mostly. What the reader said is one thing however many
+    /// rows it wraps to, and enter on any of them takes back or copies all
+    /// of it, answered from the first of them, which carries `unsent` and
+    /// `again` and the word for the key. Only the first used to answer:
+    /// enter on the rest of the message did nothing.
+    #[must_use]
+    pub fn acting(rows: &[Self], row: usize) -> Option<std::ops::Range<usize>> {
+        let here = rows.get(row)?;
+        if here.speaker == Speaker::Reader
+            && let Some((said, _)) = here.from
+        {
+            let same = |row: &&Self| {
+                row.speaker == Speaker::Reader && row.from.is_some_and(|(at, _)| at == said)
+            };
+            let start = row - rows[..row].iter().rev().take_while(same).count();
+            let end = row + rows[row..].iter().take_while(same).count();
+            if rows[start].acts() {
+                return Some(start..end);
+            }
+        }
+        here.acts().then(|| row..row + 1)
+    }
+
     /// How many characters the row draws.
     #[must_use]
     pub fn characters(&self) -> usize {
@@ -2990,7 +3016,9 @@ impl Chat {
             // everywhere else in Obelus. On a row that is only words it
             // does nothing, because there is nothing there to do.
             KeyCode::Enter if bare => {
-                let row = laid.get(at.row).cloned();
+                let row = laid
+                    .get(Row::acting(&laid, at.row).map_or(at.row, |on| on.start))
+                    .cloned();
                 match row {
                     Some(row) => match (row.unsent, row.again, row.folds, row.place, row.away) {
                         // Something they said that has not gone: one of
