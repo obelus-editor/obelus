@@ -1196,6 +1196,13 @@ impl ApplicationHandler<Waking> for Showing {
                 // And what is no longer on the screen is no longer kept.
                 let lanes: Vec<Lane> = self.scrolled.iter().map(Rolling::lane).collect();
                 self.motion.bands_drawn(&lanes);
+                // A cell of another size is a screen the kept one was not
+                // laid out for, and a pane cut from it would be cut from the
+                // wrong place: what was leaving is simply gone, as it is
+                // when the window is resized.
+                if faces.is_some() || sized.is_some() {
+                    self.left = None;
+                }
                 if let Some(names) = faces {
                     // Which faces text is drawn in decides how wide a cell
                     // is, so this is the same work a new size is: measure

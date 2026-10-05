@@ -904,6 +904,10 @@ impl Command {
             | Self::SymbolMenu
             | Self::CodeActions
             | Self::SymbolTroubles
+            // And a way into a conversation: `f4` is where the reader goes
+            // to talk, from wherever they are, and a key that was dead inside
+            // every view would be the one way to the agent that sometimes
+            // does nothing.
             | Self::ConversationSelect => true,
             Self::FileOpen
             | Self::FileChanged
@@ -1001,16 +1005,13 @@ impl Command {
             // Documents rather than views, and whole-screen all the same:
             // what the reader goes to, from wherever they are.
             | Self::ConversationNew
-            | Self::TodoOpen
-            // A compact list, and a way into a conversation all the same:
-            // `f4` is where the reader goes to talk, from wherever they are,
-            // and a key that was dead inside every other view would be the
-            // one way to the agent that sometimes does nothing.
-            | Self::ConversationSelect => true,
+            | Self::TodoOpen => true,
             // Over the file rather than instead of it -- the palette, the
             // menus, a list of what a server offers -- or not a thing to look
             // at at all.
-            Self::FileReload
+            // A list over the file, which `opens_a_list` says.
+            Self::ConversationSelect
+            | Self::FileReload
             | Self::FileSave
             | Self::DocumentClose
             | Self::FileRename

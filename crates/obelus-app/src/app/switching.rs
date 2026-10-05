@@ -77,17 +77,52 @@ impl App {
             });
             return;
         }
-        // Left the way escape leaves each of them, which is what puts back
-        // what a view had changed while it was open: a theme it previewed, a
-        // question it was asking for an agent, where the file was scrolled
-        // to under a preview.
+        // A list that turns out to have nothing in it is a sentence on the
+        // status row instead, and the reader is still where they were, with
+        // what they had typed: closing the view first answered "nothing
+        // wrong with this file" by throwing their search away.
+        if !self.would_list(command) {
+            dispatch::dispatch(self, command);
+            return;
+        }
+        self.put_away_the_views();
+        dispatch::dispatch(self, command);
+    }
+
+    /// Whether a command would put something on screen, asked before a view
+    /// is put away for it.
+    ///
+    /// Every view does, and most lists: the palette, the themes, the
+    /// conversations are never empty. Three lists answer some questions with
+    /// a sentence instead, and those are asked first.
+    fn would_list(&mut self, command: Command) -> bool {
+        match command {
+            Command::SymbolTroubles => self.anything_wrong(),
+            Command::SymbolMenu => {
+                // What `open_symbol_menu` settles before asking, so the two
+                // are asked about the same tree.
+                self.settle_syntax();
+                self.symbol_actions().is_ok()
+            }
+            // Asked of a server, and only its answer says. The answer puts
+            // the view away itself when it comes back with a list
+            // (`on_code_actions`).
+            Command::CodeActions => false,
+            _ => true,
+        }
+    }
+
+    /// Leaves what is showing the way escape leaves each of it, which is
+    /// what puts back what a view had changed while it was open: a theme it
+    /// previewed, a question it was asking for an agent, where the file was
+    /// scrolled to under a preview.
+    pub(super) fn put_away_the_views(&mut self) {
         let showing: Vec<Layer> = self.layers().nearest_first().collect();
         for layer in showing {
             if layer.context() == Context::Dialog {
                 self.leave(layer);
             }
         }
-        dispatch::dispatch(self, command);
     }
 
     /// Which tab of the view on screen a command names, if it names one.

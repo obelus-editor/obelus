@@ -954,9 +954,9 @@ impl Motion {
 
     /// A box with a frame round it opened over the page.
     ///
-    /// The opening only, like a pane's: a box that is closed leaves
-    /// nothing to draw, and one still up while another opens over it has
-    /// not moved.
+    /// The opening only: a box that is closed leaves nothing to draw --
+    /// unlike a pane, whose going is `panes_laid`'s -- and one still up
+    /// while another opens over it has not moved.
     pub(crate) fn card_opened(&mut self, now: Instant) {
         if self.animates {
             self.card.opened = Some(now);

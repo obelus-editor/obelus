@@ -219,6 +219,110 @@ fn the_palette_takes_a_view_s_place() {
     );
 }
 
+/// The files, with something typed into them, as the reader would have them
+/// when they press a key for a list.
+fn in_the_files_having_typed(app: &mut App) {
+    press_function(app, 1);
+    type_text(app, "ma");
+}
+
+/// What the files still hold of what was typed, while they are showing.
+fn typed_in_the_files(app: &App) -> Option<String> {
+    app.picker()
+        .filter(|picker| picker.is_listing())
+        .map(|picker| picker.query().to_string())
+}
+
+/// A key whose list turns out to have nothing in it leaves the reader in the
+/// view they were in, with what they typed: the problems with no server, the
+/// menu with no server, the actions with no server to ask. What it says
+/// instead goes on the status row.
+///
+/// Broken deliberately three times, one arm of `would_list` at a time
+/// answering yes: the files are thrown away for a sentence, each time.
+#[test]
+fn a_list_with_nothing_in_it_leaves_the_view_where_it_was() {
+    let mut app = reading();
+    let mut keymap = obelus_editing::keymap::Keymap::new();
+    keymap.rebind(
+        Command::SymbolMenu,
+        Some(obelus_editing::keymap::KeyChord::new(
+            KeyCode::Char('y'),
+            crossterm::event::KeyModifiers::ALT,
+        )),
+    );
+    app.set_keymap(keymap);
+    for key in ['e', 'y', 'a'] {
+        in_the_files_having_typed(&mut app);
+        support::press_alt(&mut app, key);
+        assert_eq!(
+            typed_in_the_files(&app),
+            Some("ma".to_string()),
+            "alt+{key} threw the files away for a list with nothing in it"
+        );
+        press(&mut app, KeyCode::Esc);
+    }
+}
+
+/// What a server offers to do comes back after the key, and it is the
+/// answer that puts the view away: a list of offers goes in its place, and
+/// "nothing to do here" leaves the reader where they were.
+///
+/// Broken deliberately by taking `put_away_the_views` out of
+/// `on_code_actions`: the offers come up over the settings, and escape from
+/// them goes back to the settings rather than to the file.
+#[test]
+fn the_offers_put_the_view_away_when_they_come() {
+    let mut app = reading();
+    dispatch::dispatch(&mut app, Command::ConfigOpen);
+    app.actions_for_test(serde_json::json!([]));
+    assert!(
+        app.settings().is_some(),
+        "nothing to do took the settings away"
+    );
+
+    app.actions_for_test(serde_json::json!([{ "title": "Fix it" }]));
+    assert!(
+        app.settings().is_none(),
+        "the offers came up over the settings"
+    );
+    assert!(
+        app.picker()
+            .is_some_and(|picker| picker.opener() == Some(Command::CodeActions)),
+        "the offers did not come up"
+    );
+}
+
+/// Enter is a list's own key however it is held: `alt+enter` in the files is
+/// not the menu about the name under the caret in the file behind them,
+/// though there is a server that would answer it.
+///
+/// Broken deliberately by taking the enter out of `App::handle_key`'s swap:
+/// the files go, and the menu comes up in their place.
+#[test]
+fn enter_held_any_way_is_the_list_s_own() {
+    let mut app = reading();
+    assert!(
+        app.stand_in_server_for_test(obelus_syntax::LanguageId::Rust, "cat"),
+        "the stand-in would not start"
+    );
+    app.declared_for_test(
+        obelus_syntax::LanguageId::Rust,
+        serde_json::json!({ "definitionProvider": true }),
+    );
+    // On `main`, so the menu would have something to ask about.
+    for _ in 0..3 {
+        press(&mut app, KeyCode::Right);
+    }
+    in_the_files_having_typed(&mut app);
+    support::press_alt_key(&mut app, KeyCode::Enter);
+    assert_eq!(
+        typed_in_the_files(&app),
+        Some("ma".to_string()),
+        "alt+enter in the files went to the menu"
+    );
+}
+
 /// A question keeps its keys: leaving it by any other key is an answer the
 /// reader never gave, so `f1` does nothing until it is answered.
 ///

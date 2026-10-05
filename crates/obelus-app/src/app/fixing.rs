@@ -174,6 +174,13 @@ impl App {
                 section: None,
             })
             .collect();
+        // The view the reader asked from, put away now that there is a list
+        // to go in its place -- and not before, because the answer could
+        // have been that there is nothing to do (`app/switching`). Before
+        // the offers are kept: leaving a list forgets them.
+        if self.gives_way_to_a_view() {
+            self.put_away_the_views();
+        }
         self.code_actions = offered;
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
         picker.keeps_order(true);
