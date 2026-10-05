@@ -61,6 +61,8 @@ pub(super) struct Remote {
     /// The clock it runs out on. Dropped with the code, which stops it: a
     /// new code is a new clock, and a used one needs none.
     pairing_runs_out: Option<crate::event::Pause>,
+    /// A code asked for before the chat was here, made once it connects.
+    pair_once_connected: bool,
     /// The number of the connection now wanted: every connection's events
     /// carry theirs, and one let go may still be saying something -- a late
     /// `Connected`, a `Refused` for a token since mended -- that is not
@@ -340,6 +342,15 @@ impl App {
                 if state == State::Connected {
                     self.threads_may_open_again();
                 }
+                match state {
+                    State::Connected if std::mem::take(&mut self.remote.pair_once_connected) => {
+                        self.pair();
+                    }
+                    // A code for a chat that will not have this window's
+                    // tokens is a code nobody will be asked for.
+                    State::Refused => self.remote.pair_once_connected = false,
+                    _ => {}
+                }
             }
             obelus_remote::Event::Heard {
                 from,
@@ -348,6 +359,17 @@ impl App {
                 text,
             } => self.heard(&from, &room, &at, &text),
             obelus_remote::Event::Named { id, name } => self.let_in(id, name),
+            obelus_remote::Event::Unasked { asked } => self.question_not_put(asked),
+            obelus_remote::Event::Answered {
+                from,
+                asked,
+                chosen,
+                words,
+            } => {
+                if self.on_the_list(&from) {
+                    self.answered_on_a_card(asked, &chosen, words.as_deref());
+                }
+            }
             obelus_remote::Event::Opened { asked, thread, .. } => self.thread_opened(asked, thread),
             obelus_remote::Event::Unopened { asked, waited } => {
                 self.thread_unopened(asked, waited);
@@ -489,11 +511,7 @@ impl App {
             tracing::info!(platform = platform.key, "words outside the room, not heard");
             return;
         }
-        let known = self
-            .config()
-            .remote_of(platform.key)
-            .is_some_and(|remote| remote.people.iter().any(|person| person.id == from));
-        if !known {
+        if !self.on_the_list(from) {
             tracing::info!(
                 platform = platform.key,
                 "somebody not on the list, not answered"
@@ -504,6 +522,16 @@ impl App {
             obelus_remote::model::Where::Thread(thread) => self.heard_in_thread(thread, text),
             obelus_remote::model::Where::Fresh(thread) => self.heard_fresh(thread, text),
         }
+    }
+
+    /// Whether somebody is on the list of who may talk to this machine:
+    /// nobody else is answered, in words or on a card.
+    fn on_the_list(&self, who: &str) -> bool {
+        self.platform().is_some_and(|platform| {
+            self.config()
+                .remote_of(platform.key)
+                .is_some_and(|remote| remote.people.iter().any(|person| person.id == who))
+        })
     }
 
     /// Lets in somebody who sent the code, now that their name is known,
@@ -741,17 +769,28 @@ impl App {
         tracing::debug!("the list of people is not drawn yet");
     }
 
-    /// Makes a code for somebody to pair with, where there is anything
-    /// listening for it.
+    /// Makes a code for somebody to pair with, taking the chat into this
+    /// window first where it is not here.
+    ///
+    /// Asked whether the chat could be reached rather than whether it is:
+    /// pairing is the first thing a reader does with a chat, so offering it
+    /// only once connected was a row that did nothing until they found
+    /// `connect-remote` -- and then one to press again.
     ///
     /// Good for five minutes, and then it is gone: a code is the one thing a
     /// stranger may send, so it is something that exists only while the
     /// reader is waiting for it. Run out by a clock of its own rather than a
     /// countdown on the row -- nothing on screen moves for it.
     fn pair(&mut self) {
-        // Silent where there is nothing to send it to: the row is drawn dim
-        // there, and a key does nothing where its row is dim.
-        if !self.remote_state().connected() {
+        // Silent where it could not be sent: the row is drawn dim there,
+        // and a key does nothing where its row is dim.
+        let state = self.remote_state();
+        if !state.may_connect() {
+            return;
+        }
+        if !state.connected() || !self.holds_the_remote() {
+            self.remote.pair_once_connected = true;
+            self.connect_remote();
             return;
         }
         self.remote.pairing = Some(a_code());
@@ -977,6 +1016,7 @@ impl App {
     /// waiting going on, so the next asking starts it again, and one still
     /// going is over -- said, because nothing else will come for it.
     pub(super) fn not_held(&mut self, number: u64) {
+        self.remote.pair_once_connected = false;
         if self.remote.waiter == Some(number) {
             self.remote.waiter = None;
         }
@@ -996,6 +1036,7 @@ impl App {
         let Some((number, _)) = self.remote.taking.take() else {
             return;
         };
+        self.remote.pair_once_connected = false;
         self.remote.given_up = Some(number);
         if let Some(platform) = self.platform() {
             self.wrong(format!("Another window would not let {} go", platform.name));
@@ -1014,6 +1055,7 @@ impl App {
     /// Stops this window talking to the chat, which leaves it to no window
     /// until one asks.
     pub(super) fn disconnect_remote(&mut self) {
+        self.remote.pair_once_connected = false;
         // An asking, taken back: the request withdrawn, so that the window
         // that has the chat keeps it when it hears.
         if self.remote.taking.take().is_some() {
@@ -1051,6 +1093,9 @@ impl App {
         if (asker.is_some() && asker == self.remote.wrote) || asker.as_deref() == Some(WITHDRAWN) {
             return;
         }
+        // Only once it is going: this window hears its own asking too, and
+        // a code it is waiting to make is the reason it asked.
+        self.remote.pair_once_connected = false;
         self.remote.holding = None;
         self.let_the_chat_go();
         if let Some(platform) = self.platform() {

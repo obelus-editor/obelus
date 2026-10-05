@@ -299,6 +299,18 @@ impl Card {
         self.several
     }
 
+    /// Whether the agent said one of the named answers has to be chosen.
+    #[must_use]
+    pub const fn needed(&self) -> bool {
+        self.needed
+    }
+
+    /// Whether the agent needs something written in the box.
+    #[must_use]
+    pub fn words_needed(&self) -> bool {
+        self.words.as_ref().is_some_and(|words| words.required)
+    }
+
     /// Where the keys are going, for the view to say so.
     #[must_use]
     pub const fn on(&self) -> On {
@@ -534,124 +546,34 @@ impl Card {
         None
     }
 
-    /// The question in words, for a chat that cannot be given the card:
-    /// what it is about, the named answers numbered from one, and how to
-    /// answer it by replying.
-    ///
-    /// Here rather than wherever the chat is, so that the card on screen
-    /// and the question in the chat are one question asked from one place:
-    /// [`Card::answered_by`] reads the reply against the same numbers.
-    #[must_use]
-    pub fn in_words(&self) -> String {
-        let mut said = String::from("\u{2753} ");
-        if let Some(about) = &self.about {
-            said.push_str(about.trim());
-        }
-        for (at, choice) in self.choices.iter().enumerate() {
-            said.push_str(&format!("\n{}. {}", at + 1, choice.name));
-        }
-        let numbers = match self.several {
-            true => {
-                let bounds = match (self.least, self.most) {
-                    (Some(least), Some(most)) => format!(" (at least {least}, at most {most})"),
-                    (Some(least), None) => format!(" (at least {least})"),
-                    (None, Some(most)) => format!(" (at most {most})"),
-                    (None, None) => String::new(),
-                };
-                format!("the numbers{bounds}")
-            }
-            false => "a number".to_string(),
-        };
-        // Said from what `answered_by` will take, so that the sentence is
-        // never an invitation to a reply that is then refused.
-        let how = match (self.choices.is_empty(), &self.words) {
-            (true, _) => "Reply with your answer.".to_string(),
-            (false, None) => format!("Reply with {numbers}."),
-            (false, Some(words)) if words.required => {
-                format!("Reply with {numbers}, then your own words.")
-            }
-            // Words alone answer nothing where a named answer has to be
-            // chosen: one, or at least some.
-            (false, Some(_)) if self.needed || self.least.is_some_and(|least| least > 0) => {
-                format!("Reply with {numbers}, and your own words after it if you like.")
-            }
-            (false, Some(_)) => format!("Reply with {numbers}, or in your own words."),
-        };
-        said.push('\n');
-        said.push_str(&how);
-        said
-    }
-
-    /// What a reply in words answers: the ids of the named answers it
-    /// chose and the words it carries, or why it cannot be taken -- said to
-    /// the reader, who is then still being asked.
-    ///
-    /// Numbers first, then the reader's own words where the card takes
-    /// some: `2 because it is smaller`. Words with no numbers are words
-    /// alone. A reply with words on a card that takes none is not an
-    /// answer: the agent said what it would take, and Obelus guessing
-    /// which was meant is Obelus answering for them. And whatever it is,
-    /// it is held to what the card on screen holds an answer to.
+    /// Whether an answer given on a card drawn somewhere else -- the ids
+    /// chosen and the words written -- is one this card holds an answer to,
+    /// or why not, in a sentence: the same counts the card on screen holds
+    /// its own answers to, so that the two cannot take different answers.
     ///
     /// # Errors
     ///
-    /// Why the reply cannot be taken, in a sentence.
-    pub fn answered_by(&self, reply: &str) -> Result<(Vec<String>, Option<String>), String> {
-        let reply = reply.trim();
-        let ours = self.words.is_some();
-        if self.choices.is_empty() {
-            return match reply.is_empty() {
-                true => Err("Reply with your answer".to_string()),
-                false => Ok((Vec::new(), Some(reply.to_string()))),
-            };
-        }
-        let separator = |character: char| character == ',' || character.is_whitespace();
-        let mut numbers: Vec<usize> = Vec::new();
-        let mut rest = reply;
-        loop {
-            let word = rest.trim_start_matches(separator);
-            let end = word.find(separator).unwrap_or(word.len());
-            match word[..end].trim_end_matches('.').parse() {
-                Ok(number) if end > 0 => {
-                    numbers.push(number);
-                    rest = &word[end..];
-                }
-                _ => {
-                    rest = word;
-                    break;
-                }
-            }
-        }
-        let words = Some(rest.trim().to_string()).filter(|words| !words.is_empty());
-        if (numbers.is_empty() && words.is_none()) || (words.is_some() && !ours) {
-            return Err(format!(
-                "Reply with a number from 1 to {}",
-                self.choices.len()
-            ));
-        }
-        if let Some(missing) = numbers
+    /// Why it cannot be taken.
+    pub fn takes(&self, chosen: &[String], words: Option<&str>) -> Result<(), String> {
+        if chosen
             .iter()
-            .find(|number| **number == 0 || **number > self.choices.len())
+            .any(|id| !self.choices.iter().any(|choice| choice.id == *id))
         {
-            return Err(format!("There is no {missing}"));
-        }
-        let mut chosen: Vec<String> = Vec::new();
-        for number in numbers {
-            let id = self.choices[number - 1].id.clone();
-            if !chosen.contains(&id) {
-                chosen.push(id);
-            }
+            return Err("That is not one of the answers".to_string());
         }
         if !self.several && chosen.len() > 1 {
-            return Err("Just one number".to_string());
+            return Err("Just one".to_string());
+        }
+        if words.is_some() && !self.takes_words() {
+            return Err("This takes no words".to_string());
         }
         match self.short_of(chosen.len() as u64, words.is_some()) {
-            None => Ok((chosen, words)),
+            None => Ok(()),
             Some(Short::Least(least)) => Err(format!("At least {least}")),
             Some(Short::Most(most)) => Err(format!("At most {most}")),
-            Some(Short::One) => Err("Choose one of the numbers as well".to_string()),
+            Some(Short::One) => Err("Choose one as well".to_string()),
             Some(Short::Words) => Err(format!(
-                "{} as well, after the number",
+                "{} as well",
                 self.placeholder().unwrap_or("An answer")
             )),
         }
@@ -1077,150 +999,44 @@ mod tests {
             .collect()
     }
 
-    /// A question in words is the card's question: its answers numbered
-    /// from one, and a sentence on how to reply that says what the card
-    /// will take.
+    /// An answer given on a card drawn elsewhere is held to what this one
+    /// holds an answer to: answers it offered, as many as it takes, and
+    /// the words it needs.
     ///
-    /// Broken deliberately by numbering from nought: the first answer was
-    /// `0.` and the reply that chose it was refused.
+    /// Broken deliberately twice. Not checking the ids: `nine`, which the
+    /// card never offered, went to the agent. And not counting: two went
+    /// to a question that takes one.
     #[test]
-    fn a_card_in_words_numbers_its_answers_and_says_how_to_reply() {
-        let mut card = Card::new(answers(), false);
-        card.about("Which one?");
+    fn an_answer_from_elsewhere_is_held_to_the_card() {
+        let one = Card::new(answers(), false);
+        assert_eq!(one.takes(&["two".to_string()], None), Ok(()));
         assert_eq!(
-            card.in_words(),
-            "\u{2753} Which one?\n1. one\n2. two\n3. three\nReply with a number."
+            one.takes(&["nine".to_string()], None),
+            Err("That is not one of the answers".to_string())
         );
-        card.writing("Other", false, None);
-        assert!(
-            card.in_words()
-                .ends_with("Reply with a number, or in your own words.")
+        assert_eq!(
+            one.takes(&["one".to_string(), "two".to_string()], None),
+            Err("Just one".to_string())
+        );
+        assert_eq!(
+            one.takes(&[], Some("mine")),
+            Err("This takes no words".to_string())
         );
 
         let mut several = Card::new(answers(), true);
-        several.counts(Some(1), Some(2));
-        assert!(
-            several
-                .in_words()
-                .ends_with("Reply with the numbers (at least 1, at most 2)."),
-            "{}",
-            several.in_words()
-        );
-        assert!(
-            Card::new(Vec::new(), false)
-                .in_words()
-                .ends_with("Reply with your answer.")
-        );
-    }
-
-    /// A reply is read against the same numbers: one where one is asked,
-    /// several within what the agent will take, the reader's own words
-    /// where the card takes some, and a sentence where it will not do.
-    ///
-    /// Broken deliberately three ways. Not checking the count: two numbers
-    /// answered a question that takes one. Not checking the bounds: three
-    /// answered one that takes at most two. And taking words where the
-    /// card takes none: "the second" was sent as an answer nobody asked
-    /// for.
-    #[test]
-    fn a_reply_in_words_is_read_against_the_card() {
-        let card = Card::new(answers(), false);
-        assert_eq!(card.answered_by(" 2 "), Ok((vec!["two".to_string()], None)));
-        assert_eq!(card.answered_by("2."), Ok((vec!["two".to_string()], None)));
-        assert_eq!(card.answered_by("1 3"), Err("Just one number".to_string()));
-        assert_eq!(card.answered_by("4"), Err("There is no 4".to_string()));
+        several.counts(Some(2), None);
+        several.writing("Reason", true, None);
         assert_eq!(
-            card.answered_by("the second"),
-            Err("Reply with a number from 1 to 3".to_string())
-        );
-
-        let mut card = Card::new(answers(), false);
-        card.writing("Other", false, None);
-        assert_eq!(
-            card.answered_by("neither, thanks"),
-            Ok((Vec::new(), Some("neither, thanks".to_string())))
-        );
-
-        let mut several = Card::new(answers(), true);
-        several.counts(Some(1), Some(2));
-        assert_eq!(
-            several.answered_by("1, 3"),
-            Ok((vec!["one".to_string(), "three".to_string()], None))
-        );
-        assert_eq!(several.answered_by("1 2 3"), Err("At most 2".to_string()));
-
-        let words = Card::new(Vec::new(), false);
-        assert_eq!(
-            words.answered_by("feature-x"),
-            Ok((Vec::new(), Some("feature-x".to_string())))
-        );
-    }
-
-    /// A reply from a chat is held to what the card on screen holds an
-    /// answer to: words the agent needs, the fewest it will take, a named
-    /// answer it needs -- and a number with words after it is both.
-    ///
-    /// Broken deliberately three ways. Not asking for the words when the
-    /// reply is a number: `2` went out with no reason, which the card on
-    /// screen refuses. Not counting when the reply is words: `foo` went out
-    /// choosing none of a card that takes at least one. Reading the whole
-    /// reply as numbers or as words: `2 because` was neither. And asking a
-    /// card that takes at least one as if words alone would do: it invited
-    /// `foo`, and then refused it.
-    #[test]
-    fn a_reply_is_held_to_what_the_card_holds_an_answer_to() {
-        let mut reasoned = Card::new(answers(), false);
-        reasoned.writing("Reason", true, None);
-        assert_eq!(
-            reasoned.answered_by("2"),
-            Err("Reason as well, after the number".to_string())
+            several.takes(&["one".to_string()], Some("why")),
+            Err("At least 2".to_string())
         );
         assert_eq!(
-            reasoned.answered_by("2 because it is smaller"),
-            Ok((
-                vec!["two".to_string()],
-                Some("because it is smaller".to_string())
-            ))
-        );
-        assert!(
-            reasoned
-                .in_words()
-                .ends_with("Reply with a number, then your own words."),
-            "{}",
-            reasoned.in_words()
-        );
-
-        let mut several = Card::new(answers(), true);
-        several.counts(Some(1), None);
-        several.writing("Other", false, None);
-        assert_eq!(several.answered_by("foo"), Err("At least 1".to_string()));
-        // And the sentence asking it says so, rather than inviting the words
-        // alone that it then refuses.
-        assert!(
-            several.in_words().ends_with(
-                "Reply with the numbers (at least 1), and your own words after it if you like."
-            ),
-            "{}",
-            several.in_words()
+            several.takes(&["one".to_string(), "three".to_string()], None),
+            Err("Reason as well".to_string())
         );
         assert_eq!(
-            several.answered_by("1, 3 and that"),
-            Ok((
-                vec!["one".to_string(), "three".to_string()],
-                Some("and that".to_string())
-            ))
-        );
-
-        let mut needed = Card::new(answers(), false);
-        needed.needs_one();
-        needed.writing("Other", false, None);
-        assert_eq!(
-            needed.answered_by("neither"),
-            Err("Choose one of the numbers as well".to_string())
-        );
-        assert_eq!(
-            needed.answered_by("3 or so"),
-            Ok((vec!["three".to_string()], Some("or so".to_string())))
+            several.takes(&["one".to_string(), "three".to_string()], Some("why")),
+            Ok(())
         );
     }
 

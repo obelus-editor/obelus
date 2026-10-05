@@ -1,9 +1,9 @@
 //! What passes between Obelus and a chat platform: words, and where they go.
 //!
-//! **Words are the floor.** Nothing here is a button, a card or a form: a
-//! platform is told to say some text somewhere and tells Obelus what somebody
-//! said and where. Which is everything every chat can do, and so the whole of
-//! what a new platform has to be taught.
+//! **Words, and a question.** A platform is told to say some text somewhere
+//! and tells Obelus what somebody said and where. The one thing that is not
+//! words is a question ([`Question`]): what it is made of, for the platform
+//! to draw as a card, and a press on the card is its answer.
 
 /// Where in the room something was said.
 ///
@@ -66,6 +66,92 @@ pub enum Out {
         /// Their id.
         id: String,
     },
+    /// Put a question the agent is waiting on to the reader in a thread,
+    /// calling them, as a card answered by `Event::Answered`.
+    Ask {
+        /// Which room.
+        room: String,
+        /// Which thread.
+        thread: String,
+        /// Whom the thread is with.
+        to: String,
+        /// Obelus's own number for the question, handed back with the
+        /// answer and with what became of it.
+        asked: u64,
+        /// The question.
+        question: Question,
+    },
+    /// What became of a question asked: answered, here or there, or taken
+    /// back -- drawn on the card, so that it cannot be answered twice.
+    Settle {
+        /// Which room.
+        room: String,
+        /// Which thread.
+        thread: String,
+        /// Whom the thread is with.
+        to: String,
+        /// The number it was asked with.
+        asked: u64,
+        /// What became of it, in a line.
+        said: String,
+    },
+}
+
+impl Out {
+    /// What became of a question whose card never went up -- the platform
+    /// would not take it, or it went on a connection since let go -- said
+    /// in the thread instead.
+    #[must_use]
+    pub fn in_words(self) -> Self {
+        match self {
+            Self::Settle {
+                room,
+                thread,
+                to,
+                said,
+                ..
+            } => Self::Say {
+                room,
+                thread,
+                to,
+                text: said,
+                notify: false,
+            },
+            out => out,
+        }
+    }
+}
+
+impl Question {
+    /// The question in words, for a thread whose platform would not take
+    /// its card: what it asks, and that it is answered on the machine,
+    /// since nothing in the thread can be.
+    #[must_use]
+    pub fn in_words(&self) -> String {
+        let mut said = format!("\u{2753} {}", self.about);
+        for (_, name) in &self.choices {
+            said.push_str("\n- ");
+            said.push_str(name);
+        }
+        said.push_str("\nThis could not be put here as a card; answer it on the machine.");
+        said
+    }
+}
+
+/// A question the agent is waiting on, as a chat is given it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Question {
+    /// What it is about.
+    pub about: String,
+    /// The named answers: the agent's id for each, and what it is called.
+    pub choices: Vec<(String, String)>,
+    /// Whether more than one may be chosen.
+    pub several: bool,
+    /// Whether one of them has to be.
+    pub needed: bool,
+    /// The box for the reader's own words, where it has one: what it is
+    /// called, and whether the agent needs something in it.
+    pub words: Option<(String, bool)>,
 }
 
 /// What a thread is: the first message of it, said again whenever any of
@@ -126,5 +212,33 @@ impl Head {
     #[must_use]
     pub fn in_words(&self) -> String {
         format!("**{}**\n{}", self.titled(), self.place)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A question no card could carry is said whole, and says where it is
+    /// answered: nothing in the thread can answer it.
+    ///
+    /// Broken deliberately by leaving out the answers: the thread was asked
+    /// something with nothing to choose from.
+    #[test]
+    fn a_question_in_words_says_where_it_is_answered() {
+        let question = Question {
+            about: "Read the file?".to_string(),
+            choices: vec![
+                ("once".to_string(), "Allow once".to_string()),
+                ("never".to_string(), "Reject".to_string()),
+            ],
+            several: false,
+            needed: true,
+            words: None,
+        };
+        assert_eq!(
+            question.in_words(),
+            "\u{2753} Read the file?\n- Allow once\n- Reject\nThis could not be put here as a card; answer it on the machine."
+        );
     }
 }

@@ -4611,6 +4611,7 @@ name = "obelus-remote"
 version = "0.9.3"
 dependencies = [
  "apple-native-keyring-store",
+ "base64 0.23.1",
  "futures",
  "keyring-core",
  "lark-websocket-protobuf",

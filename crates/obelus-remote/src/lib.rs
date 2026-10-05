@@ -5,11 +5,11 @@
 //! they find there is the same conversations their windows hold: one thread
 //! a conversation, and a thread they start a conversation begun.
 //!
-//! **Words are the floor.** Most chats cannot be given a screen of their own,
-//! so everything Obelus says there is text and everything it is told is
-//! text: a question is a numbered list answered by replying with a number. A
-//! platform that can draw buttons may draw them later, and pressing one is the
-//! same as replying with its number.
+//! **Words, and a card for a question.** What Obelus says in a chat is text
+//! and what it is told is text, except a question: that is a card the
+//! platform draws -- buttons, a list, a box -- and the card is the only way
+//! to answer it. What a press sends back is the answer as the agent asked
+//! for it, with nothing read out of words.
 //!
 //! **A platform declares; Obelus keeps.** What one has to be told is a list
 //! of fields ([`platform`]), and where each is kept -- a secret in the
@@ -104,6 +104,50 @@ pub enum Event {
         /// The name they go by.
         name: String,
     },
+    /// A question's card was not taken by the platform, so it was said in
+    /// words instead, and nothing in the thread can answer it.
+    Unasked {
+        /// The number it was asked with.
+        asked: u64,
+    },
+    /// Somebody answered a question on its card.
+    Answered {
+        /// Their id, which is what they are checked by.
+        from: String,
+        /// The number the question was asked with.
+        asked: u64,
+        /// The ids of the named answers they chose.
+        chosen: Vec<String>,
+        /// What they wrote in the box, where they wrote anything.
+        words: Option<String>,
+    },
+}
+
+/// This process's mark, on every card it puts up: a question is numbered
+/// by the window that asked it, from one, so a card from a window since
+/// closed -- still there to be pressed -- named a question in the next one.
+pub(crate) fn this_process() -> &'static str {
+    static MARK: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    MARK.get_or_init(|| {
+        use std::hash::{BuildHasher as _, Hasher as _};
+        let mut hasher = std::hash::RandomState::new().build_hasher();
+        hasher.write_u32(std::process::id());
+        format!("{:x}", hasher.finish())
+    })
+}
+
+/// Somebody else's words cut to fit where a platform puts them: a card
+/// with one line past a platform's limit is a card the platform refuses
+/// whole, and the reader is left with no question at all.
+pub(crate) fn capped(text: &str, most: usize) -> String {
+    match text.chars().nth(most) {
+        None => text.to_string(),
+        Some(_) => {
+            let mut cut: String = text.chars().take(most.saturating_sub(1)).collect();
+            cut.push('\u{2026}');
+            cut
+        }
+    }
 }
 
 /// Where a window stands with the chat it talks to, as one answer.
@@ -143,6 +187,13 @@ impl State {
         matches!(self, Self::Connected)
     }
 
+    /// Whether it is connected or may be, by going on: a chat set and
+    /// told everything, or one that is on its way up.
+    #[must_use]
+    pub const fn may_connect(self) -> bool {
+        matches!(self, Self::Connecting | Self::Connected | Self::Unreachable)
+    }
+
     /// Whether something is wrong that the reader has to do something about.
     #[must_use]
     pub const fn wrong(self) -> bool {
@@ -167,7 +218,7 @@ impl Event {
     pub fn connection(state: State, why: Option<String>) -> Self {
         Self::Connection {
             state,
-            why: why.map(|why| capped(&why)),
+            why: why.map(|why| capped(why.trim(), REASON_AT_MOST)),
         }
     }
 }
@@ -176,13 +227,21 @@ impl Event {
 /// why in, and not a page of HTML from a proxy in front of it.
 const REASON_AT_MOST: usize = 160;
 
-fn capped(why: &str) -> String {
-    let why = why.trim();
-    match why.chars().nth(REASON_AT_MOST) {
-        None => why.to_string(),
-        Some(_) => {
-            let kept: String = why.chars().take(REASON_AT_MOST - 1).collect();
-            format!("{kept}\u{2026}")
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Somebody else's words fit where they are put, cut with a mark that
+    /// says so, and words that fit are left alone.
+    ///
+    /// Broken deliberately by not cutting: the long name came back whole.
+    #[test]
+    fn somebody_else_s_words_are_capped() {
+        assert_eq!(capped("Allow once", 75), "Allow once");
+        let long = "x".repeat(200);
+        let cut = capped(&long, 75);
+        assert_eq!(cut.chars().count(), 75);
+        assert!(cut.ends_with('\u{2026}'), "{cut}");
+        assert_eq!(capped(&"\u{732b}".repeat(80), 75).chars().count(), 75);
     }
 }

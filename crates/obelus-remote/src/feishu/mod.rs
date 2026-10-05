@@ -44,7 +44,9 @@ pub static DESCRIPTION: Description = Description {
         // One app per machine, for the reason Slack's row gives: the long
         // connection hands each event to one of an app's connections at
         // random.
-        about: "One app per machine: a custom app with the bot on, long connection for events",
+        // And the card callback by the same connection, or a question's
+        // card draws and refuses every press with 200340.
+        about: "One app per machine: a custom app with the bot on, long connection for events and for the card callback",
         url: "https://open.feishu.cn/app",
     },
     begin: "Start a topic here to talk to an agent.",

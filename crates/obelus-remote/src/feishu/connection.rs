@@ -16,6 +16,13 @@
 //! that one with `reply_in_thread`, and what the reader writes in it arrives
 //! naming that message as its root.
 //!
+//! **A question is a card, and the card is the answer.** Buttons where one
+//! press answers it, a form where it takes several or the reader's own
+//! words; what is pressed comes back over the long connection as a card
+//! callback -- the app has to be given `card.action.trigger` by long
+//! connection for that -- naming the question by Obelus's number for it,
+//! and the card is drawn again closed once Obelus says what became of it.
+//!
 //! **The topics are in a group the reader made.** In a direct message a
 //! topic hangs off a message in it, so every conversation put a card into
 //! one stream with everything else said there, and it was a tangle. A group
@@ -36,7 +43,7 @@ use tokio_tungstenite::tungstenite::Message;
 
 use crate::{
     Event, State,
-    model::{Head, Out, Turning, Where},
+    model::{Head, Out, Question, Turning, Where},
 };
 
 /// Where the open API is, by the domain the reader chose.
@@ -180,10 +187,13 @@ impl Api {
             .await?;
         match answer["code"].as_i64() {
             Some(0) => Ok(answer["data"].clone()),
+            // With Feishu's own id for the request, which is what its
+            // troubleshooting asks for.
             _ => Err(Refusal::Other(format!(
-                "{} ({})",
+                "{} ({}, log {})",
                 answer["msg"].as_str().unwrap_or("refused"),
-                answer["code"]
+                answer["code"],
+                answer["error"]["log_id"].as_str().unwrap_or("none")
             ))),
         }
     }
@@ -285,6 +295,91 @@ fn card(head: &Head) -> String {
     .to_string()
 }
 
+/// How much of what a question is about goes on its card, and of each
+/// answer's name: Feishu does not say where it stops, so these are Slack's
+/// own limits -- the stricter of the two -- rather than a guess at its.
+const ABOUT: usize = 2900;
+const NAME: usize = 75;
+
+/// A question as a card: what it is about, calling the reader, and then a
+/// button for each answer where one press is the whole answer, or a form
+/// where it takes several, or words of the reader's own. Every press names
+/// the question by `asked`, and the process that asked it by `by`.
+fn asking(asked: u64, question: &Question, to: &str) -> String {
+    let asked = asked.to_string();
+    let by = crate::this_process();
+    let mut elements = vec![json!({
+        "tag": "markdown",
+        "content": format!("<at id={to}></at> {}", crate::capped(&question.about, ABOUT)),
+    })];
+    let named = |(id, name): &(String, String)| json!({ "text": { "tag": "plain_text", "content": crate::capped(name, NAME) }, "value": id });
+    if !question.several && question.words.is_none() && !question.choices.is_empty() {
+        for (id, name) in &question.choices {
+            elements.push(json!({
+                "tag": "button",
+                "text": { "tag": "plain_text", "content": crate::capped(name, NAME) },
+                "width": "fill",
+                "behaviors": [{ "type": "callback", "value": { "asked": asked, "by": by, "chosen": id } }],
+            }));
+        }
+    } else {
+        let mut form = Vec::new();
+        if !question.choices.is_empty() {
+            form.push(json!({
+                "tag": match question.several {
+                    true => "multi_select_static",
+                    false => "select_static",
+                },
+                "name": "chosen",
+                "placeholder": { "tag": "plain_text", "content": "Choose" },
+                "required": question.needed,
+                "options": question.choices.iter().map(named).collect::<Vec<Value>>(),
+            }));
+        }
+        if let Some((name, required)) = &question.words {
+            form.push(json!({
+                "tag": "input",
+                "name": "words",
+                "placeholder": { "tag": "plain_text", "content": crate::capped(name, NAME) },
+                "required": required,
+            }));
+        }
+        form.push(json!({
+            "tag": "button",
+            "name": "send",
+            "text": { "tag": "plain_text", "content": "Send" },
+            "type": "primary",
+            "form_action_type": "submit",
+            "behaviors": [{ "type": "callback", "value": { "asked": asked, "by": by } }],
+        }));
+        elements.push(json!({ "tag": "form", "name": "answer", "elements": form }));
+    }
+    json!({
+        "schema": "2.0",
+        "config": { "update_multi": true },
+        "body": { "elements": elements },
+    })
+    .to_string()
+}
+
+/// The same card closed: what it was about, and what became of it in
+/// place of anything to press.
+fn settled(about: &str, said: &str) -> String {
+    // Nothing for a question with nothing said about it -- a permission
+    // whose call said it already -- rather than an empty element.
+    let mut elements = Vec::new();
+    if !about.is_empty() {
+        elements.push(json!({ "tag": "markdown", "content": crate::capped(about, ABOUT) }));
+    }
+    elements.push(json!({ "tag": "markdown", "content": said, "text_size": "notation" }));
+    json!({
+        "schema": "2.0",
+        "config": { "update_multi": true },
+        "body": { "elements": elements },
+    })
+    .to_string()
+}
+
 async fn run(
     api: Arc<Api>,
     sink: Arc<dyn Sink<Event>>,
@@ -327,13 +422,16 @@ async fn run(
     // The long connection, on a task of its own, and made again whenever it
     // drops: what it hears goes straight to the sink.
     let listening = obelus_runtime::handle().spawn(listen(api.clone(), sink.clone()));
+    // Each question's card, by Obelus's number for it: the message, and
+    // what it was about, to draw it closed with.
+    let mut cards: HashMap<u64, (String, String)> = HashMap::new();
     for out in waiting.drain() {
-        if let Err(why) = say(&api, &sink, out).await {
+        if let Err(why) = say(&api, &sink, &mut cards, out).await {
             tracing::warn!(%why, "Feishu would not take a message");
         }
     }
     while let Some(out) = said.recv().await {
-        if let Err(why) = say(&api, &sink, out).await {
+        if let Err(why) = say(&api, &sink, &mut cards, out).await {
             tracing::warn!(%why, "Feishu would not take a message");
         }
     }
@@ -341,8 +439,95 @@ async fn run(
 }
 
 /// Does one thing Obelus asked for.
-async fn say(api: &Api, sink: &Arc<dyn Sink<Event>>, out: Out) -> Result<(), Refusal> {
+async fn say(
+    api: &Api,
+    sink: &Arc<dyn Sink<Event>>,
+    cards: &mut HashMap<u64, (String, String)>,
+    out: Out,
+) -> Result<(), Refusal> {
     match out {
+        Out::Ask {
+            room,
+            thread,
+            to,
+            asked,
+            question,
+        } => {
+            let posted = api
+                .call(
+                    reqwest::Method::POST,
+                    &format!("/open-apis/im/v1/messages/{thread}/reply"),
+                    Some(json!({
+                        "msg_type": "interactive",
+                        "content": asking(asked, &question, &to),
+                        "reply_in_thread": true,
+                    })),
+                )
+                .await;
+            match posted {
+                Ok(posted) => {
+                    if let Some(message) = posted["message_id"].as_str() {
+                        tracing::info!(thread, asked, message, "a question put");
+                        cards.insert(asked, (message.to_string(), question.about));
+                    }
+                }
+                // Said in words rather than not at all: the reader away from
+                // the machine is otherwise left with an agent waiting on a
+                // question they never see.
+                Err(why) => {
+                    tracing::warn!(thread, asked, %why, "a question not put");
+                    let _ = sink.send(Event::Unasked { asked });
+                    Box::pin(say(
+                        api,
+                        sink,
+                        cards,
+                        Out::Say {
+                            room,
+                            thread,
+                            to,
+                            text: question.in_words(),
+                            notify: true,
+                        },
+                    ))
+                    .await?;
+                }
+            }
+        }
+        Out::Settle {
+            room,
+            thread,
+            to,
+            asked,
+            said,
+        } => match cards.remove(&asked) {
+            Some((message, about)) => {
+                api.call(
+                    reqwest::Method::PATCH,
+                    &format!("/open-apis/im/v1/messages/{message}"),
+                    Some(json!({ "content": settled(&about, &said) })),
+                )
+                .await
+                .inspect_err(|why| tracing::warn!(message, %why, "a question's card not closed"))?;
+            }
+            // A card that never went up -- or went up on a connection
+            // since let go, which kept the message -- is said in words.
+            None => {
+                Box::pin(say(
+                    api,
+                    sink,
+                    cards,
+                    Out::Settle {
+                        room,
+                        thread,
+                        to,
+                        asked,
+                        said,
+                    }
+                    .in_words(),
+                ))
+                .await?;
+            }
+        },
         Out::Say {
             thread,
             to,
@@ -350,16 +535,41 @@ async fn say(api: &Api, sink: &Arc<dyn Sink<Event>>, out: Out) -> Result<(), Ref
             notify,
             ..
         } => {
-            api.call(
-                reqwest::Method::POST,
-                &format!("/open-apis/im/v1/messages/{thread}/reply"),
-                Some(json!({
-                    "msg_type": "post",
-                    "content": rich(&text, notify.then_some(to.as_str())),
-                    "reply_in_thread": true,
-                })),
-            )
-            .await?;
+            // Which thread and what was said, either way: a refusal on its
+            // own was a line that could not say which conversation lost
+            // its words, or whether it was the question or the turn's end.
+            let opening: String = text
+                .lines()
+                .next()
+                .unwrap_or_default()
+                .chars()
+                .take(60)
+                .collect();
+            let replied = api
+                .call(
+                    reqwest::Method::POST,
+                    &format!("/open-apis/im/v1/messages/{thread}/reply"),
+                    Some(json!({
+                        "msg_type": "post",
+                        "content": rich(&text, notify.then_some(to.as_str())),
+                        "reply_in_thread": true,
+                    })),
+                )
+                .await;
+            match &replied {
+                Ok(data) => tracing::info!(
+                    thread,
+                    notify,
+                    opening,
+                    message = data["message_id"].as_str(),
+                    root = data["root_id"].as_str(),
+                    "said in a thread"
+                ),
+                Err(why) => {
+                    tracing::warn!(thread, notify, opening, %why, "not said in a thread");
+                }
+            }
+            replied?;
         }
         Out::Open { asked, room, head } => {
             let opened = api
@@ -376,6 +586,7 @@ async fn say(api: &Api, sink: &Arc<dyn Sink<Event>>, out: Out) -> Result<(), Ref
                 .map(|data| data["message_id"].as_str().unwrap_or_default().to_string());
             match opened {
                 Ok(thread) if !thread.is_empty() => {
+                    tracing::info!(asked, thread, "a thread opened");
                     let _ = sink.send(Event::Opened {
                         asked,
                         thread,
@@ -398,7 +609,8 @@ async fn say(api: &Api, sink: &Arc<dyn Sink<Event>>, out: Out) -> Result<(), Ref
                 &format!("/open-apis/im/v1/messages/{thread}"),
                 Some(json!({ "content": card(&head) })),
             )
-            .await?;
+            .await
+            .inspect_err(|why| tracing::warn!(thread, %why, "a thread's head not said again"))?;
         }
         Out::Name { id } => {
             // The name where the app may read it, and the id where it may
@@ -563,13 +775,11 @@ async fn listened(
                 let Some(payload) = whole(&mut pieces, &frame) else {
                     continue;
                 };
-                if value_of(&frame.headers, "type") == Some("event") {
-                    heard_event(&payload, seen, sink);
-                }
+                let answer = heard_frame(&payload, seen, sink);
                 // Answered whatever it was, at once: an event not answered
                 // within three seconds is sent again, and what was done
                 // with it is the application's, which has it already.
-                frame.payload = Some(json!({ "code": 200 }).to_string().into_bytes());
+                frame.payload = Some(answer.to_string().into_bytes());
                 frame.headers.push(header("biz_rt", "0"));
                 out.send(Message::Binary(frame.encode_to_vec().into()))
                     .await
@@ -577,6 +787,43 @@ async fn listened(
             }
         }
     }
+}
+
+/// What a data frame said, passed on, and what to answer it with.
+///
+/// Told apart by the event's own type and not by the frame's: a press on a
+/// card arrives over the long connection as an `event` frame like a message
+/// does, and reading the frame's type sent every press to the messages,
+/// which dropped it. A press is answered with what the reader sees at once;
+/// whether it is taken is the application's to say, by closing the card.
+fn heard_frame(
+    payload: &[u8],
+    seen: &mut std::collections::VecDeque<String>,
+    sink: &Arc<dyn Sink<Event>>,
+) -> Value {
+    let pressed = serde_json::from_slice::<Value>(payload)
+        .is_ok_and(|event| event["header"]["event_type"] == "card.action.trigger");
+    if !pressed {
+        heard_event(payload, seen, sink);
+        return json!({ "code": 200 });
+    }
+    // What the press is shown at once. Not whether the answer is taken --
+    // that is the application's, by closing the card or saying why not in
+    // the thread -- but whether it went anywhere: a card another window put
+    // up, one since closed, is a press into nothing, and "Sent" over it was
+    // the one thing it should not say.
+    let said = match heard_press(payload, seen, sink) {
+        true => "Sent",
+        false => "No longer asked",
+    };
+    let toast = json!({ "toast": { "type": "info", "content": said } });
+    json!({
+        "code": 200,
+        "data": base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            toast.to_string(),
+        ),
+    })
 }
 
 fn header(key: &str, value: &str) -> Header {
@@ -674,12 +921,78 @@ fn heard_event(
             None => return,
         },
     };
+    tracing::info!(
+        ?at,
+        message = message["message_id"].as_str(),
+        "heard in the room"
+    );
     let _ = sink.send(Event::Heard {
         from: from.to_string(),
         room: room.to_string(),
         at,
         text,
     });
+}
+
+/// A press on a question's card, passed on as the answer it makes -- and
+/// whether it was, which is what the reader is shown at once: which
+/// question, by the number it was asked with, the ids chosen -- one from a
+/// button, one or several from the form's list -- and the words in its box.
+fn heard_press(
+    payload: &[u8],
+    seen: &mut std::collections::VecDeque<String>,
+    sink: &Arc<dyn Sink<Event>>,
+) -> bool {
+    let Ok(event) = serde_json::from_slice::<Value>(payload) else {
+        return false;
+    };
+    if let Some(id) = event["header"]["event_id"].as_str() {
+        // Feishu sending it again: it was taken the first time.
+        if seen.iter().any(|kept| kept == id) {
+            return true;
+        }
+        seen.push_back(id.to_string());
+        if seen.len() > 256 {
+            seen.pop_front();
+        }
+    }
+    let event = &event["event"];
+    let action = &event["action"];
+    let (Some(from), Some(asked)) = (
+        event["operator"]["open_id"].as_str(),
+        action["value"]["asked"]
+            .as_str()
+            .and_then(|asked| asked.parse().ok()),
+    ) else {
+        return false;
+    };
+    if action["value"]["by"].as_str() != Some(crate::this_process()) {
+        tracing::info!(asked, "a press on a card another window put up");
+        return false;
+    }
+    let form = &action["form_value"];
+    let chosen: Vec<String> = match (action["value"]["chosen"].as_str(), &form["chosen"]) {
+        (Some(id), _) => vec![id.to_string()],
+        (None, Value::String(id)) => vec![id.clone()],
+        (None, Value::Array(ids)) => ids
+            .iter()
+            .filter_map(|id| id.as_str().map(str::to_string))
+            .collect(),
+        (None, _) => Vec::new(),
+    };
+    let words = form["words"]
+        .as_str()
+        .map(str::trim)
+        .filter(|words| !words.is_empty())
+        .map(str::to_string);
+    tracing::info!(asked, ?chosen, "a question answered on its card");
+    sink.send(Event::Answered {
+        from: from.to_string(),
+        asked,
+        chosen,
+        words,
+    })
+    .is_ok()
 }
 
 /// The words in a message: a text's text, or a rich message's title and
@@ -876,5 +1189,188 @@ mod tests {
             "<at user_id=\"ou_1\"></at> **done**"
         );
         assert_eq!(said["zh_cn"]["content"][0][0]["tag"], "md");
+    }
+
+    /// A question one press answers is a button per answer; one that takes
+    /// several, or the reader's own words, is a form sent with one button
+    /// -- and every press names the question and carries the agent's ids.
+    ///
+    /// Broken deliberately twice. Drawing a form whatever the question: the
+    /// permission's answers were a list to choose from and a button to send.
+    /// And putting the names where the ids go: the press carried "Allow
+    /// once", which is no answer the agent offered.
+    #[test]
+    fn a_question_is_buttons_or_a_form() {
+        let question = |several: bool, words: Option<(String, bool)>| Question {
+            about: "Read the file?".to_string(),
+            choices: vec![
+                ("once".to_string(), "Allow once".to_string()),
+                ("never".to_string(), "Reject".to_string()),
+            ],
+            several,
+            needed: true,
+            words,
+        };
+        let drawn = |question: &Question| {
+            serde_json::from_str::<Value>(&asking(7, question, "ou_1")).expect("a card")
+        };
+
+        let card = drawn(&question(false, None));
+        let elements = card["body"]["elements"].as_array().expect("elements");
+        assert_eq!(
+            elements[0]["content"], "<at id=ou_1></at> Read the file?",
+            "the reader is not called"
+        );
+        assert_eq!(elements[1]["tag"], "button", "{card:#}");
+        assert_eq!(
+            elements[1]["behaviors"][0]["value"],
+            json!({ "asked": "7", "by": crate::this_process(), "chosen": "once" })
+        );
+        assert_eq!(elements.len(), 3, "{card:#}");
+
+        let card = drawn(&question(true, Some(("Other".to_string(), false))));
+        let form = &card["body"]["elements"][1];
+        assert_eq!(form["tag"], "form", "{card:#}");
+        assert_eq!(form["elements"][0]["tag"], "multi_select_static");
+        assert_eq!(form["elements"][0]["options"][1]["value"], "never");
+        assert_eq!(form["elements"][1]["tag"], "input");
+        assert_eq!(form["elements"][2]["form_action_type"], "submit");
+        assert_eq!(
+            form["elements"][2]["behaviors"][0]["value"],
+            json!({ "asked": "7", "by": crate::this_process() })
+        );
+
+        // Closed, a question with nothing said about it has no empty
+        // element above what became of it.
+        let closed: Value =
+            serde_json::from_str(&settled("", "\u{2714} Allow once")).expect("a card");
+        assert_eq!(
+            closed["body"]["elements"].as_array().map(Vec::len),
+            Some(1),
+            "{closed:#}"
+        );
+
+        // A name past what a button takes is cut to fit.
+        let mut long = question(false, None);
+        long.choices[0].1 = "a".repeat(200);
+        let card = drawn(&long);
+        let shown = card["body"]["elements"][1]["text"]["content"]
+            .as_str()
+            .unwrap_or_default();
+        assert_eq!(shown.chars().count(), 75, "{card:#}");
+    }
+
+    /// A press is heard as the answer it makes -- arriving, as Feishu sends
+    /// it over the long connection, as an event like any other: a button's
+    /// one id, a form's list -- one or several -- and the words in its box,
+    /// trimmed and only where there are any. A press Feishu sends twice is
+    /// heard once, and one on a card another window put up not at all.
+    ///
+    /// Broken deliberately six ways. Telling a press by the frame rather
+    /// than by the event: every press went to the messages and was dropped.
+    /// Reading only the button's value: the form's choices arrived as nothing
+    /// chosen. Reading a form's list only as several: the single one chosen
+    /// from a list was dropped. Not keeping the ids of what was heard: the
+    /// second sending answered twice. Not reading whose card it was: the
+    /// press on the closed window's card answered this one's question. And
+    /// showing every press the same: that one was told "Sent".
+    #[test]
+    fn a_press_is_heard_as_its_answer() {
+        let (sender, heard) = std::sync::mpsc::channel::<Event>();
+        let sink: Arc<dyn Sink<Event>> = Arc::new(sender);
+        let mut seen = std::collections::VecDeque::new();
+        let by = crate::this_process();
+        let press = |id: &str, action: Value| {
+            json!({
+                "schema": "2.0",
+                "header": { "event_id": id, "event_type": "card.action.trigger" },
+                "event": { "operator": { "open_id": "ou_1" }, "action": action },
+            })
+            .to_string()
+        };
+        let answers = |heard: &std::sync::mpsc::Receiver<Event>| {
+            heard
+                .try_iter()
+                .filter_map(|event| match event {
+                    Event::Answered {
+                        from,
+                        asked,
+                        chosen,
+                        words,
+                    } => Some((from, asked, chosen, words)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+
+        let button = press(
+            "e1",
+            json!({ "value": { "asked": "7", "by": by, "chosen": "once" }, "tag": "button" }),
+        );
+        // What the press is shown at once, out of the answer to the frame.
+        let shown = |answered: &Value| {
+            let data = answered["data"].as_str().unwrap_or_default();
+            let toast = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, data)
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+                .unwrap_or_default();
+            toast["toast"]["content"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string()
+        };
+        assert_eq!(
+            shown(&heard_frame(button.as_bytes(), &mut seen, &sink)),
+            "Sent"
+        );
+        heard_frame(button.as_bytes(), &mut seen, &sink);
+        let elsewhere = heard_frame(
+            press(
+                "e4",
+                json!({ "value": { "asked": "7", "by": "another", "chosen": "never" } }),
+            )
+            .as_bytes(),
+            &mut seen,
+            &sink,
+        );
+        assert_eq!(shown(&elsewhere), "No longer asked");
+        assert_eq!(
+            answers(&heard),
+            [("ou_1".to_string(), 7, vec!["once".to_string()], None)]
+        );
+
+        heard_frame(
+            press(
+                "e2",
+                json!({
+                    "value": { "asked": "8", "by": by },
+                    "form_value": { "chosen": ["app", "ui"], "words": "  the docs too " },
+                }),
+            )
+            .as_bytes(),
+            &mut seen,
+            &sink,
+        );
+        heard_frame(
+            press(
+                "e3",
+                json!({ "value": { "asked": "9", "by": by }, "form_value": { "chosen": "app", "words": "" } }),
+            )
+            .as_bytes(),
+            &mut seen,
+            &sink,
+        );
+        assert_eq!(
+            answers(&heard),
+            [
+                (
+                    "ou_1".to_string(),
+                    8,
+                    vec!["app".to_string(), "ui".to_string()],
+                    Some("the docs too".to_string())
+                ),
+                ("ou_1".to_string(), 9, vec!["app".to_string()], None),
+            ]
+        );
     }
 }
