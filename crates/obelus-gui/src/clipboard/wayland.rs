@@ -110,7 +110,19 @@ struct Watching {
     /// What is being dragged over the window, and whether it is files.
     dragged: Option<(WlDataOffer, bool)>,
     dropped: Dropped,
+    /// Whether the connection may still be used, from a thread that is not
+    /// this one -- see [`receive_the_files`].
+    open: Open,
 }
+
+/// Whether the connection is still Obelus's to use, held while it is used.
+///
+/// A drop's list is read on a thread nobody joins, since it waits on the
+/// program the drag came from and that may never finish. So the thread
+/// takes this before it touches the connection, and [`let_go`] takes it to
+/// say no: whichever comes second sees what the first did, and a thread
+/// that comes second does nothing.
+type Open = Arc<Mutex<bool>>;
 
 /// What it takes to stop the listening thread, kept where the way out can
 /// reach it.
@@ -121,6 +133,7 @@ struct Watching {
 struct Stopper {
     /// Set before the wake, read after it.
     stopping: Arc<AtomicBool>,
+    open: Open,
     /// What the wake is sent on, and the queue its answer comes back to.
     connection: Connection,
     queue: QueueHandle<Watching>,
@@ -139,6 +152,11 @@ pub(crate) fn let_go() {
     let Some(stopper) = STOPPER.lock().ok().and_then(|mut held| held.take()) else {
         return;
     };
+    // First, so a drop still being read cannot reach the connection
+    // after this has given it back.
+    if let Ok(mut open) = stopper.open.lock() {
+        *open = false;
+    }
     // Before the wake: what the wake is for is this being read.
     stopper.stopping.store(true, Ordering::Release);
     stopper.connection.display().sync(&stopper.queue, ());
@@ -180,11 +198,13 @@ impl Clipboard {
         let mut queue = connection.new_event_queue();
         let handle = queue.handle();
         let held = Arc::new(Mutex::new(Held::default()));
+        let open: Open = Arc::new(Mutex::new(true));
         let mut watching = Watching {
             held: Arc::clone(&held),
             seat: None,
             dragged: None,
             dropped,
+            open: Arc::clone(&open),
         };
 
         let _registry = connection.display().get_registry(&handle, ());
@@ -225,6 +245,7 @@ impl Clipboard {
         if let Ok(mut held) = STOPPER.lock() {
             *held = Some(Stopper {
                 stopping,
+                open,
                 connection: connection.clone(),
                 queue: handle.clone(),
                 listening,
@@ -443,7 +464,12 @@ impl Dispatch<WlDataDevice, ()> for Watching {
                     offer.destroy();
                     return;
                 }
-                receive_the_files(&offer, connection, Arc::clone(&state.dropped));
+                receive_the_files(
+                    &offer,
+                    connection,
+                    Arc::clone(&state.dropped),
+                    Arc::clone(&state.open),
+                );
             }
             _ => {}
         }
@@ -477,7 +503,7 @@ impl Dispatch<WlDataOffer, Shapes> for Watching {
 /// read on a thread of its own for the reason a copy is written on one: it
 /// is somebody else's to write, whenever they get round to it, and the
 /// listening thread has the rest of the clipboard to answer meanwhile.
-fn receive_the_files(offer: &WlDataOffer, connection: &Connection, dropped: Dropped) {
+fn receive_the_files(offer: &WlDataOffer, connection: &Connection, dropped: Dropped, open: Open) {
     let (mut reading, writing) = match std::io::pipe() {
         Ok(pipe) => pipe,
         Err(error) => {
@@ -503,6 +529,15 @@ fn receive_the_files(offer: &WlDataOffer, connection: &Connection, dropped: Drop
             if let Err(error) = reading.read_to_end(&mut list) {
                 tracing::warn!(%error, "reading what was dropped");
             }
+            // Held while the connection is used, and nothing used once
+            // Obelus has given it back -- which a source that took its
+            // time, and a reader who quit meanwhile, would otherwise do.
+            let Ok(open) = open.lock() else {
+                return;
+            };
+            if !*open {
+                return;
+            }
             // Said done only once it is, which is what lets the program it
             // came from finish its half: a move deletes the file then.
             if offer.version() >= 3 {
@@ -512,6 +547,7 @@ fn receive_the_files(offer: &WlDataOffer, connection: &Connection, dropped: Drop
             if let Err(error) = connection.flush() {
                 tracing::warn!(%error, "saying a drop is done");
             }
+            drop(open);
             for path in obelus_clipboard::files(&list) {
                 dropped(path);
             }
