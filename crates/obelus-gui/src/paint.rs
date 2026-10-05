@@ -1359,7 +1359,7 @@ impl Painter {
         // Over the text, which it covers: a cap is the shape the cells
         // behind a key are, and it writes the key on itself, smaller than
         // the words beside it.
-        self.caps(page, &capped, panes, fonts);
+        self.caps(page, &capped, panes, &framed, fonts);
         // Over the letters: a switch replaces the glyph standing in for
         // it, rather than sitting beside one.
         self.ticks(page, said.ticked, panes, &framed, &capped, cell);
@@ -1739,25 +1739,12 @@ impl Painter {
     /// two different promises that a theme is entitled to keep in one
     /// colour. What tells them apart is that a cap has already been said,
     /// so it is already drawn as its own shape.
+    ///
+    /// Except a cap said to be standing *on* the hold, which a row the
+    /// reader is on offers its key in: that is part of the plate, and cut
+    /// out of it the row was two plates with a square between them.
     fn holds(&self, page: &Page, row: u16, capped: &[&Capped]) -> Vec<(u16, u16, Color)> {
-        let (held, chosen) = self.holding;
-        let mut found = Vec::new();
-        for (start, end, colour) in runs(page, row) {
-            if colour != held && colour != chosen {
-                continue;
-            }
-            let mut caps: Vec<(u16, u16)> = capped
-                .iter()
-                .filter(|cap| cap.area.y == row)
-                .map(|cap| (cap.area.x, cap.area.right()))
-                .collect();
-            found.extend(
-                without(start, end, &mut caps)
-                    .into_iter()
-                    .map(|(from, to)| (from, to, colour)),
-            );
-        }
-        found
+        held_runs(page, row, self.holding, capped)
     }
 
     /// What the reader has hold of, drawn as a plate rather than a square.
@@ -2751,25 +2738,39 @@ impl Painter {
     /// three sides and further in at the bottom, so what is left showing
     /// under it is a lip. Which is the whole of the trick a keyboard's own
     /// keys use.
-    fn caps(&mut self, page: &Page, capped: &[&Capped], panes: &[&Behind], fonts: &mut Fonts) {
+    fn caps(
+        &mut self,
+        page: &Page,
+        capped: &[&Capped],
+        panes: &[&Behind],
+        framed: &[&Behind],
+        fonts: &mut Fonts,
+    ) {
         for cap in capped {
+            // A cap on a hold stands on its plate, and a face in the
+            // colour the cells wear would be a shade off the plate round
+            // it -- see `held_face`.
+            let held = self.held_face(page, cap.area, panes, framed, capped);
             // What the cells said, put back: the corners this is about to
             // round away are painted in the cap's own ground, and a cap
             // drawn over them would have square shoulders. Unless what is
-            // behind the cap is glass, which is already there and is the
-            // right thing to show round a corner.
-            let put_back = !seen_through(panes, cap.area.x, cap.area.y, cap.page);
-            self.cap(cap, |x, y| Some(page.look(x, y)), put_back, fonts);
+            // behind the cap is glass or a plate, which is already there
+            // and is the right thing to show round a corner.
+            let put_back = held.is_none() && !seen_through(panes, cap.area.x, cap.area.y, cap.page);
+            let on = held.filter(|_| cap.cap == cap.page);
+            self.cap(cap, |x, y| Some(page.look(x, y)), put_back, on, fonts);
         }
     }
 
     /// One cap, out of whichever cells it was said about: the page's, or
-    /// the picture of what a pane was put over.
+    /// the picture of what a pane was put over -- and `on`, the face of
+    /// the plate it stands on, where it stands on one.
     fn cap<'a>(
         &mut self,
         cap: &Capped,
         look: impl Fn(u16, u16) -> Option<Look<'a>>,
         put_back: bool,
+        on: Option<[f32; 4]>,
         fonts: &mut Fonts,
     ) {
         let cell = fonts.cell();
@@ -2812,7 +2813,7 @@ impl Painter {
             (drawn - 2.0).max(1.0),
             face,
             (radius - 1.0).max(0.0),
-            rgba(cap.cap, Ink::Background),
+            on.unwrap_or_else(|| rgba(cap.cap, Ink::Background)),
         );
         self.legend(
             cap,
@@ -2932,7 +2933,7 @@ impl Painter {
         // through the glass -- see `Capped::still_behind`. Put back on
         // their own ground always, since nothing is behind the picture.
         for cap in capped.iter().filter(|cap| cap.still_behind(behind)) {
-            self.cap(cap, |x, y| behind.look(x, y), true, fonts);
+            self.cap(cap, |x, y| behind.look(x, y), true, None, fonts);
         }
     }
 
@@ -4197,6 +4198,34 @@ fn lettered_behind(under: Look<'_>, barred: &[Barred], x: u16, y: u16) -> bool {
             let area = showing.bar.area;
             (area.left()..area.right()).contains(&x) && (area.top()..area.bottom()).contains(&y)
         })
+}
+
+/// The runs of one row the reader has hold of -- see `Drawing::holds`,
+/// which is this with the colours of a hold handed in.
+fn held_runs(
+    page: &Page,
+    row: u16,
+    holding: (Color, Color),
+    capped: &[&Capped],
+) -> Vec<(u16, u16, Color)> {
+    let (held, chosen) = holding;
+    let mut found = Vec::new();
+    for (start, end, colour) in runs(page, row) {
+        if colour != held && colour != chosen {
+            continue;
+        }
+        let mut caps: Vec<(u16, u16)> = capped
+            .iter()
+            .filter(|cap| cap.area.y == row && cap.page != colour)
+            .map(|cap| (cap.area.x, cap.area.right()))
+            .collect();
+        found.extend(
+            without(start, end, &mut caps)
+                .into_iter()
+                .map(|(from, to)| (from, to, colour)),
+        );
+    }
+    found
 }
 
 fn seen_through(panes: &[&Behind], x: u16, y: u16, colour: Color) -> bool {
@@ -5889,6 +5918,44 @@ mod tests {
         assert_eq!(without(3, 6, &mut [(0, 4)]), vec![(4, 6)]);
         assert!(without(3, 6, &mut [(0, 9)]).is_empty(), "all of it");
         assert_eq!(without(3, 6, &mut []), vec![(3, 6)], "none of it");
+    }
+
+    /// A cap standing on a hold is part of its plate, and a cap a shade
+    /// off the page in the hold's colour is not.
+    ///
+    /// Deliberate break: drop `cap.page != colour` from `held_runs`. The
+    /// row a conversation offers enter on is then two plates, each with a
+    /// rounded end and a rim, and a square of the raw colour between them
+    /// where the cap is -- which is what the reader saw.
+    #[test]
+    fn a_cap_on_a_hold_does_not_cut_it_in_two() {
+        let page = page("a  Enter  b");
+        let held = Color::Rgb(1, 2, 3);
+        let holding = (held, Color::Rgb(4, 5, 6));
+        let cap = |page: Color| Capped {
+            keys: "Enter".to_string(),
+            area: ratatui::layout::Rect {
+                x: 2,
+                y: 0,
+                width: 7,
+                height: 1,
+            },
+            cap: held,
+            page,
+            edge: Color::Rgb(7, 8, 9),
+        };
+        let on = cap(held);
+        assert_eq!(
+            held_runs(&page, 0, holding, &[&on]),
+            vec![(0, 11, held)],
+            "the row the reader is on, with its key on it"
+        );
+        let off = cap(Color::Rgb(0, 0, 0));
+        assert_eq!(
+            held_runs(&page, 0, holding, &[&off]),
+            vec![(0, 2, held), (9, 11, held)],
+            "a key at the foot, whose cap is the hold's colour by chance"
+        );
     }
 
     /// A page with one column of text down it, for asking about a shape
