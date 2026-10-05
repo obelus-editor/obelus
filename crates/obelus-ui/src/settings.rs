@@ -245,6 +245,9 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
         Some(Shown::Remote { row: RemoteRow::Field(field), .. })
             if settings.reached().kept.contains_key(field.key)
     );
+    // Delete is the filter's while the filter has something for it, so
+    // nothing below says what it does to a row until then.
+    let rows_delete = !settings.delete_is_the_filters();
     vec![
         Hint::common(bare(KeyCode::Enter), enter)
             .saying(saying)
@@ -254,16 +257,21 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
             .when(settings.row_count(offering) > 0 && !pairing_waits),
         Hint::common(bare(KeyCode::Delete), "Forget")
             .saying("Take this out of the keyring, or out of the settings")
-            .when(forgets),
+            .when(forgets && rows_delete),
         // On an agent's row, and only while there is something to undo:
         // what `delete` leaves there is not a default of Obelus's but the
         // agent's own answer.
         Hint::common(bare(KeyCode::Delete), AGENTS_OWN)
             .saying("Stop saying what this one starts on, and leave it to the agent")
-            .when(focused.is_some()),
+            .when(focused.is_some() && rows_delete),
         Hint::common(bare(KeyCode::Delete), "Unset")
             .saying("Take this setting out of the project's file")
-            .when(settings.on_project() && !settings.on_keys() && !settings.on_agents()),
+            .when(
+                rows_delete
+                    && settings.on_project()
+                    && !settings.on_keys()
+                    && !settings.on_agents(),
+            ),
         // The card's, not the foot's: see `crate::foot`.
         Hint::rare(bare(KeyCode::Esc), "Leave").saying("Leave the settings"),
     ]

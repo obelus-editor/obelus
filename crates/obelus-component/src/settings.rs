@@ -827,6 +827,13 @@ impl Settings {
         self.query.held()
     }
 
+    /// Whether delete is the filter's just now rather than the row's: it
+    /// has something held, or something in front of its caret.
+    #[must_use]
+    pub fn delete_is_the_filters(&self) -> bool {
+        self.query.takes_a_delete()
+    }
+
     /// Puts a run of text into it, which is what a paste is.
     pub fn put_in_query(&mut self, said: &str, offering: Option<&Offering>) {
         self.query.put(said);
@@ -1424,13 +1431,22 @@ impl Settings {
             }
             // Whatever the page did not want goes to the filter, which is
             // a line with a caret in it and takes the keys a line takes.
-            _ => match self.query.handle_key(key) {
-                true => {
-                    self.settle(offering);
-                    SettingsOutcome::Consumed
+            //
+            // The page is settled again only where what is typed changed:
+            // a caret moved along the filter moved no row, and settling
+            // takes the page back to its first.
+            _ => {
+                let said = self.query.said();
+                match self.query.handle_key(key) {
+                    true => {
+                        if self.query.said() != said {
+                            self.settle(offering);
+                        }
+                        SettingsOutcome::Consumed
+                    }
+                    false => SettingsOutcome::Ignored,
                 }
-                false => SettingsOutcome::Ignored,
-            },
+            }
         }
     }
 

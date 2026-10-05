@@ -456,3 +456,35 @@ fn shift_and_an_end_hold_in_the_settings_over_their_rows() {
         "home went to the page rather than to the start of the filter"
     );
 }
+
+/// Moving the caret along a filter moves no row of the list under it.
+///
+/// Both the settings and the projects took the reader back to the first
+/// row whenever the filter took a key -- which was harmless while the only
+/// keys it took changed what was typed, and is not once home and end are
+/// the caret's: a reader on a row who moved the caret lost the row.
+///
+/// Deliberate breaks: the settings settled whatever the key did, and the
+/// projects' `at` put back to nought whatever the key did -- each is back
+/// on the first row.
+#[test]
+fn moving_a_filters_caret_moves_no_row() {
+    let scratch = support::Scratch::new("selecting-caret-rows");
+    let mut app = on_a_file(&scratch);
+    dispatch::dispatch(&mut app, Command::ConfigOpen);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Down);
+    let focus = |app: &App| app.settings().expect("the settings").focus();
+    let was = focus(&app);
+    assert_ne!(was, 0, "down did not move");
+    support::press(&mut app, KeyCode::End);
+    chord(&mut app, KeyCode::Home, KeyModifiers::SHIFT);
+    assert_eq!(focus(&app), was, "the settings' row moved with the caret");
+
+    let mut app = asking(&scratch);
+    support::press(&mut app, KeyCode::Down);
+    let at = |app: &App| app.choosing().expect("being asked").at;
+    assert_eq!(at(&app), 1, "down did not move");
+    support::press(&mut app, KeyCode::Home);
+    assert_eq!(at(&app), 1, "the projects' row moved with the caret");
+}

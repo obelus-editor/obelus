@@ -389,7 +389,7 @@ impl super::App {
     ///
     /// Answers whether it was taken. What is not taken falls to the
     /// ordinary lookup, which finds this a dialog and so offers only what
-    /// `Context::Dialog` binds -- leaving, and the three keys that act on
+    /// `Context::Dialog` binds -- leaving, and the four keys that act on
     /// what the reader has hold of. Everything else in Obelus is about a
     /// project and `Requires::AProject` refuses it.
     pub(super) fn choosing_a_project(&mut self, key: &KeyEvent) -> bool {

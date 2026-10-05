@@ -558,16 +558,7 @@ pub fn prompt_row(
     // What is held, marked where it is: the prefix in front of the
     // query is not part of what was typed, so the run moves right by
     // however wide that is.
-    let marked = match picker.query_held() {
-        Some(held) => {
-            let ahead = typed(picker.question(), "").chars().count();
-            Marked::run(
-                held.start + ahead..held.end + ahead,
-                theme.selection_background,
-            )
-        }
-        None => Marked::plain(),
-    };
+    let marked = held_after(picker.query_held(), &typed(picker.question(), ""), theme);
     write_marked(cells, area, area.x + 1, area.y, &line, style, &marked);
     hint(
         cells,
@@ -1027,16 +1018,7 @@ impl StatusView<'_> {
         style: Style,
     ) {
         let said = settings.query();
-        let marked = match settings.query_held() {
-            Some(held) => {
-                let ahead = typed(None, "").chars().count();
-                Marked::run(
-                    held.start + ahead..held.end + ahead,
-                    self.theme.selection_background,
-                )
-            }
-            None => Marked::plain(),
-        };
+        let marked = held_after(settings.query_held(), &typed(None, ""), self.theme);
         write_marked(
             cells,
             area,

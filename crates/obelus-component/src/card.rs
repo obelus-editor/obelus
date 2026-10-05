@@ -862,8 +862,9 @@ impl Card {
                 KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End
             )
         {
+            // Swallowed elsewhere on the card, for the reason below.
             if self.on != On::Words {
-                return CardOutcome::Ignored;
+                return CardOutcome::Consumed;
             }
             self.write(|composer| {
                 composer.handle_key(key, width.max(1));
@@ -963,6 +964,13 @@ impl Card {
                 self.write(|composer| composer.insert(character));
                 CardOutcome::Consumed
             }
+            // The keys that move about the words, on a row that is not
+            // them: swallowed rather than let through, because what they
+            // would reach is the box under the card -- and the caret and
+            // the hold there are a message nobody can see. Shift and an
+            // end there held the whole of a waiting draft, and the next
+            // letter after the card typed over it.
+            KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End => CardOutcome::Consumed,
             // And rubbing out is writing too, so it goes where typing goes
             // -- where there is anything written to rub out. Otherwise it
             // is swallowed, for the reason a character is on a card with no
@@ -1358,6 +1366,43 @@ mod tests {
         for code in [KeyCode::Backspace, KeyCode::Delete] {
             assert_eq!(card.handle_key(&key(code), ROOM), CardOutcome::Consumed);
         }
+    }
+
+    /// The keys that move about the words are swallowed on a row that is
+    /// not them, with or without shift, and with control and shift.
+    ///
+    /// They used to be let through, and what is under a card is the box a
+    /// message is written in: control, shift and home on an answer took
+    /// hold of the whole of a draft waiting there, and the first letter
+    /// typed after the card went over it.
+    ///
+    /// Deliberate breaks: the control-and-shift arm answering `Ignored`
+    /// off the words, as it did; and the arm that swallows the rest taken
+    /// out.
+    #[test]
+    fn the_keys_of_the_words_do_not_leave_the_card() {
+        let mut card = Card::new(answers(), false);
+        card.writing("Other", false, None);
+        assert_eq!(card.on(), On::Choice(0));
+        for code in [KeyCode::Left, KeyCode::Right, KeyCode::Home, KeyCode::End] {
+            for held in [
+                KeyModifiers::NONE,
+                KeyModifiers::SHIFT,
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            ] {
+                assert_eq!(
+                    card.handle_key(&KeyEvent::new(code, held), ROOM),
+                    CardOutcome::Consumed,
+                    "{held:?} and {code:?} left the card"
+                );
+            }
+        }
+        // But control alone and an end is the transcript's, which is
+        // nothing of the box's.
+        assert_eq!(
+            card.handle_key(&KeyEvent::new(KeyCode::End, KeyModifiers::CONTROL), ROOM),
+            CardOutcome::Ignored
+        );
     }
 
     /// A line in the box is asked for the way it is asked for in the box a

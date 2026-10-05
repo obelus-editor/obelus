@@ -965,19 +965,15 @@ fn delete_takes_a_setting_out_and_leaves_the_heading() {
 /// filter now, and a delete pressed to take a letter out took a setting
 /// out instead.
 ///
-/// Deliberate break: the `takes_a_delete` guard taken off the project's
-/// arm, and the first delete takes `wrap` out of the file.
+/// Deliberate breaks: the `takes_a_delete` guard taken off the project's
+/// arm, and the first delete takes `wrap` out of the file; `rows_delete`
+/// taken off the foot's `Unset`, and it is offered over the filter.
 #[test]
 fn delete_takes_a_letter_out_of_the_filter_before_a_setting_out_of_the_file() {
     let _turn = SETTINGS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let root = project(
-        "Unset-filter",
-        "wrap = true
-blame_margin = true
-",
-    );
+    let root = project("delete-filter", "wrap = true\nblame_margin = true\n");
 
     let mut app = App::new(vec![support::open_fixture("sample.rs")]);
     app.configure(obelus_config::Config::default(), Vec::new());
@@ -988,13 +984,27 @@ blame_margin = true
     let written =
         || std::fs::read_to_string(root.join(".obelus").join("config.toml")).expect("the file");
 
+    let foot = |app: &mut App| support::text_block(&support::render(app, 76, 16)).to_string();
+
+    // And the foot says so: what delete does to the row is not offered
+    // while delete is the filter's.
     support::press(&mut app, KeyCode::Home);
+    let text = foot(&mut app);
+    assert!(
+        !word_on(&text, "Unset"),
+        "the foot offers to unset while delete is the filter's:\n{text}"
+    );
     support::press(&mut app, KeyCode::Delete);
     assert_eq!(app.settings().expect("the settings").query(), "rap");
     assert!(written().contains("wrap = true"), "a letter cost a setting");
 
     // With nothing in front of the caret, it is the row's again.
     support::press(&mut app, KeyCode::End);
+    let text = foot(&mut app);
+    assert!(
+        word_on(&text, "Unset"),
+        "the foot no longer offers to unset:\n{text}"
+    );
     support::press(&mut app, KeyCode::Delete);
     assert!(!written().contains("wrap"), "still there: {:?}", written());
 }

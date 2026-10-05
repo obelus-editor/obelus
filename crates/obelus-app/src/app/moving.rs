@@ -373,9 +373,7 @@ impl App {
         // written in: before this, a copy over a card took what was in the
         // box nobody could see. What is held in the transcript above it
         // still comes first where the card holds nothing.
-        if let Some(card) = self.card()
-            && card.takes_words()
-        {
+        if let Some(card) = self.card() {
             let transcript = self.chat().and_then(|chat| chat.held_text(width));
             let copied = match (card.selected(), transcript) {
                 (Some(held), _) => Some((held, "selection")),

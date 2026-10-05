@@ -2191,7 +2191,7 @@ impl App {
     /// would reach.
     pub(crate) fn context(&self) -> Context {
         // Being asked which project is a dialog like any other, and takes
-        // what `Context::Dialog` binds: leaving, and the three keys that
+        // what `Context::Dialog` binds: leaving, and the four keys that
         // act on what the reader has hold of -- a box they can select in
         // and not paste into is half a box. Everything else in Obelus is
         // about a project, and `Requires::AProject` is what refuses it.
