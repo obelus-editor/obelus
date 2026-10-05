@@ -2892,8 +2892,11 @@ impl App {
                     // written by another Obelus -- or by this one, which
                     // hears its own writes like anybody else's and has
                     // already kept what it wrote. Reading it again costs
-                    // one parse and keeps the two windows in step.
+                    // one parse and keeps the two windows in step. And the
+                    // list of conversations reads it too, for the name each
+                    // goes by.
                     self.reread_the_sessions();
+                    self.say_the_new_name();
                 } else if ours && self.is_the_notes_file(&path) {
                     // What the project means to come back to, written by
                     // another Obelus, the reader's own editor -- or by this

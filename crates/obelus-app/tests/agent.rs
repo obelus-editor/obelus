@@ -5091,7 +5091,7 @@ fn a_list_over_a_question_covers_it_until_it_goes() {
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentList);
     let dump = support::render(&mut app, WIDTH, HEIGHT);
     assert!(
-        rows(&dump).iter().any(|row| row.contains("A conversation")),
+        rows(&dump).iter().any(|row| row.contains("/twice")),
         "the list of open documents did not open:\n{dump}"
     );
     assert!(
@@ -5724,6 +5724,253 @@ fn a_conversation_an_agent_closes_is_named_and_leaves_the_list() {
         !listed,
         "the closed conversation is still a row of the list"
     );
+}
+
+/// A conversation about no note goes by the reader's first words in the
+/// list of what is open until its agent names it, and by the agent's name
+/// after.
+///
+/// The agent names one at the end of its first turn, and a first turn can
+/// run for minutes: two of them side by side were two rows both saying
+/// `A conversation`.
+///
+/// Broken deliberately twice in `App::conversation_name`: without the first
+/// words the row reads `A conversation`; and asking for them before the
+/// agent's name keeps them after it has named the conversation.
+#[test]
+fn a_conversation_goes_by_its_first_words_until_it_is_named() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    fn labels(app: &mut App) -> Vec<String> {
+        obelus_app::app::dispatch::dispatch(app, obelus_command::Command::DocumentList);
+        let labels = app
+            .picker()
+            .expect("the list of what is open")
+            .matches()
+            .map(|item| item.label.clone())
+            .collect();
+        support::press(app, KeyCode::Esc);
+        labels
+    }
+
+    support::type_text(&mut app, "/titled   about the   counts");
+    support::press(&mut app, KeyCode::Enter);
+    let before = labels(&mut app);
+    assert!(
+        before
+            .iter()
+            .any(|label| label == "/titled about the counts"),
+        "the conversation does not go by what the reader first said: {before:?}"
+    );
+
+    pump(&mut app, &events, "the turn to end", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    let after = labels(&mut app);
+    assert!(
+        after.iter().any(|label| label == "Renamed by the agent"),
+        "the agent's name did not take over from the first words: {after:?}"
+    );
+}
+
+/// Where the conversation an agent closes goes by a long name, the line
+/// saying so cuts the name rather than going unsaid.
+///
+/// The name can be a whole line of the reader's, and the status row drops
+/// a sentence it cannot hold -- after squeezing the file's name out of the
+/// row to make room for it.
+///
+/// Broken deliberately by saying the name whole in
+/// `close_the_conversation`.
+#[test]
+fn a_long_name_is_cut_where_its_closing_is_said() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    let long = format!("/cost {}", "and the counts ".repeat(10));
+    support::type_text(&mut app, &long);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer", |app| {
+        said_in_transcript(app, "ran cost") && app.talking() == obelus_agent::Talking::Ready
+    });
+
+    assert_eq!(close_it(&mut app, 0), "closed");
+    let said = app.note().expect("nothing said about the closing");
+    assert!(
+        said.starts_with("Closed /cost and the counts") && said.ends_with('\u{2026}'),
+        "the closing named it some other way: {said:?}"
+    );
+    assert!(
+        // Characters for columns, which this name's are.
+        said.chars().count() <= "Closed ".len() + 40,
+        "the name went on the row whole: {said:?}"
+    );
+}
+
+/// A name the agent gives while the list of what is open is up is said on
+/// that list at once, with the reader still on the row they had moved to.
+///
+/// The list's rows are built when it opens, so it went on saying the first
+/// words until it was shut and opened again.
+///
+/// Broken deliberately twice: taking `say_the_new_name` out of the arm for
+/// `Titled` leaves the first words up until this gives up; and taking the
+/// choosing of the row out of `relist_switching` puts the reader back on the
+/// conversation.
+#[test]
+fn a_name_given_while_the_open_list_is_up_is_said_on_it() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    app.open_for_test(Path::new("src/lib.rs"));
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationNew);
+    support::type_text(&mut app, "/titled about the counts");
+    support::press(&mut app, KeyCode::Enter);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentList);
+    let on_the_file = |app: &App| {
+        app.picker()
+            .and_then(obelus_component::picker::Picker::selected_item)
+            .is_some_and(|item| item.label.contains("lib.rs"))
+    };
+    for _ in 0..4 {
+        if on_the_file(&app) {
+            break;
+        }
+        support::press(&mut app, KeyCode::Down);
+    }
+    assert!(on_the_file(&app), "the file is not a row of the list");
+
+    pump(&mut app, &events, "the name on the list", |app| {
+        app.picker().is_some_and(|picker| {
+            picker
+                .matches()
+                .any(|item| item.label == "Renamed by the agent")
+        })
+    });
+    assert!(
+        on_the_file(&app),
+        "the name moved the reader off the row they were on"
+    );
+}
+
+/// The list of conversations names one open here the way the list of what
+/// is open does -- by the reader's first words before the agent has named
+/// it -- and says the agent's name at once when it comes, with the reader
+/// still on that row.
+///
+/// Broken deliberately three ways: building its label from the table alone
+/// reads `Untitled` before the name; taking `say_the_new_name` out of the
+/// arm for `Titled` leaves the first words up until this gives up; and
+/// taking the choosing of the row out of `say_the_new_name` puts the reader
+/// on `New conversation`.
+#[test]
+fn the_list_of_conversations_says_a_name_given_while_it_is_up() {
+    // A project of its own, because the list is of what is written down
+    // about one.
+    let scratch = support::Scratch::new("agent-conversations-named-while-up");
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    app.new_conversation();
+    app.open_a_session_for_test();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/titled about the counts");
+    support::press(&mut app, KeyCode::Enter);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
+    let labels = |app: &App| -> Vec<String> {
+        listed_conversations(app)
+            .into_iter()
+            .map(|item| item.label.clone())
+            .collect()
+    };
+    assert_eq!(labels(&app), ["/titled about the counts"]);
+
+    pump(&mut app, &events, "the name on the list", |app| {
+        labels(app) == ["Renamed by the agent"]
+    });
+    let on = app
+        .picker()
+        .and_then(obelus_component::picker::Picker::selected_item)
+        .map(|item| item.label.clone());
+    assert_eq!(
+        on.as_deref(),
+        Some("Renamed by the agent"),
+        "the name moved the reader off the row they were on"
+    );
+}
+
+/// And a name another window writes down, heard through a watch the list
+/// of conversations took itself.
+///
+/// Nothing is delivered by hand: what has to happen is that the table being
+/// written reaches this application while the list is up.
+///
+/// Broken deliberately twice: watching the table for the notes alone in
+/// `settle_the_watches`, and taking `say_the_new_name` out of the
+/// watcher's arm for the table. Either way the old name stays and this
+/// gives up.
+#[test]
+fn the_list_of_conversations_hears_a_name_written_elsewhere() {
+    let scratch = support::Scratch::new("agent-conversations-real-table-watch");
+    let (sender, events) = std::sync::mpsc::channel();
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.agents_root_for_test(agents_root());
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    remember_a_conversation(
+        &scratch,
+        "fake",
+        "s-theirs",
+        "old name",
+        Some(lately(1_000)),
+    );
+    app.start(sender);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    let labels = |app: &App| -> Vec<String> {
+        listed_conversations(app)
+            .into_iter()
+            .map(|item| item.label.clone())
+            .collect()
+    };
+    assert_eq!(labels(&app), ["old name"]);
+
+    remember_a_conversation(
+        &scratch,
+        "fake",
+        "s-theirs",
+        "new name",
+        Some(lately(2_000)),
+    );
+    pump(&mut app, &events, "the new name to be heard", |app| {
+        labels(app) == ["new name"]
+    });
 }
 
 /// A project that has chosen a workflow says so in the first message -- and
@@ -7257,7 +7504,7 @@ fn the_list_of_open_documents_says_what_is_happening_now() {
     let row = |dump: &str| {
         rows(dump)
             .iter()
-            .find(|row| row.contains("A conversation"))
+            .find(|row| row.contains("/run"))
             .unwrap_or_else(|| panic!("no row for the conversation:\n{dump}"))
             .to_string()
     };

@@ -208,10 +208,16 @@ impl App {
     }
 
     /// What a conversation is called: the agent's name for it, or the note
-    /// it is about, where it has either.
+    /// it is about, or the reader's first words, where it has any of them.
     ///
     /// The one answer, which the list of what is open and the line saying
     /// one was closed both read, so the two cannot call it different things.
+    ///
+    /// The first words are for the wait before the agent names it, which is
+    /// the whole of the first turn, and a first turn can run for minutes --
+    /// two of them side by side were two rows both saying `A conversation`.
+    /// They are shown and never written down: the name kept for a
+    /// conversation is the agent's.
     pub(super) fn conversation_name(
         &self,
         talk: &crate::conversation::Conversation,
@@ -219,6 +225,7 @@ impl App {
     ) -> Option<String> {
         self.conversation_title(talk)
             .or_else(|| Self::conversation_about(talk, notes))
+            .or_else(|| talk.chat.first_words())
     }
 
     /// What the agent calls a conversation: what it has said, or what

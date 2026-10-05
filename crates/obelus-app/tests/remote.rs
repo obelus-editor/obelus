@@ -970,7 +970,7 @@ fn the_name_an_agent_gives_is_the_threads() {
         said.iter().any(|out| matches!(
             out,
             obelus_remote::model::Out::Retitle { head, .. }
-                if head.title == "A conversation"
+                if head.title == "/titled"
                     && head.state == Some(obelus_remote::model::Turning::Working)
         )),
         "the head moved before the thread was there, and the thread never heard: {said:#?}"

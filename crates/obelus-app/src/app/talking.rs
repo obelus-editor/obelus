@@ -1770,8 +1770,11 @@ impl App {
             self.conversation_name(talk, &notes)
         });
         self.close(id);
+        // Bounded the way a path said on this row is (`named`): the name
+        // can be a whole line of the reader's, and a sentence the row cannot
+        // hold squeezes the file's name out of it or is not said at all.
         self.say(match named {
-            Some(named) => format!("Closed {named}"),
+            Some(named) => format!("Closed {}", obelus_ui::truncate_from_right(&named, 40)),
             None => "Closed the conversation".to_string(),
         });
         // And out of the list of what is open, where that is showing: a
@@ -3466,6 +3469,7 @@ impl App {
                 acp::Update::Titled(_) => {
                     self.remember_the_conversations();
                     self.mirror_head(whose, None);
+                    self.say_the_new_name();
                 }
                 // Kept by the handle, which is where the view reads them:
                 // these are facts about the agent rather than things it
