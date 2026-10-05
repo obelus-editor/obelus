@@ -440,6 +440,81 @@ fn an_agent_not_yet_started_is_called_what_the_registry_calls_it() {
     assert_eq!(app.agent_name(), Some("Claude Agent"));
 }
 
+/// The list of what is open says whose a conversation is by what the
+/// agent calls itself, as the conversation's header does.
+///
+/// With no registry read, which is how a window starts: it is read only
+/// once the agents page asks for it, so a name taken from it alone is the
+/// id on every screen that has not been to that page.
+///
+/// Broken deliberately twice in `App::whose_conversation`: answering with
+/// `talker.id()`, and with `agent_called(talker.id())` -- both read
+/// `fake`.
+#[test]
+fn an_open_conversation_says_whose_it_is_by_the_agents_own_name() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentList);
+    let whose: Vec<Option<&str>> = app
+        .picker()
+        .expect("the list of what is open")
+        .matches()
+        .filter(|item| item.label == "A conversation")
+        .map(|item| item.trailing.as_deref())
+        .collect();
+    assert_eq!(whose, [Some("Fake Agent")]);
+}
+
+/// Before the agent has said who it is, the row calls it what the registry
+/// does, as the header does then -- and once it has said, the row says
+/// that, while the list is still up.
+///
+/// The list is open across the handshake because that is the moment the
+/// name moves, and rows are built once when a list opens.
+///
+/// Broken deliberately twice: answering `talker.info()` or the id in
+/// `App::whose_conversation`, skipping the registry, reads `fake` before
+/// the handshake; and dropping `item.trailing = now.trailing` from
+/// `Picker::remark` leaves `The fixture` after it.
+#[test]
+fn an_open_conversation_is_called_what_its_agent_is_called_now() {
+    let (mut app, events) = talking();
+    // The agent chosen, which is whose registry entry is asked for; and no
+    // pump, so the handshake that would name it has not been heard.
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    the_fixture_is_listed(&mut app);
+    fn whose(app: &App) -> Vec<Option<String>> {
+        app.picker()
+            .expect("the list of what is open")
+            .matches()
+            .filter(|item| item.label == "A conversation")
+            .map(|item| item.trailing.clone())
+            .collect()
+    }
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentList);
+    assert_eq!(whose(&app), [Some("The fixture".to_string())]);
+
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        whose(&app),
+        [Some("Fake Agent".to_string())],
+        "the row went on saying what it said before the agent named itself"
+    );
+}
+
 /// One whole turn: the handshake, a prompt, what comes back while it works,
 /// a file read through Obelus, a permission request, and the end.
 #[test]

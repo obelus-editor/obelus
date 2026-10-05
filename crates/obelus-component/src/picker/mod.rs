@@ -281,12 +281,19 @@ pub enum Remark {
 /// list asking, for the mark that turns while an agent works; the list of
 /// conversations needs the lock and whether the key works on that row,
 /// which are one fact wearing two faces.
+///
+/// And the words at its end, which are about the row and not matched by
+/// the query: the list of open documents names whose a conversation is
+/// there, and the agent's own name for itself arrives with its handshake,
+/// which can be after the list opened.
 #[derive(Clone, Debug)]
 pub struct Said {
     /// The mark, or none at all.
     pub marker: Option<(Marking, String)>,
     /// Whether the key works on it here.
     pub enabled: bool,
+    /// The words at the row's end, or none.
+    pub trailing: Option<String>,
 }
 
 /// One row.
@@ -1556,6 +1563,7 @@ impl Picker {
             if let Remark::Now(now) = mark(&item.value) {
                 item.marker = now.marker;
                 item.enabled = now.enabled;
+                item.trailing = now.trailing;
             }
         }
         // The column is kept for whichever rows have one, and whether any

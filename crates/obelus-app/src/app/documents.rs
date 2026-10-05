@@ -112,6 +112,7 @@ impl App {
         // Worked out before the list is borrowed to change, because both
         // halves are this application's.
         let talker = self.talker.as_ref();
+        let whose = self.whose_conversation();
         let marks: Vec<(DocumentId, Option<(Marking, String)>)> = self
             .documents
             .iter()
@@ -137,10 +138,25 @@ impl App {
                     Remark::Now(obelus_component::picker::Said {
                         marker: mark.clone(),
                         enabled: true,
+                        trailing: whose.clone(),
                     })
                 }),
             _ => Remark::Keep,
         });
+    }
+
+    /// Whose an open conversation is, at the end of its row.
+    ///
+    /// By the name the conversation's header calls the agent, and through
+    /// the same function, so the two cannot drift: the id is a word for the
+    /// settings file. Asked again on every frame the list is up, because
+    /// the agent's own name arrives with its handshake, which can be after
+    /// the list opened.
+    fn whose_conversation(&self) -> Option<String> {
+        self.talker
+            .as_ref()
+            .and(self.agent_name())
+            .map(str::to_string)
     }
 
     /// One row for an open conversation.
@@ -177,7 +193,7 @@ impl App {
             // Whose conversation it is. The same slot a commit's short id
             // uses, for the same reason: two rows that differ in who is
             // answering are two rows a reader cannot otherwise tell apart.
-            trailing: talker.map(|talker| talker.id().to_string()),
+            trailing: self.whose_conversation(),
             changed: None,
             value: PickerValue::Document(DocumentId::new(index)),
             enabled: true,

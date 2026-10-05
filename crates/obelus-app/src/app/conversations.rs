@@ -249,6 +249,9 @@ struct Listed {
     /// in a conversation of its own: so it is never the one open here, and
     /// a lock on the note is not a lock on it.
     there: bool,
+    /// Which checkout and when, as the row was built: nothing a frame
+    /// asks again moves it.
+    trailing: Option<String>,
 }
 
 impl App {
@@ -559,6 +562,7 @@ impl App {
                         session: kept.session.clone(),
                         open,
                         there: there.is_some(),
+                        trailing: item.trailing.clone(),
                     },
                     item,
                 )
@@ -629,6 +633,7 @@ impl App {
                 Said {
                     marker: self.listed_mark(open, elsewhere),
                     enabled: mine && !listed.there && !elsewhere,
+                    trailing: listed.trailing.clone(),
                 }
             })
             .collect();
