@@ -3034,9 +3034,8 @@ impl Chat {
             // everywhere else in Obelus. On a row that is only words it
             // does nothing, because there is nothing there to do.
             KeyCode::Enter if bare => {
-                let row = laid
-                    .get(Row::acting(&laid, at.row).map_or(at.row, |on| on.start))
-                    .cloned();
+                let start = Row::acting(&laid, at.row).map_or(at.row, |on| on.start);
+                let row = laid.get(start).cloned();
                 match row {
                     Some(row) => match (row.unsent, row.again, row.folds, row.place, row.away) {
                         // Something they said that has not gone: one of
@@ -3065,8 +3064,23 @@ impl Chat {
                         (None, None, Some(begins), _, _) => {
                             self.fold(begins);
                             // The heading stays under the reader: what
-                            // moved is what is below it.
-                            self.show_to(at.row, laid.len(), room);
+                            // moved is what is below it. And so does the
+                            // row they pressed it on, unless the fold took
+                            // it: a title closes to fewer rows than it has
+                            // open, and the key is answered on all of them,
+                            // so the cursor goes to the first of them
+                            // rather than staying on a number that is now
+                            // the next thing said.
+                            let laid = self.rows(room.reading);
+                            let kept =
+                                Row::acting(&laid, at.row).is_some_and(|on| on.start == start);
+                            if !kept {
+                                self.focus = Focus::Transcript(Place {
+                                    row: start,
+                                    character: 0,
+                                });
+                            }
+                            self.show_to(if kept { at.row } else { start }, laid.len(), room);
                             Some(ChatOutcome::Consumed)
                         }
                         (None, None, None, Some((place, _)), _) => Some(ChatOutcome::GoTo(place)),
@@ -3430,6 +3444,48 @@ mod tests {
             .expect("what it printed");
         assert_eq!(Row::acting(&rows, 1), Some(0..3));
         assert_eq!(Row::acting(&rows, printed), None, "what it printed acts");
+    }
+
+    /// Closing a call from a row of its title that closing takes away puts
+    /// the cursor on the call's first row.
+    ///
+    /// Broken deliberately by dropping the `if !kept` arm after the fold:
+    /// the cursor stays on row four, which is past the end of a transcript
+    /// three rows long.
+    #[test]
+    fn closing_a_call_from_deep_in_its_title_keeps_the_cursor_on_it() {
+        let script = "a1\na2\na3\na4\na5";
+        let mut chat = Chat::new();
+        chat.tool(&saying("c1", script, &["what it printed"]), "completed");
+        chat.fold(Folds::Said(0));
+        let laid = |chat: &Chat| chat.rows(ROOM.reading);
+        chat.settle(laid(&chat).len(), ROOM.transcript);
+
+        // Into the transcript, on what the call printed, and up onto the
+        // title's last row.
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        let Focus::Transcript(at) = chat.focus() else {
+            panic!("the cursor is not in the transcript");
+        };
+        assert_eq!(
+            laid(&chat)[at.row].text(),
+            "a5",
+            "not on the title's last row"
+        );
+
+        chat.handle_key(&key(KeyCode::Enter), false, ROOM, &[]);
+        let rows = laid(&chat);
+        assert!(!rows[0].open, "enter did not close the call");
+        assert_eq!(
+            chat.focus(),
+            Focus::Transcript(Place {
+                row: 0,
+                character: 0
+            }),
+            "the cursor was left behind: {:?}",
+            rows.iter().map(Row::text).collect::<Vec<_>>()
+        );
     }
 
     /// A call's title is wrapped whether or not it carries anything.
