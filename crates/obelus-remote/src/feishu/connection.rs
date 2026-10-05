@@ -807,8 +807,16 @@ fn heard_frame(
         heard_event(payload, seen, sink);
         return json!({ "code": 200 });
     }
-    heard_press(payload, seen, sink);
-    let toast = json!({ "toast": { "type": "info", "content": "Sent" } });
+    // What the press is shown at once. Not whether the answer is taken --
+    // that is the application's, by closing the card or saying why not in
+    // the thread -- but whether it went anywhere: a card another window put
+    // up, one since closed, is a press into nothing, and "Sent" over it was
+    // the one thing it should not say.
+    let said = match heard_press(payload, seen, sink) {
+        true => "Sent",
+        false => "No longer asked",
+    };
+    let toast = json!({ "toast": { "type": "info", "content": said } });
     json!({
         "code": 200,
         "data": base64::Engine::encode(
@@ -926,20 +934,22 @@ fn heard_event(
     });
 }
 
-/// A press on a question's card, passed on as the answer it makes: which
+/// A press on a question's card, passed on as the answer it makes -- and
+/// whether it was, which is what the reader is shown at once: which
 /// question, by the number it was asked with, the ids chosen -- one from a
 /// button, one or several from the form's list -- and the words in its box.
 fn heard_press(
     payload: &[u8],
     seen: &mut std::collections::VecDeque<String>,
     sink: &Arc<dyn Sink<Event>>,
-) {
+) -> bool {
     let Ok(event) = serde_json::from_slice::<Value>(payload) else {
-        return;
+        return false;
     };
     if let Some(id) = event["header"]["event_id"].as_str() {
+        // Feishu sending it again: it was taken the first time.
         if seen.iter().any(|kept| kept == id) {
-            return;
+            return true;
         }
         seen.push_back(id.to_string());
         if seen.len() > 256 {
@@ -954,11 +964,11 @@ fn heard_press(
             .as_str()
             .and_then(|asked| asked.parse().ok()),
     ) else {
-        return;
+        return false;
     };
     if action["value"]["by"].as_str() != Some(crate::this_process()) {
         tracing::info!(asked, "a press on a card another window put up");
-        return;
+        return false;
     }
     let form = &action["form_value"];
     let chosen: Vec<String> = match (action["value"]["chosen"].as_str(), &form["chosen"]) {
@@ -976,12 +986,13 @@ fn heard_press(
         .filter(|words| !words.is_empty())
         .map(str::to_string);
     tracing::info!(asked, ?chosen, "a question answered on its card");
-    let _ = sink.send(Event::Answered {
+    sink.send(Event::Answered {
         from: from.to_string(),
         asked,
         chosen,
         words,
-    });
+    })
+    .is_ok()
 }
 
 /// The words in a message: a text's text, or a rich message's title and
@@ -1255,13 +1266,14 @@ mod tests {
     /// trimmed and only where there are any. A press Feishu sends twice is
     /// heard once, and one on a card another window put up not at all.
     ///
-    /// Broken deliberately five ways. Telling a press by the frame rather
+    /// Broken deliberately six ways. Telling a press by the frame rather
     /// than by the event: every press went to the messages and was dropped.
     /// Reading only the button's value: the form's choices arrived as nothing
     /// chosen. Reading a form's list only as several: the single one chosen
     /// from a list was dropped. Not keeping the ids of what was heard: the
-    /// second sending answered twice. And not reading whose card it was:
-    /// the press on the closed window's card answered this one's question.
+    /// second sending answered twice. Not reading whose card it was: the
+    /// press on the closed window's card answered this one's question. And
+    /// showing every press the same: that one was told "Sent".
     #[test]
     fn a_press_is_heard_as_its_answer() {
         let (sender, heard) = std::sync::mpsc::channel::<Event>();
@@ -1295,13 +1307,24 @@ mod tests {
             "e1",
             json!({ "value": { "asked": "7", "by": by, "chosen": "once" }, "tag": "button" }),
         );
-        let answered = heard_frame(button.as_bytes(), &mut seen, &sink);
-        assert!(
-            answered["data"].is_string(),
-            "the press had no toast: {answered}"
+        // What the press is shown at once, out of the answer to the frame.
+        let shown = |answered: &Value| {
+            let data = answered["data"].as_str().unwrap_or_default();
+            let toast = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, data)
+                .ok()
+                .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+                .unwrap_or_default();
+            toast["toast"]["content"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string()
+        };
+        assert_eq!(
+            shown(&heard_frame(button.as_bytes(), &mut seen, &sink)),
+            "Sent"
         );
         heard_frame(button.as_bytes(), &mut seen, &sink);
-        heard_frame(
+        let elsewhere = heard_frame(
             press(
                 "e4",
                 json!({ "value": { "asked": "7", "by": "another", "chosen": "never" } }),
@@ -1310,6 +1333,7 @@ mod tests {
             &mut seen,
             &sink,
         );
+        assert_eq!(shown(&elsewhere), "No longer asked");
         assert_eq!(
             answers(&heard),
             [("ou_1".to_string(), 7, vec!["once".to_string()], None)]
