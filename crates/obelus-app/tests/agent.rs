@@ -440,6 +440,30 @@ fn an_agent_not_yet_started_is_called_what_the_registry_calls_it() {
     assert_eq!(app.agent_name(), Some("Claude Agent"));
 }
 
+/// The list of what is open says whose a conversation is by the
+/// registry's name for the agent, as the list of conversations does.
+///
+/// Broken deliberately by putting `talker.id()` back in `trailing` in
+/// `App::conversation_row`: the row reads `fake`.
+#[test]
+fn an_open_conversation_says_whose_it_is_by_the_registrys_name() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    the_fixture_is_listed(&mut app);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentList);
+    let whose: Vec<Option<&str>> = app
+        .picker()
+        .expect("the list of what is open")
+        .matches()
+        .filter(|item| item.label == "A conversation")
+        .map(|item| item.trailing.as_deref())
+        .collect();
+    assert_eq!(whose, [Some("The fixture")]);
+}
+
 /// One whole turn: the handshake, a prompt, what comes back while it works,
 /// a file read through Obelus, a permission request, and the end.
 #[test]

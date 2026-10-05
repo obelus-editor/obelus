@@ -177,7 +177,9 @@ impl App {
             // Whose conversation it is. The same slot a commit's short id
             // uses, for the same reason: two rows that differ in who is
             // answering are two rows a reader cannot otherwise tell apart.
-            trailing: talker.map(|talker| talker.id().to_string()),
+            // By the registry's name, as the list of conversations calls it:
+            // the id is a word for the settings file.
+            trailing: talker.map(|talker| self.agent_called(talker.id())),
             changed: None,
             value: PickerValue::Document(DocumentId::new(index)),
             enabled: true,
