@@ -265,11 +265,15 @@ fn offer(area: Rect, chat: &Chat) -> Offer {
     let (caret, _) = chat.writing().caret(width);
     let first = caret.saturating_sub(height.saturating_sub(1));
     let at_the_foot = first + height >= rows.len();
-    let room = offer_at(area)
-        .map_or(0, |at| usize::from(at - area.x))
-        .saturating_sub(usize::from(MARGIN + INDENT) + GAP_BETWEEN_HINTS);
-    match rows.last() {
-        Some(last) if at_the_foot && text_width(last) <= room => Offer::Beside,
+    // None where the region is too narrow to have the offer beside even an
+    // empty row: it would be drawn over the caret.
+    let room = offer_at(area).and_then(|at| {
+        usize::from(at - area.x).checked_sub(usize::from(MARGIN + INDENT) + GAP_BETWEEN_HINTS)
+    });
+    match room {
+        Some(room) if at_the_foot && usize::from(chat.writing().ends_at(width).get()) <= room => {
+            Offer::Beside
+        }
         _ => Offer::Under,
     }
 }
@@ -2315,6 +2319,75 @@ mod caret {
         // And on the last character of the row, which is as near to after
         // it as there is room for.
         assert_eq!(caret.x, area.right() - 2);
+    }
+
+    /// The offer goes beside the words only where it cannot be drawn over
+    /// them or over the caret: the row at the foot of the box is the last
+    /// of the words, the region is wide enough to have it beside even an
+    /// empty row, and the last row ends -- counted where the caret stands,
+    /// not in the words' own width -- with room for it.
+    ///
+    /// Broken deliberately three ways. By answering `at_the_foot` with
+    /// `true`: a box scrolled up to a caret above its short last row has
+    /// the offer beside some other row. By letting `room` saturate to
+    /// nothing rather than refusing it: a narrow region has the offer over
+    /// the caret. And by measuring the last row with `text_width` of its
+    /// words: a tab counts for nothing and a wrapped row's indent is not
+    /// in them, so the caret lands on the offer.
+    #[test]
+    fn the_offer_is_beside_the_words_only_clear_of_them() {
+        let offered = |area: Rect, words: &str, ups: usize| {
+            let mut chat = Chat::new();
+            chat.put(words);
+            chat.can_send_now(true);
+            let room = Room {
+                transcript: 10,
+                reading: super::reading_width(area),
+                writing: super::writing_width(area),
+            };
+            for _ in 0..ups {
+                chat.handle_key(
+                    &KeyEvent::new(KeyCode::Up, KeyModifiers::NONE),
+                    true,
+                    room,
+                    &[],
+                );
+            }
+            let caret = super::ChatView::caret(area, &chat, None).expect("a caret in the box");
+            (super::offer(area, &chat), caret.x)
+        };
+        let area = Rect::new(0, 0, 60, 20);
+        let at = super::offer_at(area).expect("nowhere for the offer");
+
+        // Eight lines and a short last one: beside it with the caret on it,
+        // and under the words with the caret three rows up, where the row
+        // at the foot of the scrolled box is not the last.
+        let lines = "one\ntwo\nthree\nfour\nfive\nsix\nseven\neight";
+        assert_eq!(offered(area, lines, 0).0, super::Offer::Beside);
+        assert_eq!(
+            offered(area, lines, 3).0,
+            super::Offer::Under,
+            "beside a row that is not the last"
+        );
+
+        // Too narrow to have it beside even an empty row.
+        let narrow = Rect::new(0, 0, 30, 20);
+        assert_eq!(
+            offered(narrow, "hello\n", 0).0,
+            super::Offer::Under,
+            "beside an empty row with no room for it"
+        );
+
+        // A tab, and the indent a wrapped line keeps: cells the words do not
+        // say they take, which the caret stands after all the same.
+        let wrapped = format!("        {}", "a".repeat(72));
+        for words in ["\t\t\t\t\t\t\t\tfoo", wrapped.as_str()] {
+            let (offer, x) = offered(area, words, 0);
+            assert!(
+                offer == super::Offer::Under || x + 3 <= at,
+                "the caret at {x} is against the offer at {at}: {words:?}"
+            );
+        }
     }
 
     /// A press on the box goes to the words while the box offers to send

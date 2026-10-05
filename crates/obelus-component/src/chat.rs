@@ -560,7 +560,7 @@ pub enum ChatOutcome {
     /// Ask the agent to stop.
     Interrupt,
     /// Stop the turn the agent is on, and send this behind whatever was
-    /// waiting for it. Empty when only what was waiting has anything in it.
+    /// waiting for it.
     SendNow(Vec<crate::composer::Part>),
     /// Put these words back in the box: the reader took back something
     /// they had said that had not gone yet, or wants to say again
@@ -720,8 +720,8 @@ pub struct Chat {
     doing: Option<String>,
     /// Whether a turn is running and `ctrl+enter` can reach it, read off
     /// the state every frame the way [`Self::doing`] is: what decides
-    /// whether the box offers to send now, which is a row of the box and so
-    /// has to be known wherever the box is measured.
+    /// whether the box offers to send now, which is drawn in the box and can
+    /// take a row of it, and so has to be known wherever the box is measured.
     can_send_now: bool,
     /// What the agent means to do about this turn, while it is doing it.
     ///

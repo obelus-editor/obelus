@@ -1754,9 +1754,7 @@ impl App {
     pub(super) fn send_now(&mut self, id: DocumentId, parts: &[Part]) {
         if let Some(talk) = self.talk_mut(Whose::One(id)) {
             talk.stopped_to_say = true;
-            if !parts.is_empty() {
-                talk.chat.will_say(parts);
-            }
+            talk.chat.will_say(parts);
         }
         self.stop_the_turn(id);
     }
