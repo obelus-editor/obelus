@@ -1635,7 +1635,9 @@ fn a_title_longer_than_the_row_keeps_the_row_its_own_end() {
 /// alone again lights the command's first row, as wide as that row.
 /// Putting back the fill to the edge of the band lights the column past
 /// the box. And painting only the cells the words were drawn in leaves a
-/// hole after the short rows, where the box should still be.
+/// hole after the short rows, where the box should still be. And painting
+/// every cell of the box, whatever it was drawn on, covers what the reader
+/// has hold of in it.
 #[test]
 fn the_light_on_a_call_is_as_wide_and_as_tall_as_its_title() {
     let (mut app, events) = talking();
@@ -1700,6 +1702,19 @@ fn the_light_on_a_call_is_as_wide_and_as_tall_as_its_title() {
             "row {y} is lit past the box:\n{screen}"
         );
     }
+
+    // What the reader holds inside the light keeps the colour it is held
+    // in: the cursor is at the start of the title, and this holds `cat`.
+    for _ in 0..3 {
+        support::press_shift(&mut app, KeyCode::Right);
+    }
+    let cells = support::cells_of(&mut app, WIDTH, HEIGHT);
+    let screen = crate::screen(&mut app);
+    assert_eq!(
+        cells[(first, top)].bg,
+        app.theme().selection_background,
+        "the light covers what is held:\n{screen}"
+    );
 }
 
 /// The answer to a turn Obelus cancelled does not end the turn after it.
