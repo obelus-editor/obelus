@@ -2807,7 +2807,16 @@ impl Chat {
 
     /// The next row worth standing on above or below `at`, among rows the
     /// caller is holding already.
+    ///
+    /// Above what `at` is part of, not above `at`: on the third row of a
+    /// command the stop above is the command's own first row, which is
+    /// lit already, so the key moved the caret and left the light where it
+    /// was -- a key that looked as though it had done nothing.
     fn next_stop_in(at: usize, up: bool, laid: &[Row]) -> Option<usize> {
+        let at = match up {
+            true => Row::acting(laid, at).map_or(at, |on| on.start),
+            false => at,
+        };
         let mut stops = laid
             .iter()
             .enumerate()
@@ -3444,6 +3453,42 @@ mod tests {
             .expect("what it printed");
         assert_eq!(Row::acting(&rows, 1), Some(0..3));
         assert_eq!(Row::acting(&rows, printed), None, "what it printed acts");
+    }
+
+    /// Shift and tab from a lower row of a call's title goes to the call
+    /// before it, not to the first row of the one already lit.
+    ///
+    /// Broken deliberately by stepping back from `at` again rather than
+    /// from where what it is part of starts: the cursor lands on `b1`.
+    #[test]
+    fn shift_and_tab_leaves_the_call_it_is_on() {
+        let mut chat = Chat::new();
+        chat.tool(&saying("c1", "a1\na2\na3", &["x"]), "completed");
+        chat.tool(&saying("c2", "b1\nb2\nb3", &["y"]), "completed");
+        let laid = |chat: &Chat| chat.rows(ROOM.reading);
+        chat.settle(laid(&chat).len(), ROOM.transcript);
+
+        // Into the transcript, which lands on its last row: the second
+        // call's last row of title.
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        let Focus::Transcript(at) = chat.focus() else {
+            panic!("the cursor is not in the transcript");
+        };
+        assert_eq!(
+            laid(&chat)[at.row].text(),
+            "b3",
+            "not on the title's last row"
+        );
+
+        chat.handle_key(&key(KeyCode::BackTab), false, ROOM, &[]);
+        let Focus::Transcript(at) = chat.focus() else {
+            panic!("the cursor left the transcript");
+        };
+        assert_eq!(
+            laid(&chat)[at.row].text(),
+            "a1",
+            "shift and tab stayed on the call"
+        );
     }
 
     /// Closing a call from a row of its title that closing takes away puts

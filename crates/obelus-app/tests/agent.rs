@@ -1666,7 +1666,9 @@ fn the_light_on_a_call_is_as_wide_and_as_tall_as_its_title() {
         if on.is_some_and(|text| text.starts_with("cat <<EOF")) {
             break;
         }
-        support::press(&mut app, KeyCode::BackTab);
+        // The arrow rather than shift and tab, which from a lower row of
+        // the call goes past it to the thing before.
+        support::press(&mut app, KeyCode::Up);
     }
 
     let cells = support::cells_of(&mut app, WIDTH, HEIGHT);
@@ -1704,7 +1706,8 @@ fn the_light_on_a_call_is_as_wide_and_as_tall_as_its_title() {
     }
 
     // What the reader holds inside the light keeps the colour it is held
-    // in: the cursor is at the start of the title, and this holds `cat`.
+    // in: from the start of the title, this holds `cat`.
+    support::press(&mut app, KeyCode::Home);
     for _ in 0..3 {
         support::press_shift(&mut app, KeyCode::Right);
     }
