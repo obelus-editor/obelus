@@ -1628,6 +1628,98 @@ fn a_title_longer_than_the_row_keeps_the_row_its_own_end() {
     );
 }
 
+/// The light on a call is a box round its title: every row of it, as wide
+/// as the widest and a cell more, and not a band across the transcript.
+///
+/// Broken deliberately three ways. Asking `Row::acting` of the first row
+/// alone again lights the command's first row, as wide as that row.
+/// Putting back the fill to the edge of the band lights the column past
+/// the box. And painting only the cells the words were drawn in leaves a
+/// hole after the short rows, where the box should still be. And painting
+/// every cell of the box, whatever it was drawn on, covers what the reader
+/// has hold of in it.
+#[test]
+fn the_light_on_a_call_is_as_wide_and_as_tall_as_its_title() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/heredoc");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the call", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+            && app.chat().is_some_and(|chat| {
+                chat.rows(WIDTH)
+                    .iter()
+                    .any(|row| row.text().contains("print(1)"))
+            })
+    });
+    support::press(&mut app, KeyCode::Up);
+    for _ in 0..4 {
+        let on = app.chat().and_then(|chat| match chat.focus() {
+            obelus_component::chat::Focus::Transcript(place) => chat
+                .rows(WIDTH - 5)
+                .get(place.row)
+                .map(obelus_component::chat::Row::text),
+            _ => None,
+        });
+        if on.is_some_and(|text| text.starts_with("cat <<EOF")) {
+            break;
+        }
+        // The arrow rather than shift and tab, which from a lower row of
+        // the call goes past it to the thing before.
+        support::press(&mut app, KeyCode::Up);
+    }
+
+    let cells = support::cells_of(&mut app, WIDTH, HEIGHT);
+    let lit = app.theme().selected_row_background;
+    let find = |needle: &str| {
+        (0..HEIGHT)
+            .find_map(|y| {
+                let row: String = (0..WIDTH).map(|x| cells[(x, y)].symbol()).collect();
+                let from = row.find(needle)?;
+                let x = u16::try_from(row[..from].chars().count()).ok()?;
+                Some((x, y))
+            })
+            .unwrap_or_else(|| panic!("{needle:?} is not on the screen"))
+    };
+    let (first, top) = find("cat <<EOF");
+    let widest = "import sys, subprocess, shutil, pathlib";
+    let (_, middle) = find(widest);
+    let (_, bottom) = find("print(1)");
+    let end = first + u16::try_from(widest.len()).unwrap_or(0);
+    let screen = screen(&mut app);
+    for y in [top, middle, bottom] {
+        assert_eq!(cells[(first, y)].bg, lit, "row {y} is not lit:\n{screen}");
+        // The cell after the widest row's words, which on the short rows
+        // has nothing drawn in it.
+        assert_eq!(
+            cells[(end, y)].bg,
+            lit,
+            "row {y} stops short of the box:\n{screen}"
+        );
+        assert_ne!(
+            cells[(end + 1, y)].bg,
+            lit,
+            "row {y} is lit past the box:\n{screen}"
+        );
+    }
+
+    // What the reader holds inside the light keeps the colour it is held
+    // in: from the start of the title, this holds `cat`.
+    support::press(&mut app, KeyCode::Home);
+    for _ in 0..3 {
+        support::press_shift(&mut app, KeyCode::Right);
+    }
+    let cells = support::cells_of(&mut app, WIDTH, HEIGHT);
+    let screen = crate::screen(&mut app);
+    assert_eq!(
+        cells[(first, top)].bg,
+        app.theme().selection_background,
+        "the light covers what is held:\n{screen}"
+    );
+}
+
 /// The answer to a turn Obelus cancelled does not end the turn after it.
 ///
 /// An agent that is told to stop does what the protocol asks: it answers

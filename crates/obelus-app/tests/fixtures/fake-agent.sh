@@ -747,6 +747,17 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call","toolCallId":"g-1","title":"%s","kind":"execute","status":"completed","content":[{"type":"content","content":{"type":"text","text":"nothing matched"}}]}}}\n' "$long"
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
+        *'"method":"session/prompt"'*'"text":"/heredoc'*)
+            # A call whose title is a script, and so several rows even
+            # when the call is shut -- with its widest row in the middle,
+            # so that a light as wide as the first row is not as wide as
+            # the call. The newlines are JSON's, left for the client to
+            # read: printf does not touch what it is handed through %s.
+            set_turn "$session" "$(id_of "$line")"
+            script='cat <<EOF\nimport sys, subprocess, shutil, pathlib\nprint(1)\nEOF'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call","toolCallId":"h-1","title":"%s","kind":"execute","status":"completed","content":[{"type":"content","content":{"type":"text","text":"1"}}]}}}\n' "$script"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
         *'"method":"session/prompt"'*'"text":"/many'*)
             # A turn with a run of tool calls of one kind in it, which is
             # what an agent looking around a repository actually does: a

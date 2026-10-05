@@ -349,19 +349,21 @@ fn the_keys_a_conversation_names_wear_caps() {
     );
 }
 
-/// A key on a lit row is capped in the row's colour.
+/// A key beside a lit row is capped in the colour it stands on.
 ///
 /// The row saying which step of its list the agent is on opens that list,
 /// so it is lit while the reader stands on it -- and it is the row that
-/// says how to stop the turn. A cap in the page's colour cut a hole in the
-/// one mark saying where the keys are. Asked of the cells under the key,
-/// which a terminal draws, rather than of the theme.
+/// says how to stop the turn. The light is a box round the row's words and
+/// the key is out at the edge, past it, on the page: a cap in the light's
+/// colour there is a patch of light round something enter does not do.
+/// When the light ran the width of the row it was the other way about, and
+/// a cap in the page's colour cut a hole in it. Asked of the cells under
+/// the key, which a terminal draws, rather than of the theme.
 ///
-/// Deliberate break: `cap_the_keys` given `self.theme.background` for its
-/// ground on the working row again, and the cap is the page's colour on a
-/// lit row.
+/// Deliberate break: `cap_the_keys` given the lit row's own ground on the
+/// working row again, and the cap is the light's colour on the page.
 #[test]
-fn a_key_on_a_lit_row_is_capped_in_its_colour() {
+fn a_key_beside_a_lit_row_is_capped_in_the_colour_under_it() {
     use crossterm::event::KeyCode;
 
     let _turn = turn();
@@ -418,8 +420,10 @@ fn a_key_on_a_lit_row_is_capped_in_its_colour() {
         .iter()
         .find(|(keys, _, _)| keys == "Esc")
         .expect("a cap round escape");
-    let row = cells[(area.x + 1, area.y)].bg;
+    let lit = cells[(0, area.y)].bg;
+    let under = cells[(area.x + 1, area.y)].bg;
     let page = cells[(0, height - 1)].bg;
-    assert_ne!(row, page, "the row with the key is not lit");
-    assert_eq!(*cap, row, "the cap is not the colour of its row");
+    assert_ne!(lit, page, "the row with the key is not lit");
+    assert_eq!(under, page, "the light reaches the key");
+    assert_eq!(*cap, under, "the cap is not the colour under it");
 }
