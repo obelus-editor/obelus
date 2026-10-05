@@ -54,7 +54,7 @@ pub fn pieces(pasted: &str) -> Vec<Piece> {
                 continue;
             }
             let path = unescaped(unquoted(said.trim()));
-            pieces.push(match is_a_picture_name(&path) {
+            pieces.push(match is_absolute(&path) && is_a_picture_name(&path) {
                 true => Piece::Picture {
                     said: said.to_string(),
                     path: PathBuf::from(path),
@@ -148,6 +148,14 @@ fn starts_a_path(rest: &str) -> bool {
     let bytes = rest.as_bytes();
     bytes.first() == Some(&b'/')
         || (bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && &bytes[1..3] == b":\\")
+}
+
+/// A path from the root, which is the only kind a terminal types for a
+/// file dropped on it. Anything else would be read from wherever this
+/// process happens to be standing, which is not the project and may be
+/// the reader's home: a bare `logo.png` pasted is a word.
+fn is_absolute(path: &str) -> bool {
+    path.starts_with('/') || is_a_windows_path(path)
 }
 
 /// A Windows path, whose backslashes are its own: `C:\`, or a share's `\\`.
@@ -268,6 +276,16 @@ mod tests {
             pieces("look at /tmp/a.png please"),
             [words("look at"), words("/tmp/a.png please")]
         );
+    }
+
+    /// Nor is a name with no root, which a terminal never types for a drop.
+    ///
+    /// Deliberate break: taking any name ending like a picture's reads
+    /// `logo.png` from whatever directory Obelus was started in.
+    #[test]
+    fn a_name_with_no_root_is_a_word() {
+        assert_eq!(pieces("logo.png"), [words("logo.png")]);
+        assert_eq!(pieces("look at logo.png"), [words("look at logo.png")]);
     }
 
     /// What a window writes for a dropped file is read back as that file.
