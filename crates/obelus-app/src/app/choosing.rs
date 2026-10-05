@@ -497,11 +497,11 @@ impl App {
             // Out through the door every list leaves by, so that what
             // the list declared -- which agents its tabs were, what each
             // row stood for, the watch on which conversations are open
-            // elsewhere -- goes however it is left. Forgotten first
-            // rather than gone back to, which is what makes `leave` put
-            // nothing back: a row was chosen, so where they were looking
-            // from is not somewhere to return to.
-            self.looked_from = None;
+            // elsewhere -- goes however it is left. The file the list was
+            // over is put back first, which also leaves `leave` nothing to
+            // put back: the reader is in the conversation now, and the
+            // file is as they left it for when they come back.
+            self.put_the_file_back();
             self.leave(Layer::Picker);
             return;
         }
@@ -529,12 +529,19 @@ impl App {
                 .map(|column| *column as usize)
         });
         self.picker = None;
-        // Not `look_back`: a row was chosen, so wherever the list was
-        // showing the reader is where they meant to be. Forgotten rather
-        // than gone back to -- and forgotten it must be, or the next list
-        // they escape out of would put them back at a place they left on
-        // purpose two lists ago.
-        self.looked_from = None;
+        // A place is where the reader meant to be: the list has been
+        // showing it to them, and choosing it is going there. Forgotten
+        // rather than gone back to -- and forgotten it must be, or the next
+        // list they escape out of would put them back at a place they left
+        // on purpose two lists ago. Anything else is not somewhere the list
+        // was showing, so the file goes back to where it was before the
+        // row is acted on: what the row does -- a command that moves the
+        // caret, a file opened -- then moves the view from there, as it
+        // would have from a file nobody had opened a list over.
+        match value {
+            PickerValue::Place { .. } => self.looked_from = None,
+            _ => self.put_the_file_back(),
+        }
         // The history goes with its list: the radii are what says a history
         // is open at all. A tree of calls goes the same way, for the same
         // reason.

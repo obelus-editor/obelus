@@ -361,3 +361,40 @@ fn a_list_open_over_the_file_keeps_its_bar() {
     assert_eq!(top_line(&app), 0, "the file scrolled under the list");
     assert!(app.picker().is_some(), "the press closed the list");
 }
+
+/// A list left by choosing a row puts the file back where it was before the
+/// list shortened it, the same as escape does: the scroll was the list's,
+/// and a row that changes a setting is not the reader moving the file.
+///
+/// The themes, because choosing the one already worn goes nowhere and
+/// changes nothing on the page -- what is left to see is the scroll.
+///
+/// Broken deliberately by forgetting where the reader was looking for every
+/// row, as `accept` did: the file stays the rows up the list put it.
+#[test]
+fn a_row_chosen_puts_the_file_back_where_it_was() {
+    let (_scratch, mut app) = reading("put-back", 100);
+    // Near the foot of the screen, where a list on the status bar covers
+    // the caret's line and the file has to scroll to keep it.
+    for _ in 0..12 {
+        support::press(&mut app, KeyCode::Down);
+    }
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    let before = top_line(&app);
+
+    dispatch::dispatch(&mut app, Command::ThemeSelect);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert!(
+        top_line(&app) > before,
+        "the list did not scroll the file, so this proves nothing"
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert!(app.picker().is_none(), "the list is still open");
+    assert_eq!(
+        top_line(&app),
+        before,
+        "the file stayed where the list had scrolled it"
+    );
+}
