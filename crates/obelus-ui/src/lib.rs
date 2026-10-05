@@ -865,12 +865,10 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
         });
     }
 
-    // And then whatever is over it, furthest from the reader first, which
-    // is the order `layers` declares and the reverse of the one a key is
-    // The row a full-screen dialog is about to take, filled before it is
-    // drawn over. Nothing else fills it: the page beneath stops at the
-    // editor region and the status row is written at the end of this
-    // function, which is a thing a full-screen dialog makes Obelus skip.
+    // The status row, filled before a pane is laid over it. Nothing else
+    // fills it in time: the page beneath stops at the editor region, and
+    // the row is written by whoever owns it only after the pane is said --
+    // at the end of this function, or at a dialog's own foot.
     //
     // The row and not the rule above it. The rule is drawn at the top of
     // this function and is already there; filling over it took the line
@@ -886,14 +884,14 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     // settings, which is the blur behind the glass reading the nothing
     // under it.
     //
-    // Any of them showing, not the nearest: a setting's words are typed on
-    // the status row, and that line *is* the row rather than taking it, so
-    // asking the nearest left the settings' glass over a hole for as long
-    // as the reader was typing -- the same band, under the box.
-    if layers
-        .furthest_first()
-        .any(|layer| !matches!(layer.room(), layers::Room::Row))
-    {
+    // Whenever anything covers the file, not when the nearest thing takes
+    // the row: whatever covers it is a pane, and a pane may reach the row
+    // whether or not the row is its own.
+    // A setting's words are typed on the status row, and that line *is* the
+    // row rather than taking it, so asking the nearest left the settings'
+    // glass over a hole for as long as the reader was typing -- the same
+    // band, under the box.
+    if layers.covering() {
         fill(
             cells,
             regions.status,
@@ -901,6 +899,8 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
         );
     }
 
+    // And then whatever is over it, furthest from the reader first, which
+    // is the order `layers` declares and the reverse of the one a key is
     // offered in. One array holds both, so the thing drawn last is the
     // thing a key reaches.
     for layer in layers.furthest_first() {
