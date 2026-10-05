@@ -3398,6 +3398,7 @@ impl App {
                 acp::Update::Titled(_) => {
                     self.remember_the_conversations();
                     self.mirror_head(whose, None);
+                    self.say_the_new_name();
                 }
                 // Kept by the handle, which is where the view reads them:
                 // these are facts about the agent rather than things it

@@ -5718,6 +5718,169 @@ fn a_long_name_is_cut_where_its_closing_is_said() {
     );
 }
 
+/// A name the agent gives while the list of what is open is up is said on
+/// that list at once, with the reader still on the row they had moved to.
+///
+/// The list's rows are built when it opens, so it went on saying the first
+/// words until it was shut and opened again.
+///
+/// Broken deliberately twice: taking `say_the_new_name` out of the arm for
+/// `Titled` leaves the first words up until this gives up; and taking the
+/// choosing of the row out of `relist_switching` puts the reader back on the
+/// conversation.
+#[test]
+fn a_name_given_while_the_open_list_is_up_is_said_on_it() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    app.open_for_test(Path::new("src/lib.rs"));
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationNew);
+    support::type_text(&mut app, "/titled about the counts");
+    support::press(&mut app, KeyCode::Enter);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::DocumentList);
+    let on_the_file = |app: &App| {
+        app.picker()
+            .and_then(obelus_component::picker::Picker::selected_item)
+            .is_some_and(|item| item.label.contains("lib.rs"))
+    };
+    for _ in 0..4 {
+        if on_the_file(&app) {
+            break;
+        }
+        support::press(&mut app, KeyCode::Down);
+    }
+    assert!(on_the_file(&app), "the file is not a row of the list");
+
+    pump(&mut app, &events, "the name on the list", |app| {
+        app.picker().is_some_and(|picker| {
+            picker
+                .matches()
+                .any(|item| item.label == "Renamed by the agent")
+        })
+    });
+    assert!(
+        on_the_file(&app),
+        "the name moved the reader off the row they were on"
+    );
+}
+
+/// The list of conversations names one open here the way the list of what
+/// is open does -- by the reader's first words before the agent has named
+/// it -- and says the agent's name at once when it comes, with the reader
+/// still on that row.
+///
+/// Broken deliberately three ways: building its label from the table alone
+/// reads `Untitled` before the name; taking `say_the_new_name` out of the
+/// arm for `Titled` leaves the first words up until this gives up; and
+/// taking the choosing of the row out of `say_the_new_name` puts the reader
+/// on `New conversation`.
+#[test]
+fn the_list_of_conversations_says_a_name_given_while_it_is_up() {
+    // A project of its own, because the list is of what is written down
+    // about one.
+    let scratch = support::Scratch::new("agent-conversations-named-while-up");
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    app.new_conversation();
+    app.open_a_session_for_test();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/titled about the counts");
+    support::press(&mut app, KeyCode::Enter);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
+    let labels = |app: &App| -> Vec<String> {
+        listed_conversations(app)
+            .into_iter()
+            .map(|item| item.label.clone())
+            .collect()
+    };
+    assert_eq!(labels(&app), ["/titled about the counts"]);
+
+    pump(&mut app, &events, "the name on the list", |app| {
+        labels(app) == ["Renamed by the agent"]
+    });
+    let on = app
+        .picker()
+        .and_then(obelus_component::picker::Picker::selected_item)
+        .map(|item| item.label.clone());
+    assert_eq!(
+        on.as_deref(),
+        Some("Renamed by the agent"),
+        "the name moved the reader off the row they were on"
+    );
+}
+
+/// And a name another window writes down, heard through a watch the list
+/// of conversations took itself.
+///
+/// Nothing is delivered by hand: what has to happen is that the table being
+/// written reaches this application while the list is up.
+///
+/// Broken deliberately twice: watching the table for the notes alone in
+/// `settle_the_watches`, and taking `say_the_new_name` out of the
+/// watcher's arm for the table. Either way the old name stays and this
+/// gives up.
+#[test]
+fn the_list_of_conversations_hears_a_name_written_elsewhere() {
+    let scratch = support::Scratch::new("agent-conversations-real-table-watch");
+    let (sender, events) = std::sync::mpsc::channel();
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.agents_root_for_test(agents_root());
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    remember_a_conversation(
+        &scratch,
+        "fake",
+        "s-theirs",
+        "old name",
+        Some(lately(1_000)),
+    );
+    app.start(sender);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    let labels = |app: &App| -> Vec<String> {
+        listed_conversations(app)
+            .into_iter()
+            .map(|item| item.label.clone())
+            .collect()
+    };
+    assert_eq!(labels(&app), ["old name"]);
+
+    remember_a_conversation(
+        &scratch,
+        "fake",
+        "s-theirs",
+        "new name",
+        Some(lately(2_000)),
+    );
+    pump(&mut app, &events, "the new name to be heard", |app| {
+        labels(app) == ["new name"]
+    });
+}
+
 /// A project that has chosen a workflow says so in the first message -- and
 /// says only where to read it, because most conversations change nothing
 /// and the workflow is several paragraphs.

@@ -392,6 +392,51 @@ impl App {
         self.picker = Some(picker);
     }
 
+    /// Says the name a conversation goes by now in the lists that name
+    /// one, where either is up: this list and the list of what is open.
+    ///
+    /// Built again rather than remarked, because a name is the one thing
+    /// `remark` may not change -- what the query matched is offsets into it.
+    /// And with the reader kept on the row they were on: a name arriving is
+    /// nobody's keystroke, and a list that went back to its first row for
+    /// one would be a list that moved under them.
+    pub(super) fn say_the_new_name(&mut self) {
+        self.relist_switching();
+        if self.conversing.agents.is_empty() || self.picker.is_none() {
+            return;
+        }
+        let on = self
+            .picker
+            .as_ref()
+            .and_then(Picker::selected_item)
+            .and_then(|item| match item.value {
+                PickerValue::Conversation(at) => self.conversing.rows.get(at),
+                _ => None,
+            })
+            .map(|listed| (listed.which.clone(), listed.there));
+        self.refresh_conversations();
+        let Some((which, there)) = on else {
+            return;
+        };
+        let Some(at) = self
+            .conversing
+            .rows
+            .iter()
+            .position(|listed| listed.which == which && listed.there == there)
+        else {
+            return;
+        };
+        let Some(picker) = self.picker.as_mut() else {
+            return;
+        };
+        let row = picker.matches().position(
+            |item| matches!(item.value, PickerValue::Conversation(listed) if listed == at),
+        );
+        if let Some(row) = row {
+            picker.select_row(row);
+        }
+    }
+
     /// What the list says about itself on this tab, which is why the rows
     /// of every tab but one cannot be chosen.
     ///
@@ -471,10 +516,10 @@ impl App {
         // which is when something told it to look. See
         // `App::reread_who_holds_what`.
         let held = self.held_kept.clone();
-        let notes = obelus_git::todo::read(&self.working_directory)
+        let todo = obelus_git::todo::read(&self.working_directory)
             .notes()
-            .unwrap_or_default()
-            .notes;
+            .unwrap_or_default();
+        let notes = &todo.notes;
         let now = std::time::SystemTime::now();
         let zone = jiff::tz::TimeZone::system();
         let today = jiff::Timestamp::now().to_zoned(zone.clone()).date();
@@ -495,9 +540,15 @@ impl App {
                         .find(|note| note.id == *id)
                         .map(|note| note.title().to_string())
                 });
-                let label = kept
-                    .title
-                    .clone()
+                // One that is open here goes by what the list of what is
+                // open calls it, which is newer than anything written down:
+                // the agent's name as it arrives, and the reader's first
+                // words before there is one.
+                let label = open
+                    .and_then(|id| self.document(id))
+                    .and_then(Document::chat)
+                    .and_then(|talk| self.conversation_name(talk, &todo))
+                    .or_else(|| kept.title.clone())
                     .or_else(|| about.clone())
                     .unwrap_or_else(|| "Untitled".to_string());
                 // Not said twice: a title the agent never gave is the
@@ -742,11 +793,12 @@ impl App {
             How::Directory,
             obelus_agent::chats::directory,
         );
-        // The table saying which note has a conversation, which only the
-        // notes page draws.
+        // The table saying which note has a conversation, which the notes
+        // page draws, and what each is called, which the list of
+        // conversations does.
         self.settle_a_watch(
             TABLE,
-            notes,
+            notes || listing,
             How::FileMakingRoom,
             obelus_agent::acp::sessions::path,
         );

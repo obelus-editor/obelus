@@ -310,6 +310,31 @@ impl App {
         }
     }
 
+    /// Fills the list again where it is up, on the row the reader was on
+    /// rather than on this document: what moved is not where they are.
+    pub(super) fn relist_switching(&mut self) {
+        let Some(picker) = self.picker.as_ref() else {
+            return;
+        };
+        if self.worktrees.tabs.get(picker.tab()).is_none() {
+            return;
+        }
+        let on = picker.selected_item().and_then(|item| match item.value {
+            PickerValue::Document(id) => Some(id),
+            _ => None,
+        });
+        self.refresh_switching();
+        let (Some(on), Some(picker)) = (on, self.picker.as_mut()) else {
+            return;
+        };
+        let row = picker
+            .matches()
+            .position(|item| matches!(item.value, PickerValue::Document(id) if id == on));
+        if let Some(row) = row {
+            picker.select_row(row);
+        }
+    }
+
     /// Whether the list showing is the worktrees, which is what the watch on
     /// the other windows is wanted for.
     pub(super) fn showing_worktrees(&self) -> bool {
