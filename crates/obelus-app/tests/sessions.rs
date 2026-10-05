@@ -397,7 +397,7 @@ fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
     let root = scratch.path();
     let note = NoteId::read("ABCDEFGH").expect("a name");
 
-    sessions::change(root, Some(std::slice::from_ref(&note)), |kept| {
+    sessions::change(root, 0, Some(std::slice::from_ref(&note)), |kept| {
         kept.put(
             &ChatId::Note(note.clone()),
             "fake",
@@ -412,7 +412,7 @@ fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
         );
     });
 
-    let back = sessions::read(root).remembered().expect("the table");
+    let back = sessions::read(root, 0).remembered().expect("the table");
     let kept = back
         .get(&ChatId::Note(note.clone()), "fake", root)
         .expect("the conversation");
@@ -423,7 +423,7 @@ fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
     // first one wrote: read-modify-write, because a second Obelus on one
     // tree is an ordinary thing to have running.
     let other = NoteId::read("JKMNPQRS").expect("a name");
-    sessions::change(root, Some(&[note.clone(), other.clone()]), |kept| {
+    sessions::change(root, 0, Some(&[note.clone(), other.clone()]), |kept| {
         kept.put(
             &ChatId::Note(other.clone()),
             "fake",
@@ -437,7 +437,7 @@ fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
             },
         );
     });
-    let back = sessions::read(root).remembered().expect("the table");
+    let back = sessions::read(root, 0).remembered().expect("the table");
     assert!(
         back.get(&ChatId::Note(note.clone()), "fake", root)
             .is_some(),
@@ -451,8 +451,8 @@ fn what_is_remembered_is_the_name_and_nothing_that_was_said() {
     // A note that has gone takes its conversation with it, collected on the
     // way past rather than when the note was deleted -- because a note can
     // go without Obelus watching.
-    sessions::change(root, Some(std::slice::from_ref(&other)), |_| {});
-    let back = sessions::read(root).remembered().expect("the table");
+    sessions::change(root, 0, Some(std::slice::from_ref(&other)), |_| {});
+    let back = sessions::read(root, 0).remembered().expect("the table");
     assert!(
         back.get(&ChatId::Note(note.clone()), "fake", root)
             .is_none(),

@@ -566,8 +566,11 @@ impl App {
 
     /// Reads that table again, because there is a reason to.
     pub(super) fn reread_the_sessions(&mut self) {
-        self.sessions_kept =
-            obelus_agent::acp::sessions::read(&self.working_directory).remembered();
+        self.sessions_kept = obelus_agent::acp::sessions::read(
+            &self.working_directory,
+            self.config().conversation_days,
+        )
+        .remembered();
     }
 
     /// Whether a path that changed is that table.
@@ -813,13 +816,18 @@ impl App {
         // table it has just written, and reading the file again for it
         // would be paying the dear half of this twice.
         let here = self.working_directory.clone();
-        let written = obelus_agent::acp::sessions::change(&self.working_directory, notes, |kept| {
-            kept.forget(
-                &obelus_agent::chats::ChatId::Note(note.clone()),
-                &agent,
-                &here,
-            );
-        });
+        let written = obelus_agent::acp::sessions::change(
+            &self.working_directory,
+            self.config().conversation_days,
+            notes,
+            |kept| {
+                kept.forget(
+                    &obelus_agent::chats::ChatId::Note(note.clone()),
+                    &agent,
+                    &here,
+                );
+            },
+        );
         if written.is_some() {
             self.sessions_kept = written;
         }
@@ -917,11 +925,16 @@ impl App {
         // In the checkout the agent was told, which is the one it will
         // take the conversation up in and no other.
         let here = self.working_directory.clone();
-        let written = obelus_agent::acp::sessions::change(&self.working_directory, notes, |kept| {
-            for (which, what) in mine {
-                kept.put(&which, &agent, &here, what);
-            }
-        });
+        let written = obelus_agent::acp::sessions::change(
+            &self.working_directory,
+            self.config().conversation_days,
+            notes,
+            |kept| {
+                for (which, what) in mine {
+                    kept.put(&which, &agent, &here, what);
+                }
+            },
+        );
         if written.is_some() {
             self.sessions_kept = written;
         }

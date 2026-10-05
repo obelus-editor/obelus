@@ -473,7 +473,13 @@ impl App {
             .open
             .iter()
             .any(|open| matches!(open, Open::Conversation(_)))
-            .then(|| obelus_agent::acp::sessions::read(&self.working_directory).remembered())
+            .then(|| {
+                obelus_agent::acp::sessions::read(
+                    &self.working_directory,
+                    self.config().conversation_days,
+                )
+                .remembered()
+            })
             .flatten();
         let mut landed: Vec<Option<DocumentId>> = Vec::new();
         let mut talked = false;

@@ -262,9 +262,12 @@ impl App {
         // happens next and not what was already there -- and the rows are
         // made here, before the frame that takes the watch.
         self.reread_who_holds_what();
-        let remembered = obelus_agent::acp::sessions::read(&self.working_directory)
-            .remembered()
-            .unwrap_or_default();
+        let remembered = obelus_agent::acp::sessions::read(
+            &self.working_directory,
+            self.config().conversation_days,
+        )
+        .remembered()
+        .unwrap_or_default();
         // A fourth reason the kept copy is read, and the one that costs
         // nothing: this has the table in its hands. Without it a
         // conversation taken up from here would be told about its note
@@ -441,7 +444,10 @@ impl App {
         // answers and not two, because a table Obelus cannot read is not a
         // project nobody has said anything about, and the new row alone
         // would tell the reader it is.
-        let reading = obelus_agent::acp::sessions::read(&self.working_directory);
+        let reading = obelus_agent::acp::sessions::read(
+            &self.working_directory,
+            self.config().conversation_days,
+        );
         self.conversing.unreadable =
             matches!(reading, obelus_agent::acp::sessions::Reading::Unreadable(_));
         let Some(remembered) = reading.remembered() else {

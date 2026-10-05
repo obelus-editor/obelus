@@ -178,6 +178,45 @@ impl Remembered {
             .retain(|(_, _, tree), _| !obelus_git::is_gone(tree));
     }
 
+    /// Forgets every conversation about no note that nothing has been said
+    /// in for `days`, except one somebody has open.
+    ///
+    /// Only those: a conversation about a note goes when the note does, and
+    /// a note still there is work a reader may come back to after any
+    /// length of time. And not one that is open, in this Obelus or another:
+    /// that one is being read, and the next thing said in it would write it
+    /// back -- `held` is asked only where something has expired, because it
+    /// is a lock tried per claim and most readings have nothing to forget.
+    ///
+    /// One with no time at all is kept. It was written before the time was,
+    /// and saying it is old would be the made-up time [`Kept::last`] refuses
+    /// to sort by.
+    fn forget_what_nobody_has_talked_in(
+        &mut self,
+        days: usize,
+        now: i64,
+        held: impl FnOnce() -> BTreeMap<ChatId, Option<PathBuf>>,
+    ) {
+        if days == 0 {
+            return;
+        }
+        let days = i64::try_from(days).unwrap_or(i64::MAX);
+        let since = now.saturating_sub(days.saturating_mul(24 * 60 * 60));
+        let expired = |which: &ChatId, kept: &Kept| {
+            which.note().is_none() && kept.last.is_some_and(|last| last < since)
+        };
+        if !self
+            .kept
+            .iter()
+            .any(|((which, _, _), kept)| expired(which, kept))
+        {
+            return;
+        }
+        let held = held();
+        self.kept
+            .retain(|(which, _, _), kept| !expired(which, kept) || held.contains_key(which));
+    }
+
     /// Every session it holds, for asking an agent which it still knows.
     pub fn sessions(&self) -> impl Iterator<Item = &str> {
         self.kept.values().map(|kept| kept.session.as_str())
@@ -254,9 +293,14 @@ impl Reading {
     }
 }
 
-/// What the file says.
+/// What the file says, less what has not been talked in for `days`.
+///
+/// Forgotten as it is read, the way a tree that has gone is: the list stops
+/// offering it the moment it expires, and the next write takes it out of
+/// the file. Zero forgets none, which is also what a caller that is only
+/// looking at the file passes.
 #[must_use]
-pub fn read(root: &Path) -> Reading {
+pub fn read(root: &Path, days: usize) -> Reading {
     let Some(path) = path(root) else {
         return Reading::Nothing;
     };
@@ -270,6 +314,12 @@ pub fn read(root: &Path) -> Reading {
     let mut reading = read_from(&text);
     if let Reading::Remembered(remembered) = &mut reading {
         remembered.forget_trees_that_are_gone();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .and_then(|since| i64::try_from(since.as_secs()).ok())
+            .unwrap_or(0);
+        remembered.forget_what_nobody_has_talked_in(days, now, || crate::chats::held(root));
     }
     reading
 }
@@ -344,6 +394,7 @@ fn read_from(text: &str) -> Reading {
 /// for one conversation, 351us for twenty -- and this has done it already.
 pub fn change(
     root: &Path,
+    days: usize,
     notes: Option<&[NoteId]>,
     what: impl FnOnce(&mut Remembered),
 ) -> Option<Remembered> {
@@ -357,7 +408,7 @@ pub fn change(
     // Obelus's own bookkeeping in its own state directory, and there is
     // nothing for them to go and fix. What they see is a conversation that
     // has to be started again.
-    let Some(mut remembered) = read(root).remembered() else {
+    let Some(mut remembered) = read(root, days).remembered() else {
         tracing::warn!(path = %path.display(), "will not read, so nothing is remembered over it");
         return None;
     };
@@ -633,10 +684,10 @@ mod tests {
         std::fs::write(&path, half).expect("the half-written table");
 
         assert!(
-            matches!(read(&root), Reading::Unreadable(_)),
+            matches!(read(&root, 0), Reading::Unreadable(_)),
             "a file that will not parse read as a file with nothing in it"
         );
-        change(&root, None, |kept| {
+        change(&root, 0, None, |kept| {
             kept.put(
                 &note("JKMNPQRS"),
                 "claude-acp",
@@ -684,18 +735,18 @@ mod tests {
             introduced: false,
             last: None,
         };
-        change(&root, None, |remembered| {
+        change(&root, 0, None, |remembered| {
             remembered.put(&note("ABCDEFGH"), "claude-acp", &root, kept("here"));
             remembered.put(&note("ABCDEFGH"), "claude-acp", &there, kept("there"));
         });
-        let both = read(&root).remembered().expect("the table");
+        let both = read(&root, 0).remembered().expect("the table");
         assert!(
             both.get(&note("ABCDEFGH"), "claude-acp", &there).is_some(),
             "a checkout that is there was forgotten"
         );
 
         std::fs::remove_dir_all(&there).expect("the checkout goes");
-        let read_back = read(&root).remembered().expect("the table");
+        let read_back = read(&root, 0).remembered().expect("the table");
         assert!(
             read_back
                 .get(&note("ABCDEFGH"), "claude-acp", &root)
@@ -708,7 +759,7 @@ mod tests {
                 .is_none(),
             "a conversation from a checkout that has gone was read"
         );
-        change(&root, None, |_| {});
+        change(&root, 0, None, |_| {});
         let written = std::fs::read_to_string(path(&root).expect("the table")).expect("the table");
         assert!(
             !written.contains("sessions-gone-tree-test-two"),
@@ -845,11 +896,119 @@ mod tests {
         std::fs::create_dir_all(theirs.parent().expect("the directory")).expect("the directory");
         std::fs::write(&theirs, "another Obelus is halfway through this").expect("theirs");
 
-        assert!(change(&root, None, |_| {}).is_some(), "nothing was written");
+        assert!(
+            change(&root, 0, None, |_| {}).is_some(),
+            "nothing was written"
+        );
         assert_eq!(
             std::fs::read_to_string(&theirs).ok().as_deref(),
             Some("another Obelus is halfway through this"),
             "the other Obelus's half-written table was taken"
         );
+    }
+
+    /// A conversation about no note that nothing has been said in for longer
+    /// than the setting is forgotten, and nothing else is.
+    ///
+    /// Broken deliberately four ways, each failing its own assertion: the
+    /// `retain` taken out (the old loose one stays), the note's exemption
+    /// taken out (the old note's goes), the claim's taken out (the open one
+    /// goes), and `is_some_and` made `is_none_or` (the one with no time
+    /// goes). And a fifth: `days == 0` returning nothing early is not what
+    /// keeps everything at zero -- with that line gone, zero is a cut-off of
+    /// now, and the day-old one goes.
+    #[test]
+    fn only_a_loose_conversation_nobody_has_talked_in_is_forgotten() {
+        const DAY: i64 = 24 * 60 * 60;
+        let now = 1_000 * DAY;
+        let loose = |session: &str| ChatId::Loose(session.to_string());
+        let kept = |session: &str, last: Option<i64>| Kept {
+            session: session.to_string(),
+            title: None,
+            told: None,
+            introduced: false,
+            last,
+        };
+        let mut remembered = Remembered::default();
+        remembered.put(
+            &loose("old"),
+            "claude-acp",
+            here(),
+            kept("old", Some(now - 31 * DAY)),
+        );
+        remembered.put(
+            &loose("new"),
+            "claude-acp",
+            here(),
+            kept("new", Some(now - DAY)),
+        );
+        remembered.put(
+            &loose("timeless"),
+            "claude-acp",
+            here(),
+            kept("timeless", None),
+        );
+        remembered.put(
+            &loose("open"),
+            "claude-acp",
+            here(),
+            kept("open", Some(now - 31 * DAY)),
+        );
+        remembered.put(
+            &note("ABCDEFGH"),
+            "claude-acp",
+            here(),
+            kept("noted", Some(now - 31 * DAY)),
+        );
+        let held = || BTreeMap::from([(loose("open"), None)]);
+
+        let mut never = remembered.clone();
+        never.forget_what_nobody_has_talked_in(0, now, held);
+        assert_eq!(never, remembered, "zero forgot something");
+
+        remembered.forget_what_nobody_has_talked_in(30, now, held);
+        let left: Vec<&str> = remembered.sessions().collect();
+        assert!(!left.contains(&"old"), "an old loose conversation was kept");
+        assert!(
+            left.contains(&"new"),
+            "a loose conversation from yesterday was forgotten"
+        );
+        assert!(
+            left.contains(&"timeless"),
+            "a conversation with no time was forgotten"
+        );
+        assert!(
+            left.contains(&"open"),
+            "a conversation somebody has open was forgotten"
+        );
+        assert!(
+            left.contains(&"noted"),
+            "a note's conversation was forgotten"
+        );
+    }
+
+    /// Nobody is asked who holds what when nothing has expired: the claims
+    /// are a lock tried per file, and most readings forget nothing.
+    ///
+    /// Broken deliberately by taking out the early return that asks whether
+    /// anything has expired: `held` is called.
+    #[test]
+    fn nobody_is_asked_who_holds_what_when_nothing_has_expired() {
+        let mut remembered = Remembered::default();
+        remembered.put(
+            &ChatId::Loose("new".to_string()),
+            "claude-acp",
+            here(),
+            Kept {
+                session: "new".to_string(),
+                title: None,
+                told: None,
+                introduced: false,
+                last: Some(1_000),
+            },
+        );
+        remembered.forget_what_nobody_has_talked_in(30, 1_000, || {
+            panic!("asked who holds what with nothing to forget")
+        });
     }
 }
