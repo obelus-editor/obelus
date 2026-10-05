@@ -126,6 +126,8 @@ pub struct Choosing {
     pub typed: String,
     /// How many characters of it are in front of the caret.
     pub caret: usize,
+    /// Which of its characters the reader has hold of.
+    pub held: Option<std::ops::Range<usize>>,
     /// Whether that box is a path being named rather than a filter over
     /// the rows.
     ///
@@ -614,10 +616,7 @@ pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
     if app.layers().nearest().is_none()
         && let Some(choosing) = app.choosing()
     {
-        let question = match choosing.naming {
-            true => "Open",
-            false => "Filter",
-        };
+        let question = status::choosing_question(choosing.naming);
         // A path box is opened in order to type, so it has a caret from
         // the first frame -- the rule a picker follows. The filter is not:
         // the rows are what the reader came for and the filter is what

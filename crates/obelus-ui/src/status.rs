@@ -9,7 +9,7 @@
 //! (`Layer`) the way the caret asks it -- a dialog draws the row at its own
 //! foot, and a question on the status row can open over a list.
 
-use std::path::Path;
+use std::{ops::Range, path::Path};
 
 use obelus_buffer::Buffer;
 use obelus_component::{layers::Layer, picker::Picker};
@@ -187,7 +187,15 @@ impl Widget for StatusView<'_> {
             Some(Layer::Prompt) => {
                 if let Some(prompt) = self.prompt {
                     let line = prompt.line();
-                    write(cells, area.x + 1, area.y, &line, style);
+                    write_marked(
+                        cells,
+                        area,
+                        area.x + 1,
+                        area.y,
+                        &line,
+                        style,
+                        &held_after(prompt.held(), &prompt.kind().label(), self.theme),
+                    );
                     self.render_landing(&line, area, cells, style);
                 }
             }
@@ -550,16 +558,7 @@ pub fn prompt_row(
     // What is held, marked where it is: the prefix in front of the
     // query is not part of what was typed, so the run moves right by
     // however wide that is.
-    let marked = match picker.query_held() {
-        Some(held) => {
-            let ahead = typed(picker.question(), "").chars().count();
-            Marked::run(
-                held.start + ahead..held.end + ahead,
-                theme.selection_background,
-            )
-        }
-        None => Marked::plain(),
-    };
+    let marked = held_after(picker.query_held(), &typed(picker.question(), ""), theme);
     write_marked(cells, area, area.x + 1, area.y, &line, style, &marked);
     hint(
         cells,
@@ -649,6 +648,32 @@ pub fn typed_caret(question: Option<&str>, words: &str, at: usize) -> u16 {
 #[must_use]
 pub fn filter_caret(query: &str, at: usize) -> u16 {
     typed_caret(None, query, at)
+}
+
+/// The word in front of the box that asks which project: what it narrows,
+/// or that it is a path being named.
+#[must_use]
+pub const fn choosing_question(naming: bool) -> &'static str {
+    match naming {
+        true => "Open",
+        false => "Filter",
+    }
+}
+
+/// What is held in a box, marked on the row it is drawn in -- where
+/// whatever is in front of the box (`ahead`) moves it right by however
+/// many characters that is.
+fn held_after(held: Option<Range<usize>>, ahead: &str, theme: &Theme) -> Marked<'static> {
+    match held {
+        Some(held) => {
+            let ahead = ahead.chars().count();
+            Marked::run(
+                held.start + ahead..held.end + ahead,
+                theme.selection_background,
+            )
+        }
+        None => Marked::plain(),
+    }
 }
 
 /// The same, in front of a question's answer.
@@ -993,16 +1018,7 @@ impl StatusView<'_> {
         style: Style,
     ) {
         let said = settings.query();
-        let marked = match settings.query_held() {
-            Some(held) => {
-                let ahead = typed(None, "").chars().count();
-                Marked::run(
-                    held.start + ahead..held.end + ahead,
-                    self.theme.selection_background,
-                )
-            }
-            None => Marked::plain(),
-        };
+        let marked = held_after(settings.query_held(), &typed(None, ""), self.theme);
         write_marked(
             cells,
             area,
@@ -1112,10 +1128,7 @@ impl StatusView<'_> {
         cells: &mut CellBuffer,
         style: Style,
     ) {
-        let question = match choosing.naming {
-            true => "Open",
-            false => "Filter",
-        };
+        let question = choosing_question(choosing.naming);
         let line = typed(Some(question), &choosing.typed);
         // A path that goes nowhere, said in the ink and then in words.
         //
@@ -1130,7 +1143,19 @@ impl StatusView<'_> {
             true => style.fg(self.theme.syntax.warning),
             false => style,
         };
-        let after = write(cells, area.x + 1, area.y, &line, ink);
+        let after = write_marked(
+            cells,
+            area,
+            area.x + 1,
+            area.y,
+            &line,
+            ink,
+            &held_after(
+                choosing.held.clone(),
+                &typed(Some(question), ""),
+                self.theme,
+            ),
+        );
         if nowhere {
             // After the path rather than instead of it: what the reader
             // typed is what they are about to fix, and a row that
@@ -1227,7 +1252,15 @@ impl StatusView<'_> {
         style: Style,
     ) {
         let said = names.query().said();
-        write(cells, area.x + 1, area.y, &typed(None, &said), style);
+        write_marked(
+            cells,
+            area,
+            area.x + 1,
+            area.y,
+            &typed(None, &said),
+            style,
+            &held_after(names.query().held(), &typed(None, ""), self.theme),
+        );
         hint(cells, area, None, names.invitation(), style, self.theme);
     }
 

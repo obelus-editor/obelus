@@ -229,7 +229,68 @@ impl App {
     /// The cursor lands at the end of it, because the cursor is one end of
     /// a selection -- and the view follows, which is the frame's own job:
     /// what the reader has just taken all of ends there.
+    ///
+    /// Or all of whatever box is in front, asked in the order a copy is:
+    /// `ctrl+a` in a question on the status row took the whole of the file
+    /// behind it, and everywhere else a reader types it did nothing.
     pub fn select_all(&mut self) {
+        match self.layers().nearest() {
+            Some(Layer::Prompt) => {
+                if let Some(prompt) = self.prompt.as_mut() {
+                    prompt.hold(true);
+                }
+                return;
+            }
+            Some(Layer::Settings) => {
+                if let Some(settings) = self.settings.as_mut() {
+                    settings.hold_in_query(true);
+                }
+                return;
+            }
+            Some(Layer::Picker) => {
+                if let Some(picker) = self.picker.as_mut() {
+                    picker.hold_in_query(true);
+                }
+                return;
+            }
+            Some(Layer::Names) => {
+                if let Some((_, names)) = self.names.as_mut() {
+                    names.hold_in_query(true);
+                }
+                return;
+            }
+            Some(Layer::Counts | Layer::Gone) => return,
+            None if self.chooser.is_some() => {
+                if let Some(chooser) = self.chooser.as_mut() {
+                    chooser.hold_in_typing(true);
+                }
+                return;
+            }
+            None => {}
+        }
+        if self.conversation().is_some() {
+            let area = self.editor_area;
+            if let Some(card) = self.card() {
+                let width =
+                    obelus_ui::card::width_of(obelus_ui::chat::bands_for(area, card).writing);
+                if let Some(card) = self.conversation_mut().and_then(|talk| talk.card.as_mut()) {
+                    card.select_all(width);
+                }
+                return;
+            }
+            let width = obelus_ui::chat::writing_width(area);
+            self.in_transcript(|chat| {
+                // One selection between the two halves, so taking all of
+                // the box lets the transcript go.
+                chat.let_go();
+                chat.writing_mut().select_all(width);
+            });
+            return;
+        }
+        if let Some(notes) = self.notes_mut() {
+            notes.select_all();
+            return;
+        }
         let Some(buffer) = self.current_buffer_mut() else {
             self.wrong("No file open".to_string());
             return;
@@ -268,8 +329,7 @@ impl App {
         // left out the views that had none.
         //
         // The notes are not here because they answer these two keys
-        // themselves. A setting's list of names takes every key there is
-        // and lets none through, so nothing it is under reaches here.
+        // themselves.
         match self.layers().nearest() {
             Some(Layer::Prompt) => {
                 if let Some(prompt) = self.prompt.as_ref() {
@@ -292,7 +352,14 @@ impl App {
                 }
                 return;
             }
-            Some(Layer::Names | Layer::Counts | Layer::Gone) => return,
+            Some(Layer::Names) => {
+                if let Some((_, names)) = self.names.as_ref() {
+                    let (text, what) = names.copy_query();
+                    self.copied(&text, what);
+                }
+                return;
+            }
+            Some(Layer::Counts | Layer::Gone) => return,
             // Being asked which project, which is a page of its own and not
             // a layer, with a box on it like any other.
             None if self.chooser.is_some() => {
@@ -302,6 +369,22 @@ impl App {
             None => {}
         }
         let width = obelus_ui::chat::reading_width(self.editor_area);
+        // What is held on a card, which covers the box a message is
+        // written in: before this, a copy over a card took what was in the
+        // box nobody could see. What is held in the transcript above it
+        // still comes first where the card holds nothing.
+        if let Some(card) = self.card() {
+            let transcript = self.chat().and_then(|chat| chat.held_text(width));
+            let copied = match (card.selected(), transcript) {
+                (Some(held), _) => Some((held, "selection")),
+                (None, Some(transcript)) => Some((transcript, "selection")),
+                (None, None) => card.copied(),
+            };
+            if let Some((text, what)) = copied {
+                self.copied(&text, what);
+            }
+            return;
+        }
         if let Some((text, what)) = self.chat().map(|chat| chat.copied(width)) {
             self.copied(&text, what);
             return;
@@ -398,12 +481,34 @@ impl App {
                 }
                 return;
             }
-            Some(Layer::Names | Layer::Counts | Layer::Gone) => return,
+            Some(Layer::Names) => {
+                if let Some((_, names)) = self.names.as_mut() {
+                    let (text, what) = names.cut_query();
+                    self.cut_away(&text, what);
+                }
+                return;
+            }
+            Some(Layer::Counts | Layer::Gone) => return,
             None if self.chooser.is_some() => {
                 self.cut_from_the_chooser();
                 return;
             }
             None => {}
+        }
+        // Out of the card's words where a card is up, because it covers
+        // the box: a cut from under it took words nobody could see go.
+        if let Some(card) = self.card() {
+            let width = obelus_ui::card::width_of(
+                obelus_ui::chat::bands_for(self.editor_area, card).writing,
+            );
+            if let Some((text, what)) = self
+                .conversation_mut()
+                .and_then(|talk| talk.card.as_mut())
+                .and_then(|card| card.cut(width))
+            {
+                self.cut_away(&text, what);
+            }
+            return;
         }
         if self.conversation().is_some() {
             // The width the box really has, from the same function the
@@ -546,6 +651,7 @@ impl App {
             || self.notes().is_some()
             || self.settings.is_some()
             || self.picker.is_some()
+            || self.names.is_some()
             || self.conversation_takes_text()
     }
 

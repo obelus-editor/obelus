@@ -955,6 +955,60 @@ fn delete_takes_a_setting_out_and_leaves_the_heading() {
     assert!(!app.config().wrap, "the project still has it");
 }
 
+/// Delete is the filter's while the filter has something for it, and the
+/// row's after.
+///
+/// The filter shares the key with the row it is over: on the project's page
+/// delete takes a setting out of its file. While the caret could only sit
+/// at the end of what was typed there was nothing for it to take in the
+/// filter, so the row could have it outright -- but the caret walks the
+/// filter now, and a delete pressed to take a letter out took a setting
+/// out instead.
+///
+/// Deliberate breaks: the `takes_a_delete` guard taken off the project's
+/// arm, and the first delete takes `wrap` out of the file; `rows_delete`
+/// taken off the foot's `Unset`, and it is offered over the filter.
+#[test]
+fn delete_takes_a_letter_out_of_the_filter_before_a_setting_out_of_the_file() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let root = project("delete-filter", "wrap = true\nblame_margin = true\n");
+
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.configure(obelus_config::Config::default(), Vec::new());
+    app.working_directory_for_test(root.path().to_path_buf());
+    support::lay_out(&mut app, 76, 16);
+    dispatch::dispatch(&mut app, Command::ConfigProject);
+    support::type_text(&mut app, "wrap");
+    let written =
+        || std::fs::read_to_string(root.join(".obelus").join("config.toml")).expect("the file");
+
+    let foot = |app: &mut App| support::text_block(&support::render(app, 76, 16)).to_string();
+
+    // And the foot says so: what delete does to the row is not offered
+    // while delete is the filter's.
+    support::press(&mut app, KeyCode::Home);
+    let text = foot(&mut app);
+    assert!(
+        !word_on(&text, "Unset"),
+        "the foot offers to unset while delete is the filter's:\n{text}"
+    );
+    support::press(&mut app, KeyCode::Delete);
+    assert_eq!(app.settings().expect("the settings").query(), "rap");
+    assert!(written().contains("wrap = true"), "a letter cost a setting");
+
+    // With nothing in front of the caret, it is the row's again.
+    support::press(&mut app, KeyCode::End);
+    let text = foot(&mut app);
+    assert!(
+        word_on(&text, "Unset"),
+        "the foot no longer offers to unset:\n{text}"
+    );
+    support::press(&mut app, KeyCode::Delete);
+    assert!(!written().contains("wrap"), "still there: {:?}", written());
+}
+
 /// A project that has no settings file gets one the moment something is set.
 ///
 /// Broken deliberately by refusing to write when the file is not there:
@@ -1279,14 +1333,15 @@ fn the_ends_and_the_pages_are_reachable() {
     let mut app = open(&file);
     let focus = |app: &App| app.settings().expect("the settings").focus();
 
-    // Every setting on one page: End reaches the last, Home the first, and
-    // neither wraps past its end.
+    // Every setting on one page: control and end reach the last, control
+    // and home the first, and neither wraps past its end. Bare, the two
+    // are the filter's caret's, as they are in a list's query.
     let last = shown() - 1;
-    support::press(&mut app, KeyCode::End);
+    support::press_control_key(&mut app, KeyCode::End);
     assert_eq!(focus(&app), last, "End did not reach the last row");
-    support::press(&mut app, KeyCode::End);
+    support::press_control_key(&mut app, KeyCode::End);
     assert_eq!(focus(&app), last, "End walked past the end");
-    support::press(&mut app, KeyCode::Home);
+    support::press_control_key(&mut app, KeyCode::Home);
     assert_eq!(focus(&app), 0);
 
     // A page is what the page shows, and paging is clamped rather than
@@ -1394,7 +1449,7 @@ fn the_agents_page_is_a_list_of_cards() {
     );
 
     // End reaches the last card, and it is on screen.
-    support::press(&mut app, KeyCode::End);
+    support::press_control_key(&mut app, KeyCode::End);
     let dump = support::render(&mut app, 76, 16);
     assert!(
         support::text_block(&dump).contains("Agent 11"),
@@ -2620,7 +2675,7 @@ fn an_agent_that_has_not_said_what_it_offers_says_so_rather_than_nothing() {
     let (_scratch, mut app) = with_an_agent("agent-silence", &[]);
 
     // The group is last, so the end of the page is where it is.
-    support::press(&mut app, KeyCode::End);
+    support::press_control_key(&mut app, KeyCode::End);
     let dump = support::render(&mut app, 66, 12);
     assert!(
         support::text_block(&dump).contains("Nothing has been heard"),
@@ -2728,7 +2783,7 @@ fn a_warning_is_counted_where_the_page_decides_what_is_on_it() {
     );
 
     support::type_text(&mut app, "way ");
-    support::press(&mut app, KeyCode::End);
+    support::press_control_key(&mut app, KeyCode::End);
     let dump = support::render(&mut app, 66, 16);
     assert!(
         support::text_block(&dump).contains("Way four"),
@@ -3025,7 +3080,7 @@ fn walking_the_cards_rewrites_marks_and_a_still_frame_does_not() {
 
     // And the end of the list, which the window has to follow: every mark
     // on the page lands on a new row.
-    support::press(&mut app, KeyCode::End);
+    support::press_control_key(&mut app, KeyCode::End);
     assert!(
         app.picture_moved_for_test(editor),
         "the window scrolled to the last card without moving a mark"

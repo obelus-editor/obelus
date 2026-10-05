@@ -237,6 +237,27 @@ impl Field {
         self.writing.select_all(ROOM);
     }
 
+    /// Whether delete has anything here to take: something held, or a
+    /// character in front of the caret.
+    ///
+    /// What a box that shares the key with the list it is over asks first:
+    /// delete is the box's while it has something to do there, and the
+    /// row's after -- the rule backspace already follows with an empty box.
+    #[must_use]
+    pub fn takes_a_delete(&self) -> bool {
+        self.writing.has_selection() || self.caret().get() < self.said().chars().count()
+    }
+
+    /// Lets go of what is held, and says whether anything was.
+    ///
+    /// What escape does first in every box: a selection is nearer than
+    /// the question the box is part of.
+    pub fn let_go(&mut self) -> bool {
+        let held = self.writing.has_selection();
+        self.writing.clear_selection();
+        held
+    }
+
     /// What a copy takes from it, and what to call it.
     ///
     /// What is held, or the whole line where nothing is -- the rule the

@@ -45,7 +45,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::{
     field::Field,
@@ -165,6 +165,30 @@ impl Chooser {
         match &self.doing {
             Doing::Choosing => &self.filter,
             Doing::Naming(naming) => &naming.typed,
+        }
+    }
+
+    /// The same, to change.
+    fn typing_mut(&mut self) -> &mut Field {
+        match &mut self.doing {
+            Doing::Choosing => &mut self.filter,
+            Doing::Naming(naming) => &mut naming.typed,
+        }
+    }
+
+    /// Puts the caret of the box at the foot where a cell of its row is.
+    ///
+    /// Only the caret, so nothing the box says changes and nothing has to
+    /// be asked again.
+    pub fn place_in_typing(&mut self, cell: u16, extend: bool) {
+        self.typing_mut().place_at_cell(cell, extend);
+    }
+
+    /// Takes hold of the word under the caret, or of all of the box.
+    pub fn hold_in_typing(&mut self, all: bool) {
+        match all {
+            true => self.typing_mut().hold_all(),
+            false => self.typing_mut().hold_word(),
         }
     }
 
@@ -289,6 +313,8 @@ impl Chooser {
             // give up on. Clearing the filter is what escape means where
             // there is one, and a reader who has narrowed to nothing has
             // exactly one key they would reach for.
+            // What is held first: nearer than the filter it is in.
+            KeyCode::Esc if self.filter.let_go() => Outcome::Taken,
             KeyCode::Esc if !self.filter.is_empty() => {
                 self.filter.clear();
                 self.at = 0;
@@ -296,13 +322,17 @@ impl Chooser {
             }
             KeyCode::Esc => Outcome::Ignored,
             _ => {
+                let said = self.filter.said();
                 if self.filter.handle_key(&key) {
                     // The rows underneath have moved, so standing on the
                     // fifth of them is standing on a different project.
                     // Back to the top, which is the newest that matched --
                     // or, where nothing did, the opening row, which is
-                    // then the only one.
-                    self.at = 0;
+                    // then the only one. Only where they have: a caret
+                    // moved along the filter moved no row.
+                    if self.filter.said() != said {
+                        self.at = 0;
+                    }
                     return Outcome::Taken;
                 }
                 Outcome::Ignored
@@ -321,7 +351,9 @@ impl Chooser {
             // Something nearer to give up on than the screen, so escape
             // does here what it does everywhere: the path box goes and
             // the projects are underneath it again. The list in front of
-            // *it* has already had its turn at this key.
+            // *it* has already had its turn at this key, and what is held
+            // in the box is nearer than the box.
+            KeyCode::Esc if self.typing_mut().let_go() => Outcome::Taken,
             KeyCode::Esc => {
                 self.doing = Doing::Choosing;
                 // Back on the row the box was opened from.
@@ -530,11 +562,8 @@ fn expanded(said: &str) -> String {
 /// is here.
 #[must_use]
 fn movement(key: KeyEvent) -> Option<Move> {
-    // Modifiers judged exactly, and before the code is looked at:
-    // `shift+up` extends a selection elsewhere in Obelus and means nothing
-    // here, and a key that answered to any modifier would swallow it.
-    if key.modifiers != KeyModifiers::NONE {
-        return None;
-    }
-    Move::of(key.code)
+    // As a list under a box has them: `shift+up` extends a selection
+    // elsewhere in Obelus, and bare home and end are where the filter's
+    // caret goes, so the ends of the list are control's.
+    Move::under_a_box(&key)
 }

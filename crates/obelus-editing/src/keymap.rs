@@ -322,10 +322,10 @@ pub enum Context {
     ///
     /// Almost nothing is bound here, and that is the point: a global key
     /// that reached a dialog would be a global key opening a second one
-    /// over it. The exception is the three that act on what the reader has
-    /// hold of -- copy, cut and paste -- because a dialog with a box in it
-    /// has a caret, and a box a reader can select in but not copy out of
-    /// is a box with half a selection.
+    /// over it. The exception is the four that act on what the reader has
+    /// hold of -- copy, cut, paste and taking all of it -- because a dialog
+    /// with a box in it has a caret, and a box a reader can select in but
+    /// not copy out of is a box with half a selection.
     Dialog,
 }
 
@@ -641,6 +641,13 @@ impl Keymap {
                     command: Command::Paste,
                     context: Context::Dialog,
                     chord: control('v'),
+                },
+                // And taking all of what is in the box, which is how a
+                // selection to copy or cut is made in one key.
+                Binding {
+                    command: Command::SelectionAll,
+                    context: Context::Dialog,
+                    chord: control('a'),
                 },
                 // And the same two under the names a desktop uses for
                 // them. Argued in `why_not`, which has to let them

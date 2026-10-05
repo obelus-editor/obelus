@@ -13,7 +13,7 @@ use obelus_component::card::{Card, On, UNDER};
 use obelus_theme::Theme;
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style};
 
-use super::{chat, fill, put, rule, write};
+use super::{Marked, chat, fill, put, rule, write, write_marked};
 
 /// The margin every row of the conversation is drawn in.
 const MARGIN: u16 = 1;
@@ -71,7 +71,12 @@ pub fn place_at(card: &Card, area: Rect, x: u16, y: u16) -> Option<(usize, u16)>
     let (row, _) = card.caret(width_of(words))?;
     let height = usize::from(words.height).max(1);
     let first = row.saturating_sub(height - 1);
-    Some((first + usize::from(y - words.y), x - words.x))
+    // From where the words start, which is a margin in from the band's
+    // edge: counted from the edge, every press landed a character late.
+    Some((
+        first + usize::from(y - words.y),
+        (x - words.x).saturating_sub(MARGIN),
+    ))
 }
 
 /// Which of the card's rows a point on screen is on.
@@ -338,7 +343,19 @@ pub fn draw(cells: &mut CellBuffer, area: Rect, card: &Card, on: Option<On>, the
                 let Ok(offset) = u16::try_from(offset) else {
                     break;
                 };
-                write(cells, row.x + MARGIN, row.y + offset, words, plain);
+                let held = match words.held.clone() {
+                    Some(held) => Marked::run(held, theme.selection_background),
+                    None => Marked::plain(),
+                };
+                write_marked(
+                    cells,
+                    row,
+                    row.x + MARGIN,
+                    row.y + offset,
+                    &words.said,
+                    plain,
+                    &held,
+                );
             }
         }
     }

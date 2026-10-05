@@ -2191,7 +2191,7 @@ impl App {
     /// would reach.
     pub(crate) fn context(&self) -> Context {
         // Being asked which project is a dialog like any other, and takes
-        // what `Context::Dialog` binds: leaving, and the three keys that
+        // what `Context::Dialog` binds: leaving, and the four keys that
         // act on what the reader has hold of -- a box they can select in
         // and not paste into is half a box. Everything else in Obelus is
         // about a project, and `Requires::AProject` is what refuses it.
@@ -3251,14 +3251,24 @@ impl App {
         // Which box is showing, and how far in its text starts. The same
         // order the keys go in by, and the same insets the renderer draws
         // them at.
+        //
+        // The list of names before the settings, because it is opened from
+        // them and drawn over them; and the page asking which project
+        // last, because every one of the others is drawn over it.
         let inset = if self.prompt.is_some() {
             self.prompt.as_ref().map(obelus_ui::status::answer_inset)
-        } else if self.settings.is_some() {
+        } else if self.names.is_some() || self.settings.is_some() {
             Some(obelus_ui::status::typed_inset(None))
-        } else {
+        } else if self.picker.is_some() {
             self.picker
                 .as_ref()
                 .map(|picker| obelus_ui::status::typed_inset(picker.question()))
+        } else {
+            self.chooser.as_ref().map(|chooser| {
+                obelus_ui::status::typed_inset(Some(obelus_ui::status::choosing_question(
+                    chooser.is_naming(),
+                )))
+            })
         };
         let Some(inset) = inset else {
             return false;
@@ -3666,22 +3676,43 @@ impl App {
         let Some(on) = obelus_ui::card::row_at(card, band, x, y) else {
             return false;
         };
-        if kind != crate::event::Pointer::Pressed {
-            // The card's, and nothing for a drag to do in it: said so
-            // rather than let through, or a drag begun on the card would
-            // take hold of the transcript behind it.
+        let width = obelus_ui::card::width_of(band);
+        // A drag over the words holds what it crosses, the way it does in
+        // every other box. Anywhere else on the card there is nothing for
+        // one to do: said so rather than let through, or a drag begun on
+        // the card would take hold of the transcript behind it.
+        if kind == crate::event::Pointer::Dragged && on == On::Words {
+            let place = obelus_ui::card::place_at(card, band, x, y);
+            if let Some(card) = self.conversation_mut().and_then(|talk| talk.card.as_mut())
+                && let Some((row, cell)) = place
+            {
+                card.place_in_words(row, cell, width, true);
+            }
             return true;
         }
-        let width = obelus_ui::card::width_of(band);
-        let place = obelus_ui::card::place_at(card, band, x, y);
+        if kind != crate::event::Pointer::Pressed {
+            return true;
+        }
+        let clicks = self.clicks_at(x, y);
+        let area = self.editor_area;
 
         let Some(card) = self.conversation_mut().and_then(|talk| talk.card.as_mut()) else {
             return true;
         };
         card.stand_on(on);
         if on == On::Words {
+            // Asked once the reader is standing in the words, because where
+            // in them a point is depends on how they scroll under the
+            // caret -- and a card says nothing about a caret it has not got.
+            let band = obelus_ui::chat::bands_for(area, card).writing;
+            let place = obelus_ui::card::place_at(card, band, x, y);
             if let Some((row, cell)) = place {
-                card.place_in_words(row, cell, width);
+                card.place_in_words(row, cell, width, false);
+                match clicks {
+                    2 => card.hold_in_words(false, width),
+                    3 => card.hold_in_words(true, width),
+                    _ => {}
+                }
             }
             return true;
         }
@@ -3841,10 +3872,14 @@ impl App {
     fn place_on_status(&mut self, cell: u16, extend: bool) {
         if let Some(prompt) = self.prompt.as_mut() {
             prompt.place_at_cell(cell, extend);
+        } else if let Some((_, names)) = self.names.as_mut() {
+            names.place_in_query(cell, extend);
         } else if let Some(settings) = self.settings.as_mut() {
             settings.place_in_query(cell, extend);
         } else if let Some(picker) = self.picker.as_mut() {
             picker.place_in_query(cell, extend);
+        } else if let Some(chooser) = self.chooser.as_mut() {
+            chooser.place_in_typing(cell, extend);
         }
     }
 
@@ -3852,10 +3887,14 @@ impl App {
     fn hold_on_status(&mut self, all: bool) {
         if let Some(prompt) = self.prompt.as_mut() {
             prompt.hold(all);
+        } else if let Some((_, names)) = self.names.as_mut() {
+            names.hold_in_query(all);
         } else if let Some(settings) = self.settings.as_mut() {
             settings.hold_in_query(all);
         } else if let Some(picker) = self.picker.as_mut() {
             picker.hold_in_query(all);
+        } else if let Some(chooser) = self.chooser.as_mut() {
+            chooser.hold_in_typing(all);
         }
     }
 

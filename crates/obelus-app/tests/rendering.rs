@@ -2829,7 +2829,7 @@ fn the_foot_says_what_enter_does_here_and_how_to_leave() {
         "the way off the page is not named:\n{dump}"
     );
 
-    press(&mut app, KeyCode::End);
+    support::press_control_key(&mut app, KeyCode::End);
     let dump = support::render(&mut app, 64, 14);
     assert!(
         support::text_block(&dump).contains("Type a path"),
@@ -2933,7 +2933,7 @@ fn naming_a_path_offers_what_could_finish_it() {
         last: None,
     }]);
     // The opening row, which is under the projects.
-    support::press(&mut app, crossterm::event::KeyCode::End);
+    support::press_control_key(&mut app, crossterm::event::KeyCode::End);
     support::press(&mut app, crossterm::event::KeyCode::Enter);
     for character in format!("{}/", scratch.path().display()).chars() {
         support::press(&mut app, crossterm::event::KeyCode::Char(character));

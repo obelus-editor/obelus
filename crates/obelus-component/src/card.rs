@@ -401,13 +401,66 @@ impl Card {
         self.words.as_ref().map(|words| words.placeholder.as_str())
     }
 
-    /// What has been written, as it is drawn.
+    /// What has been written, as it is drawn -- with what is held in it,
+    /// because a selection nothing shows is a key that looks broken, and
+    /// one typed over is words gone that the reader never saw were held.
     #[must_use]
-    pub fn written(&self, width: u16) -> Vec<String> {
+    pub fn written(&self, width: u16) -> Vec<crate::composer::Laid> {
         self.words
             .as_ref()
-            .map(|words| words.composer.rows(width))
+            .map(|words| words.composer.laid(width))
             .unwrap_or_default()
+    }
+
+    /// What is held in the words, if anything is.
+    #[must_use]
+    pub fn selected(&self) -> Option<String> {
+        self.words.as_ref()?.composer.selected()
+    }
+
+    /// What a copy takes from the card: what is held in the words, or all
+    /// of them. Nothing on a card with nowhere to write.
+    #[must_use]
+    pub fn copied(&self) -> Option<(String, &'static str)> {
+        let words = self.words.as_ref()?;
+        Some(match words.composer.selected() {
+            Some(held) => (held, "selection"),
+            None => (words.composer.text(), "answer"),
+        })
+    }
+
+    /// The same, and takes it out.
+    pub fn cut(&mut self, width: u16) -> Option<(String, &'static str)> {
+        let words = self.words.as_mut()?;
+        Some(match words.composer.cut(width.max(1)) {
+            Some(held) => (held, "selection"),
+            None => (words.composer.take(), "answer"),
+        })
+    }
+
+    /// Takes hold of everything written, from wherever the reader is on
+    /// the card -- the rule a paste follows, and for the same reason:
+    /// taking all of the words is meaning to do something to them.
+    pub fn select_all(&mut self, width: u16) {
+        if self.words.is_none() {
+            return;
+        }
+        if !self.writing_wanted() {
+            self.tick_words();
+        }
+        self.focus(On::Words);
+        self.write(|composer| composer.select_all(width));
+    }
+
+    /// Lets go of what is held in the words, and says whether anything
+    /// was.
+    pub fn let_go(&mut self) -> bool {
+        let Some(words) = self.words.as_mut() else {
+            return false;
+        };
+        let held = words.composer.selected().is_some();
+        words.composer.let_go();
+        held
     }
 
     /// Whether anything has been written.
@@ -800,6 +853,24 @@ impl Card {
         if key.code == KeyCode::Enter && modifiers == KeyModifiers::CONTROL {
             return CardOutcome::Consumed;
         }
+        // Holding a word at a time, or all the way to an end of what is
+        // written, which is the box's -- and only while the reader is in
+        // it, like the rest of the keys that move about it.
+        if modifiers == KeyModifiers::CONTROL | KeyModifiers::SHIFT
+            && matches!(
+                key.code,
+                KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End
+            )
+        {
+            // Swallowed elsewhere on the card, for the reason below.
+            if self.on != On::Words {
+                return CardOutcome::Consumed;
+            }
+            self.write(|composer| {
+                composer.handle_key(key, width.max(1));
+            });
+            return CardOutcome::Consumed;
+        }
         if modifiers != KeyModifiers::NONE && modifiers != KeyModifiers::SHIFT {
             return CardOutcome::Ignored;
         }
@@ -813,6 +884,10 @@ impl Card {
         }
 
         match key.code {
+            // What is held in the words first, which is nearer than the
+            // question: escape gives up on the whole form, and a reader
+            // letting go of a selection does not mean that.
+            KeyCode::Esc if bare && self.let_go() => CardOutcome::Consumed,
             KeyCode::Esc if bare => CardOutcome::Cancelled,
             KeyCode::Enter if bare => match self.on {
                 // A tick, where several answers may be chosen. Nothing is
@@ -889,6 +964,32 @@ impl Card {
                 self.write(|composer| composer.insert(character));
                 CardOutcome::Consumed
             }
+            // The keys that move about the words, on a row that is not
+            // them: swallowed rather than let through, because what they
+            // would reach is the box under the card -- and the caret and
+            // the hold there are a message nobody can see. Shift and an
+            // end there held the whole of a waiting draft, and the next
+            // letter after the card typed over it.
+            KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End => CardOutcome::Consumed,
+            // And rubbing out is writing too, so it goes where typing goes
+            // -- where there is anything written to rub out. Otherwise it
+            // is swallowed, for the reason a character is on a card with no
+            // box: what is under a card is the box a message is written in,
+            // and a backspace that fell through took a letter out of a
+            // message nobody could see.
+            KeyCode::Backspace | KeyCode::Delete if bare => {
+                if self.blank() {
+                    return CardOutcome::Consumed;
+                }
+                if !self.writing_wanted() {
+                    self.tick_words();
+                }
+                self.focus(On::Words);
+                self.write(|composer| {
+                    composer.handle_key(key, room);
+                });
+                CardOutcome::Consumed
+            }
             _ => CardOutcome::Ignored,
         }
     }
@@ -920,14 +1021,26 @@ impl Card {
     /// For a pointer. Where the box is on screen and how tall it is belong
     /// to the drawing, so the caller hands in a place in the *box* rather
     /// than a place on the screen.
-    pub fn place_in_words(&mut self, row: usize, cell: u16, width: u16) {
+    ///
+    /// `extend` is a drag: the place the button went down stays put and
+    /// this end moves.
+    pub fn place_in_words(&mut self, row: usize, cell: u16, width: u16, extend: bool) {
         self.write(|composer| {
             composer.place_at_cell(
                 u16::try_from(row).unwrap_or(u16::MAX),
                 cell,
                 width.max(1),
-                false,
+                extend,
             );
+        });
+    }
+
+    /// Takes hold of the word under the caret, or of its line: what a
+    /// second and a third click mean in every box in Obelus.
+    pub fn hold_in_words(&mut self, line: bool, width: u16) {
+        self.write(|composer| match line {
+            true => composer.hold_line(width.max(1)),
+            false => composer.hold_word(width.max(1)),
         });
     }
 
@@ -1203,6 +1316,95 @@ mod tests {
         );
     }
 
+    /// Backspace and delete are the card's from wherever the reader is on
+    /// it, the way typing is: they rub out what is written, and on a card
+    /// with nothing written -- or nowhere to write -- they are swallowed.
+    ///
+    /// Either way they are not let through. What is under a card is the box
+    /// a message is written in, and a backspace pressed on an answer's row
+    /// took a letter out of that message, where nobody could see it go.
+    ///
+    /// Deliberate break: the arm for the two taken out, and both are
+    /// `Ignored` on an answer's row.
+    #[test]
+    fn backspace_and_delete_rub_out_from_anywhere_on_the_card() {
+        let mut card = Card::new(answers(), false);
+        card.writing("Other", false, None);
+        // On an answer, with nothing written: swallowed.
+        assert_eq!(card.on(), On::Choice(0));
+        for code in [KeyCode::Backspace, KeyCode::Delete] {
+            assert_eq!(card.handle_key(&key(code), ROOM), CardOutcome::Consumed);
+        }
+
+        for character in "abc".chars() {
+            card.handle_key(&key(KeyCode::Char(character)), ROOM);
+        }
+        card.handle_key(&key(KeyCode::Up), ROOM);
+        assert_ne!(card.on(), On::Words, "up did not leave the box");
+        assert_eq!(
+            card.handle_key(&key(KeyCode::Backspace), ROOM),
+            CardOutcome::Consumed
+        );
+        assert_eq!(card.on(), On::Words, "backspace did not go to the box");
+        card.handle_key(&key(KeyCode::Home), ROOM);
+        card.handle_key(&key(KeyCode::Up), ROOM);
+        assert_eq!(
+            card.handle_key(&key(KeyCode::Delete), ROOM),
+            CardOutcome::Consumed
+        );
+        assert_eq!(
+            card.written(ROOM)
+                .into_iter()
+                .map(|row| row.said)
+                .collect::<Vec<_>>(),
+            ["b"],
+            "backspace and delete did not rub out what is written"
+        );
+
+        // A card with no box at all swallows them as well.
+        let mut card = Card::new(answers(), false);
+        for code in [KeyCode::Backspace, KeyCode::Delete] {
+            assert_eq!(card.handle_key(&key(code), ROOM), CardOutcome::Consumed);
+        }
+    }
+
+    /// The keys that move about the words are swallowed on a row that is
+    /// not them, with or without shift, and with control and shift.
+    ///
+    /// They used to be let through, and what is under a card is the box a
+    /// message is written in: control, shift and home on an answer took
+    /// hold of the whole of a draft waiting there, and the first letter
+    /// typed after the card went over it.
+    ///
+    /// Deliberate breaks: the control-and-shift arm answering `Ignored`
+    /// off the words, as it did; and the arm that swallows the rest taken
+    /// out.
+    #[test]
+    fn the_keys_of_the_words_do_not_leave_the_card() {
+        let mut card = Card::new(answers(), false);
+        card.writing("Other", false, None);
+        assert_eq!(card.on(), On::Choice(0));
+        for code in [KeyCode::Left, KeyCode::Right, KeyCode::Home, KeyCode::End] {
+            for held in [
+                KeyModifiers::NONE,
+                KeyModifiers::SHIFT,
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            ] {
+                assert_eq!(
+                    card.handle_key(&KeyEvent::new(code, held), ROOM),
+                    CardOutcome::Consumed,
+                    "{held:?} and {code:?} left the card"
+                );
+            }
+        }
+        // But control alone and an end is the transcript's, which is
+        // nothing of the box's.
+        assert_eq!(
+            card.handle_key(&KeyEvent::new(KeyCode::End, KeyModifiers::CONTROL), ROOM),
+            CardOutcome::Ignored
+        );
+    }
+
     /// A line in the box is asked for the way it is asked for in the box a
     /// message is written in: with shift, or with alt where the terminal
     /// cannot report shift.
@@ -1224,7 +1426,10 @@ mod tests {
             );
             card.handle_key(&key(KeyCode::Char('b')), ROOM);
             assert_eq!(
-                card.written(ROOM),
+                card.written(ROOM)
+                    .into_iter()
+                    .map(|row| row.said)
+                    .collect::<Vec<_>>(),
                 ["a", "b"],
                 "{held:?} and enter did not make a line"
             );

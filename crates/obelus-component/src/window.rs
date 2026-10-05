@@ -55,6 +55,28 @@ impl Move {
             _ => None,
         }
     }
+
+    /// The same, for a list with a box over it that the reader types in.
+    ///
+    /// Bare, except the ends: bare home and end are where a caret goes in
+    /// every text Obelus holds, so in such a list they are the box's, and
+    /// the list's ends are reached with control -- the arrangement a
+    /// picker has. Every other modifier is the box's too: shift holds what
+    /// the caret passes over, and a list that answered to it took the
+    /// hold away from the box.
+    #[must_use]
+    pub fn under_a_box(key: &crossterm::event::KeyEvent) -> Option<Self> {
+        use crossterm::event::{KeyCode, KeyModifiers};
+        let ends = matches!(key.code, KeyCode::Home | KeyCode::End);
+        let wanted = match ends {
+            true => KeyModifiers::CONTROL,
+            false => KeyModifiers::NONE,
+        };
+        if obelus_editing::keymap::modifiers_of(key) != Some(wanted) {
+            return None;
+        }
+        Self::of(key.code)
+    }
 }
 
 /// Whether stepping off the end of a list comes back at the other one.

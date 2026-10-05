@@ -1287,9 +1287,10 @@ impl Command {
             // because `offers` gates both. The command says what it found.
             Self::Undo => Requires::SomethingToUndo,
             Self::Redo => Requires::SomethingToRedo,
-            // Not a selection: this is how one is made. A file, though --
-            // there is nothing to take all of otherwise.
-            Self::SelectionAll => Requires::AFileOpen,
+            // Not a selection: this is how one is made. Somewhere with a
+            // caret, though -- a file or a box -- because there is nothing
+            // to take all of otherwise.
+            Self::SelectionAll => Requires::ACaret,
             Self::GoBack => Requires::SomewhereBack,
             Self::GoForward => Requires::SomewhereForward,
             // `ask-about-symbol` needs nothing: with no server it is the thing

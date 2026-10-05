@@ -4312,6 +4312,128 @@ fn a_paste_goes_into_the_card_and_not_behind_it() {
     );
 }
 
+/// What is written on a card is held the way it is in every other box:
+/// the same keys, drawn held, copied from the card rather than from the box
+/// it covers, taken hold of with the pointer -- and escape lets go of it
+/// before it gives up on the question.
+///
+/// Every one of those was missing: the keys held without drawing it, a
+/// copy took the box behind, the pointer could only put the caret down,
+/// and escape gave the whole form up with the selection still on it.
+/// `tests/selecting.rs` asks the same of every other box.
+///
+/// Deliberate breaks: `Card::written` back to the rows without what is
+/// held, and the word is drawn in the page's colour; the card's arm in
+/// `copy_selection` taken out, and the copy is of the empty box behind;
+/// the card's own escape arm taken out, and the first escape answers the
+/// question; the drag arm in `press_in_card` taken out, and nothing is
+/// held; the `ctrl+shift` arm in `Card::handle_key` taken out, and the word
+/// is not held at all.
+#[test]
+fn what_is_written_on_a_card_is_held_like_any_box() {
+    use crossterm::event::{KeyEvent, KeyModifiers};
+    use obelus_app::event::Pointer;
+
+    let _turn = support::clipboard_turn();
+    obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Kept);
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/pick");
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the question", App::is_asking);
+    support::type_text(&mut app, "one two three");
+    let held = |app: &App| app.card().and_then(Card::selected);
+    let chord = |app: &mut App, code: KeyCode, modifiers: KeyModifiers| {
+        app.handle(Event::Key(KeyEvent::new(code, modifiers)));
+    };
+    let control_shift = KeyModifiers::CONTROL | KeyModifiers::SHIFT;
+
+    chord(&mut app, KeyCode::Left, control_shift);
+    assert_eq!(
+        held(&app).as_deref(),
+        Some("three"),
+        "the word was not held"
+    );
+
+    // Drawn held, where the words are.
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    let y = row_of(&dump, "one two three");
+    let x = rows(&dump)
+        .into_iter()
+        .find_map(|row| {
+            let (_, cells) = row.split_once('|')?;
+            let byte = cells.find("one two three")?;
+            Some(u16::try_from(cells[..byte].chars().count()).expect("a column"))
+        })
+        .expect("the words on screen");
+    let cells = support::cells_of(&mut app, WIDTH, HEIGHT);
+    let selection = app.theme().selection_background;
+    assert_eq!(
+        cells[(x + 8, y)].bg,
+        selection,
+        "what is held on the card is not drawn held:\n{dump}"
+    );
+    assert_ne!(
+        cells[(x, y)].bg,
+        selection,
+        "what is not held is drawn held"
+    );
+
+    // Copied out of the card, and not out of the box it covers.
+    support::press_control(&mut app, 'c');
+    assert_eq!(app.note().unwrap_or_default(), "Copied selection");
+    assert_eq!(obelus_clipboard::paste().as_deref(), Some("three"));
+
+    // Escape lets go, and the question is still waiting.
+    support::press(&mut app, KeyCode::Esc);
+    assert_eq!(held(&app), None, "escape did not let go");
+    assert!(
+        app.is_asking(),
+        "escape gave the question up with something held"
+    );
+
+    // From where the word began, which is where the caret was left.
+    chord(&mut app, KeyCode::Home, control_shift);
+    assert_eq!(held(&app).as_deref(), Some("one two "));
+    support::press(&mut app, KeyCode::Esc);
+    support::press_control(&mut app, 'a');
+    assert_eq!(
+        held(&app).as_deref(),
+        Some("one two three"),
+        "control and a held nothing"
+    );
+    support::press(&mut app, KeyCode::Esc);
+
+    // A drag over the words holds what it crosses.
+    app.handle(Event::Pointer {
+        kind: Pointer::Pressed,
+        x,
+        y,
+    });
+    app.handle(Event::Pointer {
+        kind: Pointer::Dragged,
+        x: x + 3,
+        y,
+    });
+    assert_eq!(held(&app).as_deref(), Some("one"), "the drag held nothing");
+    assert!(
+        app.chat().is_some_and(|chat| chat.writing().is_blank()),
+        "something went into the box under the card"
+    );
+
+    // And with nothing held, escape is what it always was.
+    support::press(&mut app, KeyCode::Esc);
+    support::press(&mut app, KeyCode::Esc);
+    assert!(
+        !app.is_asking(),
+        "the second escape did not give the question up"
+    );
+}
+
 /// A conversation takes typing wherever its keys are, except under a card
 /// with nowhere to write.
 ///

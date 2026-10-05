@@ -827,6 +827,13 @@ impl Settings {
         self.query.held()
     }
 
+    /// Whether delete is the filter's just now rather than the row's: it
+    /// has something held, or something in front of its caret.
+    #[must_use]
+    pub fn delete_is_the_filters(&self) -> bool {
+        self.query.takes_a_delete()
+    }
+
     /// Puts a run of text into it, which is what a paste is.
     pub fn put_in_query(&mut self, said: &str, offering: Option<&Offering>) {
         self.query.put(said);
@@ -1196,7 +1203,21 @@ impl Settings {
         let Some(modifiers) = obelus_editing::keymap::modifiers_of(key) else {
             return SettingsOutcome::Ignored;
         };
-        if modifiers != KeyModifiers::NONE && modifiers != KeyModifiers::SHIFT {
+        // Except holding a word, or all the way to an end, which is the
+        // filter's and nothing else's here: control and shift together.
+        if modifiers == KeyModifiers::CONTROL | KeyModifiers::SHIFT
+            && matches!(
+                key.code,
+                KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End
+            )
+        {
+            self.query.handle_key(key);
+            return SettingsOutcome::Consumed;
+        }
+        // And the page's two ends, which are control's here, because bare
+        // they are the filter's caret's.
+        let ends = Move::under_a_box(key).filter(|_| modifiers == KeyModifiers::CONTROL);
+        if modifiers != KeyModifiers::NONE && modifiers != KeyModifiers::SHIFT && ends.is_none() {
             return SettingsOutcome::Ignored;
         }
         let bare = modifiers == KeyModifiers::NONE;
@@ -1228,6 +1249,9 @@ impl Settings {
                 self.keys_showing = false;
                 SettingsOutcome::Consumed
             }
+            // Then what is held in the filter, which is nearer than the
+            // page it is on.
+            KeyCode::Esc if bare && self.query.let_go() => SettingsOutcome::Consumed,
             KeyCode::Esc if bare => SettingsOutcome::Cancelled,
             // The ends, with and without control: the same keys reach the
             // ends of a document, a list and a rendering, and a key should
@@ -1237,9 +1261,13 @@ impl Settings {
             // in a picker. The arrows need a bare key because the left and
             // right ones walk the tabs; paging and the ends have no other
             // meaning here.
-            code if count > 0
-                && let Some(movement) = Move::of(code)
-                && (bare || !matches!(movement, Move::Up | Move::Down)) =>
+            //
+            // As a list under a box has them: with shift they are the
+            // filter's, holding what the caret passes over, and bare home
+            // and end are where its caret goes -- so the page's ends are
+            // control's.
+            _ if count > 0
+                && let Some(movement) = Move::under_a_box(key) =>
             {
                 self.window
                     .apply(movement, u16::try_from(page).unwrap_or(1), Wrap::Yes);
@@ -1352,6 +1380,9 @@ impl Settings {
             }
             // Take it out of the project's file, which is what `delete` means
             // on the keys page too: this one is not set here any more.
+            // Once the filter has nothing for it -- nothing held and nothing
+            // in front of its caret -- because until then the key is the
+            // filter's, the rule backspace follows over a list of names.
             // Only there -- the reader's own settings have no "unset", a
             // setting they have not changed is simply the default.
             // And on one of the agent's rows, wherever the page is: what
@@ -1359,6 +1390,7 @@ impl Settings {
             // own answer, so there is something to go back to.
             KeyCode::Delete
                 if bare
+                    && !self.query.takes_a_delete()
                     && let Some(Shown::Agent { offer, chosen, .. }) =
                         rows.get(self.window.focus()) =>
             {
@@ -1374,6 +1406,7 @@ impl Settings {
             // everywhere else on this page.
             KeyCode::Delete
                 if bare
+                    && !self.query.takes_a_delete()
                     && let Some(Shown::Remote {
                         row: RemoteRow::Field(field),
                         ..
@@ -1385,7 +1418,11 @@ impl Settings {
                 }
             }
             KeyCode::Delete
-                if bare && self.on_project() && !self.on_keys() && !self.on_agents() =>
+                if bare
+                    && !self.query.takes_a_delete()
+                    && self.on_project()
+                    && !self.on_keys()
+                    && !self.on_agents() =>
             {
                 match rows.get(self.window.focus()).and_then(Shown::setting) {
                     Some(setting) => SettingsOutcome::Unset(setting.key),
@@ -1394,13 +1431,22 @@ impl Settings {
             }
             // Whatever the page did not want goes to the filter, which is
             // a line with a caret in it and takes the keys a line takes.
-            _ => match self.query.handle_key(key) {
-                true => {
-                    self.settle(offering);
-                    SettingsOutcome::Consumed
+            //
+            // The page is settled again only where what is typed changed:
+            // a caret moved along the filter moved no row, and settling
+            // takes the page back to its first.
+            _ => {
+                let said = self.query.said();
+                match self.query.handle_key(key) {
+                    true => {
+                        if self.query.said() != said {
+                            self.settle(offering);
+                        }
+                        SettingsOutcome::Consumed
+                    }
+                    false => SettingsOutcome::Ignored,
                 }
-                false => SettingsOutcome::Ignored,
-            },
+            }
         }
     }
 

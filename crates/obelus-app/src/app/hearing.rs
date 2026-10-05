@@ -47,9 +47,7 @@ impl Hearer {
     /// under it, and a key it has no use for is a key for the file. What the
     /// reader is *in* keeps what it does not take, and only the key table
     /// hears it after that. Which is the only way anything behind gets a
-    /// key, and how `ctrl+q` still leaves Obelus from inside one -- all but
-    /// a setting's list of names, which takes every key and leaves the table
-    /// nothing.
+    /// key, and how `ctrl+q` still leaves Obelus from inside one.
     const fn lets_through(self) -> bool {
         match self {
             Self::Hover | Self::Signature | Self::Completion | Self::Snippet => true,
