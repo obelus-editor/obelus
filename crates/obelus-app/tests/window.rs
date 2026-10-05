@@ -198,7 +198,7 @@ fn a_window_offers_what_only_a_window_can_do() {
 /// key.
 ///
 /// Deliberate break: take the `cap_the_keys` out of the working row, out
-/// of `offer_to_send_now`, out of the tail's loop, or the `cap_around` out
+/// of `offer_to_send_now`, out of `offer_enter`, or the `cap_around` out
 /// of `the_way_back` -- each
 /// leaves its key with no cap, and this names which. And counting one
 /// blank fewer before the way back's key puts its cap a cell to the left,
@@ -347,22 +347,79 @@ fn the_keys_a_conversation_names_wear_caps() {
         ["Enter"],
         "the key on a row that hands something back"
     );
+}
 
-    // And in the colour of the row it is on. That key is offered only on
-    // the row the reader is on, so a cap in the page's colour cut a hole
-    // in the one mark saying where the keys are. Asked of the cells under
-    // the key, which a terminal draws, rather than of the theme.
-    //
-    // Deliberate break: `cap_the_keys` given `self.theme.background` for
-    // its ground again, and the cap is the page's colour on a lit row.
+/// A key on a lit row is capped in the row's colour.
+///
+/// The row saying which step of its list the agent is on opens that list,
+/// so it is lit while the reader stands on it -- and it is the row that
+/// says how to stop the turn. A cap in the page's colour cut a hole in the
+/// one mark saying where the keys are. Asked of the cells under the key,
+/// which a terminal draws, rather than of the theme.
+///
+/// Deliberate break: `cap_the_keys` given `self.theme.background` for its
+/// ground on the working row again, and the cap is the page's colour on a
+/// lit row.
+#[test]
+fn a_key_on_a_lit_row_is_capped_in_its_colour() {
+    use crossterm::event::KeyCode;
+
+    let _turn = turn();
+    obelus_config::drawn_in_a_window();
+    obelus_icons::use_glyphs(false);
+    let heard = heard();
+
+    let (sender, events) = std::sync::mpsc::channel();
+    let mut app = App::new(Vec::new());
+    app.events_for_test(sender);
+    app.agents_root_for_test(
+        std::env::temp_dir().join(format!("obelus-window-tests-{}", std::process::id())),
+    );
+    let (width, height) = (76, 24);
+    support::lay_out(&mut app, width, height);
+    app.talk_to(
+        "fake",
+        std::path::Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.new_conversation();
+    app.open_a_session_for_test();
+    let pump = |app: &mut App, what: &str, until: &dyn Fn(&App) -> bool| {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        while !until(app) {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            assert!(!left.is_zero(), "gave up waiting for {what}");
+            let event = events
+                .recv_timeout(left)
+                .unwrap_or_else(|_| panic!("nothing arrived while waiting for {what}"));
+            app.handle(event);
+            support::lay_out(app, width, height);
+        }
+    };
+    pump(&mut app, "the handshake", &|app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/steps");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, "the list", &|app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(width)
+                .iter()
+                .any(|row| row.text().contains("Step 2 of 3"))
+        })
+    });
+    // Up from the box onto it: the last row of the transcript.
+    support::press(&mut app, KeyCode::Up);
+
     heard.grounds.lock().expect("the grounds").clear();
     let cells = support::cells_of(&mut app, width, height);
     let grounds = heard.grounds.lock().expect("the grounds").clone();
     let (_, area, cap) = grounds
         .iter()
-        .find(|(keys, _, _)| keys == "Enter")
-        .expect("a cap round enter");
+        .find(|(keys, _, _)| keys == "Esc")
+        .expect("a cap round escape");
     let row = cells[(area.x + 1, area.y)].bg;
-    assert_ne!(row, Color::Reset, "the row with the key is not lit");
+    let page = cells[(0, height - 1)].bg;
+    assert_ne!(row, page, "the row with the key is not lit");
     assert_eq!(*cap, row, "the cap is not the colour of its row");
 }

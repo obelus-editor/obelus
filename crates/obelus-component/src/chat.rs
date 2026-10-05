@@ -433,11 +433,9 @@ impl Row {
     ///
     /// One row, mostly. What the reader said is one thing however many
     /// rows it wraps to, and enter on any of them takes back or copies all
-    /// of it -- so all of it is lit, and the key is answered from the first
-    /// of them, which carries `unsent` and `again` and the word for the key.
-    /// Only the first used to be: the rest of the message stood outside
-    /// the light that says what enter acts on, and enter on them did
-    /// nothing.
+    /// of it, answered from the first of them, which carries `unsent` and
+    /// `again` and the word for the key. Only the first used to answer:
+    /// enter on the rest of the message did nothing.
     #[must_use]
     pub fn acting(rows: &[Self], row: usize) -> Option<std::ops::Range<usize>> {
         let here = rows.get(row)?;

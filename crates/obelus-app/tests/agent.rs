@@ -1272,27 +1272,29 @@ fn enter_on_something_already_said_copies_it_to_the_box() {
     );
 }
 
-/// Something already said is lit on every row of it, and enter on any of
-/// them copies all of it.
+/// Something already said answers enter on every row of it, with the key
+/// after the last of them and no light round any.
 ///
-/// `again` is on the first row alone, so the light and the key were both
-/// read off that row: a message that wrapped was lit for one row of two,
-/// and enter on the second did nothing.
+/// `again` is on the first row alone, so the key was read off that row:
+/// enter on the second row of a message did nothing, and the key's word
+/// sat after the first row, in the middle of the message. And the reader's
+/// own words are not lit: several rows of them in a block of colour was
+/// the light standing over what they were reading.
 ///
-/// Broken deliberately three times: lighting a row by `row.acts()` on the
-/// cursor's own row again leaves the second row unlit; answering enter
-/// from `laid.get(at.row)` again leaves the box empty; and taking the foot
-/// from the first lit row rather than the last puts the key under that
-/// row, on the page's ground rather than the light's.
+/// Broken deliberately three times: lighting what the reader said again
+/// (dropping the `Speaker::Reader` filter on `lit`) puts a colour behind
+/// both rows; answering enter from `laid.get(at.row)` again leaves the box
+/// empty; and taking the foot from the first row rather than the last puts
+/// the key after the first line, which has the room for it.
 #[test]
-fn something_already_said_is_lit_and_copied_from_every_row_of_it() {
+fn something_already_said_answers_enter_from_every_row_of_it() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the handshake", |app| {
         app.talking() == obelus_agent::Talking::Ready
     });
-    let words = "/forever and words that run on long enough to need a second row of \
-                 the transcript, and the end of them";
-    support::type_text(&mut app, words);
+    support::type_text(&mut app, "/forever and a first line");
+    support::press_alt_key(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "and the end of them");
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "it to start thinking", |app| {
         app.talking() == obelus_agent::Talking::Thinking
@@ -1327,31 +1329,25 @@ fn something_already_said_is_lit_and_copied_from_every_row_of_it() {
         }
         support::press(&mut app, KeyCode::Up);
     }
-    let first = ground_of(&mut app, "/forever and");
-    let rest = ground_of(&mut app, "end of them");
-    // And the key after the last of it, which has the room: the first row
-    // is full of words.
+    assert_eq!(
+        (
+            ground_of(&mut app, "first line"),
+            ground_of(&mut app, "end of them")
+        ),
+        (unlit, unlit),
+        "what the reader said is lit"
+    );
     let text = screen(&mut app);
     assert!(
         text.lines()
             .any(|row| row.contains("end of them") && row.contains("Enter  Copies it")),
         "the key is not at the end of the last row:\n{text}"
     );
-    assert_eq!(
-        ground_of(&mut app, "Copies it"),
-        rest,
-        "the key is beside the words and not on the lit row"
-    );
-    assert_ne!(rest, unlit, "the row the cursor is on is not lit");
-    assert_eq!(
-        first, rest,
-        "one thing said is lit on one row and not the other: {first:?} and {rest:?}"
-    );
 
     support::press(&mut app, KeyCode::Enter);
     assert_eq!(
         app.chat().map(|chat| chat.writing().text()),
-        Some(words.to_string()),
+        Some("/forever and a first line\nand the end of them".to_string()),
         "the words were not put in the box"
     );
 }

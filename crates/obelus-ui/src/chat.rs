@@ -1046,12 +1046,21 @@ impl ChatView<'_> {
             );
         }
         let first = self.chat.top().min(rows.len());
-        let lit = match self.focus {
+        let acting = match self.focus {
             Focus::Transcript(place) if self.in_front => Row::acting(&rows, place.row),
             _ => None,
         };
-        // The last row of what is lit, where it is on screen: where its
-        // words end, and the colour it is drawn in.
+        // Except what the reader said, which is not lit at all: it is the
+        // one thing here a key acts on that is more than a row, and a light
+        // round several rows of their own words was a block of colour over
+        // the very thing they were reading. The caret says where they are
+        // and the key at the end of it says what enter does.
+        let lit = acting.clone().filter(|on| {
+            rows.get(on.start)
+                .is_some_and(|row| row.speaker != Speaker::Reader)
+        });
+        // The last row of what a key acts on, where it is on screen: where
+        // its words end, and the colour it is drawn in.
         let mut foot = None;
         for (offset, row) in rows.iter().skip(first).enumerate() {
             let Ok(offset) = u16::try_from(offset) else {
@@ -1068,7 +1077,7 @@ impl ChatView<'_> {
             // The row the cursor is on, lit the way every list in Obelus
             // lights one -- but only where the row does something, because
             // that is what the light promises: what is lit is what enter
-            // opens. All of it, where that is more than one row.
+            // opens.
             //
             // Where the cursor is is said by the caret instead. The cursor
             // can stand anywhere now, so a light that followed it would be
@@ -1262,7 +1271,7 @@ impl ChatView<'_> {
             for (gap, said, style) in tail {
                 ended = write_within(cells, ended + gap, y, &said, style, words_end(area) + 1);
             }
-            if lit.as_ref().is_some_and(|lit| at + 1 == lit.end) {
+            if acting.as_ref().is_some_and(|on| at + 1 == on.end) {
                 foot = Some((y, ended, dim));
             }
             // How to stop it, on the row that says it is going: the one
@@ -1280,8 +1289,8 @@ impl ChatView<'_> {
                 }
             }
         }
-        if let (Some(lit), Some(foot)) = (lit, foot) {
-            self.offer_enter(cells, area, &rows, lit, foot, dim);
+        if let (Some(on), Some(foot)) = (acting, foot) {
+            self.offer_enter(cells, area, &rows, on, foot, dim);
         }
     }
 
@@ -1291,7 +1300,7 @@ impl ChatView<'_> {
     /// do not.
     ///
     /// After the last row rather than the first, because the key is about
-    /// all of it, and the light round it ends there. It used to follow the
+    /// all of it, and all of it ends there. It used to follow the
     /// words of the first row, so a message of several rows had its key in
     /// the middle of it, and the room for the key was taken off those
     /// words.
@@ -1304,11 +1313,11 @@ impl ChatView<'_> {
         cells: &mut CellBuffer,
         area: Rect,
         rows: &[Row],
-        lit: std::ops::Range<usize>,
-        (y, ended, lit_dim): (u16, u16, Style),
+        on: std::ops::Range<usize>,
+        (y, ended, beside_dim): (u16, u16, Style),
         dim: Style,
     ) {
-        let Some(first) = rows.get(lit.start) else {
+        let Some(first) = rows.get(on.start) else {
             return;
         };
         let does = match (first.unsent, first.again) {
@@ -1328,10 +1337,10 @@ impl ChatView<'_> {
         };
         let beside = usize::from(ended) + GAP_BETWEEN_HINTS <= usize::from(at);
         let under = rows
-            .get(lit.end)
+            .get(on.end)
             .is_none_or(|row| row.from.is_none() && row.spans.is_empty());
         let (y, style) = match (beside, under) {
-            (true, _) => (y, lit_dim),
+            (true, _) => (y, beside_dim),
             (false, true) if y + 1 < area.bottom() => (y + 1, dim),
             _ => return,
         };
