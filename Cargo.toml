@@ -1,6 +1,12 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+# What a bare `cargo run` starts: the window. A workspace has no
+# `default-run` of its own, so with two binaries in it `cargo run` could not
+# choose and said so. The cost is that `build`, `test` and `clippy` without
+# `--workspace` now cover `obg` and what it is made of, and not the rest --
+# which is why CI and the commands in AGENTS.md all say `--workspace`.
+default-members = ["crates/obelus-gui"]
 
 [workspace.package]
 version = "0.9.3"
