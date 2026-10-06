@@ -262,6 +262,90 @@ fn the_arrows_walk_the_lines_then_the_notes() {
     assert_eq!(row(&mut app), 4);
 }
 
+/// A page lands on the line of a note it reaches, not on that note's
+/// first line, so the last note of a list pages down to its end.
+///
+/// Deliberate break: put the caret back at the start of whichever note the
+/// page landed on, which is what it did -- the window followed the caret
+/// back to the note's first line, so a page down from the last note did
+/// nothing and its tail never came on screen. And ask where the caret is
+/// drawn from the note's first row rather than its own: once that row is
+/// above the top of the screen the caret is drawn nowhere.
+#[test]
+fn paging_reaches_the_end_of_a_long_last_note() {
+    let scratch = tree(
+        "page-a-long-note",
+        r#"
+[[todo]]
+said = "a short one"
+done = false
+
+[[todo]]
+said = """
+line 1 of the long one
+line 2 of the long one
+line 3 of the long one
+line 4 of the long one
+line 5 of the long one
+line 6 of the long one
+line 7 of the long one
+line 8 of the long one
+line 9 of the long one
+line 10 of the long one
+line 11 of the long one
+line 12 of the long one
+line 13 of the long one
+line 14 of the long one
+line 15 of the long one
+line 16 of the long one
+line 17 of the long one
+line 18 of the long one
+line 19 of the long one
+the tail of the long one
+"""
+done = false
+"#,
+    );
+    let mut app = open(&scratch, 60, 12);
+    let caret_on = |app: &mut App| {
+        let dump = support::render(app, 60, 12);
+        let row = support::cursor_line(&dump)
+            .split_once(',')
+            .and_then(|(_, y)| y.trim().parse::<usize>().ok())
+            .unwrap_or_else(|| panic!("the caret is not on screen:\n{dump}"));
+        let text = support::text_block(&dump);
+        let drawn = text
+            .lines()
+            .filter_map(|line| line.split_once('|'))
+            .find(|(at, _)| at.trim().parse() == Ok(row))
+            .map(|(_, line)| line.to_string())
+            .unwrap_or_default();
+        (drawn, dump)
+    };
+    press(&mut app, KeyCode::Down);
+    let (drawn, dump) = caret_on(&mut app);
+    assert!(
+        drawn.contains("line 1 of"),
+        "not where this test meant to start:\n{dump}"
+    );
+    for _ in 0..4 {
+        press(&mut app, KeyCode::PageDown);
+    }
+    let (drawn, dump) = caret_on(&mut app);
+    assert!(
+        drawn.contains("the tail of the long one"),
+        "paging stopped short of the end of the last note:\n{dump}"
+    );
+    for _ in 0..4 {
+        press(&mut app, KeyCode::PageUp);
+    }
+    let (drawn, dump) = caret_on(&mut app);
+    assert!(
+        drawn.contains("a short one"),
+        "paging up stopped short of the top:\n{dump}"
+    );
+}
+
 /// Backspace and delete take a note with nothing in it, and walk the way
 /// they name.
 ///

@@ -135,9 +135,12 @@ pub fn caret(area: Rect, notes: &Notes) -> Option<ratatui::layout::Position> {
     let hints = hints(notes);
     let list = list_region(area, &hints);
     let window = notes.window();
-    let row = at.checked_sub(window.top())?;
     let (line, cell) = composer.caret(notes.caret_width());
-    let y = list.y + u16::try_from(row + line).ok()?;
+    // From the caret's own row, not the note's first: in a note longer than
+    // the screen the first line is above the top while the caret is on it,
+    // and asked from there the caret went nowhere.
+    let row = (at + line).checked_sub(window.top())?;
+    let y = list.y + u16::try_from(row).ok()?;
     // Where that note's own words start, which is where its caret goes.
     let step = notes
         .rows()
