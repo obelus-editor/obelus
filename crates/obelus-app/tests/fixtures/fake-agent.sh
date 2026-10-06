@@ -878,6 +878,18 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"looking at it first"}}}}\n'
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call","toolCallId":"p1","title":"Read the file","kind":"read","status":"in_progress"}}}\n'
             ;;
+        *'"method":"session/prompt"'*'"text":"/replanning'*)
+            # It says something, makes a plan, ticks off its first step --
+            # the same steps again -- then thinks better of it and adds one,
+            # and ends: two plans in all, and three times sent.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"thinking it over"}}}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"plan","entries":[{"content":"read the counts tree","priority":"high","status":"in_progress"},{"content":"write the test","priority":"low","status":"pending"}]}}}\n' "$session"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"plan","entries":[{"content":"read the counts tree","priority":"high","status":"completed"},{"content":"write the test","priority":"low","status":"in_progress"}]}}}\n' "$session"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"plan","entries":[{"content":"read the counts tree","priority":"high","status":"completed"},{"content":"wire it to the search","priority":"medium","status":"in_progress"},{"content":"write the test","priority":"low","status":"pending"}]}}}\n' "$session"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"done planning"}}}}\n'
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
         *'"method":"session/prompt"'*'"text":"/titled'*)
             # It names the conversation, the way an agent does once it has
             # worked out what the conversation is about.

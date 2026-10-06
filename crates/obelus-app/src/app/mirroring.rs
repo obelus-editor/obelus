@@ -18,7 +18,10 @@
 //! there arrives here like anything they typed, with a line in front of it for
 //! the agent saying where it came from. What the agent's tools did does not go:
 //! a chat is not a transcript, and a run of calls is the part of a turn nobody
-//! reads on a phone.
+//! reads on a phone. Its plan does, quietly, when the steps in it change --
+//! and not when one of them is ticked off, which an agent says again with
+//! every step: a thread of the same list a dozen times is a thread nobody
+//! finds the words in.
 //!
 //! **The card is the answer.** A question goes to the thread as a card the
 //! platform draws, and a press on it comes back as the ids chosen and the
@@ -61,6 +64,8 @@ pub(super) struct Mirror {
     questions: BTreeMap<String, u64>,
     /// What the agent has said in each conversation's turn so far.
     this_turn: BTreeMap<String, String>,
+    /// The steps of the plan last said in each conversation's thread.
+    plans: BTreeMap<String, Vec<String>>,
     /// Where the words about to go to each conversation's agent came from,
     /// said the moment before they go and gone the moment after: never
     /// kept for words still waiting, which may be taken back or joined by
@@ -561,6 +566,9 @@ impl App {
                     if let Some(said) = self.mirror.this_turn.remove(&was) {
                         self.mirror.this_turn.insert(now.clone(), said);
                     }
+                    if let Some(plan) = self.mirror.plans.remove(&was) {
+                        self.mirror.plans.insert(now.clone(), plan);
+                    }
                     if let Some(asked) = self.mirror.questions.remove(&was) {
                         self.mirror.questions.insert(now.clone(), asked);
                     }
@@ -723,6 +731,34 @@ impl App {
         if !said.trim().is_empty() {
             self.mirror_in(whose, said.trim().to_string(), false);
         }
+    }
+
+    /// The agent's plan, in the thread, where its steps are not the ones
+    /// last said there -- quietly, and after what it said before it, so the
+    /// thread reads in the order things happened.
+    pub(super) fn mirror_planned(&mut self, whose: talking::Whose, steps: &[acp::Step]) {
+        if !self.chat_is_listening() {
+            return;
+        }
+        let Some(chat) = self.chat_named(whose) else {
+            return;
+        };
+        let said: Vec<String> = steps.iter().map(|step| step.said.clone()).collect();
+        if said.is_empty() || self.mirror.plans.get(&chat) == Some(&said) {
+            return;
+        }
+        self.mirror.plans.insert(chat, said);
+        self.mirror_paused(whose);
+        let mut plan = "_The plan:_".to_string();
+        for step in steps {
+            let mark = match step.state.as_str() {
+                "completed" => '\u{2713}',
+                "in_progress" => '\u{25b8}',
+                _ => '\u{25e6}',
+            };
+            plan.push_str(&format!("\n{mark} {}", step.said));
+        }
+        self.mirror_in(whose, plan, false);
     }
 
     /// The turn is over: what the agent said since its last call goes to the

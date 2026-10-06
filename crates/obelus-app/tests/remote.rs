@@ -1156,6 +1156,70 @@ fn what_is_said_before_a_call_goes_at_once() {
     );
 }
 
+/// The agent's plan goes to the thread, quietly and after what it said
+/// before it -- and again only when its steps change: a step ticked off is
+/// the same list sent again, and is not said.
+///
+/// Broken deliberately three ways. Not mirroring the plan at all: no plan
+/// came. Saying it every time it was sent: three plans came, the middle one
+/// the first again with a step ticked. And saying it before the words held
+/// for the turn: the plan came ahead of "thinking it over".
+#[test]
+fn a_plan_is_said_when_its_steps_change() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-plan");
+    let (mut app, events, _log) = paired_with_an_agent(&scratch);
+    let _ = the_platform().send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        text: "/replanning".to_string(),
+    });
+    let said = said_until(&mut app, &events, "the end of the turn", |said| {
+        in_thread(said, "F1", "done planning")
+    });
+    let words: Vec<(&str, bool)> = said
+        .iter()
+        .filter_map(|out| match out {
+            obelus_remote::model::Out::Say {
+                thread,
+                text,
+                notify,
+                ..
+            } if thread == "F1" => Some((text.as_str(), *notify)),
+            _ => None,
+        })
+        .collect();
+    let plans: Vec<&(&str, bool)> = words
+        .iter()
+        .filter(|(text, _)| text.starts_with("_The plan:_"))
+        .collect();
+    assert_eq!(
+        plans,
+        [
+            &(
+                "_The plan:_\n\u{25b8} read the counts tree\n\u{25e6} write the test",
+                false
+            ),
+            &(
+                "_The plan:_\n\u{2713} read the counts tree\n\u{25b8} wire it to the search\n\u{25e6} write the test",
+                false
+            ),
+        ],
+        "not the two plans, quietly: {words:#?}"
+    );
+    let at = |what: &str| {
+        words
+            .iter()
+            .position(|(text, _)| text.contains(what))
+            .unwrap_or_else(|| panic!("nothing said with {what:?} in it: {words:#?}"))
+    };
+    assert!(
+        at("thinking it over") < at("_The plan:_"),
+        "the plan went ahead of what was said before it: {words:#?}"
+    );
+}
+
 /// Nothing outside the room is heard, even from somebody on the list: a
 /// thread they start in another group the bot is in begins nothing and is
 /// not answered.

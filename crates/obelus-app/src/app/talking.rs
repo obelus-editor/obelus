@@ -3654,7 +3654,10 @@ impl App {
                 // it never goes in the transcript -- so it is handed to the
                 // row that says what is happening now, which is where a
                 // state belongs and where one cannot be left behind.
-                acp::Update::Plan(steps) => self.in_talk(whose, |chat| chat.planning(steps)),
+                acp::Update::Plan(steps) => {
+                    self.mirror_planned(whose, &steps);
+                    self.in_talk(whose, |chat| chat.planning(steps));
+                }
                 // What the agent calls this conversation, which is the
                 // name it goes by in the list of open documents -- so it is
                 // written down rather than only shown.
