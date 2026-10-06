@@ -737,7 +737,12 @@ mod tests {
         let mut runs = Runs::default();
         let id = runs
             .start(
-                "printf 'a\\nb\\nc\\n' | tail -1",
+                // Written in the shell that will run it -- see `shell`. A
+                // pipe either way: `findstr` is what `cmd` has for `tail`.
+                match shell().1 {
+                    "/C" => "(echo a& echo b& echo c) | findstr c",
+                    _ => "printf 'a\\nb\\nc\\n' | tail -1",
+                },
                 &[],
                 &[],
                 None,
@@ -800,9 +805,9 @@ mod tests {
                 // What is under test is not: the limit is kept in code
                 // with no `cfg` in it, and this is only how a thousand
                 // characters are asked for.
-                match cfg!(windows) {
-                    true => "for /L %i in (1,1,100) do @echo aaaaaaaaaa",
-                    false => "printf 'aaaaaaaaaa%.0s' $(seq 1 100)",
+                match shell().1 {
+                    "/C" => "for /L %i in (1,1,100) do @echo aaaaaaaaaa",
+                    _ => "printf 'aaaaaaaaaa%.0s' $(seq 1 100)",
                 },
                 &[],
                 &[],
@@ -884,9 +889,9 @@ mod tests {
                 // in it, and this asks the shell to say them back. `^|`
                 // is how cmd is told a bar is a character rather than a
                 // pipe.
-                match cfg!(windows) {
-                    true => "echo %PAGER%^|%GIT_PAGER%^|%TERM%",
-                    false => "printf '%s|%s|%s' \"$PAGER\" \"$GIT_PAGER\" \"$TERM\"",
+                match shell().1 {
+                    "/C" => "echo %PAGER%^|%GIT_PAGER%^|%TERM%",
+                    _ => "printf '%s|%s|%s' \"$PAGER\" \"$GIT_PAGER\" \"$TERM\"",
                 },
                 &[],
                 // Even where the reader's own environment has one.
@@ -904,9 +909,9 @@ mod tests {
         // other two are set to something and come back as it.
         assert_eq!(
             text.trim(),
-            match cfg!(windows) {
-                true => "%PAGER%|cat|dumb",
-                false => "|cat|dumb",
+            match shell().1 {
+                "/C" => "%PAGER%|cat|dumb",
+                _ => "|cat|dumb",
             },
             "the command was given something that waits for a key"
         );

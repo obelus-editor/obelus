@@ -437,7 +437,7 @@ fn a_process_that_is_killed_reports_letting_go_of_what_it_held() {
     // the shell died, `sleep` went on holding the claim as an orphan, and
     // the close that reports a claim let go never happened. Measured both
     // ways: with the fork, `fuser` still names a holder after the kill.
-    let mut theirs = std::process::Command::new("sh")
+    let mut theirs = std::process::Command::new(support::sh())
         .arg("-c")
         .arg(format!(
             "exec 9>{} ; echo open ; exec sleep 30",

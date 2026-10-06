@@ -518,7 +518,7 @@ fn asked_to_sign_in(marker: &Path) -> (App, Receiver<Event>) {
     let (mut app, events) = wired();
     app.talk_to(
         "signing-in",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &[
             "tests/fixtures/signing-in-agent.sh".to_string(),
             marker.display().to_string(),
@@ -692,7 +692,7 @@ fn a_conversation_taken_up_again_asks_for_the_sign_in_too() {
     app.working_directory_for_test(scratch.path().to_path_buf());
     app.talk_to(
         "signing-in",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &[
             "tests/fixtures/signing-in-agent.sh".to_string(),
             marker.display().to_string(),
@@ -738,7 +738,7 @@ fn two_waiting(name: &str) -> (App, Receiver<Event>) {
     let agent = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/signing-in-agent.sh");
     app.talk_to(
         "signing-in",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &[agent.display().to_string(), marker.display().to_string()],
     );
     app.new_conversation();

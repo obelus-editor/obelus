@@ -73,8 +73,12 @@ here=$PWD
 # And the command this is asked to have run, in the words of the shell
 # that will run it -- see where it is sent, below.
 ran='sleep 0.3; printf %s obelus-ran-this; exit 3'
+# And one that does not end on its own. `sleep` is not `cmd`'s: it was
+# found only where Git's `usr\bin` was on `PATH`.
+forever='sleep 300'
 if command -v cygpath >/dev/null 2>&1; then
     ran='ping -n 2 127.0.0.1 >nul & <nul set /p =obelus-ran-this& exit 3'
+    forever='ping -n 301 127.0.0.1 >nul'
     here=$(cygpath -m "$here")
 fi
 
@@ -474,7 +478,7 @@ while IFS= read -r line; do
             # the client has to survive, because the process is the
             # client's and nothing else can stop it.
             set_turn "$session" "$(id_of "$line")"
-            printf '{"jsonrpc":"2.0","id":930,"method":"terminal/create","params":{"sessionId":"%s","command":"sleep 300","args":[]}}\n' "$session"
+            printf '{"jsonrpc":"2.0","id":930,"method":"terminal/create","params":{"sessionId":"%s","command":"%s","args":[]}}\n' "$session" "$forever"
             ;;
         *'"id":930'*)
             term=$(printf '%s' "$line" | sed 's/.*"terminalId":"//; s/".*//')

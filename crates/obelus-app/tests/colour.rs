@@ -129,7 +129,7 @@ fn the_question_that_goes_out_is_the_one_the_protocol_names() {
     // A server that says back whatever it is told, so what Obelus writes
     // can be read.
     assert!(
-        app.stand_in_server_for_test(LanguageId::Css, "cat"),
+        app.stand_in_server_for_test(LanguageId::Css, support::cat()),
         "the echo would not start"
     );
     app.declared_for_test(LanguageId::Css, json!({ "colorProvider": true }));

@@ -164,7 +164,7 @@ fn a_server_is_asked_before_the_file_moves() {
     let (sender, heard) = obelus_app::event::channel();
     app.events_for_test(sender);
     assert!(
-        app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+        app.stand_in_server_for_test(LanguageId::Rust, support::cat()),
         "the echo would not start"
     );
     app.declared_for_test(LanguageId::Rust, will_rename_rust());
@@ -203,7 +203,7 @@ fn the_answer_changes_the_files_that_named_it() {
     let (scratch, mut app) = reading("move-applies");
     let (sender, heard) = obelus_app::event::channel();
     app.events_for_test(sender);
-    assert!(app.stand_in_server_for_test(LanguageId::Rust, "cat"));
+    assert!(app.stand_in_server_for_test(LanguageId::Rust, support::cat()));
     app.declared_for_test(LanguageId::Rust, will_rename_rust());
     let before = app.file_count_for_test();
 
@@ -274,7 +274,7 @@ fn a_server_that_is_not_ready_does_not_hold_the_move_up() {
     let (scratch, mut app) = reading("move-indexing");
     let (sender, heard) = obelus_app::event::channel();
     app.events_for_test(sender);
-    assert!(app.stand_in_server_for_test(LanguageId::Rust, "cat"));
+    assert!(app.stand_in_server_for_test(LanguageId::Rust, support::cat()));
     app.declared_for_test(LanguageId::Rust, will_rename_rust());
 
     dispatch::dispatch(&mut app, Command::FileRename);
@@ -305,7 +305,7 @@ fn a_path_no_server_registered_for_moves_at_once() {
     use serde_json::json;
 
     let (scratch, mut app) = reading("move-unfiltered");
-    assert!(app.stand_in_server_for_test(LanguageId::Rust, "cat"));
+    assert!(app.stand_in_server_for_test(LanguageId::Rust, support::cat()));
     app.declared_for_test(
         LanguageId::Rust,
         json!({
@@ -393,7 +393,7 @@ fn a_rename_waiting_on_a_server_carries_the_clock_that_ends_it() {
     let (scratch, mut app) = reading("rename-clock");
     let (sender, _heard) = obelus_app::event::channel();
     app.events_for_test(sender);
-    assert!(app.stand_in_server_for_test(LanguageId::Rust, "cat"));
+    assert!(app.stand_in_server_for_test(LanguageId::Rust, support::cat()));
     app.declared_for_test(LanguageId::Rust, will_rename_rust());
     support::lay_out(&mut app, 76, 18);
     assert!(!app.is_waking(), "something was already waking the screen");

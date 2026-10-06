@@ -607,8 +607,14 @@ fn headless_needs_a_chat_and_a_pairing() {
                 .to_string()
         )
     );
-    obelus_agent::remember("fake", std::path::Path::new("sh"), &[], "1", &agents)
-        .expect("the record");
+    obelus_agent::remember(
+        "fake",
+        std::path::Path::new(support::sh()),
+        &[],
+        "1",
+        &agents,
+    )
+    .expect("the record");
     assert_eq!(ready(chat), Ok(()));
 }
 
@@ -1012,7 +1018,7 @@ fn a_conversation_and_its_thread_say_the_same_things() {
     dispatch::dispatch(&mut app, Command::RemoteConnect);
     app.talk_to(
         "fake",
-        std::path::Path::new("sh"),
+        std::path::Path::new(support::sh()),
         &[
             "tests/fixtures/fake-agent.sh".to_string(),
             format!("log={}", log.display()),
@@ -1165,7 +1171,7 @@ fn the_name_an_agent_gives_is_the_threads() {
     dispatch::dispatch(&mut app, Command::RemoteConnect);
     app.talk_to(
         "fake",
-        std::path::Path::new("sh"),
+        std::path::Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     app.new_conversation();
@@ -1316,7 +1322,7 @@ fn paired_with_an_agent_on(
     support::lay_out(&mut app, 76, 24);
     app.talk_to(
         "fake",
-        std::path::Path::new("sh"),
+        std::path::Path::new(support::sh()),
         &[
             "tests/fixtures/fake-agent.sh".to_string(),
             format!("log={}", log.display()),
@@ -1395,7 +1401,7 @@ fn headless_a_sign_in_is_said_in_the_thread() {
     let marker = scratch.join("signed-in");
     app.talk_to(
         "signing-in",
-        std::path::Path::new("sh"),
+        std::path::Path::new(support::sh()),
         &[
             "tests/fixtures/signing-in-agent.sh".to_string(),
             marker.display().to_string(),
@@ -1667,7 +1673,7 @@ fn a_conversation_taken_up_again_is_not_said_again() {
     });
     app.talk_to(
         "fake",
-        std::path::Path::new("sh"),
+        std::path::Path::new(support::sh()),
         &[
             "tests/fixtures/fake-agent.sh".to_string(),
             "prompts".to_string(),
@@ -2286,7 +2292,7 @@ fn a_thread_finds_its_conversation_while_its_agent_is_gone() {
     let root = scratch.join("agents");
     obelus_agent::remember(
         "fake",
-        std::path::Path::new("sh"),
+        std::path::Path::new(support::sh()),
         &[
             "tests/fixtures/fake-agent.sh".to_string(),
             format!("log={}", log.display()),

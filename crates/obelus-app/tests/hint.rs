@@ -141,7 +141,7 @@ fn the_question_that_goes_out_is_the_one_the_protocol_names() {
     let (sender, heard) = obelus_app::event::channel();
     app.events_for_test(sender);
     assert!(
-        app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+        app.stand_in_server_for_test(LanguageId::Rust, support::cat()),
         "the echo would not start"
     );
     app.declared_for_test(LanguageId::Rust, json!({ "inlayHintProvider": true }));
@@ -302,7 +302,7 @@ fn a_file_opened_before_its_server_was_ready_is_asked_about() {
     // Started, and not yet able to say what it answers -- which is every
     // cold start.
     assert!(
-        app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+        app.stand_in_server_for_test(LanguageId::Rust, support::cat()),
         "the echo would not start"
     );
     app.serve_current_for_test();
@@ -334,7 +334,7 @@ fn the_switch_takes_them_away_and_brings_them_back() {
     let (sender, heard) = obelus_app::event::channel();
     app.events_for_test(sender);
     assert!(
-        app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+        app.stand_in_server_for_test(LanguageId::Rust, support::cat()),
         "the echo would not start"
     );
     app.declared_for_test(LanguageId::Rust, json!({ "inlayHintProvider": true }));
@@ -535,7 +535,7 @@ fn a_file_that_stops_changing_is_asked_about_again() {
     let (sender, heard) = obelus_app::event::channel();
     app.events_for_test(sender);
     assert!(
-        app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+        app.stand_in_server_for_test(LanguageId::Rust, support::cat()),
         "the echo would not start"
     );
     app.declared_for_test(LanguageId::Rust, json!({ "inlayHintProvider": true }));

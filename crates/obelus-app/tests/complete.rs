@@ -1168,7 +1168,7 @@ mod signatures {
         let (sender, heard) = obelus_app::event::channel();
         app.events_for_test(sender);
         assert!(
-            app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+            app.stand_in_server_for_test(LanguageId::Rust, support::cat()),
             "the echo would not start"
         );
         app.declared_for_test(
@@ -1356,7 +1356,7 @@ mod signatures {
         let (sender, heard) = obelus_app::event::channel();
         app.events_for_test(sender);
         assert!(
-            app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+            app.stand_in_server_for_test(LanguageId::Rust, support::cat()),
             "the echo would not start"
         );
         app.declared_for_test(
@@ -1440,7 +1440,7 @@ mod signatures {
         let (sender, heard) = obelus_app::event::channel();
         app.events_for_test(sender);
         assert!(
-            app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+            app.stand_in_server_for_test(LanguageId::Rust, support::cat()),
             "the echo would not start"
         );
         app.declared_for_test(
@@ -1558,7 +1558,7 @@ mod signatures {
         let (sender, heard) = obelus_app::event::channel();
         app.events_for_test(sender);
         assert!(
-            app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+            app.stand_in_server_for_test(LanguageId::Rust, support::cat()),
             "the echo would not start"
         );
         app.declared_for_test(
@@ -1605,7 +1605,7 @@ mod signatures {
         let (sender, heard) = obelus_app::event::channel();
         app.events_for_test(sender);
         assert!(
-            app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+            app.stand_in_server_for_test(LanguageId::Rust, support::cat()),
             "the echo would not start"
         );
         app.declared_for_test(

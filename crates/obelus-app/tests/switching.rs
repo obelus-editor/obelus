@@ -303,7 +303,7 @@ fn the_offers_put_the_view_away_when_they_come() {
 fn enter_held_any_way_is_the_list_s_own() {
     let mut app = reading();
     assert!(
-        app.stand_in_server_for_test(obelus_syntax::LanguageId::Rust, "cat"),
+        app.stand_in_server_for_test(obelus_syntax::LanguageId::Rust, support::cat()),
         "the stand-in would not start"
     );
     app.declared_for_test(

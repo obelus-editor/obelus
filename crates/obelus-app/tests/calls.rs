@@ -190,7 +190,7 @@ fn something_already_above_itself_is_not_asked_about_again() {
     let (sender, heard) = obelus_app::event::channel();
     app.events_for_test(sender);
     assert!(
-        app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+        app.stand_in_server_for_test(LanguageId::Rust, support::cat()),
         "the echo would not start"
     );
     // Until a server has answered the handshake nothing else is written to
@@ -289,7 +289,7 @@ fn the_tabs_are_the_two_directions() {
     let (sender, heard) = obelus_app::event::channel();
     app.events_for_test(sender);
     assert!(
-        app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+        app.stand_in_server_for_test(LanguageId::Rust, support::cat()),
         "the echo would not start"
     );
     app.declared_for_test(LanguageId::Rust, json!({ "callHierarchyProvider": true }));
@@ -377,7 +377,7 @@ fn what_arrives_is_asked_about_without_being_told_to() {
     let (sender, heard) = obelus_app::event::channel();
     app.events_for_test(sender);
     assert!(
-        app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+        app.stand_in_server_for_test(LanguageId::Rust, support::cat()),
         "the echo would not start"
     );
     app.declared_for_test(LanguageId::Rust, json!({ "callHierarchyProvider": true }));
@@ -463,7 +463,7 @@ fn the_row_being_waited_on_turns() {
     let (sender, _heard) = obelus_app::event::channel();
     app.events_for_test(sender);
     assert!(
-        app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+        app.stand_in_server_for_test(LanguageId::Rust, support::cat()),
         "the echo would not start"
     );
     app.declared_for_test(LanguageId::Rust, json!({ "callHierarchyProvider": true }));
@@ -502,7 +502,7 @@ fn the_readers_question_is_the_one_that_opens() {
     let (sender, heard) = obelus_app::event::channel();
     app.events_for_test(sender);
     assert!(
-        app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+        app.stand_in_server_for_test(LanguageId::Rust, support::cat()),
         "the echo would not start"
     );
     app.declared_for_test(LanguageId::Rust, json!({ "callHierarchyProvider": true }));
@@ -611,7 +611,7 @@ fn closing_the_list_forgets_what_it_had_asked() {
     let (sender, _heard) = obelus_app::event::channel();
     app.events_for_test(sender);
     assert!(
-        app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+        app.stand_in_server_for_test(LanguageId::Rust, support::cat()),
         "the echo would not start"
     );
     app.declared_for_test(LanguageId::Rust, json!({ "callHierarchyProvider": true }));
@@ -640,7 +640,7 @@ fn a_second_tree_does_not_leave_the_first_one_asking() {
     let (sender, _heard) = obelus_app::event::channel();
     app.events_for_test(sender);
     assert!(
-        app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+        app.stand_in_server_for_test(LanguageId::Rust, support::cat()),
         "the echo would not start"
     );
     app.declared_for_test(LanguageId::Rust, json!({ "callHierarchyProvider": true }));
@@ -665,7 +665,7 @@ fn the_question_that_goes_out_is_the_one_the_protocol_names() {
     let (sender, heard) = obelus_app::event::channel();
     app.events_for_test(sender);
     assert!(
-        app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+        app.stand_in_server_for_test(LanguageId::Rust, support::cat()),
         "the echo would not start"
     );
     app.declared_for_test(LanguageId::Rust, json!({ "callHierarchyProvider": true }));
@@ -690,7 +690,7 @@ fn a_server_that_cannot_answer_is_not_offered_the_question() {
     let (sender, _heard) = obelus_app::event::channel();
     app.events_for_test(sender);
     assert!(
-        app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+        app.stand_in_server_for_test(LanguageId::Rust, support::cat()),
         "the echo would not start"
     );
 

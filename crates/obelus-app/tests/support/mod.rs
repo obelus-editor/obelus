@@ -33,6 +33,59 @@ use obelus_app::{app::App, event::Event};
 use obelus_buffer::Buffer;
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Color};
 
+/// The shell the fake agents are scripts for, as a test starts it.
+pub(crate) fn sh() -> &'static str {
+    static FOUND: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    FOUND.get_or_init(|| posix("sh", "bin"))
+}
+
+/// `cat`, which is the language server a test stands in: it says back
+/// whatever it is sent, so the wire is something to assert about.
+pub(crate) fn cat() -> &'static str {
+    static FOUND: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    FOUND.get_or_init(|| posix("cat", "usr/bin"))
+}
+
+/// A POSIX program, by its name: every system Obelus is tested on but one
+/// has it on `PATH`.
+#[cfg(not(windows))]
+fn posix(name: &str, _: &str) -> String {
+    name.to_string()
+}
+
+/// A POSIX program out of Git for Windows, which every machine that can run
+/// these tests has -- they build their repositories with `git` -- and whose
+/// `usr\bin` is on `PATH` in Git's own shell and on a CI runner but not in a
+/// PowerShell or a `cmd` on the reader's desk. There `sh` was not found and
+/// two hundred tests waited out their patience for a handshake, which said
+/// nothing about what was missing.
+///
+/// `sh` from `bin` rather than `usr\bin`: that one is Git's launcher, which
+/// puts `usr\bin` on the script's own `PATH` before it starts, and a fake
+/// agent calls `cygpath` and `printf`. The bare name where there is no Git
+/// to ask, so that a failure is still the spawn's.
+#[cfg(windows)]
+fn posix(name: &str, under: &str) -> String {
+    // `mingw64\libexec\git-core`, or `clangarm64\...` on arm: three up is
+    // the installation either way.
+    let installed = std::process::Command::new("git")
+        .arg("--exec-path")
+        .output()
+        .ok()
+        .and_then(|it| String::from_utf8(it.stdout).ok())
+        .and_then(|it| {
+            Path::new(it.trim())
+                .ancestors()
+                .nth(3)
+                .map(|root| root.join(under).join(format!("{name}.exe")))
+        })
+        .filter(|it| it.is_file());
+    match installed {
+        Some(program) => program.display().to_string(),
+        None => name.to_string(),
+    }
+}
+
 /// The URI a language server would name a file by.
 ///
 /// `lsp::client::uri_for`, never a `format!` beside the test. A path is not a

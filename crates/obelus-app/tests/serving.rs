@@ -21,7 +21,7 @@ fn reading(name: &str) -> (support::Scratch, App) {
     app.working_directory_for_test(scratch.path().to_path_buf());
     support::lay_out(&mut app, 100, 12);
     assert!(
-        app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+        app.stand_in_server_for_test(LanguageId::Rust, support::cat()),
         "the stand-in server would not start"
     );
     (scratch, app)
