@@ -62,6 +62,14 @@ pub enum Event {
     /// way, unwritten files and their question included, and the window
     /// stays until the application says it is done.
     Closed,
+    /// Whether shift is held, said by a window when that changes.
+    ///
+    /// For the pointer, which a window reports without it: shift and a
+    /// drag is a selection of Obelus's own over a program that asked for
+    /// the pointer, which is what it is in every terminal. A terminal
+    /// Obelus runs in does that itself, before Obelus hears a thing, so
+    /// only a window says this.
+    Shifted(bool),
     /// The wheel turned, by this many rows. Negative is up the file.
     ///
     /// A wheel is not an arrow key: it moves the *view*, and the place the
@@ -212,6 +220,7 @@ impl Event {
             Self::Resize => "Resize",
             Self::Fonts { .. } => "Fonts",
             Self::Closed => "Closed",
+            Self::Shifted(_) => "Shifted",
             Self::Scroll(_) => "Scroll",
             Self::Pointer { .. } => "Pointer",
             Self::Paste(_) => "Paste",

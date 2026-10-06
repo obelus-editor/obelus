@@ -21,6 +21,7 @@
 //! writes is drawn and nothing more is made of it.
 
 mod keys;
+mod mouse;
 
 use std::{
     io::{Read as _, Write as _},
@@ -30,6 +31,7 @@ use std::{
 
 use crossterm::event::KeyEvent;
 pub use keys::bytes_of;
+pub use mouse::Mouse;
 use obelus_sink::Sink;
 use portable_pty::{ChildKiller, CommandBuilder, MasterPty, PtySize};
 /// The parser, whose screen [`Terminal::screen`] hands out: one version of
@@ -122,6 +124,9 @@ pub struct Terminal {
     said: String,
     /// How it ended, once it has.
     ended: Option<Ended>,
+    /// What the reader has taken hold of: where they pressed, and where the
+    /// pointer is now, as rows and columns of what is shown.
+    held: Option<((u16, u16), (u16, u16))>,
 }
 
 impl std::fmt::Debug for Terminal {
@@ -241,6 +246,7 @@ impl Terminal {
             killer,
             said,
             ended: None,
+            held: None,
         })
     }
 
@@ -276,6 +282,13 @@ impl Terminal {
 
     /// Takes what the program wrote.
     pub fn wrote(&mut self, bytes: &[u8]) {
+        // What was held goes, because what it was over may not be there
+        // any more: a line scrolled up under a selection keeps its place on
+        // screen and changes its words, and a copy of it would be a copy
+        // of something the reader never chose.
+        if !bytes.is_empty() {
+            self.held = None;
+        }
         self.parser.process(bytes);
         // What it asked while it wrote, answered once all of it is read:
         // the cursor it asks about is the one after everything before the
@@ -304,8 +317,95 @@ impl Terminal {
         // show: a key pressed while reading back up the screen is a key
         // pressed at the prompt.
         self.parser.screen_mut().set_scrollback(0);
+        self.held = None;
         self.send(bytes);
         true
+    }
+
+    /// Whether the program has asked to be told what the pointer does.
+    #[must_use]
+    pub fn wants_the_pointer(&self) -> bool {
+        self.parser.screen().mouse_protocol_mode() != vt100::MouseProtocolMode::None
+    }
+
+    /// Tells the program what the pointer did at a cell of what is shown,
+    /// where it asked to hear of it. Answers whether it was told.
+    pub fn pointer(&mut self, what: Mouse, at: (u16, u16)) -> bool {
+        let screen = self.parser.screen();
+        let Some(bytes) = mouse::bytes_of(
+            what,
+            at,
+            screen.mouse_protocol_mode(),
+            screen.mouse_protocol_encoding(),
+        ) else {
+            return false;
+        };
+        self.send(bytes);
+        true
+    }
+
+    /// The wheel, by `rows`, where the program did not ask for it.
+    ///
+    /// Back up what has gone past, on the screen a shell writes on. On the
+    /// other one -- the screen `less` and a manual page take over, which
+    /// keeps nothing that has gone past -- it is arrow keys, which is what
+    /// every terminal has sent a program there since xterm: a wheel that
+    /// did nothing in a pager would be the one place it could not read on.
+    pub fn wheel(&mut self, rows: isize) {
+        if !self.parser.screen().alternate_screen() {
+            self.scroll_by(-rows);
+            return;
+        }
+        let arrow = match rows < 0 {
+            true => crossterm::event::KeyCode::Up,
+            false => crossterm::event::KeyCode::Down,
+        };
+        let key = KeyEvent::new(arrow, crossterm::event::KeyModifiers::NONE);
+        for _ in 0..rows.unsigned_abs() {
+            self.key(&key);
+        }
+    }
+
+    /// Takes hold of the cell at `at`, letting go of whatever was held.
+    pub fn hold_from(&mut self, at: (u16, u16)) {
+        self.held = Some((at, at));
+    }
+
+    /// Holds from where the reader pressed to `at`.
+    pub fn hold_to(&mut self, at: (u16, u16)) {
+        if let Some((from, _)) = self.held {
+            self.held = Some((from, at));
+        }
+    }
+
+    /// Lets go of what is held.
+    pub fn let_go(&mut self) {
+        self.held = None;
+    }
+
+    /// What is held, first cell and last, in reading order -- or nothing
+    /// where nothing is, or where all that is held is the cell pressed on,
+    /// which is a click and not a selection.
+    #[must_use]
+    pub fn held(&self) -> Option<((u16, u16), (u16, u16))> {
+        let (from, to) = self.held?;
+        (from != to).then(|| match from <= to {
+            true => (from, to),
+            false => (to, from),
+        })
+    }
+
+    /// The words that are held, as they would be pasted: a line the
+    /// program wrapped is one line, and one it ended is a line end.
+    #[must_use]
+    pub fn held_text(&self) -> Option<String> {
+        let ((first_row, first_column), (last_row, last_column)) = self.held()?;
+        Some(self.parser.screen().contents_between(
+            first_row,
+            first_column,
+            last_row,
+            last_column.saturating_add(1),
+        ))
     }
 
     /// Words put in at the cursor, the way a terminal pastes them.
@@ -316,6 +416,7 @@ impl Terminal {
     /// newline the clipboard carries.
     pub fn paste(&mut self, words: &str) {
         let words = words.replace("\r\n", "\r").replace('\n', "\r");
+        self.held = None;
         let bytes = match self.parser.screen().bracketed_paste() {
             true => format!("\u{1b}[200~{words}\u{1b}[201~"),
             false => words,
@@ -331,6 +432,8 @@ impl Terminal {
     pub fn scroll_by(&mut self, rows: isize) {
         let now = self.parser.screen().scrollback();
         let wanted = now.saturating_add_signed(rows);
+        // Held by where it is on screen, and the screen is moving.
+        self.held = None;
         // The parser stops at what it has kept, so asking for more is
         // asking for the top.
         self.parser.screen_mut().set_scrollback(wanted);
@@ -355,6 +458,7 @@ impl Terminal {
             return;
         }
         self.parser.screen_mut().set_size(rows, columns);
+        self.held = None;
         let size = PtySize {
             rows,
             cols: columns,

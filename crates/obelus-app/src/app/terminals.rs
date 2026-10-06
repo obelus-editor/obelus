@@ -2,11 +2,21 @@
 //!
 //! **What is typed in a terminal is the program's.** Every other document
 //! hands the key table what it does not want; a terminal hands it only what
-//! `Context::Terminal` binds -- the palette, paste, closing it, and the
-//! function keys -- and writes everything else down the pty, escape and
-//! `ctrl+c` and `ctrl+w` included, because those are a shell's before they
-//! are anybody's. Once the program has ended there is nothing to type to,
-//! and the keys go back to Obelus.
+//! `Context::Terminal` binds -- the palette, paste, closing it, leaving
+//! Obelus, and the function keys -- and writes everything else down the
+//! pty, escape and `ctrl+c` and `ctrl+w` included, because those are a
+//! shell's before they are anybody's. Once the program has ended there is
+//! nothing to type to, and the keys go back to Obelus.
+//!
+//! **The pointer is the program's where it asked for it, and the reader's
+//! otherwise.** A program that asked to hear the pointer -- an editor, a
+//! process list -- is told what the left button and the wheel do, the way
+//! it asked to be told; one that did not leaves a drag to take hold of what
+//! it printed, and the wheel to read back up it. Shift held is the
+//! reader's whatever the program asked, which is what it is in every
+//! terminal. And the key that copies copies where something is held --
+//! `ctrl+c` included, which is the shell's interrupt everywhere else, and
+//! the key a desktop sends a window for its own copy.
 //!
 //! Two things open one. The reader's own shell, from `open-terminal`, which
 //! starts in the project. And an agent's sign-in, where the agent says that
@@ -16,8 +26,8 @@
 //! that ends badly stays open with what it said on it, because a failed
 //! sign-in is something the reader has to read.
 
-use obelus_buffer::question::{Answer, Closing, Question};
-use obelus_terminal::{Ended, Heard, Program, Terminal};
+use obelus_buffer::question::{Answer, Closing, Leaving, Question};
+use obelus_terminal::{Ended, Heard, Mouse, Program, Terminal};
 
 use super::*;
 
@@ -110,6 +120,17 @@ impl App {
         if !self.typing_to_a_program() {
             return false;
         }
+        // The key that copies, with something held: it copies. Without, it
+        // is the program's -- `ctrl+c` is a shell's interrupt, and a reader
+        // who has just taken hold of some words is not interrupting
+        // anything. Which also makes the desktop's own copy work here,
+        // which sends a window `ctrl+c`.
+        if self.terminal().and_then(Terminal::held).is_some()
+            && self.keymap.lookup(key, Context::Normal) == Some(Command::SelectionCopy)
+        {
+            self.copy_selection();
+            return true;
+        }
         // Kept, and handed back to the key table, which reads the same
         // context and finds it.
         if self.keymap.lookup(key, Context::Terminal).is_some() {
@@ -119,6 +140,100 @@ impl App {
             terminal.key(key);
         }
         true
+    }
+
+    /// What the pointer did over the terminal being read.
+    ///
+    /// To the program, where it asked for the pointer and is still there to
+    /// hear it; otherwise a selection of Obelus's own, by cells. Shift held
+    /// is a selection whatever the program asked for, which is what it is
+    /// in every terminal: a program that has taken the pointer has taken
+    /// the reader's only other way to copy what it printed.
+    pub(super) fn pointer_in_terminal(&mut self, kind: crate::event::Pointer, x: u16, y: u16) {
+        use crate::event::Pointer;
+
+        let area = obelus_ui::editor_canvas(self.screen_area);
+        if area.is_empty() {
+            return;
+        }
+        let inside = area.contains(ratatui::layout::Position::new(x, y));
+        // A press outside is not about the terminal; a drag that has left
+        // it is still holding, at its edge.
+        if !inside && kind != Pointer::Dragged {
+            return;
+        }
+        let at = (
+            y.clamp(area.y, area.bottom() - 1) - area.y,
+            x.clamp(area.x, area.right() - 1) - area.x,
+        );
+        let shifted = self.shifted;
+        let Some(terminal) = self.terminal_mut() else {
+            return;
+        };
+        if terminal.ended().is_none() && terminal.wants_the_pointer() && !shifted {
+            let what = match kind {
+                Pointer::Pressed => Mouse::Pressed,
+                Pointer::Dragged => Mouse::Dragged,
+                Pointer::Released => Mouse::Released,
+                Pointer::Moved => Mouse::Moved,
+            };
+            terminal.pointer(what, at);
+            return;
+        }
+        match kind {
+            Pointer::Pressed => terminal.hold_from(at),
+            Pointer::Dragged => terminal.hold_to(at),
+            Pointer::Released | Pointer::Moved => {}
+        }
+    }
+
+    /// The wheel over the terminal being read: to the program where it
+    /// asked for the pointer, and otherwise back up what has gone by.
+    pub(super) fn wheel_in_terminal(&mut self, rows: isize) {
+        let area = obelus_ui::editor_canvas(self.screen_area);
+        let at = self
+            .pointer
+            .filter(|(x, y)| area.contains(ratatui::layout::Position::new(*x, *y)))
+            .map_or((0, 0), |(x, y)| (y - area.y, x - area.x));
+        let shifted = self.shifted;
+        let Some(terminal) = self.terminal_mut() else {
+            return;
+        };
+        if terminal.ended().is_some() {
+            terminal.scroll_by(-rows);
+            return;
+        }
+        if terminal.wants_the_pointer() && !shifted {
+            // A notch, whatever it is worth in rows here: the program
+            // decides how far a notch goes.
+            let what = match rows < 0 {
+                true => Mouse::WheelUp,
+                false => Mouse::WheelDown,
+            };
+            terminal.pointer(what, at);
+            return;
+        }
+        terminal.wheel(rows);
+    }
+
+    /// The words held in the terminal being read, taken for a copy -- and
+    /// let go of, the way a copy in a terminal always has.
+    pub(super) fn take_what_is_held_in_the_terminal(&mut self) -> Option<String> {
+        let terminal = self.terminal_mut()?;
+        let held = terminal.held_text();
+        terminal.let_go();
+        held
+    }
+
+    /// How many terminals have a program still running, which is what
+    /// leaving would stop.
+    pub(super) fn terminals_running(&self) -> usize {
+        self.documents
+            .iter()
+            .flatten()
+            .filter_map(Document::terminal)
+            .filter(|terminal| terminal.ended().is_none())
+            .count()
     }
 
     /// Words pasted into the terminal being read, which go to its program.
@@ -208,6 +323,28 @@ impl App {
                 .way("Stop it and close", Answer::Closing(id, Closing::Discard)),
         );
         true
+    }
+
+    /// Asks before leaving with programs still running in terminals.
+    ///
+    /// Which one, when there is only one -- the words it was started with
+    /// are what the reader would recognise -- and a count otherwise.
+    pub(super) fn ask_before_stopping_them(&mut self, running: usize) {
+        let only = self
+            .documents
+            .iter()
+            .flatten()
+            .filter_map(Document::terminal)
+            .find(|terminal| terminal.ended().is_none())
+            .map(|terminal| terminal.said().to_string());
+        let (what, way) = match (running, only) {
+            (1, Some(said)) => (format!("{said} is still running"), "Stop it and leave"),
+            (many, _) => (
+                format!("{many} terminals are still running"),
+                "Stop them and leave",
+            ),
+        };
+        self.stop_to_ask(Question::new(what).way(way, Answer::Leaving(Leaving::Discard)));
     }
 
     /// Runs a way of signing in that is a program, for the conversation

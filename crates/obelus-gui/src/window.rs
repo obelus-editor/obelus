@@ -1425,7 +1425,13 @@ impl ApplicationHandler<Waking> for Showing {
             // reader choosing another size, and the window asks its own
             // scale on the way through.
             WindowEvent::ScaleFactorChanged { .. } => self.redraw_at(self.points),
-            WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers.state(),
+            WindowEvent::ModifiersChanged(modifiers) => {
+                let shifted = modifiers.state().shift_key();
+                if shifted != self.modifiers.shift_key() {
+                    self.tell(Event::Shifted(shifted));
+                }
+                self.modifiers = modifiers.state();
+            }
             WindowEvent::Ime(ime) => {
                 self.stir();
                 match ime {

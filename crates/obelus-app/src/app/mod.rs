@@ -507,6 +507,8 @@ pub struct App {
     terminals: obelus_terminal::Id,
     /// A sign-in running in a terminal of its own, while it runs.
     signing_in: Option<terminals::SigningIn>,
+    /// Whether shift is held, where a window has said so.
+    shifted: bool,
     /// Which shell `open-terminal` starts, where a test has said: the
     /// reader's own is whatever their environment says, and a test about
     /// keys is not a test about their prompt.
@@ -956,6 +958,7 @@ impl App {
             terminals: 0,
             signing_in: None,
             shell: None,
+            shifted: false,
             waiting_on: Vec::new(),
             settled: preferences::Settled::default(),
             agents: agents::Agents::default(),
@@ -1095,6 +1098,17 @@ impl App {
                 self.go_to_document(id);
             }
             self.ask_before_leaving(unsaved);
+            return;
+        }
+        // And a program still running in a terminal, which leaving stops:
+        // asked for the reason closing that terminal is. Over nothing, for
+        // the reason the question above is.
+        let running = self.terminals_running();
+        if running > 0 {
+            for layer in self.layers().nearest_first() {
+                self.leave(layer);
+            }
+            self.ask_before_stopping_them(running);
             return;
         }
         self.should_quit = true;
@@ -3010,6 +3024,7 @@ impl App {
                 }
             }
             Event::Counted(counted) => self.on_counted(*counted),
+            Event::Shifted(held) => self.shifted = held,
             Event::Scroll(rows) => self.scroll(rows),
             Event::Pointer { kind, x, y } => self.on_pointer(kind, x, y),
             // One change for the whole of it, so undoing a paste is one
@@ -4083,6 +4098,11 @@ impl App {
         // press here, and it ticked off a note nobody could see.
         if self.layers().covering() {
             self.pointer_in_a_layer(kind, x, y);
+            return;
+        }
+        // A terminal, whose program may have asked for the pointer itself.
+        if self.terminal().is_some() {
+            self.pointer_in_terminal(kind, x, y);
             return;
         }
         // The notes, which are a page with a box on it: the box takes the

@@ -496,8 +496,8 @@ impl App {
         // A terminal, back up what has gone past -- the view and not the
         // program, which is told nothing: a reader spinning the wheel is
         // looking around, and the next key they type brings it back down.
-        if let Some(terminal) = self.terminal_mut() {
-            terminal.scroll_by(-rows);
+        if self.terminal().is_some() {
+            self.wheel_in_terminal(rows);
             return;
         }
         let height = self.editor_area.height;

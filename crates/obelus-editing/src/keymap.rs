@@ -323,10 +323,11 @@ pub enum Context {
     /// The other way round from every context here: a terminal is the
     /// program's, so a key is the program's unless this says otherwise,
     /// and what it says is very little -- zed's shape, and for zed's reason.
-    /// Escape, `ctrl+c`, `ctrl+w` and `ctrl+q` are a shell's before they
-    /// are anybody's. What Obelus keeps is the palette, paste, the key that
-    /// closes it, and the function keys, which open something to look at
-    /// and are the one family a shell has no use for (`Keymap::lookup`).
+    /// Escape, `ctrl+c` and `ctrl+w` are a shell's before they are
+    /// anybody's. What Obelus keeps is the palette, paste, the key that
+    /// closes it, the key that leaves Obelus, and the function keys, which
+    /// open something to look at and are the one family a shell has no use
+    /// for (`Keymap::lookup`).
     /// Once the program has ended there is nothing to type to, and a
     /// terminal is read like a file.
     Terminal,
@@ -584,16 +585,34 @@ impl Keymap {
                 // desktop sends a terminal for it; and closing it, on the
                 // key every terminal a reader has used closes a tab with,
                 // because `ctrl+w` is the shell's. See `why_not` for why
-                // that one may be held with shift.
+                // that one may be held with shift. And leaving: `ctrl+q` is
+                // a shell's only as the flow control nobody has used since
+                // terminals were printers, and a key that leaves Obelus
+                // everywhere but in one kind of document is a key a reader
+                // cannot trust.
                 Binding {
                     command: Command::CommandPalette,
                     context: Context::Terminal,
                     chord: control('p'),
                 },
                 Binding {
+                    command: Command::Quit,
+                    context: Context::Terminal,
+                    chord: control('q'),
+                },
+                Binding {
                     command: Command::Paste,
                     context: Context::Terminal,
                     chord: KeyChord::new(KeyCode::Insert, KeyModifiers::SHIFT),
+                },
+                // And copy under the same name. `ctrl+c` copies too, where
+                // something is held -- which is a question about the
+                // terminal rather than a binding, so it is asked there
+                // (`App::terminal_key`).
+                Binding {
+                    command: Command::SelectionCopy,
+                    context: Context::Terminal,
+                    chord: KeyChord::new(KeyCode::Insert, KeyModifiers::CONTROL),
                 },
                 Binding {
                     command: Command::DocumentClose,

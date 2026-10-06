@@ -368,6 +368,15 @@ impl App {
             }
             None => {}
         }
+        // What is held in a terminal, which is the one thing in it to copy:
+        // the program's words are not a buffer, and there is no line under
+        // a caret to take in their place.
+        if self.terminal().is_some() {
+            if let Some(text) = self.take_what_is_held_in_the_terminal() {
+                self.copied(&text, "selection");
+            }
+            return;
+        }
         let width = obelus_ui::chat::reading_width(self.editor_area);
         // What is held on a card, which covers the box a message is
         // written in: before this, a copy over a card took what was in the

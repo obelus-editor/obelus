@@ -44,6 +44,7 @@ impl Widget for TerminalView<'_> {
         fill(cells, area, page);
         let screen = self.terminal.screen();
         let (rows, columns) = screen.size();
+        let held = self.terminal.held();
         for row in 0..rows.min(area.height) {
             for column in 0..columns.min(area.width) {
                 let Some(cell) = screen.cell(row, column) else {
@@ -61,13 +62,13 @@ impl Widget for TerminalView<'_> {
                 // As much room as is left on the row, so a wide character
                 // in the last column is not drawn over the edge.
                 let room = usize::from(area.width - column);
-                cells.set_stringn(
-                    area.x + column,
-                    area.y + row,
-                    contents,
-                    room,
-                    style_of(cell, self.theme),
-                );
+                let mut style = style_of(cell, self.theme);
+                // What the reader has hold of, in the colour a selection is
+                // everywhere else.
+                if held.is_some_and(|(first, last)| (first..=last).contains(&(row, column))) {
+                    style = style.bg(self.theme.selection_background);
+                }
+                cells.set_stringn(area.x + column, area.y + row, contents, room, style);
             }
         }
     }

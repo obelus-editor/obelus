@@ -162,6 +162,157 @@ fn escape_and_control_keys_go_to_the_program() {
     });
 }
 
+/// The key that leaves Obelus leaves it from inside a terminal too, though
+/// every other control letter there is the program's -- asking first,
+/// because the program would go with it.
+///
+/// Broken deliberately by taking `quit` out of the terminal's table (the key
+/// goes down the pty, nothing is asked and Obelus stays), and by leaving
+/// out the question in `request_quit` (Obelus leaves at the first press).
+#[test]
+fn ctrl_q_leaves_from_inside_a_terminal_and_asks_first() {
+    let (mut app, _events) = a_shell();
+    press(&mut app, KeyCode::Char('q'), KeyModifiers::CONTROL);
+    assert!(!app.should_quit(), "left without asking");
+    assert!(
+        support::ways(&app)
+            .iter()
+            .any(|way| way == "Stop it and leave")
+    );
+    support::answer(&mut app, "Stop it and leave");
+    assert!(app.should_quit(), "the answer did not leave");
+}
+
+/// Where the terminal's cells are on screen: the whole document region.
+fn terminal_area(app: &mut App) -> ratatui::layout::Rect {
+    let cells = support::cells_of(app, WIDTH, HEIGHT);
+    obelus_ui::editor_canvas(cells.area)
+}
+
+/// Where these words are on screen, as the pointer would find them.
+fn place_of_words(app: &mut App, words: &str) -> (u16, u16) {
+    let area = terminal_area(app);
+    let rows: Vec<String> = on_the_terminal(app).lines().map(str::to_string).collect();
+    let (row, line) = rows
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, line)| line.contains(words) && !line.contains("echo"))
+        .unwrap_or_else(|| panic!("no {words:?} on the terminal"));
+    let column = line[..line.find(words).expect("the words")].chars().count();
+    (
+        area.x + u16::try_from(column).expect("a column"),
+        area.y + u16::try_from(row).expect("a row"),
+    )
+}
+
+fn pointer(app: &mut App, kind: obelus_app::event::Pointer, (x, y): (u16, u16)) {
+    app.handle(Event::Pointer { kind, x, y });
+}
+
+/// A drag takes hold of what a shell printed, it is drawn held, and the
+/// key that copies copies it -- `ctrl+c` included, which with nothing held
+/// is the shell's interrupt.
+///
+/// Broken deliberately by dropping the copy in `App::terminal_key` (the
+/// `ctrl+c` goes to the shell and the clipboard is empty), and by not
+/// drawing what is held (the cell under it has the page's ground).
+#[test]
+fn a_drag_takes_hold_and_ctrl_c_copies_it() {
+    use obelus_app::event::Pointer;
+
+    let _turn = support::clipboard_turn();
+    obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Kept);
+    let (mut app, events) = a_shell();
+    support::type_text(&mut app, "echo take-$((6 * 7))-these");
+    press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    pump(&mut app, &events, "the words", |app| {
+        on_the_terminal(app).contains("take-42-these")
+    });
+    let (x, y) = place_of_words(&mut app, "take-42-these");
+    pointer(&mut app, Pointer::Pressed, (x, y));
+    pointer(&mut app, Pointer::Dragged, (x + 6, y));
+    pointer(&mut app, Pointer::Released, (x + 6, y));
+    let cells = support::cells_of(&mut app, WIDTH, HEIGHT);
+    assert_eq!(cells[(x + 3, y)].bg, app.theme().selection_background);
+    press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL);
+    assert_eq!(obelus_clipboard::paste().as_deref(), Some("take-42"));
+    // And let go of, so the next `ctrl+c` is the shell's again.
+    assert!(
+        app.terminal()
+            .and_then(|terminal| terminal.held())
+            .is_none()
+    );
+}
+
+/// A program that asked for the pointer is told what it did, in the
+/// encoding it asked for; shift held is a selection all the same.
+///
+/// The pty is raw and the bytes read back whole, as in the test of the
+/// keys. Broken deliberately by never handing the pointer to the program
+/// (`wants_the_pointer` answering no: the press takes hold instead, and the
+/// bytes never come), and by ignoring shift (the shifted press goes to the
+/// program and nothing is held).
+#[test]
+fn a_program_that_asked_for_the_pointer_is_told() {
+    use obelus_app::event::Pointer;
+
+    let (mut app, events) = a_shell();
+    support::type_text(
+        &mut app,
+        "printf '\\033[?1000h\\033[?1006h'; stty raw -echo; echo go-$((3 + 4)); \
+         dd bs=1 count=9 2>/dev/null | od -An -c; stty sane",
+    );
+    press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    pump(&mut app, &events, "the pty to be raw", |app| {
+        on_the_terminal(app).contains("go-7")
+    });
+    assert!(
+        app.terminal()
+            .is_some_and(|terminal| terminal.wants_the_pointer())
+    );
+    // Shift first, which is Obelus's: nothing goes to the program.
+    let area = terminal_area(&mut app);
+    app.handle(Event::Shifted(true));
+    pointer(&mut app, Pointer::Pressed, (area.x + 1, area.y + 1));
+    pointer(&mut app, Pointer::Dragged, (area.x + 4, area.y + 1));
+    assert!(
+        app.terminal()
+            .and_then(|terminal| terminal.held())
+            .is_some(),
+        "shift and a drag did not take hold"
+    );
+    app.handle(Event::Shifted(false));
+    // Then a click, column 3 and row 2 counted from one.
+    pointer(&mut app, Pointer::Pressed, (area.x + 2, area.y + 1));
+    pump(&mut app, &events, "the press to be read back", |app| {
+        on_the_terminal(app).contains("033   [   <   0   ;   3   ;   2   M")
+    });
+}
+
+/// The wheel in a program that took over the screen and did not ask for the
+/// pointer is arrow keys, which is what every terminal sends a pager.
+///
+/// Broken deliberately by scrolling back regardless (`Terminal::wheel`
+/// ignoring the screen it is on): nothing reaches the program.
+#[test]
+fn the_wheel_over_a_pager_is_arrow_keys() {
+    let (mut app, events) = a_shell();
+    support::type_text(
+        &mut app,
+        "printf '\\033[?1049h'; stty raw -echo; echo go-$((4 + 4)); \
+         dd bs=1 count=3 2>/dev/null | od -An -c; stty sane",
+    );
+    press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    pump(&mut app, &events, "the pty to be raw", |app| {
+        on_the_terminal(app).contains("go-8")
+    });
+    app.handle(Event::Scroll(1));
+    pump(&mut app, &events, "the arrow to be read back", |app| {
+        on_the_terminal(app).contains("033   [   B")
+    });
+}
+
 /// A function key still opens what it opens, from inside a terminal.
 ///
 /// Broken deliberately by dropping the function keys' fall-back in
