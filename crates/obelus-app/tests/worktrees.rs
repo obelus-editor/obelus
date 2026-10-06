@@ -824,3 +824,66 @@ fn several_on_one_tree_are_a_row_each() {
         );
     }
 }
+
+/// A conversation is named on another window's row the way the list of
+/// open documents names it: by the reader's first words until its agent
+/// names it, and by the agent's name after.
+///
+/// Against the fake agent, which names a conversation at the end of its
+/// first turn. Broken deliberately by naming a conversation by its agent's
+/// title alone, as this row first did: before the agent names it, the row
+/// says `A conversation`.
+#[test]
+fn a_conversation_is_named_as_the_open_documents_name_it() {
+    let scratch = Scratch::new("worktrees-conversation");
+    let (main, feature, _) = repository(&scratch);
+    let asked = Arc::new(Asked::default());
+    let (mut app, _events) = window_on(&main, &asked);
+    let (_terminal, _terminal_events) = terminal_on(&feature);
+    let (mut talking, talking_events) = window_on(&feature, &Arc::new(Asked::default()));
+    talking.agents_root_for_test(scratch.join("agents"));
+    talking.talk_to(
+        "fake",
+        Path::new("sh"),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    talking.new_conversation();
+    talking.open_a_session_for_test();
+    let ready = |app: &mut App| {
+        let deadline = Instant::now() + Duration::from_secs(30);
+        loop {
+            if let Ok(event) = talking_events.recv_timeout(Duration::from_millis(50)) {
+                app.handle(event);
+            }
+            if app.talking() == obelus_agent::Talking::Ready {
+                return;
+            }
+            assert!(Instant::now() < deadline, "the agent never got ready");
+        }
+    };
+    ready(&mut talking);
+    support::type_text(&mut talking, "/titled   about the   counts");
+    press(&mut talking, KeyCode::Enter);
+    support::lay_out(&mut talking, 80, 24);
+    let named = |app: &mut App| {
+        dispatch::dispatch(app, Command::WorktreeList);
+        let labels: Vec<String> = rows(app).into_iter().map(|row| row.0).collect();
+        press(app, KeyCode::Esc);
+        labels
+    };
+    let before = named(&mut app);
+    assert!(
+        before
+            .iter()
+            .any(|label| label == "/titled about the counts"),
+        "the conversation is not named by the reader's first words: {before:?}"
+    );
+
+    ready(&mut talking);
+    support::lay_out(&mut talking, 80, 24);
+    let after = named(&mut app);
+    assert!(
+        after.iter().any(|label| label == "Renamed by the agent"),
+        "the agent's name did not take over: {after:?}"
+    );
+}

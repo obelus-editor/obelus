@@ -181,6 +181,10 @@ pub(super) struct Worktrees {
     /// The tree the reader chose to go to, while they are asked about what
     /// is unwritten here.
     going: Option<PathBuf>,
+    /// The notes, as read to name the conversation in front, and which
+    /// document they were read for.
+    notes: Option<obelus_git::todo::Todo>,
+    named_for: Option<DocumentId>,
     /// Whether there is another worktree, where a test says so.
     given: Option<bool>,
 }
@@ -302,18 +306,38 @@ impl App {
     }
 
     /// What this window is reading, in the words the list of open documents
-    /// would name it by -- and in few of them: the name of a conversation is
-    /// worked out from the notes, which is a file read, and this is asked
-    /// every frame.
-    fn what_this_window_is_reading(&self) -> String {
+    /// names it by.
+    ///
+    /// A conversation's name may be the note it is about, which is a file
+    /// read, and this is asked every frame. So the notes are read once for
+    /// the document in front and kept until another is: only where the name
+    /// needs them -- a conversation about a note the agent has not named --
+    /// and let go of when the reader turns to something else, which is the
+    /// moment a name is looked at again.
+    fn what_this_window_is_reading(&mut self) -> String {
+        if self.worktrees.named_for != self.current {
+            self.worktrees.named_for = self.current;
+            self.worktrees.notes = None;
+        }
+        let needs_the_notes = self.conversation().is_some_and(|talk| {
+            matches!(talk.topic, crate::conversation::Topic::Note(_)) && !self.has_a_title(talk)
+        });
+        if needs_the_notes && self.worktrees.notes.is_none() {
+            self.worktrees.notes = Some(
+                obelus_git::todo::read(&self.working_directory)
+                    .notes()
+                    .unwrap_or_default(),
+            );
+        }
+        let none = obelus_git::todo::Todo::default();
+        let notes = self.worktrees.notes.as_ref().unwrap_or(&none);
         let said = match self.current.and_then(|id| self.document(id)) {
             Some(Document::File(buffer)) => relative(buffer.path(), &self.working_directory),
+            // Said as the list of open documents says it, by the same
+            // function, so the two cannot drift apart.
             Some(Document::Chat(talk)) => self
-                .talker
-                .as_ref()
-                .and_then(|talker| talker.title(talk.session.as_ref()))
-                .unwrap_or("A conversation")
-                .to_string(),
+                .conversation_name(talk, notes)
+                .unwrap_or_else(|| "A conversation".to_string()),
             Some(Document::Notes(_)) => "Todo".to_string(),
             None => String::new(),
         };

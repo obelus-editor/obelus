@@ -228,6 +228,12 @@ impl App {
             .or_else(|| talk.chat.first_words())
     }
 
+    /// Whether the agent has named a conversation, which is the one name
+    /// that needs nothing read.
+    pub(super) fn has_a_title(&self, talk: &crate::conversation::Conversation) -> bool {
+        self.conversation_title(talk).is_some()
+    }
+
     /// What the agent calls a conversation: what it has said, or what
     /// Obelus wrote down the last time it did.
     ///
