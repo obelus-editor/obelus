@@ -1529,9 +1529,34 @@ impl TodoView {
                     _ => by,
                 };
                 let landed = self.window.step(by, crate::window::Wrap::No);
-                if let Some(to) = self.rows.get(landed).map(|row| row.note) {
-                    self.enter_note(to, false);
+                let Some(to) = self.rows.get(landed).map(|row| row.note) else {
+                    return TodoOutcome::Consumed;
+                };
+                // Onto the line of the note the page landed on, not its
+                // first: a note of several lines is several rows, and
+                // putting the caret back on the first of them took the
+                // window back with it -- so the last note on the page was
+                // a key that did nothing, and its tail never came into
+                // view. A place or a blank is no line, so the note's last
+                // line before it.
+                let line = self
+                    .rows
+                    .iter()
+                    .position(|row| row.note == to && row.words())
+                    .map_or(0, |first| {
+                        self.rows[first..=landed.max(first)]
+                            .iter()
+                            .filter(|row| row.words())
+                            .count()
+                            .saturating_sub(1)
+                    });
+                self.enter_note(to, false);
+                if let Some((_, composer)) = self.writing.as_mut() {
+                    for _ in 0..line {
+                        composer.down(room);
+                    }
                 }
+                self.follow_caret();
                 TodoOutcome::Consumed
             }
 
