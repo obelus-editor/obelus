@@ -126,7 +126,7 @@ impl App {
         // who has just taken hold of some words is not interrupting
         // anything. Which also makes the desktop's own copy work here,
         // which sends a window `ctrl+c`.
-        if self.terminal().and_then(Terminal::held).is_some()
+        if self.terminal().is_some_and(Terminal::is_holding)
             && self.keymap.lookup(key, Context::Normal) == Some(Command::SelectionCopy)
         {
             self.copy_selection();

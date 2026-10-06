@@ -15,6 +15,12 @@
 //! language server's stdin is: a program that has stopped reading would stop
 //! the key that wrote to it.
 //!
+//! **Every row up the screen is counted, because the parser stops counting
+//! where it stops keeping them.** What the reader holds is held by rows that
+//! stay put while the program writes, and a window slides the screen by how
+//! far it moved: both are a row's place counted from the start, and the
+//! parser's own count of what it keeps stops growing once it is full.
+//!
 //! The program is the reader's, not Obelus's. What it is asked -- where the
 //! cursor is, what kind of terminal this is -- is answered, because a shell
 //! that asks and hears nothing waits for an answer; everything else it
@@ -124,10 +130,23 @@ pub struct Terminal {
     said: String,
     /// How it ended, once it has.
     ended: Option<Ended>,
+    /// How many rows have gone up off the top of the screen since the
+    /// program started.
+    ///
+    /// Counted here because the parser stops counting where it stops
+    /// keeping them: once what it keeps is full, a row going in is a row
+    /// let go at the other end, and its length says nothing moved. This is
+    /// what puts a row somewhere that stays put -- row `pushed` is the
+    /// first of the live screen, and every row above it has a number of its
+    /// own however far it has gone.
+    pushed: u64,
     /// What the reader has taken hold of: where they pressed, and where the
-    /// pointer is now, as rows and columns of what is shown.
-    held: Option<((u16, u16), (u16, u16))>,
+    /// pointer is now, by rows counted the way `pushed` counts them.
+    held: Option<(Spot, Spot)>,
 }
+
+/// A cell, by a row that stays put while the screen moves and a column.
+type Spot = (u64, u16);
 
 impl std::fmt::Debug for Terminal {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -246,6 +265,7 @@ impl Terminal {
             killer,
             said,
             ended: None,
+            pushed: 0,
             held: None,
         })
     }
@@ -282,14 +302,49 @@ impl Terminal {
 
     /// Takes what the program wrote.
     pub fn wrote(&mut self, bytes: &[u8]) {
-        // What was held goes, because what it was over may not be there
-        // any more: a line scrolled up under a selection keeps its place on
-        // screen and changes its words, and a copy of it would be a copy
-        // of something the reader never chose.
-        if !bytes.is_empty() {
+        if bytes.is_empty() {
+            return;
+        }
+        let held = self.held_text();
+        let elsewhere = self.parser.screen().alternate_screen();
+        // How far the screen moves, read off the parser by the one thing it
+        // does count: while the view is back up what has gone by, it moves
+        // the view one row for every row that goes up, so that the view
+        // stays where the reader left it. So the view is put a row back for
+        // the writing -- where it is not back already -- and how much
+        // further back it ends up is how many rows went up. What it keeps
+        // being full does not stop that, which is the point; a write of
+        // more rows than it keeps would, and one read off a pty is a few
+        // thousand bytes.
+        let shown = self.scrolled();
+        let kept = self.kept();
+        let probe = shown.max(1).min(kept);
+        self.parser.screen_mut().set_scrollback(probe);
+        self.parser.process(bytes);
+        let after = self.scrolled();
+        let went_up = match kept {
+            // Nothing kept yet, so nothing to put the view back by -- but
+            // nothing let go either, so what is kept now is every row that
+            // went.
+            0 => self.kept(),
+            _ => after - probe,
+        };
+        self.pushed += went_up as u64;
+        let view = match shown {
+            0 => 0,
+            _ => after,
+        };
+        self.parser.screen_mut().set_scrollback(view);
+        // What was held stays while it holds the same words, wherever the
+        // screen has moved them, and goes where the program wrote over
+        // them: a copy then would be of something the reader never chose.
+        // And on the screen a full-screen program draws on, which keeps
+        // nothing and moves nothing the count can follow.
+        if held.is_some()
+            && (elsewhere || self.parser.screen().alternate_screen() || self.held_text() != held)
+        {
             self.held = None;
         }
-        self.parser.process(bytes);
         // What it asked while it wrote, answered once all of it is read:
         // the cursor it asks about is the one after everything before the
         // question, which is where parsing has left it.
@@ -366,28 +421,58 @@ impl Terminal {
         }
     }
 
-    /// Takes hold of the cell at `at`, letting go of whatever was held.
+    /// Takes hold of the cell at `at` of what is shown, letting go of
+    /// whatever was held.
     pub fn hold_from(&mut self, at: (u16, u16)) {
-        self.held = Some((at, at));
+        let spot = self.spot(at);
+        self.held = Some((spot, spot));
     }
 
     /// Holds from where the reader pressed to `at`.
     pub fn hold_to(&mut self, at: (u16, u16)) {
+        let spot = self.spot(at);
         if let Some((from, _)) = self.held {
-            self.held = Some((from, at));
+            self.held = Some((from, spot));
         }
     }
 
-    /// Lets go of what is held.
-    pub fn let_go(&mut self) {
-        self.held = None;
+    /// Where a cell of what is shown is, by rows that stay put.
+    fn spot(&self, (row, column): (u16, u16)) -> Spot {
+        (self.top_row() + u64::from(row), column)
     }
 
-    /// What is held, first cell and last, in reading order -- or nothing
-    /// where nothing is, or where all that is held is the cell pressed on,
-    /// which is a click and not a selection.
+    /// Which row is at the top of what is shown, counted the way `pushed`
+    /// counts them.
+    fn top_row(&self) -> u64 {
+        self.pushed.saturating_sub(self.scrolled() as u64)
+    }
+
+    /// Where the view has got to, as a number to compare with the last
+    /// one: the row at its top, which goes up by one for every row the
+    /// program moves up the screen and down by one for every row the
+    /// reader reads back. Which is what a window slides the screen by.
     #[must_use]
-    pub fn held(&self) -> Option<((u16, u16), (u16, u16))> {
+    pub fn top(&self) -> i64 {
+        i64::try_from(self.top_row()).unwrap_or(i64::MAX)
+    }
+
+    /// How many rows the parser has kept of what went up the screen.
+    ///
+    /// Asked the one way it answers: a view put further back than what it
+    /// keeps stops at the oldest of them.
+    fn kept(&mut self) -> usize {
+        let shown = self.scrolled();
+        let screen = self.parser.screen_mut();
+        screen.set_scrollback(usize::MAX);
+        let kept = screen.scrollback();
+        screen.set_scrollback(shown);
+        kept
+    }
+
+    /// What is held, first and last, in reading order -- or nothing where
+    /// all that is held is the cell pressed on, which is a click and not a
+    /// selection.
+    fn ordered(&self) -> Option<(Spot, Spot)> {
         let (from, to) = self.held?;
         (from != to).then(|| match from <= to {
             true => (from, to),
@@ -395,17 +480,72 @@ impl Terminal {
         })
     }
 
+    /// Whether anything is held, on screen or not.
+    #[must_use]
+    pub fn is_holding(&self) -> bool {
+        self.ordered().is_some()
+    }
+
+    /// Lets go of what is held.
+    pub fn let_go(&mut self) {
+        self.held = None;
+    }
+
+    /// What is held of what is shown, first cell and last, in reading
+    /// order: cut at the edges of the screen where it reaches past them,
+    /// and nothing where all of it is elsewhere.
+    #[must_use]
+    pub fn held(&self) -> Option<((u16, u16), (u16, u16))> {
+        let ((first, first_column), (last, last_column)) = self.ordered()?;
+        let (rows, columns) = self.size();
+        let top = self.top_row();
+        let bottom = top + u64::from(rows) - 1;
+        if last < top || first > bottom {
+            return None;
+        }
+        let row = |line: u64| u16::try_from(line - top).unwrap_or(rows - 1);
+        let from = match first < top {
+            true => (0, 0),
+            false => (row(first), first_column),
+        };
+        let to = match last > bottom {
+            true => (rows - 1, columns - 1),
+            false => (row(last), last_column),
+        };
+        Some((from, to))
+    }
+
     /// The words that are held, as they would be pasted: a line the
     /// program wrapped is one line, and one it ended is a line end.
-    #[must_use]
-    pub fn held_text(&self) -> Option<String> {
-        let ((first_row, first_column), (last_row, last_column)) = self.held()?;
-        Some(self.parser.screen().contents_between(
-            first_row,
+    ///
+    /// Read wherever they are, by putting the view where they can be read
+    /// for a moment and back again -- the parser reads out only what it
+    /// shows. What has been let go of at the top is gone, and that much of
+    /// the words with it.
+    pub fn held_text(&mut self) -> Option<String> {
+        let ((first, first_column), (last, last_column)) = self.ordered()?;
+        let oldest = self.pushed.saturating_sub(self.kept() as u64);
+        if last < oldest {
+            return None;
+        }
+        let (first, first_column) = match first < oldest {
+            true => (oldest, 0),
+            false => (first, first_column),
+        };
+        let shown = self.scrolled();
+        let back = usize::try_from(self.pushed.saturating_sub(first)).unwrap_or(usize::MAX);
+        self.parser.screen_mut().set_scrollback(back);
+        let top = self.top_row();
+        let rows = u64::from(self.size().0);
+        let row = |line: u64| u16::try_from((line - top).min(rows - 1)).unwrap_or(0);
+        let words = self.parser.screen().contents_between(
+            row(first),
             first_column,
-            last_row,
+            row(last),
             last_column.saturating_add(1),
-        ))
+        );
+        self.parser.screen_mut().set_scrollback(shown);
+        Some(words)
     }
 
     /// Words put in at the cursor, the way a terminal pastes them.
@@ -432,8 +572,6 @@ impl Terminal {
     pub fn scroll_by(&mut self, rows: isize) {
         let now = self.parser.screen().scrollback();
         let wanted = now.saturating_add_signed(rows);
-        // Held by where it is on screen, and the screen is moving.
-        self.held = None;
         // The parser stops at what it has kept, so asking for more is
         // asking for the top.
         self.parser.screen_mut().set_scrollback(wanted);

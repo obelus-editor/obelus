@@ -42,6 +42,11 @@ impl Widget for TerminalView<'_> {
             .fg(self.theme.foreground)
             .bg(self.theme.background);
         fill(cells, area, page);
+        // Where the view has got to, every frame, so a window can slide
+        // the screen by however far the program or the reader moved it --
+        // the same thing a file and a conversation say. Whole width and no
+        // bar, because a terminal has none.
+        crate::shapes::scrolled(area, self.terminal.top(), None);
         let screen = self.terminal.screen();
         let (rows, columns) = screen.size();
         let held = self.terminal.held();

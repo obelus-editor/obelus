@@ -123,3 +123,86 @@ fn letting_go_stops_the_program() {
     };
     assert!(!ended.succeeded());
 }
+
+/// A terminal with a program that writes nothing, for a test that writes
+/// to the parser itself: what is on screen is then exactly what it said.
+#[cfg(unix)]
+fn quiet(rows: u16, columns: u16) -> Terminal {
+    let (events, heard) = mpsc::channel::<Heard>();
+    // What the program sends is never read, so it cannot land between two
+    // things the test wrote.
+    std::mem::forget(heard);
+    Terminal::start(
+        9,
+        &program("sleep 60"),
+        &std::env::temp_dir(),
+        (rows, columns),
+        events,
+    )
+    .expect("a terminal")
+}
+
+/// What is held stays with its words as they go up the screen, and can
+/// still be copied once they have gone off the top of it.
+///
+/// Broken deliberately by letting go of what is held whenever the program
+/// writes, which is what it did: the second assertion finds nothing held.
+#[cfg(unix)]
+#[test]
+fn what_is_held_goes_up_the_screen_with_its_words() {
+    let mut terminal = quiet(5, 20);
+    terminal.wrote(b"one\r\ntwo\r\nthree\r\n");
+    terminal.hold_from((1, 0));
+    terminal.hold_to((1, 2));
+    assert_eq!(terminal.held_text().as_deref(), Some("two"));
+    for line in 0..20 {
+        terminal.wrote(format!("line {line}\r\n").as_bytes());
+    }
+    assert!(terminal.is_holding(), "the words were let go of");
+    assert_eq!(terminal.held_text().as_deref(), Some("two"));
+    // Off the top, so not drawn -- and drawn where they are once the view
+    // is back up there.
+    assert_eq!(terminal.held(), None);
+    terminal.scroll_by(20);
+    assert_eq!(terminal.held(), Some(((1, 0), (1, 2))));
+}
+
+/// What is held goes when the program writes over it: a copy then would
+/// be of words the reader never chose.
+///
+/// Broken deliberately by keeping it whatever was written: still held, and
+/// the copy says `TWO`.
+#[cfg(unix)]
+#[test]
+fn what_is_held_goes_when_the_program_writes_over_it() {
+    let mut terminal = quiet(5, 20);
+    terminal.wrote(b"one\r\ntwo\r\n");
+    terminal.hold_from((1, 0));
+    terminal.hold_to((1, 2));
+    terminal.wrote(b"\x1b[2;1HTWO");
+    assert!(!terminal.is_holding(), "held over words that changed");
+}
+
+/// The view's place goes up by a row for every row that goes up the
+/// screen, after what is kept is full as well as before.
+///
+/// Broken deliberately by counting what is kept growing, which is the
+/// count the parser has: past ten thousand rows it stops growing, and the
+/// last write moves nothing.
+#[cfg(unix)]
+#[test]
+fn every_row_up_the_screen_is_counted_once_what_is_kept_is_full() {
+    let mut terminal = quiet(5, 20);
+    let mut chunk = String::new();
+    for line in 0..10_200 {
+        chunk.push_str(&format!("{line}\r\n"));
+        if chunk.len() > 4000 {
+            terminal.wrote(chunk.as_bytes());
+            chunk.clear();
+        }
+    }
+    terminal.wrote(chunk.as_bytes());
+    let before = terminal.top();
+    terminal.wrote(b"a\r\nb\r\nc\r\n");
+    assert_eq!(terminal.top() - before, 3);
+}

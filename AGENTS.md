@@ -739,8 +739,10 @@ crates/
                     a terminal sends for it -- the reader's shell, and an
                     agent's sign-in
                     · what the program writes is parsed by the loop's one
-                      owner, not by a thread holding a lock, and what it asks
-                      the terminal is answered (lib)
+                      owner, not by a thread holding a lock, what it asks
+                      the terminal is answered, and every row up the screen
+                      is counted, because the parser stops counting where it
+                      stops keeping them (lib)
   obelus-clipboard/ the clipboard through whatever the machine actually has,
                     opening a link, and a file dropped on Obelus
                     · a copy in several shapes needs a client that owns the
