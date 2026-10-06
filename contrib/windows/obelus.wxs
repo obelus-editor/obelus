@@ -54,8 +54,10 @@
     <Feature Id="Main" Title="Obelus">
       <!-- A per-user component is kept by a value under HKCU rather than by
            its file, which is how Windows Installer wants anything in a
-           profile counted. -->
-      <Component Id="Window" Directory="INSTALLFOLDER">
+           profile counted. And so its GUID is written here: WiX derives one
+           from a file it is kept by, and this one is kept by neither. Fixed
+           for the reason the upgrade code is. -->
+      <Component Id="Window" Directory="INSTALLFOLDER" Guid="A50213FF-8857-4DF4-AF3F-07ABD5173C72">
         <File Id="obg.exe" Name="obg.exe" Source="$(var.Binary)" />
         <RegistryValue Root="HKCU" Key="Software\Obelus" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
         <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
