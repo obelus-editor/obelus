@@ -730,10 +730,13 @@ impl App {
                 if self.terminal().is_some() {
                     return self.typing_to_a_program();
                 }
-                // The same two things `Buffer::edit` refuses.
-                self.current_buffer().is_some_and(|buffer| {
-                    buffer.content().is_file() && buffer.mode() == obelus_buffer::Mode::Edit
-                })
+                // The same two things `Buffer::edit` refuses, and a reader
+                // whose keys change no file: an input method spelling into
+                // one would draw the word and then lose it on the commit.
+                !self.settled.config.read_only
+                    && self.current_buffer().is_some_and(|buffer| {
+                        buffer.content().is_file() && buffer.mode() == obelus_buffer::Mode::Edit
+                    })
             }
         }
     }

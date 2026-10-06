@@ -13772,3 +13772,61 @@ fn a_picture_dropped_from_the_transcript_goes_in_the_box() {
     app.handle(Event::Paste(picture.display().to_string()));
     assert_eq!(in_the_box(&app), ["<image/png>", "<image/png>"]);
 }
+
+/// What the agent writes goes into an open file while the reader's own keys
+/// change none: a reader who has the agent make every change has not asked
+/// it to stop.
+///
+/// In a tree of the test's own, which the fake agent writes into by a path
+/// relative to it -- from this repository it would rewrite a file here.
+///
+/// Broken deliberately by refusing in `App::write_for_agent` while
+/// `read_only` is on.
+#[test]
+fn the_agent_writes_where_the_reader_may_not() {
+    let scratch = support::Scratch::new("agent-read-only");
+    let path = scratch.path().join("line.txt");
+    std::fs::write(&path, "the reader's\n").expect("writing it");
+    let (sender, events) = channel();
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&path).expect("opening it"),
+    ]);
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.events_for_test(sender);
+    app.agents_root_for_test(agents_root());
+    app.configure(
+        obelus_config::Config {
+            read_only: true,
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fake-agent.sh");
+    app.talk_to("fake", Path::new("sh"), &[script.display().to_string()]);
+    app.new_conversation();
+    app.open_a_session_for_test();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+
+    support::type_text(&mut app, "/write");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the write", |app| {
+        said_in_transcript(app, "it ") && app.talking() == obelus_agent::Talking::Ready
+    });
+
+    assert!(
+        said_in_transcript(&app, "it wrote the file"),
+        "the agent was refused:\n{}",
+        screen(&mut app)
+    );
+    assert_eq!(
+        app.file(obelus_buffer::DocumentId::new(0))
+            .expect("the file")
+            .text()
+            .rope()
+            .to_string(),
+        "written by the agent\n"
+    );
+}

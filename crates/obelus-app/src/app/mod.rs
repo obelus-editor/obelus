@@ -1121,9 +1121,13 @@ impl App {
     }
 
     /// Whether what is typed goes over what is under the cursor.
+    ///
+    /// Not while the reader's keys change no file: the key that turns the
+    /// mode off is one of those refused, so a mode that was on would sit on
+    /// the status row and in the caret's shape with nothing typed to obey it.
     #[must_use]
     pub const fn replacing(&self) -> bool {
-        self.replacing
+        self.replacing && !self.settled.config.read_only
     }
 
     /// Turns typing over on, or off again.
@@ -1141,7 +1145,7 @@ impl App {
     /// is one short line, and typing over it means nothing.
     #[must_use]
     pub fn caret(&self) -> Caret {
-        match self.replacing && self.layers().nearest().is_none() {
+        match self.replacing() && self.layers().nearest().is_none() {
             true => Caret::Block,
             false => Caret::Bar,
         }

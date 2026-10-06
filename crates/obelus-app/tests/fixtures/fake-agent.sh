@@ -32,6 +32,12 @@
 #                            turn ends once the answer to that arrives
 #   session/prompt "/titled"
 #                         -> names the conversation, and ends the turn
+#   session/prompt "/write"
+#                         -> writes `line.txt` through Obelus, relative to
+#                            the tree, says whether it was let, and ends the
+#                            turn. Only for a test that opened a tree of its
+#                            own somewhere temporary: run from this
+#                            repository it would rewrite a file in it
 #   session/prompt "/pair"
 #                         -> asks permission twice at once, and says what
 #                            each answer was
@@ -877,6 +883,18 @@ while IFS= read -r line; do
             set_turn "$session" "$(id_of "$line")"
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"looking at it first"}}}}\n'
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call","toolCallId":"p1","title":"Read the file","kind":"read","status":"in_progress"}}}\n'
+            ;;
+        *'"method":"session/prompt"'*'"text":"/write'*)
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","id":950,"method":"fs/write_text_file","params":{"sessionId":"'"$session"'","path":"line.txt","content":"written by the agent\\n"}}\n'
+            ;;
+        *'"id":950'*)
+            case "$line" in
+                *'"error"'*) wrote='refused to write' ;;
+                *) wrote='wrote the file' ;;
+            esac
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"it %s"}}}}\n' "$wrote"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
         *'"method":"session/prompt"'*'"text":"/titled'*)
             # It names the conversation, the way an agent does once it has

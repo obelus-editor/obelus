@@ -318,10 +318,10 @@ impl Default for Config {
             tab_width: obelus_text::TAB_WIDTH,
             fonts: Vec::new(),
             font_size: DEFAULT_FONT_SIZE,
+            read_only: false,
             // Off: a formatter that ran without being asked would rewrite
             // a file somebody opened to read, and the first they would know
             // of it is the diff.
-            read_only: false,
             format_on_save: false,
             // Off, for the reason above it: a file somebody opened to read
             // should not come back from a save with its imports rearranged
