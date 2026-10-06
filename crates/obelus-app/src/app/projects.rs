@@ -30,7 +30,8 @@
 //! Asked of git, which is the same question [`crate::app::opening`] asks
 //! of a path on the command line.
 //!
-//! The path is kept as it was named, and that is not the key: two
+//! The path is kept as it was named -- less the `\\?\` Windows puts on a
+//! resolved one, which names the same place -- and that is not the key: two
 //! worktrees of one repository are one project to everything Obelus
 //! *keeps* (see `obelus_git::project`) and two different places to work to
 //! the reader standing in one of them. This list is about where to work,
@@ -184,6 +185,20 @@ pub(super) fn read() -> Reading {
     Reading::Projects(projects)
 }
 
+/// A path the way a reader writes it, which is the one way a row is
+/// written.
+///
+/// On Windows a path that has been resolved begins `\\?\`, and that is the
+/// same place as the path without it: a project reached once from where
+/// Obelus was started and once from the list of worktrees -- whose main
+/// checkout is resolved -- was two rows on the list. Taken off on the way
+/// in, where what is left still names the place, which `dunce` judges;
+/// elsewhere a path is as it came. Not on the way out: what is in the file
+/// is what was written, and putting a spelling right is the writer's.
+fn spelled(path: &Path) -> PathBuf {
+    dunce::simplified(path).to_path_buf()
+}
+
 /// Puts this project at the top of the list, where it is one.
 ///
 /// Read-modify-write rather than holding a copy, for the reason the
@@ -224,11 +239,12 @@ pub(super) fn remember(root: &Path, now: i64) -> bool {
     // who has both open wants both rows. Compared as written, because a
     // path that differs only in how it was spelled is the same row and
     // the newer spelling is the one to keep.
+    let root = spelled(root);
     projects.retain(|project| project.path != root);
     projects.insert(
         0,
         Project {
-            path: root.to_path_buf(),
+            path: root,
             last: Some(now),
         },
     );
@@ -987,6 +1003,39 @@ mod tests {
         let projects = read().rows();
         assert_eq!(projects.len(), 1, "the project is in the list twice");
         assert_eq!(projects[0].last, Some(20), "the time did not move");
+    }
+
+    /// A project reached resolved and reached as a reader names it is one
+    /// row, and the file holds it the way a reader names it.
+    ///
+    /// On Windows only, which is the one place a resolved path is spelled
+    /// differently: it begins `\\?\`. The plain spelling is worked out from
+    /// the resolved one rather than taken from the scratch directory, which
+    /// on a machine with short names is `RUNNER~1` and resolves to another
+    /// word altogether.
+    ///
+    /// Broken deliberately by taking `spelled` out of `remember`: the file
+    /// holds both spellings.
+    #[cfg(windows)]
+    #[test]
+    fn a_project_reached_resolved_is_one_row_spelled_plainly() {
+        let (root, _turn) = scratch("resolved");
+        a_repository(&root);
+        let resolved = root.canonicalize().expect("the directory");
+        assert!(resolved.to_string_lossy().starts_with(r"\\?\"));
+        let plain = dunce::simplified(&resolved).to_path_buf();
+
+        assert!(remember(&plain, 10), "nothing was written");
+        assert!(remember(&resolved, 20), "nothing was written");
+
+        let written = std::fs::read_to_string(path().expect("somewhere")).expect("the list");
+        assert_eq!(
+            written.matches("[[opened]]").count(),
+            1,
+            "the project is in the file twice: {written}"
+        );
+        assert!(!written.contains(r"\\?\"), "kept resolved: {written}");
+        assert_eq!(read().rows()[0].path, plain);
     }
 
     /// Somewhere that is not a worktree is not somewhere to come back to.

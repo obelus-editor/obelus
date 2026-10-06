@@ -97,6 +97,12 @@ ignore = "0.4"
 # say out loud rather than to reach through another crate for.
 globset = "0.4"
 
+# A resolved path spelled the way a reader spells it. `canonicalize` on
+# Windows hands back `\\?\E:\...`, which is the same place as `E:\...` and
+# compares unequal to it. Already in the tree; named here because a path that
+# is kept or compared has to come out in the one spelling.
+dunce = "1"
+
 # The search's patterns. Already in the tree by way of `ignore` and `tokei`,
 # so this states a dependency Obelus was compiling anyway rather than adding
 # one. `default-features = false` with `std`, `perf` and `unicode` kept: what

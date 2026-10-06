@@ -38,6 +38,7 @@ obelus-watch.workspace = true
 anyhow.workspace = true
 crossterm.workspace = true
 dirs.workspace = true
+dunce.workspace = true
 futures.workspace = true
 gix.workspace = true
 image.workspace = true
