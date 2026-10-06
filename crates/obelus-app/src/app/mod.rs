@@ -3107,7 +3107,12 @@ impl App {
                     ),
                 }
             }
-            Event::Tools(obelus_mcp::Asked { wanted, answer }) => {
+            // Only what was asked of this tree: the server about another
+            // went with the project that was on it.
+            Event::Tools(obelus_mcp::Asked { root, .. }) if root != self.working_directory => {
+                tracing::info!(root = %root.display(), "a tool asked of a tree this window has left");
+            }
+            Event::Tools(obelus_mcp::Asked { wanted, answer, .. }) => {
                 let _ = answer.send(match wanted {
                     obelus_mcp::Wanted::Notes(doing) => self.change_the_notes(doing),
                     obelus_mcp::Wanted::Open { path, line } => self.open_for_an_agent(&path, line),
@@ -3159,7 +3164,7 @@ impl App {
                     picker.scan_arrived(*scanned);
                 }
             }
-            Event::Reopened(files) => self.take_up_what_was_open(files),
+            Event::Reopened { tree, files } => self.take_up_what_was_open(&tree, files),
             Event::Search(obelus_search::Event::FilesFound {
                 generation,
                 paths,

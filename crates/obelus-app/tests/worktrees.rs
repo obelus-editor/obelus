@@ -887,3 +887,134 @@ fn a_conversation_is_named_as_the_open_documents_name_it() {
         "the agent's name did not take over: {after:?}"
     );
 }
+
+/// What a tree had open, read on a thread, is not taken for another's by a
+/// window that went to the other while it was being read.
+///
+/// The race made real rather than played: a window on `main` starts reading
+/// what `main` had open, goes to `feature` before that has been heard, and
+/// then hears both. Broken deliberately by taking up whatever arrives first,
+/// as it did: `main`'s file opens in the window on `feature`, and what
+/// `feature` had open never does.
+#[test]
+fn what_one_tree_had_open_is_not_taken_for_anothers() {
+    let scratch = Scratch::new("worktrees-reopen-race");
+    let (main, feature, _) = repository(&scratch);
+    std::fs::write(feature.join("other.rs"), "fn other() {}\n").expect("a second file");
+    for tree in [&main, &feature] {
+        std::fs::create_dir_all(tree.join(".obelus")).expect("making .obelus");
+        std::fs::write(tree.join(".obelus/config.toml"), "reopen = true\n")
+            .expect("writing the settings");
+    }
+    // What each tree had open, written the way a window writes it: on a
+    // frame, by a window on it.
+    for (tree, file) in [(&main, "file.rs"), (&feature, "other.rs")] {
+        let (mut was, _was_events) = window_on(tree, &Arc::new(Asked::default()));
+        was.open_for_test(&tree.join(file));
+        support::lay_out(&mut was, 80, 24);
+    }
+
+    let asked = Arc::new(Asked::default());
+    let (mut app, events) = window_on(&main, &asked);
+    app.reopen_what_was_open();
+    // Read, and waiting in the channel, before the window goes.
+    std::thread::sleep(Duration::from_millis(300));
+    dispatch::dispatch(&mut app, Command::WorktreeList);
+    choose(&mut app, "feature");
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline && app.reading_nothing() {
+        if let Ok(event) = events.recv_timeout(Duration::from_millis(100)) {
+            app.handle(event);
+        }
+    }
+    let open: Vec<PathBuf> = app
+        .buffers_for_test()
+        .into_iter()
+        .map(|(path, _)| resolved(&path))
+        .collect();
+    assert_eq!(
+        open,
+        [resolved(&feature.join("other.rs"))],
+        "what main had open was taken for feature's"
+    );
+}
+
+/// What an agent asked of the tree a window has left is not done on the
+/// tree it went to.
+///
+/// Handed to the loop by hand, because what is being tested is the loop
+/// hearing it late: the server that heard it went with the old project, and
+/// this is what it had sent a moment before. Broken deliberately by doing
+/// whatever arrives: `main`'s file opens in the window on `feature`.
+#[test]
+fn what_was_asked_of_a_tree_left_behind_is_not_done() {
+    let scratch = Scratch::new("worktrees-asked-late");
+    let (main, feature, _) = repository(&scratch);
+    let asked = Arc::new(Asked::default());
+    let (mut app, _events) = window_on(&main, &asked);
+    dispatch::dispatch(&mut app, Command::WorktreeList);
+    choose(&mut app, "feature");
+    assert_eq!(resolved(app.working_directory()), resolved(&feature));
+
+    let (answer, mut said) = futures::channel::oneshot::channel();
+    app.handle(Event::Tools(obelus_mcp::Asked {
+        root: main.clone(),
+        wanted: obelus_mcp::Wanted::Open {
+            path: main.join("file.rs").display().to_string(),
+            line: None,
+        },
+        answer,
+    }));
+    assert!(
+        app.reading_nothing(),
+        "a file was opened for a tree this window has left"
+    );
+    assert!(
+        !matches!(said.try_recv(), Ok(Some(_))),
+        "the tree left behind was answered as though it were this one"
+    );
+}
+
+/// An agent that never finished starting goes with the tree it was started
+/// on, as one that did goes.
+///
+/// One that never answers its handshake: what stops a connection that is
+/// up is its asks closing, and a connection waiting on a handshake is not
+/// listening for them. Broken deliberately by stopping a connection only
+/// by closing its asks: the agent is still running after the window has
+/// gone to `feature`.
+#[cfg(target_os = "linux")]
+#[test]
+fn an_agent_that_never_started_goes_with_the_tree() {
+    let scratch = Scratch::new("worktrees-agent-hangs");
+    let (main, _, _) = repository(&scratch);
+    let asked = Arc::new(Asked::default());
+    let (mut app, events) = window_on(&main, &asked);
+    let pid = scratch.join("pid");
+    app.talk_to(
+        "fake",
+        Path::new("sh"),
+        &[
+            "-c".to_string(),
+            format!("echo $$ > {}; exec sleep 1000", pid.display()),
+        ],
+    );
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline && !pid.exists() {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let pid = std::fs::read_to_string(&pid).expect("the agent started");
+    let running = || std::path::Path::new(&format!("/proc/{}", pid.trim())).exists();
+    assert!(running());
+
+    dispatch::dispatch(&mut app, Command::WorktreeList);
+    choose(&mut app, "feature");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline && running() {
+        if let Ok(event) = events.recv_timeout(Duration::from_millis(50)) {
+            app.handle(event);
+        }
+    }
+    assert!(!running(), "the agent outlived the tree it was started on");
+}

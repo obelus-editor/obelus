@@ -1142,13 +1142,24 @@ pub struct Choice {
 /// Best effort, like every other producer: a thread that will not start, or
 /// an agent that will not run, becomes a `Gone` with the reason in it
 /// rather than a failure to open the view.
+///
+/// And how to stop it, which is dropping what comes back beside the asks.
+/// Closing the asks ends a connection that is listening for them, and one
+/// still waiting on the agent -- for its handshake, which an agent that
+/// hangs on the way up never gives -- is not listening. So the whole of the
+/// connection is raced against the stop, and losing drops it, which is
+/// what kills the process.
 pub fn start(
     command: &std::path::Path,
     arguments: &[String],
     root: &std::path::Path,
     events: impl Sink<Event> + Clone,
-) -> mpsc::UnboundedSender<Ask> {
+) -> (
+    mpsc::UnboundedSender<Ask>,
+    futures::channel::oneshot::Sender<()>,
+) {
     let (asks, taken) = mpsc::unbounded();
+    let (stop, stopped) = futures::channel::oneshot::channel::<()>();
     // Not always the file that was installed: what npm writes on Windows is
     // a `.cmd`, which is started by being handed to the command processor
     // rather than by being run. [`obelus_program::as_started_here`] is the
@@ -1170,10 +1181,14 @@ pub fn start(
     // The channels stay `futures`': that is what the protocol's own crate
     // speaks, and a channel is runtime-agnostic anyway.
     obelus_runtime::handle().spawn(async move {
-        let reason = talk(config, started, root, told.clone(), taken).await;
+        let talking = std::pin::pin!(talk(config, started, root, told.clone(), taken));
+        let reason = match futures::future::select(talking, stopped).await {
+            futures::future::Either::Left((reason, _)) => reason,
+            futures::future::Either::Right(_) => None,
+        };
         let _ = told.send(Event::Acp(Incoming::Gone(reason)));
     });
-    asks
+    (asks, stop)
 }
 
 /// Opens one conversation on a connection that is already up.

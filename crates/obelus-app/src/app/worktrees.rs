@@ -339,6 +339,9 @@ impl App {
                 .conversation_name(talk, notes)
                 .unwrap_or_else(|| "A conversation".to_string()),
             Some(Document::Notes(_)) => "Todo".to_string(),
+            Some(Document::Terminal(terminal)) => {
+                terminal.title().unwrap_or(terminal.said()).to_string()
+            }
             None => String::new(),
         };
         // One line of a file that is read a line at a time.
@@ -611,7 +614,7 @@ impl App {
                     // -- where `ctrl+enter` opens a window instead.
                     icon: match seen.door {
                         Some(_) => obelus_icons::ui::WINDOW,
-                        None => obelus_icons::ui::TERMINAL,
+                        None => obelus_icons::ui::IN_A_TERMINAL,
                     },
                     label: match seen.reading.is_empty() {
                         true => "Nothing open".to_string(),
@@ -717,9 +720,20 @@ impl App {
     /// again: going is leaving, as far as this tree is concerned.
     pub(super) fn move_to_tree(&mut self, tree: &Path) {
         tracing::info!(tree = %tree.display(), "putting this window on another worktree");
+        // Asked before the letting go, which takes the chat with it.
+        let reached = self.has_the_remote();
         self.write_down_what_is_open_on_leaving();
         self.let_go_of_the_project();
         self.settle(tree.to_path_buf(), &[]);
+        // The chat is reached through this window, and the reader who put it
+        // here did not say "for this tree": a reader away from the machine
+        // who goes to another tree from the chat would otherwise have cut
+        // themselves off. Connected again rather than carried over, the way
+        // a start that was told to connects -- what the chat's threads were
+        // about was the tree that has gone.
+        if reached {
+            self.connect_remote();
+        }
     }
 
     /// Goes to the tree a row names in a window of its own: the one the row

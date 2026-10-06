@@ -23,7 +23,12 @@
 //! `debug`, which for the loudest is the wrong place; the other three are a
 //! diary, and the log is what a diary is for.
 
-use std::{collections::HashMap, path::Path, process::Stdio};
+use std::{
+    collections::HashMap,
+    path::Path,
+    process::Stdio,
+    sync::{Arc, Mutex},
+};
 
 use anyhow::{Context as _, Result};
 use lsp_types::{
@@ -84,6 +89,15 @@ pub struct AskedEdit {
 pub struct Client {
     language: LanguageId,
     process: tokio::process::Child,
+    /// Whether what the server says still goes to the loop.
+    ///
+    /// A message only says which language's server it is from, so one the
+    /// server wrote after its client went would be taken for the next
+    /// server's of that language -- an old answer matched to a new
+    /// request, a file of a tree nobody is on marked. So the client going
+    /// shuts this, under the lock the reader sends under: once it is shut
+    /// nothing more of this server's arrives.
+    listening: Arc<Mutex<bool>>,
     /// Whether the process has been found to have stopped.
     exited: bool,
     outgoing: tokio::sync::mpsc::UnboundedSender<String>,
@@ -178,12 +192,14 @@ impl Client {
             spawn_logger(command.to_string(), stderr);
         }
 
-        spawn_reader(language, stdout, sender);
+        let listening = Arc::new(Mutex::new(true));
+        spawn_reader(language, stdout, sender, Arc::clone(&listening));
         let outgoing = spawn_writer(command.to_string(), stdin);
 
         let mut client = Self {
             language,
             process,
+            listening,
             exited: false,
             outgoing,
             next_id: INITIALIZE_ID + 1,
@@ -663,6 +679,7 @@ fn spawn_reader(
     language: LanguageId,
     stdout: tokio::process::ChildStdout,
     sender: impl Sink<Message>,
+    listening: Arc<Mutex<bool>>,
 ) {
     obelus_runtime::handle().spawn(async move {
         let mut reader = tokio::io::BufReader::new(stdout);
@@ -692,7 +709,12 @@ fn spawn_reader(
                     return;
                 }
             };
-            if sender.send(Message { language, message }).is_err() {
+            // Asked and sent under the one lock, so that a client going
+            // between the two cannot let one more through.
+            let still = listening.lock().map(|listening| {
+                *listening && sender.send(Message { language, message }).is_ok()
+            });
+            if !still.unwrap_or(false) {
                 return;
             }
         }
@@ -759,6 +781,11 @@ impl Drop for Client {
     /// another -- and a leaked rust-analyzer is a quarter of a gigabyte
     /// holding an index of a project nobody is reading.
     fn drop(&mut self) {
+        // First, and whether or not the process is still there: what it
+        // wrote before it stopped is as much not the next server's.
+        if let Ok(mut listening) = self.listening.lock() {
+            *listening = false;
+        }
         // Already gone, and `shutdown` would only be talking to a pipe with
         // nobody on the other end.
         if matches!(self.process.try_wait(), Ok(Some(_))) {

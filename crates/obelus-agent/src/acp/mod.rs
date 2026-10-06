@@ -129,6 +129,9 @@ pub struct Talk {
     id: String,
     /// How to ask it things.
     asks: mpsc::UnboundedSender<Ask>,
+    /// Held for as long as it should run: dropped, the connection is, and
+    /// the process with it -- see [`link::start`].
+    stop: Option<futures::channel::oneshot::Sender<()>>,
     /// What it calls itself, once it has said.
     info: Option<String>,
     /// What a prompt to this agent may carry, once it has said.
@@ -348,9 +351,11 @@ impl Talk {
             inner: events,
             from: connection,
         };
+        let (asks, stop) = link::start(command, arguments, root, events);
         Self {
             id: id.to_string(),
-            asks: link::start(command, arguments, root, events),
+            asks,
+            stop: Some(stop),
             info: None,
             carries: None,
             logins: Vec::new(),
@@ -772,6 +777,7 @@ impl Talk {
     /// has gone -- exits. Which is how a language server is stopped too.
     pub fn shutdown(&mut self) {
         self.asks.close_channel();
+        self.stop = None;
         self.sessions.clear();
         self.waiting.clear();
         self.named.clear();
@@ -1031,6 +1037,7 @@ mod tests {
         Talk {
             id: "fake".to_string(),
             asks,
+            stop: None,
             info: None,
             carries: None,
             logins: Vec::new(),
