@@ -1156,6 +1156,246 @@ fn what_is_said_before_a_call_goes_at_once() {
     );
 }
 
+/// The agent's plan goes to the thread, quietly and after what it said
+/// before it -- and again only when its steps change: a step ticked off is
+/// the same list sent again, and is not said.
+///
+/// Broken deliberately three ways. Not mirroring the plan at all: no plan
+/// came. Saying it every time it was sent: three plans came, the middle one
+/// the first again with a step ticked. And saying it before the words held
+/// for the turn: the plan came ahead of "thinking it over".
+#[test]
+fn a_plan_is_said_when_its_steps_change() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-plan");
+    let (mut app, events, _log) = paired_with_an_agent(&scratch);
+    let _ = the_platform().send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        text: "/replanning".to_string(),
+    });
+    let said = said_until(&mut app, &events, "the end of the turn", |said| {
+        in_thread(said, "F1", "done planning")
+    });
+    let words: Vec<(&str, bool)> = said
+        .iter()
+        .filter_map(|out| match out {
+            obelus_remote::model::Out::Say {
+                thread,
+                text,
+                notify,
+                ..
+            } if thread == "F1" => Some((text.as_str(), *notify)),
+            _ => None,
+        })
+        .collect();
+    let plans: Vec<&(&str, bool)> = words
+        .iter()
+        .filter(|(text, _)| text.starts_with("_The plan:_"))
+        .collect();
+    assert_eq!(
+        plans,
+        [
+            &(
+                "_The plan:_\n\u{25b8} read the counts tree\n\u{25e6} write the test",
+                false
+            ),
+            &(
+                "_The plan:_\n\u{2713} read the counts tree\n\u{25b8} wire it to the search\n\u{25e6} write the test",
+                false
+            ),
+        ],
+        "not the two plans, quietly: {words:#?}"
+    );
+    let at = |what: &str| {
+        words
+            .iter()
+            .position(|(text, _)| text.contains(what))
+            .unwrap_or_else(|| panic!("nothing said with {what:?} in it: {words:#?}"))
+    };
+    assert!(
+        at("thinking it over") < at("_The plan:_"),
+        "the plan went ahead of what was said before it: {words:#?}"
+    );
+}
+
+/// Every plan said in this thread, in order, and whether it called the
+/// reader.
+fn plans_in<'a>(said: &'a [obelus_remote::model::Out], thread: &str) -> Vec<(&'a str, bool)> {
+    said.iter()
+        .filter_map(|out| match out {
+            obelus_remote::model::Out::Say {
+                thread: at,
+                text,
+                notify,
+                ..
+            } if at == thread && text.starts_with("_The plan:_") => Some((text.as_str(), *notify)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// A plan cleared and made again is said again, and so is the plan of a new
+/// turn that is the last turn's over again: what the thread is told is what
+/// this turn means to do.
+///
+/// Broken deliberately two ways. Keeping the plan last said across the
+/// turn: the second turn's plan was never said, three in all and not four.
+/// And keeping it across an empty one: each turn said its plan once.
+#[test]
+fn a_plan_made_again_is_said_again() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-plan-again");
+    let (mut app, events, _log) = paired_with_an_agent(&scratch);
+    let platform = the_platform();
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        text: "/sameplan".to_string(),
+    });
+    let mut said = said_until(&mut app, &events, "the first turn's end", |said| {
+        in_thread(said, "F1", "looked again")
+    });
+    assert_eq!(
+        plans_in(&said, "F1").len(),
+        2,
+        "a plan cleared and made again was not said again: {said:#?}"
+    );
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Thread("F1".to_string()),
+        text: "/sameplan".to_string(),
+    });
+    said.extend(said_until(
+        &mut app,
+        &events,
+        "the second turn's end",
+        |said| in_thread(said, "F1", "looked again"),
+    ));
+    assert_eq!(
+        plans_in(&said, "F1").len(),
+        4,
+        "the second turn's plan was not said: {said:#?}"
+    );
+}
+
+/// What an agent replays of a conversation taken up again is not said in
+/// its thread: it was said there when it was said. Neither its plan nor its
+/// words -- which waited for the end of the next turn, and went out with
+/// that turn's as if they were new.
+///
+/// Broken deliberately two ways. Mirroring the replay's plan: the old plan
+/// went to the thread, and the old words with it, ahead of it. And keeping
+/// the replay's words for the turn: "where we were" went out with "ran x".
+#[test]
+fn a_conversation_taken_up_again_is_not_said_again() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-taken-up");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        "[[todo]]\nid = \"0123456T\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+    let id = obelus_git::todo::NoteId::read("0123456T").expect("a name");
+    let which = obelus_agent::chats::ChatId::Note(id.clone());
+    obelus_agent::acp::sessions::change(
+        scratch.path(),
+        0,
+        Some(std::slice::from_ref(&id)),
+        |remembered| {
+            remembered.put(
+                &which,
+                "fake",
+                scratch.path(),
+                obelus_agent::acp::sessions::Kept {
+                    session: "s-old".to_string(),
+                    title: None,
+                    told: Some("a note".to_string()),
+                    introduced: true,
+                    last: None,
+                },
+            );
+        },
+    );
+    obelus_remote::platform::connect_for_test(fake_connect);
+    *FAKED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    std::fs::write(
+        scratch.join("config.toml"),
+        "remote = \"slack\"\n[remotes.slack]\npeople = [{ id = \"U1\", name = \"Sunli\" }]\n",
+    )
+    .expect("the settings");
+    a_room_kept();
+    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.config_file_for_test(scratch.join("config.toml"));
+    let events = support::drive(&mut app);
+    app.agents_root_for_test(scratch.join("agents"));
+    support::lay_out(&mut app, 76, 24);
+    dispatch::dispatch(&mut app, Command::RemoteConnect);
+    until(&mut app, &events, "the connection", |app| {
+        app.remote_state_for_test() == obelus_remote::State::Connected
+    });
+    app.talk_to(
+        "fake",
+        std::path::Path::new("sh"),
+        &[
+            "tests/fixtures/fake-agent.sh".to_string(),
+            "prompts".to_string(),
+            "replans".to_string(),
+        ],
+    );
+    dispatch::dispatch(&mut app, Command::TodoOpen);
+    support::press_alt(&mut app, 'a');
+    assert!(app.chat().is_some(), "the note's conversation did not open");
+    app.open_a_session_for_test();
+    let mut said = said_until(&mut app, &events, "a thread to be asked for", |said| {
+        said.iter()
+            .any(|out| matches!(out, obelus_remote::model::Out::Open { .. }))
+    });
+    let asked = said
+        .iter()
+        .find_map(|out| match out {
+            obelus_remote::model::Out::Open { asked, .. } => Some(*asked),
+            _ => None,
+        })
+        .expect("asked for");
+    let _ = the_platform().send(obelus_remote::Event::Opened {
+        asked,
+        thread: "T1".to_string(),
+        link: None,
+    });
+    // `until` leaves what was said where `said_until` finds it.
+    until(&mut app, &events, "the old conversation", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+            && app.chat().is_some_and(|chat| {
+                chat.rows(76)
+                    .iter()
+                    .any(|row| row.text().contains("where we were"))
+            })
+    });
+    support::type_text(&mut app, "/x");
+    support::press(&mut app, KeyCode::Enter);
+    said.extend(said_until(&mut app, &events, "the turn's end", |said| {
+        in_thread(said, "T1", "ran x")
+    }));
+    assert!(
+        plans_in(&said, "T1").is_empty(),
+        "the replay's plan was said: {said:#?}"
+    );
+    assert!(
+        !in_thread(&said, "T1", "where we were"),
+        "the replay's words were said: {said:#?}"
+    );
+}
+
 /// Nothing outside the room is heard, even from somebody on the list: a
 /// thread they start in another group the bot is in begins nothing and is
 /// not answered.

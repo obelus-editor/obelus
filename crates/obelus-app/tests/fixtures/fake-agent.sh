@@ -158,6 +158,8 @@ later=''
 log=''
 prompts=''
 pictures=''
+# Whether what it replays of a conversation taken up again has a plan in it.
+replans=''
 for word in "$@"; do
     case "$word" in
         mode-as-option) both_ways='yes' ;;
@@ -171,6 +173,7 @@ for word in "$@"; do
         log=*) log="${word#log=}" ;;
         prompts) prompts='yes' ;;
         pictures) pictures='yes' ;;
+        replans) replans='yes' ;;
     esac
 done
 
@@ -884,6 +887,28 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"looking at it first"}}}}\n'
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call","toolCallId":"p1","title":"Read the file","kind":"read","status":"in_progress"}}}\n'
             ;;
+        *'"method":"session/prompt"'*'"text":"/replanning'*)
+            # It says something, makes a plan, ticks off its first step --
+            # the same steps again -- then thinks better of it and adds one,
+            # and ends: two plans in all, and three times sent.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"thinking it over"}}}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"plan","entries":[{"content":"read the counts tree","priority":"high","status":"in_progress"},{"content":"write the test","priority":"low","status":"pending"}]}}}\n' "$session"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"plan","entries":[{"content":"read the counts tree","priority":"high","status":"completed"},{"content":"write the test","priority":"low","status":"in_progress"}]}}}\n' "$session"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"plan","entries":[{"content":"read the counts tree","priority":"high","status":"completed"},{"content":"wire it to the search","priority":"medium","status":"in_progress"},{"content":"write the test","priority":"low","status":"pending"}]}}}\n' "$session"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"done planning"}}}}\n'
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
+        *'"method":"session/prompt"'*'"text":"/sameplan'*)
+            # The same plan every turn, cleared and made again part-way
+            # through: an agent starting over.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"plan","entries":[{"content":"look again","priority":"high","status":"pending"}]}}}\n' "$session"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"plan","entries":[]}}}\n' "$session"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"plan","entries":[{"content":"look again","priority":"high","status":"in_progress"}]}}}\n' "$session"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"looked again"}}}}\n'
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
         *'"method":"session/prompt"'*'"text":"/write'*)
             set_turn "$session" "$(id_of "$line")"
             printf '{"jsonrpc":"2.0","id":950,"method":"fs/write_text_file","params":{"sessionId":"'"$session"'","path":"line.txt","content":"written by the agent\\n"}}\n'
@@ -1014,6 +1039,9 @@ while IFS= read -r line; do
             # questions above them.
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"what did we settle on"}}}}\n' "$loaded"
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"tools=%s"}}}}\n' "$loaded" "$tools"
+            if [ -n "$replans" ]; then
+                printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"plan","entries":[{"content":"settle on something","priority":"high","status":"completed"}]}}}\n' "$loaded"
+            fi
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"where we were"}}}}\n' "$loaded"
             printf '{"jsonrpc":"2.0","id":%s,"result":{"modes":{"currentModeId":"ask","availableModes":[{"id":"ask","name":"ask first"},{"id":"code","name":"write code"}]},"configOptions":%s}}\n' "$(id_of "$line")" "$(options)"
             ;;

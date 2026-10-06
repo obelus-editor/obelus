@@ -1580,6 +1580,7 @@ impl App {
         };
         let (topic, introduced, told) = (talk.topic.clone(), talk.introduced, talk.told.clone());
         let opening = self.opening(&topic, introduced, told.as_deref());
+        self.mirror_plan_forgotten(whose);
         if let Some(talk) = self.talk_mut(whose) {
             // A new turn starts with no plan: an agent that made one last
             // turn and makes none this turn would otherwise have the old
@@ -3654,7 +3655,10 @@ impl App {
                 // it never goes in the transcript -- so it is handed to the
                 // row that says what is happening now, which is where a
                 // state belongs and where one cannot be left behind.
-                acp::Update::Plan(steps) => self.in_talk(whose, |chat| chat.planning(steps)),
+                acp::Update::Plan(steps) => {
+                    self.mirror_planned(whose, &steps);
+                    self.in_talk(whose, |chat| chat.planning(steps));
+                }
                 // What the agent calls this conversation, which is the
                 // name it goes by in the list of open documents -- so it is
                 // written down rather than only shown.
