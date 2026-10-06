@@ -254,6 +254,9 @@ jobs:
       # one thing a reader would notice missing: the program, the menu
       # entry and where it starts, `obg` on the PATH, and all of it gone
       # after an uninstall.
+      #
+      # Broken deliberately once, by starting the menu entry in the install
+      # directory: both jobs stopped here, saying where it started instead.
       - name: The installer, run
         if: matrix.msi
         shell: pwsh
