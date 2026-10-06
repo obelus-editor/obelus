@@ -21,6 +21,12 @@ use obelus_component::{
 use super::*;
 use crate::conversation::{Asking, Permission, Topic};
 
+/// The answer on a sign-in's card that is not a way in.
+///
+/// Not a word an agent would use for one of its own, which is what its
+/// ways in are called by on the same card.
+const NOT_SIGNING_IN: &str = "obelus:not-now";
+
 /// Which conversation a message from the agent is for.
 ///
 /// Its own type rather than an `Option<DocumentId>` because the two cases
@@ -1908,6 +1914,8 @@ impl App {
             talk.permission = None;
             talk.asking = None;
             talk.going = None;
+            talk.signing_in = None;
+            talk.sign_in_next = None;
             talk.queued.clear();
             talk.card = None;
             if asked {
@@ -2376,8 +2384,27 @@ impl App {
         if talk.is_waiting_on_the_reader() {
             return;
         }
+        if let Some(why) = talk.sign_in_next.take() {
+            self.ask_to_sign_in(whose, why);
+            return;
+        }
         if let Some(next) = talk.queued.pop_front() {
             self.put_to_the_reader(whose, next);
+        }
+    }
+
+    /// Takes the sign-in's card down wherever it is up, because the reader
+    /// is in: every conversation that was waiting is being asked again,
+    /// and a card left in one would ask them to sign in twice.
+    pub(super) fn signed_in_everywhere(&mut self) {
+        for document in self.documents.iter_mut().flatten() {
+            if let Some(talk) = Document::chat_mut(document) {
+                talk.sign_in_next = None;
+                if talk.signing_in.take().is_some() {
+                    talk.card = None;
+                    talk.chat.note("Signed in");
+                }
+            }
         }
     }
 
@@ -2585,6 +2612,137 @@ impl App {
         let _ = going.answer.send(true);
     }
 
+    /// Asks the reader to sign in, on a card with the ways the agent offers.
+    ///
+    /// Only when the agent has said it needs it -- an agent that never asks
+    /// is an agent the reader was already signed in to, and a card at every
+    /// start would be a question about nothing. What it said goes over the
+    /// ways in, and each way's own words beside it.
+    ///
+    /// An agent that wants a sign-in and offers no way to have one is said
+    /// to, and given up on: nothing the reader could press would get them
+    /// in, and a card with only "no" on it is a sentence with a key.
+    pub(super) fn ask_to_sign_in(&mut self, whose: Whose, why: Option<String>) {
+        // Behind whatever the agent is already asking, like any question:
+        // put over it, the card answered first was the other one's, and
+        // the sign-in went with it.
+        if let Some(talk) = self.talk_mut(whose)
+            && talk.is_waiting_on_the_reader()
+            && talk.signing_in.is_none()
+        {
+            talk.sign_in_next = Some(why);
+            return;
+        }
+        let Some(talker) = self.talker.as_ref() else {
+            return;
+        };
+        let logins = talker.logins().to_vec();
+        let agent = talker.info().unwrap_or("the agent").to_string();
+        if logins.is_empty() {
+            talker.give_up_signing_in();
+            self.in_talk(whose, |chat| {
+                chat.note(&format!("There is no way to sign in to {agent} from here"));
+            });
+            return;
+        }
+        self.show_the_question(whose);
+        let icons = obelus_icons::enabled();
+        let mut choices: Vec<Choice> = logins
+            .iter()
+            .map(|login| Choice {
+                id: login.id.clone(),
+                name: login.name.clone(),
+                about: login.about.clone(),
+                // A program to answer, or the agent's own business, which
+                // for an agent is a page somewhere else.
+                icon: icons.then_some(match login.how {
+                    acp::How::Run { .. } => obelus_icons::ui::TERMINAL,
+                    acp::How::Asked => obelus_icons::ui::AWAY,
+                }),
+                chosen: false,
+            })
+            .collect();
+        choices.push(Choice {
+            id: NOT_SIGNING_IN.to_string(),
+            name: "Not now".to_string(),
+            about: None,
+            icon: icons.then_some(obelus_icons::ui::STAYING),
+            chosen: false,
+        });
+        let mut card = Card::new(choices, false);
+        let about = match &why {
+            Some(why) => format!("Sign in to {agent} to go on\n\n{why}"),
+            None => format!("Sign in to {agent} to go on"),
+        };
+        card.about(&about);
+        if let Some(talk) = self.talk_mut(whose) {
+            talk.signing_in = Some(why);
+            talk.card = Some(card);
+        }
+    }
+
+    /// Signs in the way the reader chose, or gives up.
+    ///
+    /// A way that is a program goes to a terminal of its own, and the
+    /// reader with it; a way that is the agent's is asked of the agent. Not
+    /// signing in gives up on whatever was waiting for it, which ends a
+    /// conversation that was being opened -- the next thing the reader says
+    /// starts the agent again, and it asks again.
+    fn answer_signing_in(&mut self, whose: Whose, chosen: Option<&str>) {
+        if let Some(talk) = self.talk_mut(whose) {
+            talk.card = None;
+            talk.signing_in = None;
+        }
+        let login = chosen.and_then(|id| {
+            self.talker
+                .as_ref()?
+                .logins()
+                .iter()
+                .find(|login| login.id == id)
+                .cloned()
+        });
+        let (Some(login), Some(connection)) =
+            (login, self.talker.as_ref().map(acp::Talk::connection))
+        else {
+            if let Some(talker) = self.talker.as_ref() {
+                talker.give_up_signing_in();
+            }
+            self.in_talk(whose, |chat| chat.note("Not signed in"));
+            return;
+        };
+        self.in_talk(whose, |chat| {
+            chat.note(&format!("Signing in: {}", login.name))
+        });
+        match login.how {
+            acp::How::Run {
+                program,
+                arguments,
+                env,
+            } => {
+                let Some(conversation) = (match whose {
+                    Whose::One(id) => Some(id),
+                    Whose::Whoever => self.current,
+                }) else {
+                    return;
+                };
+                self.sign_in_by_running(
+                    conversation,
+                    connection,
+                    obelus_terminal::Program::Command {
+                        program,
+                        arguments,
+                        env,
+                    },
+                );
+            }
+            acp::How::Asked => {
+                if let Some(talker) = self.talker.as_ref() {
+                    talker.sign_in(&login.id);
+                }
+            }
+        }
+    }
+
     /// The agent says the far end happened, so there is nothing left to
     /// wait for.
     ///
@@ -2692,6 +2850,14 @@ impl App {
         // something.
         if self.talk(whose).is_some_and(|talk| talk.going.is_some()) {
             self.answer_going(whose, chosen.first().map(String::as_str));
+            return;
+        }
+        // Nor is a sign-in: what was chosen is a way in.
+        if self
+            .talk(whose)
+            .is_some_and(|talk| talk.signing_in.is_some())
+        {
+            self.answer_signing_in(whose, chosen.first().map(String::as_str));
             return;
         }
         // A permission request is named answers and nothing else, so the
@@ -2968,8 +3134,18 @@ impl App {
             | acp::Incoming::Ended { session, .. }
             | acp::Incoming::Remembered { session }
             | acp::Incoming::Asked { session, .. }
-            | acp::Incoming::Withdrawn { session } => Some(session),
-            acp::Incoming::Started { .. }
+            | acp::Incoming::Withdrawn { session }
+            | acp::Incoming::SignIn {
+                session: Some(session),
+                ..
+            } => Some(session),
+            // A sign-in asked for while a conversation was opening names
+            // the request rather than a session, and is routed by it
+            // before this is reached; one the agent did itself names
+            // nothing, and is said wherever the reader is.
+            acp::Incoming::SignIn { session: None, .. }
+            | acp::Incoming::SignedIn
+            | acp::Incoming::Started { .. }
             | acp::Incoming::Lost { .. }
             | acp::Incoming::Ready { .. }
             // What an agent can be set to is about the agent: the
@@ -3298,6 +3474,22 @@ impl App {
         // session: it is what *hands out* one. It goes to whichever
         // conversation has not got one yet, because a conversation asks for
         // a session only when it is opened and only ever needs the one.
+        // A conversation that could not be opened until the reader signs
+        // in. By the request's number, which is the only name it has: the
+        // agent refused it the session that would have named it.
+        if let acp::Incoming::SignIn {
+            session: None,
+            asking,
+            why,
+            ..
+        } = &incoming
+        {
+            let at = asking
+                .and_then(|asking| self.conversation_at(|talk| talk.requested == Some(asking)));
+            let whose = at.map_or(Whose::Whoever, |at| Whose::One(DocumentId::new(at)));
+            self.ask_to_sign_in(whose, why.clone());
+            return;
+        }
         if let acp::Incoming::Started {
             session, asking, ..
         } = &incoming
@@ -3645,6 +3837,15 @@ impl App {
             acp::Incoming::Ready { .. }
             | acp::Incoming::Started { .. }
             | acp::Incoming::Offers { .. } => {}
+            // A turn that needed a sign-in, which has ended and said so:
+            // the ways in go up after it, in the conversation it was.
+            acp::Incoming::SignIn { why, .. } => self.ask_to_sign_in(whose, why),
+            // The agent signed the reader in itself, and what was waiting
+            // on it is already being asked again.
+            acp::Incoming::SignedIn => {
+                self.in_talk(whose, |chat| chat.note("Signed in"));
+                self.signed_in_everywhere();
+            }
         }
     }
 

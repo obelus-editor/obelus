@@ -25,7 +25,7 @@ description = "A code editor that fits how I work, with the agent built in, in a
 
 # The lints the whole of Obelus is written under. Crate attributes do not
 # travel, so `#![deny(..)]` in one crate root would silently stop applying to
-# the other twenty-five; here they are stated once and each member opts in with
+# the other twenty-eight; here they are stated once and each member opts in with
 # a `[lints] workspace = true` of its own, which Cargo does not inherit for it.
 [workspace.lints.rust]
 missing_docs = "warn"
@@ -58,6 +58,7 @@ obelus-runtime = { path = "crates/obelus-runtime" }
 obelus-search = { path = "crates/obelus-search" }
 obelus-sink = { path = "crates/obelus-sink" }
 obelus-syntax = { path = "crates/obelus-syntax" }
+obelus-terminal = { path = "crates/obelus-terminal" }
 obelus-text = { path = "crates/obelus-text" }
 obelus-ui = { path = "crates/obelus-ui" }
 obelus-theme = { path = "crates/obelus-theme" }
@@ -217,6 +218,18 @@ dirs = "7"
 # Obelus has a server for reported that the server was not installed.
 # `either` and `home`, which it brings, were in the tree already.
 which = "8"
+
+# A terminal of Obelus's own: the program on one side of a pseudo-terminal,
+# and what it draws read back into a grid of cells. `portable-pty` is
+# wezterm's, and the one answer on all three systems -- a pty on unix and the
+# ConPTY on Windows. `vt100` is only the parser and the grid, with nothing of
+# a terminal's own beside them, so the bytes can go through the loop's one
+# channel and be parsed by the one owner of the application's state rather
+# than in a thread holding a lock the drawing has to take.
+# `alacritty_terminal`, which zed uses, brings its own event loop and its own
+# pty -- the second of those twice over.
+portable-pty = "0.9"
+vt100 = "0.16"
 
 # `file://` URIs, which are not paths with a scheme in front. A Windows path
 # starts at a drive letter rather than a `/`, so it needs one put in front of

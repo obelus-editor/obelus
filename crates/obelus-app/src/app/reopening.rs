@@ -324,7 +324,11 @@ impl App {
                 Some(Document::Notes(notes)) => Some(Open::Notes {
                     on: notes.selected_note().map(|note| note.id.clone()),
                 }),
-                Some(Document::File(_)) | None => None,
+                // A program that was running is not one a new window can
+                // pick up: what it had is gone with the process that ran it,
+                // and starting it again would be running something the
+                // reader did not ask for this time.
+                Some(Document::File(_) | Document::Terminal(_)) | None => None,
             };
             if let Some(open) = open {
                 if self.current == Some(DocumentId::new(at)) {

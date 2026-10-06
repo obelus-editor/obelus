@@ -19,12 +19,17 @@ struct Heard {
     caps: Mutex<Vec<Rect>>,
     keys: Mutex<Vec<(String, Rect)>>,
     grounds: Mutex<Vec<(String, Rect, Color)>>,
+    scrolls: Mutex<Vec<(Rect, i64)>>,
 }
 
 impl obelus_ui::shapes::Shapes for Heard {
     fn behind(&self, _area: Rect, _joined: obelus_ui::shapes::Joined, _g: Color, _c: &[Cell]) {}
 
-    fn scrolled(&self, _area: Rect, _top: i64, _bar: Option<obelus_ui::shapes::Bar>) {}
+    fn scrolled(&self, area: Rect, top: i64, _bar: Option<obelus_ui::shapes::Bar>) {
+        if let Ok(mut scrolls) = self.scrolls.lock() {
+            scrolls.push((area, top));
+        }
+    }
 
     fn ticked(&self, _area: Rect, _on: bool) {}
 
@@ -426,4 +431,76 @@ fn a_key_beside_a_lit_row_is_capped_in_the_colour_under_it() {
     assert_ne!(lit, page, "the row with the key is not lit");
     assert_eq!(under, page, "the light reaches the key");
     assert_eq!(*cap, under, "the cap is not the colour under it");
+}
+
+/// A terminal says where its view has got to, so a window slides the
+/// screen as a program writes up it -- the way a file and a conversation do.
+///
+/// Broken deliberately by taking the declaration out of `TerminalView`: no
+/// band the size of the terminal is ever said.
+#[cfg(unix)]
+#[test]
+fn a_terminal_says_how_far_the_program_moved_it() {
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use obelus_app::event::Event;
+
+    let _turn = turn();
+    let heard = heard();
+    let (sender, events) = std::sync::mpsc::channel();
+    let mut app = App::new(Vec::new());
+    app.events_for_test(sender);
+    app.shell_for_test(std::path::PathBuf::from("/bin/sh"));
+    let (width, height) = (60, 20);
+    support::lay_out(&mut app, width, height);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TerminalOpen);
+    let area = obelus_ui::editor_canvas(Rect::new(0, 0, width, height));
+    let last = || {
+        heard
+            .scrolls
+            .lock()
+            .expect("the list")
+            .iter()
+            .rev()
+            .find(|(band, _)| *band == area)
+            .map(|(_, top)| *top)
+    };
+    let shown = |app: &App, words: &str| {
+        app.terminal()
+            .is_some_and(|terminal| terminal.screen().contents().contains(words))
+    };
+    let run = |app: &mut App, line: &str, until: &str| {
+        support::type_text(app, line);
+        app.handle(Event::Key(KeyEvent::new(
+            KeyCode::Enter,
+            KeyModifiers::NONE,
+        )));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        while !shown(app, until) {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            assert!(!left.is_zero(), "gave up waiting for {until}");
+            let event = events
+                .recv_timeout(left)
+                .expect("the shell to say something");
+            app.handle(event);
+        }
+        // And then whatever is left of it, so the frame is of all of it --
+        // for a moment and not until it is quiet, because a window's clock
+        // is never quiet.
+        let settled = std::time::Instant::now() + std::time::Duration::from_millis(300);
+        while let Ok(event) =
+            events.recv_timeout(settled.saturating_duration_since(std::time::Instant::now()))
+        {
+            app.handle(event);
+        }
+        support::lay_out(app, width, height);
+    };
+    // Off the bottom first, so every row after this is a row up.
+    run(&mut app, "seq 1 40; echo filled-$((1 + 1))", "filled-2");
+    let before = last().expect("the terminal never said where it was");
+    // Five rows: the line that asked goes up as enter is pressed, then the
+    // three numbers and the line saying it is done. The prompt after them
+    // is written on the row that last one left, and moves nothing.
+    run(&mut app, "seq 1 3; echo moved-$((2 + 2))", "moved-4");
+    let after = last().expect("the terminal never said where it was");
+    assert_eq!(after - before, 5, "the view moved {before} to {after}");
 }

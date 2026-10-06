@@ -318,6 +318,22 @@ pub enum Context {
     /// looking at" means "write one about this line" in a file and "show me
     /// the one this came from" here, and those are two commands on one key.
     Chat,
+    /// Reading a terminal whose program is still running.
+    ///
+    /// The other way round from every context here: a terminal is the
+    /// program's, so a key is the program's unless this says otherwise,
+    /// and what it says is very little -- zed's shape, and for zed's reason.
+    /// Escape, `ctrl+c` and `ctrl+w` are a shell's before they are
+    /// anybody's. What Obelus keeps is the palette, paste (`ctrl+v` and
+    /// `shift+Insert`), copy where something is held, the paging keys and
+    /// `ctrl+Home` and `ctrl+End` for reading back (`Terminal::read_back`),
+    /// `ctrl+w` to close it as anything else is closed, the key that leaves
+    /// Obelus, and the function
+    /// keys, which open something to look at and are the one family a shell
+    /// has no use for (`Keymap::lookup`).
+    /// Once the program has ended there is nothing to type to, and a
+    /// terminal is read like a file.
+    Terminal,
     /// Any other dialog.
     ///
     /// Almost nothing is bound here, and that is the point: a global key
@@ -543,8 +559,8 @@ impl Keymap {
                 // Control, on the letter of the word. `ctrl+p` for the
                 // palette; `ctrl+w` is "close this" in every browser and
                 // most editors, and in a terminal it is also the shell's
-                // "delete the last word", which Obelus has no use for
-                // because nothing here is typed at a shell.
+                // "delete the last word" -- which a terminal of Obelus's
+                // own gives up for it, below.
                 Binding {
                     command: Command::CommandPalette,
                     context: Context::Normal,
@@ -563,6 +579,61 @@ impl Keymap {
                 Binding {
                     command: Command::DocumentClose,
                     context: Context::Documents,
+                    chord: control('w'),
+                },
+                // What a terminal keeps for Obelus while its program runs,
+                // and nothing else: the palette, which is how everything
+                // else is reached from in there; paste, under the name a
+                // desktop sends a terminal for it; and closing it, on the
+                // key that closes everything else in Obelus. `ctrl+w` is a
+                // shell's word rubbed out as well, and it was given up for
+                // `ctrl+shift+w` once -- which made the one document whose
+                // close was a different key, and the one command Obelus
+                // named with shift. A word goes as well with `alt+backspace`.
+                // And leaving: `ctrl+q` is
+                // a shell's only as the flow control nobody has used since
+                // terminals were printers, and a key that leaves Obelus
+                // everywhere but in one kind of document is a key a reader
+                // cannot trust.
+                Binding {
+                    command: Command::CommandPalette,
+                    context: Context::Terminal,
+                    chord: control('p'),
+                },
+                Binding {
+                    command: Command::Quit,
+                    context: Context::Terminal,
+                    chord: control('q'),
+                },
+                Binding {
+                    command: Command::Paste,
+                    context: Context::Terminal,
+                    chord: KeyChord::new(KeyCode::Insert, KeyModifiers::SHIFT),
+                },
+                // And under the name it has everywhere else in Obelus, which
+                // is also the one a desktop sends a *window* for its paste:
+                // without it, the desktop's own paste in `obg` put a `^V` in
+                // front of the shell. Taken from the program for good --
+                // vim's block selection and a shell's literal next character
+                // -- which is what Windows Terminal and VS Code's terminal
+                // decided too.
+                Binding {
+                    command: Command::Paste,
+                    context: Context::Terminal,
+                    chord: control('v'),
+                },
+                // And copy under the same name. `ctrl+c` copies too, where
+                // something is held -- which is a question about the
+                // terminal rather than a binding, so it is asked there
+                // (`App::terminal_key`).
+                Binding {
+                    command: Command::SelectionCopy,
+                    context: Context::Terminal,
+                    chord: KeyChord::new(KeyCode::Insert, KeyModifiers::CONTROL),
+                },
+                Binding {
+                    command: Command::DocumentClose,
+                    context: Context::Terminal,
                     chord: control('w'),
                 },
                 Binding {
@@ -951,6 +1022,16 @@ impl Keymap {
             && let Some(command) = self.find(chord, Context::Normal)
         {
             return Some(command);
+        }
+        // A function key opens something to look at, whatever is in front
+        // -- and a terminal is the one place that family is asked for by
+        // name, because everything else in a file's table is the program's
+        // there. Bare only, which is the only way a function key is bound.
+        if context == Context::Terminal
+            && matches!(chord.code, KeyCode::F(_))
+            && chord.modifiers.is_empty()
+        {
+            return self.find(chord, Context::Normal);
         }
         if !context.has_global_keys() {
             return None;

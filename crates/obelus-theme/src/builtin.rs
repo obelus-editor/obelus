@@ -65,6 +65,7 @@ pub const DARK: Theme = Theme {
         error: DARK_REMOVED,
         warning: DARK_MODIFIED,
     },
+    terminal: crate::WORKED_OUT,
 };
 
 /// The light theme's page and its three change colours, for the same reason.
@@ -114,6 +115,7 @@ pub const LIGHT: Theme = Theme {
         error: LIGHT_REMOVED,
         warning: LIGHT_MODIFIED,
     },
+    terminal: crate::WORKED_OUT,
 };
 
 /// The page gruvbox-dark is drawn on, and its three change colours, named
@@ -169,6 +171,7 @@ pub const GRUVBOX_DARK: Theme = Theme {
         error: GRUVBOX_DARK_REMOVED,
         warning: GRUVBOX_DARK_MODIFIED,
     },
+    terminal: crate::WORKED_OUT,
 };
 
 /// The page gruvbox-light is drawn on, and its three change colours, named
@@ -220,6 +223,7 @@ pub const GRUVBOX_LIGHT: Theme = Theme {
         error: GRUVBOX_LIGHT_REMOVED,
         warning: GRUVBOX_LIGHT_MODIFIED,
     },
+    terminal: crate::WORKED_OUT,
 };
 
 /// The page catppuccin-mocha is drawn on, and its three change colours, named
@@ -275,6 +279,7 @@ pub const CATPPUCCIN_MOCHA: Theme = Theme {
         error: CATPPUCCIN_MOCHA_REMOVED,
         warning: CATPPUCCIN_MOCHA_MODIFIED,
     },
+    terminal: crate::WORKED_OUT,
 };
 
 /// The page catppuccin-latte is drawn on, and its three change colours, named
@@ -326,6 +331,7 @@ pub const CATPPUCCIN_LATTE: Theme = Theme {
         error: CATPPUCCIN_LATTE_REMOVED,
         warning: CATPPUCCIN_LATTE_MODIFIED,
     },
+    terminal: crate::WORKED_OUT,
 };
 
 /// The page nord is drawn on, and its three change colours, named
@@ -381,6 +387,7 @@ pub const NORD: Theme = Theme {
         error: NORD_REMOVED,
         warning: NORD_MODIFIED,
     },
+    terminal: crate::WORKED_OUT,
 };
 
 /// The page tokyo-night is drawn on, and its three change colours, named
@@ -432,6 +439,7 @@ pub const TOKYO_NIGHT: Theme = Theme {
         error: TOKYO_NIGHT_REMOVED,
         warning: TOKYO_NIGHT_MODIFIED,
     },
+    terminal: crate::WORKED_OUT,
 };
 
 /// The page solarized-dark is drawn on, and its three change colours, named
@@ -487,6 +495,7 @@ pub const SOLARIZED_DARK: Theme = Theme {
         error: SOLARIZED_DARK_REMOVED,
         warning: SOLARIZED_DARK_MODIFIED,
     },
+    terminal: crate::WORKED_OUT,
 };
 
 /// The page solarized-light is drawn on, and its three change colours, named
@@ -538,6 +547,7 @@ pub const SOLARIZED_LIGHT: Theme = Theme {
         error: SOLARIZED_LIGHT_REMOVED,
         warning: SOLARIZED_LIGHT_MODIFIED,
     },
+    terminal: crate::WORKED_OUT,
 };
 
 /// The page high-contrast is drawn on, and its three change colours, named
@@ -596,6 +606,7 @@ pub const HIGH_CONTRAST: Theme = Theme {
         error: HIGH_CONTRAST_REMOVED,
         warning: HIGH_CONTRAST_MODIFIED,
     },
+    terminal: crate::WORKED_OUT,
 };
 
 /// Every theme compiled in, by the name it answers to, in the order the

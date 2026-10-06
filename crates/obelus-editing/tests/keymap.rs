@@ -297,15 +297,17 @@ fn the_readers_own_bindings_go_over_the_defaults() {
     .collect();
     let (keymap, _unbound) = Keymap::with(&moved);
 
-    // Both of `close-document`'s bindings moved: it is one command with one
-    // key, bound in two contexts so that it reaches the list of open files.
+    // All of `close-document`'s bindings moved: it is one command with one
+    // key, bound in three contexts so that it reaches the list of open files
+    // and a terminal, where it is the program's otherwise and the reader's
+    // own key is the reader's own choice.
     let closes: Vec<_> = keymap
         .bindings()
         .iter()
         .filter(|binding| binding.command == Command::DocumentClose)
         .map(|binding| (binding.context, binding.chord))
         .collect();
-    assert_eq!(closes.len(), 2, "a context lost the command: {closes:?}");
+    assert_eq!(closes.len(), 3, "a context lost the command: {closes:?}");
     assert!(
         closes
             .iter()
@@ -414,7 +416,8 @@ fn only_the_two_chords_a_desktop_sends_are_a_modified_insert() {
 /// context.
 ///
 /// Copy answers to `ctrl+c` and to `ctrl+Insert`, in the file and in a
-/// dialog, so it is in each of those contexts twice. A rebind that made one
+/// dialog, so it is in each of those contexts twice -- and to `ctrl+Insert`
+/// in a terminal, once. A rebind that made one
 /// binding per *appearance* would put the reader's key in twice -- two
 /// bindings on one chord in one context, which is the thing
 /// `no_chord_is_bound_twice_in_one_context` holds the shipped table to and
@@ -433,12 +436,12 @@ fn rebinding_a_command_with_two_chords_leaves_it_one_key_per_context() {
         .iter()
         .filter(|binding| binding.command == Command::SelectionCopy)
         .collect();
-    assert_eq!(copies.len(), 2, "{copies:?}");
+    assert_eq!(copies.len(), 3, "{copies:?}");
     assert!(copies.iter().all(|binding| binding.chord == control('y')));
-    // The two it was in, each once.
+    // The three it was in, each once.
     let mut contexts: Vec<_> = copies.iter().map(|binding| binding.context).collect();
     contexts.dedup();
-    assert_eq!(contexts.len(), 2);
+    assert_eq!(contexts.len(), 3);
 
     // And the chord it had is nobody's now, rather than still copying.
     assert_eq!(

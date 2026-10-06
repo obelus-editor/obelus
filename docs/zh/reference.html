@@ -169,6 +169,9 @@
       <h3>在笔记页</h3>
       <p>这一页一直在被写：敲一个字母就是一个字母，<kbd>Enter</kbd> 起下一条，<kbd>Alt+Enter</kbd> 或 <kbd>Shift+Enter</kbd> 在一条里换行。<kbd>Tab</kbd> 把一条挂到上一条底下，<kbd>Shift+Tab</kbd> 再挪出来。把一条笔记当笔记来操作的键都在 <kbd>Alt</kbd> 底下：<kbd>Alt+Space</kbd> 打勾，<kbd>Alt+o</kbd> 去它指着的那一行，<kbd>Alt+a</kbd> 打开它的对话，<kbd>Alt+↑</kbd><kbd>Alt+↓</kbd> 挪位置，<kbd>Alt+←</kbd> 拿掉。</p>
 
+      <h3>在终端里</h3>
+      <p><code>open-terminal</code> 在项目里启动你的 shell，它是一个单独的 document；agent 要你登录时，它的登录程序也在这样一个终端里跑。程序在跑的时候，键都归程序——<kbd>Esc</kbd>、<kbd>Ctrl+c</kbd> 都是。Obelus 只留下功能键、<kbd>Ctrl+p</kbd>、离开用的 <kbd>Ctrl+q</kbd>、粘贴用的 <kbd>Ctrl+v</kbd> 或 <kbd>Shift+Insert</kbd>，以及关闭它的 <kbd>Ctrl+w</kbd>；程序还在跑时，关闭前会先问一句。滚轮往回翻看已经滚走的内容，<kbd>PageUp</kbd>/<kbd>PageDown</kbd> 一次翻一屏，<kbd>Ctrl+Home</kbd>/<kbd>Ctrl+End</kbd> 到最前和最后——这几个键在终端里归 Obelus，不发给程序。拖动可以选中程序打印出来的字：<kbd>Ctrl+c</kbd> 或 <kbd>Ctrl+Insert</kbd> 复制；没有选中时，<kbd>Ctrl+c</kbd> 照旧归程序。程序自己要鼠标时（编辑器、进程列表之类），左键和滚轮交给它；按住 <kbd>Shift</kbd> 还是由你来选。还有程序在跑时退出，会先问一句。程序结束以后键都还给 Obelus。</p>
+
       <h3 id="commands">命令</h3>
 
       <p>按 <kbd>Ctrl+p</kbd>，按名字找。名字都是动词开头，面板上分成六个标签页，大致是一个上午的顺序：打开点什么 → 在里面找路 → 问它是什么意思 → 改 → 看看自己改了什么 → 最后是 Obelus 自己的杂务。</p>
@@ -202,7 +205,7 @@
           </tr>
           <tr>
             <td>Obelus</td>
-            <td><code>choose-theme</code> <code>new-conversation</code> <code>choose-conversation</code> <code>open-settings</code> <code>open-project-settings</code> <code>open-settings-file</code> <code>open-log</code> <code>open-server-log</code> <code>restart-server</code> <code>stop-server</code> <code>quit</code></td>
+            <td><code>choose-theme</code> <code>new-conversation</code> <code>choose-conversation</code> <code>open-terminal</code> <code>open-settings</code> <code>open-project-settings</code> <code>open-settings-file</code> <code>open-log</code> <code>open-server-log</code> <code>restart-server</code> <code>stop-server</code> <code>quit</code></td>
           </tr>
         </tbody>
       </table>

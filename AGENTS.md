@@ -39,7 +39,7 @@ ignores them, and mixing the two makes the formatting oscillate. **Always
 Clippy must be silent. The lints are the workspace's, in the root
 `Cargo.toml` -- `missing_docs`, `unreachable_pub`, `private_interfaces` --
 because a `#![deny(..)]` in one crate root would silently stop applying to
-the other twenty-six. Every member opts in with a `[lints] workspace = true`
+the other twenty-eight. Every member opts in with a `[lints] workspace = true`
 of its own, which Cargo does not inherit for it, and every public item needs
 a doc comment.
 
@@ -567,7 +567,8 @@ crates/
                       names another whole view swaps rather than stacks, and a
                       view that bound the key beats the swap (app/switching);
                       what is in front has the key, and nothing behind it is
-                      asked (app/hearing); a
+                      asked (app/hearing); what is typed in a terminal is the
+                      program's (app/terminals); a
                       newer Obelus is asked about once a day, not once a start
                       (app/releases); only where Obelus draws its own window, a
                       window on a tree is a claim held the way a
@@ -684,8 +685,10 @@ crates/
                       two directions are not symmetrical, the one ordering the
                       protocol does not promise, what waits on the reader
                       does not wait in the handler, what an agent asking
-                      something may ask for, and a command is the agent's
-                      namespace while a setting is Obelus's to draw (acp/link);
+                      something may ask for, a sign-in holds what was asked
+                      and does not end the connection, and a command is the
+                      agent's namespace while a setting is Obelus's to draw
+                      (acp/link);
                       an agent that stopped is started again by talking to it,
                       every word says which connection it came from, and Obelus
                       numbers its own turns (acp/mod); almost every picture
@@ -729,6 +732,14 @@ crates/
                     giving up on a walk (cancel)
   obelus-program/   whether this machine has a program, and starting what it
                     turned out to be, which are two questions on Windows
+  obelus-terminal/  a program on a pty, what it drew, and a key as the bytes
+                    a terminal sends for it -- the reader's shell, and an
+                    agent's sign-in
+                    · what the program writes is parsed by the loop's one
+                      owner, not by a thread holding a lock, what it asks
+                      the terminal is answered, and every row up the screen
+                      is counted, because the parser stops counting where it
+                      stops keeping them (lib)
   obelus-clipboard/ the clipboard through whatever the machine actually has,
                     opening a link, and a file dropped on Obelus
                     · a copy in several shapes needs a client that owns the

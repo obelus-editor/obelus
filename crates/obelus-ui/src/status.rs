@@ -79,6 +79,7 @@ pub struct StatusView<'a> {
     note_is_wrong: bool,
     /// The notes, while they are what is being read.
     notes: Option<&'a obelus_component::todo::TodoView>,
+    terminal: Option<&'a obelus_terminal::Terminal>,
     /// Which of them is nearest the reader, and so whose row this is.
     ///
     /// The same question the caret asks. Three of these can be on screen
@@ -130,6 +131,7 @@ impl<'a> StatusView<'a> {
             making_in: app.making_in(),
             note_is_wrong: app.note_is_wrong(),
             notes: app.notes(),
+            terminal: app.terminal(),
             choosing: app.choosing(),
             nearest: app.layers().nearest(),
             replacing: app.replacing(),
@@ -209,6 +211,8 @@ impl Widget for StatusView<'_> {
             _ => {
                 if let Some(notes) = self.notes {
                     self.render_notes(notes, area, cells, style);
+                } else if let Some(terminal) = self.terminal {
+                    self.render_terminal(terminal, area, cells, style);
                 } else if let Some(buffer) = self.buffer {
                     self.render_file(buffer, area, cells, style);
                 } else if let Some(note) = self.middle {
@@ -1238,6 +1242,55 @@ impl StatusView<'_> {
         {
             write(cells, area.x + offset, area.y, &held, style);
         }
+    }
+
+    /// A terminal's row: the program, in the words it was started with, and
+    /// how it ended once it has.
+    ///
+    /// Its words rather than its title, because this is the row that says
+    /// what is running -- what Obelus was asked to start, not what the
+    /// program has since called itself -- and how far back up the screen
+    /// the reader is, which no bar says here.
+    fn render_terminal(
+        &self,
+        terminal: &obelus_terminal::Terminal,
+        area: Rect,
+        cells: &mut CellBuffer,
+        style: Style,
+    ) {
+        let end = self.remote_at_end(area, cells, style);
+        let state = match terminal.ended() {
+            Some(ended) => Some(crate::terminal::how_it_ended(ended)),
+            None => match terminal.scrolled() {
+                0 => None,
+                1 => Some("1 row back".to_string()),
+                rows => Some(format!("{rows} rows back")),
+            },
+        };
+        let state_at = state
+            .as_ref()
+            .map_or(end + 1, |state| end.saturating_sub(text_width(state)));
+        if let Some(state) = &state
+            && let Ok(offset) = u16::try_from(state_at)
+        {
+            let ink = match terminal.ended() {
+                // The red a wrong note is, by the same door.
+                Some(ended) if !ended.succeeded() => style.fg(self
+                    .theme
+                    .colour_for(Some(obelus_text::kind::SyntaxKind::Error))),
+                _ => style,
+            };
+            write(cells, area.x + offset, area.y, state, ink);
+        }
+        // The words, cut where the state begins: a command line is as long
+        // as the program it names, and the row's own fact goes first.
+        let name = match obelus_icons::enabled() {
+            true => format!("{}  {}", obelus_icons::ui::TERMINAL, terminal.said()),
+            false => terminal.said().to_string(),
+        };
+        let room = state_at.saturating_sub(3);
+        let shown = crate::truncate_from_right(&name, room);
+        write(cells, area.x + 1, area.y, &shown, style);
     }
 
     /// The list a reader is building, on whatever row it is given.

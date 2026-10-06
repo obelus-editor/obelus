@@ -49,6 +49,7 @@ mod searching;
 mod semantics;
 mod switching;
 pub mod talking;
+mod terminals;
 mod worktrees;
 
 use std::{
@@ -501,6 +502,17 @@ pub struct App {
     /// command is a thing on the page: the row that says what is happening
     /// reads its output, and a key stops it.
     runs: obelus_agent::running::Runs,
+    /// The last number handed to a terminal, which is how what its program
+    /// writes finds it again.
+    terminals: obelus_terminal::Id,
+    /// A sign-in running in a terminal of its own, while it runs.
+    signing_in: Option<terminals::SigningIn>,
+    /// Whether shift is held, where a window has said so.
+    shifted: bool,
+    /// Which shell `open-terminal` starts, where a test has said: the
+    /// reader's own is whatever their environment says, and a test about
+    /// keys is not a test about their prompt.
+    shell: Option<PathBuf>,
     /// Who is waiting to be told a command has ended.
     ///
     /// The agent's `terminal/wait_for_exit`, held until the command does.
@@ -943,6 +955,10 @@ impl App {
             talker: None,
             ctrl_enter_arrives: true,
             runs: obelus_agent::running::Runs::default(),
+            terminals: 0,
+            signing_in: None,
+            shell: None,
+            shifted: false,
             waiting_on: Vec::new(),
             settled: preferences::Settled::default(),
             agents: agents::Agents::default(),
@@ -1082,6 +1098,17 @@ impl App {
                 self.go_to_document(id);
             }
             self.ask_before_leaving(unsaved);
+            return;
+        }
+        // And a program still running in a terminal, which leaving stops:
+        // asked for the reason closing that terminal is. Over nothing, for
+        // the reason the question above is.
+        let running = self.terminals_running();
+        if running > 0 {
+            for layer in self.layers().nearest_first() {
+                self.leave(layer);
+            }
+            self.ask_before_stopping_them(running);
             return;
         }
         self.should_quit = true;
@@ -2218,6 +2245,9 @@ impl App {
         if self.conversation().is_some() {
             return Context::Chat;
         }
+        if self.typing_to_a_program() {
+            return Context::Terminal;
+        }
         Context::Normal
     }
 
@@ -2502,6 +2532,11 @@ impl App {
         // redraw put it right, so what a reader saw was their words go and
         // come back.
         self.editor_area = editor_area;
+        // A terminal is told the size it is drawn at before anything else
+        // looks at it, for the reason the notes are laid out against this
+        // frame's room: a program told a size a frame late draws its screen
+        // once at the old one.
+        self.size_the_terminal(editor_area);
         self.note_where_the_view_has_got_to();
         // What the views showing are drawn from, and what Obelus has to be
         // told about it. First, because everything below this reads one of
@@ -2793,6 +2828,7 @@ impl App {
             // no handling of its own beyond waking the loop.
             Event::Resize => {}
             Event::Closed => self.request_quit(),
+            Event::Terminal(heard) => self.heard_from_a_terminal(heard),
             Event::Summoned(token) => self.summoned(token),
             Event::Remote(event) => self.remote_event(event),
             Event::Reached(number, event) => self.reached_event(number, event),
@@ -2988,6 +3024,7 @@ impl App {
                 }
             }
             Event::Counted(counted) => self.on_counted(*counted),
+            Event::Shifted(held) => self.shifted = held,
             Event::Scroll(rows) => self.scroll(rows),
             Event::Pointer { kind, x, y } => self.on_pointer(kind, x, y),
             // One change for the whole of it, so undoing a paste is one
@@ -4063,6 +4100,11 @@ impl App {
             self.pointer_in_a_layer(kind, x, y);
             return;
         }
+        // A terminal, whose program may have asked for the pointer itself.
+        if self.terminal().is_some() {
+            self.pointer_in_terminal(kind, x, y);
+            return;
+        }
         // The notes, which are a page with a box on it: the box takes the
         // pointer the way the file does, and the rest of the page takes
         // nothing rather than letting it through to the code behind.
@@ -4734,6 +4776,9 @@ impl Screen for App {
     }
     fn notes(&self) -> Option<&TodoView> {
         App::notes(self)
+    }
+    fn terminal(&self) -> Option<&obelus_terminal::Terminal> {
+        App::terminal(self)
     }
     fn opened_hunks(&self) -> Vec<LineNumber> {
         App::opened_hunks(self)

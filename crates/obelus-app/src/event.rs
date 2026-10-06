@@ -62,6 +62,14 @@ pub enum Event {
     /// way, unwritten files and their question included, and the window
     /// stays until the application says it is done.
     Closed,
+    /// Whether shift is held, said by a window when that changes.
+    ///
+    /// For the pointer, which a window reports without it: shift and a
+    /// drag is a selection of Obelus's own over a program that asked for
+    /// the pointer, which is what it is in every terminal. A terminal
+    /// Obelus runs in does that itself, before Obelus hears a thing, so
+    /// only a window says this.
+    Shifted(bool),
     /// The wheel turned, by this many rows. Negative is up the file.
     ///
     /// A wheel is not an arrow key: it moves the *view*, and the place the
@@ -155,6 +163,8 @@ pub enum Event {
     Counted(Box<obelus_search::counts::Counted>),
     /// A file on disk changed.
     Watched(obelus_watch::Changed),
+    /// A program in a terminal of Obelus's own wrote something, or ended.
+    Terminal(obelus_terminal::Heard),
     /// A list finished scoring its rows against a query.
     ///
     /// The scoring of a project's whole file list is tens of milliseconds,
@@ -210,6 +220,7 @@ impl Event {
             Self::Resize => "Resize",
             Self::Fonts { .. } => "Fonts",
             Self::Closed => "Closed",
+            Self::Shifted(_) => "Shifted",
             Self::Scroll(_) => "Scroll",
             Self::Pointer { .. } => "Pointer",
             Self::Paste(_) => "Paste",
@@ -228,6 +239,7 @@ impl Event {
             Self::Tools(_) => "Tools",
             Self::Counted(_) => "Counted",
             Self::Watched(_) => "Watched",
+            Self::Terminal(_) => "Terminal",
             Self::Scanned(_) => "Scanned",
             Self::Reopened(_) => "Reopened",
             Self::Released(_) => "Released",
@@ -269,6 +281,7 @@ from_worker! {
     obelus_remote::Event => Remote,
     Box<obelus_search::counts::Counted> => Counted,
     obelus_watch::Changed => Watched,
+    obelus_terminal::Heard => Terminal,
 }
 
 /// What the pointer's button did.

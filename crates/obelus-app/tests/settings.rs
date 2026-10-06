@@ -4127,7 +4127,7 @@ fn a_key_that_bound_nothing_is_a_warning_on_that_line() {
     std::fs::write(
         &file,
         "theme = \"dark\"\n\n[keys]\nopen-file = \"f1\"\nopen-fiel = \"f2\"\n\
-         save-file = \"ctrl+shiftier+s\"\nclose-document = \"ctrl+shift+w\"\n",
+         save-file = \"ctrl+shiftier+s\"\nclose-document = \"ctrl+shift+e\"\n",
     )
     .expect("writing a settings file");
 

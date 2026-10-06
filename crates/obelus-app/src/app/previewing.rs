@@ -493,6 +493,14 @@ impl App {
             talk.chat.scroll(rows);
             return;
         }
+        // A terminal: to its program where it asked for the pointer, and
+        // otherwise back up what has gone past -- the view and not the
+        // program, because a reader spinning the wheel is looking around,
+        // and the next key they type brings it back down.
+        if self.terminal().is_some() {
+            self.wheel_in_terminal(rows);
+            return;
+        }
         let height = self.editor_area.height;
         if let Some(rows_in_view) = self.rendered_rows()
             && let Some(buffer) = self.current_buffer_mut()
