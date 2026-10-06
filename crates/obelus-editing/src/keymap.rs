@@ -324,7 +324,8 @@ pub enum Context {
     /// program's, so a key is the program's unless this says otherwise,
     /// and what it says is very little -- zed's shape, and for zed's reason.
     /// Escape, `ctrl+c` and `ctrl+w` are a shell's before they are
-    /// anybody's. What Obelus keeps is the palette, paste, the key that
+    /// anybody's. What Obelus keeps is the palette, paste (`ctrl+v` and
+    /// `shift+Insert`), copy where something is held, the key that
     /// closes it, the key that leaves Obelus, and the function keys, which
     /// open something to look at and are the one family a shell has no use
     /// for (`Keymap::lookup`).
@@ -604,6 +605,18 @@ impl Keymap {
                     command: Command::Paste,
                     context: Context::Terminal,
                     chord: KeyChord::new(KeyCode::Insert, KeyModifiers::SHIFT),
+                },
+                // And under the name it has everywhere else in Obelus, which
+                // is also the one a desktop sends a *window* for its paste:
+                // without it, the desktop's own paste in `obg` put a `^V` in
+                // front of the shell. Taken from the program for good --
+                // vim's block selection and a shell's literal next character
+                // -- which is what Windows Terminal and VS Code's terminal
+                // decided too.
+                Binding {
+                    command: Command::Paste,
+                    context: Context::Terminal,
+                    chord: control('v'),
                 },
                 // And copy under the same name. `ctrl+c` copies too, where
                 // something is held -- which is a question about the

@@ -2,7 +2,8 @@
 //!
 //! **What is typed in a terminal is the program's.** Every other document
 //! hands the key table what it does not want; a terminal hands it only what
-//! `Context::Terminal` binds -- the palette, paste, closing it, leaving
+//! `Context::Terminal` binds -- the palette, paste (`ctrl+v` among them),
+//! closing it, leaving
 //! Obelus, and the function keys -- and writes everything else down the
 //! pty, escape and `ctrl+c` and `ctrl+w` included, because those are a
 //! shell's before they are anybody's. Once the program has ended there is

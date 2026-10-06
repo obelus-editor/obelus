@@ -245,6 +245,24 @@ fn a_drag_takes_hold_and_ctrl_c_copies_it() {
     );
 }
 
+/// `ctrl+v` pastes into the program, the way it does everywhere else in
+/// Obelus -- and the way a desktop's own paste reaches a window.
+///
+/// Broken deliberately by taking `ctrl+v` out of the terminal's table: the
+/// shell is sent a `^V` and the line never runs.
+#[test]
+fn ctrl_v_pastes_into_the_program() {
+    let _turn = support::clipboard_turn();
+    obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Kept);
+    let (mut app, events) = a_shell();
+    obelus_clipboard::copy("echo pasted-$((5 * 5))").expect("a copy");
+    press(&mut app, KeyCode::Char('v'), KeyModifiers::CONTROL);
+    press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    pump(&mut app, &events, "the pasted line to run", |app| {
+        on_the_terminal(app).contains("pasted-25")
+    });
+}
+
 /// A program that asked for the pointer is told what it did, in the
 /// encoding it asked for; shift held is a selection all the same.
 ///
