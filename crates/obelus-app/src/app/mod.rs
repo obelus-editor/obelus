@@ -2581,6 +2581,9 @@ impl App {
         // And what is open, written down where it has changed, for the
         // same reason: there are a dozen ways a document opens or closes.
         self.write_down_what_is_open();
+        // And what this window is reading, for the others' lists of the
+        // worktrees, for the same reason.
+        self.say_what_this_window_is_reading();
         // The notes are laid out against the room they have: a terminal is
         // resized and a setting is changed while they are open, and the rows
         // they are made of depend on both.

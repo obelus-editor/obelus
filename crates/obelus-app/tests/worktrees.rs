@@ -730,63 +730,97 @@ fn going_back_opens_what_was_open() {
     );
 }
 
-/// A tree with several Obelus on it says how many after its mark, in one
-/// character, and every row of the list leaves the same room for it.
+/// Several Obelus on one tree are a row each under it, saying what each is
+/// reading, and `ctrl+enter` on one brings that one forward and no other.
 ///
-/// Two on one tree and then ten, a terminal among them. Broken deliberately
-/// three times: counting whether anybody is on a tree rather than how many
-/// (no row says 2), padding only the rows that are marked (the row nobody
-/// is on is a different width from the others), and writing ten as it is
-/// (the mark takes two characters and no `+`).
+/// Three on `feature` -- a terminal, a window reading `file.rs` and one
+/// reading `other.rs` -- and two on `main`, this one among them.
+/// Broken deliberately three ways: never saying again what a window is
+/// reading after it claimed its tree (no row says `file.rs`), bringing
+/// forward whichever window is on the tree rather than the row's (the
+/// wrong one comes, on one of the two presses), and leaving the reader on
+/// the tree's row rather than on their own (the list opens on `main`).
 #[test]
-fn several_on_one_tree_are_counted() {
-    let scratch = Scratch::new("worktrees-count");
+fn several_on_one_tree_are_a_row_each() {
+    let scratch = Scratch::new("worktrees-several");
     let (main, feature, _) = repository(&scratch);
     let asked = Arc::new(Asked::default());
     let (mut app, _events) = window_on(&main, &asked);
-    let marks = |app: &App| -> Vec<(String, String)> {
-        app.picker()
-            .expect("a list is showing")
-            .matches()
-            .map(|item| {
-                let mark = item.marker.as_ref().map(|(_, mark)| mark.clone());
-                (item.label.clone(), mark.unwrap_or_default())
-            })
-            .collect()
-    };
-    let width = |mark: &str| mark.chars().count();
-
+    let (_beside, _beside_events) = terminal_on(&main);
     let (_terminal, _terminal_events) = terminal_on(&feature);
-    let there = Arc::new(Asked::default());
-    let (_window, _window_events) = window_on(&feature, &there);
+    let (mut reading, reading_events) = window_on(&feature, &Arc::new(Asked::default()));
+    reading.open_for_test(&feature.join("file.rs"));
+    // A frame, which is where a window says what it is reading.
+    support::lay_out(&mut reading, 80, 24);
+    std::fs::write(feature.join("other.rs"), "fn other() {}\n").expect("a second file");
+    let (mut other, other_events) = window_on(&feature, &Arc::new(Asked::default()));
+    other.open_for_test(&feature.join("other.rs"));
+    support::lay_out(&mut other, 80, 24);
+
     dispatch::dispatch(&mut app, Command::WorktreeList);
-    let said = marks(&app);
-    let of = |label: &str| {
-        said.iter()
-            .find(|(named, _)| named == label)
-            .map(|(_, mark)| mark.clone())
-            .expect("a row for the tree")
+    let said = rows(&app);
+    let named: Vec<&str> = said.iter().map(|row| row.0.as_str()).collect();
+    let under = |tree: &str| -> Vec<String> {
+        let from = named
+            .iter()
+            .position(|name| *name == tree)
+            .expect("the tree");
+        let mut under: Vec<String> = said[from + 1..]
+            .iter()
+            .take_while(|row| row.1.is_none())
+            .map(|row| format!("{} {}", row.0, row.2.as_deref().unwrap_or("-")))
+            .collect();
+        under.sort();
+        under
     };
-    assert!(of("feature").ends_with(" 2"), "{said:?}");
-    assert!(of("main").trim_end().chars().count() == 1, "{said:?}");
-    assert_eq!(of("spare").trim(), "", "{said:?}");
-    assert!(
-        said.iter()
-            .all(|(_, mark)| width(mark) == width(&of("feature"))),
-        "the rows leave different room for the mark: {said:?}"
+    assert_eq!(
+        under("feature"),
+        ["Nothing open -", "file.rs -", "other.rs -"],
+        "{said:?}"
+    );
+    assert_eq!(
+        under("main"),
+        ["Nothing open -", "Nothing open This window"],
+        "{said:?}"
+    );
+    assert_eq!(under("spare"), Vec::<String>::new(), "{said:?}");
+    let selected = app
+        .picker()
+        .and_then(obelus_component::picker::Picker::selected_item)
+        .map(|item| (item.label.clone(), item.trailing.clone()));
+    assert_eq!(
+        selected,
+        Some(("Nothing open".to_string(), Some("This window".to_string()))),
+        "the list did not open on this window"
     );
 
-    let mut more = Vec::new();
-    for _ in 0..8 {
-        more.push(window_on(&feature, &there));
+    // Each brought forward by its own row: the two windows on `feature`
+    // are told apart by what they are reading, and by nothing else. Both
+    // pressed, because which claim a directory lists first is the
+    // directory's to say, and a key that took whichever came first would
+    // be right about one of them.
+    let heard = |events: &Receiver<Event>| {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            if let Ok(Event::Summoned(_)) = events.recv_timeout(Duration::from_millis(100)) {
+                return true;
+            }
+        }
+        false
+    };
+    for (row, comes, stays) in [
+        ("file.rs", &reading_events, &other_events),
+        ("other.rs", &other_events, &reading_events),
+    ] {
+        dispatch::dispatch(&mut app, Command::WorktreeList);
+        choose_elsewhere(&mut app, row);
+        let brought = asked.brought.lock().expect("the list").pop();
+        let brought = brought.expect("nothing was brought forward");
+        obelus_app::app::knock(&brought, None);
+        assert!(heard(comes), "the window reading {row} did not come");
+        assert!(
+            !matches!(stays.try_recv(), Ok(Event::Summoned(_))),
+            "a window the row was not came forward"
+        );
     }
-    support::press(&mut app, KeyCode::Esc);
-    dispatch::dispatch(&mut app, Command::WorktreeList);
-    let said = marks(&app);
-    let feature_mark = said
-        .iter()
-        .find(|(named, _)| named == "feature")
-        .map(|(_, mark)| mark.clone())
-        .expect("a row for the tree");
-    assert!(feature_mark.ends_with(" +"), "{said:?}");
 }

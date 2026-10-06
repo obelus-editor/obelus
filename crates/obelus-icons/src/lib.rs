@@ -127,6 +127,8 @@ pub mod ui {
     /// A window, because that is what is there to go to: the lock beside a
     /// conversation is a refusal, and this row is the opposite.
     pub const WINDOW: char = '\u{f08c6}';
+    /// An Obelus in a terminal, which nothing can bring forward.
+    pub const TERMINAL: char = '\u{f018d}';
     /// A directory, on a row whose children are what it holds.
     ///
     /// The plain folder rather than [`TREE`]: that one is the whole of what
