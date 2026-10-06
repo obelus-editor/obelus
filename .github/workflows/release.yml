@@ -1,6 +1,6 @@
 # What a tag produces: an archive per binary per platform, a `.deb`, a
-# `.rpm`, an AppImage, a macOS bundle, and a GitHub release with all of it
-# on it.
+# `.rpm`, an AppImage, a macOS bundle, a Windows installer, and a GitHub
+# release with all of it on it.
 #
 # Two binaries, and they are shipped apart rather than together. `obg` is
 # the window and `ob` is the terminal -- gvim's relation to vim -- and a
@@ -92,11 +92,13 @@ jobs:
             bins: ob obg
             packages: -p obelus-cli -p obelus-gui
             exe: .exe
+            msi: x64
           - os: windows-11-arm
             target: aarch64-pc-windows-msvc
             bins: ob obg
             packages: -p obelus-cli -p obelus-gui
             exe: .exe
+            msi: arm64
     steps:
       - uses: actions/checkout@v7
 
@@ -215,6 +217,82 @@ jobs:
             "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${ARCH}.AppImage"
           chmod +x appimagetool
           ./appimagetool AppDir "archives/obg-${{ needs.plan.outputs.version }}-${ARCH}.AppImage"
+
+      # The window as an installer, for a Windows reader who would rather
+      # double-click something than paste a line into PowerShell. What it
+      # does is argued in `contrib/windows/obelus.wxs`.
+      #
+      # WiX 5 and not the newest: from 6 on, using it is tied to a fee
+      # agreement the build would have to accept on the project's behalf.
+      # Windows Installer takes three numbers and nothing after them, so a
+      # prerelease's suffix is left off the version it is told -- the file's
+      # name keeps the whole of it.
+      #
+      # Built somewhere of its own and only the `.msi` taken, because WiX
+      # writes a `.wixpdb` beside it, and everything in `archives/` goes up.
+      - name: An installer of the window
+        if: matrix.msi
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet tool install --global wix --version 5.0.2
+          if ($LASTEXITCODE -ne 0) { throw 'WiX did not install' }
+          $version = '${{ needs.plan.outputs.version }}'
+          $numeric = ($version -split '-')[0]
+          wix build contrib/windows/obelus.wxs `
+            -arch ${{ matrix.msi }} `
+            -d "Version=$numeric" `
+            -d "Binary=target/${{ matrix.target }}/dist/obg.exe" `
+            -d "Icon=contrib/desktop/obelus.ico" `
+            -o "msi/Obelus-$version-${{ matrix.target }}.msi"
+          if ($LASTEXITCODE -ne 0) { throw 'WiX did not build the installer' }
+          Copy-Item "msi/Obelus-$version-${{ matrix.target }}.msi" archives/
+
+      # Installed, looked at, and taken away again, on the runner, because
+      # nothing else on any machine of ours can run an `.msi` -- and an
+      # installer nobody has run is one a reader runs first. Each check is
+      # one thing a reader would notice missing: the program, the menu
+      # entry and where it starts, `obg` on the PATH, and all of it gone
+      # after an uninstall.
+      #
+      # Broken deliberately once, by starting the menu entry in the install
+      # directory: both jobs stopped here, saying where it started instead.
+      - name: The installer, run
+        if: matrix.msi
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $msi = (Resolve-Path "archives/Obelus-*.msi").Path
+          $dir = Join-Path $env:LOCALAPPDATA 'Programs\Obelus'
+          $exe = Join-Path $dir 'obg.exe'
+          $link = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Obelus.lnk'
+          function Run-Msi($arguments, $log) {
+            $run = Start-Process msiexec.exe -ArgumentList $arguments -Wait -PassThru
+            if ($run.ExitCode -ne 0) {
+              Get-Content $log -Tail 80
+              throw "msiexec $arguments exited $($run.ExitCode)"
+            }
+          }
+          function On-Path {
+            $path = [Environment]::GetEnvironmentVariable('Path', 'User')
+            @($path -split ';' | Where-Object { $_.TrimEnd('\') -eq $dir }).Count -gt 0
+          }
+
+          Run-Msi "/i `"$msi`" /qn /l*v install.log" install.log
+          if (-not (Test-Path -LiteralPath $exe)) { throw "nothing at $exe" }
+          if (-not (Test-Path -LiteralPath $link)) { throw "no Start menu entry at $link" }
+          $shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut($link)
+          if ($shortcut.TargetPath -ne $exe) { throw "the menu entry starts $($shortcut.TargetPath)" }
+          if ($shortcut.WorkingDirectory.TrimEnd('\') -ne $env:USERPROFILE.TrimEnd('\')) {
+            throw "the menu entry starts in $($shortcut.WorkingDirectory), not $env:USERPROFILE"
+          }
+          if (-not (On-Path)) { throw "$dir is not on the PATH" }
+
+          Run-Msi "/x `"$msi`" /qn /l*v uninstall.log" uninstall.log
+          if (Test-Path -LiteralPath $exe) { throw "$exe is still there" }
+          if (Test-Path -LiteralPath $link) { throw "$link is still there" }
+          if (On-Path) { throw "$dir is still on the PATH" }
+          Write-Host "Installed and uninstalled $msi"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -337,7 +415,7 @@ jobs:
           # itself, so a platform dropped from the matrix is one fewer line
           # here and not a failure.
           shopt -s nullglob
-          sha256sum -- *.tar.xz *.zip *.deb *.rpm *.AppImage *.tpl *.desktop *.svg > SHA256SUMS
+          sha256sum -- *.tar.xz *.zip *.deb *.rpm *.AppImage *.msi *.tpl *.desktop *.svg > SHA256SUMS
           cat SHA256SUMS
 
       # A draft. The tag is the decision to build; publishing is the

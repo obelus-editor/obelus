@@ -4150,6 +4150,21 @@ impl App {
             self.pointer_in_chat(kind, x, y);
             return;
         }
+        // The welcome screen's website, the one thing on it a press opens.
+        // Not on the page that asks which project, which is drawn where
+        // the welcome screen would be and has no address on it.
+        if kind == Pointer::Pressed
+            && self.reading_nothing()
+            && self.what_is_being_chosen().is_none()
+            && obelus_ui::welcome::site_at(self.editor_area, &*self)
+                .is_some_and(|at| at.contains(ratatui::layout::Position { x, y }))
+        {
+            if let Err(error) = obelus_clipboard::links::open(obelus_ui::welcome::SITE) {
+                tracing::warn!(%error, "the website was not opened");
+                self.say("Nothing here opens links");
+            }
+            return;
+        }
         let Some(buffer) = self.current_buffer() else {
             return;
         };

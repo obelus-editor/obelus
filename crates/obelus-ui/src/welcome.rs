@@ -1,7 +1,8 @@
 //! What Obelus shows when nothing is open.
 //!
-//! Two layouts. The wide one is a wordmark, the keys as caps, and a footer;
-//! the narrow one is the keys and nothing else. A screen too small for even
+//! Two layouts. The wide one is a wordmark, the keys as caps, and the
+//! address of Obelus's website where there is a row for it; the narrow one
+//! is the keys and nothing else. A screen too small for even
 //! that gets nothing, because a welcome squeezed into wrapping is worse than
 //! an empty one.
 //!
@@ -25,8 +26,8 @@ use obelus_editing::keymap::Keymap;
 use obelus_theme::Theme;
 use ratatui::{
     buffer::Buffer as CellBuffer,
-    layout::Rect,
-    style::{Color, Style},
+    layout::{Position, Rect},
+    style::{Color, Modifier, Style},
     widgets::Widget,
 };
 use unicode_width::{UnicodeWidthChar as _, UnicodeWidthStr};
@@ -55,6 +56,25 @@ const OFFERED: &[(Command, &str)] = &[
     (Command::CommandPalette, "Run a command"),
     (Command::Quit, "Leave Obelus"),
 ];
+
+/// Where Obelus's own website is.
+///
+/// The one thing on this screen a press does: the keys are the way into a
+/// project, and this is the way to what Obelus is for, which somebody
+/// looking at an empty screen is the reader most likely to want.
+pub const SITE: &str = "https://obelus-editor.github.io/obelus/";
+
+/// The address as the screen says it, and the blanks it is raised in.
+///
+/// Without the scheme or the last slash: neither tells a reader anything a
+/// browser would not add, and both are columns. The blanks are the ones the
+/// way back to the end of a conversation is raised in, for the same reason
+/// -- what is under the pointer is a box, and words with no air round them
+/// are a band.
+fn site_label() -> String {
+    let said = SITE.trim_start_matches("https://").trim_end_matches('/');
+    format!("  {said}  ")
+}
 
 /// How many columns of keys the plate carries under it.
 const COLUMNS: usize = 2;
@@ -216,6 +236,24 @@ pub struct WelcomeView<'a> {
     /// open or when the session is remote, so this is the only thing that
     /// makes the screen differ between two draws.
     phase: u32,
+    /// Where the pointer is, for the one thing here a press does.
+    pointer: Option<(u16, u16)>,
+    /// Whether nothing is over it, which is whether what is under the
+    /// pointer may be raised -- see [`crate::in_front`].
+    in_front: bool,
+}
+
+/// Where the wide layout puts things, worked out once for the drawing and
+/// for a press alike.
+struct Lavish {
+    /// The plate's left edge.
+    left: u16,
+    /// The plate's top row.
+    top: u16,
+    /// The plate's width, which the keys are centred on.
+    width: u16,
+    /// The cells the website's address covers, where there is a row for it.
+    site: Option<Rect>,
 }
 
 impl<'a> WelcomeView<'a> {
@@ -227,8 +265,20 @@ impl<'a> WelcomeView<'a> {
             newer: app.newer_release(),
             theme: app.theme(),
             phase: app.phase(),
+            pointer: app.pointer(),
+            in_front: crate::in_front(app, None),
         }
     }
+}
+
+/// The cells the website's address covers, while it is on screen.
+///
+/// Asked by the drawing and by a press alike, so what is raised under the
+/// pointer is exactly what a press there opens.
+#[must_use]
+pub fn site_at(area: Rect, app: &impl Screen) -> Option<Rect> {
+    let view = WelcomeView::new(app);
+    view.lavish_in(area, &view.hints())?.site
 }
 
 /// One key, the picture of what it opens, and what it is called here.
@@ -242,20 +292,10 @@ struct Hint {
 impl Widget for WelcomeView<'_> {
     fn render(self, area: Rect, cells: &mut CellBuffer) {
         let hints = self.hints();
-
-        // The plate, a blank, and the keys. Nothing else: what the reader
-        // needs here is the way in, and the version is set into the plate's
-        // own edge rather than spending a row of its own.
-        // The plate, a blank, and the keys two to a line with a blank
-        // between the lines -- and none after the last of them.
-        let lines = u16::try_from(hints.len().div_ceil(COLUMNS)).unwrap_or(1);
-        let keys = (lines * ROW_HEIGHT).saturating_sub(1);
-        let tall = u16::try_from(WORDMARK.len()).unwrap_or(u16::MAX) + 1 + keys;
-        let wordmark = width_of(WORDMARK[0]);
         let short = u16::try_from(hints.len() + 2).unwrap_or(u16::MAX);
 
-        if wordmark <= area.width && tall <= area.height {
-            self.lavish(area, cells, &hints, wordmark, tall);
+        if let Some(lavish) = self.lavish_in(area, &hints) {
+            self.lavish(cells, &hints, &lavish);
         } else if let Some(narrow) = hint_block_width(&hints)
             && narrow <= area.width
             && short <= area.height
@@ -266,20 +306,87 @@ impl Widget for WelcomeView<'_> {
 }
 
 impl WelcomeView<'_> {
-    /// The plate, and the keys under it.
-    fn lavish(&self, area: Rect, cells: &mut CellBuffer, hints: &[Hint], width: u16, height: u16) {
-        let left = area.x + (area.width - width) / 2;
-        let y = area.y + (area.height - height) / 2;
+    /// Where the wide layout goes in this room, if it fits at all.
+    ///
+    /// The plate, a blank, and the keys two to a line with a blank between
+    /// the lines -- and none after the last of them. Then a blank and the
+    /// website's address, only where there are rows to spare: the keys are
+    /// what this screen is for, and a room one row short of the address
+    /// gets the plate without it rather than the narrow layout.
+    fn lavish_in(&self, area: Rect, hints: &[Hint]) -> Option<Lavish> {
+        let lines = u16::try_from(hints.len().div_ceil(COLUMNS)).unwrap_or(1);
+        let keys = (lines * ROW_HEIGHT).saturating_sub(1);
+        let tall = u16::try_from(WORDMARK.len()).unwrap_or(u16::MAX) + 1 + keys;
+        let width = width_of(WORDMARK[0]);
+        if width > area.width || tall > area.height {
+            return None;
+        }
+        let label = u16::try_from(site_label().width()).unwrap_or(u16::MAX);
+        let linked = tall + 2 <= area.height && label <= area.width;
+        let height = match linked {
+            true => tall + 2,
+            false => tall,
+        };
+        let top = area.y + (area.height - height) / 2;
+        Some(Lavish {
+            left: area.x + (area.width - width) / 2,
+            top,
+            width,
+            site: linked.then(|| Rect {
+                x: area.x + (area.width - label) / 2,
+                y: top + tall + 1,
+                width: label,
+                height: 1,
+            }),
+        })
+    }
 
+    /// The plate, the keys under it, and the address under them.
+    fn lavish(&self, cells: &mut CellBuffer, hints: &[Hint], lavish: &Lavish) {
         // A ramp across the letters, in the theme's own accent hues rather
         // than in colours invented here, so it belongs to whichever theme is
         // on. The frame and the version in its foot are in it too: they are
         // part of the mark, and one still thing in a moving one reads as a
         // thing that has stopped.
-        let mut y = self.plate(cells, left, y, width);
+        let mut y = self.plate(cells, lavish.left, lavish.top, lavish.width);
 
         y += 1;
-        self.grid(cells, left, y, width, hints);
+        self.grid(cells, lavish.left, y, lavish.width, hints);
+        if let Some(at) = lavish.site {
+            self.site(cells, at);
+        }
+    }
+
+    /// The website's address, underlined, and raised while the pointer is
+    /// over it.
+    ///
+    /// Underlined because it is the one thing on this screen a press opens,
+    /// and nothing else would say so before the pointer got there. The line
+    /// is under the address and not under the blanks round it, which are
+    /// only there for the raising.
+    fn site(&self, cells: &mut CellBuffer, at: Rect) {
+        let pointed = self.in_front
+            && self
+                .pointer
+                .is_some_and(|(x, y)| at.contains(Position { x, y }));
+        let (ink, ground) = match pointed {
+            true => (self.theme.foreground, self.theme.raised_background),
+            false => (self.theme.gutter, self.theme.background),
+        };
+        let label = site_label();
+        write(cells, at.x, at.y, &label, Style::new().fg(ink).bg(ground));
+        let said = label.trim();
+        let inset = u16::try_from(label.len() - label.trim_start().len()).unwrap_or(0);
+        write(
+            cells,
+            at.x + inset,
+            at.y,
+            said,
+            Style::new()
+                .fg(ink)
+                .bg(ground)
+                .add_modifier(Modifier::UNDERLINED),
+        );
     }
 
     /// The wordmark, with the version set into its foot.

@@ -263,3 +263,79 @@ fn a_drag_held_past_the_bottom_keeps_selecting() {
         "the selection carried on after the reader went back to the keyboard"
     );
 }
+
+/// The welcome screen's website is pressed to open, and says so under the
+/// pointer.
+///
+/// The one thing on that screen a press does, so it is raised while the
+/// pointer is over it and only then -- and a press on the plate above it is
+/// still nothing.
+///
+/// Broken deliberately three ways. Taking out the arm in `on_pointer` left
+/// the press on the address opening nothing. Making the arm take the whole
+/// region instead of the address's cells opened the site from a press on the
+/// plate. And giving `WelcomeView::site` the page's colour whatever the
+/// pointer was doing left nothing raised under it.
+#[test]
+fn the_welcome_screen_opens_the_website_where_it_is_pressed() {
+    const WIDTH: u16 = 64;
+    const HEIGHT: u16 = 20;
+    obelus_clipboard::links::use_opener_for_test(obelus_clipboard::links::Opener::Kept);
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+
+    // Found where it is drawn, not asked of the arithmetic that places it.
+    let cells = support::cells_of(&mut app, WIDTH, HEIGHT);
+    let (x, y) = (0..HEIGHT)
+        .find_map(|y| {
+            let row: String = (0..WIDTH).map(|x| cells[(x, y)].symbol()).collect();
+            let from = row.find("obelus-editor.github.io/obelus")?;
+            Some((u16::try_from(row[..from].chars().count()).ok()?, y))
+        })
+        .expect("the welcome screen does not say where the website is");
+    let ground_under = |app: &mut App, at: (u16, u16)| support::cells_of(app, WIDTH, HEIGHT)[at].bg;
+    let point = |app: &mut App, kind: Pointer, x: u16, y: u16| {
+        app.handle(Event::Pointer { kind, x, y });
+    };
+
+    let page = app.theme().background;
+    let raised = app.theme().raised_background;
+    assert_ne!(
+        page, raised,
+        "a theme where the two are one says nothing here"
+    );
+    assert_eq!(
+        ground_under(&mut app, (x, y)),
+        page,
+        "raised before the pointer came"
+    );
+    point(&mut app, Pointer::Moved, x + 5, y);
+    assert_eq!(
+        ground_under(&mut app, (x, y)),
+        raised,
+        "nothing is raised under the pointer"
+    );
+    point(&mut app, Pointer::Moved, x + 5, 4);
+    assert_eq!(
+        ground_under(&mut app, (x, y)),
+        page,
+        "still raised after the pointer left"
+    );
+
+    // The plate, above it, is nothing.
+    point(&mut app, Pointer::Pressed, x + 5, 4);
+    point(&mut app, Pointer::Released, x + 5, 4);
+    assert_eq!(
+        obelus_clipboard::links::opened(),
+        None,
+        "a press on the plate opened something"
+    );
+
+    point(&mut app, Pointer::Pressed, x + 5, y);
+    point(&mut app, Pointer::Released, x + 5, y);
+    assert_eq!(
+        obelus_clipboard::links::opened().as_deref(),
+        Some("https://obelus-editor.github.io/obelus/"),
+        "a press on the address did not open the website"
+    );
+}

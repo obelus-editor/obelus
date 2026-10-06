@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Obelus — 按我自己习惯来的编辑器，agent 就在里面</title>
-<meta name="description" content="Obelus 是一个按我自己习惯来的代码编辑器，agent 就在里面，在它自己的窗口里，或者在终端里。它不追求强大：agent 在自己的分支上改代码，你来读、来试，你点头了它才离开那个分支。">
+<title>Obelus — 照我自己的习惯做的编辑器，agent 就在里面</title>
+<meta name="description" content="Obelus 是一个代码编辑器，agent 就在里面，有窗口版也有终端版。你把要做的事交给 agent，它在单独的 worktree 里改，你随时能过去看；试过、审过，再开 PR 合进去。">
 <link rel="icon" href="../obelus.svg">
 <link rel="alternate" hreflang="en" href="../">
 <!-- The page is set in the two families omarchy's web rules name: the mono
@@ -55,12 +55,12 @@
 <div class="hero wide" id="top">
       <div class="mark">÷</div>
       <h1>Obelus</h1>
-      <p class="lede">符合我个人习惯的编辑器，<strong>agent 就在里面。</strong></p>
-      <p class="sub">Obelus 是一个代码编辑器，在它自己的窗口里，或者在终端里。它不追求强大，而是围着一种干活方式长出来的——我的方式。你也这样干活的话，它对你也会顺手：agent 在自己的分支上改代码，你在被改的代码旁边读它改了什么，你不点头，什么都不会离开那个分支。</p>
+      <p class="lede">照我自己的习惯做的编辑器，<strong>agent 就在里面。</strong></p>
+      <p class="sub">Obelus 是一个代码编辑器，有窗口版，也有终端版。它不追求功能多，只照我自己的干活方式来：你把要做的事交给 agent，它到一个单独的 worktree 里去改；你随时能过去看它改到哪了；改完你试一试，让它审一遍，再开 PR 合进去。从头到尾不用离开编辑器，也不用自己敲 git。</p>
 
       <div class="buttons">
-        <a class="button primary" href="#start"><span>开始使用</span></a>
-        <a class="button" href="#how"><span>看看它怎么走一遍</span></a>
+        <a class="button primary" href="#start"><span>安装</span></a>
+        <a class="button" href="#how"><span>看看工作流</span></a>
         <a class="button" href="https://github.com/obelus-editor/obelus">GitHub</a>
       </div>
 
@@ -73,24 +73,24 @@
       </div>
       <div class="frames">
         <figure class="shot" id="screen-editor" role="tabpanel" aria-labelledby="tab-editor" data-depth="0" data-screen="editor">
-          <img class="dark" src="../screens/editor-dark.webp" width="2100" height="1520" alt="一个 Rust 文件停在某个提交上，其中改过的一行就地展开，旧的一行在新的一行上面。">
-          <img class="light" src="../screens/editor-light.webp" width="2100" height="1520" alt="一个 Rust 文件停在某个提交上，其中改过的一行就地展开，旧的一行在新的一行上面。">
-          <figcaption class="caption">在编辑界面里读 agent 的一个提交：被替换的那一行就地展开在新的一行上面，边栏有标记，旁边写着是谁写的。</figcaption>
+          <img class="dark" src="../screens/editor-dark.webp" width="2100" height="1520" alt="一个 Rust 文件停在某个提交上，改过的一行就地展开，旧行在上，新行在下。">
+          <img class="light" src="../screens/editor-light.webp" width="2100" height="1520" alt="一个 Rust 文件停在某个提交上，改过的一行就地展开，旧行在上，新行在下。">
+          <figcaption class="caption">看 agent 的一次提交：改动直接展开在代码里，删掉的旧行在上、新行在下，边栏标着每一行是谁写的。</figcaption>
         </figure>
         <figure class="shot" id="screen-agent" role="tabpanel" aria-labelledby="tab-agent" data-depth="1" data-screen="agent">
-          <img class="dark" src="../screens/agent-dark.webp" width="2100" height="1520" alt="一段对话，agent 说明了原因、改法、跑了什么、改动在哪，下面一张卡片问要不要审。">
-          <img class="light" src="../screens/agent-light.webp" width="2100" height="1520" alt="一段对话，agent 说明了原因、改法、跑了什么、改动在哪，下面一张卡片问要不要审。">
-          <figcaption class="caption">关于一条笔记的对话：agent 说清改动在哪，等你试过，再用卡片问要不要审。</figcaption>
+          <img class="dark" src="../screens/agent-dark.webp" width="2100" height="1520" alt="一段对话：agent 说了问题出在哪、怎么改的、跑了什么、改动在哪，下面一张卡片问要不要审一遍。">
+          <img class="light" src="../screens/agent-light.webp" width="2100" height="1520" alt="一段对话：agent 说了问题出在哪、怎么改的、跑了什么、改动在哪，下面一张卡片问要不要审一遍。">
+          <figcaption class="caption">一段对话：agent 说清楚改了什么、改在哪个分支，等你试过，再用卡片问要不要审一遍。</figcaption>
         </figure>
         <figure class="shot" id="screen-todo" role="tabpanel" aria-labelledby="tab-todo" data-depth="2" data-screen="todo">
-          <img class="dark" src="../screens/todo-dark.webp" width="2100" height="1520" alt="笔记页：一条笔记底下挂着几步，有的打了勾，有对话的那条笔记旁边有标记。">
-          <img class="light" src="../screens/todo-light.webp" width="2100" height="1520" alt="笔记页：一条笔记底下挂着几步，有的打了勾，有对话的那条笔记旁边有标记。">
-          <figcaption class="caption">笔记：步骤挂在它们所属的笔记底下，有对话的笔记会标出来。</figcaption>
+          <img class="dark" src="../screens/todo-dark.webp" width="2100" height="1520" alt="笔记页：一条笔记底下挂着几步，有的打了勾，开过对话的那条旁边有标记。">
+          <img class="light" src="../screens/todo-light.webp" width="2100" height="1520" alt="笔记页：一条笔记底下挂着几步，有的打了勾，开过对话的那条旁边有标记。">
+          <figcaption class="caption">笔记页：agent 拆出来的步骤挂在笔记底下，开过对话的笔记旁边有标记。</figcaption>
         </figure>
         <figure class="shot" id="screen-worktrees" role="tabpanel" aria-labelledby="tab-worktrees" data-depth="3" data-screen="worktrees">
           <img class="dark" src="../screens/worktrees-dark.webp" width="2100" height="1520" alt="Worktrees 标签页：主 checkout 和 agent 的 worktree，两个都有窗口开着。">
           <img class="light" src="../screens/worktrees-light.webp" width="2100" height="1520" alt="Worktrees 标签页：主 checkout 和 agent 的 worktree，两个都有窗口开着。">
-          <figcaption class="caption">F2 再按 Tab：这个仓库的每个 worktree，各只隔一个窗口。</figcaption>
+          <figcaption class="caption">F2 再按 Tab：这个仓库所有的 worktree，选一个就切过去。</figcaption>
         </figure>
       </div>
     </div>
@@ -100,279 +100,46 @@
 
   <nav class="contents" aria-label="Contents">
     <ol>
-      <li><a href="#fit"><span>你是这样干活的吗</span></a></li>
-      <li><a href="#does"><span>它为此做了什么</span></a></li>
+      <li><a href="#start"><span>安装</span></a></li>
+      <li><a href="#how"><span>工作流</span></a></li>
+      <li><a href="#does"><span>编辑器本身</span></a></li>
+      <li><a href="#fit"><span>适合谁</span></a></li>
       <li><a href="#not"><span>它不做什么</span></a></li>
       <li><a href="#tenets"><span>设计理念</span></a></li>
       <li><a href="#why"><span>为什么写它</span></a></li>
-      <li><a href="#start"><span>上手</span></a></li>
       <li><a href="reference.html"><span>参考 ›</span></a></li>
     </ol>
   </nav>
 
   <main>
 
-
-
-    <section id="fit">
-      <h2><span class="num">01</span><span>你是这样干活的吗</span></h2>
-
-      <p>Obelus 假定的是某一种工作日。看看是不是你的。</p>
-
-      <ul class="beats">
-        <li><span>你同时推进好几个项目，同一个仓库也开着不止一个 worktree</span></li>
-        <li><span>大部分代码是 agent 写的；你的活是读、判断、决定下一步做什么</span></li>
-        <li><span>你有一份「接下来做什么」的清单，更希望它就在代码旁边，而不是在另一个应用里</span></li>
-        <li><span>你宁可打开文件直接读，也不想先学一套模式：方向键、<kbd>Ctrl+c</kbd>、<kbd>Ctrl+z</kbd></span></li>
-        <li><span>你习惯开好几个窗口并排，让终端或者桌面去排布它们</span></li>
-      </ul>
-
-      <p>大部分说中了，这一页剩下的就是 Obelus 为此做的事。如果你要的是最强大的编辑器，先看<a href="#not">它不做什么</a>。</p>
-    </section>
-
-    <section id="does">
-      <h2><span class="num">02</span><span>它为此做了什么</span></h2>
-
-      <h3 id="how">一条笔记，变成一个合进去的改动</h3>
-      <p>agent 在自己的分支上干活；你读它改了什么、试一试、说可以了才走。你正在读的那份 checkout 一直不动，你也不用敲一条 git 命令。本页最上面 Agent 那一屏，就是这样一天里的某一刻。</p>
-
-      <ol class="tenets">
-        <li>
-          <span class="no">01</span>
-          <div>
-            <p class="claim">从一条笔记开始。</p>
-            <p class="why">一行存疑的代码——在那一行上按 <kbd>Alt+t</kbd>，写一句话——或者一个不对着哪一行的计划，写在笔记页上（命令面板里的 <code>todo</code>）。不管哪种，它都进了这个项目的笔记，同一个仓库的每个 worktree 共用这一份。</p>
-          </div>
-        </li>
-        <li>
-          <span class="no">02</span>
-          <div>
-            <p class="claim">和 agent 把它聊清楚。</p>
-            <p class="why">在笔记上按 <kbd>Alt+a</kbd>，开一段关于它的对话，agent 会被告知笔记写的是什么。一起想要做成它需要什么；你同意的步骤写在这条笔记底下。</p>
-          </div>
-        </li>
-        <li>
-          <span class="no">03</span>
-          <div>
-            <p class="claim">它在自己的分支上改代码。</p>
-            <p class="why">动手之前，它开一个 worktree，分支按这次改动起名——放在 <code>.worktree/</code> 底下，这个 workflow 新开的树都放在那里——先让它能编译、把测试跑一遍，这样之后测试挂了，就知道是这次改动的事。对话的标题行写着改动在哪个分支上。</p>
-          </div>
-        </li>
-        <li>
-          <span class="no">04</span>
-          <div>
-            <p class="claim">它告诉你去哪试，然后等着。</p>
-            <p class="why">它再跑一遍测试，告诉你目录和分支、跑了什么、结果是什么——而不是「应该没问题」——然后等你试过再说。<kbd>F2</kbd> 再按 <kbd>Tab</kbd> 就到<a href="#worktrees">那棵树</a>；在那边，这次改动就是这个分支上最新的提交，在它写的某一行上按 <kbd>F11</kbd> 就能打开它。</p>
-          </div>
-        </li>
-        <li>
-          <span class="no">05</span>
-          <div>
-            <p class="claim">你没点头，什么都不会离开那个分支。</p>
-            <p class="why">你说试过了，它才问要不要先审一遍——能开一个干净的上下文就开——再把发现的问题按轻重列出来，让你勾要修哪些。然后问这次改动怎么回去：直接合并，开 pull request，还是先留着以后再说。</p>
-          </div>
-        </li>
-        <li>
-          <span class="no">06</span>
-          <div>
-            <p class="claim">pull request 它跟到底。</p>
-            <p class="why">它用 <code>gh</code> 开 PR，盯着 checks，哪个挂了说清楚为什么，你同意就修，全过了再合并。没有登录好的 <code>gh</code>，它就把分支推上去，把链接交给你。</p>
-          </div>
-        </li>
-        <li>
-          <span class="no">07</span>
-          <div>
-            <p class="claim">最后收拾干净，也是问过再做。</p>
-            <p class="why">合进去以后：你的 checkout 正好在它合进去的那个分支上的话，要不要跟上去——只做快进，别的不做——要不要删掉那个 worktree。笔记做完了：要不要打勾，要不要关掉这段对话。</p>
-          </div>
-        </li>
-      </ol>
-
-      <p>上面每一个问题都是对话里的一张卡片，用你手上本来就按着的那几个键回答。没有哪一次推送、合并、删除或打勾，是因为 agent 觉得「该做了」。</p>
-      <p class="quiet small">这就是 <code>feature-branch</code> 这个 workflow，默认就开着，除非你设成 <code>workflow = "none"</code>——<kbd>Ctrl+p</kbd> → <code>open-settings</code> → <code>Workflow</code>——那样 agent 就按它自己的方式改，通常直接改在你正在读的那份 checkout 里；<code>in-place</code> 介于两者之间，步骤一样，只是直接改你正在读的 checkout，每处改动都落在你眼前的文件里，<kbd>Ctrl+z</kbd> 就能撤掉。项目可以替自己选；不是 git 仓库的项目没有分支可开，agent 就在原地改。Obelus 自己不跑任何 git：每一条命令都是 agent 的。</p>
-
-      <div class="feature">
-        <div class="text">
-      <h3 id="worktrees">每个 worktree 都只隔着一个键</h3>
-      <p>Obelus 不分屏：想并排看两个文件，就是两个窗口。所以同一个项目上开着好几个、各在自己的 worktree 上，是常态。<kbd>F2</kbd> 有第二个 tab，按 <kbd>Tab</kbd> 过去：git 知道的这个仓库的每一个 worktree 都在里面，不管它在哪儿，有 Obelus 开着的会标出来；一棵树上开着好几个的，下面每个各占一行，写着它正在看什么。按 <kbd>Enter</kbd>，当前这个 Obelus 就换到那棵树上，有没存的文件会先问；上次在那边开着的东西会重新打开。</p>
-        </div>
-        <figure class="shot">
-          <a class="dark" href="../screens/worktree-list-dark.webp"><img src="../screens/worktree-list-dark.webp" width="1300" height="420" loading="lazy" alt="Worktrees 标签页：tally 在 main 上，tally/.worktree/stable-tie-order 在它自己的分支上，两棵都有窗口开着。"></a>
-          <a class="light" href="../screens/worktree-list-light.webp"><img src="../screens/worktree-list-light.webp" width="1300" height="420" loading="lazy" alt="Worktrees 标签页：tally 在 main 上，tally/.worktree/stable-tie-order 在它自己的分支上，两棵都有窗口开着。"></a>
-        </figure>
-      </div>
-      <p class="quiet small">在 <code>obg</code> 里，<kbd>Ctrl+Enter</kbd> 是在单独的窗口里过去：那一行的窗口跳到前面来，没开就新开一个。<code>ob</code> 只有 <kbd>Enter</kbd>，因为终端这两样都做不到：它所在的窗口是终端的，你想在哪个终端里开新的 Obelus，Obelus 也没法知道。</p>
-      <ul>
-        <li>同一个仓库的每个 worktree 打开的是<em>同一份</em>笔记，另一个窗口写的东西会自己出现。</li>
-        <li>两个窗口同时写，不会互相抹掉：每一次改动都以那一刻磁盘上的内容为准。</li>
-        <li>一个对话同一时刻只在一个窗口里打开，占用随进程消失而消失——不存在「上次没退干净」。</li>
-        <li>一个窗口底下的树被删掉，窗口留着，里面开着的东西也留着，只是项目变灰。</li>
-        <li>每棵树的名字从主 checkout 所在的目录算起——在它旁边的叫自己的名字，在它里面的叫往下走的路，别处的写完整路径；在 git 背后被删掉的树写着 <code>Missing</code>，选不了。</li>
-        <li>保存之前，它会问一下磁盘：你打开之后，另一个窗口、agent 或者格式化工具有没有改过这个文件。</li>
-      </ul>
-
-      <div class="feature flip">
-        <div class="text">
-      <h3 id="agent">每条笔记都有自己的对话</h3>
-      <p>Obelus 没有自己的模型。它通过 <strong>ACP</strong>（Agent Client Protocol）和你已经在用的 agent 说话；你还没有的话，它能从协议作者维护的注册表里装一个：<kbd>F4</kbd>，新建对话，进 agents 页。</p>
-        </div>
-        <figure class="shot">
-          <a class="dark" href="../screens/card-dark.webp"><img src="../screens/card-dark.webp" width="2100" height="600" loading="lazy" alt="对话里，agent 说了改动在哪、听到已经试过，下面一张卡片问要不要先审一遍。"></a>
-          <a class="light" href="../screens/card-light.webp"><img src="../screens/card-light.webp" width="2100" height="600" loading="lazy" alt="对话里，agent 说了改动在哪、听到已经试过，下面一张卡片问要不要先审一遍。"></a>
-          <figcaption class="caption">问题是一张卡片，用你手上本来就按着的键回答。</figcaption>
-        </figure>
-      </div>
-      <ul>
-        <li>对话是打开的文档之一。离开它，明天回来，它还在你离开的地方。</li>
-        <li>从笔记开的对话一直属于那条笔记；你改写了笔记，agent 会被告知改了什么。</li>
-        <li>agent 可以把下一步写在笔记底下、给某一步打勾、或者改写一条——每一件都先问过你。</li>
-        <li>在你说第一句话之前，Obelus 先告诉 agent 它在跟谁说话：你在读代码，它的回复就在旁边；属于你的选择要用卡片问，而不是在回复里写成 <code>1) … 2) …</code>。</li>
-        <li>问题是一张卡片，不是一段话：上面是 agent 要做什么，下面是答案，<kbd>Enter</kbd> 作用于你所在的那一行。</li>
-        <li>它<em>请求</em>做的改动显示在对话里；它已经做了的改动在文件里，和别的改动一样画在边栏上。</li>
-      </ul>
-
-      <div class="feature">
-        <div class="text">
-      <h3 id="notes">笔记记得自己指着哪儿</h3>
-      <p>在一行上按 <kbd>Alt+t</kbd>，就起一条关于它的笔记；<code>todo</code> 打开全部。笔记可以对着某一行，也可以对着整个项目，还可以挂在另一条底下。它除了记行号，还记着写下时的那个提交，所以上周写的笔记，文件再怎么改，也还指着当初那一行。笔记放在 Obelus 自己的目录里、按项目存——所以每个 worktree 都共用，也永远不会进你的提交。</p>
-        </div>
-        <figure class="shot">
-          <a class="dark" href="../screens/notes-dark.webp"><img src="../screens/notes-dark.webp" width="2100" height="620" loading="lazy" alt="笔记页：一条笔记底下挂着三步，其中一步打了勾，旁边还有两条笔记。"></a>
-          <a class="light" href="../screens/notes-light.webp"><img src="../screens/notes-light.webp" width="2100" height="620" loading="lazy" alt="笔记页：一条笔记底下挂着三步，其中一步打了勾，旁边还有两条笔记。"></a>
-          <figcaption class="caption">agent 想出来的步骤，挂在它们所属的那条笔记底下。</figcaption>
-        </figure>
-      </div>
-
-      <div class="feature flip">
-        <div class="text">
-      <h3 id="what">读改了什么</h3>
-      <p>不管是谁写的，改动都在它发生的地方读：边栏上标着，<kbd>Alt+d</kbd> 就地展开，它的历史只隔一个键。</p>
-        </div>
-        <figure class="shot">
-          <a class="dark" href="../screens/hunk-dark.webp"><img src="../screens/hunk-dark.webp" width="2100" height="640" loading="lazy" alt="一个提交在它改的那一行就地展开，旧的一行在新的一行上面。"></a>
-          <a class="light" href="../screens/hunk-light.webp"><img src="../screens/hunk-light.webp" width="2100" height="640" loading="lazy" alt="一个提交在它改的那一行就地展开，旧的一行在新的一行上面。"></a>
-          <figcaption class="caption">agent 的一个提交，在它改的那一行就地展开：原来的一行（红）在现在这一行上面。</figcaption>
-        </figure>
-      </div>
-
-      <div class="cards">
-        <div class="card">
-          <h4>git</h4>
-          <ul>
-            <li>边栏标出改了哪些行，和 <code>git diff</code> 说的是同一件事</li>
-            <li>滚动条内侧是整份文件的改动地图</li>
-            <li><kbd>Alt+d</kbd> 就地展开 / 收起一个 hunk，<kbd>Alt+p</kbd> / <kbd>Alt+n</kbd> 在改动之间走</li>
-            <li>边栏显示这一行最后是谁改的（可关）</li>
-            <li>文件的历史 <kbd>F9</kbd>、项目的历史 <kbd>F10</kbd>、这一行是哪个提交写的 <kbd>F11</kbd>；提交信息悬在文件上方，远端还没见过的提交有标记</li>
-            <li>只读：Obelus 不碰你的仓库，也不替你跑 git</li>
-          </ul>
-        </div>
-
-        <div class="card">
-          <h4>在窗口里，或者在终端里</h4>
-          <ul>
-            <li><code>obg</code> 是窗口，<code>ob</code> 是终端——gvim 之于 vim 的那种关系，不是第二个程序：同一套网格、同一套视图、同一套键</li>
-            <li>窗口是为了终端给不了的两件事。终端分不出 <kbd>Ctrl+i</kbd> 和 <kbd>Tab</kbd>、<kbd>Ctrl+m</kbd> 和 <kbd>Enter</kbd>、<kbd>Ctrl+[</kbd> 和 <kbd>Esc</kbd>——各自都只有一个字节——而 <kbd>Ctrl+Shift+X</kbd> 大多数终端干脆什么都不发</li>
-            <li>而且它用自己带的字体画，不用赌你装了哪一套：字形编译在二进制里，所以没有方框，也没有开关要找</li>
-            <li>它自己画像素，所以光标和列表是移过去而不是跳过去，输入法正在拼的字也会先画在页面上</li>
-          </ul>
-        </div>
-
-        <div class="card">
-          <h4>同一个文件，不止一种读法</h4>
-          <ul>
-            <li>markdown 排成文章（<kbd>Ctrl+t</kbd>）、日志排成列——按内容判断，不是按文件名</li>
-            <li>markdown 里的代码块、HTML 里的脚本，各按各自的语言上色</li>
-            <li>长行按各自语言的规矩折：中文按字断，英文单词不会被拦腰切开，续行保持缩进</li>
-            <li>还有那些寻常的：23 门语言、折叠、软换行</li>
-          </ul>
-        </div>
-
-        <div class="card">
-          <h4>问代码</h4>
-          <ul>
-            <li>IDE 能回答的那些——名字在哪定义、谁调用它、它是什么、哪里有错——去问你本来就装着的语言服务器：rust-analyzer、gopls、clangd、pylsp 等</li>
-            <li>找东西是一个界面、三个半径：本文件 <kbd>F5</kbd>、整个项目 <kbd>F6</kbd>、服务器认得的名字 <kbd>F8</kbd>——<kbd>Alt+←</kbd> 回到跳转开始的地方</li>
-            <li>问题不只来自服务器：Obelus 自己读不懂的设置，会标在读不懂的那一行上，和服务器的问题在同一个列表里</li>
-          </ul>
-        </div>
-      </div>
-
-      <h3 id="modeless">没有模式的按键，在窗口里也在终端里</h3>
-      <p>每个键什么时候按都是它字面上的意思——VS Code、Emacs 那样，不是 vim、helix 那样。功能键打开一样东西来看，<kbd>Ctrl</kbd> 对眼前的文件做点什么，<kbd>Alt</kbd> 问光标底下是什么。<kbd>Ctrl+p</kbd> 按名字找任何命令；底部有一行按键提示的列表或页面里，<kbd>Ctrl+k</kbd> 列出它的所有键。完整的表在<a href="reference.html#keys">参考</a>里。</p>
-    </section>
-
-    <section id="not">
-      <h2><span class="num">03</span><span>它不做什么</span></h2>
-
-      <p>是故意的，不是还没来得及做。</p>
-
-      <ul class="beats">
-        <li><span><strong>没有多光标，也没有宏。</strong>大块的改动现在是 agent 的活；这里有的，是读到一半顺手改一行需要的那些。</span></li>
-        <li><span><strong>不分屏。</strong>并排看两个文件就是两个窗口；终端或者窗口管理器排布得比编辑器从里面排得好。</span></li>
-        <li><span><strong>没有模式。</strong>没有 vim、helix 的键位，也没有打开它们的开关。</span></li>
-        <li><span><strong>自己不写 git。</strong>Obelus 只读 git、从不写。改动要去哪儿的时候，跑 git 的是 agent——而且先问过你。</span></li>
-        <li><span><strong>同一时刻只有一个 agent。</strong>两个就意味着每个问题都得先说是问哪个。</span></li>
-        <li><span><strong>没有自己的模型。</strong>它和你已经在用的 agent 说话。</span></li>
-      </ul>
-
-      <p>如果上面哪一条正是你挑编辑器的理由，Obelus 不会适合你——这没关系，它本来就不是为此做的。</p>
-    </section>
-
-    <section id="tenets">
-      <h2><span class="num">04</span><span>设计理念</span></h2>
-
-      <p>这些是做取舍时真正拿来对照的句子，大多是吃过一次亏之后才写下来的。</p>
-
-      <ol class="tenets">
-        <li>
-          <span class="no">01</span>
-          <div>
-            <p class="claim">合一种干活方式，而不是一张清单。</p>
-            <p class="why">一个功能在这里，是因为这种干活方式会用到它，而不是因为编辑器都该有。</p>
-          </div>
-        </li>
-        <li>
-          <span class="no">02</span>
-          <div>
-            <p class="claim">agent 做了什么，你看得见，也收得回。</p>
-            <p class="why">它写文件，是作为一次改动经过那个文件的，<kbd>Ctrl+z</kbd> 就能撤掉。它跑的命令撤不掉，所以命令按它真正跑的样子显示出来，输出全在，而让 agent 停下的那个键也会让命令停下。</p>
-          </div>
-        </li>
-        <li>
-          <span class="no">03</span>
-          <div>
-            <p class="claim">已经发生的改动在文件里；还在请求的改动在对话里。</p>
-            <p class="why">agent 改完一个文件，边栏已经画出了差别；在对话里再画一遍，就是同一件事说两遍。它<em>请求</em>做的事留在对话里，一直留着。</p>
-          </div>
-        </li>
-        <li>
-          <span class="no">04</span>
-          <div>
-            <p class="claim">你读着的文件被改写，是常态。</p>
-            <p class="why">agent 改了你开着的文件，格式化工具跑了，分支在你脚下换了。所以 Obelus 自己重读，不丢你的位置；文件没了就标上 <code>[stale]</code>，内容留在屏幕上。</p>
-          </div>
-        </li>
-      </ol>
-    </section>
-
-    <section id="why">
-      <h2><span class="num">05</span>为什么写它</h2>
-
-      <p><strong>说实话：我是写给自己用的。</strong>每一个取舍先回答「我用着顺不顺手」，再回答「会不会有人因为缺某个功能而不用」——所以这一页说的习惯，是我的习惯。</p>
-
-      <p>vim 那套我一直不习惯。模式、<code>hjkl</code>、冒号命令——对习惯的人是肌肉记忆，对我是每次都要重新想一遍的东西。我想要的是<em>打开就能读</em>：方向键就是方向键，<kbd>Ctrl+c</kbd> 就是复制，不用先退出什么。</p>
-
-      <p>而且我干活的方式变了。大部分代码是一堆 claude code、codex 写的；我坐在屏幕前做的是读、确认、标出存疑的地方、决定下一步——还有一份我想放在代码旁边、而不是另一个应用里的 todo。终端里的编辑器都在比编辑器的清单。Obelus 也是编辑器，但在另一条线上：语法树、git 的时间线、语言服务器和 agent，按我干活的方式排好。</p>
-
-      <p>还有这个名字：<em>obelus</em>（÷、†）是古代学者在手稿边上、标在存疑的那一行旁边的记号——一个读者在读的时候留下的记号。</p>
-    </section>
-
     <section id="start">
-      <h2><span class="num">06</span><span>上手</span></h2>
+      <h2><span class="num">01</span><span>安装</span></h2>
 
-      <h3>装它</h3>
-      <p>一个 shell 一个脚本，你在哪个 shell 里就用哪个。两个都是取最新的 release，拿这次 release 自带的 <code>SHA256SUMS</code> 核对下载下来的东西，然后把 <code>obg</code> 放到 PATH 找得到的地方——在自己窗口里的那个 Obelus。</p>
+      <p>挑你的系统，下载安装包，双击装上就行。想用一行命令装，或者也要终端版，往下看。</p>
+
+      <h3>下载安装包</h3>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th><span>系统</span></th><th><span>下载</span></th></tr></thead>
+        <tbody>
+          <tr><td>macOS（Intel 和 Apple 芯片通用）</td><td><a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/Obelus-@VERSION@-universal2-apple-darwin.app.zip">Obelus.app</a></td></tr>
+          <tr><td>Windows x64</td><td><a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/Obelus-@VERSION@-x86_64-pc-windows-msvc.msi">安装包（.msi）</a> · <a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/obg-@VERSION@-x86_64-pc-windows-msvc.zip">压缩包（.zip）</a></td></tr>
+          <tr><td>Windows ARM64</td><td><a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/Obelus-@VERSION@-aarch64-pc-windows-msvc.msi">安装包（.msi）</a> · <a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/obg-@VERSION@-aarch64-pc-windows-msvc.zip">压缩包（.zip）</a></td></tr>
+          <tr><td>Linux x86_64</td><td><a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/obelus-gui_@VERSION@-1_amd64.deb">.deb</a> · <a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/obelus-gui-@VERSION@-1.x86_64.rpm">.rpm</a> · <a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/obg-@VERSION@-x86_64.AppImage">AppImage</a></td></tr>
+          <tr><td>Linux arm64</td><td><a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/obelus-gui_@VERSION@-1_arm64.deb">.deb</a> · <a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/obelus-gui-@VERSION@-1.aarch64.rpm">.rpm</a> · <a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/obg-@VERSION@-aarch64.AppImage">AppImage</a></td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <ul>
+        <li>这些都是窗口版 <code>obg</code>。终端版 <code>ob</code> 用下面的脚本装，或者在 <a href="https://github.com/obelus-editor/obelus/releases/latest">Releases 页</a>下载压缩包。所有文件的 SHA256 也在那里。</li>
+        <li>macOS：Obelus 没有经过 Apple 公证，第一次打开会提示无法验证开发者。到「系统设置 → 隐私与安全性」里点「仍要打开」；或者在终端里运行 <code>xattr -dr com.apple.quarantine /Applications/Obelus.app</code>。</li>
+        <li>Windows：安装包没有签名，SmartScreen 可能会拦一下，点「更多信息 → 仍要运行」。MSI 装在你自己的用户目录下，不用管理员权限，会加开始菜单入口和 PATH，在「设置 → 应用」里能卸载。</li>
+      </ul>
+
+      <h3>用一行命令安装</h3>
+      <p>脚本会下载最新版本，用发布页里的 <code>SHA256SUMS</code> 校验，再把窗口版 <code>obg</code> 放到 PATH 找得到的地方。</p>
 
       <h4>Linux 和 macOS</h4>
       <pre><code>curl -fsSL https://raw.githubusercontent.com/obelus-editor/obelus/master/contrib/install.sh | sh</code></pre>
@@ -381,7 +148,7 @@
       <pre><code>irm https://raw.githubusercontent.com/obelus-editor/obelus/master/contrib/install.ps1 | iex</code></pre>
 
       <h4>连终端版一起装</h4>
-      <p><code>ob</code> 是另一个二进制，要点名才装。<code>-s --</code> 后面的东西都交给脚本；管道进 <code>iex</code> 没地方放参数，所以 Windows 上先把脚本下下来。</p>
+      <p>终端版 <code>ob</code> 是另一个程序，要说一声才装。Windows 上管道没法给脚本传参数，所以先把脚本下载下来再跑。</p>
 
       <pre><code>curl -fsSL https://raw.githubusercontent.com/obelus-editor/obelus/master/contrib/install.sh | sh -s -- --bin both</code></pre>
 
@@ -389,53 +156,300 @@
 .\install.ps1 -Binary both</code></pre>
 
       <ul>
-        <li><code>--bin ob</code> 是只装终端版，<code>--dir</code> 说放到哪儿，<code>--help</code> 列出其余的。</li>
-        <li><a href="https://github.com/obelus-editor/obelus/releases">Releases 页</a>上每个平台都有一份归档，另外还有 <code>.deb</code>、<code>.rpm</code>、AppImage 和 macOS 的 <code>.app</code>。</li>
-        <li>Windows 上脚本会把它的目录加进 PATH，并在开始菜单里建一个条目，<code>-NoShortcut</code> 让它不碰开始菜单。shell 脚本在目录还不在 PATH 上时，会告诉你该加哪一行；Linux 上它在 <code>~/.local/share</code> 下，给装了的 <code>obg</code> 和 <code>ob</code> 各建一个 desktop entry（<code>ob</code> 的会在终端里打开）和一个图标，所有启动器都读它们——omarchy 菜单里的 <code>Apps</code> 也是；<code>--no-desktop</code> 让它不装这些。</li>
-        <li><code>-Uninstall</code> 收回二进制和开始菜单的条目；目录里再没别的东西时，连目录和 PATH 里那一项一起收回。<code>--uninstall</code> 要带上安装时的那个 <code>--dir</code>，收回二进制、desktop entry 和图标，在 omarchy 上还有主题模板；PATH 它从来没改过，也就不碰。两边都不碰你的设置。</li>
-        <li>musl 上没有 <code>obg</code>：窗口要靠 <code>dlopen</code> 找 Vulkan、Wayland 和 X11，静态二进制做不到，脚本会直接说出来，然后装 <code>ob</code>。</li>
+        <li><code>--bin ob</code> 只装终端版，<code>--dir</code> 指定装到哪，<code>--help</code> 看其余选项。</li>
+        <li>Windows 上脚本会把目录加进 PATH，在开始菜单建一个入口（<code>-NoShortcut</code> 不建）。Linux 上会在 <code>~/.local/share</code> 下建启动项和图标（<code>--no-desktop</code> 不建），各种启动器都能找到它，omarchy 的 <code>Apps</code> 菜单也是。目录不在 PATH 上的话，脚本会告诉你该加哪一行。</li>
+        <li>卸载：Windows 用 <code>-Uninstall</code>；Linux 和 macOS 用 <code>--uninstall</code>，装的时候用了 <code>--dir</code>，卸的时候也要带上。两边都不动你的设置。</li>
+        <li>musl 系统上没有窗口版：窗口要在运行时加载 Vulkan、Wayland 和 X11，静态链接的程序做不到。脚本会说明，然后改装 <code>ob</code>。</li>
       </ul>
 
-      <h4>从源码</h4>
-      <p>只需要一套 stable Rust 工具链（edition 2024）。</p>
+      <h3>从源码</h3>
+      <p>只要一套 stable 的 Rust 工具链（edition 2024）。</p>
 
       <pre><code>git clone https://github.com/obelus-editor/obelus
 cd obelus
 
-# 装到 ~/.cargo/bin，命令叫 obg：在自己窗口里的 Obelus
+# 窗口版，装到 ~/.cargo/bin，命令叫 obg
 cargo install --path crates/obelus-gui
 
-# 装成 `ob`：同一个编辑器，跑在终端里
+# 终端版，命令叫 ob
 cargo install --path crates/obelus-cli
 
 # 或者只构建：target/release/obg 和 target/release/ob
 cargo build --release</code></pre>
 
-      <h4>另外值得装的</h4>
+      <h3>最好也装上</h3>
       <ul>
-        <li>一套 <strong>Nerd Font</strong> 补丁字体——文件名旁边、状态栏上的字形要靠它，这是终端里的事。默认就是关的，所以没装也不会出现方框。<code>obg</code> 不需要：这些字形编译在它的二进制里。</li>
-        <li>你这门语言的 <strong>language server</strong>（Rust 就是 <code>rust-analyzer</code>）。没装也能读，只是没有定义跳转、诊断和大纲。</li>
-        <li>一个说 <strong>ACP</strong> 的 agent。Obelus 自己能从注册表里装，见<a href="#agent">和 agent 对话</a>。</li>
+        <li>你所用语言的<strong>语言服务器</strong>（Rust 是 <code>rust-analyzer</code>）。没装也能看代码，只是没有跳转定义、报错提示和大纲。</li>
+        <li>一个支持 <strong>ACP</strong> 的 agent。没有的话 Obelus 能帮你装，见<a href="#agent">接上你已经在用的 agent</a>。</li>
+        <li>终端版想显示图标的话，装一套 <strong>Nerd Font</strong>。图标默认是关的，没装也不会出现方框；窗口版自带，不用装。</li>
       </ul>
 
       <h3>跑起来</h3>
-      <pre><code>obg                  # 什么都不给：在当前目录打开欢迎页
-obg src/main.rs      # 读一个文件——它所在的那个仓库就是项目
-obg ../another-repo  # 给一个目录：它就是项目
-ob src/main.rs       # 同一个文件，改在终端里读</code></pre>
+      <pre><code>obg                  # 不带参数：在当前目录打开欢迎页
+obg src/main.rs      # 打开一个文件，它所在的仓库就是项目
+obg ../another-repo  # 打开一个目录，它就是项目
+ob src/main.rs       # 同一个文件，在终端里打开</code></pre>
 
       <h3>头五分钟</h3>
       <ol>
-        <li><kbd>F1</kbd> 打开文件。输入就是筛选，<kbd>↑</kbd><kbd>↓</kbd> 选，<kbd>Enter</kbd> 确认，<kbd>Esc</kbd> 取消。</li>
-        <li>底部有一行按键提示的列表或页面，那行只列<em>当下能用的</em>；<kbd>Ctrl+k</kbd> 弹出全部（用不了的会灰掉）。</li>
-        <li><kbd>Ctrl+p</kbd> 是命令面板：记不住键的，都能按名字找到。</li>
-        <li>把光标放到一个改动上按 <kbd>Alt+d</kbd>：这个 hunk 会<em>就地</em>展开，改之前是什么样就写在那儿。</li>
-        <li>看到一行可疑的，<kbd>Alt+t</kbd>，写一句。它记在这个项目的笔记里，下次 <code>todo</code> 还能找回来。</li>
-        <li><kbd>Ctrl+p</kbd> → <code>open-settings</code> 调颜色、换行、tab 宽度这些；<code>choose-theme</code> 换主题。</li>
-        <li><kbd>Ctrl+q</kbd> 走人。</li>
+        <li><kbd>F1</kbd> 打开文件：打字筛选，<kbd>↑</kbd><kbd>↓</kbd> 选，<kbd>Enter</kbd> 打开，<kbd>Esc</kbd> 取消。</li>
+        <li>列表底部只列<em>现在</em>能用的键；<kbd>Ctrl+k</kbd> 看全部，暂时用不了的是灰的。</li>
+        <li><kbd>Ctrl+p</kbd> 是命令面板，记不住快捷键的，都能按名字搜到。</li>
+        <li>光标放到一处改动上按 <kbd>Alt+d</kbd>，改之前的样子会<em>就地</em>展开。</li>
+        <li>看到可疑的一行，按 <kbd>Alt+t</kbd> 记一句。再 <kbd>Ctrl+p</kbd> 搜 <code>todo</code> 打开笔记页，选中它按 <kbd>Alt+a</kbd>，和 agent 聊聊——这就是下面那套工作流的起点。</li>
+        <li><kbd>Ctrl+p</kbd> → <code>open-settings</code> 改颜色、换行、tab 宽度；<code>choose-theme</code> 换主题。</li>
+        <li><kbd>Ctrl+q</kbd> 退出。</li>
       </ol>
 
-      <p>每个键、命令和设置都在<a href="reference.html">参考</a>里。</p>
+      <p>所有按键、命令和设置都在<a href="reference.html">参考</a>里。</p>
+    </section>
+
+    <section id="how">
+      <h2><span class="num">02</span><span>工作流</span></h2>
+
+      <p>这是 Obelus 最主要的用法：从一个想法到一个合进去的改动。agent 在它自己的 worktree 里改代码，你正在看的这份代码一直不动；每到要你拿主意的时候，它就停下来问你。</p>
+
+      <ol class="tenets">
+        <li>
+          <span class="no">01</span>
+          <div>
+            <p class="claim">先记一笔，或者直接开聊。</p>
+            <p class="why">看到哪行代码不对劲，在那一行按 <kbd>Alt+t</kbd> 写一句；想做的事不对着哪一行，就写在笔记页里（<kbd>Ctrl+p</kbd> 搜 <code>todo</code>）。不想记笔记也行，<kbd>F4</kbd> 直接开一段新对话。</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">02</span>
+          <div>
+            <p class="claim">和 agent 把需求聊清楚。</p>
+            <p class="why">在笔记页里选中一条，按 <kbd>Alt+a</kbd>，就开了一段关于它的对话，agent 一上来就知道这条笔记写的是什么。商量好的步骤，它问过你之后记在这条笔记底下。</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">03</span>
+          <div>
+            <p class="claim">agent 开一个 worktree 去改。</p>
+            <p class="why">动手之前，它在 <code>.worktree/</code> 下面新建一个 worktree 和分支，先编译、跑一遍测试，确认改之前是好的。之后的改动全在那边，你这边的代码一个字都不会变。对话顶上写着它在哪个分支上。</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">04</span>
+          <div>
+            <p class="claim">中途随时过去看。</p>
+            <p class="why">不用等它改完。<kbd>F2</kbd> 再按 <kbd>Tab</kbd>，选那个 worktree，就切到<a href="#worktrees">那棵树上</a>。还没提交的改动，边栏上标着，<kbd>F3</kbd> 列出改过的文件；已经提交的，在它写的那一行上按 <kbd>F11</kbd>，就能看到整个提交。</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">05</span>
+          <div>
+            <p class="claim">改完了，它告诉你去哪试，然后等你。</p>
+            <p class="why">它再跑一遍测试，告诉你在哪个目录、哪个分支、跑了什么、结果怎样——是真跑出来的结果，不是「应该没问题」。然后就等着：你没试过，它不往下走。</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">06</span>
+          <div>
+            <p class="claim">你试过了，它再审一遍。</p>
+            <p class="why">你说没问题，它会问要不要先审一遍代码——能开新的上下文就开，不带着写代码时的思路去看。审出来的问题按轻重排好，你勾要修哪些，它一个一个修。</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">07</span>
+          <div>
+            <p class="claim">开 PR，一直跟到合并。</p>
+            <p class="why">接着问你怎么合：直接合并、开 PR，还是先放着。选了 PR，它用 <code>gh</code> 去开，盯着 CI，哪项挂了就告诉你原因，你同意就修，全过了再合并。没装 <code>gh</code> 或者没登录，它就把分支推上去，把链接给你。</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">08</span>
+          <div>
+            <p class="claim">最后收拾干净。</p>
+            <p class="why">合并以后，它会问：要不要把你本地的分支更新到最新，要不要删掉那个 worktree，要不要把笔记打勾，要不要关掉这段对话。</p>
+          </div>
+        </li>
+      </ol>
+
+      <p>每一个要你决定的地方，agent 都会在对话里弹一张卡片，方向键选、回车定。推送、合并、删除、打勾，没有一样是 agent 自己拍板的。</p>
+      <p class="quiet small">这套流程是默认的。想让 agent 直接改你眼前的文件，可以在设置里把 <code>workflow</code> 改成 <code>in-place</code>：步骤一样，只是不开 worktree，每处改动都能 <kbd>Ctrl+z</kbd> 撤掉；改成 <code>none</code>，就是让 agent 按它自己的习惯来。Obelus 自己从不跑 git，上面的 git 命令都是 agent 跑的。</p>
+
+      <div class="feature">
+        <div class="text">
+      <h3 id="worktrees">所有 worktree，一个键就到</h3>
+      <p>Obelus 不分屏，想同时看两份代码就开两个窗口。所以同一个项目开着好几个 Obelus、各看一个 worktree，是很平常的事。按 <kbd>F2</kbd> 再按 <kbd>Tab</kbd>，能看到这个仓库所有的 worktree，哪些已经有 Obelus 开着也标出来了；一棵树上开着好几个的，下面每个占一行，写着它正在看什么。按 <kbd>Enter</kbd>，当前这个 Obelus 就换到那棵树上：有没保存的文件会先问你，上次在那边开着的东西会重新打开。</p>
+        </div>
+        <figure class="shot">
+          <a class="dark" href="../screens/worktree-list-dark.webp"><img src="../screens/worktree-list-dark.webp" width="1300" height="420" loading="lazy" alt="Worktrees 标签页：tally 在 main 上，tally/.worktree/stable-tie-order 在它自己的分支上，两棵都有窗口开着。"></a>
+          <a class="light" href="../screens/worktree-list-light.webp"><img src="../screens/worktree-list-light.webp" width="1300" height="420" loading="lazy" alt="Worktrees 标签页：tally 在 main 上，tally/.worktree/stable-tie-order 在它自己的分支上，两棵都有窗口开着。"></a>
+        </figure>
+      </div>
+      <p class="quiet small">在窗口版 <code>obg</code> 里，<kbd>Ctrl+Enter</kbd> 是另开一个窗口过去：那棵树已经有窗口开着，就把它调到前面，没有就新开一个。终端版 <code>ob</code> 只有 <kbd>Enter</kbd>：它没法替你开新终端，也没法把别的终端窗口调到前面。</p>
+      <ul>
+        <li>同一个仓库的所有 worktree 共用<em>一份</em>笔记，这个窗口记的，那个窗口马上能看到。</li>
+        <li>一段对话同时只能在一个窗口里打开，不会两边各说各的。</li>
+        <li>保存之前，Obelus 会先看一眼磁盘：别的窗口、agent 或者格式化工具改过这个文件的话，不会被你悄悄覆盖掉。</li>
+      </ul>
+      <p>多个窗口一起用的其余细节，在<a href="reference.html#windows">参考</a>里。</p>
+    </section>
+
+    <section id="does">
+      <h2><span class="num">03</span><span>编辑器本身</span></h2>
+
+      <div class="feature flip">
+        <div class="text">
+      <h3 id="agent">接上你已经在用的 agent</h3>
+      <p>Obelus 自己没有模型。它通过 <strong>ACP</strong>（Agent Client Protocol）连你已经在用的 agent；还没有的话，按 <kbd>F4</kbd> 新建对话，在 agents 页里就能装一个。</p>
+        </div>
+        <figure class="shot">
+          <a class="dark" href="../screens/card-dark.webp"><img src="../screens/card-dark.webp" width="2100" height="600" loading="lazy" alt="对话里，agent 说了改动在哪、听到已经试过，下面一张卡片问要不要先审一遍。"></a>
+          <a class="light" href="../screens/card-light.webp"><img src="../screens/card-light.webp" width="2100" height="600" loading="lazy" alt="对话里，agent 说了改动在哪、听到已经试过，下面一张卡片问要不要先审一遍。"></a>
+          <figcaption class="caption">要你拿主意的问题是一张卡片：方向键选，回车定。</figcaption>
+        </figure>
+      </div>
+      <ul>
+        <li>对话和文件一样，是一个打开着的文档。今天没聊完，明天回来接着聊。</li>
+        <li>从笔记开的对话跟着这条笔记走；你改了笔记，agent 会知道改了什么。</li>
+        <li>agent 想在笔记底下加步骤、给哪步打勾、改写哪一条，都会先问你。</li>
+        <li>agent 已经改了的，直接看文件，边栏上标着；它还在问能不能改的，才留在对话里。</li>
+      </ul>
+
+      <div class="feature">
+        <div class="text">
+      <h3 id="notes">笔记一直指着它说的那一行</h3>
+      <p>在一行上按 <kbd>Alt+t</kbd> 记一条笔记，<kbd>Ctrl+p</kbd> 搜 <code>todo</code> 打开全部。笔记可以对着某一行，也可以对着整个项目，还能一条挂在另一条底下。它记着写下时的提交，所以就算文件后来改了很多，上周写的笔记也还能找到当初那一行。笔记存在 Obelus 自己的目录里，不在仓库里，所以所有 worktree 都看得到，也不会混进你的提交。</p>
+        </div>
+        <figure class="shot">
+          <a class="dark" href="../screens/notes-dark.webp"><img src="../screens/notes-dark.webp" width="2100" height="620" loading="lazy" alt="笔记页：一条笔记底下挂着三步，其中一步打了勾，旁边还有两条笔记。"></a>
+          <a class="light" href="../screens/notes-light.webp"><img src="../screens/notes-light.webp" width="2100" height="620" loading="lazy" alt="笔记页：一条笔记底下挂着三步，其中一步打了勾，旁边还有两条笔记。"></a>
+          <figcaption class="caption">agent 拆出来的步骤，挂在对应的那条笔记底下。</figcaption>
+        </figure>
+      </div>
+
+      <div class="feature flip">
+        <div class="text">
+      <h3 id="what">改动就在代码里看</h3>
+      <p>不管是 agent 改的还是你改的，改动都直接在文件里看：边栏标出哪些行改过，<kbd>Alt+d</kbd> 把旧代码就地展开，再按一下收起来。</p>
+        </div>
+        <figure class="shot">
+          <a class="dark" href="../screens/hunk-dark.webp"><img src="../screens/hunk-dark.webp" width="2100" height="640" loading="lazy" alt="一个提交在它改的那一行就地展开，旧行在上，新行在下。"></a>
+          <a class="light" href="../screens/hunk-light.webp"><img src="../screens/hunk-light.webp" width="2100" height="640" loading="lazy" alt="一个提交在它改的那一行就地展开，旧行在上，新行在下。"></a>
+          <figcaption class="caption">agent 的一次提交，就地展开在它改的那一行：红色的旧行在上，现在的行在下。</figcaption>
+        </figure>
+      </div>
+
+      <div class="cards">
+        <div class="card">
+          <h4>git</h4>
+          <ul>
+            <li>边栏标出改过的行，和 <code>git diff</code> 一致</li>
+            <li>滚动条旁边能看到整个文件的改动分布</li>
+            <li><kbd>Alt+d</kbd> 展开 / 收起一处改动，<kbd>Alt+p</kbd> / <kbd>Alt+n</kbd> 跳到上一处 / 下一处</li>
+            <li>边栏显示每一行最后是谁改的（可以关掉）</li>
+            <li><kbd>F9</kbd> 看这个文件的历史，<kbd>F10</kbd> 看整个项目的历史，<kbd>F11</kbd> 看这一行是哪个提交写的；还没推到远端的提交会标出来</li>
+            <li>只读：Obelus 不改你的仓库，也不替你跑 git</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h4>窗口版和终端版</h4>
+          <ul>
+            <li><code>obg</code> 是窗口版，<code>ob</code> 是终端版，就像 gvim 和 vim：界面一样，按键也一样</li>
+            <li>窗口版能分清终端分不清的键，比如 <kbd>Ctrl+i</kbd> 和 <kbd>Tab</kbd>、<kbd>Ctrl+m</kbd> 和 <kbd>Enter</kbd>、<kbd>Ctrl+[</kbd> 和 <kbd>Esc</kbd>；<kbd>Ctrl+Shift+X</kbd> 这类组合，大多数终端根本不发</li>
+            <li>窗口版自带图标字体，不用另装 Nerd Font，也不会出现方框</li>
+            <li>窗口版里光标和列表是滑过去的，输入法拼字时也直接显示在页面上</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <h4>问代码</h4>
+          <ul>
+            <li>跳到定义、查谁调用了它、看类型、看报错，都交给你已经装好的语言服务器：rust-analyzer、gopls、clangd、pylsp 等</li>
+            <li>搜索都用同一个界面，只是范围不同：<kbd>F5</kbd> 搜当前文件，<kbd>F6</kbd> 搜整个项目，<kbd>F8</kbd> 搜函数名、类型名；<kbd>Alt+←</kbd> 跳回原处</li>
+            <li>设置文件写错了，Obelus 会像编译报错那样，标在写错的那一行上</li>
+          </ul>
+        </div>
+      </div>
+
+      <h3 id="modeless">没有模式，按什么键就是什么意思</h3>
+      <p>不用先进「插入模式」才能打字——像 VS Code、Emacs，不像 vim、helix。规律很简单：功能键打开要看的东西，<kbd>Ctrl</kbd> 对当前文件做事，<kbd>Alt</kbd> 问光标下面是什么。记不住的，<kbd>Ctrl+p</kbd> 按名字搜命令；列表底部有按键提示的地方，<kbd>Ctrl+k</kbd> 能看到全部按键。完整的按键表在<a href="reference.html#keys">参考</a>里。</p>
+    </section>
+
+    <section id="fit">
+      <h2><span class="num">04</span><span>适合谁</span></h2>
+
+      <p>Obelus 是照一种特定的干活方式做的。下面这些大多说中你的话，它应该会顺手：</p>
+
+      <ul class="beats">
+        <li><span>大部分代码是 agent 写的，你主要是读、判断、决定下一步</span></li>
+        <li><span>你常常同时推进好几件事，一个仓库开着好几个 worktree</span></li>
+        <li><span>你想把待办清单放在代码旁边，而不是另一个应用里</span></li>
+        <li><span>你不想学一套模式，方向键、<kbd>Ctrl+c</kbd>、<kbd>Ctrl+z</kbd> 拿来就用</span></li>
+        <li><span>你习惯开好几个窗口，让终端或者桌面去排</span></li>
+      </ul>
+    </section>
+
+    <section id="not">
+      <h2><span class="num">05</span><span>它不做什么</span></h2>
+
+      <p>这些是故意不做的，不是没来得及。</p>
+
+      <ul class="beats">
+        <li><span><strong>没有多光标，没有宏。</strong>大改动现在交给 agent；这里只留读代码时顺手改一两行要用的。</span></li>
+        <li><span><strong>不分屏。</strong>想并排看就开两个窗口，终端和窗口管理器排得比编辑器好。</span></li>
+        <li><span><strong>没有模式。</strong>没有 vim、helix 的键位，也没有开关能打开。</span></li>
+        <li><span><strong>自己不写 git。</strong>Obelus 只读 git。提交、推送、合并都是 agent 在跑 git，而且先问过你。</span></li>
+        <li><span><strong>一次只连一个 agent。</strong>连两个的话，每个问题都得先说清是问哪个。</span></li>
+        <li><span><strong>没有自己的模型。</strong>用的是你已经在用的 agent。</span></li>
+      </ul>
+
+      <p>如果你挑编辑器正是看重上面某一条，Obelus 可能不适合你——没关系，它本来就不是为这个做的。</p>
+    </section>
+
+    <section id="tenets">
+      <h2><span class="num">06</span><span>设计理念</span></h2>
+
+      <p>做取舍时拿来对照的几句话，大多是踩过坑才写下来的。</p>
+
+      <ol class="tenets">
+        <li>
+          <span class="no">01</span>
+          <div>
+            <p class="claim">照一种干活方式做，不照功能清单做。</p>
+            <p class="why">一个功能留下来，是因为干活时真用得上，不是因为别的编辑器都有。</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">02</span>
+          <div>
+            <p class="claim">agent 做的事，你看得见，也撤得回。</p>
+            <p class="why">agent 改文件，跟你自己改一样，<kbd>Ctrl+z</kbd> 就能撤。它跑的命令撤不回，所以命令原样显示、输出全都留着，让 agent 停下的那个键也会把命令一起停掉。</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">03</span>
+          <div>
+            <p class="claim">改完的看文件，还没改的看对话。</p>
+            <p class="why">agent 改完的东西，边栏上已经标出来了，对话里不再重复一遍；它还在<em>请求</em>要做的事，才留在对话里。</p>
+          </div>
+        </li>
+        <li>
+          <span class="no">04</span>
+          <div>
+            <p class="claim">你正在看的文件被别人改了，很正常。</p>
+            <p class="why">agent 改了、格式化工具跑了、分支切了，Obelus 都会自己重新读，你看到哪还是哪；文件被删了，就标上 <code>[stale]</code>，内容先留在屏幕上。</p>
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <section id="why">
+      <h2><span class="num">07</span>为什么写它</h2>
+
+      <p><strong>说实话，这是我写给自己用的。</strong>每个取舍先问「我用着顺不顺手」，再问「会不会有人因为少了某个功能就不用」——所以这页说的习惯，都是我的习惯。</p>
+
+      <p>vim 那套我一直用不惯。模式、<code>hjkl</code>、冒号命令，习惯的人是肌肉记忆，我却每次都得想一想。我想要的是<em>打开就能看</em>：方向键就是方向键，<kbd>Ctrl+c</kbd> 就是复制，不用先退出什么模式。</p>
+
+      <p>而且我写代码的方式变了。现在大部分代码是一堆 Claude Code、Codex 写的，我坐在屏幕前主要是读、确认、标出可疑的地方、决定下一步，还想把待办清单放在代码旁边。终端里的编辑器都在比谁功能多；Obelus 也是编辑器，但走的是另一条路：把语法树、git 历史、语言服务器和 agent，按我干活的方式摆在一起。</p>
+
+      <p>名字的来历：<em>obelus</em>（÷、†）是古代学者在手稿边上做的记号，标在他们觉得可疑的那一行旁边——是读的人边读边留下的。</p>
     </section>
 
   </main>
@@ -443,7 +457,7 @@ ob src/main.rs       # 同一个文件，改在终端里读</code></pre>
 
 <footer>
   <p><span class="mono">÷</span> &nbsp; Obelus &nbsp;·&nbsp; Apache-2.0 &nbsp;·&nbsp; <a href="https://github.com/obelus-editor/obelus">github.com/obelus-editor/obelus</a></p>
-  <p>一个读者在读的时候留下的记号。</p>
+  <p>读的人边读边留下的记号。</p>
 </footer>
 
 <script src="../main.js"></script>
