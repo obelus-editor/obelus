@@ -2,6 +2,8 @@
 
 use std::{sync::mpsc, time::Duration};
 
+// For the tests of a shell, which are unix's alone.
+#[cfg(unix)]
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use obelus_terminal::{Heard, Program, Terminal};
 
