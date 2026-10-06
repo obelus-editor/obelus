@@ -1518,9 +1518,11 @@ impl App {
         // whether or not the reader has said where they work.
         self.ask_about_releases();
         // Before what went wrong, which a chat that is not there to
-        // connect to is one of.
-        if self.remote_at_start {
-            self.connect_remote_at_start();
+        // connect to is one of. And not before there is a project, like
+        // the tools above: a conversation begun from the chat would be
+        // rooted at wherever the process began. `settle_on` connects.
+        if self.remote_at_start && self.chooser.is_none() {
+            self.connect_remote_at_start(self.reading_nothing());
         }
         // What went wrong on the way up, over whatever the first screen is,
         // and last of all so that everything that could go wrong has.

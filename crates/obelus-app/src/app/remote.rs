@@ -926,10 +926,17 @@ impl App {
     /// except that no chat to connect to is said rather than passed over.
     /// The command is quiet about it because the palette had already said
     /// so, by dimming it; nothing dims a word on the command line.
-    pub(super) fn connect_remote_at_start(&mut self) {
+    ///
+    /// Said with what else went wrong on the way up where that is put
+    /// over the first screen, and on the status row where it is not: a
+    /// file named on the command line is the first screen, and the list
+    /// is never put over one.
+    pub(super) fn connect_remote_at_start(&mut self, over_the_first_screen: bool) {
+        const NOTHING: &str = "No chat is set in the settings to connect to";
         match self.platform() {
             Some(_) => self.connect_remote(),
-            None => self.amiss("No chat is set in the settings to connect to"),
+            None if over_the_first_screen => self.amiss(NOTHING),
+            None => self.wrong(NOTHING),
         }
     }
 

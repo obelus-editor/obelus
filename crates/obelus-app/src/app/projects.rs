@@ -792,6 +792,9 @@ impl super::App {
         self.offer_the_tools();
         self.watch_the_project();
         self.say_where_this_window_is();
+        if self.remote_at_start {
+            self.connect_remote_at_start(false);
+        }
         for file in &opening.files {
             self.open(file);
         }
