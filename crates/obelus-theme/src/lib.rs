@@ -224,9 +224,74 @@ pub struct Theme {
     pub bracket_background: Color,
     /// The syntax colours.
     pub syntax: SyntaxTheme,
+    /// The sixteen colours a program in a terminal of Obelus's own names by
+    /// number, where the theme says what they are -- black to white and the
+    /// bright eight after them, in the order every terminal numbers them.
+    ///
+    /// `None` is a colour left to Obelus, which takes it from the theme's
+    /// own (see [`Theme::terminal_colour`]). Not a palette of its own in
+    /// every theme: a program that prints red means the red the rest of the
+    /// screen is already using, and sixteen more colours per theme would be
+    /// sixteen more ways for one page to disagree with itself.
+    pub terminal: [Option<Color>; 16],
 }
 
+/// A theme that names none of the sixteen, and leaves them all to Obelus.
+pub const WORKED_OUT: [Option<Color>; 16] = [None; 16];
+
+/// What the sixteen are called in a theme file, in their numbered order.
+pub const TERMINAL_NAMES: [&str; 16] = [
+    "black",
+    "red",
+    "green",
+    "yellow",
+    "blue",
+    "magenta",
+    "cyan",
+    "white",
+    "bright_black",
+    "bright_red",
+    "bright_green",
+    "bright_yellow",
+    "bright_blue",
+    "bright_magenta",
+    "bright_cyan",
+    "bright_white",
+];
+
 impl Theme {
+    /// What a program in a terminal means by colour `index`, or `None` past
+    /// the sixteen -- the 256-colour cube and the greys are exact colours,
+    /// and go through as the program named them.
+    ///
+    /// The theme's own where it gave one; otherwise the colour on the page
+    /// that already means the same thing. Red is what an error is drawn in,
+    /// green and yellow what a line added and changed are, blue a function,
+    /// magenta a keyword, cyan a property; white the ink, bright black the
+    /// dimmed ink a comment is, and black a shade off the page, which is
+    /// what a program painting a black ground is asking for. The bright six
+    /// are the same six: a theme with one red has one red to offer.
+    #[must_use]
+    pub const fn terminal_colour(&self, index: u8) -> Option<Color> {
+        if index >= 16 {
+            return None;
+        }
+        if let Some(given) = self.terminal[index as usize] {
+            return Some(given);
+        }
+        Some(match index % 8 {
+            0 if index == 0 => self.raised_background,
+            0 => self.syntax.comment,
+            1 => self.syntax.error,
+            2 => self.change_added,
+            3 => self.change_modified,
+            4 => self.syntax.function,
+            5 => self.syntax.keyword,
+            6 => self.syntax.property,
+            _ => self.foreground,
+        })
+    }
+
     /// The colour a change's marker is drawn in, wherever it is drawn.
     ///
     /// Here rather than in a view, because two of them draw one now: a file

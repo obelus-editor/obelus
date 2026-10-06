@@ -95,6 +95,7 @@ pub fn over(table: &toml::Table) -> Theme {
         .and_then(builtin::by_name)
         .unwrap_or(&builtin::DARK);
     let syntax = table.get("syntax").and_then(toml::Value::as_table);
+    let terminal = table.get("terminal").and_then(toml::Value::as_table);
     let of = |key: &str, fallback: Color| colour(table, key, fallback);
     let syn = |key: &str, fallback: Color| match syntax {
         Some(table) => colour(table, key, fallback),
@@ -147,6 +148,26 @@ pub fn over(table: &toml::Table) -> Theme {
             error: syn("error", base.syntax.error),
             warning: syn("warning", base.syntax.warning),
         },
+        // What the file names, and what the base names where it does not:
+        // a colour left to Obelus stays left, so it is worked out from
+        // *this* theme's colours rather than from the base's.
+        terminal: std::array::from_fn(|index| {
+            terminal
+                .and_then(|table| table.get(crate::TERMINAL_NAMES[index]))
+                .and_then(toml::Value::as_str)
+                .and_then(|said| {
+                    let read = hex(said);
+                    if read.is_none() {
+                        tracing::warn!(
+                            key = crate::TERMINAL_NAMES[index],
+                            said,
+                            "not a colour, so it was left alone"
+                        );
+                    }
+                    read
+                })
+                .or(base.terminal[index])
+        }),
     }
 }
 
@@ -194,4 +215,30 @@ pub fn hex(said: &str) -> Option<Color> {
         _ => return None,
     };
     Some(Color::Rgb(red, green, blue))
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::style::Color;
+
+    /// A terminal colour a file names is the file's, and one it does not is
+    /// worked out from the file's own colours -- not from the base it built
+    /// on, which would put the base's blue beside the file's.
+    ///
+    /// Broken deliberately twice: `over` ignoring `[terminal]` (red is the
+    /// worked-out one instead), and taking the unnamed ones from the base
+    /// (blue is the base's function colour).
+    #[test]
+    fn a_terminal_colour_is_the_files_or_worked_out_from_it() {
+        let table: toml::Table = "base = \"dark\"\n[syntax]\nfunction = \"#abcdef\"\n\
+                                  [terminal]\nred = \"#123456\"\n"
+            .parse()
+            .expect("a table");
+        let theme = super::over(&table);
+        assert_eq!(theme.terminal_colour(1), Some(Color::Rgb(0x12, 0x34, 0x56)));
+        assert_eq!(theme.terminal_colour(4), Some(Color::Rgb(0xab, 0xcd, 0xef)));
+        assert_eq!(theme.terminal_colour(7), Some(theme.foreground));
+        // Past the sixteen, a colour is exactly what it says.
+        assert_eq!(theme.terminal_colour(16), None);
+    }
 }

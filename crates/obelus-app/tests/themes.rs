@@ -364,6 +364,10 @@ fn the_template_for_omarchy_names_colours_obelus_has() {
         syntax.error,
         syntax.warning,
     ]);
+    // And the sixteen a terminal's program names by number, as the file
+    // gave them: one it spelt wrong is worked out instead, and its own
+    // colour is then nowhere.
+    got.extend(theme.terminal.iter().flatten());
     for (key, colour) in wanted {
         let colour = written::hex(&colour).expect("a colour");
         assert!(

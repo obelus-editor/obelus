@@ -52,3 +52,24 @@ punctuation = "{{ dark_foreground }}"
 comment = "{{ dark_foreground }}"
 error = "{{ bright_red }}"
 warning = "{{ bright_yellow }}"
+
+# The sixteen a program in Obelus's own terminal names by number, as
+# omarchy's own terminals have them -- so a shell inside Obelus is the
+# colour it is in kitty or alacritty beside it.
+[terminal]
+black = "{{ background }}"
+red = "{{ red }}"
+green = "{{ green }}"
+yellow = "{{ yellow }}"
+blue = "{{ blue }}"
+magenta = "{{ magenta }}"
+cyan = "{{ cyan }}"
+white = "{{ foreground }}"
+bright_black = "{{ muted }}"
+bright_red = "{{ bright_red }}"
+bright_green = "{{ bright_green }}"
+bright_yellow = "{{ bright_yellow }}"
+bright_blue = "{{ bright_blue }}"
+bright_magenta = "{{ bright_magenta }}"
+bright_cyan = "{{ bright_cyan }}"
+bright_white = "{{ bright_foreground }}"

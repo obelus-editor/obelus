@@ -1,11 +1,12 @@
 //! A terminal of Obelus's own: what its program drew, cell for cell.
 //!
 //! Nothing here is laid out. The program said what goes in every cell of a
-//! screen the size it was told, and the screen is drawn the way it said --
-//! its colours going through as it named them, which a terminal of the
-//! reader's would have done. The one thing Obelus decides is the colour a
-//! program leaves as the default, which is the page's: a program that says
-//! nothing about colour is drawn in the ink everything else is.
+//! screen the size it was told, and the screen is drawn the way it said.
+//! What Obelus decides is what its colours are: the default is the page's
+//! ground and ink, and the sixteen a program names by number are the
+//! theme's (`Theme::terminal_colour`) -- a program that prints red means
+//! the red the rest of the screen is using. An exact colour goes through as
+//! it was named.
 
 use obelus_terminal::{Terminal, vt100};
 use obelus_theme::Theme;
@@ -88,8 +89,8 @@ pub fn caret(area: Rect, terminal: &Terminal) -> Option<Position> {
 
 /// How one cell is drawn.
 fn style_of(cell: &vt100::Cell, theme: &Theme) -> Style {
-    let mut ink = colour_of(cell.fgcolor()).unwrap_or(theme.foreground);
-    let mut ground = colour_of(cell.bgcolor()).unwrap_or(theme.background);
+    let mut ink = colour_of(cell.fgcolor(), theme).unwrap_or(theme.foreground);
+    let mut ground = colour_of(cell.bgcolor(), theme).unwrap_or(theme.background);
     if cell.inverse() {
         std::mem::swap(&mut ink, &mut ground);
     }
@@ -108,10 +109,17 @@ fn style_of(cell: &vt100::Cell, theme: &Theme) -> Style {
 }
 
 /// A colour as the program named it, or nothing for the default.
-const fn colour_of(colour: vt100::Color) -> Option<Color> {
+///
+/// The sixteen by number are the theme's: left as numbers, `ob` drew them in
+/// the palette of the terminal it was in and `obg` in a palette of its own,
+/// and neither was the page around them.
+const fn colour_of(colour: vt100::Color, theme: &Theme) -> Option<Color> {
     match colour {
         vt100::Color::Default => None,
-        vt100::Color::Idx(index) => Some(Color::Indexed(index)),
+        vt100::Color::Idx(index) => match theme.terminal_colour(index) {
+            Some(ours) => Some(ours),
+            None => Some(Color::Indexed(index)),
+        },
         vt100::Color::Rgb(red, green, blue) => Some(Color::Rgb(red, green, blue)),
     }
 }

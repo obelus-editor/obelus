@@ -183,6 +183,37 @@ fn a_function_key_opens_what_it_opens() {
     );
 }
 
+/// What a program prints in red is the theme's red: the sixteen colours a
+/// program names by number are the page's, in `ob` and `obg` alike, rather
+/// than whatever palette the front end happens to have.
+///
+/// Broken deliberately by passing the number through (`colour_of` answering
+/// `Color::Indexed`): the cell's ink is a palette slot, not the theme's.
+#[test]
+fn a_colour_named_by_number_is_the_themes() {
+    let (mut app, events) = a_shell();
+    support::type_text(&mut app, "printf '\\033[31mred-%s\\033[0m\\n' $((2 + 3))");
+    press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    pump(&mut app, &events, "the red words", |app| {
+        on_the_terminal(app).contains("red-5")
+    });
+    let cells = support::cells_of(&mut app, WIDTH, HEIGHT);
+    let area = cells.area;
+    let ink = (area.y..area.bottom())
+        .find_map(|y| {
+            let row: String = (area.x..area.right())
+                .map(|x| cells[(x, y)].symbol().to_string())
+                .collect();
+            // The row the words were printed on, not the line that printed
+            // them, which says `red-%s`.
+            let at = row.find("red-5")?;
+            let column = u16::try_from(row[..at].chars().count()).ok()?;
+            Some(cells[(area.x + column, y)].fg)
+        })
+        .expect("the words on screen");
+    assert_eq!(ink, app.theme().syntax.error);
+}
+
 /// Closing a terminal whose program is running asks first, on the key every
 /// terminal closes a tab with -- and closing it stops the program.
 ///
