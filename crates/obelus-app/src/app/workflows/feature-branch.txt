@@ -28,4 +28,4 @@ Once it is merged, ask whether to remove the worktree. If yes, run `git worktree
 
 The work is thrown away only when the reader asks for that in so many words, and only after saying what goes with it -- the branch, its commits and the worktree -- and hearing them confirm.
 
-Every one of these questions is the reader's, and each goes on a card through `elicitation/create`.
+Every one of these questions is the reader's, and each goes on a card: asked with your own tool for asking the user a question, which reaches Obelus as `elicitation/create`.
