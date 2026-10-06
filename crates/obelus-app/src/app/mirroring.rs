@@ -64,7 +64,8 @@ pub(super) struct Mirror {
     questions: BTreeMap<String, u64>,
     /// What the agent has said in each conversation's turn so far.
     this_turn: BTreeMap<String, String>,
-    /// The steps of the plan last said in each conversation's thread.
+    /// The steps of the plan last said in each conversation's thread this
+    /// turn.
     plans: BTreeMap<String, Vec<String>>,
     /// Where the words about to go to each conversation's agent came from,
     /// said the moment before they go and gone the moment after: never
@@ -705,9 +706,16 @@ impl App {
         }
     }
 
+    /// Whether what the agent sends this conversation is the replay of one
+    /// taken up again: said in its thread when it was said, and not news.
+    fn replaying(&self, whose: talking::Whose) -> bool {
+        self.talk_of(whose)
+            .is_some_and(|talk| talk.session.is_none() && talk.asked_for.is_some())
+    }
+
     /// Keeps what the agent said, for the end of its turn.
     pub(super) fn mirror_said(&mut self, whose: talking::Whose, text: &str) {
-        if !self.chat_is_listening() {
+        if !self.chat_is_listening() || self.replaying(whose) {
             return;
         }
         if let Some(chat) = self.chat_named(whose) {
@@ -736,15 +744,21 @@ impl App {
     /// The agent's plan, in the thread, where its steps are not the ones
     /// last said there -- quietly, and after what it said before it, so the
     /// thread reads in the order things happened.
+    ///
+    /// An empty one is no plan, and the next is said whatever it is.
     pub(super) fn mirror_planned(&mut self, whose: talking::Whose, steps: &[acp::Step]) {
-        if !self.chat_is_listening() {
+        if !self.chat_is_listening() || self.replaying(whose) {
             return;
         }
         let Some(chat) = self.chat_named(whose) else {
             return;
         };
         let said: Vec<String> = steps.iter().map(|step| step.said.clone()).collect();
-        if said.is_empty() || self.mirror.plans.get(&chat) == Some(&said) {
+        if said.is_empty() {
+            self.mirror.plans.remove(&chat);
+            return;
+        }
+        if self.mirror.plans.get(&chat) == Some(&said) {
             return;
         }
         self.mirror.plans.insert(chat, said);
@@ -759,6 +773,15 @@ impl App {
             plan.push_str(&format!("\n{mark} {}", step.said));
         }
         self.mirror_in(whose, plan, false);
+    }
+
+    /// A new turn: its plan is said whatever the last one was, as the one
+    /// drawn here is forgotten -- the reader in the thread is told what this
+    /// turn means to do, not left to find a list from the last.
+    pub(super) fn mirror_plan_forgotten(&mut self, whose: talking::Whose) {
+        if let Some(chat) = self.chat_named(whose) {
+            self.mirror.plans.remove(&chat);
+        }
     }
 
     /// The turn is over: what the agent said since its last call goes to the

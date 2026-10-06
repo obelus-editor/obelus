@@ -1580,6 +1580,7 @@ impl App {
         };
         let (topic, introduced, told) = (talk.topic.clone(), talk.introduced, talk.told.clone());
         let opening = self.opening(&topic, introduced, told.as_deref());
+        self.mirror_plan_forgotten(whose);
         if let Some(talk) = self.talk_mut(whose) {
             // A new turn starts with no plan: an agent that made one last
             // turn and makes none this turn would otherwise have the old
