@@ -24,4 +24,4 @@ Left uncommitted: say which files hold the change, and leave them.
 
 The work is thrown away only when the reader asks for that in so many words, and then only your files, by name, after saying which they are and hearing them confirm. A file the reader had changed too is not put back with git, which would take their changes with yours: say so, and undo your part of it by hand.
 
-Every one of these questions is the reader's, and each goes on a card through `elicitation/create`.
+Every one of these questions is the reader's, and each goes on a card: asked with your own tool for asking the user a question, which reaches Obelus as `elicitation/create`.

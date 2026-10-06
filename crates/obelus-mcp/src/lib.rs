@@ -348,9 +348,10 @@ impl Obelus {
     #[tool(description = "\
         Put a file on the reader's screen, at a line if you name one. \
         Offer first and let them say yes -- this takes them off whatever \
-        they were reading, and `elicitation/create` is how to ask. Use it \
-        when you are talking about a place in the code: naming a file and \
-        a line asks them to go and find it, and this is the going. A file \
+        they were reading, and your own tool for asking the user a \
+        question is how to ask. Use it when you are talking about a place \
+        in the code: naming a file and a line asks them to go and find it, \
+        and this is the going. A file \
         they already have open is the one they are taken to rather than a \
         second copy of it, and `alt+left` brings them back to where they \
         were. `path` is against the project; `line` counts from one, the \
@@ -395,7 +396,8 @@ impl Obelus {
     /// conversation has an address of its own.
     #[tool(description = "\
         Close this conversation, once the work it was opened for is done. \
-        Ask the reader first, with `elicitation/create` -- this takes it off \
+        Ask the reader first, with your own tool for asking the user a \
+        question -- this takes it off \
         their screen and does not ask for you. It closes at once and stops \
         this turn, so make it the last thing you do and say whatever is left \
         to say before it: nobody sees anything after it. It stays open if \
