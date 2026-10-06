@@ -103,3 +103,26 @@ fn a_bare_start_outside_a_repository_asks_which_project() {
         "the file list is offered over a project nobody named"
     );
 }
+
+/// With nobody at the screen, a start with nothing to go on is refused
+/// rather than put on the page asking which project, where it would wait
+/// for an answer nobody gives.
+///
+/// Broken deliberately by taking the `None if headless` arm out of
+/// `startup::build`: the start asked, and stopped on something else.
+#[test]
+fn a_headless_start_with_nothing_to_go_on_is_refused() {
+    let _turn = TURNS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = support::Scratch::new("starting-headless-nowhere");
+
+    std::env::set_current_dir(scratch.path()).expect("going there");
+    let Err(error) = startup::start_headless(&[], "abc1234") else {
+        panic!("a headless start with no project started");
+    };
+    assert!(
+        error.to_string().contains("needs a project"),
+        "it stopped on {error}"
+    );
+}

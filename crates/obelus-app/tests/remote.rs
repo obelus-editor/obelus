@@ -564,6 +564,94 @@ fn a_chat_asked_for_at_the_start_waits_for_a_project() {
     assert!(app.holds_the_remote_for_test(), "the chat is not here");
 }
 
+/// With nobody at the screen a chat has to be set, and paired: a code to
+/// pair with is drawn on the settings page, which nobody here will read.
+///
+/// Broken deliberately by taking the room out of
+/// `App::ready_to_be_reached`: a chat never paired was ready.
+#[test]
+fn headless_needs_a_chat_and_a_pairing() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-headless-ready");
+    let ready = |settings: &str| {
+        std::fs::write(scratch.join("config.toml"), settings).expect("the settings");
+        let mut app = App::new(Vec::new());
+        app.headless();
+        app.config_file_for_test(scratch.join("config.toml"));
+        app.ready_to_be_reached()
+    };
+    assert_eq!(
+        ready(""),
+        Err("No chat is set in the settings to connect to".to_string())
+    );
+    assert_eq!(
+        ready("remote = \"slack\"\n"),
+        Err("Slack is not paired: pair it from the settings in a window first".to_string())
+    );
+    a_room_kept();
+    assert_eq!(ready("remote = \"slack\"\n"), Ok(()));
+}
+
+/// With nobody at the screen, what the reader would have to mend ends it
+/// with the reason -- a token turned down -- and a chat that cannot be
+/// reached for now is tried again, as anywhere.
+///
+/// Broken deliberately twice: taking `give_up_unseen` out of the
+/// connection's arm, and the refusal ended nothing; and giving up on
+/// `Unreachable` too, and a dropped network ended it.
+#[test]
+fn headless_gives_up_on_what_the_reader_has_to_mend() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-headless-gives-up");
+    obelus_remote::platform::connect_for_test(fake_connect);
+    *FAKED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    std::fs::write(scratch.join("config.toml"), "remote = \"slack\"\n").expect("the settings");
+    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    a_room_kept();
+    let mut app = App::new(Vec::new());
+    app.headless();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.config_file_for_test(scratch.join("config.toml"));
+    app.remote_at_start();
+    let (sender, events) = obelus_app::event::channel();
+    app.start(sender);
+    until(&mut app, &events, "the connection", |app| {
+        app.remote_state_for_test() == obelus_remote::State::Connected
+    });
+    let say = |app: &mut App, state, why: &str| {
+        let sink = FAKED
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .map(|faked| std::sync::Arc::clone(&faked.sink))
+            .expect("connected");
+        let _ = sink.send(obelus_remote::Event::connection(
+            state,
+            Some(why.to_string()),
+        ));
+        until(app, &events, "the chat to say so", |app| {
+            app.remote_state_for_test() == state
+        });
+    };
+
+    say(
+        &mut app,
+        obelus_remote::State::Unreachable,
+        "the network went",
+    );
+    assert!(!app.should_quit(), "a dropped network ended it");
+    say(&mut app, obelus_remote::State::Connected, "back");
+    say(&mut app, obelus_remote::State::Refused, "invalid_auth");
+    assert!(app.should_quit(), "a refused token left it waiting");
+    assert_eq!(
+        app.why_it_stopped(),
+        Some("Not connected to Slack: invalid_auth")
+    );
+}
+
 /// A window set to a chat connects to it only once it is told to, with
 /// what it was told -- the secrets out of the keyring -- and says so on its
 /// status row and nowhere else: not before, and not on the page, which

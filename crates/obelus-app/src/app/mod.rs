@@ -24,6 +24,7 @@ pub mod dispatch;
 pub mod document;
 mod documents;
 mod fixing;
+mod headless;
 mod hearing;
 mod hierarchy;
 mod history;
@@ -61,6 +62,7 @@ use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use document::Document;
 use documents::Rendered;
+pub use headless::run_headless;
 use history::Changed;
 use obelus_agent::{Listed, Talking, acp};
 use obelus_buffer::{Buffer, Cursor, DocumentId, Mode, Motion, TextArea};
@@ -867,6 +869,10 @@ pub struct App {
     /// would. A flag for the same reason as the one above: connecting
     /// waits on the loop's channel.
     remote_at_start: bool,
+    /// Whether nobody is at the screen: `ob --headless` (`headless`).
+    headless: bool,
+    /// Why a headless Obelus gave up, where it did.
+    stopped_because: Option<String>,
     should_quit: bool,
 }
 
@@ -1041,6 +1047,8 @@ impl App {
             mirror: mirroring::Mirror::default(),
             list_at_start: false,
             remote_at_start: false,
+            headless: false,
+            stopped_because: None,
             should_quit: false,
         }
     }
@@ -1294,6 +1302,12 @@ impl App {
     /// and a page covers what shares its room.
     pub(super) fn the_tree_has_gone(&mut self) {
         tracing::warn!(tree = %self.working_directory.display(), "the tree Obelus is on has gone");
+        if self.give_up_unseen(format!(
+            "The tree Obelus was on has gone: {}",
+            self.working_directory.display()
+        )) {
+            return;
+        }
         self.make_room(layers::Room::Screen);
         self.gone = true;
         self.head = None;
@@ -1535,7 +1549,10 @@ impl App {
         // went wrong, though: a list opened over a list would put the one
         // the reader is owed under the one they asked for, and the files
         // are one key away once it has been read.
-        if self.list_at_start && !told {
+        //
+        // Nor where nobody is at the screen to choose from it: the walk
+        // that fills it is the whole project.
+        if self.list_at_start && !told && !self.headless {
             self.open_file_picker();
         }
     }
@@ -1918,6 +1935,17 @@ impl App {
     /// Not where the first screen is a file, which was asked for by name
     /// and is what the reader came to read.
     pub(super) fn tell_what_went_wrong(&mut self) -> bool {
+        // Into the log where nobody is at the screen, and nothing put up to
+        // wait for a key that will not come.
+        if self.headless {
+            for row in self.what_went_wrong() {
+                match row.detail {
+                    Some(at) => tracing::warn!("{at}: {}", row.label),
+                    None => tracing::warn!("{}", row.label),
+                }
+            }
+            return false;
+        }
         if !self.reading_nothing() {
             return false;
         }
@@ -2059,6 +2087,9 @@ impl App {
     /// from the half-dozen places that change any of it, which is how a
     /// ticker outlives its reason.
     fn wants_animating(&self, working: bool) -> bool {
+        if self.headless {
+            return false;
+        }
         // Nothing open and no page taking its place: the welcome screen's
         // sheen. A settings page over the welcome is not a welcome screen,
         // so keeping its clock running would redraw a motionless page.
@@ -2417,6 +2448,11 @@ impl App {
 
     /// Says what happened, or what is happening.
     pub(crate) fn say(&mut self, said: impl Into<String>) {
+        let said = said.into();
+        // Where nobody is at the screen the log is the status row.
+        if self.headless {
+            tracing::info!("{said}");
+        }
         self.note = Some(saying::Note::said(said));
     }
 
@@ -2428,6 +2464,10 @@ impl App {
     /// Which of these a note went through is the whole of how it says
     /// which it is.
     pub(crate) fn wrong(&mut self, said: impl Into<String>) {
+        let said = said.into();
+        if self.headless {
+            tracing::warn!("{said}");
+        }
         self.note = Some(saying::Note::wrong(said));
     }
 
@@ -2854,6 +2894,12 @@ impl App {
             // no handling of its own beyond waking the loop.
             Event::Resize => {}
             Event::Closed => self.request_quit(),
+            // Nothing asked: whoever sent the signal is not at the screen
+            // to answer, and is ending the process either way.
+            Event::Stopped => {
+                tracing::info!("told to stop");
+                self.should_quit = true;
+            }
             Event::Terminal(heard) => self.heard_from_a_terminal(heard),
             Event::Summoned(token) => self.summoned(token),
             Event::Remote(event) => self.remote_event(event),

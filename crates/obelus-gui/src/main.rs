@@ -80,7 +80,7 @@ fn main() -> Result<()> {
 
     // Held until main returns, so buffered log lines are flushed on the way
     // out.
-    let _log_guard = obelus_logging::install();
+    let _log_guard = obelus_logging::install(false);
     // Before anything that can panic, so a panic on the way up is in the
     // log as well.
     obelus_logging::catch_panics();

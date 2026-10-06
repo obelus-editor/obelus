@@ -62,6 +62,10 @@ pub enum Event {
     /// way, unwritten files and their question included, and the window
     /// stays until the application says it is done.
     Closed,
+    /// Somebody stopped Obelus from outside it -- `ctrl+c` on the terminal
+    /// it was started from, or a `kill` -- where nobody is at its screen to
+    /// leave it any other way (`stop_when_told`).
+    Stopped,
     /// Whether shift is held, said by a window when that changes.
     ///
     /// For the pointer, which a window reports without it: shift and a
@@ -229,6 +233,7 @@ impl Event {
             Self::Resize => "Resize",
             Self::Fonts { .. } => "Fonts",
             Self::Closed => "Closed",
+            Self::Stopped => "Stopped",
             Self::Shifted(_) => "Shifted",
             Self::Scroll(_) => "Scroll",
             Self::Pointer { .. } => "Pointer",
@@ -398,6 +403,39 @@ pub fn spawn_terminal_reader(sender: Sender<Event>) {
 /// Twelve frames a second. A colour ramp sliding across five rows of block
 /// elements needs no more than that, and every frame is a whole redraw.
 const TICK: Duration = Duration::from_millis(80);
+
+/// Sends [`Event::Stopped`] when Obelus is told to stop from outside.
+///
+/// Only for `ob --headless`, which has no key to leave by. Anywhere else
+/// `ctrl+c` is a key -- the terminal is in raw mode and sends it as one --
+/// and a `kill` ends the process the way it always has.
+pub fn stop_when_told(sender: Sender<Event>) {
+    let _inside = obelus_runtime::handle().enter();
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        for kind in [SignalKind::interrupt(), SignalKind::terminate()] {
+            let mut told = match signal(kind) {
+                Ok(told) => told,
+                Err(error) => {
+                    tracing::warn!(%error, ?kind, "not listening to be told to stop");
+                    continue;
+                }
+            };
+            let sender = sender.clone();
+            obelus_runtime::handle().spawn(async move {
+                told.recv().await;
+                let _ = sender.send(Event::Stopped);
+            });
+        }
+    }
+    #[cfg(not(unix))]
+    obelus_runtime::handle().spawn(async move {
+        if tokio::signal::ctrl_c().await.is_ok() {
+            let _ = sender.send(Event::Stopped);
+        }
+    });
+}
 
 /// Whether this session is being read over a network.
 ///

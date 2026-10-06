@@ -345,8 +345,10 @@ impl App {
     /// Not while the record is still being read: what has arrived so far
     /// would take the place of the one being read.
     fn where_to_write(&self) -> Option<PathBuf> {
-        let may =
-            self.settled.config.reopen && self.has_a_project() && self.reopening.waiting.is_none();
+        let may = self.settled.config.reopen
+            && !self.headless
+            && self.has_a_project()
+            && self.reopening.waiting.is_none();
         may.then(|| self.reopening.path.clone()).flatten()
     }
 
@@ -404,7 +406,7 @@ impl App {
     /// is a channel to answer on; what it names goes in the list when they
     /// arrive.
     pub fn reopen_what_was_open(&mut self) {
-        if !self.settled.config.reopen {
+        if !self.settled.config.reopen || self.headless {
             return;
         }
         let Some(path) = self.reopening.path.clone() else {

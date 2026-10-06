@@ -28,6 +28,15 @@ struct Arguments {
     /// `connect-remote` does.
     #[arg(long)]
     connect_remote: bool,
+
+    /// Draw nothing and take over no terminal: an Obelus there only to be
+    /// reached from the chat set in the settings, which it connects to.
+    ///
+    /// Works on a project -- the directory named, or the one it is started
+    /// in -- and opens no file. Stops on ctrl+c or a kill, and says why on
+    /// stderr where it has to stop on its own.
+    #[arg(long)]
+    headless: bool,
 }
 
 fn main() -> Result<()> {
@@ -35,10 +44,17 @@ fn main() -> Result<()> {
 
     // Held until main returns, so buffered log lines are flushed on the way
     // out.
-    let _log_guard = obelus_logging::install();
+    let _log_guard = obelus_logging::install(arguments.headless);
     // Before anything that can panic, so a panic on the way up is in the
     // log as well.
     obelus_logging::catch_panics();
+
+    // Before anything about the terminal, which it does not touch.
+    if arguments.headless {
+        let outcome = app::run_headless(&arguments.paths, env!("OBELUS_BUILD"));
+        startup::finish(&outcome);
+        return outcome;
+    }
 
     // Opened before the terminal is taken over, so a bad path reports
     // itself on a normal screen rather than flashing past inside an

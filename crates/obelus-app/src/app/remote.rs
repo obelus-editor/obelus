@@ -330,10 +330,16 @@ impl App {
                     && was != Some(state)
                     && let Some(platform) = self.platform()
                 {
-                    self.wrong(match &why {
+                    let said = match &why {
                         Some(why) => format!("Not connected to {}: {why}", platform.name),
                         None => format!("Not connected to {}", platform.name),
-                    });
+                    };
+                    self.wrong(said.clone());
+                    // Except a chat that cannot be reached, which is tried
+                    // again: everything else is the reader's to mend.
+                    if state != State::Unreachable {
+                        self.give_up_unseen(said);
+                    }
                 }
                 self.remote.why = why;
                 // Up again -- a socket made again inside one connection is
@@ -952,6 +958,7 @@ impl App {
         };
         let Some(lock) = the_lock() else {
             self.wrong(format!("Nowhere to hold {} from", platform.name));
+            self.give_up_unseen(format!("Nowhere to hold {} from", platform.name));
             return;
         };
         if !obelus_agent::chats::held_by_somebody_else(&lock) {
@@ -1042,6 +1049,7 @@ impl App {
             self.remote.taking = None;
             if let Some(platform) = self.platform() {
                 self.wrong(format!("Could not wait for {} to come here", platform.name));
+                self.give_up_unseen(format!("Could not wait for {} to come here", platform.name));
             }
         }
     }
@@ -1058,6 +1066,7 @@ impl App {
         self.remote.given_up = Some(number);
         if let Some(platform) = self.platform() {
             self.wrong(format!("Another window would not let {} go", platform.name));
+            self.give_up_unseen(format!("Another window would not let {} go", platform.name));
         }
     }
 
