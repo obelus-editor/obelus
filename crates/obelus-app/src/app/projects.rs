@@ -171,7 +171,7 @@ pub(super) fn read() -> Reading {
                         // A row with no path is not a project, however
                         // much else it carries: do not delete what you do
                         // not recognise, but do not draw it either.
-                        path: spelled(Path::new(row.get("path")?.as_str()?)),
+                        path: PathBuf::from(row.get("path")?.as_str()?),
                         last: row.get("last").and_then(toml::Value::as_integer),
                     })
                 })
@@ -182,22 +182,19 @@ pub(super) fn read() -> Reading {
     // file is written by several Obelus processes and the order one of
     // them left is not a fact about the others.
     projects.sort_by_key(|project| std::cmp::Reverse(project.last));
-    // And one row a place, the newest, for a file written before every
-    // path was spelled one way: two rows for one place were two of the
-    // twenty, and the older of them is what the next write leaves out.
-    let mut seen = std::collections::HashSet::new();
-    projects.retain(|project| seen.insert(project.path.clone()));
     Reading::Projects(projects)
 }
 
-/// A path the way a reader writes it, which is the one way a row is kept.
+/// A path the way a reader writes it, which is the one way a row is
+/// written.
 ///
 /// On Windows a path that has been resolved begins `\\?\`, and that is the
 /// same place as the path without it: a project reached once from where
 /// Obelus was started and once from the list of worktrees -- whose main
-/// checkout is resolved -- was two rows on the list. Taken off where what
-/// is left still names the place, which `dunce` judges; elsewhere a path is
-/// as it came.
+/// checkout is resolved -- was two rows on the list. Taken off on the way
+/// in, where what is left still names the place, which `dunce` judges;
+/// elsewhere a path is as it came. Not on the way out: what is in the file
+/// is what was written, and putting a spelling right is the writer's.
 fn spelled(path: &Path) -> PathBuf {
     dunce::simplified(path).to_path_buf()
 }
@@ -1039,36 +1036,6 @@ mod tests {
         );
         assert!(!written.contains(r"\\?\"), "kept resolved: {written}");
         assert_eq!(read().rows()[0].path, plain);
-    }
-
-    /// A list written with one place in it twice, the way an Obelus before
-    /// this one left it, reads as one row: the newer.
-    ///
-    /// Broken deliberately twice: taking `spelled` out of `read` (two rows,
-    /// one of them resolved), and the `retain` after the sort (two rows,
-    /// both plain).
-    #[cfg(windows)]
-    #[test]
-    fn one_place_written_twice_reads_as_one_row() {
-        let (_root, _turn) = scratch("twice");
-        let path = path().expect("somewhere");
-        std::fs::create_dir_all(path.parent().expect("a directory")).expect("the directory");
-        std::fs::write(
-            &path,
-            "[[opened]]\npath = 'E:\\work\\obelus'\nlast = 20\n\n\
-             [[opened]]\npath = '\\\\?\\E:\\work\\obelus'\nlast = 10\n",
-        )
-        .expect("a file an older Obelus left");
-
-        let projects = read().rows();
-        assert_eq!(
-            projects,
-            [Project {
-                path: PathBuf::from(r"E:\work\obelus"),
-                last: Some(20),
-            }],
-            "one place is not one row"
-        );
     }
 
     /// Somewhere that is not a worktree is not somewhere to come back to.
