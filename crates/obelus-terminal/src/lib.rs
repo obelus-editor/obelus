@@ -389,6 +389,32 @@ impl Terminal {
         true
     }
 
+    /// The keys a reader reads back up what has gone by with: a screenful
+    /// at a time, and to either end. Answers whether the key was one of
+    /// these.
+    ///
+    /// The same keys that page through a file and go to its ends, because
+    /// it is the same errand -- and Obelus's wherever they are pressed,
+    /// over a pager and an editor as over a shell, so that what they do is
+    /// one thing. A full-screen program is not sent them: it pages with its
+    /// own keys or the wheel, and on the screen it draws there is nothing
+    /// kept to read back, so there they do nothing.
+    pub fn read_back(&mut self, key: &KeyEvent) -> bool {
+        use crossterm::event::{KeyCode, KeyModifiers};
+
+        // A row short of a screenful, so the row the reader was reading is
+        // still on screen to read on from.
+        let page = isize::try_from(self.size().0.saturating_sub(1).max(1)).unwrap_or(1);
+        match (key.code, key.modifiers) {
+            (KeyCode::PageUp, KeyModifiers::NONE) => self.scroll_by(page),
+            (KeyCode::PageDown, KeyModifiers::NONE) => self.scroll_by(-page),
+            (KeyCode::Home, KeyModifiers::CONTROL) => self.scroll_by(isize::MAX),
+            (KeyCode::End, KeyModifiers::CONTROL) => self.scroll_by(isize::MIN),
+            _ => return false,
+        }
+        true
+    }
+
     /// Whether the program has asked to be told what the pointer does.
     #[must_use]
     pub fn wants_the_pointer(&self) -> bool {

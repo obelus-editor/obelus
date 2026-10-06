@@ -125,6 +125,14 @@ impl App {
 
     /// A key, to the program -- unless the terminal has kept it for Obelus.
     pub(super) fn terminal_key(&mut self, key: &KeyEvent) -> bool {
+        // Reading back up what went by, which is the reader's whether or
+        // not the program is still there to type to.
+        if self
+            .terminal_mut()
+            .is_some_and(|terminal| terminal.read_back(key))
+        {
+            return true;
+        }
         if !self.typing_to_a_program() {
             return false;
         }

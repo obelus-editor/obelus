@@ -325,10 +325,11 @@ pub enum Context {
     /// and what it says is very little -- zed's shape, and for zed's reason.
     /// Escape, `ctrl+c` and `ctrl+w` are a shell's before they are
     /// anybody's. What Obelus keeps is the palette, paste (`ctrl+v` and
-    /// `shift+Insert`), copy where something is held, the key that
-    /// closes it, the key that leaves Obelus, and the function keys, which
-    /// open something to look at and are the one family a shell has no use
-    /// for (`Keymap::lookup`).
+    /// `shift+Insert`), copy where something is held, the paging keys and
+    /// `ctrl+Home` and `ctrl+End` for reading back (`Terminal::read_back`),
+    /// the key that closes it, the key that leaves Obelus, and the function
+    /// keys, which open something to look at and are the one family a shell
+    /// has no use for (`Keymap::lookup`).
     /// Once the program has ended there is nothing to type to, and a
     /// terminal is read like a file.
     Terminal,

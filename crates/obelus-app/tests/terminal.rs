@@ -312,6 +312,55 @@ fn a_program_that_asked_for_the_pointer_is_told() {
     });
 }
 
+/// The paging keys read back up what a shell printed, a screenful at a time
+/// and to either end -- and are Obelus's over a full-screen program too.
+///
+/// Broken deliberately by sending them down the pty (`read_back` answering
+/// no): the view never moves, and the pager is sent its key.
+#[test]
+fn the_paging_keys_read_back_and_are_never_the_programs() {
+    let (mut app, events) = a_shell();
+    support::type_text(&mut app, "seq 1 200; echo done-$((5 + 5))");
+    press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    pump(&mut app, &events, "the numbers", |app| {
+        on_the_terminal(app).contains("done-10")
+    });
+    let back = |app: &App| app.terminal().map_or(0, |terminal| terminal.scrolled());
+    let rows = app
+        .terminal()
+        .map_or(0, |terminal| usize::from(terminal.size().0));
+    press(&mut app, KeyCode::PageUp, KeyModifiers::NONE);
+    assert_eq!(back(&app), rows - 1);
+    press(&mut app, KeyCode::PageDown, KeyModifiers::NONE);
+    assert_eq!(back(&app), 0);
+    press(&mut app, KeyCode::Home, KeyModifiers::CONTROL);
+    assert!(back(&app) > 150, "not at the top: {}", back(&app));
+    press(&mut app, KeyCode::End, KeyModifiers::CONTROL);
+    assert_eq!(back(&app), 0);
+    // And over a program that has the other screen, still not its: the
+    // first byte it reads is the one typed after the paging key.
+    support::type_text(
+        &mut app,
+        "printf '\\033[?1049h'; stty raw -echo; echo go-$((6 + 6)); \
+         dd bs=1 count=1 2>/dev/null | od -An -c; stty sane",
+    );
+    press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    pump(&mut app, &events, "the pty to be raw", |app| {
+        on_the_terminal(app).contains("go-12")
+    });
+    press(&mut app, KeyCode::PageUp, KeyModifiers::NONE);
+    support::type_text(&mut app, "z");
+    pump(&mut app, &events, "the byte to be read back", |app| {
+        let said = on_the_terminal(app);
+        said.contains("   z") || said.contains("033")
+    });
+    assert!(
+        on_the_terminal(&app).contains("   z"),
+        "the pager was sent the paging key:\n{}",
+        on_the_terminal(&app)
+    );
+}
+
 /// The wheel in a program that took over the screen and did not ask for the
 /// pointer is arrow keys, which is what every terminal sends a pager.
 ///
