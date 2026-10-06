@@ -863,6 +863,10 @@ pub struct App {
     /// from a walk on the loop's own channel and there is no channel until
     /// [`App::start`].
     list_at_start: bool,
+    /// Whether to connect to the chat once started, as `connect-remote`
+    /// would. A flag for the same reason as the one above: connecting
+    /// waits on the loop's channel.
+    remote_at_start: bool,
     should_quit: bool,
 }
 
@@ -1036,6 +1040,7 @@ impl App {
             remote: remote::Remote::default(),
             mirror: mirroring::Mirror::default(),
             list_at_start: false,
+            remote_at_start: false,
             should_quit: false,
         }
     }
@@ -1396,6 +1401,11 @@ impl App {
         self.list_at_start = true;
     }
 
+    /// Says to connect to the chat once started.
+    pub fn remote_at_start(&mut self) {
+        self.remote_at_start = true;
+    }
+
     /// One of what is open, by its id.
     ///
     /// Four doors rather than forty-odd repetitions of
@@ -1507,6 +1517,13 @@ impl App {
         // same question wherever this one was started, so it is asked
         // whether or not the reader has said where they work.
         self.ask_about_releases();
+        // Before what went wrong, which a chat that is not there to
+        // connect to is one of. And not before there is a project, like
+        // the tools above: a conversation begun from the chat would be
+        // rooted at wherever the process began. `settle_on` connects.
+        if self.remote_at_start && self.chooser.is_none() {
+            self.connect_remote_at_start(self.reading_nothing());
+        }
         // What went wrong on the way up, over whatever the first screen is,
         // and last of all so that everything that could go wrong has.
         let told = self.tell_what_went_wrong();

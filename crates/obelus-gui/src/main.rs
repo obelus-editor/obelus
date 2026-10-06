@@ -65,6 +65,11 @@ struct Arguments {
     /// A file names the tree it is in and is opened. A directory is the
     /// tree itself, and Obelus opens on the list of what is in it.
     paths: Vec<PathBuf>,
+
+    /// Connect to the chat set in the settings once started, as
+    /// `connect-remote` does.
+    #[arg(long)]
+    connect_remote: bool,
 }
 
 fn main() -> Result<()> {
@@ -90,7 +95,10 @@ fn main() -> Result<()> {
     // the console the reader started Obelus from rather than flashing past
     // inside a window that is about to close. The order inside is argued
     // where it lives.
-    let app = startup::start(&arguments.paths, env!("OBELUS_BUILD"))?;
+    let mut app = startup::start(&arguments.paths, env!("OBELUS_BUILD"))?;
+    if arguments.connect_remote {
+        app.remote_at_start();
+    }
     // The window's half of the line `startup::start` just wrote, which is
     // the first thing to suspect when a key or a colour did not do what it
     // should.

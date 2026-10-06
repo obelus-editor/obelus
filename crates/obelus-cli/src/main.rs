@@ -23,6 +23,11 @@ struct Arguments {
     /// A file names the tree it is in and is opened. A directory is the
     /// tree itself, and Obelus opens on the list of what is in it.
     paths: Vec<PathBuf>,
+
+    /// Connect to the chat set in the settings once started, as
+    /// `connect-remote` does.
+    #[arg(long)]
+    connect_remote: bool,
 }
 
 fn main() -> Result<()> {
@@ -39,6 +44,9 @@ fn main() -> Result<()> {
     // itself on a normal screen rather than flashing past inside an
     // alternate one. The order inside is argued where it lives.
     let mut app = startup::start(&arguments.paths, env!("OBELUS_BUILD"))?;
+    if arguments.connect_remote {
+        app.remote_at_start();
+    }
     // The terminal's half of the line `startup::start` just wrote: what was
     // drawing Obelus, which a log read a week later has no other way to
     // learn, and which is the first thing to suspect when a key or a colour
