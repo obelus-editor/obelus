@@ -38,7 +38,7 @@
     <!-- Where the Start menu starts it: the reader's own directory, as
          `install.ps1` does. Obelus asks which project when it is started
          somewhere that is not one, and a path typed there without a drive
-         is read from here -- which from the install directory would be a
+         is read from here, and from the install directory that would be a
          path inside Obelus. Windows Installer has no name for the profile
          directory, so it is set from the environment. -->
     <SetDirectory Id="HOMEFOLDER" Value="[%USERPROFILE]" Sequence="both" />
