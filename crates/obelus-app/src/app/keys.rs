@@ -67,6 +67,11 @@ impl App {
         // `why_not` refuses them, because every list and box takes them
         // itself.
         if let Some(typing) = obelus_editing::typing_for(key) {
+            // Taken and dropped rather than passed on: a letter is not a
+            // command, and the status row already says why nothing came of it.
+            if self.settled.config.read_only {
+                return true;
+            }
             self.typed(typing);
             // A letter is a reason to ask what could follow it; everything
             // else is a reason to stop offering.

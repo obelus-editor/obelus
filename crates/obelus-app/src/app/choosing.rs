@@ -160,6 +160,16 @@ impl App {
     #[must_use]
     pub fn offers(&self, command: Command) -> bool {
         let buffer = self.current_buffer();
+        // A reader who has the agent make every change: their own hand on a
+        // file is refused, and only on a file -- a cut or a paste into a
+        // box they are typing in is a message, not a change to the code.
+        if self.settled.config.read_only && command.changes_a_file() {
+            let into_a_box = matches!(command, Command::SelectionCut | Command::Paste)
+                && self.somewhere_to_type();
+            if !into_a_box {
+                return false;
+            }
+        }
         match command.requires() {
             Requires::Nothing => true,
             // Whether the question has been answered, which is a thing

@@ -246,7 +246,7 @@
       <p class="quiet small">而且它会说清楚是<em>哪一行</em>。配置文件解析不了、某个键绑不上、某一项项目无权设、主题名字没有文件对应——每一条都标在它自己那一行上，进的是语言服务器的诊断同一个列表，所以 <kbd>Alt+e</kbd> 和 <kbd>Alt+[</kbd> <kbd>Alt+]</kbd> 照常能走它们。文件是 Obelus 写的，那它就得说得出自己哪一行读不懂。</p>
 
       <div class="aside">
-        <p><strong>项目不能设的五项：</strong><code>agent</code>、<code>keys</code>、<code>agents</code>、<code>new_versions</code>、<code>conversation_days</code>。一个下载来的项目不该决定你的机器上启动哪个程序；能改键的项目也就能把 <code>quit</code> 挪到你会误触的地方；而「agent 不用问就能做什么」正是一个陌生项目最想写的那一项；Obelus 要不要联网问有没有新版本，也该由你定，不该由下载来的项目定；能把会话保留时间调短的项目，等于让一个下载来的文件清空你的会话列表。</p>
+        <p><strong>项目不能设的六项：</strong><code>agent</code>、<code>keys</code>、<code>agents</code>、<code>new_versions</code>、<code>conversation_days</code>、<code>read_only</code>。一个下载来的项目不该决定你的机器上启动哪个程序；能改键的项目也就能把 <code>quit</code> 挪到你会误触的地方；而「agent 不用问就能做什么」正是一个陌生项目最想写的那一项；Obelus 要不要联网问有没有新版本，也该由你定，不该由下载来的项目定；能把会话保留时间调短的项目，等于让一个下载来的文件清空你的会话列表；你的键能不能改文件是你的工作方式，一个仓库无权替你定。</p>
       </div>
 
       <h3>能设的项</h3>
@@ -268,6 +268,7 @@
           <tr><td><code>animation</code></td><td><code>true</code></td><td><em>只在窗口。</em>光标是飞到目的地、列表是滑过去，还是直接跳过去。关掉，一切一步到位</td></tr>
           <tr><td><code>font_size</code></td><td><code>14</code></td><td><em>只在窗口。</em>字画多大，单位 point。终端用的是你给终端设的字体</td></tr>
           <tr><td><code>hover_delay</code></td><td><code>400</code></td><td>鼠标停多久才去问那个词是什么，毫秒；0 表示只有按键才问</td></tr>
+          <tr><td><code>read_only</code></td><td><code>false</code></td><td>你自己的键不改任何文件：在文件里打字、粘贴、剪切、撤销，以及改写行的命令都不起作用。agent 写的照样写进去，保存照样能存，你打字的那些框——给 agent 的消息、列表的搜索框、笔记——不算文件</td></tr>
           <tr><td><code>format_on_save</code></td><td><code>false</code></td><td>保存前让语言服务器排一遍版。默认关：没人要求就跑格式化，等于把一个只是打开来读的文件改了，而且第一次知道是在 diff 里</td></tr>
           <tr><td><code>code_actions_on_save</code></td><td><code>false</code></td><td>保存前做服务器提供的整文件修改（排 import 之类）。默认关，理由同上</td></tr>
           <tr><td><code>inlay_hints</code></td><td><code>true</code></td><td>画不画服务器推导出来的类型和参数名。它们不在文件里——关掉之后每一列都回到文件本来的位置</td></tr>
