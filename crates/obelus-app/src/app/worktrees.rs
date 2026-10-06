@@ -136,8 +136,8 @@ impl Tab {
 #[derive(Debug)]
 struct Listed {
     tree: obelus_git::Worktree,
-    /// Whether any Obelus is on it, a terminal's among them.
-    held: bool,
+    /// How many Obelus are on it, a terminal's among them.
+    on: usize,
     /// Where a window on it can be reached, where one can.
     door: Option<Door>,
 }
@@ -391,8 +391,8 @@ impl App {
         self.worktrees.listed = obelus_git::worktrees(&self.working_directory)
             .into_iter()
             .map(|tree| {
-                let (held, door) = window_on(&windows, &tree.path);
-                Listed { tree, held, door }
+                let (on, door) = window_on(&windows, &tree.path);
+                Listed { tree, on, door }
             })
             .collect();
         // Named from the directory the main checkout sits in, which is the
@@ -414,6 +414,7 @@ impl App {
             .listed
             .first()
             .and_then(|first| named_from(&first.tree.path));
+        let wide = counts(&self.worktrees.listed, &tree);
         self.worktrees
             .listed
             .iter()
@@ -434,7 +435,7 @@ impl App {
                     marker,
                     enabled,
                     trailing,
-                } = said(listed, here);
+                } = said(listed, here, wide);
                 PickerItem {
                     icon: obelus_icons::enabled().then_some(obelus_icons::ui::TREE),
                     label,
@@ -469,15 +470,16 @@ impl App {
         let windows = windows_on(&self.working_directory);
         let tree = self.this_tree();
         for listed in &mut self.worktrees.listed {
-            (listed.held, listed.door) = window_on(&windows, &listed.tree.path);
+            (listed.on, listed.door) = window_on(&windows, &listed.tree.path);
         }
         let listed = &self.worktrees.listed;
+        let wide = counts(listed, &tree);
         let Some(picker) = self.picker.as_mut() else {
             return;
         };
         picker.remark(|value| match value {
             PickerValue::Worktree(at) => listed.get(*at).map_or(Remark::Keep, |listed| {
-                Remark::Now(said(listed, same_tree(&listed.tree.path, &tree)))
+                Remark::Now(said(listed, same_tree(&listed.tree.path, &tree), wide))
             }),
             _ => Remark::Keep,
         });
@@ -582,22 +584,54 @@ impl App {
     }
 }
 
-/// What a row of the worktrees says about itself: whether a window has it,
-/// and whether there is anywhere for the key to go.
+/// How many Obelus are on a tree, this one counted on its own.
+///
+/// Its own claim is among the others' where it could make one, and the
+/// row is this window's whether or not it could.
+const fn how_many(listed: &Listed, here: bool) -> usize {
+    match here {
+        true if listed.on == 0 => 1,
+        _ => listed.on,
+    }
+}
+
+/// Whether any tree has more than one Obelus on it, which is whether the
+/// marks say how many.
+fn counts(listed: &[Listed], tree: &Path) -> bool {
+    listed
+        .iter()
+        .any(|listed| how_many(listed, same_tree(&listed.tree.path, tree)) > 1)
+}
+
+/// What a row of the worktrees says about itself: whether an Obelus is on
+/// it and how many, and whether there is anywhere for the key to go.
 ///
 /// One answer for the rows as they are built and as they are asked again,
 /// so that asking again cannot disagree with the first.
-fn said(listed: &Listed, here: bool) -> Said {
+///
+/// How many is one character after the mark, and `+` past nine: the mark
+/// is for glancing at, and a list where one row's mark is wider than the
+/// next has names that no longer line up. Said only where some tree has
+/// more than one, and then every row leaves room for it -- a row nobody is
+/// on included, in blanks -- because the picker keeps one column for a
+/// mark, not one as wide as the widest.
+fn said(listed: &Listed, here: bool, wide: bool) -> Said {
+    let on = how_many(listed, here);
+    let mark = match obelus_icons::enabled() {
+        true => obelus_icons::ui::WINDOW,
+        false => '\u{2022}',
+    };
+    // A blank between the two, which a Nerd Font glyph needs after it.
+    let marker = match (on, wide) {
+        (0, false) => None,
+        (_, false) => Some(mark.to_string()),
+        (0, true) => Some("   ".to_string()),
+        (1, true) => Some(format!("{mark}  ")),
+        (2..=9, true) => Some(format!("{mark} {on}")),
+        (_, true) => Some(format!("{mark} +")),
+    };
     Said {
-        marker: (listed.held || here).then(|| {
-            (
-                Marking::Aside,
-                match obelus_icons::enabled() {
-                    true => obelus_icons::ui::WINDOW.to_string(),
-                    false => "\u{2022}".to_string(),
-                },
-            )
-        }),
+        marker: marker.map(|marker| (Marking::Aside, marker)),
         // This one is where the reader is, which is the list closing.
         enabled: here || listed.tree.there,
         trailing: match (here, listed.tree.there) {
@@ -654,15 +688,15 @@ fn resolved_as_far_as_it_goes(path: &Path) -> PathBuf {
         })
 }
 
-/// Whether an Obelus is on this tree, and the door of a window on it where
+/// How many Obelus are on this tree, and the door of a window on it where
 /// one can be reached.
 ///
 /// A door before none: two on one tree, a terminal's and a window's, is a
 /// tree a window can be brought forward on.
-fn window_on(windows: &[(PathBuf, Option<Door>)], tree: &Path) -> (bool, Option<Door>) {
+fn window_on(windows: &[(PathBuf, Option<Door>)], tree: &Path) -> (usize, Option<Door>) {
     let mut on = windows.iter().filter(|(on, _)| same_tree(on, tree));
-    let held = on.clone().next().is_some();
-    (held, on.find_map(|(_, door)| door.clone()))
+    let count = on.clone().count();
+    (count, on.find_map(|(_, door)| door.clone()))
 }
 
 /// Where a project's windows say where they are, one file each.

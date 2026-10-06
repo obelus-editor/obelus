@@ -729,3 +729,64 @@ fn going_back_opens_what_was_open() {
         "what was open in the tree was not opened again"
     );
 }
+
+/// A tree with several Obelus on it says how many after its mark, in one
+/// character, and every row of the list leaves the same room for it.
+///
+/// Two on one tree and then ten, a terminal among them. Broken deliberately
+/// three times: counting whether anybody is on a tree rather than how many
+/// (no row says 2), padding only the rows that are marked (the row nobody
+/// is on is a different width from the others), and writing ten as it is
+/// (the mark takes two characters and no `+`).
+#[test]
+fn several_on_one_tree_are_counted() {
+    let scratch = Scratch::new("worktrees-count");
+    let (main, feature, _) = repository(&scratch);
+    let asked = Arc::new(Asked::default());
+    let (mut app, _events) = window_on(&main, &asked);
+    let marks = |app: &App| -> Vec<(String, String)> {
+        app.picker()
+            .expect("a list is showing")
+            .matches()
+            .map(|item| {
+                let mark = item.marker.as_ref().map(|(_, mark)| mark.clone());
+                (item.label.clone(), mark.unwrap_or_default())
+            })
+            .collect()
+    };
+    let width = |mark: &str| mark.chars().count();
+
+    let (_terminal, _terminal_events) = terminal_on(&feature);
+    let there = Arc::new(Asked::default());
+    let (_window, _window_events) = window_on(&feature, &there);
+    dispatch::dispatch(&mut app, Command::WorktreeList);
+    let said = marks(&app);
+    let of = |label: &str| {
+        said.iter()
+            .find(|(named, _)| named == label)
+            .map(|(_, mark)| mark.clone())
+            .expect("a row for the tree")
+    };
+    assert!(of("feature").ends_with(" 2"), "{said:?}");
+    assert!(of("main").trim_end().chars().count() == 1, "{said:?}");
+    assert_eq!(of("spare").trim(), "", "{said:?}");
+    assert!(
+        said.iter()
+            .all(|(_, mark)| width(mark) == width(&of("feature"))),
+        "the rows leave different room for the mark: {said:?}"
+    );
+
+    let mut more = Vec::new();
+    for _ in 0..8 {
+        more.push(window_on(&feature, &there));
+    }
+    support::press(&mut app, KeyCode::Esc);
+    dispatch::dispatch(&mut app, Command::WorktreeList);
+    let said = marks(&app);
+    let feature_mark = said
+        .iter()
+        .find(|(named, _)| named == "feature")
+        .map(|(_, mark)| mark.clone())
+        .expect("a row for the tree");
+    assert!(feature_mark.ends_with(" +"), "{said:?}");
+}
