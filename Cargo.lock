@@ -4460,6 +4460,7 @@ name = "obelus-clipboard"
 version = "0.9.3"
 dependencies = [
  "base64 0.23.1",
+ "obelus-program",
  "objc2 0.6.4",
  "objc2-app-kit 0.3.2",
  "objc2-foundation 0.3.2",
@@ -4645,6 +4646,7 @@ name = "obelus-program"
 version = "0.9.3"
 dependencies = [
  "which",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

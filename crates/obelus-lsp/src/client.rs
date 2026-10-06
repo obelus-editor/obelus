@@ -159,7 +159,9 @@ impl Client {
         let command = server.command;
         // Inside the runtime, because a child's pipes register with it.
         let _inside = obelus_runtime::handle().enter();
-        let mut process = tokio::process::Command::new(command)
+        let mut starting = tokio::process::Command::new(command);
+        obelus_program::without_a_window(starting.as_std_mut());
+        let mut process = starting
             .args(server.arguments)
             .current_dir(root)
             .stdin(Stdio::piped())

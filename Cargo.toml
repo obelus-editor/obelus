@@ -425,6 +425,10 @@ windows-sys = { version = "0.61.2", features = [
     # And a job, which is how a command an agent asked for is stopped with
     # everything it started: see `obelus-agent`'s `running.rs`.
     "Win32_System_JobObjects",
+    # And a console: `obg` takes the one it was started from, if there is
+    # one, and what it starts is given none -- see `obelus-gui`'s `main.rs`
+    # and `obelus-program`.
+    "Win32_System_Console",
     "Win32_System_Threading",
     "Win32_UI_WindowsAndMessaging",
     # And the clipboard, which on Windows is a system service rather than a

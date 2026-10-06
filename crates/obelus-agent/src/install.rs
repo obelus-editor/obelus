@@ -199,7 +199,7 @@ fn node_now(package: &str, home: &Path) -> Result<(), String> {
         return Err("There is no npm on the path".to_string());
     };
     let (npm, first) = obelus_program::as_started_here(&npm, &[]);
-    let outcome = std::process::Command::new(npm)
+    let outcome = obelus_program::without_a_window(&mut std::process::Command::new(npm))
         .args(first)
         .arg("install")
         .arg("--prefix")

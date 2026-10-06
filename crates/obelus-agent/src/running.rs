@@ -152,6 +152,7 @@ impl Runs {
         let _inside = obelus_runtime::handle().enter();
         let (shell, said_with) = shell();
         let mut process = Command::new(shell);
+        obelus_program::without_a_window(process.as_std_mut());
         said_to(&mut process, said_with, &said);
         process
             .current_dir(cwd.unwrap_or(root))

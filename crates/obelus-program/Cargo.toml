@@ -11,3 +11,7 @@ workspace = true
 
 [dependencies]
 which.workspace = true
+
+# For `CREATE_NO_WINDOW`: see `without_a_window`.
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
