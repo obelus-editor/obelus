@@ -101,6 +101,11 @@ pub struct StatusView<'a> {
     /// block rather than a bar -- and a terminal's caret is the terminal's,
     /// which is why the word is the half that works in both.
     replacing: bool,
+    /// Whether the reader's own keys change no file.
+    ///
+    /// Said where the mode goes, because it is what typing will do: a
+    /// letter that goes nowhere has to have a reason on screen.
+    read_only: bool,
     theme: &'a Theme,
     troubles: &'a [obelus_lsp::trouble::Trouble],
     working_directory: &'a Path,
@@ -135,6 +140,7 @@ impl<'a> StatusView<'a> {
             choosing: app.choosing(),
             nearest: app.layers().nearest(),
             replacing: app.replacing(),
+            read_only: app.config().read_only,
             theme: app.theme(),
             working_directory: app.working_directory(),
             head: app.head(),
@@ -792,6 +798,9 @@ impl StatusView<'_> {
         }
         if self.replacing {
             marker.push_str("  Replacing");
+        }
+        if self.read_only {
+            marker.push_str("  Read only");
         }
         // Unsaved work, and the file having moved under it. Both are the
         // same kind of fact as the three above -- what is on screen is not

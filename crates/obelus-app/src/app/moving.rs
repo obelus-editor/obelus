@@ -817,6 +817,12 @@ impl App {
             }
             None => {}
         }
+        // The file, which a reader who has the agent make every change does
+        // not paste into: here rather than in `offers`, because a terminal's
+        // own paste and a window's input method arrive without a command.
+        if self.settled.config.read_only {
+            return;
+        }
         let Some(buffer) = self.current_buffer() else {
             return;
         };

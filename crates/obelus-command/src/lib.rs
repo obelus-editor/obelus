@@ -1361,6 +1361,34 @@ impl Command {
         }
     }
 
+    /// Whether the command is the reader's own hand changing a file.
+    ///
+    /// What the `read_only` setting refuses, and a second question beside
+    /// [`requires`](Self::requires) rather than a condition in it: undo
+    /// needs something to undo *and* a reader who changes files by hand.
+    /// Cut and paste are here and still reach a box the reader is typing
+    /// into, which is not a file -- the caller asks where they would land.
+    /// Renaming a file is here too: it moves code, and a server's rename
+    /// rewrites what imported it.
+    #[must_use]
+    pub const fn changes_a_file(self) -> bool {
+        matches!(
+            self,
+            Self::SelectionCut
+                | Self::Paste
+                | Self::Undo
+                | Self::Redo
+                | Self::LineUp
+                | Self::LineDown
+                | Self::CommentToggle
+                | Self::ReplaceToggle
+                | Self::SymbolComplete
+                | Self::SymbolRename
+                | Self::CodeActions
+                | Self::FileRename
+        )
+    }
+
     /// This command's entry in [`ALL`].
     ///
     /// # Panics

@@ -109,6 +109,15 @@ pub struct Config {
     /// machine are the normal case, and a reader who set this in a window
     /// has not asked for a second file to keep it in.
     pub font_size: usize,
+    /// Whether the reader's own keys may change a file.
+    ///
+    /// For a reader who has the agent make every change: typing, pasting,
+    /// cutting, undoing and the commands that rewrite lines are refused in
+    /// a file, and what an agent writes still goes in. Not about the boxes
+    /// a reader types into -- a message to the agent is the way the code
+    /// gets changed at all -- and not about saving, because what an agent
+    /// wrote into an open file reaches the disk by being saved.
+    pub read_only: bool,
     /// Whether to ask a language server to lay the file out before writing.
     pub format_on_save: bool,
     /// Whether to make the server's whole-file fixes before writing.
@@ -312,6 +321,7 @@ impl Default for Config {
             // Off: a formatter that ran without being asked would rewrite
             // a file somebody opened to read, and the first they would know
             // of it is the diff.
+            read_only: false,
             format_on_save: false,
             // Off, for the reason above it: a file somebody opened to read
             // should not come back from a save with its imports rearranged
@@ -720,6 +730,17 @@ pub const ALL: &[Setting] = &[
         drawn: Drawn::Anywhere,
     },
     Setting {
+        key: "read_only",
+        name: "Read only",
+        about: "Your own keys change no file: typing, pasting and undo are refused there, and what an agent writes still goes in",
+        group: Group::Reading,
+        // The reader's alone: whether their keys may change a file is how
+        // they work, and a repository has no say in it.
+        reach: Reach::ReaderOnly,
+        kind: Kind::Switch,
+        drawn: Drawn::Anywhere,
+    },
+    Setting {
         key: "format_on_save",
         name: "Formatting",
         about: "Ask the language server to lay the file out before writing it",
@@ -851,6 +872,7 @@ impl Config {
             "hover_delay" => Some(Value::Count(self.hover_delay)),
             "conversation_days" => Some(Value::Count(self.conversation_days)),
             "animation" => Some(Value::Switch(self.animation)),
+            "read_only" => Some(Value::Switch(self.read_only)),
             "format_on_save" => Some(Value::Switch(self.format_on_save)),
             "code_actions_on_save" => Some(Value::Switch(self.code_actions_on_save)),
             "inlay_hints" => Some(Value::Switch(self.inlay_hints)),
@@ -882,6 +904,7 @@ impl Config {
             ("font_size", Value::Count(points)) => self.font_size = *points,
             ("fonts", Value::Names(names)) => self.fonts = names.clone(),
             ("animation", Value::Switch(on)) => self.animation = *on,
+            ("read_only", Value::Switch(on)) => self.read_only = *on,
             ("format_on_save", Value::Switch(on)) => self.format_on_save = *on,
             ("code_actions_on_save", Value::Switch(on)) => self.code_actions_on_save = *on,
             ("inlay_hints", Value::Switch(on)) => self.inlay_hints = *on,
@@ -1393,6 +1416,11 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
     {
         config.animation = on;
     }
+    if let Some(on) = table.get("read_only").and_then(toml::Value::as_bool)
+        && allowed("read_only")
+    {
+        config.read_only = on;
+    }
     if let Some(on) = table.get("format_on_save").and_then(toml::Value::as_bool)
         && allowed("format_on_save")
     {
@@ -1705,6 +1733,11 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
         "animation",
         config.animation != default.animation,
         toml_edit::value(config.animation),
+    );
+    put(
+        "read_only",
+        config.read_only != default.read_only,
+        toml_edit::value(config.read_only),
     );
     put(
         "format_on_save",
@@ -2303,6 +2336,7 @@ mod tests {
             font_size: 18,
             hover_delay: 800,
             conversation_days: 90,
+            read_only: true,
             format_on_save: true,
             code_actions_on_save: true,
             inlay_hints: true,
