@@ -160,7 +160,7 @@
       <p><kbd>Insert</kbd> 是 <code>toggle-replace</code>——输入时覆盖光标下的字，而不是插在它前面，状态行会用一个词说明；<kbd>Esc</kbd> 停止选择，或者放弃离你最近的那件事。</p>
 
       <h3>移动，和列表里</h3>
-      <p>移动不是命令，所以它不在上面那些表里：方向键、<kbd>PageUp</kbd>/<kbd>PageDown</kbd>、<kbd>Home</kbd>/<kbd>End</kbd>（行首行尾）、<kbd>Ctrl+Home</kbd>/<kbd>Ctrl+End</kbd>（文件两端）。上下是按<em>视觉行</em>走的，所以换行之后它仍然是你看到的那一行。<kbd>Shift</kbd> 从不命名任何命令，它只做一件事：扩展选区——唯一的例外是终端里的 <kbd>Ctrl+Shift+w</kbd>，见下文。</p>
+      <p>移动不是命令，所以它不在上面那些表里：方向键、<kbd>PageUp</kbd>/<kbd>PageDown</kbd>、<kbd>Home</kbd>/<kbd>End</kbd>（行首行尾）、<kbd>Ctrl+Home</kbd>/<kbd>Ctrl+End</kbd>（文件两端）。上下是按<em>视觉行</em>走的，所以换行之后它仍然是你看到的那一行。<kbd>Shift</kbd> 从不命名任何命令，它只做一件事：扩展选区。</p>
       <p>列表里（任何一个 picker、设置页、统计页）：打字就是筛选，<kbd>↑</kbd><kbd>↓</kbd> 选，<kbd>PageUp</kbd>/<kbd>PageDown</kbd> 快速翻，<kbd>Home</kbd>/<kbd>End</kbd> 到两端，<kbd>Enter</kbd> 作用于光标所在那一行，<kbd>Esc</kbd> 取消，<kbd>Ctrl+k</kbd> 列出全部的键。功能键在整屏视图里也能用，会换成它说的那个视图——在文件列表里按 <kbd>F6</kbd> 就是搜索，<kbd>F3</kbd> 是文件列表的另一个 tab。</p>
 
       <h3>在对话里</h3>
@@ -170,7 +170,7 @@
       <p>这一页一直在被写：敲一个字母就是一个字母，<kbd>Enter</kbd> 起下一条，<kbd>Alt+Enter</kbd> 或 <kbd>Shift+Enter</kbd> 在一条里换行。<kbd>Tab</kbd> 把一条挂到上一条底下，<kbd>Shift+Tab</kbd> 再挪出来。把一条笔记当笔记来操作的键都在 <kbd>Alt</kbd> 底下：<kbd>Alt+Space</kbd> 打勾，<kbd>Alt+o</kbd> 去它指着的那一行，<kbd>Alt+a</kbd> 打开它的对话，<kbd>Alt+↑</kbd><kbd>Alt+↓</kbd> 挪位置，<kbd>Alt+←</kbd> 拿掉。</p>
 
       <h3>在终端里</h3>
-      <p><code>open-terminal</code> 在项目里启动你的 shell，它是一个单独的 document；agent 要你登录时，它的登录程序也在这样一个终端里跑。程序在跑的时候，键都归程序——<kbd>Esc</kbd>、<kbd>Ctrl+c</kbd>、<kbd>Ctrl+w</kbd> 都是。Obelus 只留下功能键、<kbd>Ctrl+p</kbd>、离开用的 <kbd>Ctrl+q</kbd>、粘贴用的 <kbd>Ctrl+v</kbd> 或 <kbd>Shift+Insert</kbd>，以及关闭它的 <kbd>Ctrl+Shift+w</kbd>；程序还在跑时，关闭前会先问一句。滚轮往回翻看已经滚走的内容，<kbd>PageUp</kbd>/<kbd>PageDown</kbd> 一次翻一屏，<kbd>Ctrl+Home</kbd>/<kbd>Ctrl+End</kbd> 到最前和最后——这几个键在终端里归 Obelus，不发给程序。拖动可以选中程序打印出来的字：<kbd>Ctrl+c</kbd> 或 <kbd>Ctrl+Insert</kbd> 复制；没有选中时，<kbd>Ctrl+c</kbd> 照旧归程序。程序自己要鼠标时（编辑器、进程列表之类），左键和滚轮交给它；按住 <kbd>Shift</kbd> 还是由你来选。还有程序在跑时退出，会先问一句。程序结束以后键都还给 Obelus，<kbd>Ctrl+w</kbd> 像关别的东西一样关掉它。</p>
+      <p><code>open-terminal</code> 在项目里启动你的 shell，它是一个单独的 document；agent 要你登录时，它的登录程序也在这样一个终端里跑。程序在跑的时候，键都归程序——<kbd>Esc</kbd>、<kbd>Ctrl+c</kbd> 都是。Obelus 只留下功能键、<kbd>Ctrl+p</kbd>、离开用的 <kbd>Ctrl+q</kbd>、粘贴用的 <kbd>Ctrl+v</kbd> 或 <kbd>Shift+Insert</kbd>，以及关闭它的 <kbd>Ctrl+w</kbd>；程序还在跑时，关闭前会先问一句。滚轮往回翻看已经滚走的内容，<kbd>PageUp</kbd>/<kbd>PageDown</kbd> 一次翻一屏，<kbd>Ctrl+Home</kbd>/<kbd>Ctrl+End</kbd> 到最前和最后——这几个键在终端里归 Obelus，不发给程序。拖动可以选中程序打印出来的字：<kbd>Ctrl+c</kbd> 或 <kbd>Ctrl+Insert</kbd> 复制；没有选中时，<kbd>Ctrl+c</kbd> 照旧归程序。程序自己要鼠标时（编辑器、进程列表之类），左键和滚轮交给它；按住 <kbd>Shift</kbd> 还是由你来选。还有程序在跑时退出，会先问一句。程序结束以后键都还给 Obelus。</p>
 
       <h3 id="commands">命令</h3>
 

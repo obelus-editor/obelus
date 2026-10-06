@@ -74,13 +74,9 @@ fn press(app: &mut App, code: KeyCode, modifiers: KeyModifiers) {
     app.handle(Event::Key(KeyEvent::new(code, modifiers)));
 }
 
-/// The key that closes a terminal, which `ctrl+w` does not.
+/// The key that closes a terminal, which is the key that closes anything.
 fn close_the_terminal(app: &mut App) {
-    press(
-        app,
-        KeyCode::Char('w'),
-        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
-    );
+    press(app, KeyCode::Char('w'), KeyModifiers::CONTROL);
 }
 
 /// Opens the reader's shell and waits for it to be ready to read a line.
@@ -116,15 +112,15 @@ fn a_shell_is_drawn_and_typed_to() {
     );
 }
 
-/// The keys a shell uses are the shell's: escape, `ctrl+c` and `ctrl+w` do
-/// to it what they do in any terminal, and none of them closes or copies.
+/// The keys a shell uses are the shell's: escape, `ctrl+c` and the control
+/// letters Obelus has not kept do to it what they do in any terminal, and
+/// none of them copies.
 ///
 /// The pty is put in raw mode first and three bytes read off it whole, so
 /// what arrived is what was sent rather than what the line discipline made
-/// of it -- in the ordinary mode `ctrl+w` is the tty's own word rubbed out,
-/// and never reaches a program at all. Broken deliberately by asking a
-/// file's table instead of the terminal's in `App::terminal_key`: escape
-/// clears a selection there and never reaches the program.
+/// of it. Broken deliberately by asking a file's table instead of the
+/// terminal's in `App::terminal_key`: escape clears a selection there and
+/// never reaches the program.
 #[test]
 fn escape_and_control_keys_go_to_the_program() {
     let (mut app, events) = a_shell();
@@ -138,11 +134,10 @@ fn escape_and_control_keys_go_to_the_program() {
     });
     press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
     support::type_text(&mut app, "x");
-    press(&mut app, KeyCode::Char('w'), KeyModifiers::CONTROL);
+    press(&mut app, KeyCode::Char('e'), KeyModifiers::CONTROL);
     pump(&mut app, &events, "the bytes to be read back", |app| {
-        on_the_terminal(app).contains("033   x 027")
+        on_the_terminal(app).contains("033   x 005")
     });
-    assert!(app.terminal().is_some(), "ctrl+w closed the terminal");
     // And `ctrl+c` stops what is running, which is the shell's to do: back
     // at the prompt, a line typed is run.
     //
@@ -436,15 +431,14 @@ fn a_colour_named_by_number_is_the_themes() {
     assert_eq!(ink, app.theme().syntax.error);
 }
 
-/// Closing a terminal whose program is running asks first, on the key every
-/// terminal closes a tab with -- and closing it stops the program.
+/// Closing a terminal whose program is running asks first, on the key that
+/// closes anything in Obelus -- and closing it stops the program.
 ///
 /// Broken deliberately by emptying `ask_before_stopping`: the terminal goes
 /// at the first press, with nothing asked. And by putting the command first
-/// in the question again, which the rule about names forbids. And by taking the
-/// terminal's context away (`App::context` returning `Normal`): the key is
-/// handed back to a table that does not have it, and nothing is asked or
-/// closed.
+/// in the question again, which the rule about names forbids. And by taking
+/// `ctrl+w` out of the terminal's table: the key goes to the shell, and
+/// nothing is asked.
 #[test]
 fn closing_a_running_terminal_asks_first() {
     let (mut app, _events) = a_shell();

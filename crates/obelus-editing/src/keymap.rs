@@ -327,7 +327,8 @@ pub enum Context {
     /// anybody's. What Obelus keeps is the palette, paste (`ctrl+v` and
     /// `shift+Insert`), copy where something is held, the paging keys and
     /// `ctrl+Home` and `ctrl+End` for reading back (`Terminal::read_back`),
-    /// the key that closes it, the key that leaves Obelus, and the function
+    /// `ctrl+w` to close it as anything else is closed, the key that leaves
+    /// Obelus, and the function
     /// keys, which open something to look at and are the one family a shell
     /// has no use for (`Keymap::lookup`).
     /// Once the program has ended there is nothing to type to, and a
@@ -558,9 +559,8 @@ impl Keymap {
                 // Control, on the letter of the word. `ctrl+p` for the
                 // palette; `ctrl+w` is "close this" in every browser and
                 // most editors, and in a terminal it is also the shell's
-                // "delete the last word" -- which is why a terminal of
-                // Obelus's own leaves it to the shell, and closes with
-                // `ctrl+shift+w` below.
+                // "delete the last word" -- which a terminal of Obelus's
+                // own gives up for it, below.
                 Binding {
                     command: Command::CommandPalette,
                     context: Context::Normal,
@@ -585,9 +585,12 @@ impl Keymap {
                 // and nothing else: the palette, which is how everything
                 // else is reached from in there; paste, under the name a
                 // desktop sends a terminal for it; and closing it, on the
-                // key every terminal a reader has used closes a tab with,
-                // because `ctrl+w` is the shell's. See `why_not` for why
-                // that one may be held with shift. And leaving: `ctrl+q` is
+                // key that closes everything else in Obelus. `ctrl+w` is a
+                // shell's word rubbed out as well, and it was given up for
+                // `ctrl+shift+w` once -- which made the one document whose
+                // close was a different key, and the one command Obelus
+                // named with shift. A word goes as well with `alt+backspace`.
+                // And leaving: `ctrl+q` is
                 // a shell's only as the flow control nobody has used since
                 // terminals were printers, and a key that leaves Obelus
                 // everywhere but in one kind of document is a key a reader
@@ -631,10 +634,7 @@ impl Keymap {
                 Binding {
                     command: Command::DocumentClose,
                     context: Context::Terminal,
-                    chord: KeyChord::new(
-                        KeyCode::Char('w'),
-                        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
-                    ),
+                    chord: control('w'),
                 },
                 Binding {
                     command: Command::FileSave,
@@ -1284,23 +1284,6 @@ pub fn why_not(chord: KeyChord) -> Option<&'static str> {
     // Obelus can answer from the inside -- the terminal decides before
     // Obelus is asked, and decides unconditionally.
     if chord.code == KeyCode::Insert && (control || chord.modifiers == KeyModifiers::SHIFT) {
-        return None;
-    }
-
-    // Closing a terminal, which is the one place Obelus names a command
-    // with shift. In a terminal of its own every plain control letter is
-    // the program's -- `ctrl+w` is the shell's word rubbed out -- and the
-    // key every terminal closes a tab with is this one, so it is the key a
-    // reader already has. Where a terminal cannot tell it from `ctrl+w`
-    // (one that does not speak the keyboard protocol) it arrives as that,
-    // goes to the program, and the palette is how to close it: a key that
-    // falls on the shell's side of the line, rather than on Obelus's.
-    if chord
-        == KeyChord::new(
-            KeyCode::Char('w'),
-            KeyModifiers::CONTROL | KeyModifiers::SHIFT,
-        )
-    {
         return None;
     }
 

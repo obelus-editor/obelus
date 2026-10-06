@@ -373,9 +373,6 @@ command is gone and `App::blame` reads the setting.
   what the rule is about: they are the names a desktop already sends a
   terminal for paste and copy. Why Obelus answers them, and why copy still
   cannot work where a terminal keeps them, is argued in `keymap::why_not`.
-  The other exception is `ctrl+shift+w` in a terminal of Obelus's own, where
-  every plain control letter is the program's and that is the key every
-  terminal already closes a tab with (`Context::Terminal`).
 
 **Escape always gives up on the nearest thing**, and everything else is
 reached from the palette: a chord for every command is how a key table stops

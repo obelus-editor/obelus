@@ -299,8 +299,8 @@ fn the_readers_own_bindings_go_over_the_defaults() {
 
     // All of `close-document`'s bindings moved: it is one command with one
     // key, bound in three contexts so that it reaches the list of open files
-    // and a terminal -- where it was `ctrl+shift+w`, because `ctrl+w` is the
-    // shell's, and where the reader's own key is the reader's own choice.
+    // and a terminal, where it is the program's otherwise and the reader's
+    // own key is the reader's own choice.
     let closes: Vec<_> = keymap
         .bindings()
         .iter()
