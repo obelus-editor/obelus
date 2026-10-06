@@ -116,7 +116,30 @@
     <section id="start">
       <h2><span class="num">01</span><span>Install</span></h2>
 
-      <p>One command. The script downloads the latest release, checks it against the release's <code>SHA256SUMS</code>, and puts <code>obg</code>, the window version, somewhere on your PATH.</p>
+      <p>Pick your system, download the package and double-click it. To install with one command instead, or to get the terminal version too, read on.</p>
+
+      <h3>Download</h3>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th><span>System</span></th><th><span>Download</span></th></tr></thead>
+        <tbody>
+          <tr><td>macOS (Intel and Apple silicon)</td><td><a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/Obelus-@VERSION@-universal2-apple-darwin.app.zip">Obelus.app</a></td></tr>
+          <tr><td>Windows x64</td><td><a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/Obelus-@VERSION@-x86_64-pc-windows-msvc.msi">Installer (.msi)</a> · <a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/obg-@VERSION@-x86_64-pc-windows-msvc.zip">Archive (.zip)</a></td></tr>
+          <tr><td>Windows ARM64</td><td><a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/Obelus-@VERSION@-aarch64-pc-windows-msvc.msi">Installer (.msi)</a> · <a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/obg-@VERSION@-aarch64-pc-windows-msvc.zip">Archive (.zip)</a></td></tr>
+          <tr><td>Linux x86_64</td><td><a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/obelus-gui_@VERSION@-1_amd64.deb">.deb</a> · <a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/obelus-gui-@VERSION@-1.x86_64.rpm">.rpm</a> · <a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/obg-@VERSION@-x86_64.AppImage">AppImage</a></td></tr>
+          <tr><td>Linux arm64</td><td><a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/obelus-gui_@VERSION@-1_arm64.deb">.deb</a> · <a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/obelus-gui-@VERSION@-1.aarch64.rpm">.rpm</a> · <a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/obg-@VERSION@-aarch64.AppImage">AppImage</a></td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <ul>
+        <li>These are all <code>obg</code>, the window version. For <code>ob</code>, the terminal version, use the script below or grab an archive from <a href="https://github.com/obelus-editor/obelus/releases/latest">the releases page</a>, which also lists every file's SHA256.</li>
+        <li>macOS: Obelus isn't notarized by Apple, so the first time you open it macOS says it can't verify the developer. Go to System Settings → Privacy &amp; Security and click Open Anyway, or run <code>xattr -dr com.apple.quarantine /Applications/Obelus.app</code> in a terminal.</li>
+        <li>Windows: the installer isn't signed, so SmartScreen may stop it; click More info → Run anyway. The MSI installs into your own user folder without asking for an administrator, adds a Start menu entry and a PATH entry, and can be uninstalled from Settings → Apps.</li>
+      </ul>
+
+      <h3>Install with one command</h3>
+      <p>The script downloads the latest release, checks it against the release's <code>SHA256SUMS</code>, and puts <code>obg</code>, the window version, somewhere on your PATH.</p>
 
       <h4>Linux and macOS</h4>
       <pre><code>curl -fsSL https://raw.githubusercontent.com/obelus-editor/obelus/master/contrib/install.sh | sh</code></pre>
@@ -134,13 +157,12 @@
 
       <ul>
         <li><code>--bin ob</code> installs only the terminal version, <code>--dir</code> says where to put it, and <code>--help</code> lists the rest.</li>
-        <li><a href="https://github.com/obelus-editor/obelus/releases">The releases page</a> has an archive for every platform, plus a <code>.deb</code>, an <code>.rpm</code>, an AppImage and a macOS <code>.app</code>.</li>
         <li>On Windows the script adds its directory to your PATH and creates a Start menu entry (<code>-NoShortcut</code> skips it). On Linux it adds launcher entries and an icon under <code>~/.local/share</code> so any app launcher can find it, omarchy's <code>Apps</code> menu included (<code>--no-desktop</code> skips them). If the directory isn't on your PATH, the script tells you which line to add.</li>
         <li>To uninstall, use <code>-Uninstall</code> on Windows, or <code>--uninstall</code> on Linux and macOS. If you installed with <code>--dir</code>, pass it again. Your settings are left alone either way.</li>
         <li>There's no window version on musl: the window loads Vulkan, Wayland and X11 at runtime, which a static binary can't do. The script says so and installs <code>ob</code> instead.</li>
       </ul>
 
-      <h4>From source</h4>
+      <h3>From source</h3>
       <p>All you need is a stable Rust toolchain (edition 2024).</p>
 
       <pre><code>git clone https://github.com/obelus-editor/obelus
@@ -155,7 +177,7 @@ cargo install --path crates/obelus-cli
 # or just build both: target/release/obg and target/release/ob
 cargo build --release</code></pre>
 
-      <h4>Also worth installing</h4>
+      <h3>Also worth installing</h3>
       <ul>
         <li>A <strong>language server</strong> for your language (<code>rust-analyzer</code> for Rust). Without one you can still read code; you just don't get go-to-definition, errors or an outline.</li>
         <li>An agent that speaks <strong>ACP</strong>. If you don't have one, Obelus can install one for you: see <a href="#agent">bring the agent you already use</a>.</li>

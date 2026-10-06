@@ -116,7 +116,30 @@
     <section id="start">
       <h2><span class="num">01</span><span>安装</span></h2>
 
-      <p>一行命令。脚本会下载最新版本，用发布页里的 <code>SHA256SUMS</code> 校验，再把窗口版 <code>obg</code> 放到 PATH 找得到的地方。</p>
+      <p>挑你的系统，下载安装包，双击装上就行。想用一行命令装，或者也要终端版，往下看。</p>
+
+      <h3>下载安装包</h3>
+      <div class="table-wrap">
+      <table>
+        <thead><tr><th><span>系统</span></th><th><span>下载</span></th></tr></thead>
+        <tbody>
+          <tr><td>macOS（Intel 和 Apple 芯片通用）</td><td><a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/Obelus-@VERSION@-universal2-apple-darwin.app.zip">Obelus.app</a></td></tr>
+          <tr><td>Windows x64</td><td><a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/Obelus-@VERSION@-x86_64-pc-windows-msvc.msi">安装包（.msi）</a> · <a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/obg-@VERSION@-x86_64-pc-windows-msvc.zip">压缩包（.zip）</a></td></tr>
+          <tr><td>Windows ARM64</td><td><a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/Obelus-@VERSION@-aarch64-pc-windows-msvc.msi">安装包（.msi）</a> · <a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/obg-@VERSION@-aarch64-pc-windows-msvc.zip">压缩包（.zip）</a></td></tr>
+          <tr><td>Linux x86_64</td><td><a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/obelus-gui_@VERSION@-1_amd64.deb">.deb</a> · <a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/obelus-gui-@VERSION@-1.x86_64.rpm">.rpm</a> · <a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/obg-@VERSION@-x86_64.AppImage">AppImage</a></td></tr>
+          <tr><td>Linux arm64</td><td><a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/obelus-gui_@VERSION@-1_arm64.deb">.deb</a> · <a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/obelus-gui-@VERSION@-1.aarch64.rpm">.rpm</a> · <a href="https://github.com/obelus-editor/obelus/releases/download/v@VERSION@/obg-@VERSION@-aarch64.AppImage">AppImage</a></td></tr>
+        </tbody>
+      </table>
+      </div>
+
+      <ul>
+        <li>这些都是窗口版 <code>obg</code>。终端版 <code>ob</code> 用下面的脚本装，或者在 <a href="https://github.com/obelus-editor/obelus/releases/latest">Releases 页</a>下载压缩包。所有文件的 SHA256 也在那里。</li>
+        <li>macOS：Obelus 没有经过 Apple 公证，第一次打开会提示无法验证开发者。到「系统设置 → 隐私与安全性」里点「仍要打开」；或者在终端里运行 <code>xattr -dr com.apple.quarantine /Applications/Obelus.app</code>。</li>
+        <li>Windows：安装包没有签名，SmartScreen 可能会拦一下，点「更多信息 → 仍要运行」。MSI 装在你自己的用户目录下，不用管理员权限，会加开始菜单入口和 PATH，在「设置 → 应用」里能卸载。</li>
+      </ul>
+
+      <h3>用一行命令安装</h3>
+      <p>脚本会下载最新版本，用发布页里的 <code>SHA256SUMS</code> 校验，再把窗口版 <code>obg</code> 放到 PATH 找得到的地方。</p>
 
       <h4>Linux 和 macOS</h4>
       <pre><code>curl -fsSL https://raw.githubusercontent.com/obelus-editor/obelus/master/contrib/install.sh | sh</code></pre>
@@ -134,13 +157,12 @@
 
       <ul>
         <li><code>--bin ob</code> 只装终端版，<code>--dir</code> 指定装到哪，<code>--help</code> 看其余选项。</li>
-        <li><a href="https://github.com/obelus-editor/obelus/releases">Releases 页</a>上有各平台的压缩包，还有 <code>.deb</code>、<code>.rpm</code>、AppImage 和 macOS 的 <code>.app</code>。</li>
         <li>Windows 上脚本会把目录加进 PATH，在开始菜单建一个入口（<code>-NoShortcut</code> 不建）。Linux 上会在 <code>~/.local/share</code> 下建启动项和图标（<code>--no-desktop</code> 不建），各种启动器都能找到它，omarchy 的 <code>Apps</code> 菜单也是。目录不在 PATH 上的话，脚本会告诉你该加哪一行。</li>
         <li>卸载：Windows 用 <code>-Uninstall</code>；Linux 和 macOS 用 <code>--uninstall</code>，装的时候用了 <code>--dir</code>，卸的时候也要带上。两边都不动你的设置。</li>
         <li>musl 系统上没有窗口版：窗口要在运行时加载 Vulkan、Wayland 和 X11，静态链接的程序做不到。脚本会说明，然后改装 <code>ob</code>。</li>
       </ul>
 
-      <h4>从源码</h4>
+      <h3>从源码</h3>
       <p>只要一套 stable 的 Rust 工具链（edition 2024）。</p>
 
       <pre><code>git clone https://github.com/obelus-editor/obelus
@@ -155,7 +177,7 @@ cargo install --path crates/obelus-cli
 # 或者只构建：target/release/obg 和 target/release/ob
 cargo build --release</code></pre>
 
-      <h4>最好也装上</h4>
+      <h3>最好也装上</h3>
       <ul>
         <li>你所用语言的<strong>语言服务器</strong>（Rust 是 <code>rust-analyzer</code>）。没装也能看代码，只是没有跳转定义、报错提示和大纲。</li>
         <li>一个支持 <strong>ACP</strong> 的 agent。没有的话 Obelus 能帮你装，见<a href="#agent">接上你已经在用的 agent</a>。</li>

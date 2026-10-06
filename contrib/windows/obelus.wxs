@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The window, as an installer a Windows reader can double-click.
+
+  `obg` alone, for the reason the release ships the two binaries apart: a
+  reader who wants the window has no use for the terminal's forty megabytes,
+  and `install.ps1 -Binary ob` is there for the one who does.
+
+  Per user, and so where `install.ps1` would put it in spirit: nothing here
+  needs an administrator, and a prompt for one is a reader asked to trust an
+  unsigned installer twice. The directory, the Start menu entry and the PATH
+  are all the reader's own, and the uninstall entry in Settings takes each
+  of them back.
+
+  Built by `release.yml` with WiX 5, which is told the version, the binary
+  and the icon:
+
+    wix build obelus.wxs -arch x64 -d Version=0.9.3 -d Binary=obg.exe -d Icon=obelus.ico
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <!-- The upgrade code is what makes a newer Obelus replace an older one
+       rather than sit beside it, so it is written once and never changed. -->
+  <Package
+      Name="Obelus"
+      Manufacturer="Obelus"
+      Version="$(var.Version)"
+      UpgradeCode="44DD305A-9471-4C1F-AD8E-F5A2BBAA090C"
+      Scope="perUser"
+      Compressed="yes">
+    <SummaryInformation Description="Obelus, a code editor with the agent built in" />
+    <MajorUpgrade DowngradeErrorMessage="A newer Obelus is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="obelus.ico" SourceFile="$(var.Icon)" />
+    <Property Id="ARPPRODUCTICON" Value="obelus.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://obelus-editor.github.io/obelus/" />
+
+    <!-- Where the Start menu starts it: the reader's own directory, as
+         `install.ps1` does. Obelus asks which project when it is started
+         somewhere that is not one, and a path typed there without a drive
+         is read from here -- which from the install directory would be a
+         path inside Obelus. Windows Installer has no name for the profile
+         directory, so it is set from the environment. -->
+    <SetDirectory Id="HOMEFOLDER" Value="[%USERPROFILE]" Sequence="both" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Obelus" />
+      </Directory>
+      <Directory Id="HOMEFOLDER" Name="Home" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <Feature Id="Main" Title="Obelus">
+      <!-- A per-user component is kept by a value under HKCU rather than by
+           its file, which is how Windows Installer wants anything in a
+           profile counted. -->
+      <Component Id="Window" Directory="INSTALLFOLDER">
+        <File Id="obg.exe" Name="obg.exe" Source="$(var.Binary)" />
+        <RegistryValue Root="HKCU" Key="Software\Obelus" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
+        <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+        <RemoveFolder Id="RemoveProgramsFolder" Directory="ProgramsFolder" On="uninstall" />
+        <!-- So `obg` from a terminal is this one. The reader's PATH, not
+             the machine's, for the reason the rest of it is per user. -->
+        <Environment Id="Path" Name="PATH" Value="[INSTALLFOLDER]" Part="last" Action="set" System="no" Permanent="no" />
+      </Component>
+      <Component Id="Menu" Directory="ProgramMenuFolder">
+        <Shortcut
+            Id="StartMenu"
+            Name="Obelus"
+            Description="A code editor with the agent built in"
+            Target="[INSTALLFOLDER]obg.exe"
+            WorkingDirectory="HOMEFOLDER"
+            Icon="obelus.ico" />
+        <RegistryValue Root="HKCU" Key="Software\Obelus" Name="Menu" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </Feature>
+  </Package>
+</Wix>
