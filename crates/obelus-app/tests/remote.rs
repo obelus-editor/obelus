@@ -463,6 +463,61 @@ fn connected(scratch: &support::Scratch) -> (App, std::sync::mpsc::Receiver<Even
     (app, events)
 }
 
+/// Asked to on the command line, a window connects to the chat as it
+/// starts, the way `connect-remote` would.
+///
+/// Broken deliberately by never reading the flag in `App::start`: nothing
+/// connected.
+#[test]
+fn a_chat_is_connected_to_from_the_start_when_asked() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-at-start");
+    obelus_remote::platform::connect_for_test(fake_connect);
+    *FAKED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    std::fs::write(scratch.join("config.toml"), "remote = \"slack\"\n").expect("the settings");
+    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.config_file_for_test(scratch.join("config.toml"));
+    app.remote_at_start();
+    let (sender, events) = obelus_app::event::channel();
+    app.start(sender);
+    until(&mut app, &events, "the connection", |app| {
+        app.remote_state_for_test() == obelus_remote::State::Connected
+    });
+    assert!(app.holds_the_remote_for_test(), "the chat is not here");
+}
+
+/// Asked to connect on the command line with no chat set, a window says so
+/// over its first screen -- where the command would be dimmed and say
+/// nothing, a flag has nothing that dimmed it.
+///
+/// Broken deliberately by calling `connect_remote` alone: nothing was said.
+#[test]
+fn no_chat_to_connect_to_from_the_start_is_said() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-at-start-none");
+    std::fs::write(scratch.join("config.toml"), "").expect("the settings");
+    let mut app = App::new(vec![support::open_fixture("sample.rs")]);
+    app.config_file_for_test(scratch.join("config.toml"));
+    app.remote_at_start();
+    let (sender, _events) = obelus_app::event::channel();
+    app.start(sender);
+    assert!(
+        app.went_wrong()
+            .iter()
+            .any(|said| said == "No chat is set in the settings to connect to"),
+        "it said {:?}",
+        app.went_wrong()
+    );
+    assert!(
+        !app.holds_the_remote_for_test(),
+        "held a chat that is not set"
+    );
+}
+
 /// A window set to a chat connects to it only once it is told to, with
 /// what it was told -- the secrets out of the keyring -- and says so on its
 /// status row and nowhere else: not before, and not on the page, which

@@ -922,6 +922,17 @@ impl App {
         self.remote.holding.is_some() || self.remote.taking.is_some()
     }
 
+    /// What `--connect-remote` asks for, which is `connect-remote` --
+    /// except that no chat to connect to is said rather than passed over.
+    /// The command is quiet about it because the palette had already said
+    /// so, by dimming it; nothing dims a word on the command line.
+    pub(super) fn connect_remote_at_start(&mut self) {
+        match self.platform() {
+            Some(_) => self.connect_remote(),
+            None => self.amiss("No chat is set in the settings to connect to"),
+        }
+    }
+
     /// Makes this the window the chat talks to: at once where no other
     /// window has it, and where one has, by asking it to let go and waiting
     /// for the kernel to say it has.
