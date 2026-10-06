@@ -258,7 +258,11 @@ pub fn main_checkout(root: &Path) -> Option<PathBuf> {
     if common.file_name()? != ".git" {
         return None;
     }
-    Some(common.parent()?.to_path_buf())
+    // Without the `\\?\` that resolving puts on it on Windows: this is a
+    // place a window is put on and a reader's list of projects keeps, and
+    // `\\?\E:\work\obelus` is the same place as `E:\work\obelus` written so
+    // that nothing comparing the two can tell -- the list had it twice.
+    Some(dunce::simplified(common.parent()?).to_path_buf())
 }
 
 /// The repository a path is in, if it is in one.

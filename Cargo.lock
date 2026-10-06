@@ -4381,6 +4381,7 @@ dependencies = [
  "anyhow",
  "crossterm",
  "dirs",
+ "dunce",
  "futures",
  "gix",
  "image",
@@ -4527,6 +4528,7 @@ dependencies = [
 name = "obelus-git"
 version = "0.10.0"
 dependencies = [
+ "dunce",
  "gix",
  "imara-diff",
  "obelus-logging",

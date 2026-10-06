@@ -274,6 +274,35 @@ fn enter_puts_this_obelus_on_the_tree() {
     );
 }
 
+/// Going to the main checkout puts this Obelus on it spelled the way a
+/// reader spells it, not the way resolving it does.
+///
+/// On Windows only, because that is the one place the two differ: git's
+/// answer for the main checkout is resolved, and a resolved path there
+/// begins `\\?\`. It was handed to the window as it came, and the list of
+/// projects -- which keeps a path as it is named -- had the repository on it
+/// twice. Broken deliberately by taking `dunce::simplified` out of
+/// `obelus_git::main_checkout`.
+#[cfg(windows)]
+#[test]
+fn going_to_the_main_checkout_does_not_spell_it_resolved() {
+    let scratch = Scratch::new("worktrees-spelled");
+    let (main, feature, _) = repository(&scratch);
+    let asked = Arc::new(Asked::default());
+    let (mut app, _events) = window_on(&feature, &asked);
+
+    dispatch::dispatch(&mut app, Command::WorktreeList);
+    choose(&mut app, "main");
+    assert_eq!(resolved(app.working_directory()), resolved(&main));
+    assert!(
+        !app.working_directory()
+            .to_string_lossy()
+            .starts_with(r"\\?\"),
+        "this window is on {}",
+        app.working_directory().display()
+    );
+}
+
 /// Something unwritten is asked about before going, the way leaving asks:
 /// cancelling stays, and saving writes it and then goes.
 ///
