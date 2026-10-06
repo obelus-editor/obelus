@@ -1104,7 +1104,8 @@ impl ChatView<'_> {
             _ => None,
         };
         // The last row of what a key acts on, where it is on screen: where
-        // its words end, and the colour it is drawn in.
+        // its words end, the colour it is drawn in, and whether it is the
+        // row escape stops.
         let mut foot = None;
         for (offset, row) in rows.iter().skip(first).enumerate() {
             let Ok(offset) = u16::try_from(offset) else {
@@ -1287,13 +1288,17 @@ impl ChatView<'_> {
             for (gap, said, style) in tail {
                 ended = write_within(cells, ended + gap, y, &said, style, words_end(area) + 1);
             }
-            if acting.as_ref().is_some_and(|on| at + 1 == on.end) {
-                foot = Some((y, ended, dim));
+            let stops = row.speaker == Speaker::Doing && self.state == Talking::Thinking;
+            let footed = acting.as_ref().is_some_and(|on| at + 1 == on.end);
+            if footed {
+                foot = Some((y, ended, dim, stops));
             }
             // How to stop it, on the row that says it is going: the one
             // thing escape does here that a reader could not guess, and it
-            // belongs beside the thing it would stop.
-            if row.speaker == Speaker::Doing && self.state == Talking::Thinking {
+            // belongs beside the thing it would stop. Unless enter is said
+            // on that row too, which says the two together: written one
+            // after the other, the second was written over the first.
+            if stops && !footed {
                 let keys = [(chord(KeyCode::Esc, KeyModifiers::NONE), "Stops it")];
                 if let Some(said) = joined(&keys)
                     && let Ok(offset) =
@@ -1311,10 +1316,13 @@ impl ChatView<'_> {
         }
     }
 
-    /// Says what enter does to something the reader said, the way the box
+    /// Says what enter does to the thing the cursor is on, the way the box
     /// says what `ctrl+enter` does to what is in it: at the end of its last
     /// row where its words leave room, and on the row under it where they
     /// do not.
+    ///
+    /// Said in words rather than by lighting the row: a light was drawn on
+    /// the cells of what the reader had hold of in it.
     ///
     /// After the last row rather than the first, because the key is about
     /// all of it, and all of it ends there. It used to follow the
@@ -1331,39 +1339,63 @@ impl ChatView<'_> {
         area: Rect,
         rows: &[Row],
         on: std::ops::Range<usize>,
-        (y, ended, beside_dim): (u16, u16, Style),
+        (y, ended, beside_dim, stops): (u16, u16, Style, bool),
         dim: Style,
     ) {
         let Some(first) = rows.get(on.start) else {
             return;
         };
-        let does = match (first.unsent, first.again) {
-            (Some(_), _) => "Takes it back",
-            (None, Some(_)) => "Copies it to the box",
-            (None, None) => return,
+        // In the order the key's own `match` asks them, because a call that
+        // folds and names a file is opened by enter, not gone to.
+        let does = match (
+            first.unsent,
+            first.again,
+            first.folds,
+            &first.place,
+            &first.away,
+        ) {
+            (Some(_), ..) => "Takes it back",
+            (None, Some(_), ..) => "Copies it to the box",
+            (None, None, Some(_), ..) => match first.open {
+                true => "Closes it",
+                false => "Opens it",
+            },
+            (None, None, None, Some(_), _) => "Opens the file",
+            (None, None, None, None, Some(_)) => "Opens it in your browser",
+            (None, None, None, None, None) => return,
         };
-        let keys = [(chord(KeyCode::Enter, KeyModifiers::NONE), does)];
-        let Some(said) = joined(&keys) else {
-            return;
+        let stop = (chord(KeyCode::Esc, KeyModifiers::NONE), "Stops it");
+        let mut keys = vec![(chord(KeyCode::Enter, KeyModifiers::NONE), does)];
+        if stops {
+            keys.push(stop.clone());
+        }
+        let placed = |keys: &[(String, &'static str)]| {
+            let said = joined(keys)?;
+            let wide = u16::try_from(text_width(&said)).ok()?;
+            let at = (words_end(area) + 1).checked_sub(wide)?;
+            Some((said, at))
         };
-        let Some(at) = u16::try_from(text_width(&said))
-            .ok()
-            .and_then(|wide| (words_end(area) + 1).checked_sub(wide))
-        else {
-            return;
-        };
-        let beside = usize::from(ended) + GAP_BETWEEN_HINTS <= usize::from(at);
+        let beside = |at: u16| usize::from(ended) + GAP_BETWEEN_HINTS <= usize::from(at);
         let under = rows
             .get(on.end)
-            .is_none_or(|row| row.from.is_none() && row.spans.is_empty());
-        let (y, style) = match (beside, under) {
-            (true, _) => (y, beside_dim),
-            (false, true) if y + 1 < area.bottom() => (y + 1, dim),
-            _ => return,
+            .is_none_or(|row| row.from.is_none() && row.spans.is_empty())
+            && y + 1 < area.bottom();
+        // Beside the words, or on the blank under them -- and where there
+        // is room for neither, escape keeps its own row and enter goes
+        // without, because a turn that cannot be stopped is worse than a
+        // heading nobody was told opens.
+        let alone = [stop];
+        let (keys, said, at, y, style) = match placed(&keys) {
+            Some((said, at)) if beside(at) => (&keys[..], said, at, y, beside_dim),
+            Some((said, at)) if under => (&keys[..], said, at, y + 1, dim),
+            _ => match placed(&alone) {
+                Some((said, at)) if stops && beside(at) => (&alone[..], said, at, y, beside_dim),
+                _ => return,
+            },
         };
         write(cells, at, y, &said, style);
         let ground = style.bg.unwrap_or(self.theme.background);
-        cap_the_keys(at, y, &keys, ground, self.theme);
+        cap_the_keys(at, y, keys, ground, self.theme);
     }
 
     /// The box, with the caret's own row scrolled into it.

@@ -398,7 +398,8 @@ the same colour behind the one item of a row of them, for the things laid
 out across a row rather than down a column. Where there is a caret there is
 no background: a box is marked by the caret sitting in it, and so is the
 transcript, even on a row enter acts on -- a light there was drawn over what
-the reader had hold of. Two marks for one fact is one too many.
+the reader had hold of, and a key at the row's end says what enter does.
+Two marks for one fact is one too many.
 
 And only the nearest thing on screen wears it. A page or a list under
 another is drawn as it was, rows and all, but its row is not marked: two

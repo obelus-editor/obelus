@@ -34,8 +34,8 @@
 //! pointer landed. Tab and shift and tab step to the next row that does
 //! something: a tool call names a file, a heading opens what is under it.
 //! None of them is lit while the cursor is on it: the caret says where the
-//! cursor is, and a light behind the row was drawn over what the reader had
-//! hold of in it.
+//! cursor is, a key at the row's end says what enter does there, and a light
+//! behind the row was drawn over what the reader had hold of in it.
 //!
 //! Enter opens what the row names -- in a buffer, and the conversation hides
 //! itself, because going somewhere means seeing it. Escape comes back out to

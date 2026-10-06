@@ -3779,6 +3779,9 @@ fn a_question_goes_when_the_agent_does() {
 /// reader lands in a buffer, with its jump list, its definitions and its
 /// hunks. The cursor only ever stands on a row that does something, so
 /// there is no way to reach one where enter does nothing.
+///
+/// Broken deliberately by having `offer_enter` return for a row that only
+/// names a file: the row says nothing about enter.
 #[test]
 fn a_tool_call_in_the_transcript_opens_the_file_it_was_in() {
     let (mut app, events) = talking();
@@ -3809,6 +3812,20 @@ fn a_tool_call_in_the_transcript_opens_the_file_it_was_in() {
             Some(obelus_component::chat::Focus::Transcript(_))
         ),
         "up from the box did not reach the transcript"
+    );
+    // And the row says what enter does there, since nothing lights it:
+    // beside it, or on the blank under it where its words leave no room.
+    let text = screen(&mut app);
+    let lines: Vec<&str> = text.lines().collect();
+    let call = lines
+        .iter()
+        .position(|row| row.contains("Read the file"))
+        .expect("the tool call");
+    assert!(
+        lines[call..=call + 1]
+            .iter()
+            .any(|row| row.contains("Enter  Opens the file")),
+        "the row does not say what enter does:\n{text}"
     );
     // Enter opens what it names, at the line it named -- and the
     // conversation gets out of the way, because going somewhere means
@@ -6477,6 +6494,10 @@ fn a_plan_is_read_in_the_transcript_and_the_card_holds_the_answers() {
 /// list with how far along each one is. It is never written into the
 /// transcript: a finished list of completed steps is a log, and what is kept
 /// of a turn is what the agent said and did.
+///
+/// Broken deliberately by taking away escape's own row when enter and
+/// escape do not fit on it together: the row that says it is going says
+/// nothing about stopping it.
 #[test]
 fn what_the_agent_means_to_do_is_one_row_that_opens() {
     let (mut app, events) = talking();
