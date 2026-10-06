@@ -1631,13 +1631,18 @@ const MARK: &[u8] = include_bytes!("../../../contrib/desktop/obelus.ico");
 ///
 /// X11 is who needs it. A Wayland compositor takes the icon from the
 /// desktop entry the name above points it at, and macOS from the bundle,
-/// so on those two this is dropped; Windows does take it, and gets the
-/// same picture it would have taken out of the executable's own resources
-/// anyway, because both are built from the one file below.
+/// so on those two this is dropped. Windows takes it twice, because it
+/// keeps two: winit's window icon is only `ICON_SMALL`, the one in the
+/// title bar, and the taskbar and alt-tab read `ICON_BIG`, which winit
+/// clears unless it is given a taskbar icon as well -- and its window
+/// class has none to fall back on, so the executable's own resources are
+/// never asked. Without the second, the button came up blank and filled in
+/// only once something made the taskbar look again.
 ///
 /// Set on all of them rather than behind a `cfg` for each: a platform that
 /// does not want it drops it, and three cfgs would be three places to be
-/// wrong about somebody else's rules. Read from the file rather than
+/// wrong about somebody else's rules. The taskbar's is the one `cfg`,
+/// because only Windows has the method. Read from the file rather than
 /// written out as pixels beside it, because an icon is an icon in one
 /// place.
 ///
@@ -1659,6 +1664,11 @@ fn marked(attributes: winit::window::WindowAttributes) -> winit::window::WindowA
             tracing::warn!(%error, "the window has no icon");
             None
         }
+    };
+    #[cfg(windows)]
+    let attributes = {
+        use winit::platform::windows::WindowAttributesExtWindows;
+        attributes.with_taskbar_icon(icon.clone())
     };
     attributes.with_window_icon(icon)
 }
