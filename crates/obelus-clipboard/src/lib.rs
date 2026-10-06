@@ -288,7 +288,7 @@ pub fn provider() -> Provider {
     }
     *PROVIDER.get_or_init(|| {
         let have = |program: &str| {
-            Command::new(program)
+            obelus_program::without_a_window(&mut Command::new(program))
                 .arg("--help")
                 .stdin(Stdio::null())
                 .stdout(Stdio::null())
@@ -342,7 +342,7 @@ pub fn types() -> Vec<String> {
     let Some((program, arguments)) = provider().listing() else {
         return Vec::new();
     };
-    let outcome = Command::new(program)
+    let outcome = obelus_program::without_a_window(&mut Command::new(program))
         .args(arguments)
         .stdin(Stdio::null())
         .stderr(Stdio::null())
@@ -377,7 +377,7 @@ pub fn paste_as(mime: &str) -> Option<Vec<u8>> {
         return Some(bytes);
     }
     let (program, arguments) = provider().reading(mime)?;
-    let outcome = Command::new(program)
+    let outcome = obelus_program::without_a_window(&mut Command::new(program))
         .args(&arguments)
         .stdin(Stdio::null())
         .stderr(Stdio::null())
@@ -525,7 +525,7 @@ pub fn paste() -> Option<String> {
     let Some((_, _, program, arguments)) = provider().commands() else {
         return kept();
     };
-    let outcome = Command::new(program)
+    let outcome = obelus_program::without_a_window(&mut Command::new(program))
         .args(arguments)
         .stdin(Stdio::null())
         .stderr(Stdio::null())
@@ -609,7 +609,7 @@ fn to_a_program(text: &str, waiting: Waiting) -> io::Result<()> {
     let Some((program, arguments, _, _)) = provider().commands() else {
         return write_to(&mut io::stdout().lock(), text);
     };
-    let mut child = Command::new(program)
+    let mut child = obelus_program::without_a_window(&mut Command::new(program))
         .args(arguments)
         .stdin(Stdio::piped())
         .stdout(Stdio::null())

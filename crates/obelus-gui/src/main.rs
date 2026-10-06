@@ -23,6 +23,18 @@
 //! on a texture (`grid`), and `app::run` is handed the *receiving* end of
 //! the loop's channel, because the other end belongs to whichever front end
 //! is running (`window`).
+//!
+//! **A window is not a console program.** On Windows a program says which it
+//! is, and one that says console is given a console wherever it starts --
+//! from a menu or a double-click, a black window beside Obelus's own for as
+//! long as it runs. So `obg` says window. What a console program had for
+//! nothing -- `--help`, and a bad path saying so -- comes back by taking the
+//! console of whatever started it, where something did; and what it starts
+//! is told to put up no console of its own (`obelus_program`).
+
+// Not in a test binary: cargo reads what a test says on the console it
+// started it in.
+#![cfg_attr(not(test), windows_subsystem = "windows")]
 
 mod blink;
 mod clipboard;
@@ -56,6 +68,9 @@ struct Arguments {
 }
 
 fn main() -> Result<()> {
+    // Before the arguments, because `--help` is said on it.
+    #[cfg(windows)]
+    take_the_console_it_was_started_from();
     let arguments = Arguments::parse();
 
     // Held until main returns, so buffered log lines are flushed on the way
@@ -85,6 +100,22 @@ fn main() -> Result<()> {
     );
 
     window::show(app)
+}
+
+/// Says what follows on the console `obg` was started from, where it was
+/// started from one.
+///
+/// Nothing where it was not -- a start from Explorer or a menu -- which is
+/// right: there is nobody to say it to, and a console put up to say it would
+/// be the window this is here to be rid of. Nor where its output was sent
+/// somewhere already, which it keeps.
+#[cfg(windows)]
+fn take_the_console_it_was_started_from() {
+    use windows_sys::Win32::System::Console::{ATTACH_PARENT_PROCESS, AttachConsole};
+    // Safety: it takes a constant, and a failure is only an answer.
+    unsafe {
+        AttachConsole(ATTACH_PARENT_PROCESS);
+    }
 }
 
 #[cfg(test)]

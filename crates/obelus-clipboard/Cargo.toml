@@ -11,6 +11,8 @@ workspace = true
 
 [dependencies]
 base64.workspace = true
+# `without_a_window`, for the programs that are the clipboard on some machines.
+obelus-program.workspace = true
 open.workspace = true
 tracing.workspace = true
 

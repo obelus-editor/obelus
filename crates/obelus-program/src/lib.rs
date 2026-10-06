@@ -25,8 +25,35 @@
 //! language servers ask whether a server is installed, and the agents start
 //! `npm` and then whatever `npm` wrote. One answer, so the two cannot come to
 //! disagree about what this machine has.
+//!
+//! And a third that is only Windows's: a program started there gets a console
+//! window of its own unless it is told not to, wherever the program starting
+//! it has none to share -- which is `obg`, a window and not a console program.
+//! [`without_a_window`] is the telling, and every program Obelus starts with
+//! its pipes held asks it.
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    process::Command,
+};
+
+/// Starts a program without a console window of its own, on Windows, and does
+/// nothing anywhere else.
+///
+/// Every program Obelus starts talks to it through pipes and has nothing to
+/// show a reader in a window -- a language server, `npm`, a command an agent
+/// asked for. Started from `obg`, which has no console to lend them, each
+/// would put up one of its own and leave it on the screen for as long as it
+/// ran. Not `DETACHED_PROCESS`, which gives it no console at all: whatever it
+/// starts in turn would then put up a window of its own instead.
+pub fn without_a_window(command: &mut Command) -> &mut Command {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt as _;
+        command.creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW);
+    }
+    command
+}
 
 /// Whether a command can be found.
 #[must_use]
@@ -132,6 +159,55 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// A program started here has no console window, which is what `obg`
+    /// starting a language server would otherwise put on the reader's
+    /// screen for as long as the server ran.
+    ///
+    /// The program is this test binary again, running the test below it,
+    /// which says whether it was given a window. Started the ordinary way
+    /// it shares the one `cargo test` is in, or is given one of its own
+    /// where there is none, and says so either way.
+    ///
+    /// Broken deliberately by taking `creation_flags` out of
+    /// `without_a_window`.
+    #[cfg(windows)]
+    #[test]
+    fn a_program_started_here_has_no_console_window() {
+        let mut command = std::process::Command::new(std::env::current_exe().expect("this test"));
+        command
+            .args([
+                "--exact",
+                "tests::says_whether_it_has_a_console_window",
+                "--nocapture",
+            ])
+            .env("OBELUS_SAY_THE_WINDOW", "1");
+        let outcome = super::without_a_window(&mut command)
+            .output()
+            .expect("starting it");
+        let said = String::from_utf8_lossy(&outcome.stdout);
+        // Its own line, and not merely the absence of the other one: a
+        // child that never got as far as asking says neither.
+        assert!(said.contains("window: none"), "it said {said:?}");
+    }
+
+    /// The other half of the one above, and nothing when run on its own.
+    #[cfg(windows)]
+    #[test]
+    fn says_whether_it_has_a_console_window() {
+        if std::env::var_os("OBELUS_SAY_THE_WINDOW").is_none() {
+            return;
+        }
+        // Safety: it takes nothing and only answers.
+        let window = unsafe { windows_sys::Win32::System::Console::GetConsoleWindow() };
+        println!(
+            "window: {}",
+            match window.is_null() {
+                true => "none",
+                false => "some",
+            }
+        );
     }
 
     /// Anything else is handed over as it is.
