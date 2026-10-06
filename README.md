@@ -78,8 +78,8 @@ there is no `obg` to install at all — the window finds Vulkan, Wayland and X11
 binary cannot do — so the script says so and installs `ob`.
 
 [The releases](https://github.com/obelus-editor/obelus/releases) carry an archive
-for every platform as well as a `.deb`, an `.rpm`, an AppImage and a macOS
-`.app`.
+for every platform as well as a `.deb`, an `.rpm`, an AppImage, a macOS
+`.app` and a Windows `.msi`.
 
 Or from source, which needs nothing but a stable Rust:
 
