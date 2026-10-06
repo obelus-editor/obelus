@@ -393,11 +393,13 @@ the menu about the name under the caret, the problems (`app/switching`).
 
 **One mark for "the keys are here", and it says nothing else.** Every list,
 page and card in Obelus puts `selected_row_background` behind the row the
-reader is on -- a picker's rows, the settings', an agent's question, the
-transcript -- and the same colour behind the one item of a row of them, for
-the things laid out across a row rather than down a column. Where there is a
-caret there is no background: a box is marked by the caret sitting in it,
-and two marks for one fact is one too many.
+reader is on -- a picker's rows, the settings', an agent's question -- and
+the same colour behind the one item of a row of them, for the things laid
+out across a row rather than down a column. Where there is a caret there is
+no background: a box is marked by the caret sitting in it, and so is the
+transcript, even on a row enter acts on -- a light there was drawn over what
+the reader had hold of, and a key at the row's end says what enter does.
+Two marks for one fact is one too many.
 
 And only the nearest thing on screen wears it. A page or a list under
 another is drawn as it was, rows and all, but its row is not marked: two

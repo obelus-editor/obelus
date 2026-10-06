@@ -1368,11 +1368,11 @@ fn enter_on_something_already_said_copies_it_to_the_box() {
 /// own words are not lit: several rows of them in a block of colour was
 /// the light standing over what they were reading.
 ///
-/// Broken deliberately three times: lighting what the reader said again
-/// (dropping the `Speaker::Reader` filter on `lit`) puts a colour behind
-/// both rows; answering enter from `laid.get(at.row)` again leaves the box
-/// empty; and taking the foot from the first row rather than the last puts
-/// the key after the first line, which has the room for it.
+/// Broken deliberately three times: lighting what `Row::acting` names
+/// again puts a colour behind both rows; answering enter from
+/// `laid.get(at.row)` again leaves the box empty; and taking the foot from the
+/// first row rather than the last puts the key after the first line, which has
+/// the room for it.
 #[test]
 fn something_already_said_answers_enter_from_every_row_of_it() {
     let (mut app, events) = talking();
@@ -1628,18 +1628,14 @@ fn a_title_longer_than_the_row_keeps_the_row_its_own_end() {
     );
 }
 
-/// The light on a call is a box round its title: every row of it, as wide
-/// as the widest and a cell more, and not a band across the transcript.
+/// A call the cursor is on is not lit, and neither is any other row of the
+/// transcript: the caret says where the reader is, and a light behind the
+/// call was drawn on the cells of what they had hold of in it.
 ///
-/// Broken deliberately three ways. Asking `Row::acting` of the first row
-/// alone again lights the command's first row, as wide as that row.
-/// Putting back the fill to the edge of the band lights the column past
-/// the box. And painting only the cells the words were drawn in leaves a
-/// hole after the short rows, where the box should still be. And painting
-/// every cell of the box, whatever it was drawn on, covers what the reader
-/// has hold of in it.
+/// Broken deliberately by filling the rows `Row::acting` names with
+/// `selected_row_background` again: the call's title is lit.
 #[test]
-fn the_light_on_a_call_is_as_wide_and_as_tall_as_its_title() {
+fn a_call_the_cursor_is_on_is_not_lit() {
     let (mut app, events) = talking();
     pump(&mut app, &events, "the handshake", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -1670,53 +1666,38 @@ fn the_light_on_a_call_is_as_wide_and_as_tall_as_its_title() {
         // the call goes past it to the thing before.
         support::press(&mut app, KeyCode::Up);
     }
+    let on = app.chat().and_then(|chat| match chat.focus() {
+        obelus_component::chat::Focus::Transcript(place) => {
+            obelus_component::chat::Row::acting(&chat.rows(WIDTH - 5), place.row)
+        }
+        _ => None,
+    });
+    assert!(on.is_some(), "the cursor is not on the call");
 
-    let cells = support::cells_of(&mut app, WIDTH, HEIGHT);
     let lit = app.theme().selected_row_background;
-    let find = |needle: &str| {
-        (0..HEIGHT)
-            .find_map(|y| {
-                let row: String = (0..WIDTH).map(|x| cells[(x, y)].symbol()).collect();
-                let from = row.find(needle)?;
-                let x = u16::try_from(row[..from].chars().count()).ok()?;
-                Some((x, y))
-            })
-            .unwrap_or_else(|| panic!("{needle:?} is not on the screen"))
+    let any_lit = |app: &mut App| {
+        let cells = support::cells_of(app, WIDTH, HEIGHT);
+        (0..HEIGHT).any(|y| (0..WIDTH).any(|x| cells[(x, y)].bg == lit))
     };
-    let (first, top) = find("cat <<EOF");
-    let widest = "import sys, subprocess, shutil, pathlib";
-    let (_, middle) = find(widest);
-    let (_, bottom) = find("print(1)");
-    let end = first + u16::try_from(widest.len()).unwrap_or(0);
     let screen = screen(&mut app);
-    for y in [top, middle, bottom] {
-        assert_eq!(cells[(first, y)].bg, lit, "row {y} is not lit:\n{screen}");
-        // The cell after the widest row's words, which on the short rows
-        // has nothing drawn in it.
-        assert_eq!(
-            cells[(end, y)].bg,
-            lit,
-            "row {y} stops short of the box:\n{screen}"
-        );
-        assert_ne!(
-            cells[(end + 1, y)].bg,
-            lit,
-            "row {y} is lit past the box:\n{screen}"
-        );
-    }
+    assert!(!any_lit(&mut app), "the call is lit:\n{screen}");
 
-    // What the reader holds inside the light keeps the colour it is held
-    // in: from the start of the title, this holds `cat`.
+    // What the reader holds in it is the one background there: from the
+    // start of the title, this holds `cat`.
     support::press(&mut app, KeyCode::Home);
     for _ in 0..3 {
         support::press_shift(&mut app, KeyCode::Right);
     }
-    let cells = support::cells_of(&mut app, WIDTH, HEIGHT);
     let screen = crate::screen(&mut app);
-    assert_eq!(
-        cells[(first, top)].bg,
-        app.theme().selection_background,
-        "the light covers what is held:\n{screen}"
+    assert!(
+        !any_lit(&mut app),
+        "the call is lit round what is held:\n{screen}"
+    );
+    let held = app.theme().selection_background;
+    let cells = support::cells_of(&mut app, WIDTH, HEIGHT);
+    assert!(
+        (0..HEIGHT).any(|y| (0..WIDTH).any(|x| cells[(x, y)].bg == held)),
+        "nothing is held:\n{screen}"
     );
 }
 
@@ -3798,6 +3779,9 @@ fn a_question_goes_when_the_agent_does() {
 /// reader lands in a buffer, with its jump list, its definitions and its
 /// hunks. The cursor only ever stands on a row that does something, so
 /// there is no way to reach one where enter does nothing.
+///
+/// Broken deliberately by having `offer_enter` return for a row that only
+/// names a file: the row says nothing about enter.
 #[test]
 fn a_tool_call_in_the_transcript_opens_the_file_it_was_in() {
     let (mut app, events) = talking();
@@ -3829,18 +3813,20 @@ fn a_tool_call_in_the_transcript_opens_the_file_it_was_in() {
         ),
         "up from the box did not reach the transcript"
     );
-    // And it is lit, the way a chosen row is lit in every list.
-    let dump = support::render(&mut app, WIDTH, HEIGHT);
-    let lit = rows(&dump)
+    // And the row says what enter does there, since nothing lights it:
+    // beside it, or on the blank under it where its words leave no room.
+    let text = screen(&mut app);
+    let lines: Vec<&str> = text.lines().collect();
+    let call = lines
         .iter()
         .position(|row| row.contains("Read the file"))
         .expect("the tool call");
-    let styles: Vec<&str> = support::style_block(&dump).lines().collect();
     assert!(
-        styles[lit + 1].contains('d'),
-        "the row the reader is on is not marked:\n{dump}"
+        lines[call..=call + 1]
+            .iter()
+            .any(|row| row.contains("Enter  Opens the file")),
+        "the row does not say what enter does:\n{text}"
     );
-
     // Enter opens what it names, at the line it named -- and the
     // conversation gets out of the way, because going somewhere means
     // seeing it.
@@ -3856,56 +3842,6 @@ fn a_tool_call_in_the_transcript_opens_the_file_it_was_in() {
         buffer.cursor().line.get(),
         6,
         "it did not land on the line the agent named"
-    );
-}
-
-/// The transcript's row under a list opened over it is drawn and not lit:
-/// the keys are the list's.
-///
-/// Deliberate break: light the row the cursor is on whatever is over the
-/// conversation -- the tool call wears the list's own mark beside it.
-#[test]
-fn the_transcript_s_row_under_a_list_is_not_lit() {
-    let (mut app, events) = talking();
-    support::type_text(&mut app, "what is this file");
-    support::press(&mut app, KeyCode::Enter);
-    pump(
-        &mut app,
-        &events,
-        "the permission request",
-        App::is_asking_permission,
-    );
-    support::press(&mut app, KeyCode::Enter);
-    pump(&mut app, &events, "the end of the turn", |app| {
-        app.talking() == obelus_agent::Talking::Ready
-    });
-    // To the file it read -- see the test above.
-    support::press(&mut app, KeyCode::Up);
-    support::press(&mut app, KeyCode::BackTab);
-    support::press(&mut app, KeyCode::BackTab);
-    let call = "Read the file";
-    let dump = support::render(&mut app, WIDTH, HEIGHT);
-    let lit = support::drawn_in(&dump, call);
-
-    // The themes narrowed to the one in force, which is short enough to
-    // leave the row in sight and previews nobody else's colours.
-    support::press_control(&mut app, 'p');
-    support::type_text(&mut app, "choose-theme");
-    support::press(&mut app, KeyCode::Enter);
-    support::type_text(&mut app, "dark");
-    let dump = support::render(&mut app, WIDTH, HEIGHT);
-    assert_ne!(
-        support::drawn_in(&dump, call),
-        lit,
-        "the transcript's row is lit under the list:\n{dump}"
-    );
-
-    support::press(&mut app, KeyCode::Esc);
-    let dump = support::render(&mut app, WIDTH, HEIGHT);
-    assert_eq!(
-        support::drawn_in(&dump, call),
-        lit,
-        "the row did not take the mark back:\n{dump}"
     );
 }
 
@@ -6558,6 +6494,10 @@ fn a_plan_is_read_in_the_transcript_and_the_card_holds_the_answers() {
 /// list with how far along each one is. It is never written into the
 /// transcript: a finished list of completed steps is a log, and what is kept
 /// of a turn is what the agent said and did.
+///
+/// Broken deliberately by taking away escape's own row when enter and
+/// escape do not fit on it together: the row that says it is going says
+/// nothing about stopping it.
 #[test]
 fn what_the_agent_means_to_do_is_one_row_that_opens() {
     let (mut app, events) = talking();

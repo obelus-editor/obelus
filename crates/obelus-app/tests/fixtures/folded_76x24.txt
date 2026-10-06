@@ -4,7 +4,7 @@ screen 76x24  editor 76x22  status 76x1
  1|────────────────────────────────────────────────────────────────────────────
  2| >  /many                                                                   
  3|                                                                            
- 4| +  4 Files  ▾ Done                                                         
+ 4| +  4 Files  ▾ Done                                        Enter  Closes it 
  5|   +  Read src/app  tests/fixtures/many_lines.rs:4 Done                     
  6|   +  Read src/acp  tests/fixtures/many_lines.rs:4 Done                     
  7|   +  Read src/buffer  tests/fixtures/many_lines.rs:4 Done                  
@@ -29,13 +29,13 @@ screen 76x24  editor 76x22  status 76x1
  1|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
  2|abaabbbbbaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
  3|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
- 4|deddeeeeeeedeedeeeedaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+ 4|acaacccccccaccaccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaacccccccccccccccca
  5|aaacaaccccccccccccaaccccccccccccccccccccccccccccccaccccaaaaaaaaaaaaaaaaaaaaa
  6|aaacaaccccccccccccaaccccccccccccccccccccccccccccccaccccaaaaaaaaaaaaaaaaaaaaa
  7|aaacaacccccccccccccccaaccccccccccccccccccccccccccccccaccccaaaaaaaaaaaaaaaaaa
  8|aaacaacccccccccccaaccccccccccccccccccccccccccccccaccccaaaaaaaaaaaaaaaaaaaaaa
  9|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
-10|acaacccccccccccccaffffffaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+10|acaacccccccccccccaddddddaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 11|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 12|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 13|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
@@ -53,8 +53,6 @@ screen 76x24  editor 76x22  status 76x1
 a fg=#e4e4e7 bg=#18181b
 b fg=#a1a1aa bg=#18181b
 c fg=#52525b bg=#18181b
-d fg=#e4e4e7 bg=#27272a
-e fg=#52525b bg=#27272a
-f fg=#f472b6 bg=#18181b
+d fg=#f472b6 bg=#18181b
 -- cursor --
 4,4

@@ -33,8 +33,9 @@
 //! sentence has to be able to stand in it, and a press puts it where the
 //! pointer landed. Tab and shift and tab step to the next row that does
 //! something: a tool call names a file, a heading opens what is under it.
-//! Only those rows are lit while the cursor is on them, and that is the
-//! promise: what is lit is what enter opens.
+//! None of them is lit while the cursor is on it: the caret says where the
+//! cursor is, a key at the row's end says what enter does there, and a light
+//! behind the row was drawn over what the reader had hold of in it.
 //!
 //! Enter opens what the row names -- in a buffer, and the conversation hides
 //! itself, because going somewhere means seeing it. Escape comes back out to
@@ -413,8 +414,7 @@ impl Row {
     ///
     /// A tool call names a file and enter opens it, a heading opens what is
     /// under it, a row the reader was sent away by sends them again. The
-    /// cursor stands on any row; these are the ones tab goes to, and the
-    /// ones lit while it is on them, so that what is lit is what opens.
+    /// cursor stands on any row; these are the ones tab goes to.
     ///
     /// The list is the one the key's own `match` answers, and the two have
     /// to say the same thing: a row this lets the cursor stand on and that
@@ -435,8 +435,7 @@ impl Row {
     /// to, and enter on any of them answers from the first of them, which
     /// carries `unsent`, `again`, the fold, the place and the address. Only
     /// the first used to answer: enter on the rest of a message did
-    /// nothing, and a command three rows long was lit on its first row
-    /// alone, a light round a third of the thing it opened.
+    /// nothing.
     ///
     /// The words and nothing under them: what an opened call carries is
     /// deeper and from somewhere else, and is not the call.
@@ -2856,8 +2855,8 @@ impl Chat {
     ///
     /// Above what `at` is part of, not above `at`: on the third row of a
     /// command the stop above is the command's own first row, which is
-    /// lit already, so the key moved the caret and left the light where it
-    /// was -- a key that looked as though it had done nothing.
+    /// the call the key was pressed in -- a key that looked as though it
+    /// had done nothing.
     fn next_stop_in(at: usize, up: bool, laid: &[Row]) -> Option<usize> {
         let at = match up {
             true => Row::acting(laid, at).map_or(at, |on| on.start),
@@ -3533,7 +3532,7 @@ mod tests {
     }
 
     /// Shift and tab from a lower row of a call's title goes to the call
-    /// before it, not to the first row of the one already lit.
+    /// before it, not to the first row of the one it was pressed in.
     ///
     /// Broken deliberately by stepping back from `at` again rather than
     /// from where what it is part of starts: the cursor lands on `b1`.

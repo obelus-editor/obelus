@@ -1103,23 +1103,10 @@ impl ChatView<'_> {
             Focus::Transcript(place) if self.in_front => Row::acting(&rows, place.row),
             _ => None,
         };
-        // Except what the reader said, which is not lit at all: a light
-        // round several rows of their own words was a block of colour over
-        // the very thing they were reading. A call's title is lit however
-        // many rows it takes, because it is a handle on the call; a message
-        // is read for itself. The caret says where they are and the key at
-        // the end of it says what enter does.
-        let lit = acting.clone().filter(|on| {
-            rows.get(on.start)
-                .is_some_and(|row| row.speaker != Speaker::Reader)
-        });
         // The last row of what a key acts on, where it is on screen: where
-        // its words end, and the colour it is drawn in.
+        // its words end, the colour it is drawn in, and whether it is the
+        // row escape stops.
         let mut foot = None;
-        // Where the light goes, once the rows under it have said how far
-        // their words reach: the top row on screen, how many, and the
-        // columns.
-        let mut light: Option<Rect> = None;
         for (offset, row) in rows.iter().skip(first).enumerate() {
             let Ok(offset) = u16::try_from(offset) else {
                 break;
@@ -1132,17 +1119,12 @@ impl ChatView<'_> {
             // so that a run reads as one thing rather than as a stretch of
             // rows that happen to look alike.
             let words = words + u16::from(row.depth) * DEEPER;
-            // The row the cursor is on, lit in the colour every list in
-            // Obelus marks its row with -- but only where the row does
-            // something, because that is what the light promises: what is
-            // lit is what enter opens.
-            //
-            // Where the cursor is is said by the caret instead. The cursor
-            // can stand anywhere now, so a light that followed it would be
-            // a promise kept on one row in twenty; two marks saying two
-            // different things is the honest way round.
+            // Nothing here is lit, not even a row enter acts on. The caret
+            // says where the reader is, and a light behind a row was drawn
+            // on the same cells as what they had hold of in it -- two
+            // backgrounds for one cell, and the reader could not tell
+            // where the one ended and the other began.
             let at = first + usize::from(offset);
-            let here = lit.as_ref().is_some_and(|lit| lit.contains(&at));
             let (glyph, style) = self.voice(row, plain, dim);
             // What has not gone yet is said in the ink: the reader's own
             // words, dim, until the turn in front of them ends. Not by
@@ -1168,14 +1150,6 @@ impl ChatView<'_> {
                     (tint, tint.fg(self.theme.gutter))
                 }
                 None => (style, dim),
-            };
-            let unlit = dim;
-            let (style, dim) = match here {
-                true => (
-                    style.bg(self.theme.selected_row_background),
-                    dim.bg(self.theme.selected_row_background),
-                ),
-                false => (style, dim),
             };
             // The tint runs to the edge, as it does behind an opened hunk
             // in a file: a block of colour that stopped where the words
@@ -1314,61 +1288,26 @@ impl ChatView<'_> {
             for (gap, said, style) in tail {
                 ended = write_within(cells, ended + gap, y, &said, style, words_end(area) + 1);
             }
-            // A box round the words rather than a band across the row: as
-            // wide as the longest of its rows and a cell either side, which
-            // is the column the margin leaves in front of the glyph. A band
-            // to the edge said the row was lit; it also put a block of
-            // colour behind nothing, wider than the thing enter opens.
-            if here {
-                let right = (ended + 1).min(words_end(area) + 1);
-                light = Some(match light {
-                    Some(lit) => Rect {
-                        width: right.max(lit.right()).saturating_sub(lit.x),
-                        height: lit.height + 1,
-                        ..lit
-                    },
-                    None => {
-                        let x = area.x + u16::from(row.depth) * DEEPER;
-                        Rect {
-                            x,
-                            y,
-                            width: right.saturating_sub(x),
-                            height: 1,
-                        }
-                    }
-                });
-            }
-            if acting.as_ref().is_some_and(|on| at + 1 == on.end) {
-                foot = Some((y, ended, dim));
+            let stops = row.speaker == Speaker::Doing && self.state == Talking::Thinking;
+            let footed = acting.as_ref().is_some_and(|on| at + 1 == on.end);
+            if footed {
+                foot = Some((y, ended, dim, stops));
             }
             // How to stop it, on the row that says it is going: the one
             // thing escape does here that a reader could not guess, and it
-            // belongs beside the thing it would stop.
-            if row.speaker == Speaker::Doing && self.state == Talking::Thinking {
+            // belongs beside the thing it would stop. Unless enter is said
+            // on that row too, which says the two together: written one
+            // after the other, the second was written over the first.
+            if stops && !footed {
                 let keys = [(chord(KeyCode::Esc, KeyModifiers::NONE), "Stops it")];
                 if let Some(said) = joined(&keys)
                     && let Ok(offset) =
                         u16::try_from(usize::from(area.width).saturating_sub(text_width(&said) + 1))
                     && area.x + offset > ended + 1
                 {
-                    // Outside the light, so on the page's own colour.
-                    let ground = unlit.bg.unwrap_or(self.theme.background);
-                    write(cells, area.x + offset, y, &said, unlit);
+                    let ground = dim.bg.unwrap_or(self.theme.background);
+                    write(cells, area.x + offset, y, &said, dim);
                     cap_the_keys(area.x + offset, y, &keys, ground, self.theme);
-                }
-            }
-        }
-        // Behind what the rows left on the page's colour and nothing else:
-        // the words are already drawn on the light, and what is drawn on a
-        // colour of its own -- what the reader has hold of -- keeps it.
-        if let Some(light) = light {
-            for y in light.top()..light.bottom() {
-                for x in light.left()..light.right() {
-                    if let Some(cell) = cells.cell_mut((x, y))
-                        && cell.bg == self.theme.background
-                    {
-                        cell.set_bg(self.theme.selected_row_background);
-                    }
                 }
             }
         }
@@ -1377,10 +1316,13 @@ impl ChatView<'_> {
         }
     }
 
-    /// Says what enter does to something the reader said, the way the box
+    /// Says what enter does to the thing the cursor is on, the way the box
     /// says what `ctrl+enter` does to what is in it: at the end of its last
     /// row where its words leave room, and on the row under it where they
     /// do not.
+    ///
+    /// Said in words rather than by lighting the row: a light was drawn on
+    /// the cells of what the reader had hold of in it.
     ///
     /// After the last row rather than the first, because the key is about
     /// all of it, and all of it ends there. It used to follow the
@@ -1397,39 +1339,63 @@ impl ChatView<'_> {
         area: Rect,
         rows: &[Row],
         on: std::ops::Range<usize>,
-        (y, ended, beside_dim): (u16, u16, Style),
+        (y, ended, beside_dim, stops): (u16, u16, Style, bool),
         dim: Style,
     ) {
         let Some(first) = rows.get(on.start) else {
             return;
         };
-        let does = match (first.unsent, first.again) {
-            (Some(_), _) => "Takes it back",
-            (None, Some(_)) => "Copies it to the box",
-            (None, None) => return,
+        // In the order the key's own `match` asks them, because a call that
+        // folds and names a file is opened by enter, not gone to.
+        let does = match (
+            first.unsent,
+            first.again,
+            first.folds,
+            &first.place,
+            &first.away,
+        ) {
+            (Some(_), ..) => "Takes it back",
+            (None, Some(_), ..) => "Copies it to the box",
+            (None, None, Some(_), ..) => match first.open {
+                true => "Closes it",
+                false => "Opens it",
+            },
+            (None, None, None, Some(_), _) => "Opens the file",
+            (None, None, None, None, Some(_)) => "Opens it in your browser",
+            (None, None, None, None, None) => return,
         };
-        let keys = [(chord(KeyCode::Enter, KeyModifiers::NONE), does)];
-        let Some(said) = joined(&keys) else {
-            return;
+        let stop = (chord(KeyCode::Esc, KeyModifiers::NONE), "Stops it");
+        let mut keys = vec![(chord(KeyCode::Enter, KeyModifiers::NONE), does)];
+        if stops {
+            keys.push(stop.clone());
+        }
+        let placed = |keys: &[(String, &'static str)]| {
+            let said = joined(keys)?;
+            let wide = u16::try_from(text_width(&said)).ok()?;
+            let at = (words_end(area) + 1).checked_sub(wide)?;
+            Some((said, at))
         };
-        let Some(at) = u16::try_from(text_width(&said))
-            .ok()
-            .and_then(|wide| (words_end(area) + 1).checked_sub(wide))
-        else {
-            return;
-        };
-        let beside = usize::from(ended) + GAP_BETWEEN_HINTS <= usize::from(at);
+        let beside = |at: u16| usize::from(ended) + GAP_BETWEEN_HINTS <= usize::from(at);
         let under = rows
             .get(on.end)
-            .is_none_or(|row| row.from.is_none() && row.spans.is_empty());
-        let (y, style) = match (beside, under) {
-            (true, _) => (y, beside_dim),
-            (false, true) if y + 1 < area.bottom() => (y + 1, dim),
-            _ => return,
+            .is_none_or(|row| row.from.is_none() && row.spans.is_empty())
+            && y + 1 < area.bottom();
+        // Beside the words, or on the blank under them -- and where there
+        // is room for neither, escape keeps its own row and enter goes
+        // without, because a turn that cannot be stopped is worse than a
+        // heading nobody was told opens.
+        let alone = [stop];
+        let (keys, said, at, y, style) = match placed(&keys) {
+            Some((said, at)) if beside(at) => (&keys[..], said, at, y, beside_dim),
+            Some((said, at)) if under => (&keys[..], said, at, y + 1, dim),
+            _ => match placed(&alone) {
+                Some((said, at)) if stops && beside(at) => (&alone[..], said, at, y, beside_dim),
+                _ => return,
+            },
         };
         write(cells, at, y, &said, style);
         let ground = style.bg.unwrap_or(self.theme.background);
-        cap_the_keys(at, y, &keys, ground, self.theme);
+        cap_the_keys(at, y, keys, ground, self.theme);
     }
 
     /// The box, with the caret's own row scrolled into it.
