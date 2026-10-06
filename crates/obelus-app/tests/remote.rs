@@ -2924,3 +2924,88 @@ fn a_chat_with_something_untold_says_what() {
     let line = status_row(&mut app);
     assert!(line.contains("✕ Slack"), "{line}");
 }
+
+/// A window the chat talks to that goes to another worktree still has the
+/// chat once it is there.
+///
+/// Going to another tree lets go of everything the first one was, and the
+/// connection went with it: a reader away from the machine who went to
+/// another tree had cut themselves off. Broken deliberately by not
+/// connecting again in `App::move_to_tree`: the chat is no longer here.
+#[test]
+fn the_chat_goes_with_a_window_to_another_worktree() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-worktree");
+    let git = |directory: &std::path::Path, arguments: &[&str]| {
+        let outcome = std::process::Command::new("git")
+            .arg("-C")
+            .arg(directory)
+            .args(arguments)
+            .env("GIT_AUTHOR_NAME", "obelus")
+            .env("GIT_AUTHOR_EMAIL", "obelus@example.invalid")
+            .env("GIT_COMMITTER_NAME", "obelus")
+            .env("GIT_COMMITTER_EMAIL", "obelus@example.invalid")
+            .output()
+            .expect("running git");
+        assert!(outcome.status.success(), "git {arguments:?} failed");
+    };
+    let main = scratch.join("main");
+    std::fs::create_dir_all(&main).expect("the main checkout");
+    git(&main, &["init", "--quiet", "--initial-branch=master"]);
+    std::fs::write(main.join("file.rs"), "fn main() {}\n").expect("a file");
+    git(&main, &["add", "file.rs"]);
+    git(&main, &["commit", "--quiet", "-m", "committed"]);
+    let feature = scratch.join("feature");
+    git(
+        &main,
+        &[
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            "feature",
+            feature.to_str().expect("a path"),
+        ],
+    );
+
+    obelus_remote::platform::connect_for_test(fake_connect);
+    *FAKED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    std::fs::write(scratch.join("config.toml"), "remote = \"slack\"\n").expect("the settings");
+    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    let mut app = App::new(Vec::new());
+    app.config_file_for_test(scratch.join("config.toml"));
+    app.working_directory_for_test(main);
+    let (sender, events) = obelus_app::event::channel();
+    app.start(sender);
+    dispatch::dispatch(&mut app, Command::RemoteConnect);
+    until(&mut app, &events, "the connection", |app| {
+        app.remote_state_for_test() == obelus_remote::State::Connected
+    });
+
+    dispatch::dispatch(&mut app, Command::WorktreeList);
+    for _ in 0..4 {
+        let on = app
+            .picker()
+            .and_then(obelus_component::picker::Picker::selected_item)
+            .map(|item| item.label.clone());
+        if on.as_deref() == Some("feature") {
+            break;
+        }
+        support::press(&mut app, KeyCode::Down);
+    }
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.working_directory()
+            .canonicalize()
+            .expect("a tree that is there"),
+        feature.canonicalize().expect("a tree that is there"),
+        "the window did not go to feature"
+    );
+    until(&mut app, &events, "the connection again", |app| {
+        app.holds_the_remote_for_test()
+            && app.remote_state_for_test() == obelus_remote::State::Connected
+    });
+}

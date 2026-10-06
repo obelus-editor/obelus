@@ -1317,7 +1317,9 @@ impl App {
     ///
     /// What was open is closed without asking, unsaved work and all -- a
     /// file in a tree that has gone has nowhere to be written, and Obelus
-    /// does not make the tree again to write it.
+    /// does not make the tree again to write it. Going to another worktree
+    /// lets go the same way, and asks about what is unwritten before it
+    /// gets here (`App::go_to_worktree`).
     ///
     /// **A window that starts again, without starting again.** What is
     /// kept is what belongs to the process and not to the project -- the
@@ -1325,7 +1327,7 @@ impl App {
     /// and everything else is a new [`App`]'s. Kept by name rather than
     /// cleared by name, so that a field nobody thought of here is one that
     /// starts empty, and not one still holding the last project's answer.
-    fn let_go_of_the_project(&mut self) {
+    pub(super) fn let_go_of_the_project(&mut self) {
         // The sessions nothing was said in, as on the way out: an agent
         // keeps what it is not told to let go of.
         self.let_go_of_what_nothing_was_said_in(None);
@@ -2579,6 +2581,9 @@ impl App {
         // And what is open, written down where it has changed, for the
         // same reason: there are a dozen ways a document opens or closes.
         self.write_down_what_is_open();
+        // And what this window is reading, for the others' lists of the
+        // worktrees, for the same reason.
+        self.say_what_this_window_is_reading();
         // The notes are laid out against the room they have: a terminal is
         // resized and a setting is changed while they are open, and the rows
         // they are made of depend on both.
@@ -3102,7 +3107,12 @@ impl App {
                     ),
                 }
             }
-            Event::Tools(obelus_mcp::Asked { wanted, answer }) => {
+            // Only what was asked of this tree: the server about another
+            // went with the project that was on it.
+            Event::Tools(obelus_mcp::Asked { root, .. }) if root != self.working_directory => {
+                tracing::info!(root = %root.display(), "a tool asked of a tree this window has left");
+            }
+            Event::Tools(obelus_mcp::Asked { wanted, answer, .. }) => {
                 let _ = answer.send(match wanted {
                     obelus_mcp::Wanted::Notes(doing) => self.change_the_notes(doing),
                     obelus_mcp::Wanted::Open { path, line } => self.open_for_an_agent(&path, line),
@@ -3154,7 +3164,7 @@ impl App {
                     picker.scan_arrived(*scanned);
                 }
             }
-            Event::Reopened(files) => self.take_up_what_was_open(files),
+            Event::Reopened { tree, files } => self.take_up_what_was_open(&tree, files),
             Event::Search(obelus_search::Event::FilesFound {
                 generation,
                 paths,

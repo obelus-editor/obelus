@@ -178,7 +178,16 @@ pub enum Event {
     /// first screen: ten files of a large project are a fifth of a second to
     /// read and parse in a debug build, and the whole of that is a blank
     /// window.
-    Reopened(Vec<(std::path::PathBuf, Option<obelus_buffer::Buffer>)>),
+    ///
+    /// With the tree they were read for: a window that went to another
+    /// tree while they were being read is waiting on that tree's, and these
+    /// are not them.
+    Reopened {
+        /// The tree whose record named them.
+        tree: std::path::PathBuf,
+        /// Each file, and what it holds where it would open.
+        files: Vec<(std::path::PathBuf, Option<obelus_buffer::Buffer>)>,
+    },
     /// What the newest release of Obelus is called, as its tag says it.
     Released(String),
     /// Another Obelus's reader asked to be brought to this window, with
@@ -241,7 +250,7 @@ impl Event {
             Self::Watched(_) => "Watched",
             Self::Terminal(_) => "Terminal",
             Self::Scanned(_) => "Scanned",
-            Self::Reopened(_) => "Reopened",
+            Self::Reopened { .. } => "Reopened",
             Self::Released(_) => "Released",
             Self::Summoned(_) => "Summoned",
             Self::Remote(_) => "Remote",

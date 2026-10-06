@@ -162,7 +162,7 @@
           <span class="no">04</span>
           <div>
             <p class="claim">它告诉你去哪试，然后等着。</p>
-            <p class="why">它再跑一遍测试，告诉你目录和分支、跑了什么、结果是什么——而不是「应该没问题」——然后等你试过再说。<kbd>F2</kbd> 再按 <kbd>Tab</kbd> 就到<a href="#worktrees">那棵树的窗口</a>；在那边，这次改动就是这个分支上最新的提交，在它写的某一行上按 <kbd>F11</kbd> 就能打开它。</p>
+            <p class="why">它再跑一遍测试，告诉你目录和分支、跑了什么、结果是什么——而不是「应该没问题」——然后等你试过再说。<kbd>F2</kbd> 再按 <kbd>Tab</kbd> 就到<a href="#worktrees">那棵树</a>；在那边，这次改动就是这个分支上最新的提交，在它写的某一行上按 <kbd>F11</kbd> 就能打开它。</p>
           </div>
         </li>
         <li>
@@ -194,14 +194,14 @@
       <div class="feature">
         <div class="text">
       <h3 id="worktrees">每个 worktree 都只隔着一个键</h3>
-      <p>Obelus 不分屏：想并排看两个文件，就是两个窗口。所以同一个项目上开着好几个、各在自己的 worktree 上，是常态。在窗口里，<kbd>F2</kbd> 有第二个 tab，按 <kbd>Tab</kbd> 过去：git 知道的这个仓库的每一个 worktree 都在里面，不管它在哪儿，有窗口开着的会标出来。选一个，开着它的那个窗口就跳到前面来，没开就新开一个。</p>
+      <p>Obelus 不分屏：想并排看两个文件，就是两个窗口。所以同一个项目上开着好几个、各在自己的 worktree 上，是常态。<kbd>F2</kbd> 有第二个 tab，按 <kbd>Tab</kbd> 过去：git 知道的这个仓库的每一个 worktree 都在里面，不管它在哪儿，有 Obelus 开着的会标出来；一棵树上开着好几个的，下面每个各占一行，写着它正在看什么。按 <kbd>Enter</kbd>，当前这个 Obelus 就换到那棵树上，有没存的文件会先问；上次在那边开着的东西会重新打开。</p>
         </div>
         <figure class="shot">
           <a class="dark" href="../screens/worktree-list-dark.webp"><img src="../screens/worktree-list-dark.webp" width="1300" height="420" loading="lazy" alt="Worktrees 标签页：tally 在 main 上，tally/.worktree/stable-tie-order 在它自己的分支上，两棵都有窗口开着。"></a>
           <a class="light" href="../screens/worktree-list-light.webp"><img src="../screens/worktree-list-light.webp" width="1300" height="420" loading="lazy" alt="Worktrees 标签页：tally 在 main 上，tally/.worktree/stable-tie-order 在它自己的分支上，两棵都有窗口开着。"></a>
         </figure>
       </div>
-      <p class="quiet small">只有 <code>obg</code> 列这些。去另一个地方，要么是启动一个 Obelus，要么是把一个带到前面来，而终端两样都做不到：它所在的窗口是终端的，你想在哪个终端里开新的 Obelus，Obelus 也没法知道。所以 <code>ob</code> 里没有这个 tab，<code>switch-worktree</code> 也是灰的。</p>
+      <p class="quiet small">在 <code>obg</code> 里，<kbd>Ctrl+Enter</kbd> 是在单独的窗口里过去：那一行的窗口跳到前面来，没开就新开一个。<code>ob</code> 只有 <kbd>Enter</kbd>，因为终端这两样都做不到：它所在的窗口是终端的，你想在哪个终端里开新的 Obelus，Obelus 也没法知道。</p>
       <ul>
         <li>同一个仓库的每个 worktree 打开的是<em>同一份</em>笔记，另一个窗口写的东西会自己出现。</li>
         <li>两个窗口同时写，不会互相抹掉：每一次改动都以那一刻磁盘上的内容为准。</li>

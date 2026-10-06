@@ -101,6 +101,13 @@ use serde::Deserialize;
 /// the sort a person is at the other end of.
 #[derive(Debug)]
 pub struct Asked {
+    /// The tree the server that heard it was about.
+    ///
+    /// A window that has gone to another tree has let go of the server
+    /// about the first, but what that server heard a moment before is
+    /// still in the loop's queue -- and done there, a file of the old tree
+    /// would open in a window on the new one.
+    pub root: std::path::PathBuf,
     /// What the agent asked for.
     pub wanted: Wanted,
     /// What Obelus did, or why it did not.
@@ -525,7 +532,13 @@ impl Obelus {
     /// speaking.
     async fn told(&self, wanted: Wanted) -> Option<String> {
         let (answer, answered) = futures::channel::oneshot::channel();
-        self.events.send(Asked { wanted, answer }).ok()?;
+        self.events
+            .send(Asked {
+                root: self.root.clone(),
+                wanted,
+                answer,
+            })
+            .ok()?;
         answered.await.ok()
     }
 }

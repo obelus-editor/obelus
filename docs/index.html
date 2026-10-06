@@ -162,7 +162,7 @@
           <span class="no">04</span>
           <div>
             <p class="claim">It tells you where to try it, and waits.</p>
-            <p class="why">It runs the tests again and says the directory and the branch, what it ran and what that showed — not that it should work — and waits until you have tried it. <kbd>F2</kbd> and <kbd>Tab</kbd> takes you to <a href="#worktrees">that worktree's window</a>; there the change is the newest commit on the branch, and <kbd>F11</kbd> on a line it wrote opens it.</p>
+            <p class="why">It runs the tests again and says the directory and the branch, what it ran and what that showed — not that it should work — and waits until you have tried it. <kbd>F2</kbd> and <kbd>Tab</kbd> takes you to <a href="#worktrees">that worktree</a>; there the change is the newest commit on the branch, and <kbd>F11</kbd> on a line it wrote opens it.</p>
           </div>
         </li>
         <li>
@@ -194,14 +194,14 @@
       <div class="feature">
         <div class="text">
       <h3 id="worktrees">Every worktree is one key away</h3>
-      <p>Obelus has no splits: two files side by side is two windows. So several on one project, each on its own worktree, is the normal case. In a window, <kbd>F2</kbd> has a second tab, and <kbd>Tab</kbd> goes to it: every worktree git knows of for this repository, wherever it is, with the ones that have a window marked. Choosing one brings its window forward, or opens a new one on it.</p>
+      <p>Obelus has no splits: two files side by side is two windows. So several on one project, each on its own worktree, is the normal case. <kbd>F2</kbd> has a second tab, and <kbd>Tab</kbd> goes to it: every worktree git knows of for this repository, wherever it is, with the ones an Obelus is on marked, and under a tree with several, a row for each saying what it is reading. <kbd>Enter</kbd> puts this Obelus on it, asking first about anything unsaved; what was open there last time opens again.</p>
         </div>
         <figure class="shot">
           <a class="dark" href="screens/worktree-list-dark.webp"><img src="screens/worktree-list-dark.webp" width="1300" height="420" loading="lazy" alt="The Worktrees tab: tally on main and tally/.worktree/stable-tie-order on its branch, both with a window open."></a>
           <a class="light" href="screens/worktree-list-light.webp"><img src="screens/worktree-list-light.webp" width="1300" height="420" loading="lazy" alt="The Worktrees tab: tally on main and tally/.worktree/stable-tie-order on its branch, both with a window open."></a>
         </figure>
       </div>
-      <p class="quiet small">Only <code>obg</code> lists them. Going somewhere is starting an Obelus or bringing one forward, and a terminal can do neither: the window it is drawn in is the terminal's, and which terminal you would want a new Obelus started in is not something Obelus can know. So <code>ob</code> has no such tab, and <code>switch-worktree</code> is dim there.</p>
+      <p class="quiet small">In <code>obg</code>, <kbd>Ctrl+Enter</kbd> goes there in a window of its own instead: it brings forward the window on that row, or opens a new one. <code>ob</code> has only <kbd>Enter</kbd>, because a terminal can do neither: the window it is drawn in is the terminal's, and which terminal you would want a new Obelus started in is not something Obelus can know.</p>
       <ul>
         <li>Every worktree of a repository opens <em>one</em> set of notes, and what another window writes turns up by itself.</li>
         <li>Two windows writing at once do not erase each other: every change is made against what is on disk at that moment.</li>

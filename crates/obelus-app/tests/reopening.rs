@@ -92,7 +92,7 @@ fn arrive(app: &mut App) {
         let event = events
             .recv_timeout(std::time::Duration::from_secs(10))
             .expect("what was open never arrived");
-        let reopened = matches!(event, obelus_app::event::Event::Reopened(_));
+        let reopened = matches!(event, obelus_app::event::Event::Reopened { .. });
         app.handle(event);
         if reopened {
             return;

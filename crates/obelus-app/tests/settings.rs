@@ -4387,26 +4387,6 @@ fn a_groups_name_is_bold() {
     );
 }
 
-/// The keys page lists what this front end can do, and a terminal cannot
-/// go to another worktree: there is no key worth giving it here.
-///
-/// Broken deliberately by taking the `shown` filter out of `key_rows`.
-#[test]
-fn the_keys_page_leaves_out_what_only_a_window_can_do() {
-    let scratch = support::Scratch::new("keys-terminal");
-    let mut app = open(&scratch.join("config.toml"));
-    support::press(&mut app, KeyCode::Tab);
-    let keys = app.settings().expect("the settings").key_rows();
-    assert!(
-        keys.contains(&Command::DocumentList),
-        "not the keys page: {keys:?}"
-    );
-    assert!(
-        !keys.contains(&Command::WorktreeList),
-        "a terminal's keys page offers a key for what only a window can do"
-    );
-}
-
 /// Which rows of the last column are a bar's.
 fn bar_rows(app: &mut App, width: u16, height: u16) -> Vec<u16> {
     let dump = support::render(app, width, height);

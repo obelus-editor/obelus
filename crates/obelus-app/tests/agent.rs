@@ -5368,6 +5368,7 @@ fn a_loose_conversation_is_told_who_it_is_with_and_no_more() {
 fn the_workflow(app: &mut App) -> String {
     let (answer, mut said) = futures::channel::oneshot::channel();
     app.handle(Event::Tools(obelus_mcp::Asked {
+        root: app.working_directory().to_path_buf(),
         wanted: obelus_mcp::Wanted::Workflow,
         answer,
     }));
@@ -5389,6 +5390,7 @@ fn choose_workflow(app: &mut App, workflow: &str) {
 fn close_it(app: &mut App, conversation: usize) -> String {
     let (answer, mut said) = futures::channel::oneshot::channel();
     app.handle(Event::Tools(obelus_mcp::Asked {
+        root: app.working_directory().to_path_buf(),
         wanted: obelus_mcp::Wanted::Close {
             conversation: Some(conversation),
         },
@@ -10100,6 +10102,7 @@ fn an_agents_tool_is_refused_a_note_another_obelus_is_talking_about() {
 fn what_the_tool_said(app: &mut App, doing: obelus_git::todo::Doing) -> String {
     let (answer, mut said) = futures::channel::oneshot::channel();
     app.handle(Event::Tools(obelus_mcp::Asked {
+        root: app.working_directory().to_path_buf(),
         wanted: obelus_mcp::Wanted::Notes(doing),
         answer,
     }));

@@ -14,6 +14,9 @@ fn app() -> App {
     // any, and a test of how a *row* is drawn should not depend on whether
     // someone is working in the repository.
     app.statuses_for_test(std::collections::HashMap::new());
+    // And no other worktree, which the list of what is open would grow a
+    // tab for and the palette would offer to go to.
+    app.worktrees_for_test(false);
     app
 }
 
@@ -1504,14 +1507,11 @@ fn a_question_with_no_server_is_dim_and_keeps_its_key() {
 }
 
 /// The whole rule, in one place: every command is listed, and one that
-/// cannot do its job here is dim and cannot be chosen -- except one that
-/// needs the other front end, which is not here to be dim.
+/// cannot do its job here is dim and cannot be chosen.
 ///
-/// Broken deliberately by taking the `shown` filter out of the palette: the
-/// count is one over and `switch-worktree` is listed. A row that silently
-/// fails is worse than no row at all -- but a list that hides what it cannot
-/// do cannot be learned from, and a reader who never sees `show-change` does
-/// not find out Obelus has it.
+/// A row that silently fails is worse than no row at all -- but a list that
+/// hides what it cannot do cannot be learned from, and a reader who never sees
+/// `show-change` does not find out Obelus has it.
 ///
 /// With a plain Rust file open and no server, so what is dim is everything
 /// needing a server, a selection, a bracket, a history, or markdown.
@@ -1532,18 +1532,11 @@ fn the_palette_lists_everything_and_dims_what_cannot_run() {
             .map(|(_, enabled)| *enabled)
     };
 
-    // Every command Obelus has, whatever it can do here -- but the one a
-    // terminal can never do, which needs a window. Named rather than asked
-    // of `shown`, for the reason the dim ones below are.
+    // Every command Obelus has, whatever it can do here.
     assert_eq!(
         rows.len(),
-        obelus_command::ALL.len() - 1,
+        obelus_command::ALL.len(),
         "the palette is not the whole command table: {rows:?}"
-    );
-    assert_eq!(
-        listed("switch-worktree"),
-        None,
-        "a command only a window can run is listed in a terminal"
     );
 
     // Named here rather than taken from `requires`, which is the rule under

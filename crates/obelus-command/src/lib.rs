@@ -31,7 +31,7 @@ pub enum Command {
     FileSave,
     /// Choose among the documents already open.
     DocumentList,
-    /// Go to another of the repository's worktrees, in a window of its own.
+    /// Go to another of the repository's worktrees.
     WorktreeList,
     /// Stop showing the current document.
     DocumentClose,
@@ -371,14 +371,12 @@ pub enum Requires {
     /// walking a repository that was not there and finding nothing: the
     /// right answer for the wrong reason, and a walk per keypress for it.
     AProject,
-    /// There has to be another worktree to go to, and a window to go there
-    /// in.
+    /// There has to be another worktree to go to.
     ///
-    /// A window, because what going to a worktree means is starting an
-    /// Obelus on it or bringing forward the one already there, and a
-    /// window is the one thing that can do either: a terminal belongs to
-    /// the terminal, and which one the reader would want it opened in is
-    /// not something Obelus can know.
+    /// Asked of git once the project is known, and in a terminal as much
+    /// as in a window: going there is this Obelus settling on it, which
+    /// either can do. Only a window can also open one of its own there,
+    /// and that is a second key on the list rather than a second command.
     AnotherWorktree,
     /// A chat has to be set in the settings, and this window not already
     /// the one it talks to, nor asking to be.
@@ -442,7 +440,7 @@ pub const ALL: &[CommandSpec] = &[
     CommandSpec {
         command: Command::WorktreeList,
         name: "switch-worktree",
-        title: "Go to another worktree, in a window of its own",
+        title: "Go to another worktree of this repository",
     },
     CommandSpec {
         command: Command::DocumentClose,
@@ -803,11 +801,8 @@ impl Command {
     #[must_use]
     pub const fn drawn(self) -> obelus_config::Drawn {
         match self {
-            // Going to another worktree is starting a window or bringing
-            // one forward, and only a window can do either: a terminal's
-            // window is the terminal's.
-            Self::WorktreeList => obelus_config::Drawn::InAWindow,
-            Self::FileOpen
+            Self::WorktreeList
+            | Self::FileOpen
             | Self::FileNew
             | Self::FileChanged
             | Self::FileReload

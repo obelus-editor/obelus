@@ -438,6 +438,7 @@ impl App {
             .as_ref()
             .and_then(|path| path.parent())
             .map(Path::to_path_buf);
+        let tree = self.reopening.tree.clone();
         obelus_runtime::handle().spawn_blocking(move || {
             let read = files
                 .into_iter()
@@ -457,15 +458,21 @@ impl App {
             if let Some(records) = records {
                 forget_the_trees_that_have_gone(&records);
             }
-            let _ = sender.send(crate::event::Event::Reopened(read));
+            let _ = sender.send(crate::event::Event::Reopened { tree, files: read });
         });
     }
 
     /// Puts what was open in the list, now that its files have been read.
     pub(super) fn take_up_what_was_open(
         &mut self,
+        read_for: &Path,
         mut files: Vec<(PathBuf, Option<obelus_buffer::Buffer>)>,
     ) {
+        // Read for a tree this window has since left, and so not what it
+        // is waiting on: that is still being read.
+        if read_for != self.reopening.tree {
+            return;
+        }
         let Some(record) = self.reopening.waiting.take() else {
             return;
         };
