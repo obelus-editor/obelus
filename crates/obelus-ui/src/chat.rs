@@ -1103,23 +1103,9 @@ impl ChatView<'_> {
             Focus::Transcript(place) if self.in_front => Row::acting(&rows, place.row),
             _ => None,
         };
-        // Except what the reader said, which is not lit at all: a light
-        // round several rows of their own words was a block of colour over
-        // the very thing they were reading. A call's title is lit however
-        // many rows it takes, because it is a handle on the call; a message
-        // is read for itself. The caret says where they are and the key at
-        // the end of it says what enter does.
-        let lit = acting.clone().filter(|on| {
-            rows.get(on.start)
-                .is_some_and(|row| row.speaker != Speaker::Reader)
-        });
         // The last row of what a key acts on, where it is on screen: where
         // its words end, and the colour it is drawn in.
         let mut foot = None;
-        // Where the light goes, once the rows under it have said how far
-        // their words reach: the top row on screen, how many, and the
-        // columns.
-        let mut light: Option<Rect> = None;
         for (offset, row) in rows.iter().skip(first).enumerate() {
             let Ok(offset) = u16::try_from(offset) else {
                 break;
@@ -1132,17 +1118,12 @@ impl ChatView<'_> {
             // so that a run reads as one thing rather than as a stretch of
             // rows that happen to look alike.
             let words = words + u16::from(row.depth) * DEEPER;
-            // The row the cursor is on, lit in the colour every list in
-            // Obelus marks its row with -- but only where the row does
-            // something, because that is what the light promises: what is
-            // lit is what enter opens.
-            //
-            // Where the cursor is is said by the caret instead. The cursor
-            // can stand anywhere now, so a light that followed it would be
-            // a promise kept on one row in twenty; two marks saying two
-            // different things is the honest way round.
+            // Nothing here is lit, not even a row enter acts on. The caret
+            // says where the reader is, and a light behind a row was drawn
+            // on the same cells as what they had hold of in it -- two
+            // backgrounds for one cell, and the reader could not tell
+            // where the one ended and the other began.
             let at = first + usize::from(offset);
-            let here = lit.as_ref().is_some_and(|lit| lit.contains(&at));
             let (glyph, style) = self.voice(row, plain, dim);
             // What has not gone yet is said in the ink: the reader's own
             // words, dim, until the turn in front of them ends. Not by
@@ -1168,14 +1149,6 @@ impl ChatView<'_> {
                     (tint, tint.fg(self.theme.gutter))
                 }
                 None => (style, dim),
-            };
-            let unlit = dim;
-            let (style, dim) = match here {
-                true => (
-                    style.bg(self.theme.selected_row_background),
-                    dim.bg(self.theme.selected_row_background),
-                ),
-                false => (style, dim),
             };
             // The tint runs to the edge, as it does behind an opened hunk
             // in a file: a block of colour that stopped where the words
@@ -1314,30 +1287,6 @@ impl ChatView<'_> {
             for (gap, said, style) in tail {
                 ended = write_within(cells, ended + gap, y, &said, style, words_end(area) + 1);
             }
-            // A box round the words rather than a band across the row: as
-            // wide as the longest of its rows and a cell either side, which
-            // is the column the margin leaves in front of the glyph. A band
-            // to the edge said the row was lit; it also put a block of
-            // colour behind nothing, wider than the thing enter opens.
-            if here {
-                let right = (ended + 1).min(words_end(area) + 1);
-                light = Some(match light {
-                    Some(lit) => Rect {
-                        width: right.max(lit.right()).saturating_sub(lit.x),
-                        height: lit.height + 1,
-                        ..lit
-                    },
-                    None => {
-                        let x = area.x + u16::from(row.depth) * DEEPER;
-                        Rect {
-                            x,
-                            y,
-                            width: right.saturating_sub(x),
-                            height: 1,
-                        }
-                    }
-                });
-            }
             if acting.as_ref().is_some_and(|on| at + 1 == on.end) {
                 foot = Some((y, ended, dim));
             }
@@ -1351,24 +1300,9 @@ impl ChatView<'_> {
                         u16::try_from(usize::from(area.width).saturating_sub(text_width(&said) + 1))
                     && area.x + offset > ended + 1
                 {
-                    // Outside the light, so on the page's own colour.
-                    let ground = unlit.bg.unwrap_or(self.theme.background);
-                    write(cells, area.x + offset, y, &said, unlit);
+                    let ground = dim.bg.unwrap_or(self.theme.background);
+                    write(cells, area.x + offset, y, &said, dim);
                     cap_the_keys(area.x + offset, y, &keys, ground, self.theme);
-                }
-            }
-        }
-        // Behind what the rows left on the page's colour and nothing else:
-        // the words are already drawn on the light, and what is drawn on a
-        // colour of its own -- what the reader has hold of -- keeps it.
-        if let Some(light) = light {
-            for y in light.top()..light.bottom() {
-                for x in light.left()..light.right() {
-                    if let Some(cell) = cells.cell_mut((x, y))
-                        && cell.bg == self.theme.background
-                    {
-                        cell.set_bg(self.theme.selected_row_background);
-                    }
                 }
             }
         }
