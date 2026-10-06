@@ -189,7 +189,7 @@ pub fn reach(platform: &'static Description, settled: Told, sink: Arc<dyn Sink<E
                         let state = match trouble {
                             crate::secrets::Trouble::NoKeyring => crate::State::NoKeyring,
                             crate::secrets::Trouble::Locked => crate::State::Locked,
-                            crate::secrets::Trouble::Failed(_) => crate::State::Unreachable,
+                            crate::secrets::Trouble::Failed(_) => crate::State::Unread,
                         };
                         let _ = sink.send(Event::connection(state, Some(trouble.to_string())));
                         return;

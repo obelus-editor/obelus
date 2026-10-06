@@ -567,38 +567,59 @@ fn a_chat_asked_for_at_the_start_waits_for_a_project() {
 /// With nobody at the screen a chat has to be set, and paired: a code to
 /// pair with is drawn on the settings page, which nobody here will read.
 ///
+/// And an agent, installed: what a chat says to an Obelus with none goes
+/// nowhere.
+///
 /// Broken deliberately by taking the room out of
-/// `App::ready_to_be_reached`: a chat never paired was ready.
+/// `App::ready_to_be_reached`: a chat never paired was ready. And the
+/// install: an agent nothing had installed was ready.
 #[test]
 fn headless_needs_a_chat_and_a_pairing() {
     let _turn = turn();
     let scratch = support::Scratch::new("remote-headless-ready");
+    let agents = scratch.join("agents");
     let ready = |settings: &str| {
         std::fs::write(scratch.join("config.toml"), settings).expect("the settings");
         let mut app = App::new(Vec::new());
         app.headless();
+        app.agents_root_for_test(agents.clone());
         app.config_file_for_test(scratch.join("config.toml"));
         app.ready_to_be_reached()
     };
+    let chat = "remote = \"slack\"\nagent = \"fake\"\n";
     assert_eq!(
         ready(""),
         Err("No chat is set in the settings to connect to".to_string())
     );
     assert_eq!(
-        ready("remote = \"slack\"\n"),
+        ready(chat),
         Err("Slack is not paired: pair it from the settings in a window first".to_string())
     );
     a_room_kept();
-    assert_eq!(ready("remote = \"slack\"\n"), Ok(()));
+    assert_eq!(
+        ready("remote = \"slack\"\nagent = \"\"\n"),
+        Err("No agent is set in the settings to talk to".to_string())
+    );
+    assert_eq!(
+        ready(chat),
+        Err(
+            "Nothing is installed as fake: install it from the settings in a window first"
+                .to_string()
+        )
+    );
+    obelus_agent::remember("fake", std::path::Path::new("sh"), &[], "1", &agents)
+        .expect("the record");
+    assert_eq!(ready(chat), Ok(()));
 }
 
 /// With nobody at the screen, what the reader would have to mend ends it
 /// with the reason -- a token turned down -- and a chat that cannot be
 /// reached for now is tried again, as anywhere.
 ///
-/// Broken deliberately twice: taking `give_up_unseen` out of the
-/// connection's arm, and the refusal ended nothing; and giving up on
-/// `Unreachable` too, and a dropped network ended it.
+/// Broken deliberately three ways: taking `give_up_unseen` out of the
+/// connection's arm, and the refusal ended nothing; giving up on
+/// `Unreachable` too, and a dropped network ended it; and saying it on the
+/// status row whether or not it ended anything, and it was said twice.
 #[test]
 fn headless_gives_up_on_what_the_reader_has_to_mend() {
     let _turn = turn();
@@ -649,6 +670,47 @@ fn headless_gives_up_on_what_the_reader_has_to_mend() {
     assert_eq!(
         app.why_it_stopped(),
         Some("Not connected to Slack: invalid_auth")
+    );
+    // Said once, on the way out, and not on the status row as well -- which
+    // with nobody at the screen is a second line in the log.
+    assert!(
+        app.note().is_none_or(|note| !note.contains("invalid_auth")),
+        "the reason was said twice"
+    );
+}
+
+/// A keyring that will not say what it keeps ends it too: nothing reads
+/// it again, so waiting is waiting for ever.
+///
+/// Broken deliberately by mapping a failed read back to `Unreachable`, which
+/// is tried again elsewhere and here was never asked again: it went on
+/// running with no chat.
+#[test]
+fn headless_gives_up_on_a_keyring_that_will_not_answer() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-headless-keyring");
+    obelus_remote::platform::connect_for_test(fake_connect);
+    std::fs::write(scratch.join("config.toml"), "remote = \"slack\"\n").expect("the settings");
+    let kept = std::env::temp_dir().join(format!("obelus-secrets-{}", std::process::id()));
+    std::fs::create_dir_all(&kept).expect("the secrets' directory");
+    std::fs::write(kept.join("secrets.toml"), "not = [a table").expect("a file that will not read");
+    a_room_kept();
+    let mut app = App::new(Vec::new());
+    app.headless();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.config_file_for_test(scratch.join("config.toml"));
+    app.remote_at_start();
+    let (sender, events) = obelus_app::event::channel();
+    app.start(sender);
+    until(&mut app, &events, "the keyring to fail", |app| {
+        app.remote_state_for_test() != obelus_remote::State::Connecting
+    });
+    assert!(app.should_quit(), "it went on with no chat");
+    assert!(
+        app.why_it_stopped()
+            .is_some_and(|why| why.starts_with("Not connected to Slack")),
+        "it said {:?}",
+        app.why_it_stopped()
     );
 }
 
@@ -1312,6 +1374,77 @@ fn a_thread_the_reader_starts_is_a_conversation() {
             obelus_remote::model::Out::Open { .. } | obelus_remote::model::Out::Retitle { .. }
         )),
         "a thread was asked for, or a head said, over the reader's own: {said:#?}"
+    );
+}
+
+/// With nobody at the screen, an agent that wants a sign-in is told no at
+/// once and the thread says where to sign in, rather than a card nobody
+/// can answer holding the conversation -- a sign-in runs on the machine,
+/// and a chat cannot carry one.
+///
+/// Broken deliberately by taking the headless arm out of `ask_to_sign_in`:
+/// the card went up and the thread heard nothing. And by sending it through
+/// `mirror_in` alone: the conversation had no name yet, and the words went
+/// nowhere.
+#[test]
+fn headless_a_sign_in_is_said_in_the_thread() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-headless-sign-in");
+    let (mut app, events, _log) = paired_with_an_agent(&scratch);
+    app.headless();
+    let marker = scratch.join("signed-in");
+    app.talk_to(
+        "signing-in",
+        std::path::Path::new("sh"),
+        &[
+            "tests/fixtures/signing-in-agent.sh".to_string(),
+            marker.display().to_string(),
+        ],
+    );
+    let _ = the_platform().send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        text: "hello".to_string(),
+    });
+    let said = said_until(&mut app, &events, "where to sign in", |said| {
+        in_thread(said, "F1", "Sign in to")
+    });
+    assert!(
+        in_thread(&said, "F1", "on the machine Obelus is running on"),
+        "{said:#?}"
+    );
+}
+
+/// With nobody at the screen, somewhere the agent wants the reader to go
+/// goes to the thread as an address, and the agent is told they did not go
+/// -- rather than a card nobody can answer holding the turn.
+///
+/// Broken deliberately by taking the headless arm out of
+/// `send_the_reader`: the card went up, the thread heard nothing and the
+/// turn never ended.
+#[test]
+fn headless_somewhere_to_go_is_said_in_the_thread() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-headless-going");
+    let (mut app, events, _log) = paired_with_an_agent(&scratch);
+    app.headless();
+    let _ = the_platform().send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        text: "/signin".to_string(),
+    });
+    let said = said_until(&mut app, &events, "the agent told no", |said| {
+        in_thread(said, "F1", "you would not go")
+    });
+    assert!(
+        in_thread(
+            &said,
+            "F1",
+            "send you to https://console.example.com/oauth/authorize"
+        ),
+        "{said:#?}"
     );
 }
 
@@ -2440,6 +2573,63 @@ fn set_up_for_two(scratch: &support::Scratch) {
     a_room_kept();
     obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
     obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+}
+
+/// A headless Obelus whose chat goes to a window the reader asked for it
+/// in ends, cleanly: it has nothing left to do, and a process holding
+/// nothing is a process that would have to be found and stopped. And so
+/// does one whose settings stop naming a chat.
+///
+/// Broken deliberately twice, by taking `leave_unseen` out of
+/// `somebody_wants_the_remote` and then out of `settle_the_connection`:
+/// each went on running, holding nothing.
+#[test]
+fn headless_leaves_when_it_has_no_chat_to_hold() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-headless-leaves");
+    set_up_for_two(&scratch);
+    let unseen = |scratch: &support::Scratch| {
+        let mut app = App::new(Vec::new());
+        app.headless();
+        app.working_directory_for_test(scratch.path().to_path_buf());
+        app.config_file_for_test(scratch.join("config.toml"));
+        app.remote_at_start();
+        let (sender, events) = obelus_app::event::channel();
+        app.start(sender);
+        support::lay_out(&mut app, 76, 24);
+        (app, events)
+    };
+
+    let (mut first, firsts) = unseen(&scratch);
+    until(&mut first, &firsts, "the headless one to connect", |app| {
+        app.remote_state_for_test() == obelus_remote::State::Connected
+    });
+    let mut second = App::new(Vec::new());
+    second.config_file_for_test(scratch.join("config.toml"));
+    let (sender, seconds) = obelus_app::event::channel();
+    second.start(sender);
+    support::lay_out(&mut second, 76, 24);
+    dispatch::dispatch(&mut second, Command::RemoteConnect);
+    both_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the window to have the chat",
+        |first, second| first.should_quit() && second.holds_the_remote_for_test(),
+    );
+    assert_eq!(first.why_it_stopped(), None, "handing the chat over failed");
+    drop(second);
+
+    let (mut again, agains) = unseen(&scratch);
+    until(&mut again, &agains, "it to connect again", |app| {
+        app.remote_state_for_test() == obelus_remote::State::Connected
+    });
+    std::fs::write(scratch.join("config.toml"), "").expect("no chat");
+    until(&mut again, &agains, "it to hear the settings", |app| {
+        app.should_quit()
+    });
+    assert_eq!(again.why_it_stopped(), None, "having no chat failed");
 }
 
 /// Connecting in a second window takes the chat from the first: the first

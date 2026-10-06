@@ -994,6 +994,12 @@ impl App {
     /// "I have put it in front of them" and "there is no such file" are
     /// not the same turn.
     pub(super) fn open_for_an_agent(&mut self, path: &str, line: Option<u32>) -> String {
+        // Nobody's screen to put it on -- and a file opened here would hold
+        // what the agent writes to it for a save nobody makes.
+        if self.is_headless() {
+            return "Nobody is at Obelus's screen: it is reached from a chat, and opens no file"
+                .to_string();
+        }
         let asked = Path::new(path);
         // A path of its own is taken as it is. Against the project
         // otherwise, which is what an agent has been talking in: the tools

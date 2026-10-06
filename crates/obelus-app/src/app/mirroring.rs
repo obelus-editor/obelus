@@ -706,6 +706,26 @@ impl App {
         }
     }
 
+    /// Says something in a conversation's thread for Obelus itself, and
+    /// calls the reader to it: what it says is about something that has
+    /// stopped.
+    ///
+    /// Including in a thread the reader began, before the conversation it
+    /// began has a name: that waits for its session, and a sign-in is asked
+    /// for instead of one.
+    pub(super) fn tell_the_thread(&mut self, whose: talking::Whose, text: String) {
+        if let talking::Whose::One(id) = whose
+            && self.chat_is_listening()
+            && self.chat_named(whose).is_none()
+            && let Some(thread) = self.mirror.starting.get(&id.get()).cloned()
+            && let (Some(room), Some(to)) = (self.the_room(), self.whom())
+        {
+            self.say_to(Saying::Words(text, true).in_thread(room, thread, to));
+            return;
+        }
+        self.mirror_in(whose, text, true);
+    }
+
     /// Whether what the agent sends this conversation is the replay of one
     /// taken up again: said in its thread when it was said, and not news.
     fn replaying(&self, whose: talking::Whose) -> bool {

@@ -178,6 +178,10 @@ pub enum State {
     Locked,
     /// There is no keyring on this machine to keep a token in.
     NoKeyring,
+    /// The keyring opened and would not say what it keeps. Not
+    /// `Unreachable`: nothing tries again, so a window would say it was
+    /// trying for as long as it was open.
+    Unread,
 }
 
 impl State {
@@ -208,6 +212,7 @@ impl State {
                 | Self::Unreachable
                 | Self::Locked
                 | Self::NoKeyring
+                | Self::Unread
         )
     }
 }

@@ -45,11 +45,17 @@ impl App {
         self.headless = true;
     }
 
+    /// Whether nobody is at the screen.
+    pub(super) const fn is_headless(&self) -> bool {
+        self.headless
+    }
+
     /// Whether everything a headless Obelus needs before it starts is
     /// there, and what is not where it is not.
     ///
-    /// A pairing is the one that cannot be had here: its code is drawn on
-    /// the settings page for the reader to send to the bot.
+    /// A pairing and an install are what cannot be had here: the code to
+    /// pair with is drawn on the settings page for the reader to send to
+    /// the bot, and an install is pressed for there.
     ///
     /// # Errors
     ///
@@ -64,13 +70,31 @@ impl App {
                 platform.name
             ));
         }
+        // And somebody to talk to: what a chat says to an Obelus with no
+        // agent goes nowhere, and a reader on a phone hears nothing back.
+        let Some(agent) = self
+            .settled
+            .config
+            .agent
+            .clone()
+            .filter(|id| !id.is_empty())
+        else {
+            return Err("No agent is set in the settings to talk to".to_string());
+        };
+        if self.installed(&agent).is_none() {
+            return Err(format!(
+                "Nothing is installed as {agent}: install it from the settings in a window first"
+            ));
+        }
         Ok(())
     }
 
     /// Ends a headless Obelus with the reason, and says whether it did.
     ///
     /// Nothing where somebody is at the screen, where the same thing is a
-    /// line on the status row and the reader's to answer.
+    /// line on the status row and the reader's to answer -- which is why a
+    /// caller says it there only where this says no: the reason is said
+    /// once, on the way out, and the status row's line would be it again.
     pub(super) fn give_up_unseen(&mut self, why: impl Into<String>) -> bool {
         if !self.headless {
             return false;
@@ -79,6 +103,17 @@ impl App {
         self.stopped_because.get_or_insert_with(|| why.into());
         self.should_quit = true;
         true
+    }
+
+    /// Ends a headless Obelus that has nothing left to do, which is not a
+    /// failure: the chat gone to the window the reader asked for it in, or
+    /// no chat set any more. Cleanly, so that whatever started it to be
+    /// restarted on a failure does not start it again to take the chat
+    /// back.
+    pub(super) fn leave_unseen(&mut self) {
+        if self.headless {
+            self.should_quit = true;
+        }
     }
 
     /// Why a headless Obelus ended, where it gave up rather than being

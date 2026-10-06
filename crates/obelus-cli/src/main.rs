@@ -5,7 +5,7 @@
 //! there is a screen is [`obelus_app::startup`], which does not know there
 //! is a terminal at all.
 
-use std::path::PathBuf;
+use std::{path::PathBuf, process::ExitCode};
 
 use anyhow::Result;
 use clap::Parser;
@@ -39,7 +39,7 @@ struct Arguments {
     headless: bool,
 }
 
-fn main() -> Result<()> {
+fn main() -> Result<ExitCode> {
     let arguments = Arguments::parse();
 
     // Held until main returns, so buffered log lines are flushed on the way
@@ -52,8 +52,13 @@ fn main() -> Result<()> {
     // Before anything about the terminal, which it does not touch.
     if arguments.headless {
         let outcome = app::run_headless(&arguments.paths, env!("OBELUS_BUILD"));
+        // Which says why on stderr, where a headless Obelus logs: an `Err`
+        // handed back as well would be said twice.
         startup::finish(&outcome);
-        return outcome;
+        return Ok(match outcome {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(_) => ExitCode::FAILURE,
+        });
     }
 
     // Opened before the terminal is taken over, so a bad path reports
@@ -140,7 +145,7 @@ fn main() -> Result<()> {
         tracing::warn!(%error, "the terminal was not put back");
     }
 
-    outcome
+    outcome.map(|()| ExitCode::SUCCESS)
 }
 
 /// Whether the terminal will report `ctrl+enter` as itself.

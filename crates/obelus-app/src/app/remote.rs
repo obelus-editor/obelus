@@ -334,11 +334,12 @@ impl App {
                         Some(why) => format!("Not connected to {}: {why}", platform.name),
                         None => format!("Not connected to {}", platform.name),
                     };
-                    self.wrong(said.clone());
                     // Except a chat that cannot be reached, which is tried
-                    // again: everything else is the reader's to mend.
-                    if state != State::Unreachable {
-                        self.give_up_unseen(said);
+                    // again: everything else is the reader's to mend, and
+                    // with nobody at the screen that is the end of it.
+                    let ends = state != State::Unreachable && self.give_up_unseen(said.clone());
+                    if !ends {
+                        self.wrong(said);
                     }
                 }
                 self.remote.why = why;
@@ -424,7 +425,12 @@ impl App {
         // A chat set to nothing holds nothing: the next window to want it
         // should not have to ask this one.
         if self.platform().is_none() {
-            self.remote.holding = None;
+            // And with nobody at the screen, holding nothing is having
+            // nothing to do.
+            if self.remote.holding.take().is_some() && self.is_headless() {
+                tracing::info!("no chat is set in the settings any more");
+                self.leave_unseen();
+            }
             self.remote.taking = None;
         }
         let wanted = self.platform().filter(|_| self.remote.holding.is_some());
@@ -957,8 +963,10 @@ impl App {
             return;
         };
         let Some(lock) = the_lock() else {
-            self.wrong(format!("Nowhere to hold {} from", platform.name));
-            self.give_up_unseen(format!("Nowhere to hold {} from", platform.name));
+            let said = format!("Nowhere to hold {} from", platform.name);
+            if !self.give_up_unseen(said.clone()) {
+                self.wrong(said);
+            }
             return;
         };
         if !obelus_agent::chats::held_by_somebody_else(&lock) {
@@ -1048,8 +1056,10 @@ impl App {
         if self.remote.taking.as_ref().map(|(asked, _)| *asked) == Some(number) {
             self.remote.taking = None;
             if let Some(platform) = self.platform() {
-                self.wrong(format!("Could not wait for {} to come here", platform.name));
-                self.give_up_unseen(format!("Could not wait for {} to come here", platform.name));
+                let said = format!("Could not wait for {} to come here", platform.name);
+                if !self.give_up_unseen(said.clone()) {
+                    self.wrong(said);
+                }
             }
         }
     }
@@ -1065,8 +1075,10 @@ impl App {
         self.remote.pair_once_connected = false;
         self.remote.given_up = Some(number);
         if let Some(platform) = self.platform() {
-            self.wrong(format!("Another window would not let {} go", platform.name));
-            self.give_up_unseen(format!("Another window would not let {} go", platform.name));
+            let said = format!("Another window would not let {} go", platform.name);
+            if !self.give_up_unseen(said.clone()) {
+                self.wrong(said);
+            }
         }
     }
 
@@ -1128,5 +1140,6 @@ impl App {
         if let Some(platform) = self.platform() {
             self.say(format!("{} went to another window", platform.name));
         }
+        self.leave_unseen();
     }
 }
