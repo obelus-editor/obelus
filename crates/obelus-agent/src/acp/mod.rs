@@ -66,8 +66,8 @@ use std::path::Path;
 pub use agent_client_protocol::schema::v1::SessionId;
 use futures::channel::mpsc;
 pub use link::{
-    Answer, Ask, Call, Category, Change, Choice, Chosen, Cost, Field, Incoming, Kind, Order, Place,
-    Question, Reply, Setting, Step, Takes, Turn, Update, Usage, Value,
+    Answer, Ask, Call, Category, Change, Choice, Chosen, Cost, Field, How, Incoming, Kind, Login,
+    Order, Place, Question, Reply, Setting, Step, Takes, Turn, Update, Usage, Value,
 };
 use obelus_sink::Sink;
 
@@ -140,6 +140,8 @@ pub struct Talk {
     /// the default would be refusing them on ignorance rather than on
     /// anything the agent said.
     carries: Option<link::Carries>,
+    /// The ways it offers to be signed in to, once it has said.
+    logins: Vec<link::Login>,
     /// Whether the connection has ended, and why.
     gone: Option<Option<String>>,
     /// The conversations open on it, by the name the agent gave each.
@@ -351,6 +353,7 @@ impl Talk {
             asks: link::start(command, arguments, root, events),
             info: None,
             carries: None,
+            logins: Vec::new(),
             gone: None,
             sessions: std::collections::HashMap::new(),
             waiting: std::collections::VecDeque::new(),
@@ -390,6 +393,30 @@ impl Talk {
     #[must_use]
     pub const fn carries(&self) -> Option<link::Carries> {
         self.carries
+    }
+
+    /// The ways it offers to be signed in to, as it said at the handshake.
+    #[must_use]
+    pub fn logins(&self) -> &[link::Login] {
+        &self.logins
+    }
+
+    /// Signs in a way the agent does itself.
+    pub fn sign_in(&self, method: &str) {
+        let _ = self.asks.unbounded_send(Ask::SignIn {
+            method: method.to_string(),
+        });
+    }
+
+    /// Says the reader has signed in some way of their own, so what was
+    /// waiting on it is asked again.
+    pub fn signed_in(&self) {
+        let _ = self.asks.unbounded_send(Ask::SignedIn);
+    }
+
+    /// Says the reader will not sign in.
+    pub fn give_up_signing_in(&self) {
+        let _ = self.asks.unbounded_send(Ask::GiveUp);
     }
 
     /// Whether this conversation exists, and so whether a prompt in it goes
@@ -795,11 +822,27 @@ impl Talk {
                 };
                 Some(Incoming::Offers { session, offers })
             }
-            Incoming::Ready { named, carries } => {
+            Incoming::Ready {
+                named,
+                carries,
+                logins,
+            } => {
                 self.info = named;
                 self.carries = Some(carries);
+                self.logins = logins;
                 None
             }
+            // Which request is waiting on it, where it was one: the oldest
+            // not yet answered. They are answered in the order they were
+            // made, so the one the agent refused is that one, and every
+            // request after it waits behind it.
+            Incoming::SignIn {
+                session: None, why, ..
+            } => Some(Incoming::SignIn {
+                session: None,
+                asking: self.waiting.front().map(|(asking, _)| *asking),
+                why,
+            }),
             Incoming::Started { session, mode, .. } => {
                 // `or_default` rather than an insert, because this is not
                 // always the first word about a conversation: an agent is
@@ -960,7 +1003,11 @@ fn about(incoming: &Incoming) -> Option<&SessionId> {
         | Incoming::Lost { session, .. }
         | Incoming::Asked { session, .. }
         | Incoming::Withdrawn { session }
-        | Incoming::Remembered { session, .. } => Some(session),
+        | Incoming::Remembered { session, .. }
+        | Incoming::SignIn {
+            session: Some(session),
+            ..
+        } => Some(session),
         // Its own session is what it is the answer about, and forgetting
         // that session is the answer's own business.
         Incoming::Offers { .. } => None,
@@ -981,6 +1028,7 @@ mod tests {
             asks,
             info: None,
             carries: None,
+            logins: Vec::new(),
             gone: None,
             sessions: std::collections::HashMap::new(),
             waiting: std::collections::VecDeque::new(),

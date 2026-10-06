@@ -883,6 +883,7 @@ impl App {
                 Self::file_row(index, buffer, statuses, &self.working_directory)
             }
             Document::Notes(notes) => Self::notes_row(index, notes),
+            Document::Terminal(terminal) => Self::terminal_row(index, terminal),
         })
         .collect()
     }
@@ -905,6 +906,13 @@ impl App {
             && unsaved
         {
             self.ask_before_closing(id);
+            return;
+        }
+        // And a program still running, which is the same loss by another
+        // name: what it had goes with it.
+        if let Some(id) = which
+            && self.ask_before_stopping(id)
+        {
             return;
         }
         // Whichever file the screen is about. With the list of what is open

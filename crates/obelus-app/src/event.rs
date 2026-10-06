@@ -155,6 +155,8 @@ pub enum Event {
     Counted(Box<obelus_search::counts::Counted>),
     /// A file on disk changed.
     Watched(obelus_watch::Changed),
+    /// A program in a terminal of Obelus's own wrote something, or ended.
+    Terminal(obelus_terminal::Heard),
     /// A list finished scoring its rows against a query.
     ///
     /// The scoring of a project's whole file list is tens of milliseconds,
@@ -228,6 +230,7 @@ impl Event {
             Self::Tools(_) => "Tools",
             Self::Counted(_) => "Counted",
             Self::Watched(_) => "Watched",
+            Self::Terminal(_) => "Terminal",
             Self::Scanned(_) => "Scanned",
             Self::Reopened(_) => "Reopened",
             Self::Released(_) => "Released",
@@ -269,6 +272,7 @@ from_worker! {
     obelus_remote::Event => Remote,
     Box<obelus_search::counts::Counted> => Counted,
     obelus_watch::Changed => Watched,
+    obelus_terminal::Heard => Terminal,
 }
 
 /// What the pointer's button did.

@@ -76,6 +76,20 @@
 //! there -- and it says the far end happened with `elicitation/complete`,
 //! which is a notification because nothing is owed back.
 //!
+//! **A sign-in holds what was asked; it does not end the connection.** An
+//! agent nobody has signed in to answers `session/new` with `auth_required`,
+//! and that answer used to end everything, because an error opening a
+//! conversation did. Now the request waits -- and every request for a
+//! conversation after it, because they are answered in the order they were
+//! made -- while the reader picks one of the ways in the handshake offered,
+//! and goes again when they are in. zed's shape: nothing is signed in to
+//! until the agent says it needs it, and the agent is not started again
+//! afterwards. Most ways in are a program to run (claude-agent-acp offers
+//! *only* those, and only to a client that says it can run one), which
+//! Obelus runs in a terminal of its own; `authenticate` is for the rest.
+//! A reader who will not sign in ends the connection the way it ended
+//! before, and the next thing they say starts it again.
+//!
 //! **A command is the agent's namespace; a setting is Obelus's to draw.**
 //! Two things in the protocol, and they must not be mistaken for each
 //! other. An agent's slash commands ([`Order`]) are names it takes *in a
@@ -116,13 +130,14 @@ use agent_client_protocol::{
     schema::{
         ProtocolVersion,
         v1::{
-            AvailableCommand, BooleanConfigOptionCapabilities, CancelNotification,
-            ClientCapabilities, ClientSessionCapabilities, CloseSessionRequest,
-            CompleteElicitationNotification, ContentBlock, CreateElicitationRequest,
-            CreateElicitationResponse, CreateTerminalRequest, CreateTerminalResponse,
-            DeleteSessionRequest, ElicitationAcceptAction, ElicitationAction,
-            ElicitationCapabilities, ElicitationContentValue, ElicitationFormCapabilities,
-            ElicitationMode, ElicitationPropertySchema, ElicitationSchema, ElicitationScope,
+            AuthCapabilities, AuthMethod, AuthenticateRequest, AvailableCommand,
+            BooleanConfigOptionCapabilities, CancelNotification, ClientCapabilities,
+            ClientSessionCapabilities, CloseSessionRequest, CompleteElicitationNotification,
+            ContentBlock, CreateElicitationRequest, CreateElicitationResponse,
+            CreateTerminalRequest, CreateTerminalResponse, DeleteSessionRequest,
+            ElicitationAcceptAction, ElicitationAction, ElicitationCapabilities,
+            ElicitationContentValue, ElicitationFormCapabilities, ElicitationMode,
+            ElicitationPropertySchema, ElicitationSchema, ElicitationScope,
             ElicitationUrlCapabilities, FileSystemCapabilities, ImageContent, Implementation,
             InitializeRequest, KillTerminalRequest, KillTerminalResponse, LoadSessionRequest,
             McpCapabilities, McpServer, McpServerHttp, McpServerSse, MultiSelectItems,
@@ -260,6 +275,50 @@ pub enum Ask {
         /// What to put it on.
         chosen: Chosen,
     },
+    /// Sign in this way, which the agent does itself.
+    ///
+    /// Only for a way the agent named as its own: a way that is a program
+    /// to run is run by Obelus, in a terminal of its own, and the agent is
+    /// told nothing until [`Ask::SignedIn`].
+    SignIn {
+        /// Which way, by the agent's id for it.
+        method: String,
+    },
+    /// The reader has signed in some way the agent was not part of, so what
+    /// was waiting on it can be asked again.
+    SignedIn,
+    /// The reader will not sign in, so what was waiting on it never will be.
+    GiveUp,
+}
+
+/// A way the agent offers to be signed in to.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Login {
+    /// The agent's id for it.
+    pub id: String,
+    /// What to call it, in the agent's words.
+    pub name: String,
+    /// What it says about it, where it says anything.
+    pub about: Option<String>,
+    /// What signing in this way is.
+    pub how: How,
+}
+
+/// What signing in one way is.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum How {
+    /// A program to run where the reader can answer it, and its ending well
+    /// is the sign-in: `authenticate` is never sent for one of these.
+    Run {
+        /// The program.
+        program: PathBuf,
+        /// What it is told.
+        arguments: Vec<String>,
+        /// What it is given on top of Obelus's own environment.
+        env: Vec<(String, String)>,
+    },
+    /// The agent's own business, asked for with `authenticate`.
+    Asked,
 }
 
 /// What a setting is being put on.
@@ -378,7 +437,28 @@ pub enum Incoming {
         named: Option<String>,
         /// What may go in a prompt.
         carries: Carries,
+        /// The ways it offers to be signed in to, which are only asked for
+        /// once the agent has said that it needs it.
+        logins: Vec<Login>,
     },
+    /// The agent will not go on until the reader has signed in.
+    ///
+    /// Said from a conversation being opened, or taken up again, or from a
+    /// turn. What was being opened waits for the sign-in rather than ending
+    /// the connection, which is what an error opening one does; a turn has
+    /// already ended, and is the reader's to say again.
+    SignIn {
+        /// The conversation whose turn it was, where it was a turn.
+        session: Option<SessionId>,
+        /// Which request for a conversation is waiting on it, where one is
+        /// -- counted at the other end, like [`Incoming::Started`]'s.
+        asking: Option<super::Asking>,
+        /// What the agent said about it, where it said more than that it
+        /// needs it.
+        why: Option<String>,
+    },
+    /// The agent has signed the reader in.
+    SignedIn,
     /// There is a session to talk in.
     Started {
         /// Which one, which is what everything said in it names.
@@ -1068,6 +1148,11 @@ pub fn start(
     // a `.cmd`, which is started by being handed to the command processor
     // rather than by being run. [`obelus_program::as_started_here`] is the
     // one place that knows the difference.
+    //
+    // Kept as it was named as well, for a way in that is this command with
+    // more on the end: the terminal it is run in asks the same question of
+    // it, and asking twice would wrap a shim in two command processors.
+    let started = (command.to_path_buf(), arguments.to_vec());
     let (program, arguments) = obelus_program::as_started_here(command, arguments);
     let config = AcpAgentConfig::new(&program).args(arguments.iter().cloned());
     let root = root.to_path_buf();
@@ -1080,7 +1165,7 @@ pub fn start(
     // The channels stay `futures`': that is what the protocol's own crate
     // speaks, and a channel is runtime-agnostic anyway.
     obelus_runtime::handle().spawn(async move {
-        let reason = talk(config, root, told.clone(), taken).await;
+        let reason = talk(config, started, root, told.clone(), taken).await;
         let _ = told.send(Event::Acp(Incoming::Gone(reason)));
     });
     asks
@@ -1229,6 +1314,7 @@ async fn open_session(
 /// Returns why it ended, or `None` because it ended tidily.
 async fn talk(
     config: AcpAgentConfig,
+    (command, arguments): (PathBuf, Vec<String>),
     root: PathBuf,
     events: impl Sink<Event> + Clone,
     mut asks: mpsc::UnboundedReceiver<Ask>,
@@ -1667,7 +1753,15 @@ async fn talk(
                 // do nothing" is answered by what the agent said it takes
                 // and by nothing else.
                 tracing::info!(?carries, "what a prompt to this agent may carry");
-                let _ = events.send(Event::Acp(Incoming::Ready { named, carries }));
+                let logins = logins_of(&ready.auth_methods, &command, &arguments);
+                // Written down for the same reason: "why does it offer no
+                // way to sign in" is answered by what it said here.
+                tracing::info!(?logins, "the ways in it offers");
+                let _ = events.send(Event::Acp(Incoming::Ready {
+                    named,
+                    carries,
+                    logins,
+                }));
 
                 // Which way the tools can be handed over, decided once from
                 // what the agent said it takes rather than guessed afresh
@@ -1690,11 +1784,76 @@ async fn talk(
                 // against the note in place of the one the reader had been
                 // talking in. Whoever opens a conversation says what it
                 // wants, and waits the one round trip that costs.
-                while let Some(ask) = asks.next().await {
+                // The requests for a conversation that are waiting for the
+                // reader to sign in, oldest first, and the ones being asked
+                // again now that they have. Every request for one waits
+                // behind the first that is held, whatever it would have been
+                // answered: they are answered in the order they were made,
+                // which is all the other end has to tell them apart by.
+                let mut held: std::collections::VecDeque<Ask> = std::collections::VecDeque::new();
+                let mut retried: std::collections::VecDeque<Ask> = std::collections::VecDeque::new();
+                loop {
+                    let ask = match retried.pop_front() {
+                        Some(ask) => ask,
+                        None => match asks.next().await {
+                            Some(ask) => ask,
+                            None => break,
+                        },
+                    };
                     match ask {
+                        ask @ (Ask::Open { .. } | Ask::Reopen { .. }) if !held.is_empty() => {
+                            held.push_back(ask);
+                        }
                         Ask::Open { tools } => {
                             let offered = offering(tools.as_deref(), &can);
-                            open_session(&connection, &root, offered.as_ref(), &events).await?;
+                            match open_session(&connection, &root, offered.as_ref(), &events).await
+                            {
+                                Ok(_) => {}
+                                Err(error) if wants_signing_in(&error) => {
+                                    held.push_back(Ask::Open { tools });
+                                    let _ = events.send(Event::Acp(Incoming::SignIn {
+                                        session: None,
+                                        asking: None,
+                                        why: why_signing_in(&error),
+                                    }));
+                                }
+                                Err(error) => return Err(error),
+                            }
+                        }
+                        // A way in the agent does itself. Whatever was
+                        // waiting is asked again once it says it has, and
+                        // an answer that it has not is the same question
+                        // put again, with what it said.
+                        Ask::SignIn { method } => {
+                            match connection
+                                .send_request(AuthenticateRequest::new(method))
+                                .block_task()
+                                .await
+                            {
+                                Ok(_) => {
+                                    retried.extend(held.drain(..));
+                                    let _ = events.send(Event::Acp(Incoming::SignedIn));
+                                }
+                                Err(error) => {
+                                    let _ = events.send(Event::Acp(Incoming::SignIn {
+                                        session: None,
+                                        asking: None,
+                                        why: Some(ended_because(&error)),
+                                    }));
+                                }
+                            }
+                        }
+                        Ask::SignedIn => retried.extend(held.drain(..)),
+                        // Nothing that was waiting will ever be answered,
+                        // and a request that is never answered is a
+                        // conversation that says it is opening for ever. So
+                        // the connection ends the way it did before anybody
+                        // could sign in, with what the agent said, and the
+                        // next thing the reader says starts it again.
+                        Ask::GiveUp => {
+                            if !held.is_empty() {
+                                return Err(agent_client_protocol::Error::auth_required());
+                            }
                         }
                         // A conversation opened to read one thing off it
                         // and closed again. Nothing is said in it and
@@ -1817,6 +1976,18 @@ async fn talk(
                                 // trip spent learning nothing.
                                 Again::Not => None,
                             };
+                            if let Some(Err(error)) = &taken
+                                && wants_signing_in(error)
+                            {
+                                let why = why_signing_in(error);
+                                held.push_back(Ask::Reopen { session, tools });
+                                let _ = events.send(Event::Acp(Incoming::SignIn {
+                                    session: None,
+                                    asking: None,
+                                    why,
+                                }));
+                                continue;
+                            }
                             match taken {
                                 Some(Ok((modes, options))) => {
                                     let mode = modes.as_ref().map(mode_setting);
@@ -1899,13 +2070,29 @@ async fn talk(
                                     // handle, which is the side that counts
                                     // them -- this one keeps nothing that
                                     // could go stale.
+                                    // A turn that needed a sign-in has ended
+                                    // all the same, and says so; the card
+                                    // that asks for one comes after it.
+                                    let signing_in = match &asked {
+                                        Err(error) if wants_signing_in(error) => {
+                                            Some(why_signing_in(error))
+                                        }
+                                        _ => None,
+                                    };
                                     let _ = told.send(Event::Acp(Incoming::Ended {
-                                        session: whose,
+                                        session: whose.clone(),
                                         turn,
                                         why: asked
                                             .map(|answer| said_as(&answer.stop_reason))
                                             .map_err(|error| error.to_string()),
                                     }));
+                                    if let Some(why) = signing_in {
+                                        let _ = told.send(Event::Acp(Incoming::SignIn {
+                                            session: Some(whose),
+                                            asking: None,
+                                            why,
+                                        }));
+                                    }
                                     std::future::ready(Ok(()))
                                 })?;
                         }
@@ -2058,9 +2245,109 @@ fn handshake() -> InitializeRequest {
                         SessionConfigOptionsCapabilities::new()
                             .boolean(BooleanConfigOptionCapabilities::new()),
                     ),
-                ),
+                )
+                // A sign-in that is a program to run, which Obelus runs in a
+                // terminal of its own. Said twice, because the protocol said
+                // it in `_meta` before it said it here and an agent written
+                // then still asks there: Copilot's one way in is a
+                // `_meta` program, and claude-agent-acp offers *no* way in
+                // to a client that says neither.
+                .auth(AuthCapabilities::new().terminal(true))
+                .meta(serde_json::Map::from_iter([(
+                    TERMINAL_AUTH.to_string(),
+                    serde_json::Value::Bool(true),
+                )])),
         )
         .client_info(Implementation::new("obelus", env!("CARGO_PKG_VERSION")))
+}
+
+/// Where an agent written before the protocol had a word for it says a
+/// sign-in is a program: in a capability's `_meta`, and in a way in's.
+const TERMINAL_AUTH: &str = "terminal-auth";
+
+/// The ways in an agent offers, as Obelus can take them.
+///
+/// A program the agent names is run as it named it. The newer kind names
+/// only what to add to the agent's own command line -- the agent knows how
+/// it was started better than it knows how to say so -- so it is the
+/// command Obelus started it with and those after it.
+fn logins_of(
+    methods: &[AuthMethod],
+    command: &std::path::Path,
+    arguments: &[String],
+) -> Vec<Login> {
+    methods
+        .iter()
+        .map(|method| {
+            let how = match method {
+                AuthMethod::Terminal(terminal) => How::Run {
+                    program: command.to_path_buf(),
+                    arguments: arguments.iter().chain(&terminal.args).cloned().collect(),
+                    env: terminal
+                        .env
+                        .iter()
+                        .map(|(key, value)| (key.clone(), value.clone()))
+                        .collect(),
+                },
+                _ => method
+                    .meta()
+                    .and_then(|meta| meta.get(TERMINAL_AUTH))
+                    .and_then(run_of)
+                    .unwrap_or(How::Asked),
+            };
+            Login {
+                id: method.id().to_string(),
+                name: method.name().to_string(),
+                about: method
+                    .description()
+                    .map(str::trim)
+                    .filter(|about| !about.is_empty())
+                    .map(str::to_string),
+                how,
+            }
+        })
+        .collect()
+}
+
+/// A program a way in names in its `_meta`: `{command, args?, env?}`.
+fn run_of(said: &serde_json::Value) -> Option<How> {
+    let program = said.get("command")?.as_str()?;
+    let arguments = said
+        .get("args")
+        .and_then(serde_json::Value::as_array)
+        .map(|all| {
+            all.iter()
+                .filter_map(|it| it.as_str().map(str::to_string))
+                .collect()
+        })
+        .unwrap_or_default();
+    let env = said
+        .get("env")
+        .and_then(serde_json::Value::as_object)
+        .map(|all| {
+            all.iter()
+                .filter_map(|(key, value)| Some((key.clone(), value.as_str()?.to_string())))
+                .collect()
+        })
+        .unwrap_or_default();
+    Some(How::Run {
+        program: PathBuf::from(program),
+        arguments,
+        env,
+    })
+}
+
+/// Whether the agent's answer is that the reader has to sign in first.
+fn wants_signing_in(error: &agent_client_protocol::Error) -> bool {
+    error.code == agent_client_protocol::ErrorCode::AuthRequired
+}
+
+/// What the agent said about needing a sign-in, where it said more than the
+/// protocol's own words for it.
+fn why_signing_in(error: &agent_client_protocol::Error) -> Option<String> {
+    let said = error.message.trim();
+    (!said.is_empty() && said != agent_client_protocol::ErrorCode::AuthRequired.to_string())
+        .then(|| said.to_string())
 }
 
 /// How a command ended, as the protocol says it.

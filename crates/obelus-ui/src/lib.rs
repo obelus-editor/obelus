@@ -327,6 +327,8 @@ pub trait Screen {
     fn note(&self) -> Option<&str>;
     /// The notes, while the reader is in them.
     fn notes(&self) -> Option<&TodoView>;
+    /// The terminal, while the reader is in one.
+    fn terminal(&self) -> Option<&obelus_terminal::Terminal>;
     /// Whether each note has a conversation, by the note's place in the
     /// list -- which is what a row of the notes names.
     fn talked_about(&self) -> Vec<obelus_component::todo::Talked>;
@@ -445,6 +447,7 @@ pub mod settings;
 pub mod shapes;
 pub mod signature;
 pub mod status;
+pub mod terminal;
 pub mod todo;
 pub mod trouble;
 pub mod welcome;
@@ -538,7 +541,11 @@ pub fn editor_room(area: Rect, app: &impl Screen) -> Rect {
     else {
         return editor;
     };
-    if app.chat().is_some() {
+    // Nor a terminal: a list over it is over it, and its program is not
+    // told it is smaller for as long as the palette is open -- which would
+    // make a shell draw its prompt again under a list the reader is about
+    // to close.
+    if app.chat().is_some() || app.terminal().is_some() {
         return editor;
     }
     picker::room_above(list, editor)
@@ -709,6 +716,10 @@ pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
             if let Some(notes) = app.notes() {
                 return todo::caret(regions.editor, notes);
             }
+            // And a terminal, whose caret is its program's cursor.
+            if let Some(terminal) = app.terminal() {
+                return terminal::caret(regions.editor, terminal);
+            }
         }
     }
 
@@ -796,6 +807,10 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     let canvas = editor_canvas(area);
     if let Some(view) = todo::TodoUi::new(app) {
         bars::of(Whose::Notes, || view.render(canvas, cells));
+    } else if let Some(view) = terminal::TerminalView::new(app) {
+        // No bar: what scrolled off the top is the program's, and how far
+        // back the reader is is said on the status row instead.
+        view.render(canvas, cells);
     } else {
         match chat::ChatView::new(app) {
             Some(view) => bars::of(Whose::Conversation, || view.render(regions.editor, cells)),

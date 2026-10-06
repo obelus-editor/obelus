@@ -58,6 +58,17 @@ pub enum Document {
     /// this is 240 bytes against a buffer's 440, so it rides in the space
     /// the list already spends.
     Notes(TodoView),
+    /// A program the reader can type to: their shell, or an agent's own
+    /// sign-in.
+    ///
+    /// A document for the reason a conversation is one -- somewhere the
+    /// reader goes and comes back to -- and not a file for the reason a
+    /// conversation is not one: what is on it is the program's, drawn by it
+    /// a screen at a time, and nothing in it is the reader's to edit.
+    ///
+    /// Boxed: a parser and its screen, against the buffer every other slot
+    /// is sized to.
+    Terminal(Box<obelus_terminal::Terminal>),
 }
 
 impl Document {
@@ -74,7 +85,7 @@ impl Document {
     pub const fn file(&self) -> Option<&Buffer> {
         match self {
             Self::File(buffer) => Some(buffer),
-            Self::Chat(_) | Self::Notes(_) => None,
+            Self::Chat(_) | Self::Notes(_) | Self::Terminal(_) => None,
         }
     }
 
@@ -83,7 +94,7 @@ impl Document {
     pub const fn file_mut(&mut self) -> Option<&mut Buffer> {
         match self {
             Self::File(buffer) => Some(buffer),
-            Self::Chat(_) | Self::Notes(_) => None,
+            Self::Chat(_) | Self::Notes(_) | Self::Terminal(_) => None,
         }
     }
 
@@ -92,7 +103,7 @@ impl Document {
     pub fn chat(&self) -> Option<&Conversation> {
         match self {
             Self::Chat(talk) => Some(talk),
-            Self::File(_) | Self::Notes(_) => None,
+            Self::File(_) | Self::Notes(_) | Self::Terminal(_) => None,
         }
     }
 
@@ -100,7 +111,7 @@ impl Document {
     pub fn chat_mut(&mut self) -> Option<&mut Conversation> {
         match self {
             Self::Chat(talk) => Some(talk),
-            Self::File(_) | Self::Notes(_) => None,
+            Self::File(_) | Self::Notes(_) | Self::Terminal(_) => None,
         }
     }
 
@@ -109,7 +120,7 @@ impl Document {
     pub const fn notes(&self) -> Option<&TodoView> {
         match self {
             Self::Notes(notes) => Some(notes),
-            Self::File(_) | Self::Chat(_) => None,
+            Self::File(_) | Self::Chat(_) | Self::Terminal(_) => None,
         }
     }
 
@@ -118,8 +129,33 @@ impl Document {
     pub const fn notes_mut(&mut self) -> Option<&mut TodoView> {
         match self {
             Self::Notes(notes) => Some(notes),
-            Self::File(_) | Self::Chat(_) => None,
+            Self::File(_) | Self::Chat(_) | Self::Terminal(_) => None,
         }
+    }
+}
+
+impl Document {
+    /// The terminal, where this is one.
+    #[must_use]
+    pub fn terminal(&self) -> Option<&obelus_terminal::Terminal> {
+        match self {
+            Self::Terminal(terminal) => Some(terminal),
+            Self::File(_) | Self::Chat(_) | Self::Notes(_) => None,
+        }
+    }
+
+    /// And to type to it.
+    pub fn terminal_mut(&mut self) -> Option<&mut obelus_terminal::Terminal> {
+        match self {
+            Self::Terminal(terminal) => Some(terminal),
+            Self::File(_) | Self::Chat(_) | Self::Notes(_) => None,
+        }
+    }
+}
+
+impl From<obelus_terminal::Terminal> for Document {
+    fn from(terminal: obelus_terminal::Terminal) -> Self {
+        Self::Terminal(Box::new(terminal))
     }
 }
 

@@ -1,0 +1,19 @@
+[package]
+name = "obelus-terminal"
+description = "A program running in a terminal of Obelus's own"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Cargo inherits nothing here on its own; every member says it.
+[lints]
+workspace = true
+
+[dependencies]
+crossterm.workspace = true
+obelus-program.workspace = true
+obelus-runtime.workspace = true
+obelus-sink.workspace = true
+portable-pty.workspace = true
+tracing.workspace = true
+vt100.workspace = true

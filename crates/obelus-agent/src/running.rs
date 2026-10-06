@@ -4,8 +4,9 @@
 //! `terminal/write`, no size, no keys. What the five `terminal/*` methods
 //! ask for is a command started, its output read, its exit status waited
 //! for, and a way to stop it. So this is a process runner with the output
-//! kept, not a terminal -- Obelus has no terminal to offer and does not
-//! need one.
+//! kept, not a terminal. Obelus has one of those now (`obelus_terminal`),
+//! for a program the reader answers, and these are not that: nobody types
+//! to a command an agent ran, and what the agent reads back is its words.
 //!
 //! Its pipes are read on [`obelus_runtime`], not on threads of their own:
 //! reading a pipe is waiting, which is what that runtime is for, and a

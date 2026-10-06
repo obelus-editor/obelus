@@ -297,15 +297,17 @@ fn the_readers_own_bindings_go_over_the_defaults() {
     .collect();
     let (keymap, _unbound) = Keymap::with(&moved);
 
-    // Both of `close-document`'s bindings moved: it is one command with one
-    // key, bound in two contexts so that it reaches the list of open files.
+    // All of `close-document`'s bindings moved: it is one command with one
+    // key, bound in three contexts so that it reaches the list of open files
+    // and a terminal -- where it was `ctrl+shift+w`, because `ctrl+w` is the
+    // shell's, and where the reader's own key is the reader's own choice.
     let closes: Vec<_> = keymap
         .bindings()
         .iter()
         .filter(|binding| binding.command == Command::DocumentClose)
         .map(|binding| (binding.context, binding.chord))
         .collect();
-    assert_eq!(closes.len(), 2, "a context lost the command: {closes:?}");
+    assert_eq!(closes.len(), 3, "a context lost the command: {closes:?}");
     assert!(
         closes
             .iter()

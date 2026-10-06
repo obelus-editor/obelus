@@ -71,6 +71,7 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::GoForward => app.go_forward(),
         Command::ConversationNew => app.new_conversation(),
         Command::ConversationSelect => app.open_conversation_picker(),
+        Command::TerminalOpen => app.open_terminal(),
         Command::CountLines => app.open_counts(),
         Command::TodoOpen => app.open_todo(),
         Command::TodoAdd => app.add_todo(),

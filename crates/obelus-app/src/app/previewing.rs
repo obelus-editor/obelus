@@ -493,6 +493,13 @@ impl App {
             talk.chat.scroll(rows);
             return;
         }
+        // A terminal, back up what has gone past -- the view and not the
+        // program, which is told nothing: a reader spinning the wheel is
+        // looking around, and the next key they type brings it back down.
+        if let Some(terminal) = self.terminal_mut() {
+            terminal.scroll_by(-rows);
+            return;
+        }
         let height = self.editor_area.height;
         if let Some(rows_in_view) = self.rendered_rows()
             && let Some(buffer) = self.current_buffer_mut()

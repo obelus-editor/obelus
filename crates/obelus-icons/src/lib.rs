@@ -148,6 +148,11 @@ pub mod ui {
     pub const THOUGHT: char = '\u{f07f7}';
     /// The agent using a tool.
     pub const TOOL: char = '\u{f05b7}';
+    /// A terminal of Obelus's own: a program running that the reader can
+    /// type to. `md-console_line`, the console with a line under its prompt,
+    /// and not the plain console the palette wears -- that one is a name
+    /// being typed, and this is a program being answered.
+    pub const TERMINAL: char = '\u{f07b7}';
     /// Obelus's own remark in a conversation.
     pub const NOTE: char = '\u{f02fd}';
     /// A tool call that has not started.
@@ -351,6 +356,7 @@ pub fn for_command(command: obelus_command::Command) -> char {
         // picture say less than one, and the difference between these two
         // rows is exactly one conversation against all of them.
         Command::ConversationSelect => '\u{f0286}',
+        Command::TerminalOpen => ui::TERMINAL,
         // A bar chart, which is what the view itself draws: a column per
         // language against the biggest one.
         Command::CountLines => '\u{f0128}',

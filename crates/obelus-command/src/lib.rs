@@ -142,6 +142,8 @@ pub enum Command {
     ConversationNew,
     /// Choose which conversation to be in: one had before, or a new one.
     ConversationSelect,
+    /// Start the reader's own shell, in a terminal of Obelus's own.
+    TerminalOpen,
     /// Count the lines of the project, by language and by file.
     CountLines,
     /// Show what this project means to come back to.
@@ -714,6 +716,11 @@ pub const ALL: &[CommandSpec] = &[
         title: "Choose a conversation with the agent, or start one",
     },
     CommandSpec {
+        command: Command::TerminalOpen,
+        name: "open-terminal",
+        title: "Your shell, in a terminal of Obelus's own",
+    },
+    CommandSpec {
         command: Command::CountLines,
         name: "count-lines",
         title: "How much code is here, by language and by file",
@@ -856,6 +863,7 @@ impl Command {
             | Self::GoForward
             | Self::ConversationNew
             | Self::ConversationSelect
+            | Self::TerminalOpen
             | Self::CountLines
             | Self::TodoOpen
             | Self::TodoAdd
@@ -923,6 +931,7 @@ impl Command {
             | Self::ConfigOpen
             | Self::ConfigProject
             | Self::ConversationNew
+            | Self::TerminalOpen
             | Self::TodoOpen
             | Self::FileReload
             | Self::FileSave
@@ -1005,6 +1014,7 @@ impl Command {
             // Documents rather than views, and whole-screen all the same:
             // what the reader goes to, from wherever they are.
             | Self::ConversationNew
+            | Self::TerminalOpen
             | Self::TodoOpen => true,
             // Over the file rather than instead of it -- the palette, the
             // menus, a list of what a server offers -- or not a thing to look
@@ -1144,6 +1154,9 @@ impl Command {
             | Self::LspStop
             | Self::ConversationNew
             | Self::ConversationSelect
+            // Beside the conversation, and for the same reason: somewhere
+            // the reader goes that is Obelus's rather than the project's.
+            | Self::TerminalOpen
             | Self::ConfigOpen
             | Self::ConfigProject
             | Self::ConfigFile
@@ -1303,6 +1316,10 @@ impl Command {
             | Self::ConfigOpen
             | Self::ConfigFile
             | Self::LogOpen
+            // A shell starts in the project, and in the home directory
+            // where there is none, which is where the reader's own
+            // terminal would have started it.
+            | Self::TerminalOpen
             | Self::Quit => Requires::Nothing,
             // A project, and nothing more. Each of these is about one --
             // a list of its files, a search across it, how much code is
@@ -1426,6 +1443,7 @@ mod tests {
             Command::LogServers,
             Command::LspRestart,
             Command::LspStop,
+            Command::TerminalOpen,
             Command::Quit,
         ] {
             assert_eq!(command.spec().command, command);

@@ -24,6 +24,7 @@ obelus-row.workspace = true
 obelus-reading.workspace = true
 obelus-search.workspace = true
 obelus-syntax.workspace = true
+obelus-terminal.workspace = true
 obelus-text.workspace = true
 obelus-theme.workspace = true
 crossterm.workspace = true

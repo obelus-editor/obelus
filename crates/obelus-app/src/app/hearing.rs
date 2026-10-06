@@ -28,6 +28,8 @@ enum Hearer {
     Chat,
     /// The notes, being read.
     Notes,
+    /// A terminal, being read: its program's, while it runs.
+    Terminal,
     /// What the server said about a place.
     Hover,
     /// What the call the cursor is inside takes.
@@ -51,7 +53,12 @@ impl Hearer {
     const fn lets_through(self) -> bool {
         match self {
             Self::Hover | Self::Signature | Self::Completion | Self::Snippet => true,
-            Self::Layer(_) | Self::Chooser | Self::Chat | Self::Notes | Self::Editor => false,
+            Self::Layer(_)
+            | Self::Chooser
+            | Self::Chat
+            | Self::Notes
+            | Self::Terminal
+            | Self::Editor => false,
         }
     }
 }
@@ -70,6 +77,8 @@ impl App {
             hearers.push(Hearer::Chat);
         } else if self.notes().is_some() {
             hearers.push(Hearer::Notes);
+        } else if self.terminal().is_some() {
+            hearers.push(Hearer::Terminal);
         } else {
             // Escape belongs to whichever is nearest, and the hover and the
             // call are never up together. The panel takes the arrows and
@@ -125,6 +134,7 @@ impl App {
             Hearer::Chooser => self.choosing_a_project(key),
             Hearer::Chat => self.chat_key(key),
             Hearer::Notes => self.notes_key(key),
+            Hearer::Terminal => self.terminal_key(key),
             Hearer::Hover => self.hover_key(key),
             Hearer::Signature => self.signature_key(key),
             Hearer::Completion => self.completion_key(key),

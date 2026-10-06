@@ -656,6 +656,7 @@ impl App {
             || self.picker.is_some()
             || self.names.is_some()
             || self.conversation_takes_text()
+            || self.typing_to_a_program()
     }
 
     /// Whether the conversation being read has somewhere text can go.
@@ -713,6 +714,12 @@ impl App {
                 }
                 if let Some(notes) = self.notes() {
                     return notes.writing().is_some() && !notes.selected_is_elsewhere();
+                }
+                // A program reads what is typed at it, an input method's
+                // words included -- they arrive as a paste, which goes down
+                // the pty like any other.
+                if self.terminal().is_some() {
+                    return self.typing_to_a_program();
                 }
                 // The same two things `Buffer::edit` refuses.
                 self.current_buffer().is_some_and(|buffer| {
@@ -790,6 +797,13 @@ impl App {
             // moment they stopped being one.
             None if self.notes().is_some() => {
                 self.paste_into_notes(what);
+                return;
+            }
+            // A terminal's program, which reads a paste the way a terminal
+            // hands it one. One whose program has ended takes nothing, and
+            // what it is does not change into a file for want of one.
+            None if self.terminal().is_some() => {
+                self.paste_into_terminal(what);
                 return;
             }
             None => {}
