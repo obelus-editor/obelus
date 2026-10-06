@@ -689,6 +689,9 @@ impl Settings {
                     obelus_remote::State::NoKeyring if secret => {
                         Some("No keyring on this machine".to_string())
                     }
+                    obelus_remote::State::Unread if secret => {
+                        Some("The keyring would not answer".to_string())
+                    }
                     _ => None,
                 }
             }

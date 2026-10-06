@@ -131,45 +131,80 @@ fn ours_at_info() -> EnvFilter {
 ///
 /// Verbosity comes from `RUST_LOG`, which is `tracing-subscriber`'s own
 /// convention rather than a setting Obelus invents.
+///
+/// `on_stderr` is for `ob --headless`, where nothing is drawn and the log
+/// is the only thing anybody watching it will read: Obelus's own lines go
+/// to stderr as well, through the same filter, so `RUST_LOG` moves both.
+/// Not the servers', which are the volume the second file is there to keep
+/// out of the first. And still there where the files cannot be made, which
+/// is when a process nobody can see most needs to say something.
 #[must_use]
-pub fn install() -> Option<(WorkerGuard, WorkerGuard)> {
-    let directory = log_directory()?;
-    std::fs::create_dir_all(&directory).ok()?;
-
-    let (ours, kept) = writer(&directory, OBELUS)?;
-    let (theirs, also_kept) = writer(&directory, SERVERS)?;
-
+pub fn install(on_stderr: bool) -> Option<(WorkerGuard, WorkerGuard)> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| ours_at_info());
 
-    // Two layers over one registry, each taking the events the other does
-    // not: the split is by target, so an event goes to exactly one file and
-    // neither file has to be read with the other in mind.
-    //
-    // Boxed into a list because a per-layer filter fixes the subscriber it
-    // belongs to at the moment it is built, so two of them cannot be
-    // stacked one after the other -- they go on together or not at all.
-    let ours = tracing_subscriber::fmt::layer()
-        // No escape sequences: this is a file, and a pager should not have
-        // to strip colour out of it.
-        .with_ansi(false)
-        .with_writer(Marked(ours))
-        .with_filter(tracing_subscriber::filter::filter_fn(|event| {
-            !is_server(event.target())
-        }))
-        .boxed();
-    let theirs = tracing_subscriber::fmt::layer()
-        .with_ansi(false)
-        .with_writer(Marked(theirs))
-        .with_filter(tracing_subscriber::filter::filter_fn(|event| {
-            is_server(event.target())
-        }))
-        .boxed();
+    let mut layers = Vec::new();
+    let files = files();
+    let guards = files.map(|(ours, theirs, guards)| {
+        // Two layers over one registry, each taking the events the other
+        // does not: the split is by target, so an event goes to exactly one
+        // file and neither file has to be read with the other in mind.
+        //
+        // Boxed into a list because a per-layer filter fixes the subscriber
+        // it belongs to at the moment it is built, so two of them cannot be
+        // stacked one after the other -- they go on together or not at all.
+        layers.push(
+            tracing_subscriber::fmt::layer()
+                // No escape sequences: this is a file, and a pager should
+                // not have to strip colour out of it.
+                .with_ansi(false)
+                .with_writer(Marked(ours))
+                .with_filter(tracing_subscriber::filter::filter_fn(|event| {
+                    !is_server(event.target())
+                }))
+                .boxed(),
+        );
+        layers.push(
+            tracing_subscriber::fmt::layer()
+                .with_ansi(false)
+                .with_writer(Marked(theirs))
+                .with_filter(tracing_subscriber::filter::filter_fn(|event| {
+                    is_server(event.target())
+                }))
+                .boxed(),
+        );
+        guards
+    });
+    if on_stderr {
+        // Unmarked: one process's stderr has nobody else's lines in it.
+        layers.push(
+            tracing_subscriber::fmt::layer()
+                .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stderr()))
+                .with_writer(std::io::stderr)
+                .with_filter(tracing_subscriber::filter::filter_fn(|event| {
+                    !is_server(event.target())
+                }))
+                .boxed(),
+        );
+    }
     tracing_subscriber::registry()
-        .with(vec![ours, theirs])
+        .with(layers)
         .with(filter)
         .init();
 
-    Some((kept, also_kept))
+    guards
+}
+
+/// The two files, where they can be made.
+fn files() -> Option<(
+    tracing_appender::non_blocking::NonBlocking,
+    tracing_appender::non_blocking::NonBlocking,
+    (WorkerGuard, WorkerGuard),
+)> {
+    let directory = log_directory()?;
+    std::fs::create_dir_all(&directory).ok()?;
+    let (ours, kept) = writer(&directory, OBELUS)?;
+    let (theirs, also_kept) = writer(&directory, SERVERS)?;
+    Some((ours, theirs, (kept, also_kept)))
 }
 
 /// One day-rotated file, and the guard that flushes it.

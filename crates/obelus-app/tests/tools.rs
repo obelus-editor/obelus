@@ -797,3 +797,54 @@ fn an_agent_closes_the_conversation_whose_address_it_called() {
     assert!(closed.contains("closed"), "it did not say it had: {closed}");
     assert!(app.chat().is_none(), "the conversation is still open");
 }
+
+/// With nobody at the screen a file an agent offers is not opened, and the
+/// agent is told why: there is no screen to put it on, and a file open here
+/// would hold what the agent then writes to it for a save nobody makes.
+///
+/// Broken deliberately by taking the headless arm out of
+/// `open_for_an_agent`: the file was open and the agent was told it was on
+/// the reader's screen.
+#[test]
+fn a_file_an_agent_offers_is_not_opened_with_nobody_there() {
+    use obelus_app::app::App;
+
+    let scratch = support::Scratch::new("tools-opened-unseen");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(scratch.path().join("sample.rs"), "// a file\n").expect("a file to open");
+
+    let (sender, events) = channel::<obelus_app::event::Event>();
+    let url = served(scratch.path(), sender);
+    let mut app = App::new(Vec::new());
+    app.headless();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+
+    let asking = std::thread::spawn({
+        let url = url.clone();
+        move || {
+            let (_, session) = ask(
+                &url,
+                None,
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"a test","version":"0"}}}"#,
+            );
+            let session = session.expect("a session of its own");
+            let (opened, _) = ask(
+                &url,
+                Some(&session),
+                r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"open_file","arguments":{"path":"sample.rs"}}}"#,
+            );
+            opened
+        }
+    });
+    let event = events
+        .recv_timeout(std::time::Duration::from_secs(10))
+        .expect("the server asked the loop for something");
+    app.handle(event);
+    let opened = asking.join().expect("the agent's side");
+
+    assert!(
+        opened.contains("Nobody is at Obelus's screen"),
+        "it said {opened}"
+    );
+    assert!(app.current_buffer().is_none(), "the file was opened");
+}

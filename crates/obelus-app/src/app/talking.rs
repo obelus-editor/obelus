@@ -2520,6 +2520,19 @@ impl App {
         id: &str,
         answer: acp::Answer<bool>,
     ) {
+        // With nobody at the screen there is nobody to send, and a card
+        // left up would hold the conversation for good. The address goes to
+        // the thread, where a reader on a phone may have a use for it, and
+        // the agent is told they did not go -- which, from here, they did
+        // not.
+        if self.is_headless() {
+            self.tell_the_thread(
+                whose,
+                format!("The agent asked to send you to {url}, and was told you did not go."),
+            );
+            let _ = answer.send(false);
+            return;
+        }
         self.show_the_question(whose);
         if let Some(talk) = self.talk_mut(whose) {
             talk.going = Some(crate::conversation::Going {
@@ -2639,6 +2652,17 @@ impl App {
         };
         let logins = talker.logins().to_vec();
         let agent = talker.info().unwrap_or("the agent").to_string();
+        // Nobody at the screen to sign in, and nothing on a card in a chat
+        // that could: given up on at once and said in the thread, rather
+        // than a card nobody will answer holding the conversation.
+        if self.is_headless() {
+            self.tell_the_thread(
+                whose,
+                format!("Sign in to {agent} on the machine Obelus is running on, then say something here again."),
+            );
+            self.answer_signing_in(whose, None);
+            return;
+        }
         if logins.is_empty() {
             talker.give_up_signing_in();
             self.in_talk(whose, |chat| {

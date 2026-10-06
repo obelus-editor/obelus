@@ -31,6 +31,29 @@ use crate::app::{self, App};
 /// the crate it belongs to and nothing else. Handed in, the same way
 /// [`App::built_at`] already takes it.
 pub fn start(paths: &[PathBuf], built: &'static str) -> Result<App> {
+    build(paths, built, false)
+}
+
+/// The same, for an Obelus nobody is at the screen of: `ob --headless`.
+///
+/// Refused here, before anything has started, for what it cannot do
+/// without a reader: a file named is a file it would open, and an agent's
+/// writes to it would wait there for a save nobody makes; no project is a
+/// page asking which; and a chat not set or not paired is nothing to be
+/// reached from. See `app::headless`.
+///
+/// # Errors
+///
+/// The paths, as [`start`]; and what it cannot do, in the words it says
+/// it in.
+pub fn start_headless(paths: &[PathBuf], built: &'static str) -> Result<App> {
+    let mut app = build(paths, built, true)?;
+    app.ready_to_be_reached().map_err(anyhow::Error::msg)?;
+    app.remote_at_start();
+    Ok(app)
+}
+
+fn build(paths: &[PathBuf], built: &'static str, headless: bool) -> Result<App> {
     // What the paths mean: which project, which files, and whether the
     // question left over is "which file".
     let opening = app::opening(paths);
@@ -60,6 +83,10 @@ pub fn start(paths: &[PathBuf], built: &'static str) -> Result<App> {
         "Obelus starting"
     );
 
+    if headless && !opening.files.is_empty() {
+        anyhow::bail!("Headless, Obelus opens no file: name the project's directory instead");
+    }
+
     let buffers = opening
         .files
         .iter()
@@ -67,6 +94,9 @@ pub fn start(paths: &[PathBuf], built: &'static str) -> Result<App> {
         .collect::<Result<Vec<_>>>()?;
 
     let mut app = App::new(buffers);
+    if headless {
+        app.headless();
+    }
     // Before the settings, because a project has settings of its own and
     // reading those means knowing which project.
     //
@@ -100,6 +130,11 @@ pub fn start(paths: &[PathBuf], built: &'static str) -> Result<App> {
         // of the screen until it is answered. `work_in` is deliberately
         // not called: there is no project to be put on yet, and saying
         // there is would be the bug this replaces.
+        None if headless => {
+            anyhow::bail!(
+                "Headless, Obelus needs a project: name its directory, or start it in one"
+            )
+        }
         None => app.ask_which_project(),
     }
     // Read here rather than in `App::new`, so that a test gets the defaults
