@@ -1317,7 +1317,9 @@ impl App {
     ///
     /// What was open is closed without asking, unsaved work and all -- a
     /// file in a tree that has gone has nowhere to be written, and Obelus
-    /// does not make the tree again to write it.
+    /// does not make the tree again to write it. Going to another worktree
+    /// lets go the same way, and asks about what is unwritten before it
+    /// gets here (`App::go_to_worktree`).
     ///
     /// **A window that starts again, without starting again.** What is
     /// kept is what belongs to the process and not to the project -- the
@@ -1325,7 +1327,7 @@ impl App {
     /// and everything else is a new [`App`]'s. Kept by name rather than
     /// cleared by name, so that a field nobody thought of here is one that
     /// starts empty, and not one still holding the last project's answer.
-    fn let_go_of_the_project(&mut self) {
+    pub(super) fn let_go_of_the_project(&mut self) {
         // The sessions nothing was said in, as on the way out: an agent
         // keeps what it is not told to let go of.
         self.let_go_of_what_nothing_was_said_in(None);

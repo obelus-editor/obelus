@@ -1,27 +1,36 @@
-//! Going to another of the repository's worktrees, in a window of its own.
+//! Going to another of the repository's worktrees.
 //!
 //! Obelus does not split its window, so a reader with three worktrees of
 //! one repository has three Obelus processes on it -- and what the list of
 //! open documents could not say is where the other two are. Its second tab
-//! is every checkout the repository has, and choosing one goes there: to
-//! the window already open on it, or to a new one.
+//! is every checkout the repository has, and which of them an Obelus is on.
 //!
-//! **Only where Obelus draws its own window.** Going somewhere is starting
-//! an Obelus or bringing one forward, and a window can do both: it can
-//! start a program that opens a window, and it can hand that window -- or
-//! another Obelus's -- the compositor's permission to come to the front. A
-//! terminal can do neither. The window it is in is the terminal's, and
-//! which terminal the reader would want a new Obelus started in is not
-//! something Obelus can know. So [`Windows`] is what a front end says it
-//! can do, and a terminal says nothing: no tab, and `switch-worktree` dim.
+//! **Enter puts this window on the tree, in a terminal and in a window
+//! alike.** What the project was is let go of the way a tree that went
+//! lets go of it (`App::let_go_of_the_project`), with what was unwritten
+//! asked about first -- the tree is still there to write it in -- and what
+//! was open written down, so going back opens it again.
+//!
+//! **`ctrl+enter` is a window of its own, and only where Obelus draws
+//! one.** Going there is starting an Obelus or bringing one forward, and a
+//! window can do both: it can start a program that opens a window, and it
+//! can hand that window -- or another Obelus's -- the compositor's
+//! permission to come to the front. A terminal can do neither. The window
+//! it is in is the terminal's, and which terminal the reader would want a
+//! new Obelus started in is not something Obelus can know. So [`Windows`]
+//! is what a front end says it can do, and a terminal says nothing: its
+//! list has the one enter.
 //!
 //! **A window on a tree is a claim, held the way a conversation's is.** A
 //! lock the kernel gives up with the process, and a file beside it for the
 //! watcher to wake on -- see `obelus_agent::chats`, whose argument this is
 //! word for word. One file per window rather than per tree, because two
 //! windows on one tree is as ordinary as two on one project, and the file
-//! says which tree and how to reach the window: an address on the loopback
-//! and a key that a stranger on the same machine does not have.
+//! says which tree and, where it can be, how to reach the window: an
+//! address on the loopback and a key that a stranger on the same machine
+//! does not have. A terminal's Obelus claims its tree too, with no door:
+//! which tree has somebody on it is true whatever they are drawn on, and
+//! only the bringing forward is a window's.
 //!
 //! **A claim appears already held.** It is made under a name nobody reads
 //! and renamed once it is locked, so a file nobody holds is a window that
@@ -123,10 +132,13 @@ impl Tab {
     }
 }
 
-/// One row of the worktrees, and the window on it where there is one.
+/// One row of the worktrees, and the Obelus on it where there is one.
 #[derive(Debug)]
 struct Listed {
     tree: obelus_git::Worktree,
+    /// Whether any Obelus is on it, a terminal's among them.
+    held: bool,
+    /// Where a window on it can be reached, where one can.
     door: Option<Door>,
 }
 
@@ -150,6 +162,11 @@ pub(super) struct Worktrees {
     pub(super) tabs: Vec<Tab>,
     /// What each row of the worktrees tab stands for.
     listed: Vec<Listed>,
+    /// The tree the reader chose to go to, while they are asked about what
+    /// is unwritten here.
+    going: Option<PathBuf>,
+    /// Whether there is another worktree, where a test says so.
+    given: Option<bool>,
 }
 
 impl Worktrees {
@@ -191,39 +208,45 @@ impl App {
     /// again by everything that settles on one, which drops the claim on
     /// the old tree as it takes the new.
     pub(super) fn say_where_this_window_is(&mut self) {
-        if self.worktrees.windows.is_none() || !self.has_a_project() {
+        if !self.has_a_project() {
             return;
         }
-        if self.worktrees.door.is_none() {
+        if self.worktrees.windows.is_some() && self.worktrees.door.is_none() {
             let Some(events) = self.events.clone() else {
                 return;
             };
             match listen(events) {
                 Ok(door) => self.worktrees.door = Some(door),
+                // Not a reason to stop: a window nobody can bring forward
+                // still says which tree it is on, as a terminal's does.
                 Err(error) => {
-                    // Not a reason to stop: a window nobody can bring
-                    // forward is the window every Obelus was until now.
                     tracing::warn!(%error, "no other Obelus can bring this window forward");
-                    return;
                 }
             }
         }
-        let Some(door) = self.worktrees.door.clone() else {
-            return;
-        };
-        let tree = obelus_git::worktree(&self.working_directory)
-            .unwrap_or_else(|| self.working_directory.clone());
+        let tree = self.this_tree();
         self.worktrees.present = None;
-        self.worktrees.present = present(&self.working_directory, &tree, &door);
+        self.worktrees.present =
+            present(&self.working_directory, &tree, self.worktrees.door.as_ref());
     }
 
     /// Whether `switch-worktree` has anywhere to go.
-    ///
-    /// The window first, because it is free and a terminal stops there.
     pub(super) fn another_worktree(&self) -> bool {
-        self.worktrees.windows.is_some()
-            && self.has_a_project()
-            && obelus_git::has_another_worktree(&self.working_directory)
+        self.has_a_project()
+            && self
+                .worktrees
+                .given
+                .unwrap_or_else(|| obelus_git::has_another_worktree(&self.working_directory))
+    }
+
+    /// Says whether there is another worktree to go to, for a test.
+    ///
+    /// The tests run in a checkout whose worktrees are not theirs to depend
+    /// on, for the reason `statuses_for_test` gives about its dirtiness:
+    /// the list of what is open grows a tab where there are several, and
+    /// the checkout anyone runs them in while working has several.
+    pub fn worktrees_for_test(&mut self, another: bool) {
+        self.worktrees.given = Some(another);
     }
 
     /// Opens the list of open documents, on one of its tabs.
@@ -289,6 +312,7 @@ impl App {
             Tab::Documents => picker.previews(),
             Tab::Worktrees => picker.stops_previewing(),
         }
+        picker.goes_elsewhere(tab == Tab::Worktrees && self.worktrees.windows.is_some());
         picker.when_empty(empty);
         picker.before_typing(typing);
         // By the row itself rather than by its label, which is what
@@ -367,8 +391,8 @@ impl App {
         self.worktrees.listed = obelus_git::worktrees(&self.working_directory)
             .into_iter()
             .map(|tree| {
-                let door = door_of(&windows, &tree.path);
-                Listed { tree, door }
+                let (held, door) = window_on(&windows, &tree.path);
+                Listed { tree, held, door }
             })
             .collect();
         // Named from the directory the main checkout sits in, which is the
@@ -445,7 +469,7 @@ impl App {
         let windows = windows_on(&self.working_directory);
         let tree = self.this_tree();
         for listed in &mut self.worktrees.listed {
-            listed.door = door_of(&windows, &listed.tree.path);
+            (listed.held, listed.door) = window_on(&windows, &listed.tree.path);
         }
         let listed = &self.worktrees.listed;
         let Some(picker) = self.picker.as_mut() else {
@@ -465,13 +489,63 @@ impl App {
             .is_some_and(|directory| path.parent() == Some(directory.as_path()))
     }
 
-    /// Goes to the tree a row names: to the window on it, or to a new one.
+    /// Puts this window on the tree a row names.
+    ///
+    /// Asking first where something is unwritten, the way leaving does:
+    /// the tree being left is still there, so what is unwritten has
+    /// somewhere to go, and the reader says whether it goes. The notes are
+    /// written without asking, as on the way out.
+    pub(super) fn go_to_worktree(&mut self, at: usize) {
+        let Some(listed) = self.worktrees.listed.get(at) else {
+            return;
+        };
+        let path = listed.tree.path.clone();
+        // Asked of the disk again, for the reason the window is: a tree
+        // that went since the row was drawn is nowhere to be put.
+        if same_tree(&path, &self.this_tree()) || obelus_git::is_gone(&path) {
+            return;
+        }
+        self.write_the_notes();
+        let unsaved = self
+            .documents
+            .iter()
+            .flatten()
+            .filter_map(Document::file)
+            .filter(|buffer| buffer.is_dirty())
+            .count();
+        if unsaved > 0 {
+            self.worktrees.going = Some(path);
+            self.ask_before_switching(unsaved);
+            return;
+        }
+        self.move_to_tree(&path);
+    }
+
+    /// The tree the reader was asked about going to, taken.
+    pub(super) fn going(&mut self) -> Option<PathBuf> {
+        self.worktrees.going.take()
+    }
+
+    /// Lets go of this project and settles on `tree` in its place.
+    ///
+    /// What was open is written down first, so that coming back opens it
+    /// again: going is leaving, as far as this tree is concerned.
+    pub(super) fn move_to_tree(&mut self, tree: &Path) {
+        tracing::info!(tree = %tree.display(), "putting this window on another worktree");
+        self.write_down_what_is_open_on_leaving();
+        self.let_go_of_the_project();
+        self.settle(tree.to_path_buf(), &[]);
+    }
+
+    /// Goes to the tree a row names in a window of its own: the one on it,
+    /// or a new one.
     ///
     /// Which window is asked again here rather than read off the row,
     /// because the row was drawn a moment ago and a window may have closed
     /// since -- and bringing forward a window that has gone is a key that
     /// does nothing. A window that closed is a tree to open a window on.
-    pub(super) fn go_to_worktree(&mut self, at: usize) {
+    /// The list is left either way, as choosing any row leaves it.
+    pub(super) fn go_elsewhere(&mut self, at: usize) {
         let (Some(listed), Some(windows)) = (
             self.worktrees.listed.get(at),
             self.worktrees.windows.clone(),
@@ -479,10 +553,11 @@ impl App {
             return;
         };
         let path = listed.tree.path.clone();
+        self.leave(super::layers::Layer::Picker);
         if same_tree(&path, &self.this_tree()) {
             return;
         }
-        let door = door_of(&windows_on(&self.working_directory), &path);
+        let (_, door) = window_on(&windows_on(&self.working_directory), &path);
         match door {
             Some(door) if windows.can_bring() => {
                 tracing::info!(tree = %path.display(), "bringing the window on a worktree forward");
@@ -514,7 +589,7 @@ impl App {
 /// so that asking again cannot disagree with the first.
 fn said(listed: &Listed, here: bool) -> Said {
     Said {
-        marker: (listed.door.is_some() || here).then(|| {
+        marker: (listed.held || here).then(|| {
             (
                 Marking::Aside,
                 match obelus_icons::enabled() {
@@ -579,12 +654,15 @@ fn resolved_as_far_as_it_goes(path: &Path) -> PathBuf {
         })
 }
 
-/// The door of a window on this tree, where one is open.
-fn door_of(windows: &[(PathBuf, Door)], tree: &Path) -> Option<Door> {
-    windows
-        .iter()
-        .find(|(on, _)| same_tree(on, tree))
-        .map(|(_, door)| door.clone())
+/// Whether an Obelus is on this tree, and the door of a window on it where
+/// one can be reached.
+///
+/// A door before none: two on one tree, a terminal's and a window's, is a
+/// tree a window can be brought forward on.
+fn window_on(windows: &[(PathBuf, Option<Door>)], tree: &Path) -> (bool, Option<Door>) {
+    let mut on = windows.iter().filter(|(on, _)| same_tree(on, tree));
+    let held = on.clone().next().is_some();
+    (held, on.find_map(|(_, door)| door.clone()))
 }
 
 /// Where a project's windows say where they are, one file each.
@@ -620,7 +698,7 @@ impl Drop for Present {
     }
 }
 
-/// Says this window is on `tree` and can be reached at `door`.
+/// Says this window is on `tree`, and can be reached at `door` where it can.
 ///
 /// Named by the window, not by the tree: two windows on one tree are two
 /// claims. The process for whoever reads the directory, a word of the key
@@ -634,12 +712,13 @@ impl Drop for Present {
 /// that nobody holds is a window that died without tidying up, and whoever
 /// finds one may take it away ([`windows_on`]). A name nobody reuses would
 /// otherwise be a file per window that was ever killed, kept for ever.
-fn present(root: &Path, tree: &Path, door: &Door) -> Option<Present> {
+fn present(root: &Path, tree: &Path, door: Option<&Door>) -> Option<Present> {
     static COUNT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let directory = directory(root)?;
     std::fs::create_dir_all(&directory).ok()?;
     let count = COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let word = door.key.get(..8).unwrap_or_default();
+    let key = door.map_or_else(a_key, |door| door.key.clone());
+    let word = key.get(..8).unwrap_or_default();
     let name = format!("{}-{word}-{count}", std::process::id());
     let (making, path) = (directory.join(format!(".{name}")), directory.join(&name));
     // For writing, for the reason a conversation's claim is: a process
@@ -655,7 +734,12 @@ fn present(root: &Path, tree: &Path, door: &Door) -> Option<Present> {
         return None;
     }
     let tree = tree.canonicalize().unwrap_or_else(|_| tree.to_path_buf());
-    let said = format!("{}\n{}\n{}\n", tree.display(), door.address, door.key);
+    // The tree alone, for a window with no door: an Obelus before this one
+    // read three lines or none, so it takes a terminal's for nobody's.
+    let said = match door {
+        Some(door) => format!("{}\n{}\n{}\n", tree.display(), door.address, door.key),
+        None => format!("{}\n", tree.display()),
+    };
     if let Err(error) = (&file).write_all(said.as_bytes()) {
         tracing::warn!(%error, path = %making.display(), "a window does not say where it is");
     }
@@ -672,7 +756,7 @@ fn present(root: &Path, tree: &Path, door: &Door) -> Option<Present> {
 /// This one's own among them: a lock is about the open file and not about
 /// the process, so a look from here finds this window's claim held too.
 /// Which is the truth about its tree.
-fn windows_on(root: &Path) -> Vec<(PathBuf, Door)> {
+fn windows_on(root: &Path) -> Vec<(PathBuf, Option<Door>)> {
     let Some(directory) = directory(root) else {
         return Vec::new();
     };
@@ -699,9 +783,15 @@ fn windows_on(root: &Path) -> Vec<(PathBuf, Door)> {
             }
             let mut lines = said.lines();
             let tree = PathBuf::from(lines.next()?);
-            let address = lines.next()?.parse().ok()?;
-            let key = lines.next()?.to_string();
-            Some((tree, Door { address, key }))
+            let door = lines
+                .next()
+                .and_then(|address| address.parse().ok())
+                .zip(lines.next())
+                .map(|(address, key)| Door {
+                    address,
+                    key: key.to_string(),
+                });
+            Some((tree, door))
         })
         .collect()
 }

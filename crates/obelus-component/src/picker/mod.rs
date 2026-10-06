@@ -177,7 +177,7 @@ pub enum PickerValue {
     /// id, a claim, where it is already open -- and a list of rows is not
     /// where that belongs.
     Conversation(usize),
-    /// Go to one of the repository's worktrees, in a window of its own.
+    /// One of the repository's worktrees, to go to.
     ///
     /// By its place in the list, as a conversation is: which window has it
     /// open, and how to reach that window, is the application's to know.
@@ -550,6 +550,11 @@ pub enum PickerOutcome {
     Open,
     /// The user chose something.
     Accepted(PickerValue),
+    /// The user chose something, to have it somewhere else than here.
+    ///
+    /// `ctrl+enter`, on a list that said its rows have somewhere else to
+    /// be ([`Picker::goes_elsewhere`]).
+    Elsewhere(PickerValue),
     /// The user gave up.
     Cancelled,
 }
@@ -826,6 +831,13 @@ pub struct Picker {
     /// before them, rather than commands out of the table: nothing else
     /// binds them and there is nothing for a reader to rebind.
     opens: bool,
+    /// Whether `ctrl+enter` takes a row somewhere other than here.
+    ///
+    /// The worktrees in a window: enter puts this window on the tree, and
+    /// `ctrl+enter` puts the tree in a window of its own. Said by whoever
+    /// filled the list, and per tab, because the other tab of that list is
+    /// documents, which are only ever here.
+    elsewhere: bool,
     /// Whether the rows of this list are only read.
     ///
     /// A list of things to be told rather than chosen from: what went wrong
@@ -931,6 +943,7 @@ impl Picker {
             prefer: None,
             nests: false,
             opens: false,
+            elsewhere: false,
             reads: false,
             filling: None,
             ordered: false,
@@ -1346,6 +1359,19 @@ impl Picker {
     /// worktrees tab is whole checkouts.
     pub const fn stops_previewing(&mut self) {
         self.previews = false;
+    }
+
+    /// Says whether `ctrl+enter` takes a row somewhere else, which is the
+    /// one key of its own such a list has, and so whether its foot says so.
+    pub const fn goes_elsewhere(&mut self, elsewhere: bool) {
+        self.elsewhere = elsewhere;
+        self.footed = elsewhere;
+    }
+
+    /// Whether it does.
+    #[must_use]
+    pub const fn takes_elsewhere(&self) -> bool {
+        self.elsewhere
     }
 
     /// Whether it does.
@@ -2264,6 +2290,14 @@ impl Picker {
             // goes there -- the pair a list of places that hold places
             // needs, since one key cannot mean both.
             KeyCode::Enter if bare && self.opens => PickerOutcome::Open,
+            KeyCode::Enter if self.elsewhere && control => self
+                .matched
+                .get(self.window.focus())
+                .map(|(index, _)| &self.items[*index])
+                .filter(|item| item.enabled)
+                .map_or(PickerOutcome::Consumed, |item| {
+                    PickerOutcome::Elsewhere(item.value.clone())
+                }),
             KeyCode::Enter if bare || (self.opens && modifiers == KeyModifiers::ALT) => self
                 .matched
                 .get(self.window.focus())

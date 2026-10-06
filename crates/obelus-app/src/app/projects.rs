@@ -777,6 +777,21 @@ impl super::App {
         self.naming_list = None;
         self.naming_read = None;
         self.naming_shut = false;
+        self.settle(root, &opening.files);
+        // A directory is a reader saying which project and asking which
+        // file, which is the list -- the same thing `ob some-directory`
+        // does, said in the same place.
+        if opening.list {
+            self.open_file_picker();
+        }
+    }
+
+    /// Puts a window with no project on `root`, opening `files` in it.
+    ///
+    /// The half of answering which project that is not about the page
+    /// asking it: going to another worktree is the same settling, on a
+    /// window that has just let go of the tree it was on.
+    pub(super) fn settle(&mut self, root: PathBuf, files: &[PathBuf]) {
         self.work_in(root);
         self.apply_project();
         // Everything `App::start` holds back while there is no project.
@@ -795,16 +810,10 @@ impl super::App {
         if self.remote_at_start {
             self.connect_remote_at_start(false);
         }
-        for file in &opening.files {
+        for file in files {
             self.open(file);
         }
         self.reopen_what_was_open();
-        // A directory is a reader saying which project and asking which
-        // file, which is the list -- the same thing `ob some-directory`
-        // does, said in the same place.
-        if opening.list {
-            self.open_file_picker();
-        }
     }
 }
 

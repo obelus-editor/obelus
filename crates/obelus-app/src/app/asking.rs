@@ -69,6 +69,30 @@ impl App {
         );
     }
 
+    /// Asks before going to another worktree with something unwritten here.
+    ///
+    /// The question leaving asks, in the words of going: this tree is still
+    /// there to write what is unwritten into, and the reader says whether it
+    /// is.
+    pub(super) fn ask_before_switching(&mut self, unsaved: usize) {
+        let what = match unsaved {
+            1 => match self.first_unsaved() {
+                Some(id) => format!("{} is unsaved", self.file_path(id)),
+                None => "1 file is unsaved".to_string(),
+            },
+            many => format!("{many} files are unsaved"),
+        };
+        self.stop_to_ask(
+            Question::new(what)
+                .way(
+                    "Save everything and switch",
+                    Answer::Switching(Leaving::SaveAll),
+                )
+                .way("Switch without saving", Answer::Switching(Leaving::Discard))
+                .saying("Loses your changes"),
+        );
+    }
+
     /// Asks before writing over a file that moved while it was being edited.
     ///
     /// The one question with no safe answer: each way out keeps one of the
@@ -123,6 +147,18 @@ impl App {
             Answer::Closing(id, Closing::Discard) => self.close(id),
             Answer::Leaving(Leaving::SaveAll) => self.save_everything_and_leave(),
             Answer::Leaving(Leaving::Discard) => self.should_quit = true,
+            Answer::Switching(Leaving::SaveAll) => {
+                if self.save_everything()
+                    && let Some(tree) = self.going()
+                {
+                    self.move_to_tree(&tree);
+                }
+            }
+            Answer::Switching(Leaving::Discard) => {
+                if let Some(tree) = self.going() {
+                    self.move_to_tree(&tree);
+                }
+            }
             Answer::Saving(id, Saving::Mine) => self.save_now(id.get()),
             Answer::Saving(id, Saving::Theirs) => self.take_what_is_on_disk(id.get()),
             Answer::Writing(id, Writing::Back) => self.save_now(id.get()),
@@ -180,14 +216,21 @@ impl App {
     /// first failure stops it, and says which file, because "saving failed"
     /// with four files open names nothing the reader can act on.
     fn save_everything_and_leave(&mut self) {
+        if self.save_everything() {
+            self.should_quit = true;
+        }
+    }
+
+    /// Writes every unwritten document, and says whether they all went.
+    fn save_everything(&mut self) -> bool {
         for index in 0..self.documents.len() {
             let unwritten = self
                 .file(DocumentId::new(index))
                 .is_some_and(|buffer| buffer.is_dirty() && buffer.content().is_file());
             if unwritten && !self.write_now(index) {
-                return;
+                return false;
             }
         }
-        self.should_quit = true;
+        true
     }
 }

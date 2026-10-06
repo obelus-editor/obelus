@@ -121,6 +121,8 @@ pub enum Answer {
     Closing(DocumentId, Closing),
     /// Leaving with something unwritten anywhere.
     Leaving(Leaving),
+    /// Going to another worktree with something unwritten in this one.
+    Switching(Leaving),
     /// Saving over a file that moved while it was being edited.
     Saving(DocumentId, Saving),
     /// Saving a file somebody else took away.

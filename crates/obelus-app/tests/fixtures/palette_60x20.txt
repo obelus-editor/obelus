@@ -14,10 +14,10 @@ screen 60x20  editor 60x18  status 60x1
 11| save-file               Write this file back to d  Ctrl+s █
 12| reload-file             Re-read this file from di  Ctrl+r █
 13| switch-document         Switch to something already o  F2 █
-14| close-document          Close what is being read   Ctrl+w █
-15| rename-file             Call this file something else, or █
-16| toggle-preview          Show this file rendered,   Ctrl+t █
-17| choose-theme            Change the colours                █
+14| switch-worktree         Go to another worktree of this re █
+15| close-document          Close what is being read   Ctrl+w █
+16| rename-file             Call this file something else, or █
+17| toggle-preview          Show this file rendered,   Ctrl+t █
 18|────────────────────────────────────────────────────────────
 19| > Filter commands                                          
 -- style --
@@ -35,10 +35,10 @@ screen 60x20  editor 60x18  status 60x1
 11|aaaaaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccccccaaccccccai
 12|aaaaaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccccccaaccccccai
 13|aaaaaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccccccccccaaccai
-14|aaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccccccccccccaaaccccccai
-15|aaaaaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccccccccccccccai
-16|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccci
-17|aaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccccccaaaaaaaaaaaaaaaai
+14|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccci
+15|aaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccccccccccccaaaccccccai
+16|aaaaaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccccccccccccccai
+17|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccci
 18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 19|jjjcccccccccccccccjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj
 -- legend --

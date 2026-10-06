@@ -476,6 +476,13 @@ impl App {
                 self.accept(value);
                 true
             }
+            // Only the worktrees say their rows go elsewhere.
+            PickerOutcome::Elsewhere(value) => {
+                if let PickerValue::Worktree(at) = value {
+                    self.go_elsewhere(at);
+                }
+                true
+            }
             PickerOutcome::Ignored => false,
         }
     }

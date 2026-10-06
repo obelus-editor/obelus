@@ -100,6 +100,17 @@ fn every_hint(picker: &Picker) -> Vec<Hint> {
                 .saying("Leave the list and read the line this row names"),
         ];
     }
+    // Said for the reason the two enters above are: what enter does is not
+    // news, and that a second one does something else is.
+    if picker.takes_elsewhere() {
+        return vec![
+            Hint::common(
+                obelus_editing::keymap::KeyChord::new(KeyCode::Enter, KeyModifiers::CONTROL),
+                "New window",
+            )
+            .saying("Go to this tree in a window of its own, or to the one already on it"),
+        ];
+    }
     let alt =
         |letter| obelus_editing::keymap::KeyChord::new(KeyCode::Char(letter), KeyModifiers::ALT);
     if picker.is_searching() {
