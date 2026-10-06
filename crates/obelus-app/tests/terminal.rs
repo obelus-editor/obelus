@@ -634,11 +634,14 @@ fn a_sign_in_that_fails_stays_to_be_read() {
     });
     support::type_text(&mut app, "wrong");
     press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-    pump(&mut app, &events, "the sign-in to end", |app| {
+    // Both, and not the end and then the words: what a program wrote and
+    // that it ended come from two threads, so the end can arrive with its
+    // last line still on the way -- one run in eight, here and on CI.
+    pump(&mut app, &events, "the sign-in to end, and why", |app| {
         app.terminal()
             .is_some_and(|terminal| terminal.ended().is_some())
+            && on_the_terminal(app).contains("Not that code")
     });
-    assert!(on_the_terminal(&app).contains("Not that code"));
     // The conversation has the card again, and the way back to it is the
     // way back from anywhere a key took the reader.
     press(&mut app, KeyCode::Left, KeyModifiers::ALT);
