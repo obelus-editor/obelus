@@ -1914,6 +1914,8 @@ impl App {
             talk.permission = None;
             talk.asking = None;
             talk.going = None;
+            talk.signing_in = None;
+            talk.sign_in_next = None;
             talk.queued.clear();
             talk.card = None;
             if asked {
@@ -2382,8 +2384,27 @@ impl App {
         if talk.is_waiting_on_the_reader() {
             return;
         }
+        if let Some(why) = talk.sign_in_next.take() {
+            self.ask_to_sign_in(whose, why);
+            return;
+        }
         if let Some(next) = talk.queued.pop_front() {
             self.put_to_the_reader(whose, next);
+        }
+    }
+
+    /// Takes the sign-in's card down wherever it is up, because the reader
+    /// is in: every conversation that was waiting is being asked again,
+    /// and a card left in one would ask them to sign in twice.
+    pub(super) fn signed_in_everywhere(&mut self) {
+        for document in self.documents.iter_mut().flatten() {
+            if let Some(talk) = Document::chat_mut(document) {
+                talk.sign_in_next = None;
+                if talk.signing_in.take().is_some() {
+                    talk.card = None;
+                    talk.chat.note("Signed in");
+                }
+            }
         }
     }
 
@@ -2602,6 +2623,16 @@ impl App {
     /// to, and given up on: nothing the reader could press would get them
     /// in, and a card with only "no" on it is a sentence with a key.
     pub(super) fn ask_to_sign_in(&mut self, whose: Whose, why: Option<String>) {
+        // Behind whatever the agent is already asking, like any question:
+        // put over it, the card answered first was the other one's, and
+        // the sign-in went with it.
+        if let Some(talk) = self.talk_mut(whose)
+            && talk.is_waiting_on_the_reader()
+            && talk.signing_in.is_none()
+        {
+            talk.sign_in_next = Some(why);
+            return;
+        }
         let Some(talker) = self.talker.as_ref() else {
             return;
         };
@@ -3450,6 +3481,7 @@ impl App {
             session: None,
             asking,
             why,
+            ..
         } = &incoming
         {
             let at = asking
@@ -3810,7 +3842,10 @@ impl App {
             acp::Incoming::SignIn { why, .. } => self.ask_to_sign_in(whose, why),
             // The agent signed the reader in itself, and what was waiting
             // on it is already being asked again.
-            acp::Incoming::SignedIn => self.in_talk(whose, |chat| chat.note("Signed in")),
+            acp::Incoming::SignedIn => {
+                self.in_talk(whose, |chat| chat.note("Signed in"));
+                self.signed_in_everywhere();
+            }
         }
     }
 

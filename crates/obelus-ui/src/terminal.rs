@@ -79,6 +79,17 @@ impl Widget for TerminalView<'_> {
     }
 }
 
+/// How a terminal's program ended, in the words every place that says so
+/// uses: the status row and the terminal's row in the list of what is open.
+#[must_use]
+pub fn how_it_ended(ended: &obelus_terminal::Ended) -> String {
+    match (&ended.signal, ended.succeeded()) {
+        (_, true) => "Ended".to_string(),
+        (Some(signal), false) => format!("Stopped by {signal}"),
+        (None, false) => format!("Exited {}", ended.code),
+    }
+}
+
 /// Where the program's cursor is, if it is showing one and the view is on
 /// the screen it is on.
 #[must_use]

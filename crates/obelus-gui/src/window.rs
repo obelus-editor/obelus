@@ -1425,6 +1425,17 @@ impl ApplicationHandler<Waking> for Showing {
             // reader choosing another size, and the window asks its own
             // scale on the way through.
             WindowEvent::ScaleFactorChanged { .. } => self.redraw_at(self.points),
+            // A window losing the reader takes what they were holding with
+            // it: the key comes up somewhere else, and nothing tells this
+            // window it did -- so shift held on the way out was held for
+            // good, and every press in a terminal after it took hold of
+            // words rather than reaching the program.
+            WindowEvent::Focused(false) => {
+                if self.modifiers.shift_key() {
+                    self.tell(Event::Shifted(false));
+                }
+                self.modifiers = ModifiersState::empty();
+            }
             WindowEvent::ModifiersChanged(modifiers) => {
                 let shifted = modifiers.state().shift_key();
                 if shifted != self.modifiers.shift_key() {

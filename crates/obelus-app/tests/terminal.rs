@@ -215,8 +215,9 @@ fn pointer(app: &mut App, kind: obelus_app::event::Pointer, (x, y): (u16, u16)) 
 /// is the shell's interrupt.
 ///
 /// Broken deliberately by dropping the copy in `App::terminal_key` (the
-/// `ctrl+c` goes to the shell and the clipboard is empty), and by not
-/// drawing what is held (the cell under it has the page's ground).
+/// `ctrl+c` goes to the shell and the clipboard is empty), by not drawing
+/// what is held (the cell under it has the page's ground), and by offering
+/// the copy with nothing held, as a file does.
 #[test]
 fn a_drag_takes_hold_and_ctrl_c_copies_it() {
     use obelus_app::event::Pointer;
@@ -229,12 +230,15 @@ fn a_drag_takes_hold_and_ctrl_c_copies_it() {
     pump(&mut app, &events, "the words", |app| {
         on_the_terminal(app).contains("take-42-these")
     });
+    // Nothing held, nothing to copy: the palette says so by the row's ink.
+    assert!(!app.offers(obelus_command::Command::SelectionCopy));
     let (x, y) = place_of_words(&mut app, "take-42-these");
     pointer(&mut app, Pointer::Pressed, (x, y));
     pointer(&mut app, Pointer::Dragged, (x + 6, y));
     pointer(&mut app, Pointer::Released, (x + 6, y));
     let cells = support::cells_of(&mut app, WIDTH, HEIGHT);
     assert_eq!(cells[(x + 3, y)].bg, app.theme().selection_background);
+    assert!(app.offers(obelus_command::Command::SelectionCopy));
     press(&mut app, KeyCode::Char('c'), KeyModifiers::CONTROL);
     assert_eq!(obelus_clipboard::paste().as_deref(), Some("take-42"));
     // And let go of, so the next `ctrl+c` is the shell's again.
@@ -334,7 +338,7 @@ fn the_wheel_over_a_pager_is_arrow_keys() {
 /// A function key still opens what it opens, from inside a terminal.
 ///
 /// Broken deliberately by dropping the function keys' fall-back in
-/// `Keymap::lookup`: `f1` goes down the pty and no list opens.
+/// `Keymap::lookup`: `f2` goes down the pty and no list opens.
 #[test]
 fn a_function_key_opens_what_it_opens() {
     let (mut app, _events) = a_shell();
@@ -387,14 +391,23 @@ fn a_colour_named_by_number_is_the_themes() {
 /// terminal closes a tab with -- and closing it stops the program.
 ///
 /// Broken deliberately by emptying `ask_before_stopping`: the terminal goes
-/// at the first press, with nothing asked. And by taking the terminal's
-/// context away (`App::context` returning `Normal`): the key is handed back
-/// to a table that does not have it, and nothing is asked or closed.
+/// at the first press, with nothing asked. And by putting the command first
+/// in the question again, which the rule about names forbids. And by taking the
+/// terminal's context away (`App::context` returning `Normal`): the key is
+/// handed back to a table that does not have it, and nothing is asked or
+/// closed.
 #[test]
 fn closing_a_running_terminal_asks_first() {
     let (mut app, _events) = a_shell();
     close_the_terminal(&mut app);
     assert!(app.terminal().is_some(), "closed without asking");
+    // Saying which, after the words rather than in front of them: a
+    // command line is a name, and a sentence does not start with one.
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        support::said(&dump).contains("Still running: /bin/sh"),
+        "{dump}"
+    );
     support::answer(&mut app, "Stop it and close");
     assert!(app.terminal().is_none(), "still open after the answer");
 }
@@ -404,7 +417,8 @@ fn closing_a_running_terminal_asks_first() {
 ///
 /// Broken deliberately by keeping the terminal's context once the program
 /// has ended (`typing_to_a_program` ignoring the end): `ctrl+w` goes nowhere
-/// and the terminal stays.
+/// and the terminal stays. And by spelling the row's end its own way again:
+/// the list says something the status row does not.
 #[test]
 fn a_program_that_has_ended_is_read_like_a_file() {
     let (mut app, events) = a_shell();
@@ -419,6 +433,21 @@ fn a_program_that_has_ended_is_read_like_a_file() {
         "the status row does not say how it ended:\n{}",
         screen(&mut app)
     );
+    // And its row in the list of what is open says it in the same words.
+    press(&mut app, KeyCode::F(2), KeyModifiers::NONE);
+    let trailing: Vec<Option<String>> = app
+        .picker()
+        .expect("the list of what is open")
+        .matches()
+        .map(|item| item.trailing.clone())
+        .collect();
+    assert!(
+        trailing
+            .iter()
+            .any(|said| said.as_deref() == Some("Exited 3")),
+        "{trailing:?}"
+    );
+    press(&mut app, KeyCode::Esc, KeyModifiers::NONE);
     press(&mut app, KeyCode::Char('w'), KeyModifiers::CONTROL);
     assert!(app.terminal().is_none(), "ctrl+w did not close it");
 }
@@ -573,6 +602,246 @@ fn a_sign_in_that_fails_stays_to_be_read() {
     assert!(app.chat().is_some(), "not in the conversation");
     assert!(said_in_transcript(&app, "Signing in did not finish"));
     assert!(app.card().is_some(), "the question did not go back up");
+}
+
+/// A conversation taken up again that the agent cannot take up, and whose
+/// fresh one wants a sign-in, asks for the sign-in rather than ending.
+///
+/// The signing-in agent says nothing about taking conversations up, so
+/// asking for one written down beside a note goes straight to a new one --
+/// which it refuses until the reader is in. Broken deliberately by putting
+/// the `?` back on that `open_session`: the connection ends instead, and
+/// no card ever comes.
+#[test]
+fn a_conversation_taken_up_again_asks_for_the_sign_in_too() {
+    let marker = marker("again");
+    let scratch = support::Scratch::new("terminal-sign-in-again");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        "[[todo]]\nid = \"0123456Q\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+    let id = obelus_git::todo::NoteId::read("0123456Q").expect("a name");
+    obelus_agent::acp::sessions::change(
+        scratch.path(),
+        0,
+        Some(std::slice::from_ref(&id)),
+        |kept| {
+            kept.put(
+                &obelus_agent::chats::ChatId::Note(id.clone()),
+                "signing-in",
+                scratch.path(),
+                obelus_agent::acp::sessions::Kept {
+                    session: "s-old".to_string(),
+                    title: None,
+                    told: None,
+                    introduced: false,
+                    last: None,
+                },
+            );
+        },
+    );
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.talk_to(
+        "signing-in",
+        Path::new("sh"),
+        &[
+            "tests/fixtures/signing-in-agent.sh".to_string(),
+            marker.display().to_string(),
+        ],
+    );
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    press(&mut app, KeyCode::Char('a'), KeyModifiers::ALT);
+    assert!(app.chat().is_some(), "the note's conversation did not open");
+    app.open_a_session_for_test();
+    pump(&mut app, &events, "the sign-in card", |app| {
+        app.talking() == obelus_agent::Talking::Gone
+            || app.card().is_some_and(|card| {
+                card.choices()
+                    .iter()
+                    .any(|choice| choice.name == "Type a code")
+            })
+    });
+    assert_ne!(
+        app.talking(),
+        obelus_agent::Talking::Gone,
+        "the connection ended"
+    );
+}
+
+/// Two conversations waiting on one sign-in, the reader in the second.
+///
+/// The second -- about a note, so it is not the first one again -- asks
+/// for its session after the agent has refused the first, so it is held
+/// behind it without the agent being asked.
+fn two_waiting(name: &str) -> (App, Receiver<Event>) {
+    let marker = marker(name);
+    let scratch = support::Scratch::new(&format!("terminal-sign-in-{name}"));
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        "[[todo]]\nid = \"0123456R\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    // By its whole path: a sign-in runs in the project, and this project is
+    // not the directory the tests run in.
+    let agent = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/signing-in-agent.sh");
+    app.talk_to(
+        "signing-in",
+        Path::new("sh"),
+        &[agent.display().to_string(), marker.display().to_string()],
+    );
+    app.new_conversation();
+    app.open_a_session_for_test();
+    pump(&mut app, &events, "the first conversation's card", asking);
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    press(&mut app, KeyCode::Char('a'), KeyModifiers::ALT);
+    assert!(app.chat().is_some(), "the note's conversation did not open");
+    app.open_a_session_for_test();
+    pump(&mut app, &events, "the second conversation's card", asking);
+    (app, events)
+}
+
+/// Whether the conversation on screen is asking for a sign-in.
+fn asking(app: &App) -> bool {
+    app.card().is_some_and(|card| {
+        card.choices()
+            .iter()
+            .any(|choice| choice.name == "Type a code")
+    })
+}
+
+/// Goes back past the notes to the first conversation, and says whether it
+/// has let go of its question.
+fn the_first_has_let_go(app: &mut App) {
+    press(app, KeyCode::Left, KeyModifiers::ALT);
+    press(app, KeyCode::Left, KeyModifiers::ALT);
+    assert!(app.chat().is_some(), "not back in the first conversation");
+    assert!(
+        app.card().is_none(),
+        "the first conversation is still asking"
+    );
+    assert!(said_in_transcript(app, "Signed in"));
+}
+
+/// Every conversation waiting on a sign-in says so, and signing in once
+/// lets all of them go on -- here by the agent's own way in.
+///
+/// Broken deliberately by saying nothing for a request held behind another
+/// (the second conversation never shows a card), and by leaving the first's
+/// card up when the agent says the reader is in (it is still asking
+/// afterwards).
+#[test]
+fn every_conversation_waiting_on_a_sign_in_is_asked_and_let_go() {
+    let (mut app, events) = two_waiting("two");
+    choose(&mut app, "Let it sign in");
+    pump(
+        &mut app,
+        &events,
+        "the second conversation to open",
+        |app| app.talking() == obelus_agent::Talking::Ready && app.card().is_none(),
+    );
+    the_first_has_let_go(&mut app);
+}
+
+/// And by a way in that is a program, whose ending well is the sign-in.
+///
+/// Broken deliberately by leaving the first's card up when the sign-in's
+/// terminal ends well.
+#[test]
+fn a_sign_in_in_a_terminal_lets_every_conversation_go_on() {
+    let (mut app, events) = two_waiting("two-terminal");
+    choose(&mut app, "Type a code");
+    pump(&mut app, &events, "the sign-in to ask for a code", |app| {
+        on_the_terminal(app).contains("Code:")
+    });
+    support::type_text(&mut app, "right");
+    press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    pump(
+        &mut app,
+        &events,
+        "the second conversation to open",
+        |app| app.chat().is_some() && app.talking() == obelus_agent::Talking::Ready,
+    );
+    the_first_has_let_go(&mut app);
+}
+
+/// A turn that finds the reader no longer signed in ends, and asks.
+///
+/// Broken deliberately by not saying `SignIn` after a turn's
+/// `auth_required`: the turn ends with the agent's words and nothing asks.
+#[test]
+fn a_turn_that_needs_a_sign_in_asks_for_one() {
+    let marker = marker("turn");
+    let (mut app, events) = asked_to_sign_in(&marker);
+    choose(&mut app, "Let it sign in");
+    pump(&mut app, &events, "the conversation to open", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/refuse now");
+    press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    pump(&mut app, &events, "the card", |app| {
+        app.card().is_some_and(|card| {
+            card.choices()
+                .iter()
+                .any(|choice| choice.name == "Type a code")
+        })
+    });
+}
+
+/// Leaving with a file unwritten and a program running says both in the
+/// one question, because either answer stops the program.
+///
+/// Broken deliberately by asking about the file alone, as it did: the
+/// question says nothing of the terminal.
+#[test]
+fn leaving_says_what_is_running_beside_what_is_unwritten() {
+    let scratch = support::Scratch::new("terminal-leaving");
+    let file = scratch.join("unwritten.txt");
+    std::fs::write(&file, "words\n").expect("a file");
+    let (sender, events) = channel();
+    let mut app = App::new(vec![obelus_buffer::Buffer::open(&file).expect("the file")]);
+    app.events_for_test(sender);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    support::type_text(&mut app, "more ");
+    app.shell_for_test(PathBuf::from("/bin/sh"));
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TerminalOpen);
+    support::type_text(&mut app, "echo up-$((1 + 8))");
+    press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    pump(&mut app, &events, "the shell", |app| {
+        on_the_terminal(app).contains("up-9")
+    });
+    press(&mut app, KeyCode::Char('q'), KeyModifiers::CONTROL);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        support::said(&dump).contains("and a terminal is still running"),
+        "{dump}"
+    );
+}
+
+/// A way in that will not even start puts the question back, with why: what
+/// it was asking for is still waiting, and nothing else would ask again.
+///
+/// Broken deliberately by not putting the question back where the terminal
+/// would not start: the card is gone, and the conversation waits for ever.
+#[test]
+fn a_sign_in_that_will_not_start_asks_again() {
+    let marker = marker("missing");
+    let (mut app, _events) = asked_to_sign_in(&marker);
+    choose(&mut app, "Run what is not there");
+    assert!(app.terminal().is_none(), "a terminal opened for nothing");
+    assert!(said_in_transcript(&app, "The sign-in would not start"));
+    assert!(
+        app.card().is_some_and(|card| card
+            .choices()
+            .iter()
+            .any(|choice| choice.name == "Type a code")),
+        "the question did not go back up"
+    );
 }
 
 /// A way in that is the agent's own is asked of the agent.

@@ -1260,11 +1260,7 @@ impl StatusView<'_> {
     ) {
         let end = self.remote_at_end(area, cells, style);
         let state = match terminal.ended() {
-            Some(ended) if ended.succeeded() => Some("Ended".to_string()),
-            Some(ended) => Some(match &ended.signal {
-                Some(signal) => format!("Stopped by {signal}"),
-                None => format!("Exited {}", ended.code),
-            }),
+            Some(ended) => Some(crate::terminal::how_it_ended(ended)),
             None => match terminal.scrolled() {
                 0 => None,
                 1 => Some("1 row back".to_string()),

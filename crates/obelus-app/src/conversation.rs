@@ -238,6 +238,9 @@ pub struct Conversation {
     /// That the agent wants the reader signed in, while they have not said
     /// which way -- what it said about it, where it said anything.
     pub signing_in: Option<Option<String>>,
+    /// That the agent wants the reader signed in, asked while another
+    /// question was up, and put up once that one is answered.
+    pub sign_in_next: Option<Option<String>>,
     /// What the agent asked while a question was already up, oldest first.
     ///
     /// One card, so one question at a time, and the next goes up when the

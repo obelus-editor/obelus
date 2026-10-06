@@ -191,9 +191,12 @@ impl App {
             // is being asked is whether there is anything on the screen to
             // take a copy of, and a file answers that through the buffer
             // above.
-            Requires::SomethingToCopy => {
-                buffer.is_some() || self.somewhere_to_type() || !self.reading_nothing()
-            }
+            // In a terminal, what is held is the one thing to copy: there is
+            // no line under a caret to take in its place.
+            Requires::SomethingToCopy => match self.terminal() {
+                Some(terminal) => terminal.is_holding(),
+                None => buffer.is_some() || self.somewhere_to_type() || !self.reading_nothing(),
+            },
             // Not `current_buffer`, which is the point of the distinction: a
             // conversation is something open and is not a file.
             Requires::ADocumentOpen => !self.reading_nothing(),

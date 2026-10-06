@@ -493,9 +493,10 @@ impl App {
             talk.chat.scroll(rows);
             return;
         }
-        // A terminal, back up what has gone past -- the view and not the
-        // program, which is told nothing: a reader spinning the wheel is
-        // looking around, and the next key they type brings it back down.
+        // A terminal: to its program where it asked for the pointer, and
+        // otherwise back up what has gone past -- the view and not the
+        // program, because a reader spinning the wheel is looking around,
+        // and the next key they type brings it back down.
         if self.terminal().is_some() {
             self.wheel_in_terminal(rows);
             return;

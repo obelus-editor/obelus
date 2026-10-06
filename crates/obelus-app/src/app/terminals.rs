@@ -56,20 +56,28 @@ impl App {
             },
             None => Program::Shell,
         };
-        let Some(id) = self.start_terminal(&program) else {
-            return;
-        };
-        self.record(from);
-        self.go_to_document(id);
+        match self.start_terminal(&program) {
+            Ok(id) => {
+                self.record(from);
+                self.go_to_document(id);
+            }
+            Err(why) => self.wrong(format!("The terminal would not start: {why}")),
+        }
     }
 
-    /// Starts a program in a terminal of its own, and says where it landed.
+    /// Starts a program in a terminal of its own, and says where it landed
+    /// -- or why it would not start, which the caller says where its reader
+    /// is looking.
     ///
     /// In the project, at the size the document region is now -- the next
     /// frame makes it whatever size it is drawn at, and a program told the
     /// wrong size first draws its first screen twice.
-    pub(super) fn start_terminal(&mut self, program: &Program) -> Option<DocumentId> {
-        let events = self.events.clone()?;
+    pub(super) fn start_terminal(&mut self, program: &Program) -> Result<DocumentId, String> {
+        // Only a test driving its own events has no loop, and a program
+        // whose words would go nowhere is not one to start.
+        let Some(events) = self.events.clone() else {
+            return Err("nothing is listening for what it writes".to_string());
+        };
         self.terminals += 1;
         let size = (self.editor_area.height, self.editor_area.width);
         match Terminal::start(
@@ -82,12 +90,11 @@ impl App {
             Ok(terminal) => {
                 tracing::info!(said = terminal.said(), "a terminal started");
                 self.documents.push(Some(Document::from(terminal)));
-                Some(DocumentId::new(self.documents.len() - 1))
+                Ok(DocumentId::new(self.documents.len() - 1))
             }
             Err(why) => {
                 tracing::warn!(%why, "a terminal would not start");
-                self.wrong(format!("The terminal would not start: {why}"));
-                None
+                Err(why)
             }
         }
     }
@@ -320,7 +327,10 @@ impl App {
             return false;
         };
         self.stop_to_ask(
-            Question::new(format!("{said} is still running"))
+            // The words after the colon, because a command line is a name
+            // and keeps its own spelling -- and a sentence may not start
+            // with one.
+            Question::new(format!("Still running: {said}"))
                 .way("Stop it and close", Answer::Closing(id, Closing::Discard)),
         );
         true
@@ -339,7 +349,7 @@ impl App {
             .find(|terminal| terminal.ended().is_none())
             .map(|terminal| terminal.said().to_string());
         let (what, way) = match (running, only) {
-            (1, Some(said)) => (format!("{said} is still running"), "Stop it and leave"),
+            (1, Some(said)) => (format!("Still running: {said}"), "Stop it and leave"),
             (many, _) => (
                 format!("{many} terminals are still running"),
                 "Stop them and leave",
@@ -356,8 +366,20 @@ impl App {
         connection: obelus_agent::acp::Connection,
         program: Program,
     ) {
-        let Some(id) = self.start_terminal(&program) else {
-            return;
+        // A way in that will not even start is a way in that did not work,
+        // and the question goes back up for the reader to try another: what
+        // it was asking for is still waiting, and nothing else would ever
+        // ask it again.
+        let id = match self.start_terminal(&program) {
+            Ok(id) => id,
+            Err(why) => {
+                let whose = talking::Whose::One(conversation);
+                self.in_talk(whose, |chat| {
+                    chat.note(&format!("The sign-in would not start: {why}"));
+                });
+                self.ask_to_sign_in(whose, None);
+                return;
+            }
         };
         if let Some(terminal) = self.document(id).and_then(Document::terminal) {
             self.signing_in = Some(SigningIn {
@@ -395,6 +417,7 @@ impl App {
                 self.close(slot);
             }
             self.in_talk(whose, |chat| chat.note("Signed in"));
+            self.signed_in_everywhere();
             if let Some(talker) = self.talker.as_ref() {
                 talker.signed_in();
             }
@@ -420,13 +443,7 @@ impl App {
     /// because a terminal whose program has gone is a page to read rather
     /// than one to type into.
     pub(super) fn terminal_row(index: usize, terminal: &Terminal) -> PickerItem {
-        let trailing = terminal.ended().map(|ended| match ended.succeeded() {
-            true => "Ended".to_string(),
-            false => match &ended.signal {
-                Some(signal) => signal.clone(),
-                None => format!("Exited {}", ended.code),
-            },
-        });
+        let trailing = terminal.ended().map(obelus_ui::terminal::how_it_ended);
         PickerItem {
             prose: false,
             marker: None,

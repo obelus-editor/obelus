@@ -310,29 +310,41 @@ impl Terminal {
         // How far the screen moves, read off the parser by the one thing it
         // does count: while the view is back up what has gone by, it moves
         // the view one row for every row that goes up, so that the view
-        // stays where the reader left it. So the view is put a row back for
-        // the writing -- where it is not back already -- and how much
-        // further back it ends up is how many rows went up. What it keeps
-        // being full does not stop that, which is the point; a write of
-        // more rows than it keeps would, and one read off a pty is a few
-        // thousand bytes.
+        // stays where the reader left it. So the view is put one row back
+        // for the writing, wherever the reader had it, and how much further
+        // back it ends up is how many rows went up -- and then put where
+        // the reader had it, that much further back. One row and not where
+        // the reader was, because a view at the oldest row kept has nowhere
+        // further back to go, and counted nothing. What it keeps being full
+        // does not stop this, which is the point; a write of more rows than
+        // it keeps would, and one read off a pty is a few thousand bytes.
         let shown = self.scrolled();
         let kept = self.kept();
-        let probe = shown.max(1).min(kept);
+        let probe = kept.min(1);
         self.parser.screen_mut().set_scrollback(probe);
         self.parser.process(bytes);
         let after = self.scrolled();
+        let now_kept = self.kept();
+        // A write that changed which screen is shown, or started the
+        // terminal over, is not rows going up: the view and what is kept
+        // are another screen's now, or nothing, and the two counts are not
+        // of the same thing. Taking one from the other is how `less` after
+        // a screenful brought Obelus down -- the screen it leaves puts its
+        // own view to the bottom on the way out.
+        let other = self.parser.screen().alternate_screen() != elsewhere || now_kept < kept;
         let went_up = match kept {
+            _ if other => 0,
             // Nothing kept yet, so nothing to put the view back by -- but
             // nothing let go either, so what is kept now is every row that
             // went.
-            0 => self.kept(),
-            _ => after - probe,
+            0 => now_kept,
+            _ => after.saturating_sub(probe),
         };
         self.pushed += went_up as u64;
-        let view = match shown {
-            0 => 0,
-            _ => after,
+        let view = match (shown, other) {
+            (0, _) => 0,
+            (_, true) => after,
+            (_, false) => (shown + went_up).min(now_kept),
         };
         self.parser.screen_mut().set_scrollback(view);
         // What was held stays while it holds the same words, wherever the
@@ -533,17 +545,35 @@ impl Terminal {
             false => (first, first_column),
         };
         let shown = self.scrolled();
-        let back = usize::try_from(self.pushed.saturating_sub(first)).unwrap_or(usize::MAX);
-        self.parser.screen_mut().set_scrollback(back);
-        let top = self.top_row();
         let rows = u64::from(self.size().0);
-        let row = |line: u64| u16::try_from((line - top).min(rows - 1)).unwrap_or(0);
-        let words = self.parser.screen().contents_between(
-            row(first),
-            first_column,
-            row(last),
-            last_column.saturating_add(1),
-        );
+        let columns = self.size().1;
+        // A screenful at a time, because that is all the parser reads out
+        // at once, and what was held may be taller: a drag the wheel took
+        // further up than the screen.
+        let mut words = String::new();
+        let mut from = (first, first_column);
+        loop {
+            let back = usize::try_from(self.pushed.saturating_sub(from.0)).unwrap_or(usize::MAX);
+            self.parser.screen_mut().set_scrollback(back);
+            let top = self.top_row();
+            let bottom = top + rows - 1;
+            let row = |line: u64| u16::try_from(line - top).unwrap_or(0);
+            let (to, end) = match last <= bottom {
+                true => (last, last_column.saturating_add(1)),
+                false => (bottom, columns),
+            };
+            let screen = self.parser.screen();
+            words.push_str(&screen.contents_between(row(from.0), from.1, row(to), end));
+            if to == last {
+                break;
+            }
+            // The row the screenful ended on goes on into the next one
+            // where the program wrapped it, and is a line where it did not.
+            if !screen.row_wrapped(row(to)) {
+                words.push('\n');
+            }
+            from = (to + 1, 0);
+        }
         self.parser.screen_mut().set_scrollback(shown);
         Some(words)
     }
@@ -555,14 +585,10 @@ impl Terminal {
     /// a return, which is what a terminal sends for one, rather than in the
     /// newline the clipboard carries.
     pub fn paste(&mut self, words: &str) {
-        let words = words.replace("\r\n", "\r").replace('\n', "\r");
         self.held = None;
-        let bytes = match self.parser.screen().bracketed_paste() {
-            true => format!("\u{1b}[200~{words}\u{1b}[201~"),
-            false => words,
-        };
+        let bytes = pasted(words, self.parser.screen().bracketed_paste());
         self.parser.screen_mut().set_scrollback(0);
-        self.send(bytes.into_bytes());
+        self.send(bytes);
     }
 
     /// Moves what is shown up the screen by `rows`, or down where negative.
@@ -628,6 +654,22 @@ impl Drop for Terminal {
     fn drop(&mut self) {
         self.stop();
     }
+}
+
+/// What a paste of `words` sends, marked as one where the program asked.
+///
+/// Without an escape in it, where it is marked: the mark is an escape
+/// sequence, so words with one of their own could end it early and have
+/// the rest typed -- a clipboard holding `ESC [201~` and a command runs it
+/// the moment it is pasted. Every terminal that marks a paste takes them
+/// out, alacritty and xterm among them.
+fn pasted(words: &str, bracketed: bool) -> Vec<u8> {
+    let words = words.replace("\r\n", "\r").replace('\n', "\r");
+    match bracketed {
+        true => format!("\u{1b}[200~{}\u{1b}[201~", words.replace('\u{1b}', "")),
+        false => words,
+    }
+    .into_bytes()
 }
 
 /// The command for a program, and the words it was started with.
@@ -722,7 +764,21 @@ impl vt100::Callbacks for Answers {
 
 #[cfg(test)]
 mod tests {
-    use super::{Answers, quoted};
+    use super::{Answers, pasted, quoted};
+
+    /// A paste cannot end its own mark early and have the rest typed.
+    ///
+    /// Broken deliberately by leaving the escapes in: the words close the
+    /// paste themselves, and what follows them is a command.
+    #[test]
+    fn a_paste_cannot_end_itself() {
+        assert_eq!(
+            pasted("ok\u{1b}[201~rm -rf ~\n", true),
+            b"\x1b[200~ok[201~rm -rf ~\r\x1b[201~".to_vec()
+        );
+        // Unmarked, it is typed anyway, so there is nothing to end.
+        assert_eq!(pasted("a\nb", false), b"a\rb".to_vec());
+    }
 
     /// A shell that asks where the cursor is is told, at the cursor.
     ///

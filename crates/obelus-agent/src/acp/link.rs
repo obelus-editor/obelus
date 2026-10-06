@@ -453,6 +453,11 @@ pub enum Incoming {
         /// Which request for a conversation is waiting on it, where one is
         /// -- counted at the other end, like [`Incoming::Started`]'s.
         asking: Option<super::Asking>,
+        /// How many requests for a conversation wait on the sign-in ahead
+        /// of this one: none for the one the agent refused, and one more
+        /// for every one held behind it, so each conversation waiting is
+        /// told and not only the first.
+        behind: usize,
         /// What the agent said about it, where it said more than that it
         /// needs it.
         why: Option<String>,
@@ -1803,6 +1808,15 @@ async fn talk(
                     match ask {
                         ask @ (Ask::Open { .. } | Ask::Reopen { .. }) if !held.is_empty() => {
                             held.push_back(ask);
+                            // Said for this one too, or the conversation it
+                            // is for sits opening with nothing on it saying
+                            // why.
+                            let _ = events.send(Event::Acp(Incoming::SignIn {
+                                session: None,
+                                asking: None,
+                                behind: held.len() - 1,
+                                why: None,
+                            }));
                         }
                         Ask::Open { tools } => {
                             let offered = offering(tools.as_deref(), &can);
@@ -1814,6 +1828,7 @@ async fn talk(
                                     let _ = events.send(Event::Acp(Incoming::SignIn {
                                         session: None,
                                         asking: None,
+                                        behind: 0,
                                         why: why_signing_in(&error),
                                     }));
                                 }
@@ -1838,6 +1853,7 @@ async fn talk(
                                     let _ = events.send(Event::Acp(Incoming::SignIn {
                                         session: None,
                                         asking: None,
+                                        behind: 0,
                                         why: Some(ended_because(&error)),
                                     }));
                                 }
@@ -1984,6 +2000,7 @@ async fn talk(
                                 let _ = events.send(Event::Acp(Incoming::SignIn {
                                     session: None,
                                     asking: None,
+                                    behind: 0,
                                     why,
                                 }));
                                 continue;
@@ -2022,8 +2039,30 @@ async fn talk(
                                         session: session.clone(),
                                         why,
                                     }));
-                                    open_session(&connection, &root, offered.as_ref(), &events)
-                                        .await?;
+                                    // And the new one may want a sign-in
+                                    // as much as a first one does: what is
+                                    // held then is the opening, which is all
+                                    // that is left of this request.
+                                    match open_session(
+                                        &connection,
+                                        &root,
+                                        offered.as_ref(),
+                                        &events,
+                                    )
+                                    .await
+                                    {
+                                        Ok(_) => {}
+                                        Err(error) if wants_signing_in(&error) => {
+                                            held.push_back(Ask::Open { tools });
+                                            let _ = events.send(Event::Acp(Incoming::SignIn {
+                                                session: None,
+                                                asking: None,
+                                                behind: 0,
+                                                why: why_signing_in(&error),
+                                            }));
+                                        }
+                                        Err(error) => return Err(error),
+                                    }
                                 }
                             }
                         }
@@ -2090,6 +2129,7 @@ async fn talk(
                                         let _ = told.send(Event::Acp(Incoming::SignIn {
                                             session: Some(whose),
                                             asking: None,
+                                            behind: 0,
                                             why,
                                         }));
                                     }

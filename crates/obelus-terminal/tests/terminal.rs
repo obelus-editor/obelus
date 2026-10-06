@@ -206,3 +206,76 @@ fn every_row_up_the_screen_is_counted_once_what_is_kept_is_full() {
     terminal.wrote(b"a\r\nb\r\nc\r\n");
     assert_eq!(terminal.top() - before, 3);
 }
+
+/// Going over to the screen a full-screen program draws on and back, or
+/// starting the terminal over, moves no row up the screen -- and does not
+/// bring the terminal down, which taking one screen's count from another's
+/// did the moment there was a screenful to keep.
+///
+/// Broken deliberately by counting across the change of screen as if it
+/// were one screen: coming back counts every row the shell had kept as
+/// having just gone up. (Before the subtraction saturated, going over
+/// panicked instead.)
+#[cfg(unix)]
+#[test]
+fn another_screen_or_a_reset_moves_no_row_up() {
+    let mut terminal = quiet(5, 20);
+    for line in 0..20 {
+        terminal.wrote(format!("{line}\r\n").as_bytes());
+    }
+    let before = terminal.top();
+    terminal.wrote(b"\x1b[?1049h");
+    terminal.wrote(b"drawn over\r\n");
+    terminal.wrote(b"\x1b[?1049l");
+    assert_eq!(terminal.top(), before);
+    terminal.wrote(b"\x1bc");
+    terminal.wrote(b"again\r\n");
+}
+
+/// Read back to the oldest row kept, every row up the screen still counts:
+/// the oldest are let go, so what is at the top of the view is newer by
+/// that many.
+///
+/// Broken deliberately by putting the view back by where the reader had it
+/// rather than by one row: a view at the oldest row has nowhere further to
+/// go, and the write moves nothing.
+#[cfg(unix)]
+#[test]
+fn rows_up_the_screen_count_with_the_view_at_the_oldest() {
+    let mut terminal = quiet(5, 20);
+    let mut chunk = String::new();
+    for line in 0..10_200 {
+        chunk.push_str(&format!("{line}\r\n"));
+        if chunk.len() > 4000 {
+            terminal.wrote(chunk.as_bytes());
+            chunk.clear();
+        }
+    }
+    terminal.wrote(chunk.as_bytes());
+    terminal.scroll_by(isize::MAX);
+    let before = terminal.top();
+    terminal.wrote(b"a\r\nb\r\nc\r\n");
+    assert_eq!(terminal.top() - before, 3);
+}
+
+/// What is held is copied whole, however much taller than the screen it is.
+///
+/// Broken deliberately by reading only the screenful the first row is on:
+/// the copy stops at the screen's last row.
+#[cfg(unix)]
+#[test]
+fn what_is_held_taller_than_the_screen_is_copied_whole() {
+    let mut terminal = quiet(5, 20);
+    for line in 0..30 {
+        terminal.wrote(format!("row {line}\r\n").as_bytes());
+    }
+    // From `row 10`, read back up to, down to `row 22`.
+    terminal.scroll_by(isize::MAX);
+    terminal.scroll_by(-10);
+    terminal.hold_from((0, 0));
+    terminal.scroll_by(-12);
+    terminal.hold_to((0, 5));
+    let copied = terminal.held_text().expect("something held");
+    let wanted: Vec<String> = (10..=22).map(|line| format!("row {line}")).collect();
+    assert_eq!(copied, wanted.join("\n"));
+}

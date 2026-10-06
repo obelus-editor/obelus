@@ -833,14 +833,19 @@ impl Talk {
                 None
             }
             // Which request is waiting on it, where it was one: the oldest
-            // not yet answered. They are answered in the order they were
-            // made, so the one the agent refused is that one, and every
-            // request after it waits behind it.
+            // not yet answered, and as many after it as it is behind. They
+            // are answered in the order they were made, so the one the
+            // agent refused is the oldest, and every request after it waits
+            // behind it in that order.
             Incoming::SignIn {
-                session: None, why, ..
+                session: None,
+                behind,
+                why,
+                ..
             } => Some(Incoming::SignIn {
                 session: None,
-                asking: self.waiting.front().map(|(asking, _)| *asking),
+                asking: self.waiting.get(behind).map(|(asking, _)| *asking),
+                behind,
                 why,
             }),
             Incoming::Started { session, mode, .. } => {
