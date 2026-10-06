@@ -88,7 +88,7 @@
         </tr></thead>
         <tbody>
           <tr><td><kbd>F1</kbd></td><td><code>open-file</code></td><td>在这棵树里挑一个文件打开</td></tr>
-          <tr><td><kbd>F2</kbd></td><td><code>switch-document</code></td><td>在已经打开的文档之间切换；窗口版里还能切 worktree</td></tr>
+          <tr><td><kbd>F2</kbd></td><td><code>switch-document</code></td><td>在已经打开的文档和 worktree 之间切换</td></tr>
           <tr><td><kbd>F3</kbd></td><td><code>open-changed-file</code></td><td>打开一个上次提交之后改过的文件</td></tr>
           <tr><td><kbd>F4</kbd></td><td><code>choose-conversation</code></td><td>和 agent 开一段新对话，或者接着聊以前的</td></tr>
           <tr><td><kbd>F5</kbd></td><td><code>search-file</code></td><td>在正在读的这个文件里搜</td></tr>
@@ -310,7 +310,7 @@ quit = ""            # 把这个绑定拿掉</code></pre>
         <li>一段对话同时只能在一个窗口里打开。占用跟着进程走，窗口崩了占用也就没了，不会出现对话「卡住打不开」。</li>
         <li>在一个窗口里改了设置，或者直接改了设置文件，所有窗口都会跟着变。</li>
         <li>窗口所在的 worktree 被删掉了（在 shell 里删的，或者 <code>git worktree remove</code>），整个窗口会弹出一页说明这件事。按 <kbd>Enter</kbd> 放下这个项目里打开的一切（已经没有地方可存了），再选下一个要打开的项目；按 <kbd>Ctrl+q</kbd> 退出。</li>
-        <li>worktree 列表里（<code>obg</code> 里按 <kbd>F2</kbd> 再按 <kbd>Tab</kbd>），和主 checkout 并排的 worktree 显示它自己的名字，在主 checkout 里面的显示往下的路径，别处的显示完整路径。没通过 git 就被删掉的 worktree 显示 <code>Missing</code>，选不了。</li>
+        <li>worktree 列表里（按 <kbd>F2</kbd> 再按 <kbd>Tab</kbd>），和主 checkout 并排的 worktree 显示它自己的名字，在主 checkout 里面的显示往下的路径，别处的显示完整路径。没通过 git 就被删掉的 worktree 显示 <code>Missing</code>，选不了。</li>
         <li>每个窗口有自己的语言服务器和自己的 agent。同一个 Rust 项目开三个窗口，就是三个 rust-analyzer。</li>
       </ul>
     </section>

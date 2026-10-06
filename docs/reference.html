@@ -88,7 +88,7 @@
         </tr></thead>
         <tbody>
           <tr><td><kbd>F1</kbd></td><td><code>open-file</code></td><td>Choose a file under the project and open it</td></tr>
-          <tr><td><kbd>F2</kbd></td><td><code>switch-document</code></td><td>Switch between open documents — and, in the window version, worktrees</td></tr>
+          <tr><td><kbd>F2</kbd></td><td><code>switch-document</code></td><td>Switch between open documents and worktrees</td></tr>
           <tr><td><kbd>F3</kbd></td><td><code>open-changed-file</code></td><td>Pick one of the files changed since the last commit</td></tr>
           <tr><td><kbd>F4</kbd></td><td><code>choose-conversation</code></td><td>Start a new conversation with the agent, or pick up an old one</td></tr>
           <tr><td><kbd>F5</kbd></td><td><code>search-file</code></td><td>Search the file being read</td></tr>
@@ -310,7 +310,7 @@ quit = ""            # taken away</code></pre>
         <li>A conversation can be open in only one window at a time. That hold goes away when the window's process ends, so a crash never leaves a conversation stuck.</li>
         <li>Change the settings file in one window, or by hand, and every window picks it up.</li>
         <li>If the worktree a window is on is removed, from your shell or with <code>git worktree remove</code>, a page over the whole window says so. <kbd>Enter</kbd> lets go of everything that was open there (there is nowhere left to save it) and asks which project to open next; <kbd>Ctrl+q</kbd> quits.</li>
-        <li>In the worktree list (<kbd>F2</kbd>, then <kbd>Tab</kbd>, in <code>obg</code>), a tree next to the main checkout is shown by its own name, one inside it by the path down to it, and anything else by its full path. A tree deleted without telling git says <code>Missing</code> and can't be chosen.</li>
+        <li>In the worktree list (<kbd>F2</kbd>, then <kbd>Tab</kbd>), a tree next to the main checkout is shown by its own name, one inside it by the path down to it, and anything else by its full path. A tree deleted without telling git says <code>Missing</code> and can't be chosen.</li>
         <li>Each window runs its own language server and its own agent. Three windows on one Rust project means three rust-analyzers.</li>
       </ul>
     </section>

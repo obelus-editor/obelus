@@ -90,7 +90,7 @@
         <figure class="shot" id="screen-worktrees" role="tabpanel" aria-labelledby="tab-worktrees" data-depth="3" data-screen="worktrees">
           <img class="dark" src="../screens/worktrees-dark.webp" width="2100" height="1520" alt="Worktrees 标签页：主 checkout 和 agent 的 worktree，两个都有窗口开着。">
           <img class="light" src="../screens/worktrees-light.webp" width="2100" height="1520" alt="Worktrees 标签页：主 checkout 和 agent 的 worktree，两个都有窗口开着。">
-          <figcaption class="caption">F2 再按 Tab：这个仓库所有的 worktree，选一个就切到那边的窗口。</figcaption>
+          <figcaption class="caption">F2 再按 Tab：这个仓库所有的 worktree，选一个就切过去。</figcaption>
         </figure>
       </div>
     </div>
@@ -235,7 +235,7 @@ ob src/main.rs       # 同一个文件，在终端里打开</code></pre>
           <span class="no">04</span>
           <div>
             <p class="claim">中途随时过去看。</p>
-            <p class="why">不用等它改完。<kbd>F2</kbd> 再按 <kbd>Tab</kbd>，选那个 worktree，就切到<a href="#worktrees">那边的窗口</a>。还没提交的改动，边栏上标着，<kbd>F3</kbd> 列出改过的文件；已经提交的，在它写的那一行上按 <kbd>F11</kbd>，就能看到整个提交。</p>
+            <p class="why">不用等它改完。<kbd>F2</kbd> 再按 <kbd>Tab</kbd>，选那个 worktree，就切到<a href="#worktrees">那棵树上</a>。还没提交的改动，边栏上标着，<kbd>F3</kbd> 列出改过的文件；已经提交的，在它写的那一行上按 <kbd>F11</kbd>，就能看到整个提交。</p>
           </div>
         </li>
         <li>
@@ -274,14 +274,14 @@ ob src/main.rs       # 同一个文件，在终端里打开</code></pre>
       <div class="feature">
         <div class="text">
       <h3 id="worktrees">所有 worktree，一个键就到</h3>
-      <p>Obelus 不分屏，想同时看两份代码就开两个窗口。所以同一个项目开着好几个窗口、各看一个 worktree，是很平常的事。在窗口版里按 <kbd>F2</kbd> 再按 <kbd>Tab</kbd>，能看到这个仓库所有的 worktree，哪些已经开着窗口也标出来了。选一个，那个窗口就跳到前面；还没开，就新开一个。</p>
+      <p>Obelus 不分屏，想同时看两份代码就开两个窗口。所以同一个项目开着好几个 Obelus、各看一个 worktree，是很平常的事。按 <kbd>F2</kbd> 再按 <kbd>Tab</kbd>，能看到这个仓库所有的 worktree，哪些已经有 Obelus 开着也标出来了；一棵树上开着好几个的，下面每个占一行，写着它正在看什么。按 <kbd>Enter</kbd>，当前这个 Obelus 就换到那棵树上：有没保存的文件会先问你，上次在那边开着的东西会重新打开。</p>
         </div>
         <figure class="shot">
           <a class="dark" href="../screens/worktree-list-dark.webp"><img src="../screens/worktree-list-dark.webp" width="1300" height="420" loading="lazy" alt="Worktrees 标签页：tally 在 main 上，tally/.worktree/stable-tie-order 在它自己的分支上，两棵都有窗口开着。"></a>
           <a class="light" href="../screens/worktree-list-light.webp"><img src="../screens/worktree-list-light.webp" width="1300" height="420" loading="lazy" alt="Worktrees 标签页：tally 在 main 上，tally/.worktree/stable-tie-order 在它自己的分支上，两棵都有窗口开着。"></a>
         </figure>
       </div>
-      <p class="quiet small">这个列表只有窗口版 <code>obg</code> 有。终端版 <code>ob</code> 没法替你开一个新终端，也没法把别的终端窗口调到前面，所以用 <code>ob</code> 的话，到那个目录另开一个 <code>ob</code> 就好。</p>
+      <p class="quiet small">在窗口版 <code>obg</code> 里，<kbd>Ctrl+Enter</kbd> 是另开一个窗口过去：那棵树已经有窗口开着，就把它调到前面，没有就新开一个。终端版 <code>ob</code> 只有 <kbd>Enter</kbd>：它没法替你开新终端，也没法把别的终端窗口调到前面。</p>
       <ul>
         <li>同一个仓库的所有 worktree 共用<em>一份</em>笔记，这个窗口记的，那个窗口马上能看到。</li>
         <li>一段对话同时只能在一个窗口里打开，不会两边各说各的。</li>

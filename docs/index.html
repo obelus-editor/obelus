@@ -90,7 +90,7 @@
         <figure class="shot" id="screen-worktrees" role="tabpanel" aria-labelledby="tab-worktrees" data-depth="3" data-screen="worktrees">
           <img class="dark" src="screens/worktrees-dark.webp" width="2100" height="1520" alt="The Worktrees tab: the main checkout and the agent's worktree, both with a window open.">
           <img class="light" src="screens/worktrees-light.webp" width="2100" height="1520" alt="The Worktrees tab: the main checkout and the agent's worktree, both with a window open.">
-          <figcaption class="caption">F2, then Tab: every worktree of the repository. Pick one to jump to its window.</figcaption>
+          <figcaption class="caption">F2, then Tab: every worktree of the repository. Pick one to go there.</figcaption>
         </figure>
       </div>
     </div>
@@ -235,7 +235,7 @@ ob src/main.rs       # the same file, in the terminal</code></pre>
           <span class="no">04</span>
           <div>
             <p class="claim">Look in on it whenever you like.</p>
-            <p class="why">You don't have to wait until it's done. <kbd>F2</kbd>, then <kbd>Tab</kbd>, pick the worktree, and you're in <a href="#worktrees">its window</a>. Changes it hasn't committed yet are marked in the margin, and <kbd>F3</kbd> lists the files it has touched. For changes it has committed, press <kbd>F11</kbd> on a line it wrote to see the whole commit.</p>
+            <p class="why">You don't have to wait until it's done. <kbd>F2</kbd>, then <kbd>Tab</kbd>, pick the worktree, and you're <a href="#worktrees">on that tree</a>. Changes it hasn't committed yet are marked in the margin, and <kbd>F3</kbd> lists the files it has touched. For changes it has committed, press <kbd>F11</kbd> on a line it wrote to see the whole commit.</p>
           </div>
         </li>
         <li>
@@ -274,14 +274,14 @@ ob src/main.rs       # the same file, in the terminal</code></pre>
       <div class="feature">
         <div class="text">
       <h3 id="worktrees">Every worktree, one key away</h3>
-      <p>Obelus has no split panes. To see two pieces of code side by side, you open two windows. So it's normal to have several windows on one project, each on its own worktree. In the window version, <kbd>F2</kbd> then <kbd>Tab</kbd> lists every worktree of the repository and marks the ones that already have a window. Pick one and its window comes to the front, or a new one opens.</p>
+      <p>Obelus has no split panes. To see two pieces of code side by side, you open two windows. So it's normal to have several Obelus windows on one project, each on its own worktree. <kbd>F2</kbd> then <kbd>Tab</kbd> lists every worktree of the repository and marks the ones an Obelus is already on; under a tree with several, each gets a row saying what it's reading. <kbd>Enter</kbd> moves this Obelus onto that tree: it asks first about anything unsaved, and reopens what you had open there last time.</p>
         </div>
         <figure class="shot">
           <a class="dark" href="screens/worktree-list-dark.webp"><img src="screens/worktree-list-dark.webp" width="1300" height="420" loading="lazy" alt="The Worktrees tab: tally on main and tally/.worktree/stable-tie-order on its branch, both with a window open."></a>
           <a class="light" href="screens/worktree-list-light.webp"><img src="screens/worktree-list-light.webp" width="1300" height="420" loading="lazy" alt="The Worktrees tab: tally on main and tally/.worktree/stable-tie-order on its branch, both with a window open."></a>
         </figure>
       </div>
-      <p class="quiet small">Only the window version, <code>obg</code>, has this list. The terminal version, <code>ob</code>, can't open a new terminal for you or bring another terminal window to the front. With <code>ob</code>, just start another <code>ob</code> in that directory.</p>
+      <p class="quiet small">In the window version, <code>obg</code>, <kbd>Ctrl+Enter</kbd> goes there in a window of its own instead: it brings that tree's window to the front, or opens a new one. The terminal version, <code>ob</code>, only has <kbd>Enter</kbd>, because it can't open a new terminal for you or bring another terminal window to the front.</p>
       <ul>
         <li>All the worktrees of a repository share <em>one</em> set of notes. What you write in one window shows up in the others straight away.</li>
         <li>A conversation can only be open in one window at a time, so two windows can't talk over each other.</li>
