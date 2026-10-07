@@ -14044,6 +14044,42 @@ fn the_count_opens_the_work_and_its_key_stops_it() {
     assert!(!lit(&app), "the key is lit on work that has stopped");
 }
 
+/// Where the row has no room for the count, the keys walking it do not
+/// stop there: round from the first setting is the last setting, not a
+/// place with nothing drawn on it.
+///
+/// Broken deliberately: have the keys count the stop whenever there is
+/// work, drawn or not, and enter on the last stop opens the list of work.
+#[test]
+fn the_keys_do_not_stand_on_a_count_the_row_had_no_room_for() {
+    let (mut app, events) = playing(&["air"]);
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    say(&mut app, "/background");
+    pump(&mut app, &events, "the work counted", |app| {
+        app.background_tasks() == Some(1)
+    });
+    pump(&mut app, &events, "the turn over", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    let narrow = 34;
+    support::lay_out(&mut app, narrow, HEIGHT);
+    let shown = support::render(&mut app, narrow, HEIGHT);
+    assert!(
+        !shown.contains("in the background"),
+        "the row had room after all, so this proves nothing:\n{shown}"
+    );
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Left);
+    support::press(&mut app, KeyCode::Enter);
+    assert!(
+        app.picker()
+            .is_none_or(|picker| picker.listing_tasks().is_none()),
+        "the keys stood on a count nothing drew"
+    );
+}
+
 /// An agent that turns out to have no way to stop its work greys the key,
 /// and the work it was asked about is running again rather than stopping
 /// for ever.

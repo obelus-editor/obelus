@@ -1328,6 +1328,17 @@ impl App {
         (!board.is_empty()).then(|| board.running())
     }
 
+    /// Whether the count of background work is on the conversation's status
+    /// row, which is whether the keys walking that row have it as a stop.
+    ///
+    /// Asked of the view that draws the row, which is the one thing that
+    /// knows whether there was room: a stop the keys could reach and the row
+    /// did not draw is somewhere to stand with nothing on screen saying so.
+    fn background_count_on_row(&self) -> bool {
+        let status = obelus_ui::regions(self.screen_area).status;
+        obelus_ui::chat::ChatView::new(self).is_some_and(|view| view.shows_tasks(status))
+    }
+
     /// The agent's background work in this conversation, as the ordinary
     /// compact list: what is still going first, and what has ended under
     /// it, each saying the last thing it said about itself.
@@ -2353,7 +2364,7 @@ impl App {
         // the view does. Cloned because the box is about to be borrowed to
         // take the key.
         let settings = self.agent_settings().to_vec();
-        let tasks = self.background_tasks().is_some();
+        let tasks = self.background_count_on_row();
         let Some(talk) = self.conversation_mut() else {
             return false;
         };
@@ -3285,7 +3296,7 @@ impl App {
         // that are really there: they are the agent's, and it can take one
         // away in the middle of a sentence -- a model with no thinking
         // levels does exactly that.
-        let settings = self.agent_settings().len() + usize::from(self.background_tasks().is_some());
+        let settings = self.agent_settings().len() + usize::from(self.background_count_on_row());
         if let Some(talk) = self.conversation_mut() {
             talk.chat.settle_focus(settings);
         }

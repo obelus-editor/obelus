@@ -1725,20 +1725,37 @@ impl ChatView<'_> {
     ///
     /// The last stop the keys walk to, and drawn after the settings for
     /// that reason, at the end of the room they have. One answer for the
-    /// drawing, for the room the settings are given and for a press.
+    /// drawing, for the room the settings are given, for a press -- and for
+    /// the keys, which may only stand on it where it is drawn (see
+    /// [`Self::shows_tasks`]).
+    ///
+    /// Whether it fits is measured with the arrow it wears under the keys,
+    /// whether or not they are on it: measured without, a count that fitted
+    /// until the keys reached it would stop fitting because they had, and
+    /// the keys would be put back where they came from.
     fn tasks_placed(&self, area: Rect) -> Option<(u16, String)> {
         let running = self.tasks?;
         let mut word = tasks_said(running);
+        let at_most = text_width(&word) + text_width(&opens(false));
         if matches!(self.focus, Focus::Settings(at) if at >= self.settings.len()) {
             word.push_str(&opens(false));
         }
         let room = self.room_beside_the_marks(area);
-        let wide = text_width(&word);
-        if room <= wide + GAP + LEAST_SETTINGS {
+        if room <= at_most + GAP + LEAST_SETTINGS {
             return None;
         }
-        let at = u16::try_from(1 + room - wide).ok()?;
+        let at = u16::try_from(1 + room - text_width(&word)).ok()?;
         Some((area.x + at, word))
+    }
+
+    /// Whether the count of background work is on the status row, which is
+    /// whether the keys walking the row have it as a stop.
+    ///
+    /// A stop the row has no room to draw is somewhere the keys would stand
+    /// with nothing on screen saying where they are.
+    #[must_use]
+    pub fn shows_tasks(&self, area: Rect) -> bool {
+        self.tasks_placed(area).is_some()
     }
 
     /// Which setting the row starts at.
