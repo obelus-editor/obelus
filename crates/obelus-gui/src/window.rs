@@ -775,11 +775,11 @@ impl ApplicationHandler<Waking> for Showing {
         // this one for a reader who asked for it.
         let attributes = crate::elsewhere::started_with(
             events,
-            crate::title::asked_for(marked(named(
+            crate::title::asked_for(marked(named(hidden(
                 Window::default_attributes()
                     .with_title("Obelus")
                     .with_inner_size(LogicalSize::new(1100.0, 720.0)),
-            ))),
+            )))),
         );
         let window = match events.create_window(attributes) {
             Ok(window) => Arc::new(window),
@@ -893,6 +893,12 @@ impl ApplicationHandler<Waking> for Showing {
         if let Err(error) = started {
             tracing::error!(%error, "Obelus could not be started behind the window");
             events.exit();
+            return;
+        }
+        // Shown now that this thread is about to go back to answering the
+        // window's messages -- see `hidden`, which is why only there.
+        if cfg!(windows) {
+            window.set_visible(true);
         }
     }
 
@@ -1623,6 +1629,28 @@ fn named(attributes: winit::window::WindowAttributes) -> winit::window::WindowAt
     attributes
 }
 
+/// A window kept off the screen until the thread it belongs to can answer
+/// for it, on Windows.
+///
+/// The taskbar asks a window for its icon the moment it is shown, and
+/// gives up on one that does not answer: it draws the system's blank
+/// program and does not ask again until something else about the button
+/// changes. A window shown as it is made is shown a second before this
+/// thread is done loading the faces and starting the drawing, and that
+/// second is when it was asked -- measured by putting a progress bar on
+/// the blank button from outside, which made the taskbar look again and
+/// find the icon that had been on the window all along.
+///
+/// Only there, because what the taskbar does is the reason -- and showing
+/// a window on macOS brings it in front, which a start the reader has
+/// since turned away from has no business doing (see `elsewhere`).
+fn hidden(attributes: winit::window::WindowAttributes) -> winit::window::WindowAttributes {
+    match cfg!(windows) {
+        true => attributes.with_visible(false),
+        false => attributes,
+    }
+}
+
 /// The icon, as the file itself. Fourteen kilobytes, seven sizes, and the
 /// decoder hands back the largest of them.
 const MARK: &[u8] = include_bytes!("../../../contrib/desktop/obelus.ico");
@@ -1631,13 +1659,17 @@ const MARK: &[u8] = include_bytes!("../../../contrib/desktop/obelus.ico");
 ///
 /// X11 is who needs it. A Wayland compositor takes the icon from the
 /// desktop entry the name above points it at, and macOS from the bundle,
-/// so on those two this is dropped; Windows does take it, and gets the
-/// same picture it would have taken out of the executable's own resources
-/// anyway, because both are built from the one file below.
+/// so on those two this is dropped. Windows takes it twice, because it
+/// keeps two: winit's window icon is only `ICON_SMALL`, the one in the
+/// title bar, and the taskbar and alt-tab read `ICON_BIG`, which winit
+/// clears unless it is given a taskbar icon as well -- and its window
+/// class has none to fall back on, so the executable's own resources are
+/// never asked. When the taskbar asks is another matter: see `hidden`.
 ///
 /// Set on all of them rather than behind a `cfg` for each: a platform that
 /// does not want it drops it, and three cfgs would be three places to be
-/// wrong about somebody else's rules. Read from the file rather than
+/// wrong about somebody else's rules. The taskbar's is the one `cfg`,
+/// because only Windows has the method. Read from the file rather than
 /// written out as pixels beside it, because an icon is an icon in one
 /// place.
 ///
@@ -1659,6 +1691,11 @@ fn marked(attributes: winit::window::WindowAttributes) -> winit::window::WindowA
             tracing::warn!(%error, "the window has no icon");
             None
         }
+    };
+    #[cfg(windows)]
+    let attributes = {
+        use winit::platform::windows::WindowAttributesExtWindows;
+        attributes.with_taskbar_icon(icon.clone())
     };
     attributes.with_window_icon(icon)
 }
