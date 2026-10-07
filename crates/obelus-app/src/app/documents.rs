@@ -1103,10 +1103,11 @@ impl App {
             // entry would answer correctly for as long as the file stayed shut,
             // and then be one version behind whoever opened it next.
             self.tokens.remove(buffer.path());
-            self.say(format!(
-                "Closed {}",
-                relative(buffer.path(), &self.working_directory)
-            ));
+            // Nothing said about it. The reader closed it and is looking at
+            // what is there instead; a line naming what went is news to
+            // nobody, and for a file outside the project -- what background
+            // work wrote, somewhere under a temporary directory -- it was a
+            // path the row had no room for.
         }
         // And a conversation's thread hears that it was, so that a reader
         // there is not left talking to something nobody is listening for.
