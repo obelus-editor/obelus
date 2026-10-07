@@ -775,11 +775,11 @@ impl ApplicationHandler<Waking> for Showing {
         // this one for a reader who asked for it.
         let attributes = crate::elsewhere::started_with(
             events,
-            crate::title::asked_for(marked(named(
+            crate::title::asked_for(marked(named(hidden(
                 Window::default_attributes()
                     .with_title("Obelus")
                     .with_inner_size(LogicalSize::new(1100.0, 720.0)),
-            ))),
+            )))),
         );
         let window = match events.create_window(attributes) {
             Ok(window) => Arc::new(window),
@@ -894,6 +894,9 @@ impl ApplicationHandler<Waking> for Showing {
             tracing::error!(%error, "Obelus could not be started behind the window");
             events.exit();
         }
+        // Shown now that this thread is about to go back to answering the
+        // window's messages -- see `hidden`.
+        window.set_visible(true);
     }
 
     fn user_event(&mut self, events: &ActiveEventLoop, waking: Waking) {
@@ -1623,6 +1626,28 @@ fn named(attributes: winit::window::WindowAttributes) -> winit::window::WindowAt
     attributes
 }
 
+/// A window kept off the screen until the thread it belongs to can answer
+/// for it, on Windows.
+///
+/// The taskbar asks a window for its icon the moment it is shown, and
+/// gives up on one that does not answer: it draws the system's blank
+/// program and does not ask again until something else about the button
+/// changes. A window shown as it is made is shown a second before this
+/// thread is done loading the faces and starting the drawing, and that
+/// second is when it was asked -- measured by putting a progress bar on
+/// the blank button from outside, which made the taskbar look again and
+/// find the icon that had been on the window all along.
+///
+/// Only there: what the taskbar does is the reason, and Wayland cannot
+/// hide a window at all, so the same change elsewhere is a window that is
+/// never shown.
+fn hidden(attributes: winit::window::WindowAttributes) -> winit::window::WindowAttributes {
+    match cfg!(windows) {
+        true => attributes.with_visible(false),
+        false => attributes,
+    }
+}
+
 /// The icon, as the file itself. Fourteen kilobytes, seven sizes, and the
 /// decoder hands back the largest of them.
 const MARK: &[u8] = include_bytes!("../../../contrib/desktop/obelus.ico");
@@ -1636,8 +1661,7 @@ const MARK: &[u8] = include_bytes!("../../../contrib/desktop/obelus.ico");
 /// title bar, and the taskbar and alt-tab read `ICON_BIG`, which winit
 /// clears unless it is given a taskbar icon as well -- and its window
 /// class has none to fall back on, so the executable's own resources are
-/// never asked. Without the second, the button came up blank and filled in
-/// only once something made the taskbar look again.
+/// never asked. When the taskbar asks is another matter: see `hidden`.
 ///
 /// Set on all of them rather than behind a `cfg` for each: a platform that
 /// does not want it drops it, and three cfgs would be three places to be
