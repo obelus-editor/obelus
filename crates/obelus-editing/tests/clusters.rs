@@ -104,7 +104,12 @@ fn a_wrapped_row_ending_in_a_picture_is_not_ended_inside_it() {
     editing.handle_key(&KeyEvent::new(KeyCode::End, KeyModifiers::NONE), &(), width);
     assert_eq!(column(&editing), 8, "end on the first row");
 
-    editing.place(LineNumber::new(0), CharColumn::new(18), width);
+    // A first row one cell short of the margin, because the `你` after the
+    // heart is two cells and does not fit: up from the tenth cell of the
+    // row below aims past the first row's end, and is held at its last
+    // cluster.
+    let mut editing = Editing::new("aaaaaaa\u{2764}\u{fe0f}\u{4f60}\u{597d}\u{4f60}\u{597d}b");
+    editing.place(LineNumber::new(0), CharColumn::new(14), width);
     editing.handle_key(&KeyEvent::new(KeyCode::Up, KeyModifiers::NONE), &(), width);
-    assert_eq!(column(&editing), 8, "up from the end of the second row");
+    assert_eq!(column(&editing), 7, "up from the end of the second row");
 }
