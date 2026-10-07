@@ -81,7 +81,9 @@
 #                            id on any of them, and then a word
 #   _session/async_task/stop
 #                         -> stopped, and says so; run with `cannot-stop` it
-#                            has no such method
+#                            has no such method, and with `garbles-first`
+#                            it says a run of nonsense about its work before
+#                            it answers
 #
 # Every reply's id is read out of the request rather than assumed, because
 # the point of the exercise is that Obelus's numbering is its own business.
@@ -196,6 +198,7 @@ replans=''
 # can stop what it started.
 air=''
 cannot_stop=''
+garbles_first=''
 for word in "$@"; do
     case "$word" in
         mode-as-option) both_ways='yes' ;;
@@ -213,6 +216,7 @@ for word in "$@"; do
         air) air='1' ;;
         air2) air='2' ;;
         cannot-stop) cannot_stop='yes' ;;
+        garbles-first) garbles_first='yes' ;;
     esac
 done
 
@@ -1030,6 +1034,15 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
         *'"method":"_session/async_task/stop"'*)
+            # Garbled first, where it was told to: what it says about its
+            # work stops making sense while the answer is still on its way.
+            if [ -n "$garbles_first" ]; then
+                garbled=0
+                while [ "$garbled" -lt 12 ]; do
+                    printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"async_task_spawned","name":"no id"}}}\n'
+                    garbled=$((garbled + 1))
+                done
+            fi
             if [ -n "$cannot_stop" ]; then
                 printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":"Method not found"}}\n' "$(id_of "$line")"
             else

@@ -2288,6 +2288,7 @@ async fn talk(
                         Ask::StopTask { session, id } => {
                             let dialect = lock(&speaking).dialect;
                             let told = events.clone();
+                            let still = speaking.clone();
                             let Some((method, params)) = dialect.stop(&session.0, &id) else {
                                 let _ = told.send(Event::Acp(Incoming::NotStopped { session, id }));
                                 continue;
@@ -2311,10 +2312,19 @@ async fn talk(
                                             tracing::info!(
                                                 "the agent cannot stop background work after all"
                                             );
-                                            let _ = told.send(Event::Acp(Incoming::Tasks {
-                                                heard: true,
-                                                stoppable: false,
-                                            }));
+                                            // Only while the dialect is still
+                                            // spoken. Given up on while this
+                                            // was in flight, saying it is
+                                            // heard would bring back every
+                                            // list the giving up took away.
+                                            let heard = lock(&still).dialect
+                                                != super::tasks::Dialect::None;
+                                            if heard {
+                                                let _ = told.send(Event::Acp(Incoming::Tasks {
+                                                    heard: true,
+                                                    stoppable: false,
+                                                }));
+                                            }
                                             true
                                         }
                                         Err(error) => {

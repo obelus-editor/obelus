@@ -14115,6 +14115,31 @@ fn background_work_spoken_badly_is_given_up_on() {
     );
 }
 
+/// An agent found unable to stop its work after Obelus had given up on what
+/// it says of it does not bring the count back: given up on is given up on.
+///
+/// Broken deliberately: send that the work is heard whatever became of the
+/// dialect in the meantime, and the count is back when this looks.
+#[test]
+fn an_agent_given_up_on_stays_given_up_on() {
+    let (mut app, events) = playing(&["air", "cannot-stop", "garbles-first"]);
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    say(&mut app, "/background");
+    pump(&mut app, &events, "the work counted", |app| {
+        app.background_tasks() == Some(1)
+    });
+    open_the_background_work(&mut app);
+    support::press_alt(&mut app, 's');
+    pump(&mut app, &events, "the count gone", |app| {
+        app.background_tasks().is_none()
+    });
+    // And the answer to the stop, which arrives after the garble.
+    settle(&mut app, &events, Duration::from_millis(500));
+    assert_eq!(app.background_tasks(), None, "the count came back");
+}
+
 /// A call's row says what its work last said, whichever way that went: a
 /// work reported stopped and then running after all is running again on
 /// the row as it is on the list.
