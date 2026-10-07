@@ -14114,3 +14114,62 @@ fn background_work_spoken_badly_is_given_up_on() {
         screen(&mut app)
     );
 }
+
+/// A call's row says what its work last said, whichever way that went: a
+/// work reported stopped and then running after all is running again on
+/// the row as it is on the list.
+///
+/// Broken deliberately: have `background_says` change only a row that says
+/// the work goes on, the way it first did, and the row stays stopped.
+#[test]
+fn a_calls_row_follows_its_work_back_from_stopped() {
+    let (mut app, events) = playing(&["air"]);
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    say(&mut app, "/background");
+    pump(&mut app, &events, "the work counted", |app| {
+        app.background_tasks() == Some(1)
+    });
+    // The turn over first: two things said into a running turn wait and go
+    // as one prompt, and the fixture answers only the first of them.
+    pump(&mut app, &events, "the turn over", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    say(&mut app, "/background-wavers");
+    say(&mut app, "/hello");
+    pump(&mut app, &events, "the next answer", |app| {
+        said_in_transcript(app, "ran hello")
+    });
+    assert_eq!(app.background_tasks(), Some(1));
+    assert!(
+        the_call_says(&mut app, obelus_icons::ui::BACKGROUND, "Background"),
+        "the call does not say its work goes on:\n{}",
+        screen(&mut app)
+    );
+}
+
+/// Work that ended before its call was marked as having left it going is
+/// done on the row, not going on for ever.
+///
+/// Broken deliberately: take `say_what_the_work_came_to` out of the arm for
+/// a tool call, and the marker that arrives last leaves the row saying the
+/// work goes on.
+#[test]
+fn work_that_ended_before_its_call_was_marked_is_done() {
+    let (mut app, events) = playing(&["air"]);
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    say(&mut app, "/background-late");
+    say(&mut app, "/hello");
+    pump(&mut app, &events, "the next answer", |app| {
+        said_in_transcript(app, "ran hello")
+    });
+    assert_eq!(app.background_tasks(), Some(0));
+    assert!(
+        the_call_says(&mut app, obelus_icons::ui::DONE, "Done"),
+        "the call does not say its work is done:\n{}",
+        screen(&mut app)
+    );
+}

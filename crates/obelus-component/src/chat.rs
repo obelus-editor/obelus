@@ -1623,36 +1623,42 @@ impl Chat {
         }
     }
 
-    /// The work a call started has gone on after it, whatever the call's own
-    /// updates said: the dialect said so of the work rather than of the call.
-    pub fn backgrounded(&mut self, id: &str) {
-        self.forget_the_layout();
-        if let Some(said) = self.call_mut(id)
-            && said.state.as_deref() == Some("completed")
-        {
-            said.state = Some(obelus_agent::acp::BACKGROUNDED.to_string());
+    /// What the work a call started has come to, said on the call's row:
+    /// [`obelus_agent::acp::BACKGROUNDED`] while it goes on, and the
+    /// protocol's own word for how a call ends once it has.
+    ///
+    /// The work's word and not the row's: once a call has returned, what
+    /// its row says is whatever the work last said, whichever order the two
+    /// arrived in -- a work that was reported stopped and then taken back,
+    /// or one that ended before the call that started it was marked. A call
+    /// still under way is left alone, because it has not returned yet.
+    ///
+    /// Forgets the rows only where one changed: news of the work arrives
+    /// with every beat of its progress, and almost none of it moves the row.
+    pub fn background_says(&mut self, id: &str, state: &str) {
+        let Some(said) = self.call_mut(id) else {
+            return;
+        };
+        let under_way = matches!(said.state.as_deref(), Some("pending" | "in_progress"));
+        if under_way || said.state.as_deref() == Some(state) {
+            return;
         }
-    }
-
-    /// The work a call started has ended, this way -- in the protocol's own
-    /// word for how a call ends.
-    pub fn background_ended(&mut self, id: &str, state: &str) {
+        said.state = Some(state.to_string());
         self.forget_the_layout();
-        if let Some(said) = self.call_mut(id)
-            && said.state.as_deref() == Some(obelus_agent::acp::BACKGROUNDED)
-        {
-            said.state = Some(state.to_string());
-        }
     }
 
     /// Every row still saying its work goes on, ended as stopped: nothing is
     /// left that could say otherwise.
     pub fn background_ended_everywhere(&mut self) {
-        self.forget_the_layout();
+        let mut changed = false;
         for said in &mut self.said {
             if said.state.as_deref() == Some(obelus_agent::acp::BACKGROUNDED) {
                 said.state = Some("cancelled".to_string());
+                changed = true;
             }
+        }
+        if changed {
+            self.forget_the_layout();
         }
     }
 

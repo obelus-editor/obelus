@@ -390,6 +390,18 @@ impl Board {
         self.tasks.iter().find(|task| task.id == id)
     }
 
+    /// The one a tool call started, by the call's id.
+    ///
+    /// The last to name it, where two did: a call starts one piece of work,
+    /// and a second naming it is the agent saying it again.
+    #[must_use]
+    pub fn started_by(&self, call: &str) -> Option<&Task> {
+        self.tasks
+            .iter()
+            .rev()
+            .find(|task| task.call.as_deref() == Some(call))
+    }
+
     /// How many are still going, which is the number on the status row.
     #[must_use]
     pub fn running(&self) -> usize {

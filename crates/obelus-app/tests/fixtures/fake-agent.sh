@@ -70,6 +70,12 @@
 #                            work it started, with what it says about itself
 #   session/prompt "/background-ends"
 #                         -> that work ends, well
+#   session/prompt "/background-wavers"
+#                         -> that work is said to have stopped, and then to
+#                            be running after all
+#   session/prompt "/background-late"
+#                         -> a call whose work starts and ends before the
+#                            call is marked as having left it going
 #   session/prompt "/garbled"
 #                         -> a run of updates about background work with no
 #                            id on any of them, and then a word
@@ -983,6 +989,25 @@ while IFS= read -r line; do
         *'"method":"session/prompt"'*'"text":"/background-ends'*)
             set_turn "$session" "$(id_of "$line")"
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"async_task_state_update","asyncTaskId":"t-1","state":"completed","summary":"exited 0"}}}\n'
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
+        *'"method":"session/prompt"'*'"text":"/background-wavers'*)
+            # Said to have stopped, and then taken back: the extension
+            # reports work that left the agent's list as stopped, and
+            # corrects it when the real word arrives.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"async_task_state_update","asyncTaskId":"t-1","state":"stopped"}}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"async_task_state_update","asyncTaskId":"t-1","state":"running"}}}\n'
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
+        *'"method":"session/prompt"'*'"text":"/background-late'*)
+            # The work starts and ends before the call that started it is
+            # said to have left it going.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call","toolCallId":"bg-1","title":"npm run dev","kind":"execute","status":"in_progress"}}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"async_task_spawned","asyncTaskId":"t-1","name":"npm run dev","taskType":"shell","canStop":true,"toolCallId":"bg-1"}}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"async_task_state_update","asyncTaskId":"t-1","state":"completed"}}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call_update","toolCallId":"bg-1","status":"completed","_meta":{"jetbrains":{"air":{"asyncTasks":{"backgrounded":true}}}}}}}\n'
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
         *'"method":"session/prompt"'*'"text":"/background'*)

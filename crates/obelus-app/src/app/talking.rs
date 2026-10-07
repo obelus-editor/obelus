@@ -1426,22 +1426,40 @@ impl App {
     /// of it is built again.
     fn hear_of_background_work(&mut self, whose: Whose, news: &obelus_agent::acp::tasks::News) {
         let session = self.talk_mut(whose).and_then(|talk| talk.session.clone());
-        let task = self
+        let call = self
             .talker
             .as_ref()
             .and_then(|talker| talker.tasks(session.as_ref()))
             .and_then(|board| board.find(news.id()))
-            .cloned();
-        if let Some(task) = task
-            && let Some(call) = task.call.as_deref()
-        {
-            match task.state.as_call() {
-                Some(ended) => self.in_talk(whose, |chat| chat.background_ended(call, ended)),
-                None => self.in_talk(whose, |chat| chat.backgrounded(call)),
-            }
+            .and_then(|task| task.call.clone());
+        if let Some(call) = call {
+            self.say_what_the_work_came_to(whose, &call);
         }
         if session.is_some() && session == self.session_now() {
             self.refresh_background_tasks();
+        }
+    }
+
+    /// Puts on a call's row what the work it started last said, where it
+    /// started any.
+    ///
+    /// Asked when the work moves on and again when the call does: the two
+    /// arrive in whichever order the agent sends them, and the row is right
+    /// only if whichever came second asks.
+    fn say_what_the_work_came_to(&mut self, whose: Whose, call: &str) {
+        let session = self.talk_mut(whose).and_then(|talk| talk.session.clone());
+        let said = self
+            .talker
+            .as_ref()
+            .and_then(|talker| talker.tasks(session.as_ref()))
+            .and_then(|board| board.started_by(call))
+            .map(|task| {
+                task.state
+                    .as_call()
+                    .unwrap_or(obelus_agent::acp::BACKGROUNDED)
+            });
+        if let Some(said) = said {
+            self.in_talk(whose, |chat| chat.background_says(call, said));
         }
     }
 
@@ -3830,6 +3848,9 @@ impl App {
                 acp::Update::Tool { call, status } => {
                     self.mirror_paused(whose);
                     self.in_talk(whose, |chat| chat.tool(&call, &status));
+                    // And what the work it started has come to, which may
+                    // have been said before this.
+                    self.say_what_the_work_came_to(whose, &call.id);
                     self.hear_where_it_wrote(whose, &call.id);
                 }
                 // What it means to do about this turn. Not a thing said --
