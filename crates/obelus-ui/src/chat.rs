@@ -1613,12 +1613,15 @@ impl ChatView<'_> {
             // Only once there is a session: before that the row would be
             // saying that an agent which has not spoken yet has nothing to
             // say about itself.
+            // In the room the settings have and no further: the count of
+            // background work is at the end of it, and words written past
+            // the end are written over that.
             if matches!(self.state, Talking::Ready | Talking::Thinking) {
                 write(
                     cells,
                     area.x + 1,
                     area.y,
-                    "Nothing to change",
+                    &super::truncate_from_right("Nothing to change", room),
                     plain.fg(self.theme.gutter),
                 );
             }
@@ -2133,6 +2136,46 @@ mod tests {
                 "{keys} is not at {along} of {said:?}"
             );
         }
+    }
+
+    /// The count of background work is whole on a row with no settings, at
+    /// a width where what the row says in their place does not fit beside it.
+    ///
+    /// Broken deliberately: write `Nothing to change` whole again, and it
+    /// runs over the count.
+    #[test]
+    fn the_count_of_background_work_is_not_written_over() {
+        let chat = obelus_component::chat::Chat::new();
+        let area = ratatui::layout::Rect::new(0, 0, 34, 1);
+        let view = super::ChatView {
+            chat: &chat,
+            theme: &obelus_theme::builtin::DARK,
+            state: obelus_agent::Talking::Ready,
+            name: None,
+            settings: &[],
+            focus: obelus_component::chat::Focus::Writing,
+            card: None,
+            in_front: true,
+            pointer: None,
+            root: std::path::Path::new("/"),
+            phase: 0,
+            branch: None,
+            about_a_note: false,
+            note: None,
+            note_is_wrong: false,
+            usage: None,
+            tasks: Some(2),
+            remote: None,
+        };
+        let mut cells = ratatui::buffer::Buffer::empty(area);
+        view.status(&mut cells, area);
+        let row: String = (area.x..area.right())
+            .map(|x| cells[(x, area.y)].symbol().to_string())
+            .collect();
+        assert!(
+            row.contains("2 in the background"),
+            "the count was written over: {row:?}"
+        );
     }
 
     use std::path::{Path, PathBuf};
