@@ -1633,6 +1633,11 @@ impl Chat {
     /// or one that ended before the call that started it was marked. A call
     /// still under way is left alone, because it has not returned yet.
     ///
+    /// Whatever the call itself ended as, too. A call the reader stopped, or
+    /// one that failed, may have left work running all the same, and a row
+    /// saying `Stopped` over a server that is still up is the one thing
+    /// this row must not say.
+    ///
     /// Forgets the rows only where one changed: news of the work arrives
     /// with every beat of its progress, and almost none of it moves the row.
     pub fn background_says(&mut self, id: &str, state: &str) {
@@ -3555,6 +3560,36 @@ mod tests {
         assert!(
             held(&chat),
             "a command that printed nothing new threw the rows away"
+        );
+    }
+
+    /// A call's row says what its work says once the call has returned,
+    /// however the call ended -- and nothing while the call is under way.
+    ///
+    /// Broken deliberately: have `background_says` change only a row that
+    /// says `completed` or that its work goes on, and the stopped and the
+    /// failed calls go on saying so over work that runs; drop the
+    /// `under_way` guard, and the call still running says its work does.
+    #[test]
+    fn a_calls_row_says_what_its_work_says_however_the_call_ended() {
+        let mut chat = Chat::new();
+        for (id, ended) in [("c1", "cancelled"), ("c2", "failed"), ("c3", "in_progress")] {
+            chat.tool(&saying(id, "npm run dev", &[]), ended);
+            chat.background_says(id, obelus_agent::acp::BACKGROUNDED);
+        }
+        let state = |id: &str| {
+            chat.said
+                .iter()
+                .find(|said| said.tag.as_deref() == Some(id))
+                .and_then(|said| said.state.clone())
+        };
+        let goes_on = Some(obelus_agent::acp::BACKGROUNDED.to_string());
+        assert_eq!(state("c1"), goes_on, "a stopped call");
+        assert_eq!(state("c2"), goes_on, "a failed call");
+        assert_eq!(
+            state("c3"),
+            Some("in_progress".to_string()),
+            "a call under way"
         );
     }
 
