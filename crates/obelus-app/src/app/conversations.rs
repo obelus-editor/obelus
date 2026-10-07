@@ -999,10 +999,10 @@ impl App {
         // read as the conversation opens, and kept level by a watch settled
         // on the next frame.
         self.reread_the_notes_kept();
-        let (told, introduced) = match listed.which.note() {
-            Some(note) => self.remembered_telling(note),
-            None => (None, false),
-        };
+        // A conversation about nothing in particular as much as one about a
+        // note: both are taken up with every word the agent was told, and
+        // reading "told nothing" for one sent it all again.
+        let (told, introduced) = self.remembered_telling(&listed.which);
         let topic = match listed.which.note() {
             Some(note) => Topic::Note(note.clone()),
             None => Topic::Loose,

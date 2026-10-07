@@ -275,7 +275,7 @@ impl App {
                 // from as *it* opens. The watch that keeps it level is
                 // settled on the next frame.
                 self.reread_the_notes_kept();
-                let (told, introduced) = self.remembered_telling(note);
+                let (told, introduced) = self.remembered_telling(&which);
                 let talk = crate::conversation::Conversation {
                     told,
                     introduced,
@@ -607,28 +607,32 @@ impl App {
         )
     }
 
-    /// What this agent has already been told, in a conversation about this
-    /// note that Obelus wrote down.
+    /// What the agent has already been told, in a conversation Obelus wrote
+    /// down.
     ///
     /// Both halves together, because they are read at one moment for one
     /// purpose -- filling in a conversation that is being picked up where
     /// it was left -- and asking the file twice for two fields of one row
     /// is two answers that can disagree.
+    ///
+    /// Of the agent the conversation will be had with, which is the chosen
+    /// one where none is running yet. Asked only of a running one, the
+    /// first conversation taken up in a window found no agent, read
+    /// "told nothing", and sent an agent that was taking up the whole of
+    /// that conversation who it is talking to all over again.
     pub(super) fn remembered_telling(
         &self,
-        note: &obelus_git::todo::NoteId,
+        which: &obelus_agent::chats::ChatId,
     ) -> (Option<String>, bool) {
-        let Some(agent) = self.talker.as_ref().map(obelus_agent::acp::Talk::id) else {
+        let agent = match self.talker.as_ref() {
+            Some(talker) => Some(talker.id()),
+            None => self.settled.config.agent.as_deref(),
+        };
+        let Some(agent) = agent else {
             return (None, false);
         };
         self.sessions()
-            .and_then(|kept| {
-                kept.get(
-                    &obelus_agent::chats::ChatId::Note(note.clone()),
-                    agent,
-                    &self.working_directory,
-                )
-            })
+            .and_then(|kept| kept.get(which, agent, &self.working_directory))
             .map_or((None, false), |kept| (kept.told.clone(), kept.introduced))
     }
 

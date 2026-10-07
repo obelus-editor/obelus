@@ -13292,6 +13292,178 @@ fn a_loose_conversation_left_open_comes_back_however_old_it_is() {
     });
 }
 
+/// Says `/blocks` in the conversation on screen and hands back what the
+/// fake agent says the prompt carried.
+fn what_the_next_prompt_carries(app: &mut App, events: &Receiver<Event>) -> String {
+    support::type_text(app, "/blocks");
+    support::press(app, KeyCode::Enter);
+    pump(app, events, "what it got", |app| {
+        app.chat().is_some_and(|chat| {
+            chat.rows(WIDTH)
+                .iter()
+                .any(|row| row.text().contains("blocks="))
+        })
+    });
+    let rows = app.chat().map(|chat| chat.rows(WIDTH)).unwrap_or_default();
+    rows.iter()
+        .map(|row| row.text())
+        .find(|text| text.contains("blocks="))
+        .unwrap_or_default()
+}
+
+/// A conversation about nothing in particular, taken up from the list, is
+/// not told again who it is talking to: the agent takes up every word of
+/// it, the opening among them, and what was written down says so.
+///
+/// The list read that half of the record only for a conversation about a
+/// note, and "told nothing" for every other -- so the first message after a
+/// restart carried the whole opening a second time, which is how a reader
+/// found it in front of a question halfway down a conversation.
+///
+/// Broken deliberately by putting back `None => (None, false)` for a
+/// conversation with no note in `App::take_up_conversation`: this read
+/// `first=always+workflow`. And by asking `App::remembered_telling` of a
+/// running agent only, the same -- nothing is running when the list is the
+/// first thing a window opens, which is what this starts as.
+#[test]
+fn a_loose_conversation_taken_up_from_the_list_is_not_introduced_again() {
+    let scratch = support::Scratch::new("agent-listed-introduced");
+    obelus_agent::acp::sessions::change(scratch.path(), 0, None, |remembered| {
+        remembered.put(
+            &obelus_agent::chats::ChatId::Loose("s-old".to_string()),
+            "fake",
+            scratch.path(),
+            obelus_agent::acp::sessions::Kept {
+                session: "s-old".to_string(),
+                title: Some("count the lines".to_string()),
+                told: None,
+                introduced: true,
+                last: Some(lately(1_000)),
+            },
+        );
+    });
+    // A window that has just started: nothing running, an agent named in
+    // the settings, and the list the first thing the reader opens.
+    let outcome = std::process::Command::new("git")
+        .arg("-C")
+        .arg(scratch.path())
+        .args(["init", "--quiet"])
+        .output()
+        .expect("running git");
+    assert!(outcome.status.success(), "git init failed");
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    let root = scratch.join("agents");
+    obelus_agent::remember(
+        "fake",
+        Path::new(support::sh()),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+        "0.1",
+        &root,
+    )
+    .expect("writing what was installed");
+    app.agents_root_for_test(root);
+    let file = scratch.join("config.toml");
+    std::fs::write(&file, "agent = \"fake\"\n").expect("a settings file");
+    app.config_file_for_test(file);
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
+    assert_eq!(
+        listed_conversations(&app)
+            .into_iter()
+            .map(|item| item.label.clone())
+            .collect::<Vec<_>>(),
+        ["count the lines"],
+        "the conversation written down is not on the list"
+    );
+    // Past the row that starts a new one, which the list opens on; and
+    // taking it up asks for its session itself.
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the conversation it was", |app| {
+        app.chat_session_for_test().as_deref() == Some("s-old")
+            && app.talking() == obelus_agent::Talking::Ready
+    });
+
+    let carried = what_the_next_prompt_carries(&mut app, &events);
+    assert!(
+        carried.contains("blocks=1 first=reader"),
+        "a conversation taken up again was told again who it is with: {carried}"
+    );
+}
+
+/// The first conversation about a note taken up in a window is not told
+/// again what it was told before: who it is with, and what the note says.
+///
+/// No agent is running when the reader goes to the note -- going there is
+/// what starts one -- and the record was asked of the running agent only,
+/// so the first conversation of every morning found nothing written down
+/// and sent the whole of its opening again.
+///
+/// Broken deliberately by asking `App::remembered_telling` of
+/// `self.talker` alone, as it was: this read `first=always+note+workflow`.
+#[test]
+fn the_first_note_conversation_of_a_window_is_not_introduced_again() {
+    let scratch = support::Scratch::new("agent-note-introduced");
+    support::make_room_for_notes(scratch.path());
+    std::fs::write(
+        obelus_git::todo::path(scratch.path()).expect("a tree that is there"),
+        "[[todo]]\nid = \"0123456Q\"\nsaid = \"a note\"\ndone = false\ndepth = 0\n",
+    )
+    .expect("the notes");
+    let id = obelus_git::todo::NoteId::read("0123456Q").expect("a name");
+    obelus_agent::acp::sessions::change(
+        scratch.path(),
+        0,
+        Some(std::slice::from_ref(&id)),
+        |remembered| {
+            remembered.put(
+                &obelus_agent::chats::ChatId::Note(id.clone()),
+                "fake",
+                scratch.path(),
+                obelus_agent::acp::sessions::Kept {
+                    session: "s-old".to_string(),
+                    title: None,
+                    told: Some("a note".to_string()),
+                    introduced: true,
+                    last: None,
+                },
+            );
+        },
+    );
+
+    // Nothing running and an agent named in the settings, the way
+    // `the_first_conversation_opened_after_a_restart_is_taken_up` starts.
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    let root = scratch.join("agents");
+    obelus_agent::remember(
+        "fake",
+        Path::new(support::sh()),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+        "0.1",
+        &root,
+    )
+    .expect("writing what was installed");
+    app.agents_root_for_test(root);
+    let file = scratch.join("config.toml");
+    std::fs::write(&file, "agent = \"fake\"\n").expect("a settings file");
+    app.config_file_for_test(file);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
+    talk_about_the_note(&mut app);
+    pump(&mut app, &events, "the old conversation", |app| {
+        said_in_transcript(app, "where we were") && app.talking() == obelus_agent::Talking::Ready
+    });
+
+    let carried = what_the_next_prompt_carries(&mut app, &events);
+    assert!(
+        carried.contains("blocks=1 first=reader"),
+        "a note's conversation taken up again was told it all again: {carried}"
+    );
+}
+
 /// A turn the fake agent answers with "heard you", and the reader back at
 /// the box once it has.
 fn answered() -> (App, Receiver<Event>) {
