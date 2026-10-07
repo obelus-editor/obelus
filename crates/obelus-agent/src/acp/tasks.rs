@@ -558,18 +558,23 @@ mod tests {
         assert_eq!(board.running(), 0);
     }
 
-    /// What is still going is listed before what has ended.
+    /// What is still going is listed before what has ended, and the most
+    /// recent first in each.
     ///
-    /// Deliberate break: list in the order they began, and the running one
-    /// started first is under the one that ended.
+    /// Two of each, because one of each says nothing about the order inside
+    /// a group. Deliberate breaks: take the `rev()` out of `listed`, and the
+    /// oldest comes first in each group; take the sort out, and the work
+    /// that ended last is above the work still running.
     #[test]
-    fn what_is_going_is_listed_first() {
+    fn what_is_going_is_listed_first_and_the_latest_first_in_each() {
         let mut board = Board::default();
-        board.hear(began("first", None));
-        board.hear(began("second", None));
-        board.hear(became("second", State::Done));
+        for id in ["first", "second", "third", "fourth"] {
+            board.hear(began(id, None));
+        }
+        board.hear(became("third", State::Done));
+        board.hear(became("fourth", State::Failed));
         let listed: Vec<&str> = board.listed().iter().map(|task| task.id.as_str()).collect();
-        assert_eq!(listed, vec!["first", "second"]);
+        assert_eq!(listed, vec!["second", "first", "fourth", "third"]);
     }
 
     /// A state taken back -- reported stopped, then running again -- is not
