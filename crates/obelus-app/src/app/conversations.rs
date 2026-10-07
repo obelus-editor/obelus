@@ -949,21 +949,16 @@ impl App {
             .iter()
             .enumerate()
             .find(|(_, document)| {
+                // By what names it, which is what claims it: for one about
+                // nothing in particular that is the session it has, the one
+                // it is asking for, or -- put back from last time and not
+                // shown yet -- the one it is to take up. Asked of the session
+                // alone, the last two were open here and listed as some
+                // other window's, under the lock this one was holding.
                 document
                     .as_ref()
                     .and_then(Document::chat)
-                    .is_some_and(|talk| match which {
-                        obelus_agent::chats::ChatId::Note(note) => {
-                            matches!(&talk.topic, Topic::Note(id) if id == note)
-                        }
-                        obelus_agent::chats::ChatId::Loose(session) => {
-                            talk.topic == Topic::Loose
-                                && talk
-                                    .session
-                                    .as_ref()
-                                    .is_some_and(|open| &*open.0 == session.as_str())
-                        }
-                    })
+                    .is_some_and(|talk| talk.which().as_ref() == Some(which))
             })
             .map(|(at, _)| DocumentId::new(at))
     }
