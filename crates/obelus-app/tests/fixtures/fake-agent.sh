@@ -70,17 +70,19 @@
 # `cygpath` is what those shells ship for exactly this, and where there is
 # none there is nothing to translate.
 here=$PWD
-# And the command this is asked to have run, in the words of the shell
-# that will run it -- see where it is sent, below.
-ran='sleep 0.3; printf %s obelus-ran-this; exit 3'
-# And one that does not end on its own. `sleep` is not `cmd`'s: it was
-# found only where Git's `usr\bin` was on `PATH`.
-forever='sleep 300'
+# And the command this is asked to have run, in words every shell Obelus
+# may reach for reads the same -- see where it is sent, below.
+ran='git -c "alias.x=!sleep 0.3; printf %s obelus-ran-this; exit 3" x'
+# And one that does not end on its own.
+forever='git -c "alias.x=!sleep 300" x'
 if command -v cygpath >/dev/null 2>&1; then
-    ran='ping -n 2 127.0.0.1 >nul & <nul set /p =obelus-ran-this& exit 3'
-    forever='ping -n 301 127.0.0.1 >nul'
     here=$(cygpath -m "$here")
 fi
+
+# Words as a JSON string holds them: the commands above carry quotes.
+json() {
+    printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
 
 # The id, verbatim: a number stays a number and a string keeps its quotes.
 # Real clients number requests however they like -- the protocol's own crate
@@ -440,18 +442,20 @@ while IFS= read -r line; do
             # already finished when the agent asks never reaches the half
             # of the client that holds the question open.
             #
-            # Written for whichever shell Obelus will reach for, which on
-            # Windows is `cmd`. Two tries said why it has to be: `cmd` does
-            # not know `;`, so the first ran `sleep` with the rest as its
-            # arguments (`invalid time interval '0.3;'`); and handing the
-            # whole thing to `sh` inside quotes does not survive `cmd /C`,
-            # which took the inner pair apart and left bash saying
-            # `unexpected EOF while looking for matching '"'`.
+            # Written for whichever shell Obelus will reach for, and this
+            # side cannot know which: on Windows that is `SHELL` where the
+            # reader's environment sets one -- Git Bash does -- and `cmd`
+            # where it does not, and Git's `sh` sets `SHELL` for this
+            # script whichever it was. Chosen by platform, the `cmd` line
+            # went to bash, which printed nothing, ran `exit 3`, and wrote
+            # a file called `nul` into the checkout.
             #
-            # So: no quotes and no `;` on that side. `&` is how cmd chains,
-            # `ping` is how it waits without a `sleep`, and
-            # `<nul set /p =` is how it prints without a line ending.
-            printf '{"jsonrpc":"2.0","id":920,"method":"terminal/create","params":{"sessionId":"%s","command":"%s","args":[]}}\n' "$session" "$ran"
+            # So one line both read alike: a program and one argument in
+            # double quotes, with nothing either shell would expand. `git`
+            # is on every machine these tests run on, and an alias that
+            # starts with `!` is run by git's own `sh`, which has `sleep`
+            # and `printf` where `cmd` has neither.
+            printf '{"jsonrpc":"2.0","id":920,"method":"terminal/create","params":{"sessionId":"%s","command":"%s","args":[]}}\n' "$session" "$(json "$ran")"
             ;;
         *'"id":920'*)
             term=$(printf '%s' "$line" | sed 's/.*"terminalId":"//; s/".*//')
@@ -478,7 +482,7 @@ while IFS= read -r line; do
             # the client has to survive, because the process is the
             # client's and nothing else can stop it.
             set_turn "$session" "$(id_of "$line")"
-            printf '{"jsonrpc":"2.0","id":930,"method":"terminal/create","params":{"sessionId":"%s","command":"%s","args":[]}}\n' "$session" "$forever"
+            printf '{"jsonrpc":"2.0","id":930,"method":"terminal/create","params":{"sessionId":"%s","command":"%s","args":[]}}\n' "$session" "$(json "$forever")"
             ;;
         *'"id":930'*)
             term=$(printf '%s' "$line" | sed 's/.*"terminalId":"//; s/".*//')

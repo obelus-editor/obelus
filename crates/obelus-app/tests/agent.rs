@@ -247,31 +247,23 @@ fn remember_telling(scratch: &support::Scratch, note: &str, session: &str, told:
     });
 }
 
-/// The command the fake agent asks to have run, in the words the shell
-/// that runs it takes.
+/// The command the fake agent asks to have run, in words `cmd` and a POSIX
+/// shell read alike.
 ///
-/// Said twice -- here and in the fake agent, beside its `cygpath` -- and
-/// it has to be: one of them is a shell script and the other is this, and
-/// what the row shows is the command line as it was sent. `cmd` knows
-/// neither `;` nor a quoted argument surviving `/C`, so that side chains
-/// with `&`, waits with `ping` and prints with `set /p`. No space before
-/// that `&`: `set /p` prints everything up to the separator, so one there
-/// is a space on the end of the output, and the page came back saying
-/// `obelus-ran-this  and ended 3`.
+/// Said twice -- here and in the fake agent -- and it has to be: one of
+/// them is a shell script and the other is this, and what the row shows is
+/// the command line as it was sent. One line for every system because
+/// neither side can tell which shell Obelus will hand it to: that is
+/// `SHELL` first, which Git Bash sets on Windows, and chosen by platform
+/// the `cmd` line went to bash and came back `it said  and ended 3`.
 fn ran_command() -> &'static str {
-    match cfg!(windows) {
-        true => "ping -n 2 127.0.0.1 >nul & <nul set /p =obelus-ran-this& exit 3",
-        false => "sleep 0.3; printf %s obelus-ran-this; exit 3",
-    }
+    "git -c \"alias.x=!sleep 0.3; printf %s obelus-ran-this; exit 3\" x"
 }
 
 /// The command the fake agent asks for that never ends on its own, said
 /// twice for the same reason as [`ran_command`].
 fn forever_command() -> &'static str {
-    match cfg!(windows) {
-        true => "ping -n 301 127.0.0.1 >nul",
-        false => "sleep 300",
-    }
+    "git -c \"alias.x=!sleep 300\" x"
 }
 
 /// Handles events until the application satisfies `until`, or gives up.
