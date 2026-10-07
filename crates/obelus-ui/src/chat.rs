@@ -577,6 +577,15 @@ fn said(setting: &acp::Setting) -> (String, Option<bool>) {
     }
 }
 
+/// What the count of background work says on the row: how much is still
+/// going, behind the mark a call wears for the same thing.
+fn tasks_said(running: usize) -> String {
+    match obelus_icons::enabled() {
+        true => format!("{}  {running}", obelus_icons::ui::BACKGROUND),
+        false => format!("Background {running}"),
+    }
+}
+
 /// How many cells one setting takes on the row, its tick and all.
 fn said_width((word, tick): &(String, Option<bool>)) -> usize {
     text_width(word) + tick.map_or(0, |_| usize::from(crate::TICK_WIDTH))
@@ -631,6 +640,9 @@ pub struct ChatView<'a> {
     /// How full the agent's memory of this conversation is, once it has
     /// said.
     usage: Option<&'a acp::Usage>,
+    /// How much of the agent's background work is still going here, where
+    /// it has told Obelus of any: the last stop on the row of settings.
+    tasks: Option<usize>,
     /// The chat this window can be reached from, and where it stands: the
     /// same mark a file's row carries, since this row is the one a reader
     /// working from a chat is most often on.
@@ -659,6 +671,7 @@ impl<'a> ChatView<'a> {
             note: app.note(),
             note_is_wrong: app.note_is_wrong(),
             usage: app.agent_usage(),
+            tasks: app.background_tasks(),
             remote: app.remote(),
         })
     }
@@ -1570,7 +1583,7 @@ impl ChatView<'_> {
     /// thing it is about is its name, so that is what is written, behind
     /// the box every switch in Obelus is drawn as.
     fn settings(&self, cells: &mut CellBuffer, area: Rect, room: usize, plain: Style) {
-        if self.settings.is_empty() {
+        if self.settings.is_empty() && self.tasks.is_none() {
             // Only once there is a session: before that the row would be
             // saying that an agent which has not spoken yet has nothing to
             // say about itself.
@@ -1589,10 +1602,7 @@ impl ChatView<'_> {
         // What each one says, and what it takes to say it. The focused one
         // carries the arrow Obelus puts on everything with a list behind
         // it, so it is wider than the others by exactly that.
-        let chosen = match self.focus {
-            Focus::Settings(at) => Some(at.min(self.settings.len() - 1)),
-            Focus::Transcript(_) | Focus::Writing => None,
-        };
+        let chosen = self.chosen_setting();
         let words = self.setting_words();
         let first = self.first_setting(&words, room);
 
@@ -1629,6 +1639,9 @@ impl ChatView<'_> {
                 // the colour a row nobody can choose is drawn in, under a
                 // box that already says which.
                 Some(false) => self.theme.gutter,
+                // The count of background work, with nothing still going:
+                // there to open, for what the work said, and not news.
+                None if index == self.settings.len() && self.tasks == Some(0) => self.theme.gutter,
                 Some(true) | None => self.theme.gutter_current,
             };
             let style = plain.fg(ink).bg(ground);
@@ -1656,9 +1669,14 @@ impl ChatView<'_> {
     /// The focused one carries the arrow Obelus puts on everything with a
     /// list behind it, so it is wider than the others by exactly that --
     /// which is why the words are made before anything measures them.
+    ///
+    /// And the count of the agent's background work after them, where it
+    /// has told Obelus of any: one more stop on the row, with a list behind
+    /// it like a setting's.
     fn setting_words(&self) -> Vec<(String, Option<bool>)> {
         let chosen = self.chosen_setting();
-        self.settings
+        let mut words: Vec<(String, Option<bool>)> = self
+            .settings
             .iter()
             .enumerate()
             .map(|(index, setting)| {
@@ -1668,13 +1686,26 @@ impl ChatView<'_> {
                 }
                 (word, tick)
             })
-            .collect()
+            .collect();
+        if let Some(running) = self.tasks {
+            let mut word = tasks_said(running);
+            if Some(self.settings.len()) == chosen {
+                word.push_str(&opens(false));
+            }
+            words.push((word, None));
+        }
+        words
+    }
+
+    /// How many stops the row has: the settings, and the count after them.
+    fn stops(&self) -> usize {
+        self.settings.len() + usize::from(self.tasks.is_some())
     }
 
     /// Which setting the keys are on, if they are up here at all.
     fn chosen_setting(&self) -> Option<usize> {
         match self.focus {
-            Focus::Settings(at) => Some(at.min(self.settings.len().saturating_sub(1))),
+            Focus::Settings(at) => Some(at.min(self.stops().saturating_sub(1))),
             Focus::Transcript(_) | Focus::Writing => None,
         }
     }
@@ -1778,8 +1809,9 @@ impl ChatView<'_> {
     /// of the row, the memory beside them, the marks that say there are
     /// more in either direction.
     #[must_use]
+    /// One past the last setting is the count of background work.
     pub fn setting_at(&self, area: Rect, x: u16, y: u16) -> Option<usize> {
-        if y != area.y || self.settings.is_empty() {
+        if y != area.y || self.stops() == 0 {
             return None;
         }
         let room = self.status_room(area);
@@ -1984,6 +2016,14 @@ impl ChatView<'_> {
                 self.theme.gutter_current,
             ),
             "completed" => (obelus_icons::ui::DONE, "Done", self.theme.gutter),
+            // Returned, with what it started still going: as bright as a
+            // running call, because it is, and still, because the agent is
+            // not the one busy with it.
+            acp::BACKGROUNDED => (
+                obelus_icons::ui::BACKGROUND,
+                "Background",
+                self.theme.gutter_current,
+            ),
             // The word the transcript already uses for the turn this call
             // was in, because it is the same fact said about a smaller
             // thing.
@@ -2168,6 +2208,7 @@ mod tests {
                 places: Vec::new(),
                 change: None,
                 ran: None,
+                backgrounded: false,
             },
             "pending",
         );
@@ -2199,6 +2240,7 @@ mod tests {
                 note: None,
                 note_is_wrong: false,
                 usage: None,
+                tasks: None,
                 remote: None,
             };
             let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2293,6 +2335,7 @@ mod caret {
                                 after: "after\n".to_string(),
                             }),
                             ran: None,
+                            backgrounded: false,
                         },
                         status,
                     );
@@ -2332,6 +2375,7 @@ mod caret {
                         note: None,
                         note_is_wrong: false,
                         usage: None,
+                        tasks: None,
                         remote: None,
                     };
                     let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2400,6 +2444,7 @@ mod caret {
             false,
             room,
             &[],
+            false,
         );
         let caret = super::ChatView::caret(area, &chat, None).expect("a caret in the transcript");
         assert!(
@@ -2443,6 +2488,7 @@ mod caret {
                     true,
                     room,
                     &[],
+                    false,
                 );
             }
             let caret = super::ChatView::caret(area, &chat, None).expect("a caret in the box");

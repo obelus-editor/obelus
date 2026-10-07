@@ -182,6 +182,9 @@ pub enum PickerValue {
     /// By its place in the list, as a conversation is: which window has it
     /// open, and how to reach that window, is the application's to know.
     Worktree(usize),
+    /// A piece of the agent's background work, by the agent's id for it:
+    /// choosing it opens what it has written.
+    Task(String),
     /// One of the ways out of a question Obelus stopped to ask.
     Answer(obelus_buffer::question::Answer),
     /// Nothing. A row that is there to say why the list is short.
@@ -838,6 +841,10 @@ pub struct Picker {
     /// filled the list, and per tab, because the other tab of that list is
     /// documents, which are only ever here.
     elsewhere: bool,
+    /// Whether this is a list of the agent's background work, and whether
+    /// its rows can be stopped from here -- which is the one key of its own
+    /// such a list has.
+    tasks: Option<bool>,
     /// Whether the rows of this list are only read.
     ///
     /// A list of things to be told rather than chosen from: what went wrong
@@ -944,6 +951,7 @@ impl Picker {
             nests: false,
             opens: false,
             elsewhere: false,
+            tasks: None,
             reads: false,
             filling: None,
             ordered: false,
@@ -1374,6 +1382,19 @@ impl Picker {
         self.elsewhere
     }
 
+    /// Says this is a list of the agent's background work, and whether a
+    /// row of it can be stopped -- which its foot says.
+    pub const fn lists_tasks(&mut self, stoppable: bool) {
+        self.tasks = Some(stoppable);
+        self.footed = true;
+    }
+
+    /// Whether it is one, and whether its rows can be stopped.
+    #[must_use]
+    pub const fn listing_tasks(&self) -> Option<bool> {
+        self.tasks
+    }
+
     /// Whether it does.
     #[must_use]
     pub const fn shows_previews(&self) -> bool {
@@ -1564,6 +1585,37 @@ impl Picker {
         self.listings += 1;
         self.window.set_focus(0);
         self.refilter();
+    }
+
+    /// Replaces every row with the same rows as they are now, standing on
+    /// the one the reader was on.
+    ///
+    /// Not [`Picker::replace`], which is for an answer that is a different
+    /// list: these are the same things, said again because one of them
+    /// moved on, and a selection sent back to the top under a reader who
+    /// was about to stop the third one stops the first.
+    ///
+    /// `same` says whether two rows' values are one thing: a value is not
+    /// always comparable, and the caller knows what its rows stand for.
+    pub fn renew(
+        &mut self,
+        items: Vec<PickerItem>,
+        same: impl Fn(&PickerValue, &PickerValue) -> bool,
+    ) {
+        let standing = self.selected_item().map(|item| item.value.clone());
+        self.items = Arc::new(items);
+        self.listings += 1;
+        self.refilter();
+        let at = standing.and_then(|standing| {
+            self.matched.iter().position(|(index, _)| {
+                self.items
+                    .get(*index)
+                    .is_some_and(|item| same(&item.value, &standing))
+            })
+        });
+        if let Some(at) = at {
+            self.window.set_focus(at);
+        }
     }
 
     /// Puts fresh marks on the rows the caller claims, without rebuilding

@@ -57,17 +57,19 @@
 //! one harmless. Both, because the first is Obelus's own discipline and the
 //! second is about what arrives.
 
+mod air;
 pub mod link;
 mod picture;
 pub mod sessions;
+pub mod tasks;
 
 use std::path::Path;
 
 pub use agent_client_protocol::schema::v1::SessionId;
 use futures::channel::mpsc;
 pub use link::{
-    Answer, Ask, Call, Category, Change, Choice, Chosen, Cost, Field, How, Incoming, Kind, Login,
-    Order, Place, Question, Reply, Setting, Step, Takes, Turn, Update, Usage, Value,
+    Answer, Ask, BACKGROUNDED, Call, Category, Change, Choice, Chosen, Cost, Field, How, Incoming,
+    Kind, Login, Order, Place, Question, Reply, Setting, Step, Takes, Turn, Update, Usage, Value,
 };
 use obelus_sink::Sink;
 
@@ -212,6 +214,10 @@ pub struct Talk {
     /// answer, so a count kept per conversation would be a count that has
     /// to be found before it can be used.
     turns: Turn,
+    /// Whether this agent tells Obelus of the work it goes on with in the
+    /// background, and whether it can be asked to stop any -- both settled
+    /// by what it said at the handshake, never assumed (see [`tasks`]).
+    tasks: (bool, bool),
 }
 
 /// One conversation, as the main loop needs to see it.
@@ -260,6 +266,9 @@ pub struct Session {
     /// back if the agent refuses, or the row goes on naming a mode the
     /// agent is not in.
     guessed: Option<(String, String)>,
+    /// The work the agent has gone on with in the background here, where it
+    /// says.
+    board: tasks::Board,
 }
 
 impl Session {
@@ -368,6 +377,7 @@ impl Talk {
             thrown: std::collections::HashSet::new(),
             named: std::collections::HashMap::new(),
             turns: 0,
+            tasks: (false, false),
         }
     }
 
@@ -604,6 +614,53 @@ impl Talk {
     #[must_use]
     pub fn setting(&self, session: Option<&SessionId>, id: &str) -> Option<&Setting> {
         self.session(session)?.setting(id)
+    }
+
+    /// The work the agent has gone on with in the background in one
+    /// conversation -- or nothing, where it does not tell Obelus of any.
+    ///
+    /// Nothing rather than an empty board for an agent that does not speak
+    /// of it, so that a view can tell "none running" from "no way to know",
+    /// and draw nothing at all for the second.
+    #[must_use]
+    pub fn tasks(&self, session: Option<&SessionId>) -> Option<&tasks::Board> {
+        let (heard, _) = self.tasks;
+        heard.then(|| self.session(session).map(|open| &open.board))?
+    }
+
+    /// Whether a piece of background work can be asked to stop here.
+    #[must_use]
+    pub const fn can_stop_tasks(&self) -> bool {
+        let (heard, stoppable) = self.tasks;
+        heard && stoppable
+    }
+
+    /// Asks for one to stop.
+    ///
+    /// Marked as stopping until the agent says what became of it: that it
+    /// has is its next update, and that it would not is
+    /// [`Incoming::NotStopped`].
+    pub fn stop_task(&mut self, session: Option<&SessionId>, id: &str) {
+        let Some(session) = session.cloned() else {
+            return;
+        };
+        if !self.can_stop_tasks() {
+            return;
+        }
+        let stoppable = self
+            .session(Some(&session))
+            .and_then(|open| open.board.find(id))
+            .is_some_and(|task| task.stoppable && !task.state.is_over());
+        if !stoppable {
+            return;
+        }
+        if let Some(open) = self.session_mut(Some(&session)) {
+            open.board.stopping(id);
+        }
+        let _ = self.asks.unbounded_send(Ask::StopTask {
+            session,
+            id: id.to_string(),
+        });
     }
 
     /// Puts one of them on one of its values.
@@ -946,6 +1003,42 @@ impl Talk {
                     update: Update::Settings(options),
                 })
             }
+            Incoming::Update {
+                session,
+                update: Update::Task(news),
+            } => {
+                self.sessions
+                    .entry(session.clone())
+                    .or_default()
+                    .board
+                    .hear(news.clone());
+                // Kept *and* passed up: the row of the call that started it
+                // is the conversation's, and changes when the work does.
+                Some(Incoming::Update {
+                    session,
+                    update: Update::Task(news),
+                })
+            }
+            Incoming::NotStopped { session, id } => {
+                if let Some(open) = self.sessions.get_mut(&session) {
+                    open.board.not_stopping(&id);
+                }
+                // Passed up, because a list of the work on screen still
+                // says it is stopping.
+                Some(Incoming::NotStopped { session, id })
+            }
+            Incoming::Tasks { heard, stoppable } => {
+                self.tasks = (heard, stoppable);
+                // Nothing will say any more about what was running, so it is
+                // ended here, and the rows that were waiting on it are told
+                // above this.
+                if !heard {
+                    for open in self.sessions.values_mut() {
+                        open.board.end_all();
+                    }
+                }
+                Some(Incoming::Tasks { heard, stoppable })
+            }
             Incoming::Ended { session, turn, why } => {
                 let open = self.sessions.entry(session.clone()).or_default();
                 // An answer about a turn that is not the one running is an
@@ -1050,6 +1143,7 @@ mod tests {
             thrown: std::collections::HashSet::new(),
             named: std::collections::HashMap::new(),
             turns: 0,
+            tasks: (false, false),
         }
     }
 

@@ -165,6 +165,10 @@ pub mod ui {
     pub const DONE: char = '\u{f012c}';
     /// One that did not.
     pub const BROKEN: char = '\u{f0159}';
+    /// One that returned while the work it started goes on -- and that work,
+    /// counted on the conversation's own row. Still where `RUNNING` turns:
+    /// the agent is not busy with it, the machine is.
+    pub const BACKGROUND: char = '\u{f0996}';
     /// Somewhere on the web the agent wants the reader to go.
     pub const AWAY: char = '\u{f03cc}';
     /// Not going there.

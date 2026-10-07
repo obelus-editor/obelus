@@ -124,6 +124,7 @@ impl App {
             // is the application's.
             Hearer::Layer(Layer::Picker) => {
                 self.page_preview(key)
+                    || self.background_key(key)
                     || self.listing_key(key)
                     || self.searching_key(key)
                     || self.picker_key(key)

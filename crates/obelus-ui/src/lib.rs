@@ -270,6 +270,10 @@ pub trait Screen {
     /// How full the agent's memory of this conversation is, once it has
     /// said -- and what it has cost, where it counts that too.
     fn agent_usage(&self) -> Option<&acp::Usage>;
+    /// How many pieces of the agent's background work are still going in
+    /// this conversation -- or nothing, where it has told Obelus of none
+    /// here, or does not speak of such work at all.
+    fn background_tasks(&self) -> Option<usize>;
     /// Who last changed each line of the file being read, if the answer has
     /// arrived and the reader wants to see it.
     fn blame(&self) -> Option<&[Option<obelus_git::Blamed>]>;

@@ -126,7 +126,8 @@
 use std::path::PathBuf;
 
 use agent_client_protocol::{
-    AcpAgentConfig, Agent, Client, ConnectionTo, JsonRpcResponse, Responder,
+    AcpAgentConfig, Agent, Client, ConnectionTo, Handled, JsonRpcResponse, Responder,
+    UntypedMessage,
     schema::{
         ProtocolVersion,
         v1::{
@@ -289,6 +290,14 @@ pub enum Ask {
     SignedIn,
     /// The reader will not sign in, so what was waiting on it never will be.
     GiveUp,
+    /// Stop a piece of background work, in the dialect the agent speaks --
+    /// see [`super::tasks`].
+    StopTask {
+        /// Which conversation started it.
+        session: SessionId,
+        /// Which piece of work, by the agent's id for it.
+        id: String,
+    },
 }
 
 /// A way the agent offers to be signed in to.
@@ -654,6 +663,30 @@ pub enum Incoming {
         /// Said once it is gone.
         answer: Answer<()>,
     },
+    /// What this connection hears of background work, which is a fact about
+    /// the agent and not about any one conversation.
+    ///
+    /// Said once the handshake has settled which dialect the agent speaks,
+    /// and again when that changes: a dialect given up on because it could
+    /// not be read, an agent that turned out not to stop what it said could
+    /// be stopped.
+    Tasks {
+        /// Whether Obelus hears of background work at all.
+        heard: bool,
+        /// Whether it can ask for any to be stopped.
+        stoppable: bool,
+    },
+    /// Asking for a piece of background work to stop came to nothing.
+    ///
+    /// Not a failure to show: the agent says it could not, or never said
+    /// anything Obelus could read, and what became of the work is whatever
+    /// its next update says. What this ends is Obelus saying it is stopping.
+    NotStopped {
+        /// Which conversation started it.
+        session: SessionId,
+        /// Which piece of work.
+        id: String,
+    },
     /// The conversation is over: the agent exited, or the protocol did.
     Gone(Option<String>),
 }
@@ -804,6 +837,9 @@ pub enum Update {
     /// How much of what the agent can hold this conversation is using, and
     /// what it has cost. Sent several times a turn.
     Used(Usage),
+    /// Something about a piece of work the agent goes on with after the
+    /// call that started it returned -- see [`super::tasks`].
+    Task(super::tasks::News),
 }
 
 /// How full the agent's memory of this conversation is, and what it has
@@ -1038,7 +1074,23 @@ pub struct Call {
     /// Empty on an update that carried none, which means "the same as
     /// before" like every other field here.
     pub said: Vec<String>,
+    /// Whether the work it started goes on after it, as the agent's dialect
+    /// for background work says -- see [`super::tasks`].
+    ///
+    /// A call that returned while what it started keeps running says
+    /// `completed` like any other, and a row that believed it would say the
+    /// server is done. False where nothing said so, which is every agent
+    /// that does not speak of background work at all.
+    pub backgrounded: bool,
 }
+
+/// What the row of a call whose work goes on says, in place of the
+/// protocol's `completed`.
+///
+/// Obelus's own word and not the wire's: the protocol has no state for a
+/// call that has returned while what it started has not, and `completed`
+/// is the one word that would be false.
+pub const BACKGROUNDED: &str = "backgrounded";
 
 /// The protocol's own word for one of its enums.
 ///
@@ -1346,6 +1398,12 @@ async fn talk(
     let agent = agent_client_protocol::AcpAgent::new(config);
 
     let updates = events.clone();
+    // Which dialect of background work the agent speaks, settled by the
+    // handshake and read by every update after it. Shared, because the
+    // handler is built before the handshake has happened and the asks are
+    // read after it.
+    let speaking = std::sync::Arc::new(std::sync::Mutex::new(Speaking::default()));
+    let hearing = speaking.clone();
     let asking = events.clone();
     let elicited = events.clone();
     let completed = events.clone();
@@ -1359,18 +1417,21 @@ async fn talk(
 
     let outcome = Client
         .builder()
+        // Untyped, and read here. Typed, an update of a kind the protocol's
+        // crate does not know -- a dialect's, or one a later protocol adds
+        // -- failed to parse and was an error for the connection, where the
+        // protocol asks for it to be ignored. Everything that is not an
+        // update goes on to the handlers after this one.
         .on_receive_notification(
-            async move |notification: SessionNotification, _connection| {
-                // Which conversation it is about, which the protocol has
-                // said all along.
-                let session = notification.session_id;
-                for update in read_update(notification.update) {
-                    let _ = updates.send(Event::Acp(Incoming::Update {
-                        session: session.clone(),
-                        update,
-                    }));
+            async move |notification: UntypedMessage, connection| {
+                if notification.method != UPDATE {
+                    return Ok(Handled::No {
+                        message: (notification, connection),
+                        retry: false,
+                    });
                 }
-                Ok(())
+                hear_update(notification.params, &hearing, &updates);
+                Ok(Handled::Yes)
             },
             agent_client_protocol::on_receive_notification!(),
         )
@@ -1781,6 +1842,17 @@ async fn talk(
                     named,
                     carries,
                     logins,
+                }));
+                // Which dialect of background work it answered in, if any.
+                // From what it said here and nothing else: not its name, not
+                // its version.
+                let dialect = super::tasks::Dialect::chosen(ready.meta.as_ref());
+                tracing::info!(?dialect, "what the agent says of background work");
+                lock(&speaking).dialect = dialect;
+                let heard = dialect != super::tasks::Dialect::None;
+                let _ = events.send(Event::Acp(Incoming::Tasks {
+                    heard,
+                    stoppable: heard,
                 }));
 
                 // Which way the tools can be handed over, decided once from
@@ -2212,6 +2284,53 @@ async fn talk(
                                     std::future::ready(Ok(()))
                                 })?;
                         }
+                        Ask::StopTask { session, id } => {
+                            let dialect = lock(&speaking).dialect;
+                            let told = events.clone();
+                            let Some((method, params)) = dialect.stop(&session.0, &id) else {
+                                let _ = told.send(Event::Acp(Incoming::NotStopped { session, id }));
+                                continue;
+                            };
+                            connection
+                                .send_request(UntypedMessage::new(method, params)?)
+                                .on_receiving_result(move |answer| {
+                                    // Stopped is said by the update that
+                                    // follows; what is said here is only
+                                    // what did not happen.
+                                    let refused = match answer {
+                                        Ok(answer) => dialect.stopped(&answer) == Some(false),
+                                        // The agent has no such method after
+                                        // all: nothing on this connection
+                                        // can be stopped, and the key that
+                                        // asks goes.
+                                        Err(error)
+                                            if error.code
+                                                == agent_client_protocol::ErrorCode::MethodNotFound =>
+                                        {
+                                            tracing::info!(
+                                                "the agent cannot stop background work after all"
+                                            );
+                                            let _ = told.send(Event::Acp(Incoming::Tasks {
+                                                heard: true,
+                                                stoppable: false,
+                                            }));
+                                            true
+                                        }
+                                        Err(error) => {
+                                            let _ = told.send(Event::Acp(Incoming::Failed(
+                                                "Stopping a background task",
+                                                error.to_string(),
+                                            )));
+                                            true
+                                        }
+                                    };
+                                    if refused {
+                                        let _ = told
+                                            .send(Event::Acp(Incoming::NotStopped { session, id }));
+                                    }
+                                    std::future::ready(Ok(()))
+                                })?;
+                        }
                         Ask::Mode { session, mode } => {
                             let told = events.clone();
                             connection
@@ -2308,12 +2427,111 @@ fn handshake() -> InitializeRequest {
                 // `_meta` program, and claude-agent-acp offers *no* way in
                 // to a client that says neither.
                 .auth(AuthCapabilities::new().terminal(true))
-                .meta(serde_json::Map::from_iter([(
-                    TERMINAL_AUTH.to_string(),
-                    serde_json::Value::Bool(true),
-                )])),
+                .meta(client_meta()),
         )
         .client_info(Implementation::new("obelus", env!("CARGO_PKG_VERSION")))
+}
+
+/// What goes in the client capabilities' `_meta`: the older word for a
+/// sign-in that is a program, and every dialect of background work Obelus
+/// reads.
+fn client_meta() -> agent_client_protocol::schema::v1::Meta {
+    let mut meta =
+        serde_json::Map::from_iter([(TERMINAL_AUTH.to_string(), serde_json::Value::Bool(true))]);
+    super::tasks::Dialect::declare(&mut meta);
+    meta
+}
+
+/// The method every update about a conversation arrives on.
+const UPDATE: &str = "session/update";
+
+/// What the connection has settled about background work: which dialect the
+/// agent speaks, and how much of it has been unreadable.
+#[derive(Debug, Default)]
+struct Speaking {
+    /// The dialect, once the handshake has said.
+    dialect: super::tasks::Dialect,
+    /// How many of its updates could not be read -- see
+    /// [`super::tasks::UNREADABLE`].
+    unreadable: u32,
+}
+
+/// The connection's word on background work, whatever became of the last
+/// thread that held it.
+///
+/// A panic while holding it leaves a value that is still whole -- two plain
+/// fields, set in one statement each -- so it is taken rather than refused.
+fn lock(speaking: &std::sync::Mutex<Speaking>) -> std::sync::MutexGuard<'_, Speaking> {
+    speaking
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Reads one `session/update` and sends on what it means.
+///
+/// The dialect of background work first, because its updates are kinds the
+/// protocol does not have; then the protocol's own. An update neither can
+/// read is left unread, which is what the protocol asks of a client -- it
+/// used to fail to parse and take the connection with it.
+fn hear_update(
+    params: serde_json::Value,
+    speaking: &std::sync::Mutex<Speaking>,
+    events: &impl Sink<Event>,
+) {
+    let dialect = lock(speaking).dialect;
+    let session = params
+        .get("sessionId")
+        .and_then(serde_json::Value::as_str)
+        .map(|id| SessionId::new(id.to_string()));
+    if let (Some(session), Some(update)) = (session.as_ref(), params.get("update"))
+        && let Some(read) = dialect.read(update)
+    {
+        match read {
+            Ok(news) => {
+                let _ = events.send(Event::Acp(Incoming::Update {
+                    session: session.clone(),
+                    update: Update::Task(news),
+                }));
+            }
+            Err(why) => {
+                let mut speaking = lock(speaking);
+                speaking.unreadable += 1;
+                tracing::warn!(
+                    why,
+                    unreadable = speaking.unreadable,
+                    "an update about background work Obelus could not read"
+                );
+                // Given up on once it is plainly not the dialect Obelus was
+                // written against any more -- and said, so that every list
+                // built from it goes rather than going on saying work runs.
+                if speaking.unreadable >= super::tasks::UNREADABLE
+                    && speaking.dialect != super::tasks::Dialect::None
+                {
+                    speaking.dialect = super::tasks::Dialect::None;
+                    tracing::warn!("background work is no longer heard on this connection");
+                    let _ = events.send(Event::Acp(Incoming::Tasks {
+                        heard: false,
+                        stoppable: false,
+                    }));
+                }
+            }
+        }
+        return;
+    }
+    match serde_json::from_value::<SessionNotification>(params) {
+        Ok(notification) => {
+            // Which conversation it is about, which the protocol has said
+            // all along.
+            let session = notification.session_id;
+            for update in read_update(notification.update, dialect) {
+                let _ = events.send(Event::Acp(Incoming::Update {
+                    session: session.clone(),
+                    update,
+                }));
+            }
+        }
+        Err(error) => tracing::debug!(%error, "an update Obelus cannot read, left unread"),
+    }
 }
 
 /// Where an agent written before the protocol had a word for it says a
@@ -2509,7 +2727,7 @@ fn reason_of(request: &RequestPermissionRequest) -> Option<String> {
 /// it goes, though -- a finished list of seven completed steps *is* a log,
 /// so it is never written into the transcript. It is what is happening
 /// now, and it is drawn where that is drawn.
-fn read_update(update: SessionUpdate) -> Vec<Update> {
+fn read_update(update: SessionUpdate, dialect: super::tasks::Dialect) -> Vec<Update> {
     match update {
         SessionUpdate::AgentMessageChunk(chunk) => words(&chunk.content)
             .map(Update::Said)
@@ -2532,13 +2750,17 @@ fn read_update(update: SessionUpdate) -> Vec<Update> {
                 change: change_of(&call.content),
                 ran: ran_in(&call.content),
                 said: words_of(&call.content),
+                backgrounded: dialect.backgrounded(call.meta.as_ref()),
             }),
             status: said_as(&call.status),
         }],
         // A later update carries only what changed, so what it leaves out
         // arrives here as nothing and is read as "the same as before".
         SessionUpdate::ToolCallUpdate(call) => vec![Update::Tool {
-            call: Box::new(call_of(&call.tool_call_id, &call.fields)),
+            call: Box::new(Call {
+                backgrounded: dialect.backgrounded(call.meta.as_ref()),
+                ..call_of(&call.tool_call_id, &call.fields)
+            }),
             status: call
                 .fields
                 .status
@@ -3005,6 +3227,9 @@ fn call_of(id: &ToolCallId, fields: &ToolCallUpdateFields) -> Call {
             .and_then(|content| change_of(&content)),
         ran: fields.content.clone().and_then(|content| ran_in(&content)),
         said: fields.content.as_deref().map(words_of).unwrap_or_default(),
+        // Asked of the update's `_meta` by whoever has one: a permission
+        // request carries the call's fields without it.
+        backgrounded: false,
     }
 }
 

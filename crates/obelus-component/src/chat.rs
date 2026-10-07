@@ -606,6 +606,8 @@ pub enum ChatOutcome {
     Choose(String),
     /// Flip one of its switches, by its id.
     Toggle(String),
+    /// Open the list of the work the agent goes on with in the background.
+    Tasks,
 }
 
 /// What the conversation's keys are moving.
@@ -620,7 +622,9 @@ pub enum Focus {
     /// The box. What is typed goes in it, and the caret is in it.
     #[default]
     Writing,
-    /// One of the settings on the status row, by its place in the list.
+    /// One of the settings on the status row, by its place in the list --
+    /// or one past the last of them, which is the count of the agent's
+    /// background work where the row carries one.
     Settings(usize),
 }
 
@@ -971,6 +975,10 @@ impl Chat {
     /// a model with no thinking levels takes that row away -- so the place
     /// the focus names has to be checked against the list that is really
     /// there, once a frame, like every other window in Obelus.
+    ///
+    /// `settings` is everything on the row the keys can stand on: the
+    /// settings, and the count of background work after them where there
+    /// is one.
     pub fn settle_focus(&mut self, settings: usize) {
         if let Focus::Settings(at) = self.focus {
             self.focus = match settings {
@@ -1554,6 +1562,12 @@ impl Chat {
             .iter_mut()
             .rev()
             .find(|said| said.tag.as_deref() == Some(call.id.as_str()));
+        // A call that returned while what it started goes on has not
+        // completed anything a reader would call done.
+        let status = match (call.backgrounded, status) {
+            (true, "completed") => obelus_agent::acp::BACKGROUNDED,
+            _ => status,
+        };
         let Some(said) = existing else {
             self.said.push(Said {
                 parts: Vec::new(),
@@ -1599,8 +1613,55 @@ impl Chat {
             said.words = call.said.clone();
         }
         if !status.is_empty() {
-            said.state = Some(status.to_string());
+            // Said once, by the update that carried the marker; the ones
+            // after it repeat `completed` without it, and are not news.
+            let kept = said.state.as_deref() == Some(obelus_agent::acp::BACKGROUNDED)
+                && status == "completed";
+            if !kept {
+                said.state = Some(status.to_string());
+            }
         }
+    }
+
+    /// The work a call started has gone on after it, whatever the call's own
+    /// updates said: the dialect said so of the work rather than of the call.
+    pub fn backgrounded(&mut self, id: &str) {
+        self.forget_the_layout();
+        if let Some(said) = self.call_mut(id)
+            && said.state.as_deref() == Some("completed")
+        {
+            said.state = Some(obelus_agent::acp::BACKGROUNDED.to_string());
+        }
+    }
+
+    /// The work a call started has ended, this way -- in the protocol's own
+    /// word for how a call ends.
+    pub fn background_ended(&mut self, id: &str, state: &str) {
+        self.forget_the_layout();
+        if let Some(said) = self.call_mut(id)
+            && said.state.as_deref() == Some(obelus_agent::acp::BACKGROUNDED)
+        {
+            said.state = Some(state.to_string());
+        }
+    }
+
+    /// Every row still saying its work goes on, ended as stopped: nothing is
+    /// left that could say otherwise.
+    pub fn background_ended_everywhere(&mut self) {
+        self.forget_the_layout();
+        for said in &mut self.said {
+            if said.state.as_deref() == Some(obelus_agent::acp::BACKGROUNDED) {
+                said.state = Some("cancelled".to_string());
+            }
+        }
+    }
+
+    /// The row of one call, by its id.
+    fn call_mut(&mut self, id: &str) -> Option<&mut Said> {
+        self.said
+            .iter_mut()
+            .rev()
+            .find(|said| said.speaker == Speaker::Tool && said.tag.as_deref() == Some(id))
     }
 
     /// The file the call with this id changed, once it has.
@@ -2424,6 +2485,7 @@ impl Chat {
         thinking: bool,
         room: Room,
         settings: &[obelus_agent::acp::Setting],
+        tasks: bool,
     ) -> ChatOutcome {
         let Some(modifiers) = obelus_editing::keymap::modifiers_of(key) else {
             return ChatOutcome::Ignored;
@@ -2497,7 +2559,7 @@ impl Chat {
         // that are the box's own, which it swallows rather than taking the
         // focus back with them.
         if let Focus::Settings(at) = self.focus
-            && let Some(outcome) = self.on_settings(key, bare, at, settings)
+            && let Some(outcome) = self.on_settings(key, bare, at, settings, tasks)
         {
             return outcome;
         }
@@ -2630,7 +2692,7 @@ impl Chat {
                 if self.input.down(room.writing) {
                     ChatOutcome::Consumed
                 } else if self.window.at_the_end() {
-                    if !settings.is_empty() {
+                    if !settings.is_empty() || tasks {
                         self.focus = Focus::Settings(0);
                     }
                     ChatOutcome::Consumed
@@ -2705,19 +2767,24 @@ impl Chat {
         bare: bool,
         at: usize,
         settings: &[obelus_agent::acp::Setting],
+        tasks: bool,
     ) -> Option<ChatOutcome> {
+        // Everything the keys can stand on: the settings, and the count of
+        // background work after them, which is one more stop on the row.
+        let stops = settings.len() + usize::from(tasks);
         match key.code {
             // Along the row, and round: it is a short cycle, and a reader
             // walking off one end means the other end.
-            KeyCode::Left if bare && !settings.is_empty() => {
-                let last = settings.len() - 1;
+            KeyCode::Left if bare && stops > 0 => {
+                let last = stops - 1;
                 self.focus = Focus::Settings(if at == 0 { last } else { at - 1 });
                 Some(ChatOutcome::Consumed)
             }
-            KeyCode::Right if bare && !settings.is_empty() => {
-                self.focus = Focus::Settings((at + 1) % settings.len());
+            KeyCode::Right if bare && stops > 0 => {
+                self.focus = Focus::Settings((at + 1) % stops);
                 Some(ChatOutcome::Consumed)
             }
+            KeyCode::Enter if bare && tasks && at == settings.len() => Some(ChatOutcome::Tasks),
             // Whatever the setting under the focus is: a list of values is
             // a list to open, and a switch has nowhere to go, so it flips.
             // The same judgement the row's drawing makes.
@@ -3595,7 +3662,7 @@ mod tests {
 
         // Into the transcript, which lands on its last row: the second
         // call's last row of title.
-        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[], false);
         let Focus::Transcript(at) = chat.focus() else {
             panic!("the cursor is not in the transcript");
         };
@@ -3605,7 +3672,7 @@ mod tests {
             "not on the title's last row"
         );
 
-        chat.handle_key(&key(KeyCode::BackTab), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::BackTab), false, ROOM, &[], false);
         let Focus::Transcript(at) = chat.focus() else {
             panic!("the cursor left the transcript");
         };
@@ -3633,8 +3700,8 @@ mod tests {
 
         // Into the transcript, on what the call printed, and up onto the
         // title's last row.
-        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
-        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[], false);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[], false);
         let Focus::Transcript(at) = chat.focus() else {
             panic!("the cursor is not in the transcript");
         };
@@ -3644,7 +3711,7 @@ mod tests {
             "not on the title's last row"
         );
 
-        chat.handle_key(&key(KeyCode::Enter), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Enter), false, ROOM, &[], false);
         let rows = laid(&chat);
         assert!(!rows[0].open, "enter did not close the call");
         assert_eq!(
@@ -3854,6 +3921,7 @@ mod tests {
             change: None,
             ran: None,
             said: Vec::new(),
+            backgrounded: false,
         }
     }
 
@@ -3931,7 +3999,7 @@ mod tests {
         // Deliberate break: taking either arm out of the match in `paste`,
         // and the word is in a box the focus is not in.
         let mut chat = walked();
-        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[], false);
         assert!(matches!(chat.focus(), Focus::Transcript(_)));
         chat.paste("你好", ROOM.writing);
         assert_eq!(chat.focus(), Focus::Writing, "the transcript kept the keys");
@@ -4013,7 +4081,7 @@ mod tests {
 
         // Up from the box lands at the end of the last row, which is the
         // words nearest the box.
-        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[], false);
         assert_eq!(
             chat.focus(),
             Focus::Transcript(Place {
@@ -4024,7 +4092,7 @@ mod tests {
 
         // The left arrow walks back along it a character at a time, rather
         // than leaving the row altogether.
-        chat.handle_key(&key(KeyCode::Left), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Left), false, ROOM, &[], false);
         assert_eq!(
             chat.focus(),
             Focus::Transcript(Place {
@@ -4034,7 +4102,7 @@ mod tests {
             "the left arrow did not walk the words"
         );
         // And home takes it to the start of the row it is on.
-        chat.handle_key(&key(KeyCode::Home), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Home), false, ROOM, &[], false);
         assert_eq!(
             chat.focus(),
             Focus::Transcript(Place {
@@ -4047,7 +4115,7 @@ mod tests {
         // already standing on one of the two: shift and tab goes to the
         // other.
         assert_eq!(last, stops[2], "the last row is the second tool call");
-        chat.handle_key(&key(KeyCode::BackTab), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::BackTab), false, ROOM, &[], false);
         assert_eq!(
             chat.focus(),
             Focus::Transcript(Place {
@@ -4059,19 +4127,19 @@ mod tests {
 
         // Enter opens what the row names.
         assert_eq!(
-            chat.handle_key(&key(KeyCode::Enter), false, ROOM, &[]),
+            chat.handle_key(&key(KeyCode::Enter), false, ROOM, &[], false),
             ChatOutcome::GoTo(place("/a.rs", 3))
         );
         // And on a row of nothing but words it does nothing, rather than
         // doing whatever the last row it was on did.
-        chat.handle_key(&key(KeyCode::Down), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Down), false, ROOM, &[], false);
         assert_eq!(
-            chat.handle_key(&key(KeyCode::Enter), false, ROOM, &[]),
+            chat.handle_key(&key(KeyCode::Enter), false, ROOM, &[], false),
             ChatOutcome::Consumed,
             "enter on a row of words did something"
         );
         // And tab forwards is the way back to the other one.
-        chat.handle_key(&key(KeyCode::Tab), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Tab), false, ROOM, &[], false);
         assert_eq!(
             chat.focus(),
             Focus::Transcript(Place {
@@ -4083,7 +4151,7 @@ mod tests {
 
         // Escape is the way back: it gives up on the nearest thing, which
         // is being in the transcript rather than the conversation.
-        let outcome = chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]);
+        let outcome = chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[], false);
         assert_eq!(outcome, ChatOutcome::Consumed, "escape closed the view");
         assert_eq!(chat.focus(), Focus::Writing);
     }
@@ -4122,10 +4190,10 @@ mod tests {
 
         // In at the foot, to the start of that row, and then two rows up:
         // away from the foot, in a column that is the end of nothing.
-        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
-        chat.handle_key(&key(KeyCode::Home), false, ROOM, &[]);
-        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
-        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[], false);
+        chat.handle_key(&key(KeyCode::Home), false, ROOM, &[], false);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[], false);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[], false);
         let Focus::Transcript(left) = chat.focus() else {
             panic!("the cursor is not in the transcript");
         };
@@ -4137,9 +4205,9 @@ mod tests {
 
         // Out to the box and back in: the column it left, on the foot
         // rather than on the row it left.
-        chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[], false);
         assert_eq!(chat.focus(), Focus::Writing, "escape did not reach the box");
-        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[], false);
         assert_eq!(
             chat.focus(),
             Focus::Transcript(Place {
@@ -4152,7 +4220,7 @@ mod tests {
         // Down is the other way out, and what arrives while the reader is
         // in the box moves the foot. Which is what they are taken to: the
         // row they left is now in the middle of what they have not read.
-        chat.handle_key(&key(KeyCode::Down), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Down), false, ROOM, &[], false);
         assert_eq!(chat.focus(), Focus::Writing, "down did not reach the box");
         chat.chunk(
             Speaker::Agent,
@@ -4162,7 +4230,7 @@ mod tests {
         chat.settle(chat.rows(ROOM.reading).len(), ROOM.transcript);
         let grown = chat.rows(ROOM.reading).len() - 1;
         assert!(grown > foot, "the rest of the answer made no rows");
-        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[], false);
         assert_eq!(
             chat.focus(),
             Focus::Transcript(Place {
@@ -4174,9 +4242,9 @@ mod tests {
 
         // And the wheel keeps the column, because a column is not a place
         // the view can be moved away from.
-        chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[], false);
         chat.scroll(-1);
-        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[], false);
         assert_eq!(
             chat.focus(),
             Focus::Transcript(Place {
@@ -4213,9 +4281,9 @@ mod tests {
 
         // In at the end of the words, then back over the last two of them
         // with shift down.
-        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
-        chat.handle_key(&shifted(KeyCode::Left), false, ROOM, &[]);
-        chat.handle_key(&shifted(KeyCode::Left), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[], false);
+        chat.handle_key(&shifted(KeyCode::Left), false, ROOM, &[], false);
+        chat.handle_key(&shifted(KeyCode::Left), false, ROOM, &[], false);
         assert_eq!(
             chat.copied(ROOM.reading),
             ("re".to_string(), "selection"),
@@ -4223,7 +4291,7 @@ mod tests {
         );
 
         // And a bare motion lets go.
-        chat.handle_key(&key(KeyCode::Left), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Left), false, ROOM, &[], false);
         assert!(!chat.holding(), "a bare motion kept the selection");
     }
 
@@ -4242,14 +4310,14 @@ mod tests {
         chat.settle(chat.rows(ROOM.reading).len(), ROOM.transcript);
         chat.put("abcdef");
 
-        chat.handle_key(&shifted(KeyCode::Left), false, ROOM, &[]);
-        chat.handle_key(&shifted(KeyCode::Left), false, ROOM, &[]);
+        chat.handle_key(&shifted(KeyCode::Left), false, ROOM, &[], false);
+        chat.handle_key(&shifted(KeyCode::Left), false, ROOM, &[], false);
         assert_eq!(
             chat.copied(ROOM.reading),
             ("ef".to_string(), "selection"),
             "shift and left did not hold what they passed over in the box"
         );
-        chat.handle_key(&shifted(KeyCode::Right), false, ROOM, &[]);
+        chat.handle_key(&shifted(KeyCode::Right), false, ROOM, &[], false);
         assert_eq!(
             chat.copied(ROOM.reading),
             ("f".to_string(), "selection"),
@@ -4270,7 +4338,7 @@ mod tests {
             at: 5,
         });
         assert!(chat.holding(), "the transcript did not take hold");
-        chat.handle_key(&shifted(KeyCode::Right), false, ROOM, &[]);
+        chat.handle_key(&shifted(KeyCode::Right), false, ROOM, &[], false);
         assert!(
             !chat.holding(),
             "the box took hold and the transcript kept its own"
@@ -4298,7 +4366,7 @@ mod tests {
         chat.settle(chat.rows(ROOM.reading).len(), ROOM.transcript);
         chat.put("a message I typed");
 
-        chat.handle_key(&shifted(KeyCode::Home), false, ROOM, &[]);
+        chat.handle_key(&shifted(KeyCode::Home), false, ROOM, &[], false);
         assert_eq!(
             chat.copied(ROOM.reading),
             ("a message I typed".to_string(), "selection"),
@@ -4312,8 +4380,8 @@ mod tests {
         // And the other end. A bare motion lets go first, the way it does
         // everywhere: shift and end straight after shift and home walks the
         // caret back to where the hold was anchored, and holds nothing.
-        chat.handle_key(&key(KeyCode::Home), false, ROOM, &[]);
-        chat.handle_key(&shifted(KeyCode::End), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Home), false, ROOM, &[], false);
+        chat.handle_key(&shifted(KeyCode::End), false, ROOM, &[], false);
         assert_eq!(
             chat.copied(ROOM.reading),
             ("a message I typed".to_string(), "selection"),
@@ -4324,12 +4392,12 @@ mod tests {
         // One selection between the two halves: taking hold in the box
         // lets the transcript go. Up twice, because the first press is
         // what lets go of what the box is holding.
-        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
-        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
-        chat.handle_key(&shifted(KeyCode::Left), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[], false);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[], false);
+        chat.handle_key(&shifted(KeyCode::Left), false, ROOM, &[], false);
         assert!(chat.holding(), "the transcript did not take hold");
-        chat.handle_key(&key(KeyCode::Down), false, ROOM, &[]);
-        chat.handle_key(&shifted(KeyCode::Home), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Down), false, ROOM, &[], false);
+        chat.handle_key(&shifted(KeyCode::Home), false, ROOM, &[], false);
         assert!(
             !chat.holding(),
             "the box took hold and the transcript kept its own"
@@ -4362,13 +4430,13 @@ mod tests {
         chat.settle(chat.rows(short.reading).len(), short.transcript);
 
         // From the box, where there is no cursor in the transcript to move.
-        chat.handle_key(&control(KeyCode::Home), false, short, &[]);
+        chat.handle_key(&control(KeyCode::Home), false, short, &[], false);
         assert_eq!(chat.focus(), Focus::Writing, "the box lost the keys");
         assert!(!chat.at_the_end(), "control and home did not leave the end");
 
         // And from inside it, where the cursor goes with the view.
-        chat.handle_key(&key(KeyCode::Up), false, short, &[]);
-        chat.handle_key(&control(KeyCode::End), false, short, &[]);
+        chat.handle_key(&key(KeyCode::Up), false, short, &[], false);
+        chat.handle_key(&control(KeyCode::End), false, short, &[], false);
         let rows = chat.rows(short.reading);
         let last = rows.len() - 1;
         assert_eq!(
@@ -4382,7 +4450,7 @@ mod tests {
         assert!(chat.at_the_end(), "control and end did not reach the end");
         assert!(!chat.holding(), "control and end held a row instead");
 
-        chat.handle_key(&control(KeyCode::Home), false, short, &[]);
+        chat.handle_key(&control(KeyCode::Home), false, short, &[], false);
         assert_eq!(
             chat.focus(),
             Focus::Transcript(Place {
@@ -4431,12 +4499,12 @@ mod tests {
         // Into the transcript -- which lands at the end of the last row --
         // and then up to the first bullet and along it with the arrows,
         // because the cursor in here is only ever put somewhere by a key.
-        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[], false);
         for _ in 0..3 {
-            chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+            chat.handle_key(&key(KeyCode::Up), false, ROOM, &[], false);
         }
         for _ in 0..9 {
-            chat.handle_key(&key(KeyCode::Right), false, ROOM, &[]);
+            chat.handle_key(&key(KeyCode::Right), false, ROOM, &[], false);
         }
         assert_eq!(
             chat.focus(),
@@ -4447,7 +4515,7 @@ mod tests {
             "the cursor is not in the middle of the first bullet"
         );
 
-        chat.handle_key(&shifted(KeyCode::Home), false, ROOM, &[]);
+        chat.handle_key(&shifted(KeyCode::Home), false, ROOM, &[], false);
         assert_eq!(
             chat.copied(ROOM.reading),
             ("alpha b".to_string(), "selection"),
@@ -4456,12 +4524,12 @@ mod tests {
 
         // The same on a quote, whose bar is drawn the same way.
         for _ in 0..3 {
-            chat.handle_key(&key(KeyCode::Down), false, ROOM, &[]);
+            chat.handle_key(&key(KeyCode::Down), false, ROOM, &[], false);
         }
         for _ in 0..7 {
-            chat.handle_key(&key(KeyCode::Right), false, ROOM, &[]);
+            chat.handle_key(&key(KeyCode::Right), false, ROOM, &[], false);
         }
-        chat.handle_key(&shifted(KeyCode::Home), false, ROOM, &[]);
+        chat.handle_key(&shifted(KeyCode::Home), false, ROOM, &[], false);
         assert_eq!(
             chat.copied(ROOM.reading),
             ("a quo".to_string(), "selection"),
@@ -4492,9 +4560,9 @@ mod tests {
         chat.chunk(Speaker::Agent, "**Two**\nopen the page and press it\n");
         chat.settle(chat.rows(ROOM.reading).len(), ROOM.transcript);
 
-        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
-        chat.handle_key(&key(KeyCode::Home), false, ROOM, &[]);
-        chat.handle_key(&shifted(KeyCode::End), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[], false);
+        chat.handle_key(&key(KeyCode::Home), false, ROOM, &[], false);
+        chat.handle_key(&shifted(KeyCode::End), false, ROOM, &[], false);
         assert_eq!(
             chat.copied(ROOM.reading),
             ("Two open the page and press it".to_string(), "selection"),
@@ -4789,7 +4857,7 @@ mod tests {
 
         // In at the one nearest the box, then a page up: the view moves,
         // and the cursor lands on what the view now holds.
-        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[], false);
         assert_eq!(
             chat.focus(),
             Focus::Transcript(Place {
@@ -4798,7 +4866,7 @@ mod tests {
             }),
             "the cursor did not come in at the end of the last row"
         );
-        chat.handle_key(&key(KeyCode::PageUp), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::PageUp), false, ROOM, &[], false);
         let Focus::Transcript(place) = chat.focus() else {
             panic!("the page took the cursor out of the transcript");
         };
@@ -4834,8 +4902,8 @@ mod tests {
     #[test]
     fn typing_in_the_transcript_goes_nowhere() {
         let mut chat = walked();
-        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
-        chat.handle_key(&shifted(KeyCode::Left), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Up), false, ROOM, &[], false);
+        chat.handle_key(&shifted(KeyCode::Left), false, ROOM, &[], false);
         let at = chat.focus();
         assert!(matches!(at, Focus::Transcript(_)), "not in the transcript");
         assert!(chat.holding(), "nothing held, so this proves nothing");
@@ -4847,7 +4915,7 @@ mod tests {
             shifted(KeyCode::Enter),
             KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT),
         ] {
-            chat.handle_key(&pressed, false, ROOM, &[]);
+            chat.handle_key(&pressed, false, ROOM, &[], false);
             assert_eq!(chat.focus(), at, "{pressed:?} moved the cursor");
             assert!(chat.holding(), "{pressed:?} let go of what was held");
         }
@@ -4884,7 +4952,7 @@ mod tests {
             shifted(KeyCode::Enter),
             KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT),
         ] {
-            let outcome = chat.handle_key(&pressed, false, ROOM, &settings);
+            let outcome = chat.handle_key(&pressed, false, ROOM, &settings, false);
             assert!(
                 matches!(outcome, ChatOutcome::Consumed),
                 "{pressed:?} was not taken by the row"
@@ -4999,7 +5067,7 @@ mod tests {
 
         // Back down to the end, and it follows again.
         for _ in 0..5 {
-            chat.handle_key(&key(KeyCode::Down), false, ROOM, &[]);
+            chat.handle_key(&key(KeyCode::Down), false, ROOM, &[], false);
         }
         chat.settle(rows, 10);
         assert_eq!(chat.top(), rows - 10);
@@ -5025,10 +5093,10 @@ mod tests {
     fn escape_stops_the_agent_then_empties_the_box() {
         let mut chat = Chat::new();
         for character in "hello".chars() {
-            chat.handle_key(&key(KeyCode::Char(character)), false, ROOM, &[]);
+            chat.handle_key(&key(KeyCode::Char(character)), false, ROOM, &[], false);
         }
         assert_eq!(
-            chat.handle_key(&key(KeyCode::Esc), true, ROOM, &[]),
+            chat.handle_key(&key(KeyCode::Esc), true, ROOM, &[], false),
             ChatOutcome::Interrupt
         );
         assert_eq!(chat.writing().text(), "hello", "stopping emptied the box");
@@ -5038,10 +5106,11 @@ mod tests {
             false,
             ROOM,
             &[],
+            false,
         );
         assert!(chat.writing().selected().is_some(), "nothing was held");
         assert_eq!(
-            chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]),
+            chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[], false),
             ChatOutcome::Consumed
         );
         assert_eq!(
@@ -5064,7 +5133,7 @@ mod tests {
             at: 5,
         });
         assert_eq!(
-            chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]),
+            chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[], false),
             ChatOutcome::Consumed
         );
         assert_eq!(
@@ -5074,7 +5143,7 @@ mod tests {
         );
         assert!(!chat.holding(), "escape kept hold of the transcript");
         assert_eq!(
-            chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]),
+            chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[], false),
             ChatOutcome::Consumed
         );
         assert_eq!(chat.writing().text(), "", "escape left the box as it was");
@@ -5082,7 +5151,7 @@ mod tests {
         // conversation is a document, and escape leaves what is *over* a
         // document. There is nothing over this one.
         assert_eq!(
-            chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[]),
+            chat.handle_key(&key(KeyCode::Esc), false, ROOM, &[], false),
             ChatOutcome::Ignored
         );
     }
@@ -5101,24 +5170,24 @@ mod tests {
         let mut chat = Chat::new();
         chat.note("something said");
         for character in "ab".chars() {
-            chat.handle_key(&key(KeyCode::Char(character)), false, ROOM, &[]);
+            chat.handle_key(&key(KeyCode::Char(character)), false, ROOM, &[], false);
         }
-        chat.handle_key(&shift(KeyCode::Enter), false, ROOM, &[]);
+        chat.handle_key(&shift(KeyCode::Enter), false, ROOM, &[], false);
         for character in "cd".chars() {
-            chat.handle_key(&key(KeyCode::Char(character)), false, ROOM, &[]);
+            chat.handle_key(&key(KeyCode::Char(character)), false, ROOM, &[], false);
         }
         assert_eq!(
-            chat.handle_key(&shift(KeyCode::Up), false, ROOM, &[]),
+            chat.handle_key(&shift(KeyCode::Up), false, ROOM, &[], false),
             ChatOutcome::Consumed
         );
         assert_eq!(chat.writing().selected().as_deref(), Some("\ncd"));
         // From the top row there is nowhere to go, and the box keeps it.
-        chat.handle_key(&shift(KeyCode::Up), false, ROOM, &[]);
+        chat.handle_key(&shift(KeyCode::Up), false, ROOM, &[], false);
         assert_eq!(chat.focus(), Focus::Writing, "it left the box");
         assert!(chat.writing().selected().is_some(), "it let go");
         // And back down, to where it started.
-        chat.handle_key(&shift(KeyCode::Down), false, ROOM, &[]);
-        chat.handle_key(&shift(KeyCode::Down), false, ROOM, &[]);
+        chat.handle_key(&shift(KeyCode::Down), false, ROOM, &[], false);
+        chat.handle_key(&shift(KeyCode::Down), false, ROOM, &[], false);
         assert_eq!(chat.focus(), Focus::Writing, "it left the box");
         assert_eq!(chat.writing().text(), "ab\ncd", "the keys wrote something");
     }
@@ -5178,13 +5247,13 @@ mod tests {
     fn what_is_typed_is_sent_once() {
         let mut chat = Chat::new();
         for character in "hello".chars() {
-            chat.handle_key(&key(KeyCode::Char(character)), false, ROOM, &[]);
+            chat.handle_key(&key(KeyCode::Char(character)), false, ROOM, &[], false);
         }
-        chat.handle_key(&key(KeyCode::Backspace), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Backspace), false, ROOM, &[], false);
         assert_eq!(chat.writing().text(), "hell");
 
         assert_eq!(
-            chat.handle_key(&key(KeyCode::Enter), false, ROOM, &[]),
+            chat.handle_key(&key(KeyCode::Enter), false, ROOM, &[], false),
             ChatOutcome::Send(vec![Part::Words("hell".to_string())])
         );
         // Sent, so the row is empty: a prompt still sitting there after
@@ -5196,7 +5265,7 @@ mod tests {
         // turn without them. What is waiting is rows in the transcript
         // now, and each of them has its own key.
         assert_eq!(
-            chat.handle_key(&key(KeyCode::Enter), false, ROOM, &[]),
+            chat.handle_key(&key(KeyCode::Enter), false, ROOM, &[], false),
             ChatOutcome::Consumed
         );
     }
@@ -5208,7 +5277,7 @@ mod tests {
         let mut chat = Chat::new();
         let quit = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL);
         assert_eq!(
-            chat.handle_key(&quit, false, ROOM, &[]),
+            chat.handle_key(&quit, false, ROOM, &[], false),
             ChatOutcome::Ignored
         );
         assert_eq!(chat.writing().text(), "", "it typed the chord into the row");

@@ -86,6 +86,20 @@ fn every_hint(picker: &Picker) -> Vec<Hint> {
     if !picker.says_keys() {
         return Vec::new();
     }
+    // The agent's background work: enter opens what a row has written, and
+    // this stops it. Greyed rather than dropped where the agent turned out
+    // not to stop anything, so the foot says the key exists and is not
+    // working here.
+    if let Some(stoppable) = picker.listing_tasks() {
+        return vec![
+            Hint::common(
+                obelus_editing::keymap::KeyChord::new(KeyCode::Char('s'), KeyModifiers::ALT),
+                "Stop",
+            )
+            .saying("Ask the agent to stop this piece of background work")
+            .when(stoppable),
+        ];
+    }
     // The two enters, where a row both holds something and is somewhere to
     // go. Said at the foot although a list's enter is normally not news,
     // because here it is: this is the one list where enter does not take
