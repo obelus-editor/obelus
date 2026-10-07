@@ -635,7 +635,7 @@ enum Waiting {
 /// The half of a copy that is somebody else's program, or the terminal.
 fn to_a_program(text: &str, waiting: Waiting) -> io::Result<()> {
     let Some((program, arguments, _, _)) = provider().commands() else {
-        return write_to(&mut io::stdout().lock(), text);
+        return to_the_terminal(&mut io::stdout().lock(), text);
     };
     let mut child = obelus_program::without_a_window(&mut Command::new(program))
         .args(arguments)
@@ -653,7 +653,21 @@ fn to_a_program(text: &str, waiting: Waiting) -> io::Result<()> {
     Ok(())
 }
 
-/// The same, to somewhere a test can read.
+/// The escape sequence, where the provider is the terminal.
+///
+/// Not for [`Provider::Kept`], which has no command either and means
+/// nothing outside Obelus at all. Written anyway, it reaches the terminal
+/// a test suite is running in -- the harness captures `print!` and not a
+/// write to stdout -- and that terminal puts the words on the clipboard of
+/// whoever is running it.
+fn to_the_terminal<W: io::Write>(out: &mut W, text: &str) -> io::Result<()> {
+    if provider() == Provider::Kept {
+        return Ok(());
+    }
+    write_to(out, text)
+}
+
+/// The sequence itself, to somewhere a test can read.
 ///
 /// Split out because the sequence itself is the whole of what this module
 /// does, and a wrong one is invisible: the terminal ignores it, so nothing
@@ -741,6 +755,29 @@ mod tests {
         assert!(
             picture().is_none(),
             "a shape that produced no bytes was taken for a picture"
+        );
+    }
+
+    /// A copy under the clipboard a test asks for writes nothing to the
+    /// terminal, and one under the escape sequence writes the sequence.
+    ///
+    /// The second half is what makes the first a claim: without it, a
+    /// `to_the_terminal` that never wrote would pass.
+    ///
+    /// Deliberate break: `to_the_terminal` without its question about
+    /// `Kept`, which writes the sequence into the first buffer.
+    #[test]
+    fn a_test_copy_reaches_no_terminal() {
+        use_provider_for_test(Provider::Kept);
+        let mut written = Vec::new();
+        to_the_terminal(&mut written, "what Obelus cut").expect("writing to a vector");
+        assert!(written.is_empty(), "a test's copy reached the terminal");
+
+        use_provider_for_test(Provider::Osc52);
+        to_the_terminal(&mut written, "what Obelus cut").expect("writing to a vector");
+        assert!(
+            written.starts_with(b"\x1b]52;c;"),
+            "the terminal was not written to"
         );
     }
 
