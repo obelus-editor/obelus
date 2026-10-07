@@ -33,8 +33,9 @@ pub struct Hover {
     pointed: bool,
     /// How far down it the reader has read.
     scrolled: usize,
-    /// The markdown, laid out for the width it was last drawn at.
-    rendered: Option<(u16, Vec<Row>)>,
+    /// The markdown, laid out for the width it was last drawn at and the
+    /// characters the window was drawing as pictures then.
+    rendered: Option<((u16, u64), Vec<Row>)>,
 }
 
 impl std::fmt::Debug for Hover {
@@ -88,8 +89,9 @@ impl Hover {
 
     /// Lays the markdown out for a width, if it is not laid out already.
     pub fn settle(&mut self, width: u16, height: u16) {
-        if self.rendered.as_ref().is_none_or(|(was, _)| *was != width) {
-            self.rendered = Some((width, obelus_markdown::render(&self.markdown, width)));
+        let asked = (width, obelus_text::pictures_version());
+        if self.rendered.as_ref().is_none_or(|(was, _)| *was != asked) {
+            self.rendered = Some((asked, obelus_markdown::render(&self.markdown, width)));
         }
         let rows = self.rows().len();
         self.scrolled = self.scrolled.min(rows.saturating_sub(usize::from(height)));

@@ -709,6 +709,10 @@ pub struct Place {
     pub character: usize,
 }
 
+/// What a conversation's rows were laid out against: a width, and a
+/// version of `obelus_text`'s table of pictures.
+type LaidAt = (u16, u64);
+
 /// A conversation.
 ///
 /// `Default` is `new` rather than derived, because the two differed and the
@@ -720,8 +724,9 @@ pub struct Place {
 pub struct Chat {
     /// What has been said, oldest first.
     said: Vec<Said>,
-    /// The rows as they were last laid out, and the width they were laid
-    /// out at.
+    /// The rows as they were last laid out, and what they were laid out
+    /// against: the width, and which characters the window draws as
+    /// pictures.
     ///
     /// Laying out a conversation means making rows of every word ever said
     /// in it, at the width of the moment -- wrapping it, reading the
@@ -740,7 +745,7 @@ pub struct Chat {
     /// one is a screen that has stopped saying what happened, so the rule
     /// is to drop it wherever there is a doubt: laying out again costs
     /// milliseconds and being wrong costs the reader their conversation.
-    laid: std::cell::RefCell<Option<(u16, Vec<Row>)>>,
+    laid: std::cell::RefCell<Option<(LaidAt, Vec<Row>)>>,
     /// What is happening now, if anything is.
     ///
     /// One slot rather than a line of the transcript: a state has no
@@ -1641,17 +1646,22 @@ impl Chat {
 
     /// The rows, laid out or remembered from the last time they were.
     fn laid_out(&self, width: u16) -> Vec<Row> {
+        // And against which characters are pictures, which is a question
+        // about the window's fonts and changes when the reader's do: a
+        // heart laid out one cell wide and drawn two runs into the word
+        // after it.
+        let at = (width, obelus_text::pictures_version());
         if let Some(rows) = self
             .laid
             .borrow()
             .as_ref()
-            .filter(|(at, _)| *at == width)
+            .filter(|(laid, _)| *laid == at)
             .map(|(_, rows)| rows.clone())
         {
             return rows;
         }
         let rows = self.lay_out(width);
-        *self.laid.borrow_mut() = Some((width, rows.clone()));
+        *self.laid.borrow_mut() = Some((at, rows.clone()));
         rows
     }
 
@@ -2921,11 +2931,29 @@ impl Chat {
     /// the screen, wherever in the words it happens to come from.
     fn walked(place: Place, key: KeyCode, laid: &[Row], room: Room) -> Option<Place> {
         let characters = |row: usize| laid.get(row).map_or(0, Row::characters);
+        // Where a caret may stand on a row: between clusters, so that a
+        // picture and its selector, or a letter and its accent, are one
+        // step -- the same as in a file. See `Text::cluster_before`.
+        let stops = |row: usize| {
+            laid.get(row)
+                .map_or_else(|| vec![0], |row| obelus_text::boundaries(&row.text()))
+        };
+        let settled = |place: Place| Place {
+            character: stops(place.row)
+                .into_iter()
+                .take_while(|stop| *stop <= place.character)
+                .last()
+                .unwrap_or(0),
+            ..place
+        };
         let rows = laid.len();
         let here = characters(place.row);
-        Some(match key {
+        Some(settled(match key {
             KeyCode::Right if place.character < here => Place {
-                character: place.character + 1,
+                character: stops(place.row)
+                    .into_iter()
+                    .find(|stop| *stop > place.character)
+                    .unwrap_or(here),
                 ..place
             },
             // Off the end of a row and on to the start of the next, which
@@ -2935,7 +2963,11 @@ impl Chat {
                 character: 0,
             },
             KeyCode::Left if place.character > 0 => Place {
-                character: place.character - 1,
+                character: stops(place.row)
+                    .into_iter()
+                    .take_while(|stop| *stop < place.character)
+                    .last()
+                    .unwrap_or(0),
                 ..place
             },
             KeyCode::Left if place.row > 0 => Place {
@@ -2978,7 +3010,7 @@ impl Chat {
                 }
             }
             _ => return None,
-        })
+        }))
     }
 
     /// Walks the transcript with the cursor, and holds what it walks over
@@ -3909,6 +3941,57 @@ mod tests {
         chat.focus = Focus::Settings(0);
         chat.paste("你好", ROOM.writing);
         assert_eq!(chat.focus(), Focus::Writing, "the row kept the keys");
+    }
+
+    /// The cursor in the transcript steps over a picture and its selector
+    /// in one press, the way the caret in a file does, and up and down
+    /// never leave it between the two.
+    ///
+    /// Deliberate break: a step of one character, which is what the arrows
+    /// were -- the first stop is between the heart and its selector.
+    #[test]
+    fn the_cursor_in_the_transcript_steps_over_a_whole_cluster() {
+        let mut chat = Chat::new();
+        chat.chunk(Speaker::Agent, "a\u{2764}\u{fe0f}b");
+        let rows = chat.rows(ROOM.reading);
+        let row = rows
+            .iter()
+            .position(|row| row.text().contains('\u{2764}'))
+            .expect("the heart is on a row");
+        let start = rows[row]
+            .text()
+            .chars()
+            .position(|c| c == 'a')
+            .expect("the a");
+        chat.focus = Focus::Transcript(Place {
+            row,
+            character: start,
+        });
+        let mut stops = Vec::new();
+        for _ in 0..3 {
+            chat.handle_key(&key(KeyCode::Right), false, ROOM, &[]);
+            if let Focus::Transcript(place) = chat.focus() {
+                stops.push(place.character - start);
+            }
+        }
+        assert_eq!(stops, [1, 3, 4], "stepping right");
+
+        // Standing between the two, which a place carried over from a row
+        // laid out differently could leave it: left goes to the start of
+        // the picture, not past it.
+        chat.focus = Focus::Transcript(Place {
+            row,
+            character: start + 2,
+        });
+        chat.handle_key(&key(KeyCode::Left), false, ROOM, &[]);
+        assert_eq!(
+            chat.focus(),
+            Focus::Transcript(Place {
+                row,
+                character: start + 1
+            }),
+            "stepping left from inside the picture"
+        );
     }
 
     #[test]

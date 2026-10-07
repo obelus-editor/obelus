@@ -9,6 +9,8 @@ pub mod coordinates;
 pub mod kind;
 pub mod marker;
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use ropey::{Rope, RopeSlice};
 use unicode_linebreak::linebreaks;
 use unicode_width::UnicodeWidthChar;
@@ -341,6 +343,80 @@ impl Text {
         column.min(self.line_length(line))
     }
 
+    /// Where the caret goes one step left: the start of the cluster behind it.
+    ///
+    /// A cluster is what a reader sees as one character -- `❤` and the
+    /// selector that makes it a picture, `e` and the accent over it -- and
+    /// there is no place inside one a reader could point at. A caret
+    /// between the two halves is drawn where the whole thing ends, so a key
+    /// that put it there moved nothing anybody can see, and a letter typed
+    /// there splits the picture from what asked for it.
+    ///
+    /// Zero at the start of the line: what lies beyond that is the caller's.
+    #[must_use]
+    pub fn cluster_before(&self, line: LineNumber, column: CharColumn) -> CharColumn {
+        let column = column.get();
+        CharColumn::new(
+            self.boundaries(line)
+                .into_iter()
+                .take_while(|boundary| *boundary < column)
+                .last()
+                .unwrap_or(0),
+        )
+    }
+
+    /// Where the caret goes one step right: the end of the cluster in
+    /// front of it, or the end of the line.
+    #[must_use]
+    pub fn cluster_after(&self, line: LineNumber, column: CharColumn) -> CharColumn {
+        let column = column.get();
+        let boundaries = self.boundaries(line);
+        let end = boundaries.last().copied().unwrap_or(0);
+        CharColumn::new(
+            boundaries
+                .into_iter()
+                .find(|boundary| *boundary > column)
+                .unwrap_or(end),
+        )
+    }
+
+    /// The nearest place a caret may stand, at or before `column`.
+    #[must_use]
+    pub fn cluster_start(&self, line: LineNumber, column: CharColumn) -> CharColumn {
+        let column = column.get();
+        CharColumn::new(
+            self.boundaries(line)
+                .into_iter()
+                .take_while(|boundary| *boundary <= column)
+                .last()
+                .unwrap_or(0),
+        )
+    }
+
+    /// The same, at or after it.
+    #[must_use]
+    pub fn cluster_end(&self, line: LineNumber, column: CharColumn) -> CharColumn {
+        let column = column.get();
+        let boundaries = self.boundaries(line);
+        let end = boundaries.last().copied().unwrap_or(0);
+        CharColumn::new(
+            boundaries
+                .into_iter()
+                .find(|boundary| *boundary >= column)
+                .unwrap_or(end),
+        )
+    }
+
+    /// Every column of a line a caret may stand at, ascending: zero, each
+    /// place one cluster ends and the next begins, and the end of the line.
+    ///
+    /// The extended clusters, which are the ones that keep a picture with
+    /// its selector and a letter with its marks.
+    fn boundaries(&self, line: LineNumber) -> Vec<usize> {
+        let contents: String = self.line(line).chars().collect();
+        boundaries(&contents)
+    }
+
     /// The document-wide `char` offset of a position.
     #[must_use]
     pub fn char_offset(&self, line: LineNumber, column: CharColumn) -> CharOffset {
@@ -587,15 +663,192 @@ fn continuation_indent(glyphs: &[Glyph], width: u16) -> u16 {
 /// rather than by a fixed amount. Characters `unicode-width` has no opinion
 /// about — control characters, most combining marks — occupy none, which is
 /// also how a terminal treats them.
-fn char_width(character: char, width: usize) -> usize {
+fn char_width(character: char, next: Option<char>, width: usize) -> usize {
     if character == '\t' {
         let tabs = tab_width();
         tabs - (width % tabs)
-    } else if character == ATTACHED {
-        ATTACHED_WIDTH
     } else {
-        character.width().unwrap_or(0)
+        cells_of(character, next)
     }
+}
+
+/// How many cells a character occupies, given the one after it.
+///
+/// The one after it, because of the two variation selectors: `❤` is a
+/// character written in a line of text and is one cell, and `❤` followed by
+/// U+FE0F is the same character asked to be drawn as a picture, which every
+/// terminal draws two cells wide. The selector is what changed and the
+/// character is what is drawn, so the character is given the width and the
+/// selector none -- the way a terminal advances, and the way `unicode-width`
+/// measures the pair. Asked of the pair rather than worked out here, so that
+/// which characters have a picture to be drawn as is that crate's table and
+/// not a second copy of it.
+///
+/// Counted per character rather than per cluster so that a column is still a
+/// character and nothing that counts them has to learn a new unit.
+#[must_use]
+pub fn cells_of(character: char, next: Option<char>) -> usize {
+    use unicode_width::UnicodeWidthStr as _;
+    match (character, next) {
+        (ATTACHED, _) => ATTACHED_WIDTH,
+        (_, Some(selector)) if is_a_presentation(selector) => {
+            let mut pair = [0u8; 8];
+            let base = character.encode_utf8(&mut pair).len();
+            let both = base + selector.encode_utf8(&mut pair[base..]).len();
+            std::str::from_utf8(&pair[..both]).map_or(0, |pair| pair.width())
+        }
+        (_, next) => match character.width().unwrap_or(0) {
+            // Written as text and drawn as a picture all the same, which
+            // is what the front end says it does where the reader's faces
+            // have no such character -- see `draw_as_pictures`. Not where
+            // the text asks for text in so many words.
+            1 if next.is_none_or(|next| !is_a_presentation(next))
+                && drawn_as_a_picture(character) =>
+            {
+                2
+            }
+            cells => cells,
+        },
+    }
+}
+
+/// Every character index of a string a caret may stand at, ascending: zero,
+/// each place one cluster ends and the next begins, and the end.
+///
+/// What [`Text::cluster_before`] and its fellows walk, for text that is not
+/// a document -- a row of a conversation is a string, and a caret in it
+/// stands between clusters for the same reason one in a file does.
+#[must_use]
+pub fn boundaries(contents: &str) -> Vec<usize> {
+    use unicode_segmentation::UnicodeSegmentation as _;
+
+    let mut column = 0usize;
+    let mut boundaries = vec![0];
+    for cluster in contents.graphemes(true) {
+        column += cluster.chars().count();
+        boundaries.push(column);
+    }
+    boundaries
+}
+
+/// How many cells each character of a run takes as a row writer draws it.
+///
+/// For whoever has to find a character from a cell, or a cell from a
+/// character, in something written a character at a time -- a click on a
+/// conversation's row, the caret put back on it, the room an inlay hint is
+/// given. What [`cells_of`] counts, except where a writer cannot do less
+/// than a cell: a character a terminal does not advance over is still
+/// written into one, unless it is a selector after a character, which goes
+/// in that character's cell and takes none.
+pub fn drawn_widths(contents: &str) -> impl Iterator<Item = (char, u16)> + '_ {
+    let mut first = true;
+    widths(contents).map(move |(character, cells)| {
+        let follows = !std::mem::replace(&mut first, false);
+        let cells = match (cells, follows && is_a_presentation(character)) {
+            (_, true) => 0,
+            (0, false) => 1,
+            (cells, false) => cells,
+        };
+        (character, u16::try_from(cells).unwrap_or(1))
+    })
+}
+
+/// Whether a character written on its own is text that has a picture of
+/// itself: one cell as it stands and two with U+FE0F after it, which is
+/// `unicode-width`'s table of the characters that have both.
+///
+/// Not ASCII, which has a picture for `#`, `*` and every digit -- for a
+/// keycap -- and is never what a reader means one of.
+#[must_use]
+pub fn could_be_a_picture(character: char) -> bool {
+    !character.is_ascii()
+        && character.width() == Some(1)
+        && cells_of(character, Some('\u{fe0f}')) == 2
+}
+
+/// How many characters the table of pictures below covers: every plane
+/// with a character in it that could be one.
+const PICTURED_RANGE: usize = 0x2_0000;
+
+/// Which characters written as text this front end draws as pictures, one
+/// bit each.
+///
+/// A global, like the tab width, because it is one decision the whole
+/// program shares: a column is counted by everything and drawn by one
+/// thing, and the two have to agree about how wide a heart is. Atomics
+/// rather than a lock because it is asked of every character of every row
+/// of every frame, and changed when the reader changes their fonts.
+static PICTURED: [AtomicU64; PICTURED_RANGE / 64] =
+    [const { AtomicU64::new(0) }; PICTURED_RANGE / 64];
+
+/// How many times the table has changed, for anything that keeps rows laid
+/// out against it.
+static PICTURED_VERSION: AtomicU64 = AtomicU64::new(0);
+
+/// Says which characters written as text are drawn as pictures from now on,
+/// and two cells wide.
+///
+/// What a window says, because only it knows: a character is drawn as a
+/// picture where none of the reader's faces has it and a face that draws
+/// pictures does -- which is what every other program on the machine does
+/// with an input method's `❤`, and a picture is drawn two cells wide. A
+/// terminal says nothing, and a character there is as wide as the terminal
+/// counts it.
+pub fn draw_as_pictures(characters: &[char]) {
+    let mut words = [0u64; PICTURED_RANGE / 64];
+    for character in characters {
+        let at = *character as usize;
+        if at < PICTURED_RANGE {
+            words[at / 64] |= 1 << (at % 64);
+        }
+    }
+    for (word, bits) in PICTURED.iter().zip(words) {
+        word.store(bits, Ordering::Relaxed);
+    }
+    // Released after the bits, so whoever sees the new version sees the
+    // table it is the version of, and lays out against that.
+    PICTURED_VERSION.fetch_add(1, Ordering::Release);
+}
+
+/// Which table of pictures rows are being laid out against.
+#[must_use]
+pub fn pictures_version() -> u64 {
+    PICTURED_VERSION.load(Ordering::Acquire)
+}
+
+/// Whether this front end draws a character written as text as a picture.
+fn drawn_as_a_picture(character: char) -> bool {
+    let at = character as usize;
+    at < PICTURED_RANGE
+        && !character.is_ascii()
+        && PICTURED[at / 64].load(Ordering::Relaxed) & (1 << (at % 64)) != 0
+}
+
+/// Whether this is one of the two selectors that say how the character
+/// before it is drawn: as a picture (U+FE0F) or as text (U+FE0E).
+///
+/// A selector is no cell of its own -- it goes in the cell of the character
+/// it follows, and whoever writes a row of cells puts it there.
+#[must_use]
+pub const fn is_a_presentation(character: char) -> bool {
+    matches!(character, '\u{fe0e}' | '\u{fe0f}')
+}
+
+/// Every character of a string, and the cells each occupies.
+///
+/// [`cells_of`] over a string, so that anything walking one -- a row being
+/// cut to fit, a label being measured -- gets the width the drawing will
+/// give it, with a picture's selector counted where the drawing counts it.
+pub fn widths(contents: &str) -> impl Iterator<Item = (char, usize)> + '_ {
+    let nexts = contents
+        .chars()
+        .skip(1)
+        .map(Some)
+        .chain(std::iter::once(None));
+    contents
+        .chars()
+        .zip(nexts)
+        .map(|(character, next)| (character, cells_of(character, next)))
 }
 
 /// A thing that is not text, standing in the text that is around it.
@@ -664,15 +917,9 @@ pub fn characters_at_utf16(contents: &str, units: usize) -> usize {
 /// from. That is [`char_width`], which this is the rest of.
 #[must_use]
 pub fn text_width(contents: &str) -> usize {
-    contents
-        .chars()
-        .map(|character| match character {
-            // The same answer as `char_width`, because a label with one in
-            // it is measured by this and drawn by the same nine columns.
-            ATTACHED => ATTACHED_WIDTH,
-            _ => character.width().unwrap_or(0),
-        })
-        .sum()
+    // The same answer as `char_width`, because a label is measured by this
+    // and drawn by the same columns.
+    widths(contents).map(|(_, cells)| cells).sum()
 }
 
 /// One visual row of a wrapped line.
@@ -772,6 +1019,7 @@ impl Text {
         }
 
         let breaks = self.break_columns(line);
+        let stops = self.boundaries(line);
         let indent = continuation_indent(&glyphs, width);
 
         let mut rows: Vec<WrapRow> = Vec::new();
@@ -784,7 +1032,13 @@ impl Text {
             let mut fits = first;
             let mut cells = 0usize;
             while fits < glyphs.len() {
-                let taken = glyphs[fits].cells.max(1);
+                let glyph = glyphs[fits];
+                // A selector is drawn in the cell of the character before
+                // it, so it takes no room of its own.
+                let taken = match glyph.cells {
+                    0 if glyph.phantom.is_none() && is_a_presentation(glyph.character) => 0,
+                    cells => cells.max(1),
+                };
                 // A glyph wider than the whole row still has to go somewhere,
                 // or an empty row would be emitted forever.
                 if cells + taken > room && fits > first {
@@ -792,6 +1046,22 @@ impl Text {
                 }
                 cells += taken;
                 fits += 1;
+            }
+            // And never through the middle of a cluster, which is where the
+            // margin falls when a run has nowhere to break: the half on the
+            // next row would start with a selector or an accent, and a caret
+            // at the start of that row would stand inside the cluster. Back
+            // to the start of the one the margin cut, or -- where that is
+            // the whole row -- on to its end.
+            if fits < glyphs.len() {
+                fits = stops
+                    .iter()
+                    .copied()
+                    .take_while(|stop| *stop <= fits)
+                    .last()
+                    .filter(|stop| *stop > first)
+                    .or_else(|| stops.iter().copied().find(|stop| *stop > first))
+                    .unwrap_or(fits);
             }
 
             let end = if fits >= glyphs.len() {
@@ -891,7 +1161,9 @@ impl Text {
         let ceiling = if row_index + 1 == rows.len() {
             row.end
         } else {
-            CharColumn::new(row.end.get().saturating_sub(1))
+            // The start of the row's last cluster, not one character back
+            // from its end, which can be inside it.
+            self.cluster_before(line, row.end)
         };
         self.column_at_display(line, target)
             .min(ceiling.max(row.first))
@@ -911,10 +1183,22 @@ impl Text {
         let mut next = 0usize;
         let mut column = 0usize;
         let mut held: Option<char> = None;
+        // The character after the one being measured, because a selector
+        // after it changes how wide it is. Kept rather than peeked by
+        // cloning the walk: a rope's walk carries a stack, and a clone of
+        // it per character is an allocation per character on every line
+        // that crosses one of the rope's own pieces.
+        let mut ahead = characters.next();
         std::iter::from_fn(move || {
             let character = match held.take() {
                 Some(character) => Some(character),
-                None => characters.next(),
+                None => {
+                    let character = ahead;
+                    if character.is_some() {
+                        ahead = characters.next();
+                    }
+                    character
+                }
             };
             // A phantom comes out in front of the character it sits on, and
             // wears that character's byte so whatever colours the line
@@ -939,7 +1223,7 @@ impl Text {
                 return Some(glyph);
             }
             let character = character?;
-            let cells = char_width(character, cell);
+            let cells = char_width(character, ahead, cell);
             let glyph = Glyph {
                 character,
                 column: CharColumn::new(column),

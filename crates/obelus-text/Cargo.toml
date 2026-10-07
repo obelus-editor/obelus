@@ -12,4 +12,5 @@ workspace = true
 [dependencies]
 ropey.workspace = true
 unicode-linebreak.workspace = true
+unicode-segmentation.workspace = true
 unicode-width.workspace = true

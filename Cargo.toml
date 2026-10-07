@@ -188,6 +188,7 @@ tree-sitter-scala = "0.26"
 # ranges its injection query hands over. It was left out while there was no
 # injection machinery to express that, and this note said so.
 tree-sitter-md = "0.5.3"
+unicode-segmentation = "1.13"
 unicode-width = "0.2"
 
 anyhow = "1"

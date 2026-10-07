@@ -2987,3 +2987,104 @@ fn the_status_row_says_which_project() {
         "the status row does not say which project, or does not say what it is:\n{dump}"
     );
 }
+
+/// A character asked to be drawn as a picture is two cells, and its
+/// selector goes in the first of them.
+///
+/// `❤` followed by U+FE0F is a picture every terminal advances two columns
+/// over. In a cell of its own the selector is a cell the terminal does not
+/// advance over, and without it the window has nothing to say this `❤` is
+/// not the one written in a line of text -- so it is drawn in the cell with
+/// the heart, the cell after is the heart's too, and the caret after it is
+/// where the terminal puts the next character.
+///
+/// Deliberate breaks: taking the selector arm out of `cells_of` puts the
+/// caret a column short of the `x`, which is drawn where it always was;
+/// and drawing the editor's glyphs with `put` rather than `put_before`
+/// leaves the heart's cell without its selector.
+#[test]
+fn a_character_asked_to_be_a_picture_is_two_cells_with_its_selector_in_the_first() {
+    let scratch = support::Scratch::new("a-picture-is-two-cells");
+    let path = scratch.write("heart.txt", "\u{2764}\u{fe0f}x\n");
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&path).expect("opening the file"),
+    ]);
+    let cells = support::cells_of(&mut app, WIDTH, HEIGHT);
+    let (x, y) = (0..HEIGHT)
+        .flat_map(|y| (0..WIDTH).map(move |x| (x, y)))
+        .find(|at| cells[*at].symbol().starts_with('\u{2764}'))
+        .expect("the heart is on the screen");
+    assert_eq!(
+        cells[(x, y)].symbol(),
+        "\u{2764}\u{fe0f}",
+        "the selector is not with its heart"
+    );
+    assert_eq!(
+        cells[(x + 1, y)].symbol(),
+        "",
+        "the heart's second cell has something in it"
+    );
+    assert_eq!(cells[(x + 2, y)].symbol(), "x");
+
+    press(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        support::cursor_line(&dump),
+        format!("{},{y}", x + 3),
+        "the caret after the line is not after the x"
+    );
+}
+
+/// In a file, backspace and delete take a picture with its selector, and
+/// the arrows step over the pair.
+///
+/// The file's own path through the keys, which is not the one a box takes:
+/// backspace there is a span worked out in `keys`, so the box's tests say
+/// nothing about it.
+///
+/// Deliberate break: backspace's span starting one character back -- the
+/// `saturating_sub(1)` in `indent_back` that it was -- takes the selector
+/// and leaves the heart drawn as text; and delete's ending one character on
+/// takes the heart and leaves its selector.
+#[test]
+fn in_a_file_a_picture_is_taken_and_stepped_over_whole() {
+    let scratch = support::Scratch::new("a-picture-is-taken-whole");
+    let open = |name: &str| {
+        let path = scratch.write(name, "x\u{2764}\u{fe0f}y\n");
+        let mut app = App::new(vec![
+            obelus_buffer::Buffer::open(&path).expect("opening the file"),
+        ]);
+        support::lay_out(&mut app, WIDTH, HEIGHT);
+        app
+    };
+    let said = |app: &App| {
+        let buffer = app.current_buffer().expect("a buffer");
+        buffer.text().line(LineNumber::new(0)).to_string()
+    };
+    let column = |app: &App| {
+        app.current_buffer()
+            .expect("a buffer")
+            .cursor()
+            .column
+            .get()
+    };
+
+    let mut app = open("stepped.txt");
+    press(&mut app, KeyCode::Right);
+    press(&mut app, KeyCode::Right);
+    assert_eq!(column(&app), 3, "right stopped inside the picture");
+    press(&mut app, KeyCode::Left);
+    assert_eq!(column(&app), 1, "left stopped inside the picture");
+    press(&mut app, KeyCode::Delete);
+    assert_eq!(said(&app), "xy", "delete left part of the picture behind");
+
+    let mut app = open("rubbed.txt");
+    press(&mut app, KeyCode::Right);
+    press(&mut app, KeyCode::Right);
+    press(&mut app, KeyCode::Backspace);
+    assert_eq!(
+        said(&app),
+        "xy",
+        "backspace left part of the picture behind"
+    );
+}
