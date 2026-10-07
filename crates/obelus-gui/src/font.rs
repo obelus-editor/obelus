@@ -230,6 +230,13 @@ impl Fonts {
     ///
     /// Asked of the faces' character maps rather than by laying anything
     /// out: a few hundred characters, once per change of fonts.
+    ///
+    /// Every `Fonts::new` in this binary's tests writes the table too, which
+    /// bends the rule that a test setting a global has a binary of its own:
+    /// `obg` has no library for a test binary of its own to link against.
+    /// What makes it safe is that every one of them writes the same table --
+    /// one machine, the same faces, the same default -- so a test beside
+    /// them that measures a picture gets the same answer whichever ran first.
     fn say_what_is_a_picture(&mut self) {
         let faces_of = |system: &FontSystem, names: &[&str]| -> Vec<fontdb::ID> {
             system

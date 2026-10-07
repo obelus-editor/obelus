@@ -118,3 +118,17 @@ fn the_status_row_says_it_too() {
     app.toggle_replacing();
     assert!(support::render(&mut app, 60, 10).contains("Replacing"));
 }
+
+/// What is under the cursor is a cluster, so a picture is typed over
+/// whole: its selector does not stay behind to make the letter typed in
+/// its place a picture.
+///
+/// Deliberate break: a span one character wide, which takes the heart and
+/// leaves the selector after the `X`.
+#[test]
+fn a_picture_is_typed_over_whole() {
+    let (_scratch, mut app) = opened("replacing-a-picture", "\u{2764}\u{fe0f}b\n");
+    app.toggle_replacing();
+    support::press(&mut app, KeyCode::Char('X'));
+    assert_eq!(text(&app), "Xb\n");
+}

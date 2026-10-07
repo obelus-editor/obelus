@@ -86,6 +86,28 @@ fn a_word_step_does_not_stop_inside_a_cluster() {
     );
 }
 
+/// A word step left lands at a cluster's start, for the same reason a step
+/// right lands at its end: an accent is not its letter's kind, so the word
+/// the walk finds can start on the accent.
+///
+/// Deliberate break: leaving the column `word_left` found as it is stops
+/// the caret on the accent.
+#[test]
+fn a_word_step_left_does_not_stop_inside_a_cluster() {
+    let mut editing = Editing::new("ab e\u{301}");
+    editing.place(LineNumber::new(0), CharColumn::new(5), u16::MAX);
+    editing.handle_key(
+        &KeyEvent::new(KeyCode::Left, KeyModifiers::CONTROL),
+        &(),
+        u16::MAX,
+    );
+    assert_ne!(
+        column(&editing),
+        4,
+        "the caret stopped between the e and its accent"
+    );
+}
+
 /// On a wrapped line, end on a row that ends in a picture stops in front
 /// of the picture, and up onto that row from far along the one below stops
 /// there too -- not one character back from the row's end, which is

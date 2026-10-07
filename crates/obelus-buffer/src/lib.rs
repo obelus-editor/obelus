@@ -373,8 +373,10 @@ pub struct Block {
     /// height of the thing between two lines of the file -- and wrapping
     /// every line of a long deletion each time round would be the frame's
     /// whole budget. Nothing in the block changes while it is open, so the
-    /// answer only depends on the width.
-    rows: std::cell::Cell<Option<(u16, usize)>>,
+    /// answer only depends on the width -- and on which characters the
+    /// window draws as pictures, two cells wide, which changes with the
+    /// reader's fonts.
+    rows: std::cell::Cell<Option<((u16, u64), usize)>>,
 }
 
 impl Block {
@@ -410,8 +412,9 @@ impl Block {
         if self.is_empty() {
             return 0;
         }
+        let asked = (width, obelus_text::pictures_version());
         if let Some((at, rows)) = self.rows.get()
-            && at == width
+            && at == asked
         {
             return rows;
         }
@@ -420,7 +423,7 @@ impl Block {
             .map(|line| text.row_count(LineNumber::new(line), width))
             .sum();
         let rows = rows + usize::from(self.ruled);
-        self.rows.set(Some((width, rows)));
+        self.rows.set(Some((asked, rows)));
         rows
     }
 

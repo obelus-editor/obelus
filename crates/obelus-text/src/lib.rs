@@ -731,6 +731,28 @@ pub fn boundaries(contents: &str) -> Vec<usize> {
     boundaries
 }
 
+/// How many cells each character of a run takes as a row writer draws it.
+///
+/// For whoever has to find a character from a cell, or a cell from a
+/// character, in something written a character at a time -- a click on a
+/// conversation's row, the caret put back on it, the room an inlay hint is
+/// given. What [`cells_of`] counts, except where a writer cannot do less
+/// than a cell: a character a terminal does not advance over is still
+/// written into one, unless it is a selector after a character, which goes
+/// in that character's cell and takes none.
+pub fn drawn_widths(contents: &str) -> impl Iterator<Item = (char, u16)> + '_ {
+    let mut first = true;
+    widths(contents).map(move |(character, cells)| {
+        let follows = !std::mem::replace(&mut first, false);
+        let cells = match (cells, follows && is_a_presentation(character)) {
+            (_, true) => 0,
+            (0, false) => 1,
+            (cells, false) => cells,
+        };
+        (character, u16::try_from(cells).unwrap_or(1))
+    })
+}
+
 /// Whether a character written on its own is text that has a picture of
 /// itself: one cell as it stands and two with U+FE0F after it, which is
 /// `unicode-width`'s table of the characters that have both.
@@ -783,13 +805,15 @@ pub fn draw_as_pictures(characters: &[char]) {
     for (word, bits) in PICTURED.iter().zip(words) {
         word.store(bits, Ordering::Relaxed);
     }
-    PICTURED_VERSION.fetch_add(1, Ordering::Relaxed);
+    // Released after the bits, so whoever sees the new version sees the
+    // table it is the version of, and lays out against that.
+    PICTURED_VERSION.fetch_add(1, Ordering::Release);
 }
 
 /// Which table of pictures rows are being laid out against.
 #[must_use]
 pub fn pictures_version() -> u64 {
-    PICTURED_VERSION.load(Ordering::Relaxed)
+    PICTURED_VERSION.load(Ordering::Acquire)
 }
 
 /// Whether this front end draws a character written as text as a picture.

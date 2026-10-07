@@ -1622,27 +1622,6 @@ pub fn put_before(
     width.max(1)
 }
 
-/// How many cells each character of a run takes as [`write`] draws it.
-///
-/// For whoever has to find a character from a cell, or a cell from a
-/// character, in something written this way -- a click on a row, the caret
-/// put back on it. What `obelus-text` counts, except where `put` differs:
-/// a character a terminal does not advance over still gets the one cell
-/// `put` gives it, and a selector after a character gets none, because it
-/// was written into that character's cell.
-pub fn drawn_widths(contents: &str) -> impl Iterator<Item = (char, u16)> + '_ {
-    let mut first = true;
-    widths(contents).map(move |(character, cells)| {
-        let follows = !std::mem::replace(&mut first, false);
-        let cells = match (cells, follows && is_a_presentation(character)) {
-            (_, true) => 0,
-            (0, false) => 1,
-            (cells, false) => cells,
-        };
-        (character, u16::try_from(cells).unwrap_or(1))
-    })
-}
-
 /// What a character looks like in a cell.
 ///
 /// Itself, unless it is a control character, which is a space. A terminal
@@ -3121,9 +3100,10 @@ mod tests {
     /// cell a zero-width character gets, which is what the conversation did.
     #[test]
     fn a_cell_is_found_by_the_widths_write_draws() {
+        use obelus_text::drawn_widths;
         use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style};
 
-        use super::{drawn_widths, write};
+        use super::write;
 
         let said = "\u{2764}\u{fe0f}x";
         let counted: Vec<u16> = drawn_widths(said).map(|(_, cells)| cells).collect();

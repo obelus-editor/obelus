@@ -1651,11 +1651,16 @@ fn draw_row(
                     let style = style.fg(painting
                         .theme
                         .colour_for(Some(obelus_text::kind::SyntaxKind::Comment)));
+                    // Measured the way the hint's room was -- see
+                    // `Hinted::cells` -- and written with each selector in
+                    // the cell of the character before it.
                     let mut cell = 0usize;
-                    for character in hint.label.chars() {
-                        let taken = unicode_width::UnicodeWidthChar::width(character)
-                            .unwrap_or(0)
-                            .max(1);
+                    let mut said = obelus_text::drawn_widths(&hint.label).peekable();
+                    while let Some((character, taken)) = said.next() {
+                        let taken = usize::from(taken);
+                        if taken == 0 {
+                            continue;
+                        }
                         if cell + taken > glyph.cells {
                             break;
                         }
@@ -1665,7 +1670,8 @@ fn draw_row(
                         if at >= width {
                             break;
                         }
-                        put(cells, x + at, y, character, style);
+                        let next = said.peek().map(|(next, _)| *next);
+                        put_before(cells, x + at, y, character, next, style);
                         ended = at + u16::try_from(taken).unwrap_or(1);
                         cell += taken;
                     }

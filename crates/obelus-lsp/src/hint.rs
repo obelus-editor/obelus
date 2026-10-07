@@ -18,7 +18,6 @@ use obelus_text::{
     coordinates::{CharColumn, LineNumber},
 };
 use serde_json::Value;
-use unicode_width::UnicodeWidthStr;
 
 /// One of them: what it says, and where it is drawn.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -56,10 +55,14 @@ impl Hinted {
     ///
     /// The width of what is written rather than the length of it: a hint
     /// is a piece of somebody's source language and may be full of
-    /// characters a terminal draws two cells wide.
+    /// characters a terminal draws two cells wide. Counted the way it is
+    /// drawn, a character at a time, so the room it is given is the room
+    /// it takes.
     #[must_use]
     pub fn cells(&self) -> usize {
-        self.label.width()
+        obelus_text::drawn_widths(&self.label)
+            .map(|(_, cells)| usize::from(cells))
+            .sum()
     }
 }
 
@@ -232,7 +235,33 @@ mod tests {
             &PositionEncodingKind::UTF16,
         );
         assert_eq!(found[0].label, ": Result<    i32,>");
-        assert_eq!(found[0].cells(), found[0].label.width());
+        assert_eq!(found[0].cells(), found[0].label.chars().count());
+    }
+
+    /// A hint is given the room it is drawn in, which is a cell for each
+    /// character it writes -- an accent included, since it is written into
+    /// a cell of its own -- and none for a selector, which goes in the cell
+    /// before it.
+    ///
+    /// Deliberate break: the label's width as `unicode-width` measures the
+    /// string, which counts the accent as nothing, so the `e` is drawn and
+    /// the room runs out before its accent.
+    #[test]
+    fn a_hint_is_given_the_room_it_is_drawn_in() {
+        let hinted = |label: &str| Hinted {
+            label: label.to_string(),
+            ..in_reply(
+                &Ok(serde_json::json!([{
+                    "position": { "line": 0, "character": 5 },
+                    "label": "x"
+                }])),
+                &text(),
+                &PositionEncodingKind::UTF16,
+            )[0]
+            .clone()
+        };
+        assert_eq!(hinted(": e\u{301}").cells(), 4);
+        assert_eq!(hinted(": \u{2764}\u{fe0f}").cells(), 4);
     }
 
     /// A server with nothing to say says it in several ways.
