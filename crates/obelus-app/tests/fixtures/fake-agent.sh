@@ -455,6 +455,13 @@ while IFS= read -r line; do
             # is on every machine these tests run on, and an alias that
             # starts with `!` is run by git's own `sh`, which has `sleep`
             # and `printf` where `cmd` has neither.
+            #
+            # "Nothing either shell would expand" holds for `cmd` as it
+            # ships. A machine that has turned on delayed expansion in the
+            # registry (`DelayedExpansion` under `Command Processor`) takes
+            # a lone `!` out of the line, git is asked for a command called
+            # `sleep`, and the tests that run this fail for that reason and
+            # no other.
             printf '{"jsonrpc":"2.0","id":920,"method":"terminal/create","params":{"sessionId":"%s","command":"%s","args":[]}}\n' "$session" "$(json "$ran")"
             ;;
         *'"id":920'*)
