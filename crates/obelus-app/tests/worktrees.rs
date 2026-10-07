@@ -873,7 +873,7 @@ fn a_conversation_is_named_as_the_open_documents_name_it() {
     talking.agents_root_for_test(scratch.join("agents"));
     talking.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     talking.new_conversation();
@@ -1023,7 +1023,7 @@ fn an_agent_that_never_started_goes_with_the_tree() {
     let pid = scratch.join("pid");
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &[
             "-c".to_string(),
             format!("echo $$ > {}; exec sleep 1000", pid.display()),

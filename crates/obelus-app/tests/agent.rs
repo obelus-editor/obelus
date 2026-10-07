@@ -7,7 +7,9 @@
 //! reads the screen, so what is asserted is what a reader would see.
 //!
 //! It is `sh` on purpose. A fake agent written in python, node, or a second
-//! Rust binary is a test that stops running on somebody else's machine.
+//! Rust binary is a test that stops running on somebody else's machine. On
+//! Windows the `sh` is Git's, found by `support::sh` rather than on `PATH`,
+//! where a PowerShell does not have it.
 //!
 //! It is also what holds Obelus to its promises, because the protocol's
 //! crate cannot: the fixture checks the handshake it was given and answers
@@ -112,7 +114,7 @@ fn playing(how: &[&str]) -> (App, Receiver<Event>) {
     let (mut app, events) = wired();
     let mut arguments = vec!["tests/fixtures/fake-agent.sh".to_string()];
     arguments.extend(how.iter().map(|word| (*word).to_string()));
-    app.talk_to("fake", Path::new("sh"), &arguments);
+    app.talk_to("fake", Path::new(support::sh()), &arguments);
     app.new_conversation();
     // Now rather than on the first frame, which is what would ask for it
     // otherwise: what these tests are about is what happens in a
@@ -260,6 +262,15 @@ fn ran_command() -> &'static str {
     match cfg!(windows) {
         true => "ping -n 2 127.0.0.1 >nul & <nul set /p =obelus-ran-this& exit 3",
         false => "sleep 0.3; printf %s obelus-ran-this; exit 3",
+    }
+}
+
+/// The command the fake agent asks for that never ends on its own, said
+/// twice for the same reason as [`ran_command`].
+fn forever_command() -> &'static str {
+    match cfg!(windows) {
+        true => "ping -n 301 127.0.0.1 >nul",
+        false => "sleep 300",
     }
 }
 
@@ -3534,7 +3545,7 @@ fn a_question_asked_while_the_reader_is_away_waits_in_its_conversation() {
     app.working_directory_for_test(scratch.path().to_path_buf());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
@@ -3680,7 +3691,7 @@ fn talking_to_an_agent_that_stopped_starts_it_again() {
     let root = directory.join("agents");
     obelus_agent::remember(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
         "0.1",
         &root,
@@ -3996,7 +4007,7 @@ fn a_row_naming_a_file_that_is_gone_changes_nothing() {
     support::lay_out(&mut app, WIDTH, HEIGHT);
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     app.new_conversation();
@@ -4559,7 +4570,7 @@ fn a_conversation_about_a_note_says_so_in_its_first_message() {
     app.working_directory_for_test(scratch.path().to_path_buf());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     // Into the notes and on to the one note's conversation.
@@ -4637,7 +4648,7 @@ fn a_conversation_about_a_note_offers_something_to_say() {
     app.working_directory_for_test(scratch.path().to_path_buf());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
@@ -4715,7 +4726,7 @@ fn a_question_that_arrives_while_the_reader_is_away_waits_in_its_own_conversatio
     app.working_directory_for_test(scratch.path().to_path_buf());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
@@ -4797,7 +4808,7 @@ fn an_agent_that_stops_takes_the_questions_in_every_conversation_with_it() {
     app.working_directory_for_test(scratch.path().to_path_buf());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
@@ -5248,7 +5259,7 @@ fn a_question_about_a_notes_conversation_is_asked_in_it() {
     app.working_directory_for_test(scratch.path().to_path_buf());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     // Into the notes and on to the one note's conversation.
@@ -5441,7 +5452,7 @@ fn every_conversation_is_told_an_address_of_its_own() {
         "tests/fixtures/fake-agent.sh".to_string(),
         format!("log={}", log.display()),
     ];
-    app.talk_to("fake", Path::new("sh"), &arguments);
+    app.talk_to("fake", Path::new(support::sh()), &arguments);
     app.new_conversation();
     app.open_a_session_for_test();
     asked(&mut app, &events, &log, "tools http://127.0.0.1:9/mcp/0\n");
@@ -5633,7 +5644,7 @@ fn a_conversation_an_agent_closes_is_named_and_leaves_the_list() {
     app.working_directory_for_test(scratch.path().to_path_buf());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
@@ -5815,7 +5826,7 @@ fn the_list_of_conversations_says_a_name_given_while_it_is_up() {
     app.working_directory_for_test(scratch.path().to_path_buf());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     app.configure(
@@ -6067,7 +6078,7 @@ fn notes_that_will_not_read_do_not_forget_the_conversations() {
     app.working_directory_for_test(scratch.path().to_path_buf());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
@@ -6156,7 +6167,7 @@ fn a_note_taken_away_elsewhere_leaves_the_conversation_standing() {
     app.working_directory_for_test(scratch.path().to_path_buf());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
@@ -6265,7 +6276,7 @@ fn a_conversation_the_agent_has_forgotten_is_started_again() {
     app.working_directory_for_test(scratch.path().to_path_buf());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
@@ -7142,7 +7153,7 @@ fn remembering_how(
     }
     let mut arguments = vec!["tests/fixtures/fake-agent.sh".to_string()];
     arguments.extend(how.iter().map(|word| (*word).to_string()));
-    app.talk_to("fake", Path::new("sh"), &arguments);
+    app.talk_to("fake", Path::new(support::sh()), &arguments);
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
     talk_about_the_note(&mut app);
     (scratch, app, events)
@@ -7213,7 +7224,7 @@ fn a_note_says_whether_anybody_has_talked_about_it() {
     let root = scratch.join("agents");
     obelus_agent::remember(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
         "0.1",
         &root,
@@ -7692,7 +7703,7 @@ fn the_first_conversation_opened_after_a_restart_is_taken_up() {
     let root = scratch.join("agents");
     obelus_agent::remember(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
         "0.1",
         &root,
@@ -7774,7 +7785,7 @@ fn a_conversation_taken_up_again_keeps_its_name() {
     app.working_directory_for_test(scratch.path().to_path_buf());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
@@ -8543,7 +8554,7 @@ fn the_key_that_stops_the_agent_stops_what_it_is_running() {
         app.chat().is_some_and(|chat| {
             chat.rows(WIDTH)
                 .iter()
-                .any(|row| row.text().contains("sleep 300"))
+                .any(|row| row.text().contains(forever_command()))
         })
     });
     assert!(
@@ -9196,7 +9207,7 @@ fn a_conversation_opens_on_what_the_reader_chose() {
     app.configure(config, Vec::new());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     app.new_conversation();
@@ -9257,7 +9268,7 @@ fn a_value_the_agent_no_longer_offers_is_not_sent() {
     app.configure(config, Vec::new());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     app.new_conversation();
@@ -9345,7 +9356,7 @@ fn a_conversation_opened_to_ask_is_not_answered_as_one() {
     app.configure(config, Vec::new());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &[
             "tests/fixtures/fake-agent.sh".to_string(),
             "tells-settings".to_string(),
@@ -9395,7 +9406,7 @@ fn the_fixture_is_listed(app: &mut App) {
 fn the_fixture_is_installed(root: &Path) {
     obelus_agent::remember(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
         "1.0.0",
         root,
@@ -9488,7 +9499,7 @@ fn the_settings_page_asks_what_the_agent_offers_each_time_it_opens() {
     app.configure(config, Vec::new());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &[
             "tests/fixtures/fake-agent.sh".to_string(),
             format!("log={}", log.display()),
@@ -9595,7 +9606,7 @@ fn choosing_another_agent_stops_the_one_that_was_running() {
     app.agents_root_for_test(root.clone());
     obelus_agent::remember(
         "other",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
         "1.0.0",
         &root,
@@ -9678,7 +9689,7 @@ fn a_conversation_another_obelus_has_open_is_not_opened_again() {
     app.working_directory_for_test(scratch.path().to_path_buf());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
@@ -10129,7 +10140,7 @@ fn opening_a_conversation_opens_its_session_before_a_word_is_said() {
     let (mut app, events) = wired();
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     app.new_conversation();
@@ -10184,7 +10195,7 @@ fn a_note_s_conversation_left_without_a_word_keeps_nothing() {
     app.working_directory_for_test(scratch.path().to_path_buf());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &[
             "tests/fixtures/fake-agent.sh".to_string(),
             format!("log={}", log.display()),
@@ -10254,7 +10265,7 @@ fn a_conversation_taken_up_again_is_not_let_go_for_being_quiet() {
     app.working_directory_for_test(scratch.path().to_path_buf());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &[
             "tests/fixtures/fake-agent.sh".to_string(),
             "only-resumes".to_string(),
@@ -10311,7 +10322,7 @@ fn the_list_offers_the_conversations_this_project_has_had() {
     // first and has to reach the second.
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     remember_a_conversation(
@@ -10447,7 +10458,7 @@ fn a_new_conversation_is_new_once_something_is_said_in_the_last() {
     );
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationNew);
@@ -10980,7 +10991,7 @@ fn what_nobody_has_talked_in_goes_from_the_file_and_what_is_open_does_not() {
     app.working_directory_for_test(scratch.path().to_path_buf());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     app.new_conversation();
@@ -11063,7 +11074,7 @@ fn a_notes_conversation_from_another_checkout_is_not_asked_for() {
     app.working_directory_for_test(scratch.path().to_path_buf());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &[
             "tests/fixtures/fake-agent.sh".to_string(),
             "only-resumes".to_string(),
@@ -11225,7 +11236,7 @@ fn a_conversation_already_open_here_is_gone_to() {
     );
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     app.new_conversation();
@@ -11566,7 +11577,7 @@ fn a_note_rewritten_elsewhere_is_offered_again() {
     // the agent that was told it.
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
@@ -11673,7 +11684,7 @@ fn the_header_says_which_branch_the_agent_changed_files_on() {
     app.working_directory_for_test(main.clone());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     app.new_conversation();
@@ -11968,7 +11979,7 @@ fn a_conversation_about_a_note_watches_the_notes_without_the_page() {
     // the agent that was told it.
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     support::lay_out(&mut app, WIDTH, HEIGHT);
@@ -12121,7 +12132,7 @@ fn a_conversation_the_agent_died_under_asks_for_another() {
     app.configure(config, Vec::new());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     // One conversation the reader has said something in.
@@ -12196,7 +12207,7 @@ fn an_answer_nobody_is_waiting_for_goes_to_nobody() {
     app.working_directory_for_test(scratch.path().to_path_buf());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     // A conversation opened -- which asks for its session -- and closed
@@ -12239,7 +12250,7 @@ fn the_settings_page_stops_asking_an_agent_that_has_gone() {
     app.configure(config, Vec::new());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     obelus_app::app::dispatch::dispatch(&mut app, Command::ConfigOpen);
@@ -12283,7 +12294,7 @@ fn an_agent_with_nothing_to_set_says_so() {
     app.configure(config, Vec::new());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &[
             "tests/fixtures/fake-agent.sh".to_string(),
             "nothing-to-change".to_string(),
@@ -12318,7 +12329,7 @@ fn a_choice_not_offered_is_said_once_however_many_sessions() {
     app.configure(config, Vec::new());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     app.new_conversation();
@@ -12378,7 +12389,7 @@ fn installing_does_not_ask_the_version_before_it() {
     app.configure(config, Vec::new());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &[
             "tests/fixtures/fake-agent.sh".to_string(),
             format!("log={}", log.display()),
@@ -12567,7 +12578,7 @@ fn a_session_nobody_is_waiting_for_is_let_go() {
     let (mut app, events) = wired();
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &[
             "tests/fixtures/fake-agent.sh".to_string(),
             format!("log={}", log.display()),
@@ -12659,7 +12670,7 @@ fn what_an_agent_offers_after_its_answer_is_heard() {
     app.configure(config, Vec::new());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &[
             "tests/fixtures/fake-agent.sh".to_string(),
             "options-later".to_string(),
@@ -12719,7 +12730,7 @@ fn a_second_choice_not_offered_is_said_too() {
     app.configure(config, Vec::new());
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     app.new_conversation();
@@ -13160,7 +13171,7 @@ fn reopened_on(scratch: &support::Scratch, conversation: &str) -> (App, Receiver
     let root = scratch.join("agents");
     obelus_agent::remember(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
         "0.1",
         &root,
@@ -13524,7 +13535,7 @@ fn not_yet_asked() -> (App, Receiver<Event>) {
     let (mut app, events) = wired();
     app.talk_to(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     app.new_conversation();
@@ -13746,7 +13757,11 @@ fn the_agent_writes_where_the_reader_may_not() {
     );
     support::lay_out(&mut app, WIDTH, HEIGHT);
     let script = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fake-agent.sh");
-    app.talk_to("fake", Path::new("sh"), &[script.display().to_string()]);
+    app.talk_to(
+        "fake",
+        Path::new(support::sh()),
+        &[script.display().to_string()],
+    );
     app.new_conversation();
     app.open_a_session_for_test();
     pump(&mut app, &events, "the handshake", |app| {

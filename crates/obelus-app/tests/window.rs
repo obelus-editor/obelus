@@ -193,7 +193,7 @@ fn the_keys_a_conversation_names_wear_caps() {
     support::lay_out(&mut app, width, height);
     app.talk_to(
         "fake",
-        std::path::Path::new("sh"),
+        std::path::Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
     );
     app.new_conversation();

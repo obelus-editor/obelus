@@ -160,7 +160,7 @@ fn an_edit_from_the_server_walks_the_whole_way_in() {
 
     let (_scratch, mut app, open, closed) = project("apply-event");
     assert!(
-        app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+        app.stand_in_server_for_test(LanguageId::Rust, support::cat()),
         "the stand-in server would not start"
     );
     app.handle(Event::Lsp(obelus_lsp::Message {
@@ -218,7 +218,7 @@ fn a_save_asks_only_for_what_a_server_does_to_a_whole_file() {
     let (sender, heard) = obelus_app::event::channel();
     app.events_for_test(sender);
     assert!(
-        app.stand_in_server_for_test(LanguageId::Rust, "cat"),
+        app.stand_in_server_for_test(LanguageId::Rust, support::cat()),
         "the echo would not start"
     );
     app.declared_for_test(LanguageId::Rust, json!({ "codeActionProvider": true }));
@@ -325,7 +325,7 @@ fn a_kind_the_server_has_nothing_for_does_not_end_the_save() {
     let (_scratch, mut app, open, _closed) = project("save-nothing");
     let (sender, heard) = obelus_app::event::channel();
     app.events_for_test(sender);
-    assert!(app.stand_in_server_for_test(LanguageId::Rust, "cat"));
+    assert!(app.stand_in_server_for_test(LanguageId::Rust, support::cat()));
     app.declared_for_test(LanguageId::Rust, json!({ "codeActionProvider": true }));
     app.configure(
         obelus_config::Config {
@@ -373,7 +373,7 @@ fn a_save_passes_over_an_offer_the_server_will_not_carry_out() {
     let (_scratch, mut app, open, _closed) = project("save-disabled");
     let (sender, heard) = obelus_app::event::channel();
     app.events_for_test(sender);
-    assert!(app.stand_in_server_for_test(LanguageId::Rust, "cat"));
+    assert!(app.stand_in_server_for_test(LanguageId::Rust, support::cat()));
     app.declared_for_test(LanguageId::Rust, json!({ "codeActionProvider": true }));
     app.configure(
         obelus_config::Config {
@@ -431,7 +431,7 @@ fn a_save_leaves_the_imports_alone_unless_asked() {
     let (_scratch, mut app, open, _closed) = project("save-plain");
     let (sender, heard) = obelus_app::event::channel();
     app.events_for_test(sender);
-    assert!(app.stand_in_server_for_test(LanguageId::Rust, "cat"));
+    assert!(app.stand_in_server_for_test(LanguageId::Rust, support::cat()));
     app.declared_for_test(LanguageId::Rust, json!({ "codeActionProvider": true }));
 
     support::type_text(&mut app, "\n");

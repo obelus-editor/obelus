@@ -34,7 +34,7 @@ fn talking() -> (Talk, Receiver<Event>) {
     let (sender, events) = channel();
     let mut talk = Talk::start(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
         Path::new("."),
         sender,
@@ -113,7 +113,7 @@ fn a_prompt_waiting_for_a_conversation_says_it_is_thinking() {
     let (sender, _events): (_, Receiver<Event>) = channel();
     let mut talk = Talk::start(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
         Path::new("."),
         sender,
@@ -157,7 +157,7 @@ fn a_prompt_held_for_the_second_of_two_goes_out_in_the_second() {
     let (sender, events) = channel();
     let mut talk = Talk::start(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
         Path::new("."),
         sender,
@@ -220,7 +220,7 @@ fn a_conversation_is_opened_only_when_one_is_asked_for() {
     let (sender, events) = channel();
     let mut talk = Talk::start(
         "fake",
-        Path::new("sh"),
+        Path::new(support::sh()),
         &["tests/fixtures/fake-agent.sh".to_string()],
         Path::new("."),
         sender,
