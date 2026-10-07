@@ -393,13 +393,20 @@ fn fake_connect(
     sink: std::sync::Arc<dyn obelus_sink::Sink<obelus_remote::Event>>,
 ) -> tokio::sync::mpsc::UnboundedSender<obelus_remote::model::Out> {
     let (out, said) = tokio::sync::mpsc::unbounded_channel();
-    let _ = sink.send(obelus_remote::Event::connection(
-        obelus_remote::State::Connected,
-        None,
-    ));
+    // Kept before it says it is connected, never after: a test waits for
+    // the connection and then speaks for the platform, and this runs on a
+    // thread of its own -- said first, the test could get there before
+    // the sink did, which Windows CI did. Broken deliberately by sleeping
+    // between the two in the old order: every test that speaks for the
+    // platform panicked on `connected`.
+    let connected = std::sync::Arc::clone(&sink);
     *FAKED
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(Faked { told, sink, said });
+    let _ = connected.send(obelus_remote::Event::connection(
+        obelus_remote::State::Connected,
+        None,
+    ));
     out
 }
 

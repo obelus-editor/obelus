@@ -115,7 +115,14 @@ pub(crate) fn show(app: App) -> Result<()> {
         .context("no window system to open a window on")?;
     let mut showing = Showing::new(app, events.create_proxy());
     events.run_app(&mut showing).context("the window stopped")?;
-    showing.outcome()
+    let outcome = showing.outcome();
+    // Written down as well as returned: a start from a menu has no console
+    // to return it to, and one that fails before its first frame has no
+    // window either -- see `Showing::shown` -- so the log is all there is.
+    if let Err(error) = &outcome {
+        tracing::error!(?error, "Obelus stopped");
+    }
+    outcome
 }
 
 /// The screen a pane went from, kept until the painter has a picture of
@@ -320,9 +327,23 @@ struct Showing {
     ///
     /// The application's, said when it hears who is drawing and again
     /// after every change to the settings. `Reset` until it has: a window
-    /// is drawing nothing at all before the first of those, so the default
-    /// is never on the screen.
+    /// draws nothing before the first frame, which comes after it -- see
+    /// `shown` -- so the default is never on the screen.
     ground: Color,
+    /// Whether the window is on the screen, which it is from the first
+    /// frame the application sends and not before.
+    ///
+    /// Shown as it is made, a window is on the screen for the second it
+    /// takes to start the drawing and the application, and what it shows
+    /// there is nobody's: the system's colour where the page will be, and
+    /// the system's title bar until the ground arrives to paint it. Beside
+    /// a dark Obelus the reader has just opened it from, that is a light
+    /// window flashing up and changing its mind. So it is kept hidden, and
+    /// a redraw asked for before then draws nothing -- on Wayland, where a
+    /// window cannot be hidden, a surface appears with the first thing
+    /// drawn on it, and that has to be the page rather than an empty one
+    /// on `Reset`.
+    shown: bool,
     /// How many pixels at the top of the window are the title bar's --
     /// see `title::height`. Measured with the columns and rows, because it
     /// changes when they do: a resize, a screen of another density, and
@@ -451,6 +472,7 @@ impl Showing {
             capped: Vec::new(),
             capping: Vec::new(),
             ground: Color::Reset,
+            shown: false,
             titled: 0.0,
             holding: (Color::Reset, Color::Reset),
             ticked: Vec::new(),
@@ -893,13 +915,8 @@ impl ApplicationHandler<Waking> for Showing {
         if let Err(error) = started {
             tracing::error!(%error, "Obelus could not be started behind the window");
             events.exit();
-            return;
         }
-        // Shown now that this thread is about to go back to answering the
-        // window's messages -- see `hidden`, which is why only there.
-        if cfg!(windows) {
-            window.set_visible(true);
-        }
+        // Not shown yet: the first frame shows it -- see `shown`.
     }
 
     fn user_event(&mut self, events: &ActiveEventLoop, waking: Waking) {
@@ -1243,6 +1260,18 @@ impl ApplicationHandler<Waking> for Showing {
                 if drew {
                     self.allow_the_input_method();
                     self.point_the_input_method();
+                    // Shown here, by the window's own thread on its way back
+                    // to answering the system, which is what the taskbar
+                    // needs on Windows -- see `hidden`. And drawn by the
+                    // redraw like any other frame rather than on the spot,
+                    // which would keep the thread from the taskbar's
+                    // question for as long as the first page takes.
+                    if !self.shown
+                        && let Some(window) = self.window.as_ref()
+                    {
+                        window.set_visible(true);
+                        self.shown = true;
+                    }
                     self.redraw();
                 }
             }
@@ -1345,6 +1374,13 @@ impl ApplicationHandler<Waking> for Showing {
                 }
             }
             WindowEvent::RedrawRequested => {
+                // Nothing until the first frame has shown the window -- see
+                // `shown`. Nor counted as a wait: what kept it waiting was
+                // the application starting, not the screen.
+                if !self.shown {
+                    self.asked.take();
+                    return;
+                }
                 if let Some(asked) = self.asked.take() {
                     let waited = asked.elapsed();
                     if waited >= SLOW {
@@ -1629,26 +1665,27 @@ fn named(attributes: winit::window::WindowAttributes) -> winit::window::WindowAt
     attributes
 }
 
-/// A window kept off the screen until the thread it belongs to can answer
-/// for it, on Windows.
+/// A window kept off the screen until there is a page on it -- see
+/// `Showing::shown`.
 ///
-/// The taskbar asks a window for its icon the moment it is shown, and
-/// gives up on one that does not answer: it draws the system's blank
-/// program and does not ask again until something else about the button
-/// changes. A window shown as it is made is shown a second before this
-/// thread is done loading the faces and starting the drawing, and that
-/// second is when it was asked -- measured by putting a progress bar on
-/// the blank button from outside, which made the taskbar look again and
-/// find the icon that had been on the window all along.
+/// Everywhere, and on Windows for a second reason as well. The taskbar
+/// asks a window for its icon the moment it is shown, and gives up on one
+/// that does not answer: it draws the system's blank program and does not
+/// ask again until something else about the button changes. A window shown
+/// as it is made is shown a second before this thread is done loading the
+/// faces and starting the drawing, and that second is when it was asked --
+/// measured by putting a progress bar on the blank button from outside,
+/// which made the taskbar look again and find the icon that had been on the
+/// window all along.
 ///
-/// Only there, because what the taskbar does is the reason -- and showing
-/// a window on macOS brings it in front, which a start the reader has
-/// since turned away from has no business doing (see `elsewhere`).
+/// Showing it later on macOS does not take the reader from whatever they
+/// turned to while it started: a window ordered front there comes in front
+/// of its own program's windows only, unless that program is the one the
+/// reader is in. Wayland has no hidden window at all, and asking for one
+/// is ignored: a surface appears with the first thing drawn on it, which is
+/// why the drawing waits as well.
 fn hidden(attributes: winit::window::WindowAttributes) -> winit::window::WindowAttributes {
-    match cfg!(windows) {
-        true => attributes.with_visible(false),
-        false => attributes,
-    }
+    attributes.with_visible(false)
 }
 
 /// The icon, as the file itself. Fourteen kilobytes, seven sizes, and the
