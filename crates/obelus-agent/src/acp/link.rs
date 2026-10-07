@@ -2323,14 +2323,21 @@ async fn talk(
                                             // was in flight, saying it is
                                             // heard would bring back every
                                             // list the giving up took away.
-                                            let heard = lock(&still).dialect
-                                                != super::tasks::Dialect::None;
-                                            if heard {
+                                            //
+                                            // Said with the lock held, as the
+                                            // giving up is: whichever takes it
+                                            // first is also first on the loop's
+                                            // channel, so the two cannot cross
+                                            // whatever order the connection
+                                            // runs them in.
+                                            let speaking = lock(&still);
+                                            if speaking.dialect != super::tasks::Dialect::None {
                                                 let _ = told.send(Event::Acp(Incoming::Tasks {
                                                     heard: true,
                                                     stoppable: false,
                                                 }));
                                             }
+                                            drop(speaking);
                                             true
                                         }
                                         Err(error) => {
