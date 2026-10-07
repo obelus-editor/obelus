@@ -1360,7 +1360,12 @@ impl App {
         };
         let stoppable = talker.can_stop_tasks();
         let items: Vec<PickerItem> = board.listed().into_iter().map(task_row).collect();
-        let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
+        let mut picker = Picker::new(
+            items,
+            PickerLayout::Compact {
+                rows: BACKGROUND_ROWS,
+            },
+        );
         // In two runs under their headings, what is going and what has
         // ended, and kept in that order whatever is typed: a query ranking
         // the rows would scatter them out from under their headings, which
@@ -4603,6 +4608,15 @@ fn said_of(parts: &[Part]) -> Vec<acp::link::Said> {
         })
         .collect()
 }
+
+/// How tall the list of background work may be.
+///
+/// What the list of conversations is given, and for its reasons: its rows
+/// wrap -- a name, and under it what the work last said -- and under two
+/// headings, so the ten a compact list gets is three or four pieces of
+/// work. And what it is drawn over is the conversation that started them,
+/// which the reader has put down to look at this.
+const BACKGROUND_ROWS: u16 = 24;
 
 /// One piece of background work, as a row of the list of it.
 ///
