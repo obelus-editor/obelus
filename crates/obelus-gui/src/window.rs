@@ -893,10 +893,13 @@ impl ApplicationHandler<Waking> for Showing {
         if let Err(error) = started {
             tracing::error!(%error, "Obelus could not be started behind the window");
             events.exit();
+            return;
         }
         // Shown now that this thread is about to go back to answering the
-        // window's messages -- see `hidden`.
-        window.set_visible(true);
+        // window's messages -- see `hidden`, which is why only there.
+        if cfg!(windows) {
+            window.set_visible(true);
+        }
     }
 
     fn user_event(&mut self, events: &ActiveEventLoop, waking: Waking) {
@@ -1638,9 +1641,9 @@ fn named(attributes: winit::window::WindowAttributes) -> winit::window::WindowAt
 /// the blank button from outside, which made the taskbar look again and
 /// find the icon that had been on the window all along.
 ///
-/// Only there: what the taskbar does is the reason, and Wayland cannot
-/// hide a window at all, so the same change elsewhere is a window that is
-/// never shown.
+/// Only there, because what the taskbar does is the reason -- and showing
+/// a window on macOS brings it in front, which a start the reader has
+/// since turned away from has no business doing (see `elsewhere`).
 fn hidden(attributes: winit::window::WindowAttributes) -> winit::window::WindowAttributes {
     match cfg!(windows) {
         true => attributes.with_visible(false),
