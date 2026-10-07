@@ -578,11 +578,23 @@ fn said(setting: &acp::Setting) -> (String, Option<bool>) {
 }
 
 /// What the count of background work says on the row: how much is still
-/// going, behind the mark a call wears for the same thing.
+/// going, in words, behind the mark a call wears for the same thing.
+///
+/// Words and not a bare number: a glyph and a digit at the end of a row of
+/// settings read as one more setting on some value, and a reader has to
+/// open it to find out it was a count. Where there is no glyph, the words
+/// say what the glyph would have.
 fn tasks_said(running: usize) -> String {
+    let going = match running {
+        0 => "None running".to_string(),
+        many => format!("{many} running"),
+    };
     match obelus_icons::enabled() {
-        true => format!("{}  {running}", obelus_icons::ui::BACKGROUND),
-        false => format!("Background {running}"),
+        true => format!("{}  {going}", obelus_icons::ui::BACKGROUND),
+        false => match running {
+            0 => "Nothing in the background".to_string(),
+            many => format!("{many} in the background"),
+        },
     }
 }
 
@@ -1563,6 +1575,23 @@ impl ChatView<'_> {
             );
             return;
         }
+        // The count of background work, beside the memory and for the same
+        // reason: it stays put while the settings scroll. At the end of
+        // them it was the first thing cut, on a row the settings fill.
+        if let Some((at, word)) = self.tasks_placed(area) {
+            let chosen = matches!(self.focus, Focus::Settings(at) if at >= self.settings.len());
+            let ground = match chosen {
+                true => self.theme.selected_row_background,
+                false => self.theme.background,
+            };
+            // Nothing still going: there to open, for what the work said,
+            // and not news.
+            let ink = match self.tasks {
+                Some(0) => self.theme.gutter,
+                _ => self.theme.gutter_current,
+            };
+            write(cells, at, area.y, &word, plain.fg(ink).bg(ground));
+        }
         self.settings(cells, area, self.status_room(area), plain);
     }
 
@@ -1583,7 +1612,7 @@ impl ChatView<'_> {
     /// thing it is about is its name, so that is what is written, behind
     /// the box every switch in Obelus is drawn as.
     fn settings(&self, cells: &mut CellBuffer, area: Rect, room: usize, plain: Style) {
-        if self.settings.is_empty() && self.tasks.is_none() {
+        if self.settings.is_empty() {
             // Only once there is a session: before that the row would be
             // saying that an agent which has not spoken yet has nothing to
             // say about itself.
@@ -1639,9 +1668,6 @@ impl ChatView<'_> {
                 // the colour a row nobody can choose is drawn in, under a
                 // box that already says which.
                 Some(false) => self.theme.gutter,
-                // The count of background work, with nothing still going:
-                // there to open, for what the work said, and not news.
-                None if index == self.settings.len() && self.tasks == Some(0) => self.theme.gutter,
                 Some(true) | None => self.theme.gutter_current,
             };
             let style = plain.fg(ink).bg(ground);
@@ -1669,14 +1695,9 @@ impl ChatView<'_> {
     /// The focused one carries the arrow Obelus puts on everything with a
     /// list behind it, so it is wider than the others by exactly that --
     /// which is why the words are made before anything measures them.
-    ///
-    /// And the count of the agent's background work after them, where it
-    /// has told Obelus of any: one more stop on the row, with a list behind
-    /// it like a setting's.
     fn setting_words(&self) -> Vec<(String, Option<bool>)> {
         let chosen = self.chosen_setting();
-        let mut words: Vec<(String, Option<bool>)> = self
-            .settings
+        self.settings
             .iter()
             .enumerate()
             .map(|(index, setting)| {
@@ -1686,28 +1707,38 @@ impl ChatView<'_> {
                 }
                 (word, tick)
             })
-            .collect();
-        if let Some(running) = self.tasks {
-            let mut word = tasks_said(running);
-            if Some(self.settings.len()) == chosen {
-                word.push_str(&opens(false));
-            }
-            words.push((word, None));
-        }
-        words
+            .collect()
     }
 
-    /// How many stops the row has: the settings, and the count after them.
-    fn stops(&self) -> usize {
-        self.settings.len() + usize::from(self.tasks.is_some())
-    }
-
-    /// Which setting the keys are on, if they are up here at all.
+    /// Which setting the keys are on, if they are up here at all -- and not
+    /// on the count of background work, which is the stop after the last.
     fn chosen_setting(&self) -> Option<usize> {
         match self.focus {
-            Focus::Settings(at) => Some(at.min(self.stops().saturating_sub(1))),
-            Focus::Transcript(_) | Focus::Writing => None,
+            Focus::Settings(at) if at < self.settings.len() => Some(at),
+            Focus::Settings(_) | Focus::Transcript(_) | Focus::Writing => None,
         }
+    }
+
+    /// Where the count of background work goes on the status row, and what
+    /// it says -- or nothing, where the agent has told of none, or the row
+    /// has no room for it beside the settings.
+    ///
+    /// The last stop the keys walk to, and drawn after the settings for
+    /// that reason, at the end of the room they have. One answer for the
+    /// drawing, for the room the settings are given and for a press.
+    fn tasks_placed(&self, area: Rect) -> Option<(u16, String)> {
+        let running = self.tasks?;
+        let mut word = tasks_said(running);
+        if matches!(self.focus, Focus::Settings(at) if at >= self.settings.len()) {
+            word.push_str(&opens(false));
+        }
+        let room = self.room_beside_the_marks(area);
+        let wide = text_width(&word);
+        if room <= wide + GAP + LEAST_SETTINGS {
+            return None;
+        }
+        let at = u16::try_from(1 + room - wide).ok()?;
+        Some((area.x + at, word))
     }
 
     /// Which setting the row starts at.
@@ -1781,6 +1812,15 @@ impl ChatView<'_> {
     /// other, both of which stay put. Asked by the drawing and by a press,
     /// because a press has to be measured against the row that is there.
     fn status_room(&self, area: Rect) -> usize {
+        let room = self.room_beside_the_marks(area);
+        match self.tasks_placed(area) {
+            Some((_, word)) => room - text_width(&word) - GAP,
+            None => room,
+        }
+    }
+
+    /// The same, before the count of background work has taken its share.
+    fn room_beside_the_marks(&self, area: Rect) -> usize {
         let hint = self.status_hint();
         let taken = hint.as_deref().map_or(0, |hint| text_width(hint) + 2);
         let over = usize::from(area.width).saturating_sub(taken + 2);
@@ -1808,10 +1848,20 @@ impl ChatView<'_> {
     /// `None` for a point that is not on one of them: the keys at the end
     /// of the row, the memory beside them, the marks that say there are
     /// more in either direction.
-    #[must_use]
+    ///
     /// One past the last setting is the count of background work.
+    #[must_use]
     pub fn setting_at(&self, area: Rect, x: u16, y: u16) -> Option<usize> {
-        if y != area.y || self.stops() == 0 {
+        if y != area.y {
+            return None;
+        }
+        if let Some((at, word)) = self.tasks_placed(area) {
+            let wide = u16::try_from(text_width(&word)).unwrap_or(0);
+            if x >= at && x < at.saturating_add(wide) {
+                return Some(self.settings.len());
+            }
+        }
+        if self.settings.is_empty() {
             return None;
         }
         let room = self.status_room(area);

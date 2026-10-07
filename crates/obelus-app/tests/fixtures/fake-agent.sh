@@ -73,9 +73,6 @@
 #   session/prompt "/garbled"
 #                         -> a run of updates about background work with no
 #                            id on any of them, and then a word
-#   session/prompt "/strange"
-#                         -> an update of a kind no protocol has, and then a
-#                            word
 #   _session/async_task/stop
 #                         -> stopped, and says so; run with `cannot-stop` it
 #                            has no such method
@@ -1005,12 +1002,6 @@ while IFS= read -r line; do
                 garbled=$((garbled + 1))
             done
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"after the garble"}}}}\n'
-            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
-            ;;
-        *'"method":"session/prompt"'*'"text":"/strange'*)
-            set_turn "$session" "$(id_of "$line")"
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"something_no_protocol_has","what":1}}}\n'
-            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"after the stranger"}}}}\n'
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
         *'"method":"_session/async_task/stop"'*)

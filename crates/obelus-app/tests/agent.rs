@@ -13980,6 +13980,16 @@ fn background_work_is_counted_and_its_call_is_not_done_until_it_is() {
         "the call does not say its work goes on:\n{}",
         screen(&mut app)
     );
+    // And the count says what it is counting, not only how many.
+    let counted = match obelus_icons::enabled() {
+        true => "1 running",
+        false => "1 in the background",
+    };
+    let shown = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        shown.contains(counted),
+        "the row does not say `{counted}`:\n{shown}"
+    );
 
     say(&mut app, "/background-ends");
     pump(&mut app, &events, "the work ended", |app| {
@@ -14079,26 +14089,6 @@ fn background_work_nobody_offered_is_never_heard() {
             screen(&mut app)
         );
     }
-}
-
-/// An update of a kind no protocol has is left unread, and the
-/// conversation goes on.
-///
-/// Broken deliberately: parse the update as the protocol's own before the
-/// dialect and return the error from the handler, the way it was typed --
-/// and the connection ends on the stranger.
-#[test]
-fn an_update_nobody_knows_is_left_unread() {
-    let (mut app, events) = talking();
-    pump(&mut app, &events, "the handshake", |app| {
-        app.talking() == obelus_agent::Talking::Ready
-    });
-    say(&mut app, "/strange");
-    say(&mut app, "/hello");
-    pump(&mut app, &events, "the next answer", |app| {
-        said_in_transcript(app, "ran hello")
-    });
-    assert!(said_in_transcript(&app, "after the stranger"));
 }
 
 /// A dialect spoken badly enough is given up on: what it said was running

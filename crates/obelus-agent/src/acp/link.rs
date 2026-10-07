@@ -1419,9 +1419,10 @@ async fn talk(
         .builder()
         // Untyped, and read here. Typed, an update of a kind the protocol's
         // crate does not know -- a dialect's, or one a later protocol adds
-        // -- failed to parse and was an error for the connection, where the
-        // protocol asks for it to be ignored. Everything that is not an
-        // update goes on to the handlers after this one.
+        // -- fails to parse before Obelus sees it, and the crate drops it
+        // with a warning: the connection lives, but a dialect's updates
+        // could never be read at all. Everything that is not an update goes
+        // on to the handlers after this one.
         .on_receive_notification(
             async move |notification: UntypedMessage, connection| {
                 if notification.method != UPDATE {
@@ -2471,8 +2472,7 @@ fn lock(speaking: &std::sync::Mutex<Speaking>) -> std::sync::MutexGuard<'_, Spea
 ///
 /// The dialect of background work first, because its updates are kinds the
 /// protocol does not have; then the protocol's own. An update neither can
-/// read is left unread, which is what the protocol asks of a client -- it
-/// used to fail to parse and take the connection with it.
+/// read is left unread, which is what the protocol asks of a client.
 fn hear_update(
     params: serde_json::Value,
     speaking: &std::sync::Mutex<Speaking>,
