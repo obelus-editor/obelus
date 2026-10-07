@@ -7215,21 +7215,7 @@ fn a_note_says_whether_anybody_has_talked_about_it() {
         },
     );
 
-    let (mut app, events) = wired();
-    app.working_directory_for_test(scratch.path().to_path_buf());
-    let root = scratch.join("agents");
-    obelus_agent::remember(
-        "fake",
-        Path::new(support::sh()),
-        &["tests/fixtures/fake-agent.sh".to_string()],
-        "0.1",
-        &root,
-    )
-    .expect("writing what was installed");
-    app.agents_root_for_test(root);
-    let file = scratch.join("config.toml");
-    std::fs::write(&file, "agent = \"fake\"\n").expect("a settings file");
-    app.config_file_for_test(file);
+    let (mut app, events) = chosen_and_not_running(&scratch);
 
     // Nothing running yet: the mark is about what is written down, which
     // is the half a restart has to survive.
@@ -7694,21 +7680,7 @@ fn the_first_conversation_opened_after_a_restart_is_taken_up() {
 
     // Started the way a reader's morning is: nothing running, an agent
     // named in the settings, and the conversation reached from the note.
-    let (mut app, events) = wired();
-    app.working_directory_for_test(scratch.path().to_path_buf());
-    let root = scratch.join("agents");
-    obelus_agent::remember(
-        "fake",
-        Path::new(support::sh()),
-        &["tests/fixtures/fake-agent.sh".to_string()],
-        "0.1",
-        &root,
-    )
-    .expect("writing what was installed");
-    app.agents_root_for_test(root);
-    let file = scratch.join("config.toml");
-    std::fs::write(&file, "agent = \"fake\"\n").expect("a settings file");
-    app.config_file_for_test(file);
+    let (mut app, events) = chosen_and_not_running(&scratch);
 
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
     talk_about_the_note(&mut app);
@@ -13147,6 +13119,28 @@ fn an_ordinary_end_leaves_the_question_up() {
     );
 }
 
+/// A window that has just started on `scratch`: the fake agent installed
+/// and chosen in the settings, and nothing running -- so whatever the test
+/// opens first is what starts it, the way a reader's morning does.
+fn chosen_and_not_running(scratch: &support::Scratch) -> (App, Receiver<Event>) {
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    let root = scratch.join("agents");
+    obelus_agent::remember(
+        "fake",
+        Path::new(support::sh()),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+        "0.1",
+        &root,
+    )
+    .expect("writing what was installed");
+    app.agents_root_for_test(root);
+    let file = scratch.join("config.toml");
+    std::fs::write(&file, "agent = \"fake\"\n").expect("a settings file");
+    app.config_file_for_test(file);
+    (app, events)
+}
+
 /// Puts a window on a tree of its own whose last window had one
 /// conversation open and nothing else, with the fake agent installed and
 /// chosen -- so that showing the conversation starts it, the way a reader's
@@ -13163,21 +13157,7 @@ fn reopened_on(scratch: &support::Scratch, conversation: &str) -> (App, Receiver
         .output()
         .expect("running git");
     assert!(outcome.status.success(), "git init failed");
-    let (mut app, events) = wired();
-    let root = scratch.join("agents");
-    obelus_agent::remember(
-        "fake",
-        Path::new(support::sh()),
-        &["tests/fixtures/fake-agent.sh".to_string()],
-        "0.1",
-        &root,
-    )
-    .expect("writing what was installed");
-    app.agents_root_for_test(root);
-    let file = scratch.join("config.toml");
-    std::fs::write(&file, "agent = \"fake\"\n").expect("a settings file");
-    app.config_file_for_test(file);
-    app.working_directory_for_test(scratch.path().to_path_buf());
+    let (mut app, events) = chosen_and_not_running(scratch);
     support::lay_out(&mut app, WIDTH, HEIGHT);
     std::fs::write(
         support::record_of_what_was_open(scratch),
@@ -13355,21 +13335,7 @@ fn a_loose_conversation_taken_up_from_the_list_is_not_introduced_again() {
         .output()
         .expect("running git");
     assert!(outcome.status.success(), "git init failed");
-    let (mut app, events) = wired();
-    app.working_directory_for_test(scratch.path().to_path_buf());
-    let root = scratch.join("agents");
-    obelus_agent::remember(
-        "fake",
-        Path::new(support::sh()),
-        &["tests/fixtures/fake-agent.sh".to_string()],
-        "0.1",
-        &root,
-    )
-    .expect("writing what was installed");
-    app.agents_root_for_test(root);
-    let file = scratch.join("config.toml");
-    std::fs::write(&file, "agent = \"fake\"\n").expect("a settings file");
-    app.config_file_for_test(file);
+    let (mut app, events) = chosen_and_not_running(&scratch);
     support::lay_out(&mut app, WIDTH, HEIGHT);
 
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
@@ -13439,21 +13405,7 @@ fn the_first_note_conversation_of_a_window_is_not_introduced_again() {
 
     // Nothing running and an agent named in the settings, the way
     // `the_first_conversation_opened_after_a_restart_is_taken_up` starts.
-    let (mut app, events) = wired();
-    app.working_directory_for_test(scratch.path().to_path_buf());
-    let root = scratch.join("agents");
-    obelus_agent::remember(
-        "fake",
-        Path::new(support::sh()),
-        &["tests/fixtures/fake-agent.sh".to_string()],
-        "0.1",
-        &root,
-    )
-    .expect("writing what was installed");
-    app.agents_root_for_test(root);
-    let file = scratch.join("config.toml");
-    std::fs::write(&file, "agent = \"fake\"\n").expect("a settings file");
-    app.config_file_for_test(file);
+    let (mut app, events) = chosen_and_not_running(&scratch);
 
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TodoOpen);
     talk_about_the_note(&mut app);
