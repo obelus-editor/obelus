@@ -16,7 +16,7 @@ use ratatui::{
     style::{Modifier, Style},
 };
 
-use crate::{fill, put, scrollbar};
+use crate::{fill, put, put_before, scrollbar};
 
 /// Draws the reading, starting `top` rows in.
 ///
@@ -142,12 +142,28 @@ pub fn write_spans(
     } = *drawn;
     let mut column = x;
     let mut at = 0usize;
-    for span in spans {
+    // A selector goes in the cell of the character before it -- see
+    // `put_before` -- and was written there, so its own turn is skipped.
+    let mut written = false;
+    for (index, span) in spans.iter().enumerate() {
         let style = style_of(span.ink, span, theme, base);
-        for character in span.text.chars() {
+        let mut characters = span.text.chars().peekable();
+        while let Some(character) = characters.next() {
+            if std::mem::take(&mut written) {
+                at += 1;
+                continue;
+            }
             if column >= stop {
                 return column;
             }
+            // The character after, which may be the first of the next run:
+            // a run is a colour, and a colour can change between a heart
+            // and its selector without the two being two things.
+            let next = characters.peek().copied().or_else(|| {
+                spans[index + 1..]
+                    .iter()
+                    .find_map(|span| span.text.chars().next())
+            });
             // What the reader has hold of, in the colour every list in
             // Obelus marks a run of itself with: a ground under whatever
             // colour the characters already carry, which is why the ink
@@ -156,7 +172,8 @@ pub fn write_spans(
                 true => style.bg(theme.selection_background),
                 false => style,
             };
-            column = column.saturating_add(put(cells, column, y, character, style));
+            column = column.saturating_add(put_before(cells, column, y, character, next, style));
+            written = next.is_some_and(obelus_text::is_a_presentation);
             at += 1;
         }
     }
@@ -197,4 +214,38 @@ fn style_of(ink: Ink, span: &obelus_row::Span, theme: &Theme, base: Style) -> St
         style = style.add_modifier(Modifier::CROSSED_OUT);
     }
     style
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style};
+
+    use super::{Drawn, write_spans};
+
+    /// A picture and its selector go in one cell, two wide, even where the
+    /// runs change between them -- which is how a conversation is drawn, and
+    /// the one row writer that wrote a character at a time.
+    ///
+    /// Deliberate break: `put` in place of `put_before`, which writes the
+    /// selector into a cell of its own and puts the `x` a cell further on.
+    #[test]
+    fn a_picture_and_its_selector_are_one_cell_of_two() {
+        let theme = obelus_theme::builtin::by_name("dark").expect("the dark theme");
+        let drawn = Drawn {
+            base: Style::new(),
+            theme,
+            stop: 10,
+            held: None,
+        };
+        let spans = [
+            obelus_row::Span::new("\u{2764}", obelus_row::Ink::Plain),
+            obelus_row::Span::new("\u{fe0f}x", obelus_row::Ink::Code),
+        ];
+        let mut cells = CellBuffer::empty(Rect::new(0, 0, 10, 1));
+        let after = write_spans(&mut cells, 0, 0, &spans, &drawn);
+        assert_eq!(after, 3, "the heart and the x are three cells");
+        assert_eq!(cells[(0, 0)].symbol(), "\u{2764}\u{fe0f}");
+        assert_eq!(cells[(1, 0)].symbol(), "");
+        assert_eq!(cells[(2, 0)].symbol(), "x");
+    }
 }

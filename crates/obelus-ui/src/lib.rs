@@ -1622,6 +1622,27 @@ pub fn put_before(
     width.max(1)
 }
 
+/// How many cells each character of a run takes as [`write`] draws it.
+///
+/// For whoever has to find a character from a cell, or a cell from a
+/// character, in something written this way -- a click on a row, the caret
+/// put back on it. What `obelus-text` counts, except where `put` differs:
+/// a character a terminal does not advance over still gets the one cell
+/// `put` gives it, and a selector after a character gets none, because it
+/// was written into that character's cell.
+pub fn drawn_widths(contents: &str) -> impl Iterator<Item = (char, u16)> + '_ {
+    let mut first = true;
+    widths(contents).map(move |(character, cells)| {
+        let follows = !std::mem::replace(&mut first, false);
+        let cells = match (cells, follows && is_a_presentation(character)) {
+            (_, true) => 0,
+            (0, false) => 1,
+            (cells, false) => cells,
+        };
+        (character, u16::try_from(cells).unwrap_or(1))
+    })
+}
+
 /// What a character looks like in a cell.
 ///
 /// Itself, unless it is a control character, which is a space. A terminal
@@ -3086,5 +3107,36 @@ mod tests {
         // rather than leaving it to say how nothing is drawn.
         assert_eq!(drop_from_left("ab\u{2764}\u{fe0f}", 2), 4);
         assert_eq!(drop_from_right("\u{2764}\u{fe0f}ab", 3), 2);
+    }
+
+    /// What finds a character from a cell counts the cells `write` drew:
+    /// a picture two and its selector none.
+    ///
+    /// Which is what a click on a conversation's row and the caret put back
+    /// on one are found by; they counted the selector as a cell of its own,
+    /// so a click on the heart's second cell landed between it and its
+    /// selector.
+    ///
+    /// Deliberate break: counting a selector after a character as the one
+    /// cell a zero-width character gets, which is what the conversation did.
+    #[test]
+    fn a_cell_is_found_by_the_widths_write_draws() {
+        use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style};
+
+        use super::{drawn_widths, write};
+
+        let said = "\u{2764}\u{fe0f}x";
+        let counted: Vec<u16> = drawn_widths(said).map(|(_, cells)| cells).collect();
+        assert_eq!(counted, [2, 0, 1]);
+        let mut cells = CellBuffer::empty(Rect::new(0, 0, 6, 1));
+        assert_eq!(
+            write(&mut cells, 0, 0, said, Style::new()),
+            counted.iter().sum::<u16>(),
+            "what is counted is not what is drawn"
+        );
+        // A selector with nothing before it has no cell to go in, and is
+        // given the one `put` gives it.
+        let counted: Vec<u16> = drawn_widths("\u{fe0f}x").map(|(_, cells)| cells).collect();
+        assert_eq!(counted, [1, 1]);
     }
 }

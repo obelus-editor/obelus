@@ -413,16 +413,8 @@ impl Text {
     /// The extended clusters, which are the ones that keep a picture with
     /// its selector and a letter with its marks.
     fn boundaries(&self, line: LineNumber) -> Vec<usize> {
-        use unicode_segmentation::UnicodeSegmentation as _;
-
         let contents: String = self.line(line).chars().collect();
-        let mut column = 0usize;
-        let mut boundaries = vec![0];
-        for cluster in contents.graphemes(true) {
-            column += cluster.chars().count();
-            boundaries.push(column);
-        }
-        boundaries
+        boundaries(&contents)
     }
 
     /// The document-wide `char` offset of a position.
@@ -718,6 +710,25 @@ pub fn cells_of(character: char, next: Option<char>) -> usize {
             cells => cells,
         },
     }
+}
+
+/// Every character index of a string a caret may stand at, ascending: zero,
+/// each place one cluster ends and the next begins, and the end.
+///
+/// What [`Text::cluster_before`] and its fellows walk, for text that is not
+/// a document -- a row of a conversation is a string, and a caret in it
+/// stands between clusters for the same reason one in a file does.
+#[must_use]
+pub fn boundaries(contents: &str) -> Vec<usize> {
+    use unicode_segmentation::UnicodeSegmentation as _;
+
+    let mut column = 0usize;
+    let mut boundaries = vec![0];
+    for cluster in contents.graphemes(true) {
+        column += cluster.chars().count();
+        boundaries.push(column);
+    }
+    boundaries
 }
 
 /// Whether a character written on its own is text that has a picture of

@@ -885,14 +885,12 @@ const fn words_end(area: Rect) -> u16 {
 fn characters_at(row: &Row, x: u16, area: Rect) -> usize {
     let mut column = words_begin(row, area);
     let mut seen = 0usize;
-    for span in &row.spans {
-        for character in span.text.chars() {
-            if x < column + wide(character) {
-                return seen;
-            }
-            column += wide(character);
-            seen += 1;
+    for (_, wide) in crate::drawn_widths(&row.text()) {
+        if x < column + wide {
+            return seen;
         }
+        column += wide;
+        seen += 1;
     }
     seen
 }
@@ -905,15 +903,11 @@ fn characters_at(row: &Row, x: u16, area: Rect) -> usize {
 /// the end of a line belongs.
 fn cell_at(row: &Row, characters: usize, area: Rect) -> u16 {
     let mut column = words_begin(row, area);
-    let mut seen = 0usize;
-    for span in &row.spans {
-        for character in span.text.chars() {
-            if seen == characters {
-                return column;
-            }
-            column += wide(character);
-            seen += 1;
+    for (seen, (_, wide)) in crate::drawn_widths(&row.text()).enumerate() {
+        if seen == characters {
+            return column;
         }
+        column += wide;
     }
     column
 }
@@ -921,13 +915,6 @@ fn cell_at(row: &Row, characters: usize, area: Rect) -> u16 {
 /// The cell a row's own words start at.
 fn words_begin(row: &Row, area: Rect) -> u16 {
     area.x + MARGIN + INDENT + u16::from(row.depth) * DEEPER
-}
-
-/// How many cells a character takes, never fewer than one.
-fn wide(character: char) -> u16 {
-    u16::try_from(text_width(&character.to_string()))
-        .unwrap_or(1)
-        .max(1)
 }
 
 impl Widget for ChatView<'_> {
@@ -1435,22 +1422,21 @@ impl ChatView<'_> {
             // the file uses for the same fact, because it is the same
             // fact. Counted in characters of the row, which is what the
             // box counts a hold in.
+            //
+            // A ground laid under the cells already written rather than the
+            // characters written again: written one at a time, a picture
+            // lost the selector that `write` put in its cell with it.
             if let Some(held) = &row.held {
                 let mut column = x;
-                let mut buffer = [0u8; 4];
-                for (at, character) in row.said.chars().enumerate() {
-                    let drawn = character.encode_utf8(&mut buffer);
-                    let wide = u16::try_from(text_width(drawn)).unwrap_or(1);
+                for (at, (_, wide)) in crate::drawn_widths(&row.said).enumerate() {
                     if held.contains(&at) {
-                        write(
-                            cells,
-                            column,
-                            y,
-                            drawn,
-                            plain.bg(self.theme.selection_background),
-                        );
+                        for cell in column..column.saturating_add(wide) {
+                            if let Some(cell) = cells.cell_mut((cell, y)) {
+                                cell.set_bg(self.theme.selection_background);
+                            }
+                        }
                     }
-                    column += wide;
+                    column = column.saturating_add(wide);
                 }
             }
         }
