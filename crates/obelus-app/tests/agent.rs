@@ -13958,7 +13958,10 @@ fn standing_on(app: &App) -> String {
 /// is.
 ///
 /// Broken deliberately three ways: take the `(true, "completed")` arm out
-/// of `Chat::tool`, and the call says done while the server runs; have
+/// of `Chat::tool` *and* the `backgrounded` call out of
+/// `hear_of_background_work` -- either alone is covered by the other, the
+/// marker on the call and the work's own start -- and the call says done
+/// while the server runs; have
 /// `Dialect::chosen` answer `None` always, and nothing is counted; take
 /// `background_ended` out of `hear_of_background_work`, and the call goes on
 /// saying the work runs after it has ended.
