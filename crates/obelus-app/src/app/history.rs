@@ -336,8 +336,8 @@ impl App {
         }
         let before = self
             .committed
-            .as_ref()
-            .and_then(|committed| committed.text.as_ref());
+            .as_mut()
+            .and_then(|committed| committed.text.as_mut());
         // No text to compare with is every way this can have no answer --
         // not a repository, a file git has never heard of, no commits yet --
         // and they all mean the same thing in the margin: nothing to say.

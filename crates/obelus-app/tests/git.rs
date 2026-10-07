@@ -5161,59 +5161,161 @@ fn a_project_that_asks_for_crlf_has_an_honest_margin() {
     );
 }
 
-/// A file written back with `\r\n` in a project that stores `\n` is counted
-/// the way `git diff` counts it: by what it changed, not by its line endings.
+/// What `git diff --numstat` says of `file.rs` against `HEAD`, which is the
+/// answer the line endings below are measured against.
+fn numstat(repository: &Repository) -> (usize, usize) {
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repository.directory())
+        .args(["diff", "--numstat", "HEAD", "--", "file.rs"])
+        .output()
+        .expect("git diff");
+    let said = String::from_utf8_lossy(&out.stdout);
+    let mut words = said.split_whitespace();
+    let mut next = || words.next().and_then(|word| word.parse().ok()).unwrap_or(0);
+    (next(), next())
+}
+
+/// A file's line endings are counted the way `git diff` counts them.
 ///
-/// Python's text mode writes `\r\n` on Windows, so an agent editing a file
-/// with a script left the whole of it differing from its commit in every
-/// line ending. git normalises those on the way in and said two hundred
-/// lines; the list said four thousand taken away and four thousand put back.
+/// Something that picks the platform's line ending -- Python's text mode,
+/// PowerShell's `Set-Content` -- writes a whole file back with `\r\n` on
+/// Windows. git normalises those on the way in where the file is text and
+/// said two hundred lines had changed; the list said four thousand taken
+/// away and four thousand put back. Whether a `\r` is a change is git's
+/// question, and each case here asks git as well as Obelus, so the expected
+/// numbers are not Obelus's opinion of itself.
 ///
-/// Broken deliberately by counting the bytes on disk as they are, which is
-/// what it did: the first count is then `(4, 3)`. And the second half is why
-/// the answer is git's conversion rather than ignoring a `\r`: where nothing
-/// says the file is text, git stores what it is given and `git diff` calls
-/// every line changed -- so does this. Broken by rewriting the endings
-/// whatever git says, the second count is `(1, 0)`.
+/// Broken deliberately four ways. Comparing the text as it is, which is
+/// what it did: the `eol=lf` and `safecrlf` cases are counted as whole
+/// files, and `eol=crlf` as its bare line changed. Leaving the round-trip
+/// check on: the `safecrlf` case is a whole file. Carrying the text in to
+/// git and not back out: the `eol=crlf` case is. And answering the index
+/// question with nothing: the case whose index already holds `\r\n` is
+/// normalised, which git does not do.
 #[test]
-fn a_file_written_back_with_crlf_is_counted_by_what_it_changed() {
+fn line_endings_are_counted_the_way_git_diff_counts_them() {
     use obelus_git::counted_against_head;
 
-    let repository = Repository::new("counts-crlf", "one\ntwo\nthree\n");
-    std::fs::write(
-        repository.directory().join(".gitattributes"),
-        "* text eol=lf\n",
-    )
-    .expect("the attributes");
-    repository.commit_all("with attributes");
+    struct Case {
+        name: &'static str,
+        attributes: Option<&'static str>,
+        committed: &'static str,
+        /// Before the attributes, so that git stores the bytes as they are.
+        committed_raw: bool,
+        config: &'static [(&'static str, &'static str)],
+        now: &'static str,
+        expected: (usize, usize),
+    }
+    let cases = [
+        Case {
+            name: "eol-lf",
+            attributes: Some("* text eol=lf\n"),
+            committed: "one\ntwo\nthree\n",
+            committed_raw: false,
+            config: &[],
+            now: "one\r\ntwo\r\nthree\r\nfour\r\n",
+            expected: (1, 0),
+        },
+        Case {
+            name: "safecrlf",
+            attributes: Some("* text eol=lf\n"),
+            committed: "one\ntwo\nthree\n",
+            committed_raw: false,
+            config: &[("core.safecrlf", "true")],
+            now: "one\r\ntwo\r\nthree\r\nfour\r\n",
+            expected: (1, 0),
+        },
+        Case {
+            name: "eol-crlf",
+            attributes: Some("* text eol=crlf\n"),
+            committed: "one\r\ntwo\r\nthree\r\n",
+            committed_raw: false,
+            config: &[],
+            // One line with a bare `\n`: git rewrites it on the way in like
+            // the rest.
+            now: "one\r\ntwo\nthree\r\nfour\r\n",
+            expected: (1, 0),
+        },
+        Case {
+            name: "indexed-crlf",
+            attributes: Some("* text=auto eol=lf\n"),
+            committed: "one\r\ntwo\r\nthree\r\n",
+            committed_raw: true,
+            config: &[],
+            now: "one\r\ntwo\r\nthree\r\nfour\r\n",
+            expected: (1, 0),
+        },
+        Case {
+            name: "no-attributes",
+            attributes: None,
+            committed: "one\ntwo\nthree\n",
+            committed_raw: false,
+            config: &[],
+            now: "one\r\ntwo\r\nthree\r\nfour\r\n",
+            expected: (4, 3),
+        },
+        Case {
+            name: "lone-cr",
+            attributes: Some("* text=auto eol=lf\n"),
+            committed: "one\ntwo\nthree\n",
+            committed_raw: false,
+            config: &[],
+            // A lone `\r` makes `text=auto` call the file binary, and a
+            // binary file's `\r\n`s are kept.
+            now: "one\r\ntwo\r\nthree\rfour\r\n",
+            expected: (3, 3),
+        },
+    ];
 
-    std::fs::write(repository.path(), "one\r\ntwo\r\nthree\r\nfour\r\n").expect("rewriting it");
-    let file = repository.path();
-    assert_eq!(
-        counted_against_head(std::slice::from_ref(&file))
-            .get(&file)
-            .copied(),
-        Some((1, 0)),
-        "the line endings were counted as changes"
-    );
+    // Every case that disagrees, rather than the first: a break that should
+    // fail three of them is checked by seeing all three.
+    let mut wrong = Vec::new();
+    for case in cases {
+        let repository = Repository::new(&format!("endings-{}", case.name), case.committed);
+        let attributes = repository.directory().join(".gitattributes");
+        if case.committed_raw {
+            // `Repository::new` committed the file with no attributes, and
+            // git stores what it is given.
+            std::fs::write(&attributes, case.attributes.unwrap_or_default()).expect("attributes");
+            repository.run(&["add", ".gitattributes"]);
+            repository.run(&["commit", "--quiet", "-m", "attributes"]);
+        } else if let Some(said) = case.attributes {
+            std::fs::write(&attributes, said).expect("attributes");
+            repository.run(&["rm", "--cached", "--quiet", "file.rs"]);
+            std::fs::write(repository.path(), case.committed).expect("the file");
+            repository.commit_all("with attributes");
+        }
+        for (key, value) in case.config {
+            repository.run(&["config", key, value]);
+        }
+        repository.write(case.now);
 
-    // Only the attributes go: committing the file too would make its `\r`s
-    // the commit's.
-    repository.run(&["rm", "--quiet", ".gitattributes"]);
-    repository.run(&["commit", "--quiet", "-m", "without attributes"]);
-    assert_eq!(
-        counted_against_head(std::slice::from_ref(&file))
+        let file = repository.path();
+        let counted = counted_against_head(std::slice::from_ref(&file))
             .get(&file)
-            .copied(),
-        Some((4, 3)),
-        "a file git would store with its `\\r` was counted as if it would not"
+            .copied();
+        assert_eq!(
+            numstat(&repository),
+            case.expected,
+            "{}: git itself does not say what this case expects",
+            case.name
+        );
+        if counted != Some(case.expected) {
+            wrong.push((case.name, counted));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "counted otherwise than `git diff`: {wrong:?}"
     );
 }
 
 /// And the margin says the same of it as the count.
 ///
-/// Broken deliberately by comparing the buffer with the checkout's text as
-/// it is, which is what the margin did: every line is then marked.
+/// Through the application rather than through `Base`, because the margin
+/// is the application's: broken deliberately by comparing the buffer with
+/// `committed.text()` in `App`'s own diff, every line is marked.
 #[test]
 fn a_file_written_back_with_crlf_is_marked_by_what_it_changed() {
     let repository = Repository::new("margin-crlf", "one\ntwo\nthree\n");
@@ -5223,9 +5325,68 @@ fn a_file_written_back_with_crlf_is_marked_by_what_it_changed() {
     )
     .expect("the attributes");
     repository.commit_all("with attributes");
+    repository.write("one\r\ntwo\r\nthree\r\nfour\r\n");
 
-    let base = obelus_git::head(&repository.path()).expect("a diff base");
-    let changes = base.changes("one\r\ntwo\r\nthree\r\nfour\r\n");
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("the file")]);
+    support::lay_out(&mut app, 40, 10);
+    let changes = app.changes().expect("a margin");
+    let marked: Vec<usize> = (0..4)
+        .filter(|&line| changes.marker_at(LineNumber::new(line)).is_some())
+        .collect();
+    assert_eq!(
+        marked,
+        vec![3],
+        "the line endings were marked as changes: {changes:?}"
+    );
+}
+
+/// And so does the preview of a changed file nobody has open.
+///
+/// Broken deliberately by comparing the preview's text with
+/// `committed.text()`: every line of it is marked.
+#[test]
+fn a_file_written_back_with_crlf_is_previewed_by_what_it_changed() {
+    use obelus_app::app::dispatch;
+    use obelus_command::Command;
+
+    let repository = Repository::new("preview-crlf", "one\ntwo\nthree\n");
+    let other = repository.directory().join("other.rs");
+    std::fs::write(&other, "elsewhere\n").expect("another file");
+    std::fs::write(
+        repository.directory().join(".gitattributes"),
+        "* text eol=lf\n",
+    )
+    .expect("the attributes");
+    repository.commit_all("with attributes");
+    repository.write("one\r\ntwo\r\nthree\r\nfour\r\n");
+
+    let mut app = App::new(vec![Buffer::open(&other).expect("the other file")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 76, 24);
+    dispatch::dispatch(&mut app, Command::FileChanged);
+    // The list and its preview arrive from walks on threads.
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(20);
+    while app
+        .preview()
+        .is_none_or(|preview| preview.changes.is_none())
+    {
+        let left = until
+            .checked_duration_since(std::time::Instant::now())
+            .expect("the preview never arrived");
+        if let Ok(event) = events.recv_timeout(left.min(std::time::Duration::from_millis(50))) {
+            app.handle(event);
+        }
+        support::lay_out(&mut app, 76, 24);
+    }
+
+    let preview = app.preview().expect("a preview of the changed file");
+    assert!(
+        preview.buffer.path().ends_with("file.rs"),
+        "the preview is of {}",
+        preview.buffer.path().display()
+    );
+    let changes = preview.changes.expect("a margin on the preview");
     let marked: Vec<usize> = (0..4)
         .filter(|&line| changes.marker_at(LineNumber::new(line)).is_some())
         .collect();

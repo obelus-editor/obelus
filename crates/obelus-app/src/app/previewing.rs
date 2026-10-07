@@ -857,7 +857,7 @@ impl App {
                         .ok()?,
                 };
                 let changes = obelus_git::head(path)
-                    .map(|committed| committed.changes(&buffer.text().rope().to_string()));
+                    .map(|mut committed| committed.changes(&buffer.text().rope().to_string()));
                 Some((buffer, changes))
             }
             Subject::Commit { id, path } => {

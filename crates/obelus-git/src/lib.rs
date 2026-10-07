@@ -896,7 +896,7 @@ pub fn counted_against_head(paths: &[PathBuf]) -> HashMap<PathBuf, (usize, usize
             continue;
         };
         let mut tree = head.clone();
-        let base = match tree.peel_to_entry_by_path(&relative) {
+        let mut base = match tree.peel_to_entry_by_path(&relative) {
             Ok(Some(entry)) => match entry.object() {
                 // Not text, so it has no lines to count.
                 Ok(object) if std::str::from_utf8(&object.data).is_err() => continue,
@@ -911,7 +911,7 @@ pub fn counted_against_head(paths: &[PathBuf]) -> HashMap<PathBuf, (usize, usize
         let now = std::fs::read_to_string(path).unwrap_or_default();
         counts.insert(
             path.clone(),
-            change::counted(&change::drawn(base.text(), &base.as_compared(&now))),
+            change::counted(&change::drawn(&base.text.clone(), &base.as_compared(&now))),
         );
     }
     counts
@@ -943,32 +943,36 @@ pub fn head(path: &Path) -> Option<Base> {
 
 /// What a text is compared with to say what has changed in it.
 ///
-/// A stored version as a checkout would write it, and the line ending git
-/// would rewrite the reader's lines to on the way in and back out again,
-/// where it rewrites them at all. The second half is what `git diff` does
-/// and the text alone could not: a file the attributes say is text, written
-/// back with `\r\n` by something that picks the platform's line ending --
-/// Python's text mode and PowerShell's `Set-Content` both do, on Windows --
-/// differs from its commit in every line and in nothing git would commit.
-/// Compared as it was, a two-hundred-line change was listed as four
-/// thousand lines taken away and four thousand put back, and the margin
-/// marked every line.
+/// A stored version as a checkout would write it, and the way git would
+/// carry the reader's text there: in as it would be committed and back out
+/// as it would be checked out, which is what `git diff` compares by. A file
+/// the attributes say is text, written back with `\r\n` by something that
+/// picks the platform's line ending -- Python's text mode and PowerShell's
+/// `Set-Content` both do, on Windows -- differs from its commit in every line
+/// and in nothing git would commit. Compared as it was, a two-hundred-line
+/// change was listed as four thousand lines taken away and four thousand put
+/// back, and the margin marked every line.
 ///
-/// Where git keeps a `\r` -- nothing says the file is text, or the commit
-/// already has them -- so does the comparison, because `git diff` calls
-/// those lines changed and a margin that did not would be the one
-/// disagreeing.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Through git's own conversion rather than a rule about `\r` of Obelus's,
+/// because which files git rewrites is git's question: where nothing says a
+/// file is text, where the index already holds `\r\n`, or where `text=auto`
+/// finds a lone `\r` and calls the file binary, git keeps the `\r` and
+/// `git diff` calls those lines changed -- and a margin that did not would be
+/// the one disagreeing.
 pub struct Base {
     text: String,
-    endings: Option<Ending>,
+    /// Whether the stored version, as checked out, has a `\r` anywhere.
+    returns: bool,
+    rewrite: Option<Rewrite>,
 }
 
-/// The line ending a checkout writes, for a file git rewrites them in.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Ending {
-    Lf,
-    CrLf,
+impl std::fmt::Debug for Base {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Base")
+            .field("text", &self.text.len())
+            .field("rewrite", &self.rewrite.is_some())
+            .finish()
+    }
 }
 
 impl Base {
@@ -977,8 +981,10 @@ impl Base {
     #[must_use]
     pub const fn as_stored(text: String) -> Self {
         Self {
+            // Nothing to carry it through, so nothing to skip.
+            returns: false,
             text,
-            endings: None,
+            rewrite: None,
         }
     }
 
@@ -990,29 +996,116 @@ impl Base {
 
     /// What has changed between this and `now`.
     #[must_use]
-    pub fn changes(&self, now: &str) -> Changes {
-        Changes::between(&self.text, &self.as_compared(now))
+    pub fn changes(&mut self, now: &str) -> Changes {
+        let now = self.as_compared(now);
+        Changes::between(&self.text, &now)
     }
 
-    /// `now` with the line endings a round trip through git would leave it.
+    /// `now` as it would be after a round trip through git, or as it is
+    /// where there is no trip to take.
     ///
-    /// Only the endings, so a line here is a line of `now`: what the margin
-    /// marks against the line numbers of the buffer stays where it was.
-    fn as_compared<'a>(&self, now: &'a str) -> std::borrow::Cow<'a, str> {
+    /// Only ever with as many lines as `now` has, because what the margin
+    /// marks is drawn against the buffer's line numbers: a conversion that
+    /// moved them would put every mark on the wrong line, which is worse than
+    /// the `\r`s it was asked about.
+    fn as_compared<'a>(&mut self, now: &'a str) -> std::borrow::Cow<'a, str> {
         use std::borrow::Cow;
-        match self.endings {
-            Some(Ending::Lf) if now.contains("\r\n") => Cow::Owned(now.replace("\r\n", "\n")),
-            Some(Ending::CrLf) if now.matches('\n').count() != now.matches("\r\n").count() => {
-                Cow::Owned(now.replace("\r\n", "\n").replace('\n', "\r\n"))
-            }
+        // The trip is the margin's diff again in cost, on every keystroke,
+        // and almost every file has no `\r` on either side -- where the
+        // trip cannot change a line ending. A checkout that writes `\r\n`
+        // put them in the stored side too, so a `\r` it would add shows up
+        // there; and with none in the text there is none to take out.
+        if !self.returns && !now.contains('\r') {
+            return Cow::Borrowed(now);
+        }
+        let Some(rewrite) = self.rewrite.as_mut() else {
+            return Cow::Borrowed(now);
+        };
+        match rewrite.round_trip(now.as_bytes()).map(String::from_utf8) {
+            Some(Ok(trip)) if trip != now && lines(&trip) == lines(now) => Cow::Owned(trip),
             _ => Cow::Borrowed(now),
         }
+    }
+}
+
+fn lines(text: &str) -> usize {
+    text.bytes().filter(|&byte| byte == b'\n').count()
+}
+
+/// git's conversions for one file, kept so that a text can be carried in and
+/// back out on every keystroke without opening the repository again.
+///
+/// Without three things the pipeline a checkout uses would do. No driver,
+/// because this runs as the reader types, and a `filter.*` program is a
+/// process per keystroke -- the stored side has been through it once, on
+/// the way to [`Base::text`], and a file a driver owns is compared as it
+/// was. And no round-trip check of either kind: `core.safecrlf` makes gix
+/// *fail* a conversion `git add` would only warn about, and a failed
+/// conversion here is a comparison of raw bytes, which is every line marked.
+struct Rewrite {
+    pipeline: gix::filter::plumbing::Pipeline,
+    attributes: gix::worktree::Stack,
+    objects: gix::OdbHandle,
+    relative: PathBuf,
+    /// What the index holds for the file: `text=auto` leaves a file's `\r`s
+    /// alone where the index already has them, so the answer depends on it.
+    indexed: Option<Vec<u8>>,
+}
+
+impl Rewrite {
+    fn round_trip(&mut self, now: &[u8]) -> Option<Vec<u8>> {
+        let Self {
+            pipeline,
+            attributes,
+            objects,
+            relative,
+            indexed,
+        } = self;
+        let name = unix_name(relative);
+        let stored = {
+            let at = attributes
+                .at_entry(AsRef::<gix::bstr::BStr>::as_ref(&name), None, &*objects)
+                .ok()?;
+            read_all(
+                pipeline
+                    .convert_to_git(
+                        now,
+                        relative,
+                        &mut |_, out| {
+                            at.matching_attributes(out);
+                        },
+                        &mut |buf| {
+                            Ok(indexed.as_ref().map(|indexed| {
+                                buf.clear();
+                                buf.extend_from_slice(indexed);
+                            }))
+                        },
+                    )
+                    .ok()?,
+            )?
+        };
+        let at = attributes
+            .at_entry(AsRef::<gix::bstr::BStr>::as_ref(&name), None, &*objects)
+            .ok()?;
+        read_all(
+            pipeline
+                .convert_to_worktree(
+                    &stored,
+                    name.as_ref(),
+                    &mut |_, out| {
+                        at.matching_attributes(out);
+                    },
+                    Default::default(),
+                )
+                .ok()?,
+        )
     }
 }
 
 /// A repository's own way of converting a file, built once for every file
 /// it is asked about.
 struct Checkout<'repo> {
+    repository: &'repo gix::Repository,
     pipeline: Option<(
         gix::filter::Pipeline<'repo>,
         gix::worktree::IndexPersistedOrInMemory,
@@ -1022,14 +1115,17 @@ struct Checkout<'repo> {
 impl<'repo> Checkout<'repo> {
     fn of(repository: &'repo gix::Repository) -> Self {
         Self {
+            repository,
             pipeline: repository.filter_pipeline(None).ok(),
         }
     }
 
     fn base(&mut self, data: &[u8], relative: &Path) -> Base {
+        let text = self.written(data, relative);
         Base {
-            text: self.written(data, relative),
-            endings: self.endings(relative),
+            returns: text.contains('\r'),
+            text,
+            rewrite: self.rewrite(relative),
         }
     }
 
@@ -1060,33 +1156,33 @@ impl<'repo> Checkout<'repo> {
         read_all(converted).map_or_else(text, |out| String::from_utf8_lossy(&out).into_owned())
     }
 
-    /// Which line ending git rewrites this file's lines to, if it rewrites
-    /// them at all -- asked of git rather than of the attributes, because
-    /// `core.autocrlf` and what the index already holds are part of the
-    /// answer too.
-    ///
-    /// By converting one line each way: if a line ending in `\r\n` is stored
-    /// as `\n`, git rewrites this file's endings, and a checkout of `\n`
-    /// says which it rewrites them to.
-    fn endings(&mut self, relative: &Path) -> Option<Ending> {
-        let (pipeline, index) = self.pipeline.as_mut()?;
-        let stored = read_all(
-            pipeline
-                .convert_to_git(&b"a\r\n"[..], relative, index)
-                .ok()?,
-        )?;
-        if stored != b"a\n" {
-            return None;
-        }
-        let written = read_all(
-            pipeline
-                .convert_to_worktree(b"a\n", unix_name(relative).as_ref(), Default::default())
-                .ok()?,
-        )?;
-        Some(if written == b"a\r\n" {
-            Ending::CrLf
-        } else {
-            Ending::Lf
+    fn rewrite(&self, relative: &Path) -> Option<Rewrite> {
+        let (_, index) = self.pipeline.as_ref()?;
+        let mut options = gix::filter::Pipeline::options(self.repository).ok()?;
+        options.drivers.clear();
+        options.crlf_roundtrip_check = gix::filter::plumbing::pipeline::CrlfRoundTripCheck::Skip;
+        options.encodings_with_roundtrip_check.clear();
+        let attributes = self
+            .repository
+            .attributes_only(
+                index,
+                gix::worktree::stack::state::attributes::Source::WorktreeThenIdMapping,
+            )
+            .ok()?
+            .detach();
+        let indexed = index
+            .entry_by_path(unix_name(relative).as_ref())
+            .and_then(|entry| self.repository.find_object(entry.id).ok())
+            .map(|object| object.detach().data);
+        Some(Rewrite {
+            pipeline: gix::filter::plumbing::Pipeline::new(
+                self.repository.command_context().ok()?,
+                options,
+            ),
+            attributes,
+            objects: self.repository.objects.clone(),
+            relative: relative.to_path_buf(),
+            indexed,
         })
     }
 }
