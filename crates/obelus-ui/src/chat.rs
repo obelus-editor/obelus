@@ -578,7 +578,9 @@ fn said(setting: &acp::Setting) -> (String, Option<bool>) {
 }
 
 /// What the count of background work says on the row: how much is still
-/// going, in words, behind the mark a call wears for the same thing.
+/// going, in words, behind the mark a call wears for the same thing -- and
+/// where none is, how much has ended, which is there to be opened rather
+/// than to be watched.
 ///
 /// Words and not a bare number: a glyph and a digit at the end of a row of
 /// settings read as one more setting on some value, and a reader has to
@@ -593,8 +595,11 @@ fn said(setting: &acp::Setting) -> (String, Option<bool>) {
 /// Whether there are glyphs and whether this is a window are handed in
 /// rather than read here, so that both answers can be asked of it in one
 /// test binary without moving a switch every other test reads.
-fn tasks_said(running: usize, glyphs: bool, window: bool) -> String {
-    let going = format!("{running} in the background");
+fn tasks_said(running: usize, finished: usize, glyphs: bool, window: bool) -> String {
+    let going = match running {
+        0 => format!("{finished} finished"),
+        _ => format!("{running} in the background"),
+    };
     match (glyphs, window) {
         (true, true) => format!("{} {going}", obelus_icons::ui::BACKGROUND),
         (true, false) => format!("{}  {going}", obelus_icons::ui::BACKGROUND),
@@ -656,9 +661,10 @@ pub struct ChatView<'a> {
     /// How full the agent's memory of this conversation is, once it has
     /// said.
     usage: Option<&'a acp::Usage>,
-    /// How much of the agent's background work is still going here, where
-    /// it has told Obelus of any: the last stop on the row of settings.
-    tasks: Option<usize>,
+    /// How much of the agent's background work here is still going and
+    /// how much has ended, where it has told Obelus of any: the last stop on
+    /// the row of settings.
+    tasks: Option<(usize, usize)>,
     /// The chat this window can be reached from, and where it stands: the
     /// same mark a file's row carries, since this row is the one a reader
     /// working from a chat is most often on.
@@ -1588,7 +1594,12 @@ impl ChatView<'_> {
                 true => self.theme.selected_row_background,
                 false => self.theme.background,
             };
-            let ink = self.theme.gutter_current;
+            // Bright while something is going, which is news; dim once it
+            // has all ended, which is only somewhere to look.
+            let ink = match self.tasks {
+                Some((0, _)) => self.theme.gutter,
+                _ => self.theme.gutter_current,
+            };
             write(cells, at, area.y, &word, plain.fg(ink).bg(ground));
         }
         self.settings(cells, area, self.status_room(area), plain);
@@ -1736,9 +1747,10 @@ impl ChatView<'_> {
     /// until the keys reached it would stop fitting because they had, and
     /// the keys would be put back where they came from.
     fn tasks_placed(&self, area: Rect) -> Option<(u16, String)> {
-        let running = self.tasks?;
+        let (running, finished) = self.tasks?;
         let mut word = tasks_said(
             running,
+            finished,
             obelus_icons::enabled(),
             obelus_config::in_a_window(),
         );
@@ -2172,14 +2184,16 @@ mod tests {
     fn the_mark_on_the_count_is_as_far_from_it_as_the_front_end_needs() {
         let mark = obelus_icons::ui::BACKGROUND;
         assert_eq!(
-            super::tasks_said(2, true, true),
+            super::tasks_said(2, 1, true, true),
             format!("{mark} 2 in the background")
         );
         assert_eq!(
-            super::tasks_said(2, true, false),
+            super::tasks_said(2, 1, true, false),
             format!("{mark}  2 in the background")
         );
-        assert_eq!(super::tasks_said(2, false, true), "2 in the background");
+        assert_eq!(super::tasks_said(2, 1, false, true), "2 in the background");
+        // And with nothing going, what has ended.
+        assert_eq!(super::tasks_said(0, 3, false, true), "3 finished");
     }
 
     /// The count of background work is whole on a row with no settings, at
@@ -2208,7 +2222,7 @@ mod tests {
             note: None,
             note_is_wrong: false,
             usage: None,
-            tasks: Some(2),
+            tasks: Some((2, 0)),
             remote: None,
         };
         let mut cells = ratatui::buffer::Buffer::empty(area);

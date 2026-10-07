@@ -13972,7 +13972,7 @@ fn background_work_is_counted_and_its_call_is_not_done_until_it_is() {
     });
     say(&mut app, "/background");
     pump(&mut app, &events, "the work counted", |app| {
-        app.background_tasks() == Some(1)
+        app.background_tasks() == Some((1, 0))
     });
     assert!(
         the_call_says(&mut app, obelus_icons::ui::BACKGROUND, "Background"),
@@ -13990,13 +13990,14 @@ fn background_work_is_counted_and_its_call_is_not_done_until_it_is() {
 
     say(&mut app, "/background-ends");
     pump(&mut app, &events, "the work ended", |app| {
-        app.background_tasks().is_none()
+        app.background_tasks() == Some((0, 1))
     });
-    // And the count goes with it: none running is nothing to say.
+    // And the count says what has ended, now that nothing is going: the
+    // list is still somewhere to open, for what the work wrote.
     let shown = support::render(&mut app, WIDTH, HEIGHT);
     assert!(
-        !shown.contains("in the background"),
-        "the row still counts work that has all ended:\n{shown}"
+        shown.contains("1 finished") && !shown.contains("in the background"),
+        "the row does not say the work has finished:\n{shown}"
     );
     assert!(
         the_call_says(&mut app, obelus_icons::ui::DONE, "Done"),
@@ -14014,7 +14015,9 @@ fn background_work_is_counted_and_its_call_is_not_done_until_it_is() {
 /// and the work is still running when this gives up; build a row's value
 /// with `stoppable: task.stoppable` alone, and the key is lit on work that
 /// has stopped; give a running row its time so far, and it says more than
-/// `Running`.
+/// `Running`. And what has stopped moves under the heading of what has
+/// ended: give every row no `section`, and it is under none; leave the list
+/// unwrapped, and no heading is drawn.
 #[test]
 fn the_count_opens_the_work_and_its_key_stops_it() {
     let (mut app, events) = playing(&["air"]);
@@ -14023,7 +14026,7 @@ fn the_count_opens_the_work_and_its_key_stops_it() {
     });
     say(&mut app, "/background");
     pump(&mut app, &events, "the work counted", |app| {
-        app.background_tasks() == Some(1)
+        app.background_tasks() == Some((1, 0))
     });
     open_the_background_work(&mut app);
     assert_eq!(
@@ -14033,6 +14036,12 @@ fn the_count_opens_the_work_and_its_key_stops_it() {
         Some("npm run dev")
     );
     assert_eq!(standing_on(&app), "Running");
+    assert_eq!(
+        app.picker()
+            .and_then(obelus_component::picker::Picker::selected_item)
+            .and_then(|item| item.section.as_deref()),
+        Some("Running")
+    );
     let lit = |app: &App| {
         app.picker()
             .is_some_and(obelus_component::picker::Picker::stops_this_one)
@@ -14041,12 +14050,27 @@ fn the_count_opens_the_work_and_its_key_stops_it() {
 
     support::press_alt(&mut app, 's');
     pump(&mut app, &events, "the work stopped", |app| {
-        app.background_tasks().is_none()
+        app.background_tasks() == Some((0, 1))
     });
     pump(&mut app, &events, "the list saying so", |app| {
         standing_on(app).starts_with("Stopped  ")
     });
     assert!(!lit(&app), "the key is lit on work that has stopped");
+    // And it has moved from the run of what is going to the run of what
+    // has ended, under a heading that says so.
+    let section = |app: &App| {
+        app.picker()
+            .and_then(obelus_component::picker::Picker::selected_item)
+            .and_then(|item| item.section.clone())
+    };
+    assert_eq!(section(&app).as_deref(), Some("Finished"));
+    let shown = screen(&mut app);
+    assert!(
+        shown
+            .lines()
+            .any(|line| line.trim_end().ends_with("| Finished")),
+        "no heading over what has ended:\n{shown}"
+    );
 }
 
 /// Where the row has no room for the count, the keys walking it do not
@@ -14063,7 +14087,7 @@ fn the_keys_do_not_stand_on_a_count_the_row_had_no_room_for() {
     });
     say(&mut app, "/background");
     pump(&mut app, &events, "the work counted", |app| {
-        app.background_tasks() == Some(1)
+        app.background_tasks() == Some((1, 0))
     });
     pump(&mut app, &events, "the turn over", |app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -14098,7 +14122,7 @@ fn an_answer_to_a_stop_nobody_can_read_takes_the_stopping_back() {
     });
     say(&mut app, "/background");
     pump(&mut app, &events, "the work counted", |app| {
-        app.background_tasks() == Some(1)
+        app.background_tasks() == Some((1, 0))
     });
     open_the_background_work(&mut app);
     support::press_alt(&mut app, 's');
@@ -14122,7 +14146,7 @@ fn an_agent_that_cannot_stop_its_work_greys_the_key() {
     });
     say(&mut app, "/background");
     pump(&mut app, &events, "the work counted", |app| {
-        app.background_tasks() == Some(1)
+        app.background_tasks() == Some((1, 0))
     });
     open_the_background_work(&mut app);
     support::press_alt(&mut app, 's');
@@ -14134,7 +14158,7 @@ fn an_agent_that_cannot_stop_its_work_greys_the_key() {
     pump(&mut app, &events, "the row running again", |app| {
         standing_on(app).starts_with("Running")
     });
-    assert_eq!(app.background_tasks(), Some(1));
+    assert_eq!(app.background_tasks(), Some((1, 0)));
 }
 
 /// An agent that never offered to tell of background work is never heard
@@ -14182,7 +14206,7 @@ fn background_work_spoken_badly_is_given_up_on() {
     });
     say(&mut app, "/background");
     pump(&mut app, &events, "the work counted", |app| {
-        app.background_tasks() == Some(1)
+        app.background_tasks() == Some((1, 0))
     });
     say(&mut app, "/garbled");
     pump(&mut app, &events, "the count gone", |app| {
@@ -14208,7 +14232,7 @@ fn an_agent_given_up_on_stays_given_up_on() {
     });
     say(&mut app, "/background");
     pump(&mut app, &events, "the work counted", |app| {
-        app.background_tasks() == Some(1)
+        app.background_tasks() == Some((1, 0))
     });
     open_the_background_work(&mut app);
     support::press_alt(&mut app, 's');
@@ -14234,7 +14258,7 @@ fn a_calls_row_follows_its_work_back_from_stopped() {
     });
     say(&mut app, "/background");
     pump(&mut app, &events, "the work counted", |app| {
-        app.background_tasks() == Some(1)
+        app.background_tasks() == Some((1, 0))
     });
     // The turn over first: two things said into a running turn wait and go
     // as one prompt, and the fixture answers only the first of them.
@@ -14246,7 +14270,7 @@ fn a_calls_row_follows_its_work_back_from_stopped() {
     pump(&mut app, &events, "the next answer", |app| {
         said_in_transcript(app, "ran hello")
     });
-    assert_eq!(app.background_tasks(), Some(1));
+    assert_eq!(app.background_tasks(), Some((1, 0)));
     assert!(
         the_call_says(&mut app, obelus_icons::ui::BACKGROUND, "Background"),
         "the call does not say its work goes on:\n{}",
@@ -14271,7 +14295,7 @@ fn work_that_ended_before_its_call_was_marked_is_done() {
     pump(&mut app, &events, "the next answer", |app| {
         said_in_transcript(app, "ran hello")
     });
-    assert_eq!(app.background_tasks(), None);
+    assert_eq!(app.background_tasks(), Some((0, 1)));
     assert!(
         the_call_says(&mut app, obelus_icons::ui::DONE, "Done"),
         "the call does not say its work is done:\n{}",

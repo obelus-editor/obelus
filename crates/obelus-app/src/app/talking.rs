@@ -1317,18 +1317,20 @@ impl App {
             })
     }
 
-    /// How much of the agent's background work is still going in the
-    /// conversation on screen -- or nothing, where none is: an agent that
-    /// does not speak of such work, and one whose work has all ended.
+    /// How much of the agent's background work in the conversation on
+    /// screen is still going, and how much has ended -- or nothing, where
+    /// the agent does not speak of such work or has started none here.
     ///
-    /// Nothing for the second as well as the first. A count of none is a
-    /// thing on the row saying nothing is happening, which is what an empty
-    /// row already says; what the ended work wrote is on the calls' rows.
+    /// Both, because work that has ended is still worth opening: what it
+    /// wrote is the reason to have asked for it, and the list is where that
+    /// is reached from.
     #[must_use]
-    pub fn background_tasks(&self) -> Option<usize> {
+    pub fn background_tasks(&self) -> Option<(usize, usize)> {
         let session = self.session_now();
         let board = self.talker.as_ref()?.tasks(session.as_ref())?;
-        Some(board.running()).filter(|running| *running > 0)
+        let running = board.running();
+        let finished = board.listed().len() - running;
+        (running + finished > 0).then_some((running, finished))
     }
 
     /// Whether the count of background work is on the conversation's status
@@ -1359,6 +1361,12 @@ impl App {
         let stoppable = talker.can_stop_tasks();
         let items: Vec<PickerItem> = board.listed().into_iter().map(task_row).collect();
         let mut picker = Picker::new(items, PickerLayout::Compact { rows: COMPACT_ROWS });
+        // In two runs under their headings, what is going and what has
+        // ended, and kept in that order whatever is typed: a query ranking
+        // the rows would scatter them out from under their headings, which
+        // is what the conversations' list does by day for the same reason.
+        picker.wraps(None);
+        picker.keeps_order(true);
         picker.before_typing("Filter background work");
         picker.ask("Background work");
         picker.when_empty("Nothing has been left running here");
@@ -4641,7 +4649,15 @@ fn task_row(task: &obelus_agent::acp::tasks::Task) -> PickerItem {
         opens: None,
         kind: None,
         tab: None,
-        section: None,
+        // Which run it is in. `listed` already puts what is going first,
+        // so each heading is said once, where its run starts.
+        section: Some(
+            match task.state.is_over() {
+                false => "Running",
+                true => "Finished",
+            }
+            .to_string(),
+        ),
     }
 }
 

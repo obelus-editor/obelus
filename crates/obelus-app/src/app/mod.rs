@@ -4806,7 +4806,7 @@ impl Screen for App {
     fn agent_usage(&self) -> Option<&acp::Usage> {
         App::agent_usage(self)
     }
-    fn background_tasks(&self) -> Option<usize> {
+    fn background_tasks(&self) -> Option<(usize, usize)> {
         App::background_tasks(self)
     }
     fn blame(&self) -> Option<&[Option<obelus_git::Blamed>]> {
