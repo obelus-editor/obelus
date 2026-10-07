@@ -709,6 +709,10 @@ pub struct Place {
     pub character: usize,
 }
 
+/// What a conversation's rows were laid out against: a width, and a
+/// version of `obelus_text`'s table of pictures.
+type LaidAt = (u16, u64);
+
 /// A conversation.
 ///
 /// `Default` is `new` rather than derived, because the two differed and the
@@ -720,8 +724,9 @@ pub struct Place {
 pub struct Chat {
     /// What has been said, oldest first.
     said: Vec<Said>,
-    /// The rows as they were last laid out, and the width they were laid
-    /// out at.
+    /// The rows as they were last laid out, and what they were laid out
+    /// against: the width, and which characters the window draws as
+    /// pictures.
     ///
     /// Laying out a conversation means making rows of every word ever said
     /// in it, at the width of the moment -- wrapping it, reading the
@@ -740,7 +745,7 @@ pub struct Chat {
     /// one is a screen that has stopped saying what happened, so the rule
     /// is to drop it wherever there is a doubt: laying out again costs
     /// milliseconds and being wrong costs the reader their conversation.
-    laid: std::cell::RefCell<Option<((u16, u64), Vec<Row>)>>,
+    laid: std::cell::RefCell<Option<(LaidAt, Vec<Row>)>>,
     /// What is happening now, if anything is.
     ///
     /// One slot rather than a line of the transcript: a state has no
