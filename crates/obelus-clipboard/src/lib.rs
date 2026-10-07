@@ -22,7 +22,9 @@
 //! and helix does not even try: its own OSC 52 provider answers a read with
 //! "not supported". So Obelus keeps whatever it last copied or cut, and hands
 //! that back when nothing else can answer. Text from outside arrives instead
-//! by the terminal's own paste, which is bracketed and comes in as an event.
+//! by the terminal's own paste, which is bracketed and comes in as an event
+//! -- except on macOS and Windows, where the clipboard is a service a paste
+//! asks directly, whatever the provider is (`native`).
 //!
 //! A copy does not survive the *terminal* exiting either: the terminal is
 //! then the client that has gone. Making a copy outlive everything is a
@@ -525,9 +527,10 @@ fn decoded(said: &str) -> String {
 
 /// Puts text back, from wherever it can be got.
 ///
-/// The provider first, and what Obelus kept when the provider cannot read --
-/// which is OSC 52 always, and any of the others when the program is not
-/// there any more or says nothing.
+/// What Obelus owns first, then the system's clipboard where it is a
+/// service, then the provider -- and what Obelus kept when none of them can
+/// read: OSC 52 on a machine with no such service, and any of the programs
+/// when it is not there any more or says nothing.
 #[must_use]
 pub fn paste() -> Option<String> {
     let kept = || KEPT.lock().ok().and_then(|kept| kept.clone());

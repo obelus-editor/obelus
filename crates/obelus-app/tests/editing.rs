@@ -686,8 +686,9 @@ mod keys {
     /// The commands say so rather than doing nothing, because a key that is
     /// not offered does nothing at all and the palette row would be grey.
     /// What a cut can be pasted back out of when nothing outside can be
-    /// read -- which is OSC 52 always, and every other provider whenever
-    /// the program behind it is gone or says nothing.
+    /// read -- which is OSC 52 where the clipboard is not a service, and
+    /// every other provider whenever the program behind it is gone or says
+    /// nothing.
     #[test]
     fn a_clipboard_that_cannot_be_read_still_pastes_what_obelus_cut() {
         let _turn = CLIPBOARD
