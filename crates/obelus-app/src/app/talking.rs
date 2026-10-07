@@ -1385,7 +1385,13 @@ impl App {
         if picker.listing_tasks().is_none() {
             return false;
         }
-        let Some(PickerValue::Task(id)) = picker.selected_item().map(|item| item.value.clone())
+        // The key's, whatever it does: on a row it cannot stop it does
+        // nothing, which is what its greyed word at the foot says.
+        if !picker.stops_this_one() {
+            return true;
+        }
+        let Some(PickerValue::Task { id, .. }) =
+            picker.selected_item().map(|item| item.value.clone())
         else {
             return true;
         };
@@ -1415,7 +1421,9 @@ impl App {
             .filter(|picker| picker.listing_tasks().is_some())
         {
             picker.renew(items, |one, other| match (one, other) {
-                (PickerValue::Task(one), PickerValue::Task(other)) => one == other,
+                (PickerValue::Task { id: one, .. }, PickerValue::Task { id: other, .. }) => {
+                    one == other
+                }
                 _ => false,
             });
         }
@@ -4576,9 +4584,11 @@ fn said_of(parts: &[Part]) -> Vec<acp::link::Said> {
 
 /// One piece of background work, as a row of the list of it.
 ///
-/// Its name, what it last said about itself, and how far it has got. How
-/// long it has been going goes at the end, which is what a reader scanning
-/// for the server that has been up all day is looking for.
+/// Its name, what it last said about itself, and how far it has got -- and,
+/// once it has ended, how long it ran. Not how long it has been running:
+/// that is a number that goes stale between one update and the next, on a
+/// list that is built again only when the agent says something, and a row
+/// of a list says what is true now.
 fn task_row(task: &obelus_agent::acp::tasks::Task) -> PickerItem {
     use obelus_agent::acp::tasks::State;
     let state = match &task.state {
@@ -4590,16 +4600,24 @@ fn task_row(task: &obelus_agent::acp::tasks::Task) -> PickerItem {
         State::Stopped => "Stopped".to_string(),
         State::Other(word) => word.clone(),
     };
-    let lasted = task.ended.unwrap_or_else(std::time::Instant::now) - task.began;
+    let trailing = match task.ended {
+        Some(ended) => format!("{state}  {}", lasted_said(ended - task.began)),
+        None => state,
+    };
     PickerItem {
         prose: false,
         marker: None,
         icon: None,
         label: task.name.clone(),
         detail: task.summary.clone().or_else(|| task.about.clone()),
-        trailing: Some(format!("{state}  {}", lasted_said(lasted))),
+        trailing: Some(trailing),
         changed: None,
-        value: PickerValue::Task(task.id.clone()),
+        value: PickerValue::Task {
+            id: task.id.clone(),
+            // And not while it is already being stopped: asking twice is
+            // a second request about one thing.
+            stoppable: task.stoppable && !task.state.is_over() && !task.stopping,
+        },
         // Ended work is still there to open: what it wrote is the reason
         // to keep it on the list at all.
         enabled: true,

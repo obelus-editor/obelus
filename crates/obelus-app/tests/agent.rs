@@ -14001,10 +14001,15 @@ fn background_work_is_counted_and_its_call_is_not_done_until_it_is() {
 }
 
 /// Enter on the count opens the list of the work, and the list's own key
-/// stops the row it is on.
+/// stops the row it is on -- and is lit only on a row it can stop. A row
+/// still running says only that; one that has ended says how long it ran,
+/// which is a number that cannot go stale.
 ///
 /// Broken deliberately: take `background_key` out of the keys a list hears,
-/// and the work is still running when this gives up.
+/// and the work is still running when this gives up; build a row's value
+/// with `stoppable: task.stoppable` alone, and the key is lit on work that
+/// has stopped; give a running row its time so far, and it says more than
+/// `Running`.
 #[test]
 fn the_count_opens_the_work_and_its_key_stops_it() {
     let (mut app, events) = playing(&["air"]);
@@ -14022,14 +14027,21 @@ fn the_count_opens_the_work_and_its_key_stops_it() {
             .map(|item| item.label.as_str()),
         Some("npm run dev")
     );
+    assert_eq!(standing_on(&app), "Running");
+    let lit = |app: &App| {
+        app.picker()
+            .is_some_and(obelus_component::picker::Picker::stops_this_one)
+    };
+    assert!(lit(&app), "the key is not lit on work that is running");
 
     support::press_alt(&mut app, 's');
     pump(&mut app, &events, "the work stopped", |app| {
         app.background_tasks() == Some(0)
     });
     pump(&mut app, &events, "the list saying so", |app| {
-        standing_on(app).starts_with("Stopped")
+        standing_on(app).starts_with("Stopped  ")
     });
+    assert!(!lit(&app), "the key is lit on work that has stopped");
 }
 
 /// An agent that turns out to have no way to stop its work greys the key,

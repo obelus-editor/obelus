@@ -650,7 +650,7 @@ impl App {
             // directory is: choosing one may leave the list where it was.
             PickerValue::Conversation(_) => {}
             PickerValue::Worktree(at) => self.go_to_worktree(at),
-            PickerValue::Task(id) => self.open_background_output(&id),
+            PickerValue::Task { id, .. } => self.open_background_output(&id),
             PickerValue::Nothing => {}
         }
     }

@@ -182,9 +182,16 @@ pub enum PickerValue {
     /// By its place in the list, as a conversation is: which window has it
     /// open, and how to reach that window, is the application's to know.
     Worktree(usize),
-    /// A piece of the agent's background work, by the agent's id for it:
-    /// choosing it opens what it has written.
-    Task(String),
+    /// A piece of the agent's background work: choosing it opens what it
+    /// has written.
+    Task {
+        /// The agent's id for it.
+        id: String,
+        /// Whether it can be stopped now -- still going, and said by the
+        /// agent to be stoppable -- which is whether the list's own key is
+        /// lit on this row.
+        stoppable: bool,
+    },
     /// One of the ways out of a question Obelus stopped to ask.
     Answer(obelus_buffer::question::Answer),
     /// Nothing. A row that is there to say why the list is short.
@@ -1393,6 +1400,20 @@ impl Picker {
     #[must_use]
     pub const fn listing_tasks(&self) -> Option<bool> {
         self.tasks
+    }
+
+    /// Whether the row the reader is on can be stopped from here: the list
+    /// says the agent stops work at all, and the row says this work can be.
+    #[must_use]
+    pub fn stops_this_one(&self) -> bool {
+        self.tasks == Some(true)
+            && matches!(
+                self.selected_item().map(|item| &item.value),
+                Some(PickerValue::Task {
+                    stoppable: true,
+                    ..
+                })
+            )
     }
 
     /// Whether it does.

@@ -803,7 +803,7 @@ impl App {
             | PickerValue::AgentDefault { .. }
             // A list of background work is compact, and what a row has
             // written is opened rather than shown.
-            | PickerValue::Task(_) => None,
+            | PickerValue::Task { .. } => None,
             // What choosing the row gives, which is not the same thing in
             // both radii. In a file's history it gives that file as the
             // commit had it, message and all; in the project's it opens the
