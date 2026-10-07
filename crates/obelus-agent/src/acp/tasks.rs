@@ -181,9 +181,6 @@ pub enum News {
         id: String,
         /// What to call it.
         name: String,
-        /// What sort of work it is, in the agent's word: `shell`,
-        /// `workflow`, and whatever else it has.
-        kind: String,
         /// One line about it, where the agent said one.
         about: Option<String>,
         /// The tool call that started it, where the agent said which.
@@ -227,8 +224,6 @@ pub struct Task {
     pub id: String,
     /// What to call it.
     pub name: String,
-    /// What sort of work it is, in the agent's word.
-    pub kind: String,
     /// One line about it, where the agent said one.
     pub about: Option<String>,
     /// The tool call that started it, where the agent said which.
@@ -266,17 +261,11 @@ pub struct Board {
 
 impl Board {
     /// Takes in one piece of news.
-    ///
-    /// Hands back the work it was about, where it was about work Obelus
-    /// knows: what is drawn from the news -- the row of the call that
-    /// started it -- needs the whole of it, and news carries only what
-    /// changed.
-    pub fn hear(&mut self, news: News) -> Option<&Task> {
+    pub fn hear(&mut self, news: News) {
         match news {
             News::Began {
                 id,
                 name,
-                kind,
                 about,
                 call,
                 output,
@@ -287,7 +276,6 @@ impl Board {
                 if let Some(at) = self.at(&id) {
                     let task = &mut self.tasks[at];
                     task.name = name;
-                    task.kind = kind;
                     task.about = about.or(task.about.take());
                     task.call = call.or(task.call.take());
                     task.output = output.or(task.output.take());
@@ -296,7 +284,6 @@ impl Board {
                     self.tasks.push(Task {
                         id: id.clone(),
                         name,
-                        kind,
                         about,
                         call,
                         output,
@@ -317,7 +304,6 @@ impl Board {
                 for news in early {
                     self.change(news);
                 }
-                self.find(&id)
             }
             changed @ News::Changed { .. } => {
                 let id = changed.id().to_string();
@@ -326,10 +312,9 @@ impl Board {
                         self.held.remove(0);
                     }
                     self.held.push(changed);
-                    return None;
+                    return;
                 }
                 self.change(changed);
-                self.find(&id)
             }
         }
     }
@@ -444,11 +429,8 @@ impl Board {
     /// either way a task left running here is a task nothing will ever
     /// end, and a count that never goes down. Stopped rather than failed,
     /// because nothing said they failed.
-    ///
-    /// Hands back the calls whose rows still say their work goes on.
-    pub fn end_all(&mut self) -> Vec<String> {
+    pub fn end_all(&mut self) {
         let now = Instant::now();
-        let mut calls = Vec::new();
         for task in &mut self.tasks {
             if task.state.is_over() {
                 continue;
@@ -456,10 +438,8 @@ impl Board {
             task.state = State::Stopped;
             task.ended = Some(now);
             task.stopping = false;
-            calls.extend(task.call.clone());
         }
         self.held.clear();
-        calls
     }
 
     /// Whether it has been told of any work at all.
@@ -477,7 +457,6 @@ mod tests {
         News::Began {
             id: id.to_string(),
             name: format!("task {id}"),
-            kind: "shell".to_string(),
             about: None,
             call: call.map(str::to_string),
             output: None,
@@ -519,9 +498,13 @@ mod tests {
     #[test]
     fn what_arrives_early_waits_for_the_start() {
         let mut board = Board::default();
-        assert!(board.hear(became("a", State::Failed)).is_none());
-        let task = board.hear(began("a", None)).expect("it began");
-        assert_eq!(task.state, State::Failed);
+        board.hear(became("a", State::Failed));
+        assert!(board.find("a").is_none(), "known before it began");
+        board.hear(began("a", None));
+        assert_eq!(
+            board.find("a").map(|task| &task.state),
+            Some(&State::Failed)
+        );
         assert_eq!(board.running(), 0);
     }
 
@@ -539,8 +522,7 @@ mod tests {
         assert_eq!(board.held.len(), HELD);
     }
 
-    /// Ending everything ends only what was still going, and says which
-    /// calls' rows were waiting on it.
+    /// Ending everything ends only what was still going.
     ///
     /// Deliberate break: have `end_all` mark every task, and the one that
     /// failed is written down as stopped.
@@ -550,7 +532,11 @@ mod tests {
         board.hear(began("a", Some("call-a")));
         board.hear(began("b", Some("call-b")));
         board.hear(became("b", State::Failed));
-        assert_eq!(board.end_all(), vec!["call-a".to_string()]);
+        board.end_all();
+        assert_eq!(
+            board.find("a").map(|task| &task.state),
+            Some(&State::Stopped)
+        );
         assert_eq!(
             board.find("b").map(|task| &task.state),
             Some(&State::Failed)

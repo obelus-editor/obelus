@@ -134,7 +134,6 @@ fn began(update: &serde_json::Value) -> Result<News, String> {
         .unwrap_or_else(|| id.clone());
     Ok(News::Began {
         name,
-        kind: words(update, "taskType").unwrap_or_default(),
         about,
         call: words(update, "toolCallId"),
         output: words(update, "outputFilePath").map(PathBuf::from),
@@ -244,7 +243,6 @@ mod tests {
             Some(Ok(News::Began {
                 id: "t-1".to_string(),
                 name: "npm run dev".to_string(),
-                kind: "shell".to_string(),
                 about: Some("the dev server".to_string()),
                 call: Some("toolu_1".to_string()),
                 output: Some(PathBuf::from("/tmp/tasks/t-1.output")),
