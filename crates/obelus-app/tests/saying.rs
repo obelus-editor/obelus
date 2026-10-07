@@ -93,9 +93,10 @@ fn a_refusal_is_in_the_ink_of_things_that_went_wrong() {
 /// row is then drawn in the colour of something standing beside
 /// something else, with nothing there for it to stand beside.
 ///
-/// And closing a file says nothing on the way: the reader did it, and is
-/// looking at what is there instead. Broken deliberately by saying
-/// `Closed {}` again where a file is shut.
+/// And closing a file says nothing on the way, and leaves nothing said
+/// about it: the reader did it, and is looking at what is there instead.
+/// Broken deliberately by saying `Closed {}` again where a file is shut,
+/// or by taking the `quiet` out of `close`.
 #[test]
 fn a_note_alone_on_the_row_is_the_row() {
     let scratch = support::Scratch::new("said-alone");
@@ -117,10 +118,14 @@ fn a_note_alone_on_the_row_is_the_row() {
     dispatch::dispatch(&mut app, Command::FileNew);
     support::type_text(&mut app, "made.rs");
     support::press(&mut app, crossterm::event::KeyCode::Enter);
+    // Something said about the file before it goes, the way a press on the
+    // row or a card's answer leaves it -- neither of which quiets the row
+    // the way a key does on its way in.
+    app.say_for_test("Saved");
     dispatch::dispatch(&mut app, Command::DocumentClose);
-    // Closing says nothing: the reader did it, and is looking at what is
-    // there instead.
-    assert_eq!(app.note(), None, "closing a file said something");
+    // Closing says nothing, and takes what was said about the file with it:
+    // the reader is looking at what is there instead.
+    assert_eq!(app.note(), None, "closing a file left something said");
     app.say_for_test("Saved");
     assert_eq!(
         ink(&mut app),

@@ -1109,6 +1109,11 @@ impl App {
             // work wrote, somewhere under a temporary directory -- it was a
             // path the row had no room for.
         }
+        // And whatever the row was saying goes with it, however it was
+        // closed. A key quiets the row on its own way in; a press, a card's
+        // answer, a sign-in's terminal ending does not, and what was said
+        // about the document that went was left standing over the next one.
+        self.quiet();
         // And a conversation's thread hears that it was, so that a reader
         // there is not left talking to something nobody is listening for.
         if let Some(talk) = document.chat() {
