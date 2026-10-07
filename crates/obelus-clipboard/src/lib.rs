@@ -22,7 +22,9 @@
 //! and helix does not even try: its own OSC 52 provider answers a read with
 //! "not supported". So Obelus keeps whatever it last copied or cut, and hands
 //! that back when nothing else can answer. Text from outside arrives instead
-//! by the terminal's own paste, which is bracketed and comes in as an event.
+//! by the terminal's own paste, which is bracketed and comes in as an event
+//! -- except on macOS and Windows, where the clipboard is a service a paste
+//! asks directly, whatever the provider is (`native`).
 //!
 //! A copy does not survive the *terminal* exiting either: the terminal is
 //! then the client that has gone. Making a copy outlive everything is a
@@ -62,6 +64,16 @@ static OWNER: OnceLock<Box<dyn Owner>> = OnceLock::new();
 /// Its own thing rather than seeding `PROVIDER`, because a `OnceLock` can be
 /// set once and a suite has more than one test in it.
 static ASKED: Mutex<Option<Provider>> = Mutex::new(None);
+
+/// Whether the system's own clipboard may be asked, where it is a service.
+///
+/// Not where a test asked for [`Provider::Kept`], which means nothing
+/// outside Obelus at all: the service is the clipboard of whoever is running
+/// the suite as much as any program is, and a paste that read it would pass
+/// or fail by what they last copied.
+fn the_service_may_be_asked() -> bool {
+    ASKED.lock().ok().and_then(|asked| *asked) != Some(Provider::Kept)
+}
 
 /// The ways there are.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -336,7 +348,9 @@ pub fn types() -> Vec<String> {
             return holds;
         }
     }
-    if let Some(names) = native::types() {
+    if the_service_may_be_asked()
+        && let Some(names) = native::types()
+    {
         return names;
     }
     let Some((program, arguments)) = provider().listing() else {
@@ -373,7 +387,9 @@ pub fn paste_as(mime: &str) -> Option<Vec<u8>> {
     if let Some(bytes) = owner().and_then(|owner| owner.holding(mime)) {
         return Some(bytes);
     }
-    if let Some(bytes) = native::paste_as(mime) {
+    if the_service_may_be_asked()
+        && let Some(bytes) = native::paste_as(mime)
+    {
         return Some(bytes);
     }
     let (program, arguments) = provider().reading(mime)?;
@@ -511,14 +527,26 @@ fn decoded(said: &str) -> String {
 
 /// Puts text back, from wherever it can be got.
 ///
-/// The provider first, and what Obelus kept when the provider cannot read --
-/// which is OSC 52 always, and any of the others when the program is not
-/// there any more or says nothing.
+/// What Obelus owns first, then the system's clipboard where it is a
+/// service, then the provider -- and what Obelus kept when none of them can
+/// read: OSC 52 on a machine with no such service, and any of the programs
+/// when it is not there any more or says nothing.
 #[must_use]
 pub fn paste() -> Option<String> {
     let kept = || KEPT.lock().ok().and_then(|kept| kept.clone());
     if let Some(words) = owner().and_then(|owner| owner.holding(WORDS[0]))
         && let Ok(words) = String::from_utf8(words)
+    {
+        return Some(words);
+    }
+    // The service, where the machine has one -- and before the provider,
+    // because on a plain Windows machine the provider is the escape
+    // sequence, which cannot be read: without this a paste there was only
+    // ever what Obelus itself had copied.
+    if the_service_may_be_asked()
+        && let Some(words) =
+            native::paste_as(WORDS[0]).and_then(|words| String::from_utf8(words).ok())
+        && !words.is_empty()
     {
         return Some(words);
     }
@@ -585,7 +613,7 @@ pub fn copy(text: &str) -> io::Result<()> {
     // is handed over, and it outlives every process without anybody
     // holding it -- which is why those two need no owner and no
     // hand-over.
-    if native::copy(&shapes) {
+    if the_service_may_be_asked() && native::copy(&shapes) {
         return Ok(());
     }
     if owner().is_some_and(|owner| owner.offer(shapes)) {
@@ -607,7 +635,7 @@ enum Waiting {
 /// The half of a copy that is somebody else's program, or the terminal.
 fn to_a_program(text: &str, waiting: Waiting) -> io::Result<()> {
     let Some((program, arguments, _, _)) = provider().commands() else {
-        return write_to(&mut io::stdout().lock(), text);
+        return to_the_terminal(&mut io::stdout().lock(), text);
     };
     let mut child = obelus_program::without_a_window(&mut Command::new(program))
         .args(arguments)
@@ -625,7 +653,21 @@ fn to_a_program(text: &str, waiting: Waiting) -> io::Result<()> {
     Ok(())
 }
 
-/// The same, to somewhere a test can read.
+/// The escape sequence, where the provider is the terminal.
+///
+/// Not for [`Provider::Kept`], which has no command either and means
+/// nothing outside Obelus at all. Written anyway, it reaches the terminal
+/// a test suite is running in -- the harness captures `print!` and not a
+/// write to stdout -- and that terminal puts the words on the clipboard of
+/// whoever is running it.
+fn to_the_terminal<W: io::Write>(out: &mut W, text: &str) -> io::Result<()> {
+    if provider() == Provider::Kept {
+        return Ok(());
+    }
+    write_to(out, text)
+}
+
+/// The sequence itself, to somewhere a test can read.
 ///
 /// Split out because the sequence itself is the whole of what this module
 /// does, and a wrong one is invisible: the terminal ignores it, so nothing
@@ -713,6 +755,29 @@ mod tests {
         assert!(
             picture().is_none(),
             "a shape that produced no bytes was taken for a picture"
+        );
+    }
+
+    /// A copy under the clipboard a test asks for writes nothing to the
+    /// terminal, and one under the escape sequence writes the sequence.
+    ///
+    /// The second half is what makes the first a claim: without it, a
+    /// `to_the_terminal` that never wrote would pass.
+    ///
+    /// Deliberate break: `to_the_terminal` without its question about
+    /// `Kept`, which writes the sequence into the first buffer.
+    #[test]
+    fn a_test_copy_reaches_no_terminal() {
+        use_provider_for_test(Provider::Kept);
+        let mut written = Vec::new();
+        to_the_terminal(&mut written, "what Obelus cut").expect("writing to a vector");
+        assert!(written.is_empty(), "a test's copy reached the terminal");
+
+        use_provider_for_test(Provider::Osc52);
+        to_the_terminal(&mut written, "what Obelus cut").expect("writing to a vector");
+        assert!(
+            written.starts_with(b"\x1b]52;c;"),
+            "the terminal was not written to"
         );
     }
 

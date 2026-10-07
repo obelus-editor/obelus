@@ -297,7 +297,7 @@ mod in_place {
         // provider clears it. Two of these running at once is one test
         // emptying the clipboard another had just copied into.
         let _turn = support::clipboard_turn();
-        use_provider_for_test(Provider::Osc52);
+        use_provider_for_test(Provider::Kept);
         let (_scratch, mut app) = open("field-roundtrip");
         dispatch::dispatch(&mut app, Command::SearchFile);
         support::type_text(&mut app, "thing");
@@ -342,7 +342,7 @@ mod in_place {
         // provider clears it. Two of these running at once is one test
         // emptying the clipboard another had just copied into.
         let _turn = support::clipboard_turn();
-        use_provider_for_test(Provider::Osc52);
+        use_provider_for_test(Provider::Kept);
         let (_scratch, mut app) = open("field-keys-settings");
         dispatch::dispatch(&mut app, Command::ConfigOpen);
         support::type_text(&mut app, "ab");
@@ -374,7 +374,7 @@ mod in_place {
         // provider clears it. Two of these running at once is one test
         // emptying the clipboard another had just copied into.
         let _turn = support::clipboard_turn();
-        use_provider_for_test(Provider::Osc52);
+        use_provider_for_test(Provider::Kept);
         let (_scratch, mut app) = open("field-keys-buffers");
         dispatch::dispatch(&mut app, Command::DocumentList);
         // A row of it still on, which is what puts the keys in that
@@ -419,7 +419,7 @@ mod in_place {
         // provider clears it. Two of these running at once is one test
         // emptying the clipboard another had just copied into.
         let _turn = support::clipboard_turn();
-        use_provider_for_test(Provider::Osc52);
+        use_provider_for_test(Provider::Kept);
         let scratch = support::Scratch::new("field-no-file");
         std::fs::write(scratch.path().join("one.rs"), "fn main() {}\n").expect("writing it");
         let mut app = App::new(Vec::new());

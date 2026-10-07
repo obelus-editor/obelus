@@ -126,7 +126,8 @@ fn escape_and_control_keys_go_to_the_program() {
     let (mut app, events) = a_shell();
     support::type_text(
         &mut app,
-        "stty raw -echo; echo go-$((2 + 2)); dd bs=1 count=3 2>/dev/null | od -An -c; stty sane",
+        "stty raw -echo; echo go-$((2 + 2)); dd bs=1 count=3 2>/dev/null | od -An -c; stty sane; \
+         echo sane-$((4 + 4))",
     );
     press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
     pump(&mut app, &events, "the pty to be raw", |app| {
@@ -137,6 +138,14 @@ fn escape_and_control_keys_go_to_the_program() {
     press(&mut app, KeyCode::Char('e'), KeyModifiers::CONTROL);
     pump(&mut app, &events, "the bytes to be read back", |app| {
         on_the_terminal(app).contains("033   x 005")
+    });
+    // And the pty cooked again before anything else is typed. A line typed
+    // while it is still raw ends in a `\r` nothing turns into a newline,
+    // and once `stty sane` has run that ends no line: dash sits waiting for
+    // the rest of it. `od` printing is not `stty` having run, and on a slow
+    // runner the gap between them is a line typed into the raw pty.
+    pump(&mut app, &events, "the pty to be cooked again", |app| {
+        on_the_terminal(app).contains("sane-8")
     });
     // And `ctrl+c` stops what is running, which is the shell's to do: back
     // at the prompt, a line typed is run.
