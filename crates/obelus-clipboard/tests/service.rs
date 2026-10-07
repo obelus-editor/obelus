@@ -68,3 +68,31 @@ fn a_paste_on_windows_breaks_lines_with_a_line_feed() {
 
     assert_eq!(obelus_clipboard::paste().as_deref(), Some("one\ntwo\n"));
 }
+
+/// And nothing of the service reaches the other three questions either,
+/// for a test that asked for the clipboard Obelus keeps: not what shapes
+/// it holds, not the bytes of one, and not a copy.
+///
+/// The words put there first under the escape sequence, which lets the
+/// service be asked, so that each question has something to wrongly find.
+///
+/// Deliberate breaks, one at a time: the question to
+/// `the_service_may_be_asked` taken out of `types` (it lists
+/// `text/plain`), of `paste_as` (it hands the words back), and of `copy`
+/// (the service then holds the second copy rather than the first).
+#[test]
+#[ignore = "writes the clipboard of whoever runs it"]
+fn a_test_that_asked_for_kept_reaches_no_service() {
+    let _turn = taking_turns();
+    obelus_clipboard::use_provider_for_test(Provider::Osc52);
+    obelus_clipboard::copy("on the service").expect("copying to the service");
+
+    obelus_clipboard::use_provider_for_test(Provider::Kept);
+    assert_eq!(obelus_clipboard::types(), Vec::<String>::new());
+    assert_eq!(obelus_clipboard::paste_as("text/plain"), None);
+    obelus_clipboard::copy("only Obelus's").expect("copying to what Obelus keeps");
+
+    // Asked again, with `KEPT` emptied, so the answer is the service's.
+    obelus_clipboard::use_provider_for_test(Provider::Osc52);
+    assert_eq!(obelus_clipboard::paste().as_deref(), Some("on the service"));
+}
