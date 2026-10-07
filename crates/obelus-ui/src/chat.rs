@@ -582,19 +582,16 @@ fn said(setting: &acp::Setting) -> (String, Option<bool>) {
 ///
 /// Words and not a bare number: a glyph and a digit at the end of a row of
 /// settings read as one more setting on some value, and a reader has to
-/// open it to find out it was a count. Where there is no glyph, the words
-/// say what the glyph would have.
+/// open it to find out it was a count. The same words with the glyph and
+/// without it, so that they say the whole of it on their own.
 fn tasks_said(running: usize) -> String {
     let going = match running {
-        0 => "None running".to_string(),
-        many => format!("{many} running"),
+        0 => "Nothing in the background".to_string(),
+        many => format!("{many} in the background"),
     };
     match obelus_icons::enabled() {
         true => format!("{}  {going}", obelus_icons::ui::BACKGROUND),
-        false => match running {
-            0 => "Nothing in the background".to_string(),
-            many => format!("{many} in the background"),
-        },
+        false => going,
     }
 }
 

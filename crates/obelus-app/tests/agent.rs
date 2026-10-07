@@ -13980,11 +13980,9 @@ fn background_work_is_counted_and_its_call_is_not_done_until_it_is() {
         "the call does not say its work goes on:\n{}",
         screen(&mut app)
     );
-    // And the count says what it is counting, not only how many.
-    let counted = match obelus_icons::enabled() {
-        true => "1 running",
-        false => "1 in the background",
-    };
+    // And the count says what it is counting, not only how many -- in the
+    // same words with a glyph in front of them or without.
+    let counted = "1 in the background";
     let shown = support::render(&mut app, WIDTH, HEIGHT);
     assert!(
         shown.contains(counted),
