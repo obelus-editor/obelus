@@ -740,7 +740,7 @@ pub struct Chat {
     /// one is a screen that has stopped saying what happened, so the rule
     /// is to drop it wherever there is a doubt: laying out again costs
     /// milliseconds and being wrong costs the reader their conversation.
-    laid: std::cell::RefCell<Option<(u16, Vec<Row>)>>,
+    laid: std::cell::RefCell<Option<((u16, u64), Vec<Row>)>>,
     /// What is happening now, if anything is.
     ///
     /// One slot rather than a line of the transcript: a state has no
@@ -1641,17 +1641,22 @@ impl Chat {
 
     /// The rows, laid out or remembered from the last time they were.
     fn laid_out(&self, width: u16) -> Vec<Row> {
+        // And against which characters are pictures, which is a question
+        // about the window's fonts and changes when the reader's do: a
+        // heart laid out one cell wide and drawn two runs into the word
+        // after it.
+        let at = (width, obelus_text::pictures_version());
         if let Some(rows) = self
             .laid
             .borrow()
             .as_ref()
-            .filter(|(at, _)| *at == width)
+            .filter(|(laid, _)| *laid == at)
             .map(|(_, rows)| rows.clone())
         {
             return rows;
         }
         let rows = self.lay_out(width);
-        *self.laid.borrow_mut() = Some((width, rows.clone()));
+        *self.laid.borrow_mut() = Some((at, rows.clone()));
         rows
     }
 

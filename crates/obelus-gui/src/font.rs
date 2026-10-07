@@ -44,7 +44,7 @@
 //! is an allocation per cell per frame for a screenful that was already
 //! in it.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use cosmic_text::{
     Attrs, Buffer, CacheKey, Family, FontSystem, Metrics, Shaping, Style, SwashCache, SwashImage,
@@ -65,6 +65,10 @@ const SYMBOLS_FAMILY: &str = "Symbols Nerd Font Mono";
 /// The selector that asks for the character before it to be drawn as a
 /// picture.
 const PICTURE: char = '\u{fe0f}';
+
+/// The selector that asks for the character before it to be drawn as
+/// text, which is a reason not to turn to a picture face for it.
+const WORDS: char = '\u{fe0e}';
 
 /// The faces that draw pictures: one per system that ships one, and the one
 /// a reader installs for themselves. Whichever this machine has.
@@ -194,6 +198,7 @@ impl Fonts {
         };
         fonts.families = chain(&[], fonts.otherwise.as_deref());
         fonts.measure();
+        fonts.say_what_is_a_picture();
         fonts
     }
 
@@ -210,6 +215,56 @@ impl Fonts {
         self.families = wanted;
         self.shaped.clear();
         self.measure();
+        self.say_what_is_a_picture();
+    }
+
+    /// Tells the arithmetic which characters written as text are drawn as
+    /// pictures here, so that it counts them two cells wide -- the width
+    /// `shape` then draws them at.
+    ///
+    /// The ones none of the reader's faces has and a face that draws
+    /// pictures does: those are the ones `shape` turns to a picture face
+    /// for, and the ones every other program on the machine draws as the
+    /// picture, at the size of one. A character one of theirs has is drawn
+    /// in theirs, as the one cell it is.
+    ///
+    /// Asked of the faces' character maps rather than by laying anything
+    /// out: a few hundred characters, once per change of fonts.
+    fn say_what_is_a_picture(&mut self) {
+        let faces_of = |system: &FontSystem, names: &[&str]| -> Vec<fontdb::ID> {
+            system
+                .db()
+                .faces()
+                .filter(|face| {
+                    face.families.iter().any(|(family, _)| {
+                        names.iter().any(|name| family.eq_ignore_ascii_case(name))
+                    })
+                })
+                .map(|face| face.id)
+                .collect()
+        };
+        let readers: Vec<&str> = self.families.iter().map(String::as_str).collect();
+        let readers = faces_of(&self.system, &readers);
+        let pictures = faces_of(&self.system, &PICTURES);
+        let mut maps = |faces: &[fontdb::ID]| -> Vec<Arc<cosmic_text::Font>> {
+            faces
+                .iter()
+                .filter_map(|id| self.system.get_font(*id, Weight::NORMAL))
+                .collect()
+        };
+        let (readers, pictures) = (maps(&readers), maps(&pictures));
+        let has = |fonts: &[Arc<cosmic_text::Font>], character: char| {
+            fonts
+                .iter()
+                .any(|font| font.as_swash().charmap().map(character) != 0)
+        };
+        let drawn: Vec<char> = (0..0x2_0000u32)
+            .filter_map(char::from_u32)
+            .filter(|character| obelus_text::could_be_a_picture(*character))
+            .filter(|character| !has(&readers, *character) && has(&pictures, *character))
+            .collect();
+        tracing::info!(pictures = drawn.len(), "what is drawn as a picture here");
+        obelus_text::draw_as_pictures(&drawn);
     }
 
     /// What this machine calls its monospaced face, where it said.
@@ -456,7 +511,7 @@ fn shape(
             // have still goes to the chain, and from the reader's attempt:
             // the chain prefers a face like the one it was asked for, and
             // asked for a picture face it puts Chinese in a proportional one.
-            (placed, drawn, None) if !text.contains(PICTURE) => {
+            (placed, drawn, None) if !text.contains(PICTURE) && !text.contains(WORDS) => {
                 match tried(system, metrics, &pictures(), text, &attrs) {
                     found @ (_, _, Some(_)) => found,
                     _ => (placed, drawn, None),
@@ -742,8 +797,10 @@ mod tests {
     /// text holds draws the first heart in whatever monospaced face has a
     /// line drawing of one -- MS Gothic on Windows -- and in one colour;
     /// taking out the turn to the picture faces after the reader's does the
-    /// same to the second; and turning to them first, ahead of the reader's,
-    /// draws the `#` as a picture.
+    /// same to the second; turning to them first, ahead of the reader's,
+    /// draws the `#` as a picture; and not telling the arithmetic which
+    /// characters are pictures leaves the second heart one cell wide, drawn
+    /// at a little over half the size of the face beside it.
     #[test]
     fn a_heart_is_drawn_in_colour_with_or_without_its_selector() {
         let mut fonts = Fonts::new(16.0);
@@ -784,6 +841,22 @@ mod tests {
             let (picture, colour, names) = drawn_in(&mut fonts, heart);
             assert!(picture, "{heart:?} was drawn in {names:?}");
             assert!(colour, "{heart:?} was drawn in one colour");
+            // As big as any other picture: given the two cells a picture is
+            // given, and shrunk only as far as every picture is to fit two.
+            // Given one, it is half the size of the face beside it.
+            let size = |fonts: &mut Fonts, text: &str| {
+                f32::from_bits(
+                    fonts.glyphs(text, false, false, Size::Cell)[0]
+                        .key
+                        .font_size_bits,
+                )
+            };
+            let face = size(&mut fonts, "\u{1f600}");
+            assert!(
+                (size(&mut fonts, heart) - face).abs() < 0.01,
+                "{heart:?} was drawn at {}, a face at {face}",
+                size(&mut fonts, heart)
+            );
         }
         // Every picture face has a `#`, for the keycap; the reader's has
         // one too, and theirs is the one drawn.

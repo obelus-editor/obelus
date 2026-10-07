@@ -9,6 +9,8 @@ pub mod coordinates;
 pub mod kind;
 pub mod marker;
 
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use ropey::{Rope, RopeSlice};
 use unicode_linebreak::linebreaks;
 use unicode_width::UnicodeWidthChar;
@@ -703,8 +705,88 @@ pub fn cells_of(character: char, next: Option<char>) -> usize {
             let both = base + selector.encode_utf8(&mut pair[base..]).len();
             std::str::from_utf8(&pair[..both]).map_or(0, |pair| pair.width())
         }
-        _ => character.width().unwrap_or(0),
+        (_, next) => match character.width().unwrap_or(0) {
+            // Written as text and drawn as a picture all the same, which
+            // is what the front end says it does where the reader's faces
+            // have no such character -- see `draw_as_pictures`. Not where
+            // the text asks for text in so many words.
+            1 if next.is_none_or(|next| !is_a_presentation(next))
+                && drawn_as_a_picture(character) =>
+            {
+                2
+            }
+            cells => cells,
+        },
     }
+}
+
+/// Whether a character written on its own is text that has a picture of
+/// itself: one cell as it stands and two with U+FE0F after it, which is
+/// `unicode-width`'s table of the characters that have both.
+///
+/// Not ASCII, which has a picture for `#`, `*` and every digit -- for a
+/// keycap -- and is never what a reader means one of.
+#[must_use]
+pub fn could_be_a_picture(character: char) -> bool {
+    !character.is_ascii()
+        && character.width() == Some(1)
+        && cells_of(character, Some('\u{fe0f}')) == 2
+}
+
+/// How many characters the table of pictures below covers: every plane
+/// with a character in it that could be one.
+const PICTURED_RANGE: usize = 0x2_0000;
+
+/// Which characters written as text this front end draws as pictures, one
+/// bit each.
+///
+/// A global, like the tab width, because it is one decision the whole
+/// program shares: a column is counted by everything and drawn by one
+/// thing, and the two have to agree about how wide a heart is. Atomics
+/// rather than a lock because it is asked of every character of every row
+/// of every frame, and changed when the reader changes their fonts.
+static PICTURED: [AtomicU64; PICTURED_RANGE / 64] =
+    [const { AtomicU64::new(0) }; PICTURED_RANGE / 64];
+
+/// How many times the table has changed, for anything that keeps rows laid
+/// out against it.
+static PICTURED_VERSION: AtomicU64 = AtomicU64::new(0);
+
+/// Says which characters written as text are drawn as pictures from now on,
+/// and two cells wide.
+///
+/// What a window says, because only it knows: a character is drawn as a
+/// picture where none of the reader's faces has it and a face that draws
+/// pictures does -- which is what every other program on the machine does
+/// with an input method's `❤`, and a picture is drawn two cells wide. A
+/// terminal says nothing, and a character there is as wide as the terminal
+/// counts it.
+pub fn draw_as_pictures(characters: &[char]) {
+    let mut words = [0u64; PICTURED_RANGE / 64];
+    for character in characters {
+        let at = *character as usize;
+        if at < PICTURED_RANGE {
+            words[at / 64] |= 1 << (at % 64);
+        }
+    }
+    for (word, bits) in PICTURED.iter().zip(words) {
+        word.store(bits, Ordering::Relaxed);
+    }
+    PICTURED_VERSION.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Which table of pictures rows are being laid out against.
+#[must_use]
+pub fn pictures_version() -> u64 {
+    PICTURED_VERSION.load(Ordering::Relaxed)
+}
+
+/// Whether this front end draws a character written as text as a picture.
+fn drawn_as_a_picture(character: char) -> bool {
+    let at = character as usize;
+    at < PICTURED_RANGE
+        && !character.is_ascii()
+        && PICTURED[at / 64].load(Ordering::Relaxed) & (1 << (at % 64)) != 0
 }
 
 /// Whether this is one of the two selectors that say how the character

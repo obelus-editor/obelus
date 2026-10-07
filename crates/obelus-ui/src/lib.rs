@@ -1590,9 +1590,13 @@ pub fn put_before(
     style: Style,
 ) -> u16 {
     let selector = next.filter(|next| is_a_presentation(*next));
-    let width = match selector {
-        Some(_) => obelus_text::cells_of(character, selector),
-        None => character.width().unwrap_or(0),
+    // `obelus-text`'s answer, which counts a picture the window draws two
+    // cells wide -- except for the attachment's stand-in, whose eleven
+    // columns are written by whoever puts the label there, one cell at a
+    // time.
+    let width = match character {
+        obelus_text::ATTACHED => character.width().unwrap_or(0),
+        _ => obelus_text::cells_of(character, selector),
     };
     let width = u16::try_from(width).unwrap_or(0);
     if let Some(cell) = cells.cell_mut((x, y)) {
