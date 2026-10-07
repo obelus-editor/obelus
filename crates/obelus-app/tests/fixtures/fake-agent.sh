@@ -72,7 +72,7 @@
 here=$PWD
 # And the command this is asked to have run, in words every shell Obelus
 # may reach for reads the same -- see where it is sent, below.
-ran='git -c "alias.x=!sleep 0.3; printf %s obelus-ran-this; exit 3" x'
+ran='git -c "alias.x=!sleep 0.3;printf obelus-ran-this;exit 3" x'
 # And one that does not end on its own.
 forever='git -c "alias.x=!sleep 300" x'
 if command -v cygpath >/dev/null 2>&1; then

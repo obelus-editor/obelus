@@ -256,8 +256,12 @@ fn remember_telling(scratch: &support::Scratch, note: &str, session: &str, told:
 /// neither side can tell which shell Obelus will hand it to: that is
 /// `SHELL` first, which Git Bash sets on Windows, and chosen by platform
 /// the `cmd` line went to bash and came back `it said  and ended 3`.
+///
+/// Short, and with no spaces it does not need: the page is `WIDTH` wide,
+/// and a command that wraps is one no row contains -- which passes the
+/// assertion that it has gone from a call that was shut without its going.
 fn ran_command() -> &'static str {
-    "git -c \"alias.x=!sleep 0.3; printf %s obelus-ran-this; exit 3\" x"
+    "git -c \"alias.x=!sleep 0.3;printf obelus-ran-this;exit 3\" x"
 }
 
 /// The command the fake agent asks for that never ends on its own, said
