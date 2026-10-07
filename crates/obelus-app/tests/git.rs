@@ -154,7 +154,7 @@ impl Repository {
         std::fs::create_dir_all(&directory).expect("a directory");
 
         let git = |arguments: &[&str]| {
-            let status = std::process::Command::new("git")
+            let status = support::git()
                 .arg("-C")
                 .arg(&directory)
                 .args(arguments)
@@ -206,7 +206,7 @@ impl Repository {
     /// Runs git in the repository, for the things a test sets up that
     /// Obelus itself never does: a branch, a checkout.
     fn run(&self, arguments: &[&str]) {
-        let outcome = std::process::Command::new("git")
+        let outcome = support::git()
             .arg("-C")
             .arg(&self.directory)
             .args(arguments)
@@ -234,7 +234,7 @@ impl Repository {
     /// history rather than a single commit.
     fn commit(&self, message: &str) {
         let git = |arguments: &[&str]| {
-            let outcome = std::process::Command::new("git")
+            let outcome = support::git()
                 .arg("-C")
                 .arg(&self.directory)
                 .args(arguments)
@@ -1652,7 +1652,7 @@ fn hunk_headers(text: &str) -> Vec<String> {
 fn a_run_of_changes_is_where_git_draws_it_in_this_history() {
     let root = std::path::PathBuf::from(env!("OBELUS_TREE"));
     let git = |arguments: &[&str]| {
-        let out = std::process::Command::new("git")
+        let out = support::git()
             .arg("-C")
             .arg(&root)
             .args(arguments)
@@ -1899,7 +1899,7 @@ fn a_list_of_files_says_which_have_changed() {
     // not a file either.
     let nested = repository.directory.join("vendored");
     std::fs::create_dir_all(&nested).expect("a directory");
-    std::process::Command::new("git")
+    support::git()
         .arg("-C")
         .arg(&nested)
         .args(["init", "--quiet", "--initial-branch=master"])
@@ -3855,14 +3855,14 @@ impl Pushed {
         let _ = std::fs::remove_dir_all(&directory);
         let (bare, work) = (directory.join("remote.git"), directory.join("work"));
         std::fs::create_dir_all(&work).expect("a directory");
-        std::process::Command::new("git")
+        support::git()
             .args(["init", "--bare", "--quiet", "--initial-branch=master"])
             .arg(&bare)
             .output()
             .expect("a remote");
 
         let git = |at: &std::path::Path, arguments: &[&str]| {
-            let outcome = std::process::Command::new("git")
+            let outcome = support::git()
                 .arg("-C")
                 .arg(at)
                 .args(arguments)
@@ -5134,7 +5134,7 @@ fn a_project_that_asks_for_crlf_has_an_honest_margin() {
     repository.commit_all("with attributes");
 
     // git really did store it with `\n`, or this test is about nothing.
-    let stored = std::process::Command::new("git")
+    let stored = support::git()
         .arg("-C")
         .arg(repository.directory())
         .args(["show", "HEAD:file.rs"])
@@ -5164,7 +5164,7 @@ fn a_project_that_asks_for_crlf_has_an_honest_margin() {
 /// What `git diff --numstat` says of `file.rs` against `HEAD`, which is the
 /// answer the line endings below are measured against.
 fn numstat(repository: &Repository) -> (usize, usize) {
-    let out = std::process::Command::new("git")
+    let out = support::git()
         .arg("-C")
         .arg(repository.directory())
         .args(["diff", "--numstat", "HEAD", "--", "file.rs"])
@@ -5415,7 +5415,7 @@ fn a_file_written_back_with_crlf_is_previewed_by_what_it_changed() {
 #[test]
 fn nothing_in_the_working_tree_ends_its_lines_in_crlf() {
     let root = std::path::PathBuf::from(env!("OBELUS_TREE"));
-    let out = std::process::Command::new("git")
+    let out = support::git()
         .arg("-C")
         .arg(&root)
         .args([
@@ -5548,7 +5548,7 @@ fn what_git_says_has_changed_is_what_the_list_says() {
         &["add", "-A"][..],
         &["commit", "--quiet", "-m", "moved on"][..],
     ] {
-        let outcome = std::process::Command::new("git")
+        let outcome = support::git()
             .arg("-C")
             .arg(&within)
             .args(arguments)
@@ -6105,7 +6105,7 @@ fn a_run_of_changes_is_where_git_draws_it() {
         // `--no-index` is how real git is asked about two files that are not
         // in a repository, and it answers with the same headers `show` does.
         // It exits non-zero because they differ, which is not a failure.
-        let out = std::process::Command::new("git")
+        let out = support::git()
             .args([
                 "-c",
                 "diff.algorithm=histogram",

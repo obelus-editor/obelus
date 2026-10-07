@@ -118,7 +118,7 @@ fn the_tree_going_ends_it() {
 /// A worktree with two files in it, which reopens what was open.
 fn tree(name: &str) -> support::Scratch {
     let scratch = support::Scratch::new(name);
-    let outcome = std::process::Command::new("git")
+    let outcome = support::git()
         .arg("-C")
         .arg(scratch.path())
         .args(["init", "--quiet"])
