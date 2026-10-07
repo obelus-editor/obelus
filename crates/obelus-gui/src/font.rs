@@ -434,11 +434,11 @@ fn shape(
     // is not what they meant. Not left to the fallback chain either, which
     // tries every monospaced face first and steps over any face with
     // `Emoji` in its name to do it.
-    let pictures: Vec<String>;
+    let asked: Vec<String>;
     let families = match text.contains(PICTURE) {
         true => {
-            pictures = PICTURES.iter().map(ToString::to_string).collect();
-            &pictures
+            asked = pictures();
+            &asked
         }
         false => families,
     };
@@ -447,7 +447,23 @@ fn shape(
             let (placed, drawn) = lay(system, metrics, text, &attrs);
             (placed, drawn, None)
         }
-        false => tried(system, metrics, families, text, &attrs),
+        false => match tried(system, metrics, families, text, &attrs) {
+            // In none of the reader's faces: the faces that draw pictures
+            // before the fallback chain, which is what every other program
+            // on the machine does -- an input method's `❤` comes without a
+            // selector, and everywhere else the reader puts one it is red.
+            // Only where one of them has it, so a character they do not
+            // have still goes to the chain, and from the reader's attempt:
+            // the chain prefers a face like the one it was asked for, and
+            // asked for a picture face it puts Chinese in a proportional one.
+            (placed, drawn, None) if !text.contains(PICTURE) => {
+                match tried(system, metrics, &pictures(), text, &attrs) {
+                    found @ (_, _, Some(_)) => found,
+                    _ => (placed, drawn, None),
+                }
+            }
+            found => found,
+        },
     };
     // Too wide for its cells, which happens where a fallback face is not a
     // monospaced one at all. Drawn again at the size that fits rather than
@@ -484,6 +500,11 @@ fn shape(
         }
     }
     placed
+}
+
+/// [`PICTURES`], in the shape [`tried`] takes a chain in.
+fn pictures() -> Vec<String> {
+    PICTURES.iter().map(ToString::to_string).collect()
 }
 
 /// The faces to try, in order.
@@ -709,18 +730,22 @@ mod tests {
         );
     }
 
-    /// A character asked to be drawn as a picture is drawn in a face that
-    /// draws pictures, and in colour; the same character not asked is left
-    /// to the reader's faces.
+    /// A heart is drawn in a face that draws pictures, and in colour --
+    /// asked to be a picture or not, since an input method's comes without
+    /// the selector and is red everywhere else on the machine. A character
+    /// one of the reader's faces has, or one no picture face has, is not.
     ///
     /// On this machine's faces, so on one with none of `PICTURES` there is
     /// nothing to assert and it says so rather than passing quietly.
     ///
-    /// Deliberate break: leaving `families` as the reader's whatever the
-    /// text holds draws the heart in whatever monospaced face has a line
-    /// drawing of one -- MS Gothic on Windows -- and in a single colour.
+    /// Deliberate breaks: leaving `families` as the reader's whatever the
+    /// text holds draws the first heart in whatever monospaced face has a
+    /// line drawing of one -- MS Gothic on Windows -- and in one colour;
+    /// taking out the turn to the picture faces after the reader's does the
+    /// same to the second; and turning to them first, ahead of the reader's,
+    /// draws the `#` as a picture.
     #[test]
-    fn a_character_asked_to_be_a_picture_is_drawn_in_colour() {
+    fn a_heart_is_drawn_in_colour_with_or_without_its_selector() {
         let mut fonts = Fonts::new(16.0);
         let has_pictures = fonts.here().iter().any(|name| {
             PICTURES
@@ -731,29 +756,42 @@ mod tests {
             eprintln!("no face that draws pictures on this machine; nothing to check");
             return;
         }
-        let placed: Vec<Placed> = fonts
-            .glyphs("\u{2764}\u{fe0f}", false, false, Size::Cell)
-            .to_vec();
-        let heart = placed.first().expect("the heart was laid out");
-        let face = fonts
-            .system
-            .db()
-            .face(heart.key.font_id)
-            .expect("the face it was laid out in");
-        assert!(
-            face.families.iter().any(|(name, _)| {
+        // Which face the first glyph came from, whether that is a picture
+        // face, and whether what it drew has colours of its own.
+        let drawn_in = |fonts: &mut Fonts, text: &str| {
+            let first = *fonts
+                .glyphs(text, false, false, Size::Cell)
+                .first()
+                .expect("it was laid out");
+            let names = fonts
+                .system
+                .db()
+                .face(first.key.font_id)
+                .expect("the face it was laid out in")
+                .families
+                .clone();
+            let picture = names.iter().any(|(name, _)| {
                 PICTURES
                     .iter()
                     .any(|picture| name.eq_ignore_ascii_case(picture))
-            }),
-            "the heart was drawn in {:?}",
-            face.families
-        );
-        let picture = fonts.picture(heart.key).expect("the heart has pixels");
-        assert!(
-            matches!(picture.content, cosmic_text::SwashContent::Color),
-            "the heart was drawn in one colour"
-        );
+            });
+            let colour = fonts
+                .picture(first.key)
+                .is_some_and(|image| matches!(image.content, cosmic_text::SwashContent::Color));
+            (picture, colour, names)
+        };
+        for heart in ["\u{2764}\u{fe0f}", "\u{2764}"] {
+            let (picture, colour, names) = drawn_in(&mut fonts, heart);
+            assert!(picture, "{heart:?} was drawn in {names:?}");
+            assert!(colour, "{heart:?} was drawn in one colour");
+        }
+        // Every picture face has a `#`, for the keycap; the reader's has
+        // one too, and theirs is the one drawn.
+        let (picture, _, names) = drawn_in(&mut fonts, "#");
+        assert!(!picture, "a # was drawn as a picture, in {names:?}");
+        // And writing no picture face has is the chain's, as it was.
+        let (picture, _, names) = drawn_in(&mut fonts, "\u{8bfb}");
+        assert!(!picture, "a Chinese character was drawn in {names:?}");
     }
 
     /// A mark is drawn on the baseline its own face asked for; writing is
