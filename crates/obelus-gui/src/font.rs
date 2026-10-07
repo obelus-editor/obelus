@@ -62,6 +62,19 @@ const SYMBOLS: &[u8] = include_bytes!("../fonts/SymbolsNerdFontMono-Regular.ttf"
 /// What the symbols face is called, once it is loaded.
 const SYMBOLS_FAMILY: &str = "Symbols Nerd Font Mono";
 
+/// The selector that asks for the character before it to be drawn as a
+/// picture.
+const PICTURE: char = '\u{fe0f}';
+
+/// The faces that draw pictures: one per system that ships one, and the one
+/// a reader installs for themselves. Whichever this machine has.
+const PICTURES: [&str; 4] = [
+    "Segoe UI Emoji",
+    "Apple Color Emoji",
+    "Noto Color Emoji",
+    "Twemoji",
+];
+
 /// How tall a line is, as a multiple of the font's size.
 ///
 /// A terminal's row is the font's own line height, which varies by face and
@@ -414,20 +427,42 @@ fn shape(
     // the glyphs actually came from, because cosmic-text will quietly
     // substitute one of its own and a chain that did not notice would
     // stop at the first name every time.
-    let (placed, drawn) = match mark {
-        true => lay(system, metrics, text, &attrs),
+    //
+    // A character asked to be drawn as a picture is asked of the faces that
+    // draw pictures instead: a monospaced face with a `❤` in it has a line
+    // drawing of one, and the selector after it is the writer saying that
+    // is not what they meant. Not left to the fallback chain either, which
+    // tries every monospaced face first and steps over any face with
+    // `Emoji` in its name to do it.
+    let pictures: Vec<String>;
+    let families = match text.contains(PICTURE) {
+        true => {
+            pictures = PICTURES.iter().map(ToString::to_string).collect();
+            &pictures
+        }
+        false => families,
+    };
+    let (placed, drawn, used) = match mark {
+        true => {
+            let (placed, drawn) = lay(system, metrics, text, &attrs);
+            (placed, drawn, None)
+        }
         false => tried(system, metrics, families, text, &attrs),
     };
     // Too wide for its cells, which happens where a fallback face is not a
     // monospaced one at all. Drawn again at the size that fits rather than
     // squeezed afterwards: a bitmap stretched sideways is a blurred letter,
-    // and the glyph has not been rasterised yet.
+    // and the glyph has not been rasterised yet. In the face that drew it,
+    // or what fits is some other face's drawing of the character.
     let (mut placed, drawn) = match drawn > room + 0.5 {
         true => lay(
             system,
             Metrics::new(metrics.font_size * room / drawn, metrics.line_height),
             text,
-            &attrs,
+            &Attrs {
+                family: used.as_deref().map_or(attrs.family, Family::Name),
+                ..attrs.clone()
+            },
         ),
         false => (placed, drawn),
     };
@@ -479,13 +514,15 @@ fn chain(names: &[String], otherwise: Option<&str>) -> Vec<String> {
 /// Where none of them draws it -- or the reader has named none -- the last
 /// attempt stands, which is the machine's own answer and is what a reader
 /// who has said nothing gets.
+///
+/// And which of them drew it, where one did.
 fn tried(
     system: &mut FontSystem,
     metrics: Metrics,
     families: &[String],
     text: &str,
     attrs: &Attrs<'_>,
-) -> (Vec<Placed>, f32) {
+) -> (Vec<Placed>, f32, Option<String>) {
     let mut last = None;
     for family in families {
         let wanted: Vec<fontdb::ID> = system
@@ -509,14 +546,15 @@ fn tried(
         };
         let (placed, drawn, faces) = laid(system, metrics, text, &asked);
         if !faces.is_empty() && faces.iter().all(|face| wanted.contains(face)) {
-            return (placed, drawn);
+            return (placed, drawn, Some(family.clone()));
         }
         last = Some((placed, drawn));
     }
     // Nothing of theirs drew it. Whatever the last attempt put there is
     // still a drawing of this character, and where they named nothing at
     // all there is no attempt to keep.
-    last.unwrap_or_else(|| lay(system, metrics, text, attrs))
+    let (placed, drawn) = last.unwrap_or_else(|| lay(system, metrics, text, attrs));
+    (placed, drawn, None)
 }
 
 /// One laying out, and how wide it came out.
@@ -668,6 +706,53 @@ mod tests {
         assert!(
             cap <= row,
             "a key starts {cap} into its room, the row it is in {row}"
+        );
+    }
+
+    /// A character asked to be drawn as a picture is drawn in a face that
+    /// draws pictures, and in colour; the same character not asked is left
+    /// to the reader's faces.
+    ///
+    /// On this machine's faces, so on one with none of `PICTURES` there is
+    /// nothing to assert and it says so rather than passing quietly.
+    ///
+    /// Deliberate break: leaving `families` as the reader's whatever the
+    /// text holds draws the heart in whatever monospaced face has a line
+    /// drawing of one -- MS Gothic on Windows -- and in a single colour.
+    #[test]
+    fn a_character_asked_to_be_a_picture_is_drawn_in_colour() {
+        let mut fonts = Fonts::new(16.0);
+        let has_pictures = fonts.here().iter().any(|name| {
+            PICTURES
+                .iter()
+                .any(|picture| name.eq_ignore_ascii_case(picture))
+        });
+        if !has_pictures {
+            eprintln!("no face that draws pictures on this machine; nothing to check");
+            return;
+        }
+        let placed: Vec<Placed> = fonts
+            .glyphs("\u{2764}\u{fe0f}", false, false, Size::Cell)
+            .to_vec();
+        let heart = placed.first().expect("the heart was laid out");
+        let face = fonts
+            .system
+            .db()
+            .face(heart.key.font_id)
+            .expect("the face it was laid out in");
+        assert!(
+            face.families.iter().any(|(name, _)| {
+                PICTURES
+                    .iter()
+                    .any(|picture| name.eq_ignore_ascii_case(picture))
+            }),
+            "the heart was drawn in {:?}",
+            face.families
+        );
+        let picture = fonts.picture(heart.key).expect("the heart has pixels");
+        assert!(
+            matches!(picture.content, cosmic_text::SwashContent::Color),
+            "the heart was drawn in one colour"
         );
     }
 

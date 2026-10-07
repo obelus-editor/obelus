@@ -587,15 +587,69 @@ fn continuation_indent(glyphs: &[Glyph], width: u16) -> u16 {
 /// rather than by a fixed amount. Characters `unicode-width` has no opinion
 /// about — control characters, most combining marks — occupy none, which is
 /// also how a terminal treats them.
-fn char_width(character: char, width: usize) -> usize {
+fn char_width(character: char, next: Option<char>, width: usize) -> usize {
     if character == '\t' {
         let tabs = tab_width();
         tabs - (width % tabs)
-    } else if character == ATTACHED {
-        ATTACHED_WIDTH
     } else {
-        character.width().unwrap_or(0)
+        cells_of(character, next)
     }
+}
+
+/// How many cells a character occupies, given the one after it.
+///
+/// The one after it, because of the two variation selectors: `❤` is a
+/// character written in a line of text and is one cell, and `❤` followed by
+/// U+FE0F is the same character asked to be drawn as a picture, which every
+/// terminal draws two cells wide. The selector is what changed and the
+/// character is what is drawn, so the character is given the width and the
+/// selector none -- the way a terminal advances, and the way `unicode-width`
+/// measures the pair. Asked of the pair rather than worked out here, so that
+/// which characters have a picture to be drawn as is that crate's table and
+/// not a second copy of it.
+///
+/// Counted per character rather than per cluster so that a column is still a
+/// character and nothing that counts them has to learn a new unit.
+#[must_use]
+pub fn cells_of(character: char, next: Option<char>) -> usize {
+    use unicode_width::UnicodeWidthStr as _;
+    match (character, next) {
+        (ATTACHED, _) => ATTACHED_WIDTH,
+        (_, Some(selector)) if is_a_presentation(selector) => {
+            let mut pair = [0u8; 8];
+            let base = character.encode_utf8(&mut pair).len();
+            let both = base + selector.encode_utf8(&mut pair[base..]).len();
+            std::str::from_utf8(&pair[..both]).map_or(0, |pair| pair.width())
+        }
+        _ => character.width().unwrap_or(0),
+    }
+}
+
+/// Whether this is one of the two selectors that say how the character
+/// before it is drawn: as a picture (U+FE0F) or as text (U+FE0E).
+///
+/// A selector is no cell of its own -- it goes in the cell of the character
+/// it follows, and whoever writes a row of cells puts it there.
+#[must_use]
+pub const fn is_a_presentation(character: char) -> bool {
+    matches!(character, '\u{fe0e}' | '\u{fe0f}')
+}
+
+/// Every character of a string, and the cells each occupies.
+///
+/// [`cells_of`] over a string, so that anything walking one -- a row being
+/// cut to fit, a label being measured -- gets the width the drawing will
+/// give it, with a picture's selector counted where the drawing counts it.
+pub fn widths(contents: &str) -> impl Iterator<Item = (char, usize)> + '_ {
+    let nexts = contents
+        .chars()
+        .skip(1)
+        .map(Some)
+        .chain(std::iter::once(None));
+    contents
+        .chars()
+        .zip(nexts)
+        .map(|(character, next)| (character, cells_of(character, next)))
 }
 
 /// A thing that is not text, standing in the text that is around it.
@@ -664,15 +718,9 @@ pub fn characters_at_utf16(contents: &str, units: usize) -> usize {
 /// from. That is [`char_width`], which this is the rest of.
 #[must_use]
 pub fn text_width(contents: &str) -> usize {
-    contents
-        .chars()
-        .map(|character| match character {
-            // The same answer as `char_width`, because a label with one in
-            // it is measured by this and drawn by the same nine columns.
-            ATTACHED => ATTACHED_WIDTH,
-            _ => character.width().unwrap_or(0),
-        })
-        .sum()
+    // The same answer as `char_width`, because a label is measured by this
+    // and drawn by the same columns.
+    widths(contents).map(|(_, cells)| cells).sum()
 }
 
 /// One visual row of a wrapped line.
@@ -939,7 +987,7 @@ impl Text {
                 return Some(glyph);
             }
             let character = character?;
-            let cells = char_width(character, cell);
+            let cells = char_width(character, characters.clone().next(), cell);
             let glyph = Glyph {
                 character,
                 column: CharColumn::new(column),

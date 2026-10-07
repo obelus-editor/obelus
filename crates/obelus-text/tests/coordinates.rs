@@ -868,3 +868,33 @@ fn a_utf16_offset_into_a_label_is_not_a_count_of_characters() {
     // And past the end is the end.
     assert_eq!(characters_at_utf16(label, 9999), label.chars().count());
 }
+
+/// A character asked to be drawn as a picture is two cells, and the
+/// selector that asked is none; asked to be text, it stays one.
+///
+/// Measured twice -- by the walk a line is drawn from and by the width of a
+/// string on its own -- because those are the two answers that must agree:
+/// a label measured one way and drawn the other is a row a cell out.
+///
+/// Deliberate break: taking the selector arm out of `cells_of` makes the
+/// heart one cell in both, and every assertion of two below fails.
+#[test]
+fn a_character_asked_to_be_a_picture_is_two_cells() {
+    let text = Text::from_string("a\u{2764}\u{fe0f}b");
+    let line = LineNumber::new(0);
+    let at = |column| text.display_column(line, CharColumn::new(column));
+    assert_eq!(at(1), DisplayColumn::new(1), "before the heart");
+    assert_eq!(
+        at(3),
+        DisplayColumn::new(3),
+        "after the heart and its selector"
+    );
+    assert_eq!(text.line_display_width(line), DisplayColumn::new(4));
+    assert_eq!(obelus_text::text_width("a\u{2764}\u{fe0f}b"), 4);
+
+    // The same character, not asked, and asked to be text.
+    assert_eq!(obelus_text::text_width("\u{2764}"), 1);
+    assert_eq!(obelus_text::text_width("\u{2764}\u{fe0e}"), 1);
+    // And a selector after something that has no picture changes nothing.
+    assert_eq!(obelus_text::text_width("a\u{fe0f}"), 1);
+}

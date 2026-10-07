@@ -458,7 +458,7 @@ use obelus_component::{
     layers::Layer,
     picker::{Colouring, Picker},
 };
-use obelus_text::text_width;
+use obelus_text::{is_a_presentation, text_width, widths};
 use obelus_theme::Theme;
 use ratatui::{
     buffer::Buffer as CellBuffer,
@@ -1567,9 +1567,46 @@ pub fn fill(cells: &mut CellBuffer, area: Rect, style: Style) {
 /// does not advance over still advances this, or a caller stepping through a
 /// string would not terminate.
 pub fn put(cells: &mut CellBuffer, x: u16, y: u16, character: char, style: Style) -> u16 {
-    let width = u16::try_from(character.width().unwrap_or(0)).unwrap_or(0);
+    put_before(cells, x, y, character, None, style)
+}
+
+/// The same, knowing the character after it.
+///
+/// Which matters only where that is a selector saying how this one is
+/// drawn: the two are one cell -- a terminal draws `❤` and U+FE0F after it
+/// as one picture two columns wide -- so the selector goes in this cell
+/// with it, and the width is the pair's. Written into a cell of its own it
+/// is a cell the terminal does not advance over, and the rest of the row
+/// is a column out. Whoever walks a string with this skips the selector it
+/// was handed, which [`is_a_presentation`] says.
+///
+/// The width is `obelus-text`'s, which is the one the arithmetic used.
+pub fn put_before(
+    cells: &mut CellBuffer,
+    x: u16,
+    y: u16,
+    character: char,
+    next: Option<char>,
+    style: Style,
+) -> u16 {
+    let selector = next.filter(|next| is_a_presentation(*next));
+    let width = match selector {
+        Some(_) => obelus_text::cells_of(character, selector),
+        None => character.width().unwrap_or(0),
+    };
+    let width = u16::try_from(width).unwrap_or(0);
     if let Some(cell) = cells.cell_mut((x, y)) {
-        cell.set_char(shown(character));
+        match selector {
+            Some(selector) => {
+                let mut both = [0u8; 8];
+                let base = shown(character).encode_utf8(&mut both).len();
+                let end = base + selector.encode_utf8(&mut both[base..]).len();
+                cell.set_symbol(std::str::from_utf8(&both[..end]).unwrap_or(" "));
+            }
+            None => {
+                cell.set_char(shown(character));
+            }
+        }
         cell.set_style(style);
     }
     for extra in 1..width {
@@ -1613,8 +1650,11 @@ const fn shown(character: char) -> char {
 /// Writes a string, returning the column after it.
 pub fn write(cells: &mut CellBuffer, x: u16, y: u16, contents: &str, style: Style) -> u16 {
     let mut column = x;
-    for character in contents.chars() {
-        column = column.saturating_add(put(cells, column, y, character, style));
+    let mut characters = contents.chars().peekable();
+    while let Some(character) = characters.next() {
+        let next = characters.peek().copied();
+        column = column.saturating_add(put_before(cells, column, y, character, next, style));
+        characters.next_if(|next| is_a_presentation(*next));
     }
     column
 }
@@ -1641,17 +1681,20 @@ pub fn write_within(
     stop: u16,
 ) -> u16 {
     let mut column = x;
-    for character in contents.chars() {
+    let mut characters = contents.chars().peekable();
+    while let Some(character) = characters.next() {
+        let next = characters.peek().copied();
         // The width `put` will report, worked out before it is asked, so
         // the decision is made before the cell is written rather than
         // after.
-        let width = u16::try_from(character.width().unwrap_or(0))
+        let width = u16::try_from(obelus_text::cells_of(character, next))
             .unwrap_or(0)
             .max(1);
         if column.saturating_add(width) > stop {
             break;
         }
-        column = column.saturating_add(put(cells, column, y, character, style));
+        column = column.saturating_add(put_before(cells, column, y, character, next, style));
+        characters.next_if(|next| is_a_presentation(*next));
     }
     column
 }
@@ -1766,7 +1809,8 @@ pub fn write_marked(
     marked: &Marked<'_>,
 ) -> u16 {
     let mut column = x;
-    for (index, character) in contents.chars().enumerate().skip(marked.skip) {
+    let mut characters = contents.chars().enumerate().skip(marked.skip).peekable();
+    while let Some((index, character)) = characters.next() {
         if column >= area.right() {
             break;
         }
@@ -1789,7 +1833,9 @@ pub fn write_marked(
             true => style.bg(marked.mark),
             false => style,
         };
-        column = column.saturating_add(put(cells, column, y, character, style));
+        let next = characters.peek().map(|(_, next)| *next);
+        column = column.saturating_add(put_before(cells, column, y, character, next, style));
+        characters.next_if(|(_, next)| is_a_presentation(*next));
     }
     column
 }
@@ -2632,13 +2678,23 @@ pub fn drop_from_left(contents: &str, cells: usize) -> usize {
     let budget = cells - 1;
     let mut kept = 0usize;
     let mut width = 0usize;
-    for character in contents.chars().rev() {
-        let character_width = character.width().unwrap_or(0);
+    let measured: Vec<(char, usize)> = widths(contents).collect();
+    for (_, character_width) in measured.iter().rev() {
         if width + character_width > budget {
             break;
         }
         width += character_width;
         kept += 1;
+    }
+    // A selector whose character did not fit goes with it: on its own it
+    // says how nothing is drawn.
+    if measured
+        .len()
+        .checked_sub(kept)
+        .and_then(|first| measured.get(first))
+        .is_some_and(|(character, _)| is_a_presentation(*character))
+    {
+        kept -= 1;
     }
     total - kept
 }
@@ -2670,8 +2726,7 @@ pub fn drop_from_right(contents: &str, cells: usize) -> usize {
     let budget = cells - 1;
     let mut kept = 0usize;
     let mut width = 0usize;
-    for character in contents.chars() {
-        let character_width = character.width().unwrap_or(0);
+    for (_, character_width) in widths(contents) {
         if width + character_width > budget {
             break;
         }
@@ -2996,5 +3051,36 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A character asked to be drawn as a picture is written with its
+    /// selector in one cell, two wide, and a row cut to fit counts it as two.
+    ///
+    /// Deliberate breaks: writing with `put` alone puts the selector in a
+    /// cell of its own, so `x` lands a cell further on; and measuring the cut
+    /// with each character's own width counts the heart as one, keeps the
+    /// `b` as well, and the row is a cell wider than it was given.
+    #[test]
+    fn a_picture_is_one_cell_of_two_with_its_selector() {
+        use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style};
+
+        let mut cells = CellBuffer::empty(Rect::new(0, 0, 6, 1));
+        let after = super::write(&mut cells, 0, 0, "\u{2764}\u{fe0f}x", Style::new());
+        assert_eq!(after, 3, "the heart and the x are three cells");
+        assert_eq!(cells[(0, 0)].symbol(), "\u{2764}\u{fe0f}");
+        assert_eq!(cells[(1, 0)].symbol(), "");
+        assert_eq!(cells[(2, 0)].symbol(), "x");
+
+        // Three cells for `ab❤️`, which is four: one for the ellipsis and
+        // two for the heart, so the `b` goes.
+        assert_eq!(drop_from_left("ab\u{2764}\u{fe0f}", 3), 2);
+        assert_eq!(
+            truncate_from_left("ab\u{2764}\u{fe0f}", 3),
+            "\u{2026}\u{2764}\u{fe0f}"
+        );
+        // And room for the ellipsis alone takes the selector with its heart
+        // rather than leaving it to say how nothing is drawn.
+        assert_eq!(drop_from_left("ab\u{2764}\u{fe0f}", 2), 4);
+        assert_eq!(drop_from_right("\u{2764}\u{fe0f}ab", 3), 2);
     }
 }

@@ -106,7 +106,7 @@ use ratatui::{
 };
 
 use crate::{
-    Screen, fill, put, rule,
+    Screen, fill, put, put_before, rule,
     shapes::{About, Side},
 };
 
@@ -1546,8 +1546,18 @@ fn draw_row(
     // The glyph's own column, not the number of steps taken: a line can be
     // drawn with cells in it that the line does not contain, so counting
     // the steps stopped being the same as counting the columns.
-    for glyph in text.glyphs(line) {
+    let mut glyphs = text.glyphs(line).peekable();
+    while let Some(glyph) = glyphs.next() {
         let column = glyph.column.get();
+        // A selector was written into the cell of the character before it,
+        // by `put_before` below. Its own cell is the next character's, and
+        // writing it there is a cell that character then has to win back.
+        if glyph.phantom.is_none()
+            && glyph.cells == 0
+            && obelus_text::is_a_presentation(glyph.character)
+        {
+            continue;
+        }
         // A glyph the left-hand edge has cut in half leaves its cell blank:
         // half of a wide character is not that character, and drawing it
         // would put the rest of the row a column out of place. This is the
@@ -1674,7 +1684,11 @@ fn draw_row(
             continue;
         }
 
-        put(cells, x + offset, y, glyph.character, style);
+        let next = glyphs
+            .peek()
+            .filter(|next| next.phantom.is_none())
+            .map(|next| next.character);
+        put_before(cells, x + offset, y, glyph.character, next, style);
         ended = offset + u16::try_from(glyph.cells).unwrap_or(1);
     }
     ended
