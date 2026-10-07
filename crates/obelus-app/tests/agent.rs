@@ -13957,14 +13957,13 @@ fn standing_on(app: &App) -> String {
 /// conversation's row, and its call does not say it is done until the work
 /// is.
 ///
-/// Broken deliberately three ways: take the `(true, "completed")` arm out
-/// of `Chat::tool` *and* the `backgrounded` call out of
-/// `hear_of_background_work` -- either alone is covered by the other, the
-/// marker on the call and the work's own start -- and the call says done
-/// while the server runs; have
-/// `Dialect::chosen` answer `None` always, and nothing is counted; take
-/// `background_ended` out of `hear_of_background_work`, and the call goes on
-/// saying the work runs after it has ended.
+/// Broken deliberately three ways. Take the `(true, "completed")` arm out
+/// of `Chat::tool` *and* have `say_what_the_work_came_to` say nothing while
+/// the work runs -- either alone is covered by the other, the marker on the
+/// call and the work's own word -- and the call says done while the server
+/// runs. Have `Dialect::chosen` answer `None` always, and nothing is
+/// counted. Have `say_what_the_work_came_to` say nothing once the work has
+/// ended, and the call goes on saying the work runs after it has.
 #[test]
 fn background_work_is_counted_and_its_call_is_not_done_until_it_is() {
     let (mut app, events) = playing(&["air"]);

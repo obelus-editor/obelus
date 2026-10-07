@@ -112,9 +112,10 @@ impl Dialect {
 
     /// Whether the answer to that says it stopped.
     ///
-    /// `None` for an answer Obelus cannot read, which is not a refusal: what
-    /// became of the task is said by the update that follows, whichever way
-    /// it went.
+    /// `None` for an answer Obelus cannot read, which the caller takes as a
+    /// refusal: only a plain yes leaves the work marked as stopping, and
+    /// anything else hands it back, so that a row cannot say it is stopping
+    /// for ever on the strength of an answer nobody understood.
     pub(crate) fn stopped(self, answer: &serde_json::Value) -> Option<bool> {
         match self {
             Self::None => None,
