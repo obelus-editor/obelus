@@ -306,7 +306,10 @@ fn move_within(
             // The last row of a line keeps the end it has always had: there
             // is no row below for that place to belong to.
             cursor.column = match row + 1 < text.row_count(cursor.line, width) {
-                true => CharColumn::new(end.get().saturating_sub(1)).max(first),
+                // In front of the row's last *cluster*: a step back of one
+                // character from the end of a row ending in a picture is
+                // between the picture and its selector.
+                true => text.cluster_before(cursor.line, end).max(first),
                 false => end,
             };
             remember(text, cursor, width);

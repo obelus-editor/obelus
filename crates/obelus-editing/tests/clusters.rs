@@ -85,3 +85,26 @@ fn a_word_step_does_not_stop_inside_a_cluster() {
         "the caret stopped between the e and its accent"
     );
 }
+
+/// On a wrapped line, end on a row that ends in a picture stops in front
+/// of the picture, and up onto that row from far along the one below stops
+/// there too -- not one character back from the row's end, which is
+/// between the picture and its selector.
+///
+/// Ten cells: eight `a`s and a heart fill the first row, and the `b`s,
+/// with nowhere to break, go on to the second.
+///
+/// Deliberate breaks: `end - 1` in the `LineEnd` arm, and `row.end - 1` as
+/// the ceiling in `column_in_row` -- each stops at column 9.
+#[test]
+fn a_wrapped_row_ending_in_a_picture_is_not_ended_inside_it() {
+    let width = 10;
+    let mut editing = Editing::new("aaaaaaaa\u{2764}\u{fe0f}bbbbbbbb");
+    editing.place(LineNumber::new(0), CharColumn::new(0), width);
+    editing.handle_key(&KeyEvent::new(KeyCode::End, KeyModifiers::NONE), &(), width);
+    assert_eq!(column(&editing), 8, "end on the first row");
+
+    editing.place(LineNumber::new(0), CharColumn::new(18), width);
+    editing.handle_key(&KeyEvent::new(KeyCode::Up, KeyModifiers::NONE), &(), width);
+    assert_eq!(column(&editing), 8, "up from the end of the second row");
+}

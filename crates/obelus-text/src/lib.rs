@@ -995,6 +995,7 @@ impl Text {
         }
 
         let breaks = self.break_columns(line);
+        let stops = self.boundaries(line);
         let indent = continuation_indent(&glyphs, width);
 
         let mut rows: Vec<WrapRow> = Vec::new();
@@ -1007,7 +1008,13 @@ impl Text {
             let mut fits = first;
             let mut cells = 0usize;
             while fits < glyphs.len() {
-                let taken = glyphs[fits].cells.max(1);
+                let glyph = glyphs[fits];
+                // A selector is drawn in the cell of the character before
+                // it, so it takes no room of its own.
+                let taken = match glyph.cells {
+                    0 if glyph.phantom.is_none() && is_a_presentation(glyph.character) => 0,
+                    cells => cells.max(1),
+                };
                 // A glyph wider than the whole row still has to go somewhere,
                 // or an empty row would be emitted forever.
                 if cells + taken > room && fits > first {
@@ -1015,6 +1022,22 @@ impl Text {
                 }
                 cells += taken;
                 fits += 1;
+            }
+            // And never through the middle of a cluster, which is where the
+            // margin falls when a run has nowhere to break: the half on the
+            // next row would start with a selector or an accent, and a caret
+            // at the start of that row would stand inside the cluster. Back
+            // to the start of the one the margin cut, or -- where that is
+            // the whole row -- on to its end.
+            if fits < glyphs.len() {
+                fits = stops
+                    .iter()
+                    .copied()
+                    .take_while(|stop| *stop <= fits)
+                    .last()
+                    .filter(|stop| *stop > first)
+                    .or_else(|| stops.iter().copied().find(|stop| *stop > first))
+                    .unwrap_or(fits);
             }
 
             let end = if fits >= glyphs.len() {
@@ -1114,7 +1137,9 @@ impl Text {
         let ceiling = if row_index + 1 == rows.len() {
             row.end
         } else {
-            CharColumn::new(row.end.get().saturating_sub(1))
+            // The start of the row's last cluster, not one character back
+            // from its end, which can be inside it.
+            self.cluster_before(line, row.end)
         };
         self.column_at_display(line, target)
             .min(ceiling.max(row.first))
@@ -1134,10 +1159,22 @@ impl Text {
         let mut next = 0usize;
         let mut column = 0usize;
         let mut held: Option<char> = None;
+        // The character after the one being measured, because a selector
+        // after it changes how wide it is. Kept rather than peeked by
+        // cloning the walk: a rope's walk carries a stack, and a clone of
+        // it per character is an allocation per character on every line
+        // that crosses one of the rope's own pieces.
+        let mut ahead = characters.next();
         std::iter::from_fn(move || {
             let character = match held.take() {
                 Some(character) => Some(character),
-                None => characters.next(),
+                None => {
+                    let character = ahead;
+                    if character.is_some() {
+                        ahead = characters.next();
+                    }
+                    character
+                }
             };
             // A phantom comes out in front of the character it sits on, and
             // wears that character's byte so whatever colours the line
@@ -1162,7 +1199,7 @@ impl Text {
                 return Some(glyph);
             }
             let character = character?;
-            let cells = char_width(character, characters.clone().next(), cell);
+            let cells = char_width(character, ahead, cell);
             let glyph = Glyph {
                 character,
                 column: CharColumn::new(column),

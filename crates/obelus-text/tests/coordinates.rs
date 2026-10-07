@@ -869,6 +869,25 @@ fn a_utf16_offset_into_a_label_is_not_a_count_of_characters() {
     assert_eq!(characters_at_utf16(label, 9999), label.chars().count());
 }
 
+/// A run with nowhere to break is cut at the margin, and the margin is
+/// moved back to the start of a cluster it would have cut through.
+///
+/// Ten cells, and nine `a`s and an accented `e` reach exactly to the
+/// margin -- so the cut, one character on, would have put the accent at
+/// the start of the second row and a caret there between it and its `e`.
+///
+/// Deliberate break: leaving `fits` where the margin put it.
+#[test]
+fn a_line_is_not_wrapped_through_the_middle_of_a_cluster() {
+    let text = Text::from_string("aaaaaaaaae\u{301}bbbbb");
+    let rows = text.wrap_rows(LineNumber::new(0), 10);
+    let starts: Vec<usize> = rows.iter().map(|row| row.first.get()).collect();
+    assert!(
+        !starts.contains(&10),
+        "a row starts with the accent, at {starts:?}"
+    );
+}
+
 /// A character asked to be drawn as a picture is two cells, and the
 /// selector that asked is none; asked to be text, it stays one.
 ///
