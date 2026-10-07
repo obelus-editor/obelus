@@ -4118,7 +4118,7 @@ mod tests {
         });
         let mut stops = Vec::new();
         for _ in 0..3 {
-            chat.handle_key(&key(KeyCode::Right), false, ROOM, &[]);
+            chat.handle_key(&key(KeyCode::Right), false, ROOM, &[], false);
             if let Focus::Transcript(place) = chat.focus() {
                 stops.push(place.character - start);
             }
@@ -4132,7 +4132,7 @@ mod tests {
             row,
             character: start + 2,
         });
-        chat.handle_key(&key(KeyCode::Left), false, ROOM, &[]);
+        chat.handle_key(&key(KeyCode::Left), false, ROOM, &[], false);
         assert_eq!(
             chat.focus(),
             Focus::Transcript(Place {
