@@ -435,6 +435,17 @@ modifier check (`component::composer`).
 **`dispatch` has no wildcard arm** and warns on one, so a new `Command` fails
 to compile until it is handled. Same idea in `theme`: only fields with readers.
 
+**The working tree is `\n`, on Windows too.** `.gitattributes` keeps `\r\n`
+out of every commit, so nothing but this checkout ever sees one -- and this
+checkout is what the tests run against: a `\r` left in `fake-agent.sh` stops
+its `case` arms matching, and the tests that count the tree count them.
+Anything that picks the platform's line ending writes them on Windows:
+Python's text mode (write with `newline="\n"`, or bytes), PowerShell's
+`Set-Content`, `Out-File` and `>`, .NET's `WriteAllLines`. `git ls-files
+--eol` says which files have them (`w/crlf`), and
+`nothing_in_the_working_tree_ends_its_lines_in_crlf` fails on them; `grep
+$'\r$'` under Git for Windows miscounts them.
+
 **Nothing writes to stdout.** stdout is the drawing surface; `tracing` goes to
 a file. A stray `println!` lands in the middle of a frame and stays there.
 

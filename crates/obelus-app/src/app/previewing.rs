@@ -856,9 +856,8 @@ impl App {
                         .inspect_err(|error| tracing::debug!(%error, "no preview"))
                         .ok()?,
                 };
-                let changes = obelus_git::head_text(path).map(|committed| {
-                    obelus_git::Changes::between(&committed, &buffer.text().rope().to_string())
-                });
+                let changes = obelus_git::head(path)
+                    .map(|committed| committed.changes(&buffer.text().rope().to_string()));
                 Some((buffer, changes))
             }
             Subject::Commit { id, path } => {

@@ -5161,6 +5161,125 @@ fn a_project_that_asks_for_crlf_has_an_honest_margin() {
     );
 }
 
+/// A file written back with `\r\n` in a project that stores `\n` is counted
+/// the way `git diff` counts it: by what it changed, not by its line endings.
+///
+/// Python's text mode writes `\r\n` on Windows, so an agent editing a file
+/// with a script left the whole of it differing from its commit in every
+/// line ending. git normalises those on the way in and said two hundred
+/// lines; the list said four thousand taken away and four thousand put back.
+///
+/// Broken deliberately by counting the bytes on disk as they are, which is
+/// what it did: the first count is then `(4, 3)`. And the second half is why
+/// the answer is git's conversion rather than ignoring a `\r`: where nothing
+/// says the file is text, git stores what it is given and `git diff` calls
+/// every line changed -- so does this. Broken by rewriting the endings
+/// whatever git says, the second count is `(1, 0)`.
+#[test]
+fn a_file_written_back_with_crlf_is_counted_by_what_it_changed() {
+    use obelus_git::counted_against_head;
+
+    let repository = Repository::new("counts-crlf", "one\ntwo\nthree\n");
+    std::fs::write(
+        repository.directory().join(".gitattributes"),
+        "* text eol=lf\n",
+    )
+    .expect("the attributes");
+    repository.commit_all("with attributes");
+
+    std::fs::write(repository.path(), "one\r\ntwo\r\nthree\r\nfour\r\n").expect("rewriting it");
+    let file = repository.path();
+    assert_eq!(
+        counted_against_head(std::slice::from_ref(&file))
+            .get(&file)
+            .copied(),
+        Some((1, 0)),
+        "the line endings were counted as changes"
+    );
+
+    // Only the attributes go: committing the file too would make its `\r`s
+    // the commit's.
+    repository.run(&["rm", "--quiet", ".gitattributes"]);
+    repository.run(&["commit", "--quiet", "-m", "without attributes"]);
+    assert_eq!(
+        counted_against_head(std::slice::from_ref(&file))
+            .get(&file)
+            .copied(),
+        Some((4, 3)),
+        "a file git would store with its `\\r` was counted as if it would not"
+    );
+}
+
+/// And the margin says the same of it as the count.
+///
+/// Broken deliberately by comparing the buffer with the checkout's text as
+/// it is, which is what the margin did: every line is then marked.
+#[test]
+fn a_file_written_back_with_crlf_is_marked_by_what_it_changed() {
+    let repository = Repository::new("margin-crlf", "one\ntwo\nthree\n");
+    std::fs::write(
+        repository.directory().join(".gitattributes"),
+        "* text eol=lf\n",
+    )
+    .expect("the attributes");
+    repository.commit_all("with attributes");
+
+    let base = obelus_git::head(&repository.path()).expect("a diff base");
+    let changes = base.changes("one\r\ntwo\r\nthree\r\nfour\r\n");
+    let marked: Vec<usize> = (0..4)
+        .filter(|&line| changes.marker_at(LineNumber::new(line)).is_some())
+        .collect();
+    assert_eq!(
+        marked,
+        vec![3],
+        "the line endings were marked as changes: {changes:?}"
+    );
+}
+
+/// Nothing in the working tree ends its lines in `\r\n`.
+///
+/// `.gitattributes` keeps them out of the repository, so nothing that reads
+/// a commit -- CI included -- ever sees one; what has them is a checkout on
+/// Windows that something wrote to with a tool that picks the platform's
+/// line ending: Python's text mode, PowerShell's `Set-Content`, `Out-File`
+/// and `>`, .NET's `WriteAllLines`. And the tree is read as it is on disk:
+/// `fake-agent.sh` run by a shell keeps every `\r`, so its `case` arms stop
+/// matching, and the tests that count the tree count them. So this is the
+/// one test that only ever fails on the machine it matters on, and says
+/// which files.
+///
+/// Broken deliberately by leaving an untracked file of two `\r\n` lines at
+/// the root of the tree: this then names it. Skipped where there is no
+/// history to ask, which is what a tarball without a `.git` is.
+#[test]
+fn nothing_in_the_working_tree_ends_its_lines_in_crlf() {
+    let root = std::path::PathBuf::from(env!("OBELUS_TREE"));
+    let out = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&root)
+        .args([
+            "ls-files",
+            "--eol",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+        ])
+        .output()
+        .expect("running git");
+    if !out.status.success() {
+        return;
+    }
+    let crlf: Vec<String> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter(|line| line.contains("w/crlf") || line.contains("w/mixed"))
+        .filter_map(|line| line.split('\t').nth(1).map(str::to_string))
+        .collect();
+    assert!(
+        crlf.is_empty(),
+        "these end their lines in \\r\\n on disk -- write them back with \\n: {crlf:?}"
+    );
+}
+
 /// And a repository does not get to run a program because Obelus looked at
 /// it.
 ///
