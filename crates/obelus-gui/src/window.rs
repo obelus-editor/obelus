@@ -320,9 +320,23 @@ struct Showing {
     ///
     /// The application's, said when it hears who is drawing and again
     /// after every change to the settings. `Reset` until it has: a window
-    /// is drawing nothing at all before the first of those, so the default
-    /// is never on the screen.
+    /// draws nothing before the first frame, which comes after it -- see
+    /// `shown` -- so the default is never on the screen.
     ground: Color,
+    /// Whether the window is on the screen, which it is from the first
+    /// frame the application sends and not before.
+    ///
+    /// Shown as it is made, a window is on the screen for the second it
+    /// takes to start the drawing and the application, and what it shows
+    /// there is nobody's: the system's colour where the page will be, and
+    /// the system's title bar until the ground arrives to paint it. Beside
+    /// a dark Obelus the reader has just opened it from, that is a light
+    /// window flashing up and changing its mind. So it is kept hidden, and
+    /// a redraw asked for before then draws nothing -- on Wayland, where a
+    /// window cannot be hidden, a surface appears with the first thing
+    /// drawn on it, and that has to be the page rather than an empty one
+    /// on `Reset`.
+    shown: bool,
     /// How many pixels at the top of the window are the title bar's --
     /// see `title::height`. Measured with the columns and rows, because it
     /// changes when they do: a resize, a screen of another density, and
@@ -451,6 +465,7 @@ impl Showing {
             capped: Vec::new(),
             capping: Vec::new(),
             ground: Color::Reset,
+            shown: false,
             titled: 0.0,
             holding: (Color::Reset, Color::Reset),
             ticked: Vec::new(),
@@ -543,6 +558,101 @@ impl Showing {
                 .set(self.asked.get().or_else(|| Some(Instant::now())));
             window.request_redraw();
         }
+    }
+
+    /// Draws what the last frame said, now.
+    ///
+    /// What a redraw asked for comes to, and the first frame too, which
+    /// does not wait to be asked -- see `show`.
+    fn draw(&mut self) {
+        if let Some(asked) = self.asked.take() {
+            let waited = asked.elapsed();
+            if waited >= SLOW {
+                tracing::warn!(?waited, "the window waited to be let draw");
+            }
+        }
+        // How each bar is being shown, worked out for this frame:
+        // the settling is a moment's answer and the pointer moves
+        // between frames, so neither is a thing to keep.
+        let now = Instant::now();
+        self.showing.clear();
+        self.showing.extend(self.barred.iter().map(|bar| Barred {
+            bar: *bar,
+            shown: self.motion.bar_shown(bar.area, now),
+            under: self.motion.bar_under(bar.area, now),
+        }));
+
+        // How each band is being shown, worked out for this
+        // frame the way the bars are: where a band has got to is
+        // a moment's answer, and a band that has caught up is not
+        // in this at all.
+        let rolled: Vec<Rolled<'_>> = self
+            .scrolled
+            .iter()
+            .filter_map(|band| {
+                let (behind, since) = self.motion.band_shown(band.lane(), now)?;
+                Some(Rolled {
+                    room: band.room,
+                    under: band.under > 0,
+                    before: band.before.as_deref()?,
+                    behind,
+                    since,
+                    bar: band.bar.map(|bar| {
+                        let origin = band.origin.unwrap_or(bar.mark);
+                        (bar.area, f32::from(origin) - f32::from(bar.mark))
+                    }),
+                })
+            })
+            .collect();
+
+        let (Some(painter), Some(fonts)) = (self.painter.as_mut(), self.fonts.as_mut()) else {
+            return;
+        };
+        painter.drawn_on(self.ground);
+        painter.titled(self.titled);
+        painter.holding(self.holding);
+        if let Some(left) = self.left.take() {
+            painter.keep(&left.page, fonts, left.said(), &left.going);
+        }
+        if let Err(error) = painter.paint(
+            &self.page,
+            fonts,
+            self.spelling.as_ref(),
+            self.motion.moving(Instant::now()),
+            Said {
+                marked: &self.marked,
+                capped: &self.capped,
+                ticked: &self.ticked,
+                barred: &self.showing,
+                ruled: &self.ruled,
+                sheened: self.sheened.as_ref(),
+                parted: &self.parted,
+                stroked: &self.stroked,
+                stack: &self.stack,
+                bands: &rolled,
+            },
+        ) {
+            tracing::error!(?error, "the frame was not drawn");
+        }
+    }
+
+    /// Puts the window on the screen with the first frame on it.
+    ///
+    /// Shown and then drawn on the spot rather than shown and left to ask:
+    /// a window that is not on the screen is not asked to draw on macOS,
+    /// and drawing on one that is not mapped can wait on X11 for a screen
+    /// that never takes it. Both before this thread goes back to the
+    /// system, so the first thing the system can show is the page.
+    ///
+    /// And shown from here, the window's own thread answering its messages,
+    /// which is what the taskbar needs on Windows -- see `hidden`.
+    fn show(&mut self) {
+        let Some(window) = self.window.as_ref() else {
+            return;
+        };
+        window.set_visible(true);
+        self.shown = true;
+        self.draw();
     }
 
     /// Tells Obelus what the reader did.
@@ -893,13 +1003,8 @@ impl ApplicationHandler<Waking> for Showing {
         if let Err(error) = started {
             tracing::error!(%error, "Obelus could not be started behind the window");
             events.exit();
-            return;
         }
-        // Shown now that this thread is about to go back to answering the
-        // window's messages -- see `hidden`, which is why only there.
-        if cfg!(windows) {
-            window.set_visible(true);
-        }
+        // Not shown yet: the first frame shows it -- see `shown`.
     }
 
     fn user_event(&mut self, events: &ActiveEventLoop, waking: Waking) {
@@ -1243,7 +1348,10 @@ impl ApplicationHandler<Waking> for Showing {
                 if drew {
                     self.allow_the_input_method();
                     self.point_the_input_method();
-                    self.redraw();
+                    match self.shown {
+                        true => self.redraw(),
+                        false => self.show(),
+                    }
                 }
             }
             Waking::Finished => {
@@ -1345,75 +1453,10 @@ impl ApplicationHandler<Waking> for Showing {
                 }
             }
             WindowEvent::RedrawRequested => {
-                if let Some(asked) = self.asked.take() {
-                    let waited = asked.elapsed();
-                    if waited >= SLOW {
-                        tracing::warn!(?waited, "the window waited to be let draw");
-                    }
-                }
-                // How each bar is being shown, worked out for this frame:
-                // the settling is a moment's answer and the pointer moves
-                // between frames, so neither is a thing to keep.
-                let now = Instant::now();
-                self.showing.clear();
-                self.showing.extend(self.barred.iter().map(|bar| Barred {
-                    bar: *bar,
-                    shown: self.motion.bar_shown(bar.area, now),
-                    under: self.motion.bar_under(bar.area, now),
-                }));
-
-                // How each band is being shown, worked out for this
-                // frame the way the bars are: where a band has got to is
-                // a moment's answer, and a band that has caught up is not
-                // in this at all.
-                let rolled: Vec<Rolled<'_>> = self
-                    .scrolled
-                    .iter()
-                    .filter_map(|band| {
-                        let (behind, since) = self.motion.band_shown(band.lane(), now)?;
-                        Some(Rolled {
-                            room: band.room,
-                            under: band.under > 0,
-                            before: band.before.as_deref()?,
-                            behind,
-                            since,
-                            bar: band.bar.map(|bar| {
-                                let origin = band.origin.unwrap_or(bar.mark);
-                                (bar.area, f32::from(origin) - f32::from(bar.mark))
-                            }),
-                        })
-                    })
-                    .collect();
-
-                let (Some(painter), Some(fonts)) = (self.painter.as_mut(), self.fonts.as_mut())
-                else {
-                    return;
-                };
-                painter.drawn_on(self.ground);
-                painter.titled(self.titled);
-                painter.holding(self.holding);
-                if let Some(left) = self.left.take() {
-                    painter.keep(&left.page, fonts, left.said(), &left.going);
-                }
-                if let Err(error) = painter.paint(
-                    &self.page,
-                    fonts,
-                    self.spelling.as_ref(),
-                    self.motion.moving(Instant::now()),
-                    Said {
-                        marked: &self.marked,
-                        capped: &self.capped,
-                        ticked: &self.ticked,
-                        barred: &self.showing,
-                        ruled: &self.ruled,
-                        sheened: self.sheened.as_ref(),
-                        parted: &self.parted,
-                        stroked: &self.stroked,
-                        stack: &self.stack,
-                        bands: &rolled,
-                    },
-                ) {
-                    tracing::error!(?error, "the frame was not drawn");
+                // Nothing until the first frame has shown the window --
+                // see `shown`.
+                if self.shown {
+                    self.draw();
                 }
             }
             WindowEvent::Resized(size) => {
@@ -1629,26 +1672,27 @@ fn named(attributes: winit::window::WindowAttributes) -> winit::window::WindowAt
     attributes
 }
 
-/// A window kept off the screen until the thread it belongs to can answer
-/// for it, on Windows.
+/// A window kept off the screen until there is a page on it -- see
+/// `Showing::shown`.
 ///
-/// The taskbar asks a window for its icon the moment it is shown, and
-/// gives up on one that does not answer: it draws the system's blank
-/// program and does not ask again until something else about the button
-/// changes. A window shown as it is made is shown a second before this
-/// thread is done loading the faces and starting the drawing, and that
-/// second is when it was asked -- measured by putting a progress bar on
-/// the blank button from outside, which made the taskbar look again and
-/// find the icon that had been on the window all along.
+/// Everywhere, and on Windows for a second reason as well. The taskbar
+/// asks a window for its icon the moment it is shown, and gives up on one
+/// that does not answer: it draws the system's blank program and does not
+/// ask again until something else about the button changes. A window shown
+/// as it is made is shown a second before this thread is done loading the
+/// faces and starting the drawing, and that second is when it was asked --
+/// measured by putting a progress bar on the blank button from outside,
+/// which made the taskbar look again and find the icon that had been on the
+/// window all along.
 ///
-/// Only there, because what the taskbar does is the reason -- and showing
-/// a window on macOS brings it in front, which a start the reader has
-/// since turned away from has no business doing (see `elsewhere`).
+/// Showing it later on macOS does not take the reader from whatever they
+/// turned to while it started: a window ordered front there comes in front
+/// of its own program's windows only, unless that program is the one the
+/// reader is in (see `elsewhere`). Wayland has no hidden window at all,
+/// and asking for one is ignored: a surface appears with the first thing
+/// drawn on it, which is why the drawing waits as well.
 fn hidden(attributes: winit::window::WindowAttributes) -> winit::window::WindowAttributes {
-    match cfg!(windows) {
-        true => attributes.with_visible(false),
-        false => attributes,
-    }
+    attributes.with_visible(false)
 }
 
 /// The icon, as the file itself. Fourteen kilobytes, seven sizes, and the
