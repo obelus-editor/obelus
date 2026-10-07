@@ -63,6 +63,16 @@ static OWNER: OnceLock<Box<dyn Owner>> = OnceLock::new();
 /// set once and a suite has more than one test in it.
 static ASKED: Mutex<Option<Provider>> = Mutex::new(None);
 
+/// Whether the system's own clipboard may be asked, where it is a service.
+///
+/// Not where a test asked for [`Provider::Kept`], which means nothing
+/// outside Obelus at all: the service is the clipboard of whoever is running
+/// the suite as much as any program is, and a paste that read it would pass
+/// or fail by what they last copied.
+fn the_service_may_be_asked() -> bool {
+    ASKED.lock().ok().and_then(|asked| *asked) != Some(Provider::Kept)
+}
+
 /// The ways there are.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Provider {
@@ -336,7 +346,9 @@ pub fn types() -> Vec<String> {
             return holds;
         }
     }
-    if let Some(names) = native::types() {
+    if the_service_may_be_asked()
+        && let Some(names) = native::types()
+    {
         return names;
     }
     let Some((program, arguments)) = provider().listing() else {
@@ -373,7 +385,9 @@ pub fn paste_as(mime: &str) -> Option<Vec<u8>> {
     if let Some(bytes) = owner().and_then(|owner| owner.holding(mime)) {
         return Some(bytes);
     }
-    if let Some(bytes) = native::paste_as(mime) {
+    if the_service_may_be_asked()
+        && let Some(bytes) = native::paste_as(mime)
+    {
         return Some(bytes);
     }
     let (program, arguments) = provider().reading(mime)?;
@@ -522,6 +536,17 @@ pub fn paste() -> Option<String> {
     {
         return Some(words);
     }
+    // The service, where the machine has one -- and before the provider,
+    // because on a plain Windows machine the provider is the escape
+    // sequence, which cannot be read: without this a paste there was only
+    // ever what Obelus itself had copied.
+    if the_service_may_be_asked()
+        && let Some(words) =
+            native::paste_as(WORDS[0]).and_then(|words| String::from_utf8(words).ok())
+        && !words.is_empty()
+    {
+        return Some(words);
+    }
     let Some((_, _, program, arguments)) = provider().commands() else {
         return kept();
     };
@@ -585,7 +610,7 @@ pub fn copy(text: &str) -> io::Result<()> {
     // is handed over, and it outlives every process without anybody
     // holding it -- which is why those two need no owner and no
     // hand-over.
-    if native::copy(&shapes) {
+    if the_service_may_be_asked() && native::copy(&shapes) {
         return Ok(());
     }
     if owner().is_some_and(|owner| owner.offer(shapes)) {

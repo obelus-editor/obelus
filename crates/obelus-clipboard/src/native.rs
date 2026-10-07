@@ -343,6 +343,11 @@ mod win32 {
     }
 
     /// The text on the clipboard, as UTF-16 turned into a string.
+    ///
+    /// With its line breaks as `\n`. Every Windows program puts `\r\n`
+    /// there, and a buffer handed that gets a `\r` at the end of every
+    /// line it did not have -- which is why `win32yank` was asked with
+    /// `--lf` when it was the only way Obelus read this clipboard.
     fn text() -> Option<String> {
         // Safety: the handle belongs to the clipboard and is only read
         // while it is open and locked, which is the documented contract.
@@ -361,7 +366,7 @@ mod win32 {
             }
             let said = String::from_utf16_lossy(std::slice::from_raw_parts(locked, length));
             GlobalUnlock(handle.cast());
-            Some(said)
+            Some(said.replace("\r\n", "\n"))
         }
     }
 

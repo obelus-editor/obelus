@@ -694,7 +694,12 @@ mod keys {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let _turn = support::clipboard_turn();
-        obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Osc52);
+        // `Kept` rather than the escape sequence, though it is the sequence
+        // this is about: the two take one path through a paste, and where
+        // the clipboard is a service the sequence is not all there is --
+        // a paste asks the service first, which is the clipboard of whoever
+        // is running the suite.
+        obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Kept);
 
         assert_eq!(
             obelus_clipboard::paste(),
