@@ -4770,6 +4770,7 @@ version = "0.10.0"
 dependencies = [
  "ropey",
  "unicode-linebreak",
+ "unicode-segmentation",
  "unicode-width",
 ]
 

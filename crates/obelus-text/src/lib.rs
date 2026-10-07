@@ -341,6 +341,88 @@ impl Text {
         column.min(self.line_length(line))
     }
 
+    /// Where the caret goes one step left: the start of the cluster behind it.
+    ///
+    /// A cluster is what a reader sees as one character -- `❤` and the
+    /// selector that makes it a picture, `e` and the accent over it -- and
+    /// there is no place inside one a reader could point at. A caret
+    /// between the two halves is drawn where the whole thing ends, so a key
+    /// that put it there moved nothing anybody can see, and a letter typed
+    /// there splits the picture from what asked for it.
+    ///
+    /// Zero at the start of the line: what lies beyond that is the caller's.
+    #[must_use]
+    pub fn cluster_before(&self, line: LineNumber, column: CharColumn) -> CharColumn {
+        let column = column.get();
+        CharColumn::new(
+            self.boundaries(line)
+                .into_iter()
+                .take_while(|boundary| *boundary < column)
+                .last()
+                .unwrap_or(0),
+        )
+    }
+
+    /// Where the caret goes one step right: the end of the cluster in
+    /// front of it, or the end of the line.
+    #[must_use]
+    pub fn cluster_after(&self, line: LineNumber, column: CharColumn) -> CharColumn {
+        let column = column.get();
+        let boundaries = self.boundaries(line);
+        let end = boundaries.last().copied().unwrap_or(0);
+        CharColumn::new(
+            boundaries
+                .into_iter()
+                .find(|boundary| *boundary > column)
+                .unwrap_or(end),
+        )
+    }
+
+    /// The nearest place a caret may stand, at or before `column`.
+    #[must_use]
+    pub fn cluster_start(&self, line: LineNumber, column: CharColumn) -> CharColumn {
+        let column = column.get();
+        CharColumn::new(
+            self.boundaries(line)
+                .into_iter()
+                .take_while(|boundary| *boundary <= column)
+                .last()
+                .unwrap_or(0),
+        )
+    }
+
+    /// The same, at or after it.
+    #[must_use]
+    pub fn cluster_end(&self, line: LineNumber, column: CharColumn) -> CharColumn {
+        let column = column.get();
+        let boundaries = self.boundaries(line);
+        let end = boundaries.last().copied().unwrap_or(0);
+        CharColumn::new(
+            boundaries
+                .into_iter()
+                .find(|boundary| *boundary >= column)
+                .unwrap_or(end),
+        )
+    }
+
+    /// Every column of a line a caret may stand at, ascending: zero, each
+    /// place one cluster ends and the next begins, and the end of the line.
+    ///
+    /// The extended clusters, which are the ones that keep a picture with
+    /// its selector and a letter with its marks.
+    fn boundaries(&self, line: LineNumber) -> Vec<usize> {
+        use unicode_segmentation::UnicodeSegmentation as _;
+
+        let contents: String = self.line(line).chars().collect();
+        let mut column = 0usize;
+        let mut boundaries = vec![0];
+        for cluster in contents.graphemes(true) {
+            column += cluster.chars().count();
+            boundaries.push(column);
+        }
+        boundaries
+    }
+
     /// The document-wide `char` offset of a position.
     #[must_use]
     pub fn char_offset(&self, line: LineNumber, column: CharColumn) -> CharOffset {

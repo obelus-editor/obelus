@@ -3034,3 +3034,57 @@ fn a_character_asked_to_be_a_picture_is_two_cells_with_its_selector_in_the_first
         "the caret after the line is not after the x"
     );
 }
+
+/// In a file, backspace and delete take a picture with its selector, and
+/// the arrows step over the pair.
+///
+/// The file's own path through the keys, which is not the one a box takes:
+/// backspace there is a span worked out in `keys`, so the box's tests say
+/// nothing about it.
+///
+/// Deliberate break: backspace's span starting one character back -- the
+/// `saturating_sub(1)` in `indent_back` that it was -- takes the selector
+/// and leaves the heart drawn as text; and delete's ending one character on
+/// takes the heart and leaves its selector.
+#[test]
+fn in_a_file_a_picture_is_taken_and_stepped_over_whole() {
+    let scratch = support::Scratch::new("a-picture-is-taken-whole");
+    let open = |name: &str| {
+        let path = scratch.write(name, "x\u{2764}\u{fe0f}y\n");
+        let mut app = App::new(vec![
+            obelus_buffer::Buffer::open(&path).expect("opening the file"),
+        ]);
+        support::lay_out(&mut app, WIDTH, HEIGHT);
+        app
+    };
+    let said = |app: &App| {
+        let buffer = app.current_buffer().expect("a buffer");
+        buffer.text().line(LineNumber::new(0)).to_string()
+    };
+    let column = |app: &App| {
+        app.current_buffer()
+            .expect("a buffer")
+            .cursor()
+            .column
+            .get()
+    };
+
+    let mut app = open("stepped.txt");
+    press(&mut app, KeyCode::Right);
+    press(&mut app, KeyCode::Right);
+    assert_eq!(column(&app), 3, "right stopped inside the picture");
+    press(&mut app, KeyCode::Left);
+    assert_eq!(column(&app), 1, "left stopped inside the picture");
+    press(&mut app, KeyCode::Delete);
+    assert_eq!(said(&app), "xy", "delete left part of the picture behind");
+
+    let mut app = open("rubbed.txt");
+    press(&mut app, KeyCode::Right);
+    press(&mut app, KeyCode::Right);
+    press(&mut app, KeyCode::Backspace);
+    assert_eq!(
+        said(&app),
+        "xy",
+        "backspace left part of the picture behind"
+    );
+}

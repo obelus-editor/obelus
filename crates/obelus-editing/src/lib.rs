@@ -218,7 +218,9 @@ fn move_within(
                     cursor.column = text.line_length(above);
                 }
             } else {
-                cursor.column = cursor.column.saturating_sub(1);
+                // A cluster at a time, not a character: see
+                // `Text::cluster_before`.
+                cursor.column = text.cluster_before(cursor.line, cursor.column);
             }
             remember(text, cursor, width);
             return moved(cursor);
@@ -230,7 +232,7 @@ fn move_within(
                     cursor.column = CharColumn::new(0);
                 }
             } else {
-                cursor.column = text.clamp_column(cursor.line, cursor.column.saturating_add(1));
+                cursor.column = text.cluster_after(cursor.line, cursor.column);
             }
             remember(text, cursor, width);
             return moved(cursor);
@@ -317,14 +319,16 @@ fn move_within(
         Motion::WordLeft => {
             let (line, column) = word_left(text, folds, cursor.line, cursor.column);
             cursor.line = line;
-            cursor.column = column;
+            // A word is told by its characters' kinds, and an accent is not
+            // the kind of the letter it sits on: the cluster settles it.
+            cursor.column = text.cluster_start(line, column);
             remember(text, cursor, width);
             return moved(cursor);
         }
         Motion::WordRight => {
             let (line, column) = word_right(text, folds, cursor.line, cursor.column);
             cursor.line = line;
-            cursor.column = column;
+            cursor.column = text.cluster_end(line, column);
             remember(text, cursor, width);
             return moved(cursor);
         }

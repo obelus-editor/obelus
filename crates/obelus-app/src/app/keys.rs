@@ -247,7 +247,7 @@ impl App {
                 // joining the line below.
                 let end_column = match typing {
                     Typing::Character(_) if self.replacing => {
-                        text.clamp_column(cursor.line, cursor.column.saturating_add(1))
+                        text.cluster_after(cursor.line, cursor.column)
                     }
                     _ => cursor.column,
                 };
@@ -303,7 +303,7 @@ impl App {
                 let (end_line, end_column) = match cursor.column == text.line_length(cursor.line) {
                     true if cursor.line >= text.last_line() => return,
                     true => (cursor.line.saturating_add(1), CharColumn::new(0)),
-                    false => (cursor.line, cursor.column.saturating_add(1)),
+                    false => (cursor.line, text.cluster_after(cursor.line, cursor.column)),
                 };
                 (
                     obelus_text::coordinates::Span {
@@ -832,7 +832,7 @@ fn indent_back(text: &obelus_text::Text, line: LineNumber, column: CharColumn) -
         .take(column.get())
         .all(|character| character == ' ');
     if !blank {
-        return column.saturating_sub(1);
+        return text.cluster_before(line, column);
     }
     let step = obelus_text::tab_width().max(1);
     CharColumn::new((column.get() - 1) / step * step)
