@@ -410,6 +410,12 @@ impl Board {
     }
 
     /// Notes that Obelus has asked for one to stop.
+    ///
+    /// Until the agent says what became of it: a state that ends it ends
+    /// this too, and an answer that is anything but a plain yes takes it
+    /// back ([`Self::not_stopping`]). An agent that says yes and never says
+    /// the work ended leaves it stopping -- which is what it said, and
+    /// claude-agent-acp follows the yes with the state every time.
     pub fn stopping(&mut self, id: &str) {
         if let Some(at) = self.at(id) {
             self.tasks[at].stopping = true;

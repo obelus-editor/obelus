@@ -14080,6 +14080,29 @@ fn the_keys_do_not_stand_on_a_count_the_row_had_no_room_for() {
     );
 }
 
+/// An answer to a stop that nobody can read takes the stopping back: the
+/// row is running again, and the key is lit for another try.
+///
+/// Broken deliberately: count only a plain no as refused, the way it was,
+/// and the row says it is stopping for ever.
+#[test]
+fn an_answer_to_a_stop_nobody_can_read_takes_the_stopping_back() {
+    let (mut app, events) = playing(&["air", "odd-stop"]);
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    say(&mut app, "/background");
+    pump(&mut app, &events, "the work counted", |app| {
+        app.background_tasks() == Some(1)
+    });
+    open_the_background_work(&mut app);
+    support::press_alt(&mut app, 's');
+    assert_eq!(standing_on(&app), "Stopping");
+    pump(&mut app, &events, "the row running again", |app| {
+        standing_on(app) == "Running"
+    });
+}
+
 /// An agent that turns out to have no way to stop its work greys the key,
 /// and the work it was asked about is running again rather than stopping
 /// for ever.

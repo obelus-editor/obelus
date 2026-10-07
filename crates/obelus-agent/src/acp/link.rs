@@ -2300,7 +2300,13 @@ async fn talk(
                                     // follows; what is said here is only
                                     // what did not happen.
                                     let refused = match answer {
-                                        Ok(answer) => dialect.stopped(&answer) == Some(false),
+                                        // Anything but a plain yes: an
+                                        // answer Obelus cannot read says
+                                        // nothing was stopped as surely as
+                                        // a no does, and a row left saying
+                                        // it is stopping would say so for
+                                        // ever.
+                                        Ok(answer) => dialect.stopped(&answer) != Some(true),
                                         // The agent has no such method after
                                         // all: nothing on this connection
                                         // can be stopped, and the key that

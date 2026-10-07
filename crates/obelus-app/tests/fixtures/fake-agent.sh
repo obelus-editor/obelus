@@ -81,7 +81,8 @@
 #                            id on any of them, and then a word
 #   _session/async_task/stop
 #                         -> stopped, and says so; run with `cannot-stop` it
-#                            has no such method, and with `garbles-first`
+#                            has no such method, with `odd-stop` it answers
+#                            something nobody can read, and with `garbles-first`
 #                            it says a run of nonsense about its work before
 #                            it answers
 #
@@ -199,6 +200,7 @@ replans=''
 air=''
 cannot_stop=''
 garbles_first=''
+odd_stop=''
 for word in "$@"; do
     case "$word" in
         mode-as-option) both_ways='yes' ;;
@@ -217,6 +219,7 @@ for word in "$@"; do
         air2) air='2' ;;
         cannot-stop) cannot_stop='yes' ;;
         garbles-first) garbles_first='yes' ;;
+        odd-stop) odd_stop='yes' ;;
     esac
 done
 
@@ -1045,6 +1048,9 @@ while IFS= read -r line; do
             fi
             if [ -n "$cannot_stop" ]; then
                 printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":"Method not found"}}\n' "$(id_of "$line")"
+            elif [ -n "$odd_stop" ]; then
+                # An answer, and not one anybody can read.
+                printf '{"jsonrpc":"2.0","id":%s,"result":{"done":"maybe"}}\n' "$(id_of "$line")"
             else
                 printf '{"jsonrpc":"2.0","id":%s,"result":{"stopped":true}}\n' "$(id_of "$line")"
                 printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"async_task_state_update","asyncTaskId":"t-1","state":"stopped"}}}\n'
