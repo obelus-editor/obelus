@@ -3558,6 +3558,46 @@ mod tests {
         );
     }
 
+    /// News of background work that leaves its call's row saying what it
+    /// said keeps the rows; news that changes it does not.
+    ///
+    /// Work reports its progress as often as it likes, and almost none of
+    /// that moves the row -- laid out again for each, a busy test run was
+    /// the whole transcript laid out a few times a second.
+    ///
+    /// Broken deliberately by putting `forget_the_layout()` back at the top
+    /// of `background_says`, which fails the first claim, or of
+    /// `background_ended_everywhere`, which fails the last; and by dropping
+    /// it from where the row changes, which fails the second.
+    #[test]
+    fn news_of_work_that_moves_no_row_does_not_lay_the_conversation_out_again() {
+        let mut chat = Chat::new();
+        let mut started = saying("c1", "npm run dev", &[]);
+        started.backgrounded = true;
+        chat.tool(&started, "completed");
+        let held = |chat: &Chat| chat.laid.borrow().is_some();
+
+        let _ = chat.rows(ROOM.reading);
+        chat.background_says("c1", obelus_agent::acp::BACKGROUNDED);
+        assert!(
+            held(&chat),
+            "the work going on as it was threw the rows away"
+        );
+
+        chat.background_says("c1", "completed");
+        assert!(
+            !held(&chat),
+            "the work ended and the rows stayed as they were"
+        );
+
+        let _ = chat.rows(ROOM.reading);
+        chat.background_ended_everywhere();
+        assert!(
+            held(&chat),
+            "ending work nothing was waiting on threw the rows away"
+        );
+    }
+
     /// A closed call shows its title, and no more of it than it is allowed.
     ///
     /// Three claims, and each was the fault at some point.
