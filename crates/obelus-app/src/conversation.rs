@@ -335,12 +335,15 @@ impl Conversation {
     /// come back with an empty page -- an agent that resumes rather than
     /// replays sends none of it -- and are the reader's all the same. One
     /// taken up is waiting on the name it asked for, or holds a session it
-    /// did not mint.
+    /// did not mint -- or, put back as it was when Obelus last shut, has
+    /// not asked yet: until the reader says something in it, the name of
+    /// the session it is to take up is all that says it is not new.
     #[must_use]
     pub fn is_blank(&self) -> bool {
         self.topic == Topic::Loose
             && !self.chat.anything_said()
             && self.asked_for.is_none()
+            && self.to_take_up.is_none()
             && (self.session.is_none() || self.minted)
     }
 }
@@ -403,4 +406,28 @@ pub struct Asking {
     pub given: Vec<(String, acp::Reply)>,
     /// Where the answers go when the last one is in.
     pub answer: acp::Answer<Option<Vec<(String, acp::Reply)>>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A conversation put back as it was when Obelus last shut is not a
+    /// blank one, though nothing has been said in it yet.
+    ///
+    /// It has asked for nothing until the reader says something, so all
+    /// that is left to tell it from a new one is the session it is to take
+    /// up -- and "new conversation" used to land in it, and the reader's
+    /// first words went to the conversation they had meant to leave.
+    ///
+    /// Deliberate break: take `to_take_up` back out of `is_blank`.
+    #[test]
+    fn a_conversation_put_back_is_not_a_blank_one() {
+        assert!(Conversation::default().is_blank(), "a new one is not blank");
+        let put_back = Conversation {
+            to_take_up: Some("s-1".to_string()),
+            ..Conversation::default()
+        };
+        assert!(!put_back.is_blank(), "one put back was taken for new");
+    }
 }
