@@ -287,7 +287,10 @@ mod win32 {
                 };
                 // Terminated, because `CF_UNICODETEXT` is a C string: a
                 // buffer without the zero is read past its end.
-                let wide: Vec<u16> = said.encode_utf16().chain(std::iter::once(0)).collect();
+                let wide: Vec<u16> = crlf(said)
+                    .encode_utf16()
+                    .chain(std::iter::once(0))
+                    .collect();
                 (CF_UNICODETEXT as u32, as_bytes(&wide))
             } else {
                 // Safety: a name is a string the caller chose, and
@@ -333,6 +336,16 @@ mod win32 {
         }
     }
 
+    /// Words with their line breaks as Windows writes them.
+    ///
+    /// What `win32yank -i --crlf` did when it was how Obelus wrote this
+    /// clipboard: a program that reads `CF_UNICODETEXT` as Windows text
+    /// pastes a bare `\n` as no break at all, so every line of a copy
+    /// arrives joined to the next. A `\r\n` already there is left as one.
+    fn crlf(said: &str) -> String {
+        said.replace("\r\n", "\n").replace('\n', "\r\n")
+    }
+
     /// The bytes of a UTF-16 buffer, in this machine's own order.
     ///
     /// Which is the order the clipboard wants: `CF_UNICODETEXT` is
@@ -342,13 +355,18 @@ mod win32 {
         wide.iter().flat_map(|unit| unit.to_ne_bytes()).collect()
     }
 
-    /// The text on the clipboard, as UTF-16 turned into a string.
+    /// The text on the clipboard, with its line breaks as `\n`.
     ///
-    /// With its line breaks as `\n`. Every Windows program puts `\r\n`
-    /// there, and a buffer handed that gets a `\r` at the end of every
-    /// line it did not have -- which is why `win32yank` was asked with
-    /// `--lf` when it was the only way Obelus read this clipboard.
+    /// Every Windows program puts `\r\n` there, Obelus included, and a
+    /// buffer handed that gets a `\r` at the end of every line it did not
+    /// have -- which is why `win32yank` was asked with `--lf` when it was
+    /// the only way Obelus read this clipboard.
     fn text() -> Option<String> {
+        written().map(|said| said.replace("\r\n", "\n"))
+    }
+
+    /// The same, as it is written there: UTF-16 turned into a string.
+    fn written() -> Option<String> {
         // Safety: the handle belongs to the clipboard and is only read
         // while it is open and locked, which is the documented contract.
         unsafe {
@@ -366,7 +384,7 @@ mod win32 {
             }
             let said = String::from_utf16_lossy(std::slice::from_raw_parts(locked, length));
             GlobalUnlock(handle.cast());
-            Some(said.replace("\r\n", "\n"))
+            Some(said)
         }
     }
 
@@ -395,6 +413,33 @@ mod win32 {
                     Some(PathBuf::from(std::ffi::OsString::from_wide(&name)))
                 })
                 .collect()
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        /// A copy's line breaks are made Windows', and one already made so
+        /// is not made so twice.
+        ///
+        /// Deliberate break: `crlf` as a bare `replace('\n', "\r\n")`,
+        /// which writes `\r\r\n` for the break that was already there.
+        #[test]
+        fn a_line_break_is_made_a_windows_one_once() {
+            assert_eq!(super::crlf("one\ntwo\r\nthree"), "one\r\ntwo\r\nthree");
+        }
+
+        /// And they are what lands on the clipboard, which is where another
+        /// program reads them.
+        ///
+        /// Deliberate break: `copy` encoding `said` rather than
+        /// `crlf(said)`, which leaves the bare `\n` there.
+        #[test]
+        #[ignore = "writes the clipboard of whoever runs it"]
+        fn a_copy_lands_with_windows_line_breaks() {
+            let shapes = [("text/plain".to_string(), b"one\ntwo\n".to_vec())];
+            assert!(super::copy(&shapes), "the clipboard did not take the copy");
+            let _open = super::Open::taken().expect("opening the clipboard");
+            assert_eq!(super::written().as_deref(), Some("one\r\ntwo\r\n"));
         }
     }
 }
