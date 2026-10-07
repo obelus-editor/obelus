@@ -1318,14 +1318,17 @@ impl App {
     }
 
     /// How much of the agent's background work is still going in the
-    /// conversation on screen -- or nothing, where it has told Obelus of
-    /// none here, which is what keeps the row free of a count for every
-    /// agent that does not speak of such work.
+    /// conversation on screen -- or nothing, where none is: an agent that
+    /// does not speak of such work, and one whose work has all ended.
+    ///
+    /// Nothing for the second as well as the first. A count of none is a
+    /// thing on the row saying nothing is happening, which is what an empty
+    /// row already says; what the ended work wrote is on the calls' rows.
     #[must_use]
     pub fn background_tasks(&self) -> Option<usize> {
         let session = self.session_now();
         let board = self.talker.as_ref()?.tasks(session.as_ref())?;
-        (!board.is_empty()).then(|| board.running())
+        Some(board.running()).filter(|running| *running > 0)
     }
 
     /// Whether the count of background work is on the conversation's status

@@ -584,14 +584,21 @@ fn said(setting: &acp::Setting) -> (String, Option<bool>) {
 /// settings read as one more setting on some value, and a reader has to
 /// open it to find out it was a count. The same words with the glyph and
 /// without it, so that they say the whole of it on their own.
-fn tasks_said(running: usize) -> String {
-    let going = match running {
-        0 => "Nothing in the background".to_string(),
-        many => format!("{many} in the background"),
-    };
-    match obelus_icons::enabled() {
-        true => format!("{}  {going}", obelus_icons::ui::BACKGROUND),
-        false => going,
+///
+/// One blank after the glyph in a window and two in a terminal: a terminal's
+/// Nerd Font draws the glyph two cells wide and the first blank is the one
+/// it bleeds into, where the window's `Mono` face fits it to one cell and a
+/// second blank is a gap between the mark and what it marks.
+///
+/// Whether there are glyphs and whether this is a window are handed in
+/// rather than read here, so that both answers can be asked of it in one
+/// test binary without moving a switch every other test reads.
+fn tasks_said(running: usize, glyphs: bool, window: bool) -> String {
+    let going = format!("{running} in the background");
+    match (glyphs, window) {
+        (true, true) => format!("{} {going}", obelus_icons::ui::BACKGROUND),
+        (true, false) => format!("{}  {going}", obelus_icons::ui::BACKGROUND),
+        (false, _) => going,
     }
 }
 
@@ -1581,12 +1588,7 @@ impl ChatView<'_> {
                 true => self.theme.selected_row_background,
                 false => self.theme.background,
             };
-            // Nothing still going: there to open, for what the work said,
-            // and not news.
-            let ink = match self.tasks {
-                Some(0) => self.theme.gutter,
-                _ => self.theme.gutter_current,
-            };
+            let ink = self.theme.gutter_current;
             write(cells, at, area.y, &word, plain.fg(ink).bg(ground));
         }
         self.settings(cells, area, self.status_room(area), plain);
@@ -1735,7 +1737,11 @@ impl ChatView<'_> {
     /// the keys would be put back where they came from.
     fn tasks_placed(&self, area: Rect) -> Option<(u16, String)> {
         let running = self.tasks?;
-        let mut word = tasks_said(running);
+        let mut word = tasks_said(
+            running,
+            obelus_icons::enabled(),
+            obelus_config::in_a_window(),
+        );
         let at_most = text_width(&word) + text_width(&opens(false));
         if matches!(self.focus, Focus::Settings(at) if at >= self.settings.len()) {
             word.push_str(&opens(false));
@@ -2153,6 +2159,27 @@ mod tests {
                 "{keys} is not at {along} of {said:?}"
             );
         }
+    }
+
+    /// The glyph in front of the count is as far from it as the front end
+    /// draws a glyph wide needs: one blank in a window, where the mark is
+    /// one cell, and two in a terminal, where it bleeds into the first.
+    ///
+    /// Broken deliberately: give the window the terminal's two blanks, and
+    /// the mark stands a cell off from its count; give the terminal one,
+    /// and the glyph runs into the number.
+    #[test]
+    fn the_mark_on_the_count_is_as_far_from_it_as_the_front_end_needs() {
+        let mark = obelus_icons::ui::BACKGROUND;
+        assert_eq!(
+            super::tasks_said(2, true, true),
+            format!("{mark} 2 in the background")
+        );
+        assert_eq!(
+            super::tasks_said(2, true, false),
+            format!("{mark}  2 in the background")
+        );
+        assert_eq!(super::tasks_said(2, false, true), "2 in the background");
     }
 
     /// The count of background work is whole on a row with no settings, at

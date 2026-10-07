@@ -13990,8 +13990,14 @@ fn background_work_is_counted_and_its_call_is_not_done_until_it_is() {
 
     say(&mut app, "/background-ends");
     pump(&mut app, &events, "the work ended", |app| {
-        app.background_tasks() == Some(0)
+        app.background_tasks().is_none()
     });
+    // And the count goes with it: none running is nothing to say.
+    let shown = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        !shown.contains("in the background"),
+        "the row still counts work that has all ended:\n{shown}"
+    );
     assert!(
         the_call_says(&mut app, obelus_icons::ui::DONE, "Done"),
         "the call does not say its work is done:\n{}",
@@ -14035,7 +14041,7 @@ fn the_count_opens_the_work_and_its_key_stops_it() {
 
     support::press_alt(&mut app, 's');
     pump(&mut app, &events, "the work stopped", |app| {
-        app.background_tasks() == Some(0)
+        app.background_tasks().is_none()
     });
     pump(&mut app, &events, "the list saying so", |app| {
         standing_on(app).starts_with("Stopped  ")
@@ -14265,7 +14271,7 @@ fn work_that_ended_before_its_call_was_marked_is_done() {
     pump(&mut app, &events, "the next answer", |app| {
         said_in_transcript(app, "ran hello")
     });
-    assert_eq!(app.background_tasks(), Some(0));
+    assert_eq!(app.background_tasks(), None);
     assert!(
         the_call_says(&mut app, obelus_icons::ui::DONE, "Done"),
         "the call does not say its work is done:\n{}",
