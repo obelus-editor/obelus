@@ -1039,7 +1039,11 @@ impl Chat {
     /// where a letter out there is as often a slip. Left where it was, the
     /// text went into a box the caret was not in. An input method, whose
     /// word also arrives as a paste, is off out there (`App::takes_text`),
-    /// so a word spelled while reading does not come this way.
+    /// so a word spelled while reading does not come this way -- except on
+    /// X11, where `obg` leaves the input method on throughout, and a word
+    /// spelled in the transcript arrives here and goes in while the letters
+    /// that spell Latin go nowhere. Turning it off there costs the box its
+    /// keys until the window is left and come back to, which is worse.
     pub fn paste(&mut self, what: &str, width: u16) {
         self.take_the_keys_back();
         self.input.write_in(what, width);
@@ -2980,9 +2984,11 @@ impl Chat {
     /// Walks the transcript with the cursor, and holds what it walks over
     /// while shift is down.
     ///
-    /// What it does not take falls through to the box below, which is what
-    /// keeps a reader from ever being stuck in here: the keys that are the
-    /// box's own take the focus back with them.
+    /// What it does not take falls through to the box below. The keys that
+    /// are the box's own it does take, and does nothing with: a letter
+    /// pressed while reading is not a reader asking to be in the box. Down
+    /// off the last row and escape are the ways back, so nobody is stuck in
+    /// here.
     fn on_transcript(
         &mut self,
         key: &KeyEvent,
@@ -3886,8 +3892,9 @@ mod tests {
     /// on the way.
     #[test]
     fn a_paste_off_the_box_takes_the_keys_back_to_it() {
-        // What an input method commits arrives as a paste, and the letters
-        // that spelled it never reached the keys that take the focus back.
+        // A paste is put somewhere on purpose -- a terminal's own, or a file
+        // dragged onto one -- so it takes the keys back where a letter typed
+        // out here does not.
         //
         // Deliberate break: taking either arm out of the match in `paste`,
         // and the word is in a box the focus is not in.
@@ -4760,6 +4767,50 @@ mod tests {
             chat.handle_key(&pressed, false, ROOM, &[]);
             assert_eq!(chat.focus(), at, "{pressed:?} moved the cursor");
             assert!(chat.holding(), "{pressed:?} let go of what was held");
+        }
+        assert_eq!(chat.writing().text(), "", "something reached the box");
+    }
+
+    /// Typing on the row of settings goes nowhere too, and is still taken
+    /// there: a key the row let fall through would reach the application,
+    /// where `Backspace` with a modifier or a letter is somebody else's.
+    ///
+    /// Broken deliberately twice: putting back the arm that moved the focus
+    /// to the box and fell through, and the focus goes red; and answering
+    /// `None` from that arm without moving the focus, and the box does,
+    /// because the box's own arms below take whatever falls through.
+    #[test]
+    fn typing_on_the_row_of_settings_goes_nowhere() {
+        let settings = [obelus_agent::acp::Setting {
+            id: "allow_all".to_string(),
+            name: "Allow everything".to_string(),
+            about: None,
+            values: Vec::new(),
+            current: "off".to_string(),
+            kind: obelus_agent::acp::Kind::Switch,
+            category: obelus_agent::acp::Category::Other,
+            legacy: false,
+        }];
+        let mut chat = walked();
+        chat.focus = Focus::Settings(0);
+        for pressed in [
+            key(KeyCode::Char('h')),
+            shifted(KeyCode::Char('H')),
+            key(KeyCode::Backspace),
+            key(KeyCode::Delete),
+            shifted(KeyCode::Enter),
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT),
+        ] {
+            let outcome = chat.handle_key(&pressed, false, ROOM, &settings);
+            assert!(
+                matches!(outcome, ChatOutcome::Consumed),
+                "{pressed:?} was not taken by the row"
+            );
+            assert_eq!(
+                chat.focus(),
+                Focus::Settings(0),
+                "{pressed:?} took the keys away"
+            );
         }
         assert_eq!(chat.writing().text(), "", "something reached the box");
     }

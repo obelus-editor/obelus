@@ -1053,11 +1053,10 @@ impl App {
     ///
     /// Dropped under a card with nowhere to write, rather than put behind
     /// it. Not [`App::conversation_takes_text`], which also says no while
-    /// the keys are off the box: what an input method commits arrives here,
-    /// and a word spelled in the transcript goes where a letter typed there
-    /// goes -- into the box, which takes the keys back. The same answer
-    /// [`App::takes_text`] gives the window, which turned the input method
-    /// on for it.
+    /// the keys are off the box: a paste is put somewhere on purpose -- a
+    /// terminal's own, or a file dragged onto one -- and it goes into the
+    /// box and takes the keys back with it, where a letter typed off the
+    /// box goes nowhere.
     pub(super) fn paste_into_conversation(&mut self, what: &str) {
         let covered = self
             .conversation()

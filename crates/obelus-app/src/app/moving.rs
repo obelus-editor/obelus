@@ -694,14 +694,15 @@ impl App {
     /// for nowhere. Not where the caret is, which is a different question
     /// with two different answers -- an empty filter has no caret and
     /// takes the first letter typed. An input method turned on by that
-    /// first letter has already missed it. A conversation's transcript and
-    /// its row of settings have no caret either, and there the two answers
-    /// agree: a letter typed there goes nowhere, so the input method is off.
+    /// first letter has already missed it. And the other way about: a
+    /// conversation's transcript has a caret, and a letter typed there goes
+    /// nowhere, so the input method is off.
     ///
     /// The layers in [`App::paste_text`]'s order, because what an input
-    /// method commits arrives as a paste -- with the two places that take
-    /// a paste and not a key: a key being bound is a key and not a letter,
-    /// and a card with no box swallows what is typed at it.
+    /// method commits arrives as a paste -- with the places that take a
+    /// paste and not a key: a key being bound is a key and not a letter, a
+    /// card with no box swallows what is typed at it, and a conversation
+    /// with the keys off its box swallows it too.
     #[must_use]
     pub fn takes_text(&self) -> bool {
         match self.layers().nearest() {
