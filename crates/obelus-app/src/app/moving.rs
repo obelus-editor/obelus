@@ -693,14 +693,16 @@ impl App {
     /// where nothing takes it is keys swallowed and a list of candidates
     /// for nowhere. Not where the caret is, which is a different question
     /// with two different answers -- an empty filter has no caret and
-    /// takes the first letter typed, and a character typed in a transcript
-    /// takes the focus back to the box and goes in. An input method turned
-    /// on by that first letter has already missed it.
+    /// takes the first letter typed. An input method turned on by that
+    /// first letter has already missed it. And the other way about: a
+    /// conversation's transcript has a caret, and a letter typed there goes
+    /// nowhere, so the input method is off.
     ///
     /// The layers in [`App::paste_text`]'s order, because what an input
-    /// method commits arrives as a paste -- with the two places that take
-    /// a paste and not a key: a key being bound is a key and not a letter,
-    /// and a card with no box swallows what is typed at it.
+    /// method commits arrives as a paste -- with the places that take a
+    /// paste and not a key: a key being bound is a key and not a letter, a
+    /// card with no box swallows what is typed at it, and a conversation
+    /// with the keys off its box swallows it too.
     #[must_use]
     pub fn takes_text(&self) -> bool {
         match self.layers().nearest() {
@@ -718,8 +720,8 @@ impl App {
             // typed into whichever box it is showing.
             None if self.chooser.is_some() => true,
             None => {
-                if let Some(talk) = self.conversation() {
-                    return talk.card.as_ref().is_none_or(Card::takes_words);
+                if self.conversation().is_some() {
+                    return self.conversation_takes_text();
                 }
                 if let Some(notes) = self.notes() {
                     return notes.writing().is_some() && !notes.selected_is_elsewhere();

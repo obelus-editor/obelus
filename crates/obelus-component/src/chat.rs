@@ -39,8 +39,12 @@
 //!
 //! Enter opens what the row names -- in a buffer, and the conversation hides
 //! itself, because going somewhere means seeing it. Escape comes back out to
-//! the box without closing anything, and typing goes to the box wherever the
-//! cursor was, because a reader who starts typing means to type.
+//! the box without closing anything. Typing out here goes nowhere, and does
+//! not take the keys back to the box either: it used to, on the grounds that
+//! a reader who starts typing means to type, and what it meant in practice
+//! was a stray letter pressed while reading throwing the caret out of what
+//! the reader had walked to. The box is one escape or one arrow away, and
+//! going back there is the reader's to say.
 //!
 //! Shift extends, and control goes to the ends. Shift and a motion holds
 //! what the motion passed over, in the box as in the transcript, because
@@ -1028,11 +1032,18 @@ impl Chat {
     /// one place in a conversation that takes text is the half of it the
     /// reader is writing.
     ///
-    /// And it takes the keys back with it, the way a character typed in the
-    /// transcript or on the row of settings does -- because what an input
-    /// method commits arrives as a paste, and the letters that spelled it
-    /// never reached the keys that would have taken the focus back. Left
-    /// where it was, the word went into a box the caret was not in.
+    /// And it takes the keys back with it, which a character typed in the
+    /// transcript or on the row of settings does not: a paste is a reader
+    /// putting something somewhere on purpose -- a terminal's own paste, or
+    /// a file dragged onto one, which arrives as the words for its path --
+    /// where a letter out there is as often a slip. Left where it was, the
+    /// text went into a box the caret was not in. An input method, whose
+    /// word also arrives as a paste, is off out there (`App::takes_text`),
+    /// so a word spelled while reading does not come this way -- except on
+    /// X11, where `obg` leaves the input method on throughout, and a word
+    /// spelled in the transcript arrives here and goes in while the letters
+    /// that spell Latin go nowhere. Turning it off there costs the box its
+    /// keys until the window is left and come back to, which is worse.
     pub fn paste(&mut self, what: &str, width: u16) {
         self.take_the_keys_back();
         self.input.write_in(what, width);
@@ -2411,9 +2422,13 @@ impl Chat {
         // the one a reader reaches for and it needs the kitty keyboard
         // protocol to arrive at all -- alt is the escape prefix, which is
         // as old as terminals.
+        // Only in the box: out of it a line break is typing like any other,
+        // and goes nowhere -- but is still taken here, or it would fall
+        // through to the application as a chord.
         if key.code == KeyCode::Enter && modifiers == KeyModifiers::ALT {
-            self.focus = Focus::Writing;
-            self.input.newline();
+            if self.focus == Focus::Writing {
+                self.input.newline();
+            }
             return ChatOutcome::Consumed;
         }
         // Saying it now rather than after the turn: escape and then enter,
@@ -2468,9 +2483,9 @@ impl Chat {
         let page = usize::from(room.transcript).max(1);
 
         // The row of settings, while that is what the reader is in. What it
-        // does not take falls through to the box below -- and the keys that
-        // are the box's own take the focus back with them, because a reader
-        // who starts typing means to type.
+        // does not take falls through to the box below -- except the keys
+        // that are the box's own, which it swallows rather than taking the
+        // focus back with them.
         if let Focus::Settings(at) = self.focus
             && let Some(outcome) = self.on_settings(key, bare, at, settings)
         {
@@ -2671,9 +2686,9 @@ impl Chat {
 
     /// What a key does while the row of settings is what the reader is in.
     ///
-    /// `None` means the key is not this row's: the box below gets it, and
-    /// for the keys that are the box's own -- typing, and the two that
-    /// delete -- the focus goes back there first.
+    /// `None` means the key is not this row's: the box below gets it. The
+    /// keys that are the box's own -- typing, and the two that delete --
+    /// are swallowed here instead, the way the transcript swallows them.
     fn on_settings(
         &mut self,
         key: &KeyEvent,
@@ -2712,10 +2727,10 @@ impl Chat {
             }
             // Nothing is under this row.
             KeyCode::Down if bare => Some(ChatOutcome::Consumed),
-            // The box's own keys, which take the focus back with them.
+            // The box's own keys, which do nothing here: a letter pressed
+            // on this row is not a reader asking to be back in the box.
             KeyCode::Char(_) | KeyCode::Backspace | KeyCode::Delete | KeyCode::Enter => {
-                self.focus = Focus::Writing;
-                None
+                Some(ChatOutcome::Consumed)
             }
             // Everything else -- the paging keys, the ends of the
             // transcript -- goes on meaning what it means, and the focus
@@ -2969,9 +2984,11 @@ impl Chat {
     /// Walks the transcript with the cursor, and holds what it walks over
     /// while shift is down.
     ///
-    /// What it does not take falls through to the box below, which is what
-    /// keeps a reader from ever being stuck in here: the keys that are the
-    /// box's own take the focus back with them.
+    /// What it does not take falls through to the box below. The keys that
+    /// are the box's own it does take, and does nothing with: a letter
+    /// pressed while reading is not a reader asking to be in the box. Down
+    /// off the last row and escape are the ways back, so nobody is stuck in
+    /// here.
     fn on_transcript(
         &mut self,
         key: &KeyEvent,
@@ -3155,12 +3172,12 @@ impl Chat {
                 self.leave_the_transcript(at);
                 Some(ChatOutcome::Consumed)
             }
-            // The box's own keys take the focus back with them, because a
-            // reader who starts typing means to type.
+            // The box's own keys do nothing in here, and leave the cursor
+            // and what it holds where they are: a letter pressed while
+            // reading threw the reader out of the place they had walked to
+            // and into a box they had not asked for.
             KeyCode::Char(_) | KeyCode::Backspace | KeyCode::Delete | KeyCode::Enter => {
-                self.let_go();
-                self.leave_the_transcript(at);
-                None
+                Some(ChatOutcome::Consumed)
             }
             _ => None,
         }
@@ -3875,8 +3892,9 @@ mod tests {
     /// on the way.
     #[test]
     fn a_paste_off_the_box_takes_the_keys_back_to_it() {
-        // What an input method commits arrives as a paste, and the letters
-        // that spelled it never reached the keys that take the focus back.
+        // A paste is put somewhere on purpose -- a terminal's own, or a file
+        // dragged onto one -- so it takes the keys back where a letter typed
+        // out here does not.
         //
         // Deliberate break: taking either arm out of the match in `paste`,
         // and the word is in a box the focus is not in.
@@ -4718,17 +4736,83 @@ mod tests {
         assert_eq!(chat.focus(), before, "the wheel moved the cursor");
     }
 
-    /// Typing takes the cursor back to the box, wherever it was.
+    /// Typing in the transcript goes nowhere, and leaves the cursor and what
+    /// it holds where they were.
     ///
-    /// A reader who starts typing means to type -- the same rule the row of
-    /// settings under the box follows.
+    /// It used to take the keys back to the box, and a letter pressed while
+    /// reading threw the reader out of the place they had walked to. Every
+    /// key the box calls its own is asked, and with shift as well as bare:
+    /// shift and enter is a line break, and a capital is shift and a letter.
+    ///
+    /// Broken deliberately twice: putting back the arm that left the
+    /// transcript and fell through to the box, and the focus and the box
+    /// both go red; and letting go of what is held in that arm, and the
+    /// selection does.
     #[test]
-    fn typing_in_the_transcript_goes_to_the_box() {
+    fn typing_in_the_transcript_goes_nowhere() {
         let mut chat = walked();
         chat.handle_key(&key(KeyCode::Up), false, ROOM, &[]);
-        chat.handle_key(&key(KeyCode::Char('h')), false, ROOM, &[]);
-        assert_eq!(chat.focus(), Focus::Writing);
-        assert_eq!(chat.writing().text(), "h");
+        chat.handle_key(&shifted(KeyCode::Left), false, ROOM, &[]);
+        let at = chat.focus();
+        assert!(matches!(at, Focus::Transcript(_)), "not in the transcript");
+        assert!(chat.holding(), "nothing held, so this proves nothing");
+        for pressed in [
+            key(KeyCode::Char('h')),
+            shifted(KeyCode::Char('H')),
+            key(KeyCode::Backspace),
+            key(KeyCode::Delete),
+            shifted(KeyCode::Enter),
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT),
+        ] {
+            chat.handle_key(&pressed, false, ROOM, &[]);
+            assert_eq!(chat.focus(), at, "{pressed:?} moved the cursor");
+            assert!(chat.holding(), "{pressed:?} let go of what was held");
+        }
+        assert_eq!(chat.writing().text(), "", "something reached the box");
+    }
+
+    /// Typing on the row of settings goes nowhere too, and is still taken
+    /// there: a key the row let fall through would reach the application,
+    /// where `Backspace` with a modifier or a letter is somebody else's.
+    ///
+    /// Broken deliberately twice: putting back the arm that moved the focus
+    /// to the box and fell through, and the focus goes red; and answering
+    /// `None` from that arm without moving the focus, and the box does,
+    /// because the box's own arms below take whatever falls through.
+    #[test]
+    fn typing_on_the_row_of_settings_goes_nowhere() {
+        let settings = [obelus_agent::acp::Setting {
+            id: "allow_all".to_string(),
+            name: "Allow everything".to_string(),
+            about: None,
+            values: Vec::new(),
+            current: "off".to_string(),
+            kind: obelus_agent::acp::Kind::Switch,
+            category: obelus_agent::acp::Category::Other,
+            legacy: false,
+        }];
+        let mut chat = walked();
+        chat.focus = Focus::Settings(0);
+        for pressed in [
+            key(KeyCode::Char('h')),
+            shifted(KeyCode::Char('H')),
+            key(KeyCode::Backspace),
+            key(KeyCode::Delete),
+            shifted(KeyCode::Enter),
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT),
+        ] {
+            let outcome = chat.handle_key(&pressed, false, ROOM, &settings);
+            assert!(
+                matches!(outcome, ChatOutcome::Consumed),
+                "{pressed:?} was not taken by the row"
+            );
+            assert_eq!(
+                chat.focus(),
+                Focus::Settings(0),
+                "{pressed:?} took the keys away"
+            );
+        }
+        assert_eq!(chat.writing().text(), "", "something reached the box");
     }
 
     /// Chunks arrive a few words at a time, and what a reader should see is

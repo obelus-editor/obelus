@@ -2312,18 +2312,18 @@ fn down_from_the_box_reaches_the_settings_and_changes_them() {
     });
     assert_eq!(focus(&app), Focus::Settings(1), "the row lost the focus");
 
-    // Up comes back to the box, and so does typing -- a reader who starts
-    // typing means to type, and the character is not lost on the way.
+    // Up comes back to the box, and typing does not: a letter pressed on
+    // the row stays on the row, and goes nowhere.
     support::press(&mut app, KeyCode::Up);
     assert_eq!(focus(&app), Focus::Writing);
     support::press(&mut app, KeyCode::Down);
     support::type_text(&mut app, "h");
-    assert_eq!(focus(&app), Focus::Writing, "typing did not come back down");
-    assert_eq!(
-        app.chat().expect("the chat").writing().text(),
-        "h",
-        "the character that came back was swallowed"
+    assert_eq!(focus(&app), Focus::Settings(0), "typing took the keys away");
+    assert!(
+        app.chat().expect("the chat").writing().is_blank(),
+        "a letter typed on the row reached the box"
     );
+    support::press(&mut app, KeyCode::Up);
 
     // And escape from the row is leaving the row, not leaving the
     // conversation: it gives up on the nearest thing first.
@@ -2831,7 +2831,10 @@ fn a_settings_values_are_a_list_and_the_agent_answers_with_all_of_them() {
     );
 
     // And it runs the other way too: an agent that puts itself on another
-    // model says so, and the row shows what the agent last said.
+    // model says so, and the row shows what the agent last said. Up to the
+    // box first: the keys are still on the row the model was chosen from,
+    // and typing there goes nowhere.
+    support::press(&mut app, KeyCode::Up);
     support::type_text(&mut app, "answer this one quickly");
     support::press(&mut app, KeyCode::Enter);
     pump(
@@ -4469,21 +4472,21 @@ fn what_is_written_on_a_card_is_held_like_any_box() {
     );
 }
 
-/// A conversation takes typing wherever its keys are, except under a card
-/// with nowhere to write.
+/// A conversation takes typing in its box, and nowhere else in it.
 ///
 /// Off the box -- on the row of the agent's settings -- there is no caret,
-/// and a letter typed there takes the keys back to the box and goes in: an
-/// input method turned off there would miss it. A permission card is a Yes
-/// and a No, and swallows what is typed at it.
+/// and a letter typed there goes nowhere, so an input method is off there:
+/// spelling a word for nowhere is a list of candidates for nowhere. A
+/// permission card is a Yes and a No, and swallows what is typed at it.
+/// A paste is not typing, and still goes into the box from the row.
 ///
-/// Deliberate break: asking `conversation_takes_text` instead, which says
-/// no off the box, and the row of settings goes red; answering the card
-/// with `true`, and the permission does; putting `conversation_takes_text`
-/// back in front of `paste_into_conversation`, and the word committed on
-/// the row is dropped.
+/// Deliberate break: answering `takes_text` for a conversation with
+/// whether a card is up, as it was, and the row of settings goes red;
+/// answering the card with `true`, and the permission does; putting
+/// `conversation_takes_text` back in front of `paste_into_conversation`,
+/// and the paste on the row is dropped.
 #[test]
-fn a_conversation_takes_typing_except_under_a_card_without_a_box() {
+fn a_conversation_takes_typing_only_in_its_box() {
     use obelus_component::chat::Focus;
 
     let (mut app, events) = talking();
@@ -4504,27 +4507,27 @@ fn a_conversation_takes_typing_except_under_a_card_without_a_box() {
         "the row has a caret:\n{dump}"
     );
     assert!(
-        app.takes_text(),
-        "the row of settings is said to take nothing"
+        !app.takes_text(),
+        "the row of settings is said to take text"
     );
     support::type_text(&mut app, "w");
     assert!(
-        app.chat().is_some_and(|chat| !chat.writing().is_blank()),
-        "a letter typed on the row did not reach the box"
+        app.chat().is_some_and(|chat| chat.writing().is_blank()),
+        "a letter typed on the row reached the box"
     );
 
-    // And a word an input method spelled there, which arrives as a paste
-    // and not as the letters that would have taken the keys back.
-    support::press(&mut app, KeyCode::Down);
-    assert_eq!(
-        app.chat().map(|chat| chat.focus()),
-        Some(Focus::Settings(0))
-    );
-    app.handle(Event::Paste("hat".to_string()));
+    // And a paste there, which goes into the box and takes the keys back
+    // with it: a terminal's own paste, or a file dragged onto one.
+    app.handle(Event::Paste("what".to_string()));
     assert_eq!(
         app.chat().map(|chat| chat.writing().text()),
         Some("what".to_string()),
-        "a word committed on the row was dropped"
+        "a paste on the row was dropped"
+    );
+    assert_eq!(
+        app.chat().map(|chat| chat.focus()),
+        Some(Focus::Writing),
+        "a paste left the keys on the row"
     );
 
     support::type_text(&mut app, " is this file");
