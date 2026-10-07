@@ -56,7 +56,7 @@ impl Windows for Asked {
 
 /// Runs git in a directory, with an identity of its own.
 fn git(directory: &Path, arguments: &[&str]) {
-    let outcome = std::process::Command::new("git")
+    let outcome = support::git()
         .arg("-C")
         .arg(directory)
         .args(arguments)

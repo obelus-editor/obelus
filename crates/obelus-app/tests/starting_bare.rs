@@ -36,7 +36,7 @@ fn a_bare_start_knows_which_branch_it_is_on() {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let scratch = support::Scratch::new("starting-bare");
     let git = |arguments: &[&str]| {
-        let outcome = std::process::Command::new("git")
+        let outcome = support::git()
             .arg("-C")
             .arg(scratch.path())
             .args(arguments)

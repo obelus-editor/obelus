@@ -11090,7 +11090,7 @@ fn a_notes_conversation_from_another_checkout_is_not_asked_for() {
 fn a_note_locked_from_another_checkout_says_which() {
     let scratch = support::Scratch::new("agent-note-held-there");
     let git = |arguments: &[&str]| {
-        let outcome = std::process::Command::new("git")
+        let outcome = support::git()
             .arg("-C")
             .arg(scratch.path())
             .args(arguments)
@@ -11610,7 +11610,7 @@ fn a_note_rewritten_elsewhere_is_offered_again() {
 fn the_header_says_which_branch_the_agent_changed_files_on() {
     let scratch = support::Scratch::new("agent-header-branch");
     let git = |directory: &Path, arguments: &[&str]| {
-        let outcome = std::process::Command::new("git")
+        let outcome = support::git()
             .arg("-C")
             .arg(directory)
             .args(arguments)
@@ -13153,7 +13153,7 @@ fn chosen_and_not_running(scratch: &support::Scratch) -> (App, Receiver<Event>) 
 /// makes: a window writes the record of its own tree, and this is the
 /// record a window that had only `conversation` open would have left.
 fn reopened_on(scratch: &support::Scratch, conversation: &str) -> (App, Receiver<Event>) {
-    let outcome = std::process::Command::new("git")
+    let outcome = support::git()
         .arg("-C")
         .arg(scratch.path())
         .args(["init", "--quiet"])
@@ -13331,7 +13331,7 @@ fn a_loose_conversation_taken_up_from_the_list_is_not_introduced_again() {
     });
     // A window that has just started: nothing running, an agent named in
     // the settings, and the list the first thing the reader opens.
-    let outcome = std::process::Command::new("git")
+    let outcome = support::git()
         .arg("-C")
         .arg(scratch.path())
         .args(["init", "--quiet"])

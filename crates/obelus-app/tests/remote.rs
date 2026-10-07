@@ -3228,7 +3228,7 @@ fn the_chat_goes_with_a_window_to_another_worktree() {
     let _turn = turn();
     let scratch = support::Scratch::new("remote-worktree");
     let git = |directory: &std::path::Path, arguments: &[&str]| {
-        let outcome = std::process::Command::new("git")
+        let outcome = support::git()
             .arg("-C")
             .arg(directory)
             .args(arguments)

@@ -326,23 +326,23 @@ impl App {
                 // A commit that added the file is compared with nothing,
                 // which makes every line of it what that commit did -- the
                 // same answer the count over its message gives.
-                Some(id) => Some(
+                Some(id) => Some(obelus_git::Base::as_stored(
                     obelus_git::history::text_before(&self.working_directory, id, &asked.0)
                         .unwrap_or_default(),
-                ),
-                None => obelus_git::head_text(&asked.0),
+                )),
+                None => obelus_git::head(&asked.0),
             };
             self.committed = Some(crate::app::Committed { of: asked, text });
         }
         let before = self
             .committed
-            .as_ref()
-            .and_then(|committed| committed.text.as_deref());
+            .as_mut()
+            .and_then(|committed| committed.text.as_mut());
         // No text to compare with is every way this can have no answer --
         // not a repository, a file git has never heard of, no commits yet --
         // and they all mean the same thing in the margin: nothing to say.
         let changes = before.map(|committed| Changed {
-            changes: obelus_git::Changes::between(committed, &now),
+            changes: committed.changes(&now),
             at,
         });
         if changes.is_none() {

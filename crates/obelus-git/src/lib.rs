@@ -60,6 +60,12 @@
 //! reduction goes where the risk is and nowhere else. `git::statuses` still
 //! opens fully, and `core.fsmonitor` is the same kind of hole; nobody has
 //! closed it.
+//!
+//! The other half of the same comparison is the reader's side: a file
+//! written back with `\r\n` in a project that stores `\n` differs from the
+//! checkout in every line, and `git diff` says it does not. So a `Base`
+//! carries the line ending git would rewrite the reader's lines to, and the
+//! margin, the preview and the count of a list all compare through it.
 
 pub mod todo;
 
@@ -866,61 +872,331 @@ fn fold(statuses: &mut HashMap<PathBuf, Standing>, path: PathBuf, standing: Stan
 ///
 /// A file that is gone from disk counts as all removed, which is what
 /// deleting it did.
+///
+/// Counted against a [`Base`], the margin's own, so the list and the margin
+/// agree about which line endings are changes.
 #[must_use]
 pub fn counted_against_head(paths: &[PathBuf]) -> HashMap<PathBuf, (usize, usize)> {
     let mut counts = HashMap::new();
     let Some(first) = paths.first() else {
         return counts;
     };
-    let Some(repository) = repository(first) else {
+    // Converting a blob the way a checkout would is a place a repository's
+    // `filter.*` would run, so the repository is opened the way the margin's
+    // is.
+    let Some(repository) = without_running_anything(first) else {
         return counts;
     };
     let Ok(head) = repository.head_tree() else {
         return counts;
     };
+    let mut checkout = Checkout::of(&repository);
     for path in paths {
         let Some(relative) = in_repository(&repository, path) else {
             continue;
         };
         let mut tree = head.clone();
-        let committed = match tree.peel_to_entry_by_path(&relative) {
+        let mut base = match tree.peel_to_entry_by_path(&relative) {
             Ok(Some(entry)) => match entry.object() {
-                Ok(object) => match String::from_utf8(object.data.clone()) {
-                    Ok(text) => text,
-                    // Not text, so it has no lines to count.
-                    Err(_) => continue,
-                },
+                // Not text, so it has no lines to count.
+                Ok(object) if std::str::from_utf8(&object.data).is_err() => continue,
+                Ok(object) => checkout.base(&object.data, &relative),
                 Err(_) => continue,
             },
             // The commit does not have it: everything in it arrived.
-            Ok(None) => String::new(),
+            Ok(None) => checkout.base(b"", &relative),
             Err(_) => continue,
         };
         // A file that is gone reads as empty, which makes its lines removed.
         let now = std::fs::read_to_string(path).unwrap_or_default();
         counts.insert(
             path.clone(),
-            change::counted(&change::drawn(&committed, &now)),
+            change::counted(&change::drawn(&base.text.clone(), &base.as_compared(&now))),
         );
     }
     counts
 }
 
 /// The file as the last commit has it, or `None` if that question has no
-/// answer.
+/// answer -- [`head`]'s text.
+#[must_use]
+pub fn head_text(path: &Path) -> Option<String> {
+    head(path).map(|base| base.text)
+}
+
+/// What the file is compared with to say what has changed in it since the
+/// last commit, or `None` if that question has no answer.
 ///
 /// No answer covers every way this can decline, and they all mean the same
 /// thing to a reader: no markers. Not a repository, a file git has never
 /// heard of, a repository with no commits yet, or a file whose committed
 /// content is not text.
 #[must_use]
-pub fn head_text(path: &Path) -> Option<String> {
+pub fn head(path: &Path) -> Option<Base> {
     let repository = without_running_anything(path)?;
     let relative = in_repository(&repository, path)?;
     let mut tree = repository.head_tree().ok()?;
     let entry = tree.peel_to_entry_by_path(&relative).ok()??;
     let object = entry.object().ok()?;
-    Some(as_checked_out(&repository, &object.data, &relative))
+    Some(Checkout::of(&repository).base(&object.data, &relative))
+}
+
+/// What a text is compared with to say what has changed in it.
+///
+/// A stored version as a checkout would write it, and the way git would
+/// carry the reader's text there: in as it would be committed and back out
+/// as it would be checked out, which is what `git diff` compares by. A file
+/// the attributes say is text, written back with `\r\n` by something that
+/// picks the platform's line ending -- Python's text mode and PowerShell's
+/// `Set-Content` both do, on Windows -- differs from its commit in every line
+/// and in nothing git would commit. Compared as it was, a two-hundred-line
+/// change was listed as four thousand lines taken away and four thousand put
+/// back, and the margin marked every line.
+///
+/// Through git's own conversion rather than a rule about `\r` of Obelus's,
+/// because which files git rewrites is git's question: where nothing says a
+/// file is text, where the index already holds `\r\n`, or where `text=auto`
+/// finds a lone `\r` and calls the file binary, git keeps the `\r` and
+/// `git diff` calls those lines changed -- and a margin that did not would be
+/// the one disagreeing.
+pub struct Base {
+    text: String,
+    /// Whether the stored version, as checked out, has a `\r` anywhere.
+    returns: bool,
+    rewrite: Option<Rewrite>,
+}
+
+impl std::fmt::Debug for Base {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Base")
+            .field("text", &self.text.len())
+            .field("rewrite", &self.rewrite.is_some())
+            .finish()
+    }
+}
+
+impl Base {
+    /// A stored version compared with exactly as it is: the text beside it
+    /// is another stored version, and two blobs need no conversion to agree.
+    #[must_use]
+    pub const fn as_stored(text: String) -> Self {
+        Self {
+            // Nothing to carry it through, so nothing to skip.
+            returns: false,
+            text,
+            rewrite: None,
+        }
+    }
+
+    /// The stored version, as a checkout would write it.
+    #[must_use]
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    /// What has changed between this and `now`.
+    #[must_use]
+    pub fn changes(&mut self, now: &str) -> Changes {
+        let now = self.as_compared(now);
+        Changes::between(&self.text, &now)
+    }
+
+    /// `now` as it would be after a round trip through git, or as it is
+    /// where there is no trip to take.
+    ///
+    /// Only ever with as many lines as `now` has, because what the margin
+    /// marks is drawn against the buffer's line numbers: a conversion that
+    /// moved them would put every mark on the wrong line, which is worse than
+    /// the `\r`s it was asked about.
+    fn as_compared<'a>(&mut self, now: &'a str) -> std::borrow::Cow<'a, str> {
+        use std::borrow::Cow;
+        // The trip is the margin's diff again in cost, on every keystroke,
+        // and almost every file has no `\r` on either side -- where the
+        // trip cannot change a line ending. A checkout that writes `\r\n`
+        // put them in the stored side too, so a `\r` it would add shows up
+        // there; and with none in the text there is none to take out.
+        if !self.returns && !now.contains('\r') {
+            return Cow::Borrowed(now);
+        }
+        let Some(rewrite) = self.rewrite.as_mut() else {
+            return Cow::Borrowed(now);
+        };
+        match rewrite.round_trip(now.as_bytes()).map(String::from_utf8) {
+            Some(Ok(trip)) if trip != now && lines(&trip) == lines(now) => Cow::Owned(trip),
+            _ => Cow::Borrowed(now),
+        }
+    }
+}
+
+fn lines(text: &str) -> usize {
+    text.bytes().filter(|&byte| byte == b'\n').count()
+}
+
+/// git's conversions for one file, kept so that a text can be carried in and
+/// back out on every keystroke without opening the repository again.
+///
+/// Without three things the pipeline a checkout uses would do. No driver,
+/// because this runs as the reader types, and a `filter.*` program is a
+/// process per keystroke -- the stored side has been through it once, on
+/// the way to [`Base::text`], and a file a driver owns is compared as it
+/// was. And no round-trip check of either kind: `core.safecrlf` makes gix
+/// *fail* a conversion `git add` would only warn about, and a failed
+/// conversion here is a comparison of raw bytes, which is every line marked.
+struct Rewrite {
+    pipeline: gix::filter::plumbing::Pipeline,
+    attributes: gix::worktree::Stack,
+    objects: gix::OdbHandle,
+    relative: PathBuf,
+    /// What the index holds for the file: `text=auto` leaves a file's `\r`s
+    /// alone where the index already has them, so the answer depends on it.
+    indexed: Option<Vec<u8>>,
+}
+
+impl Rewrite {
+    fn round_trip(&mut self, now: &[u8]) -> Option<Vec<u8>> {
+        let Self {
+            pipeline,
+            attributes,
+            objects,
+            relative,
+            indexed,
+        } = self;
+        let name = unix_name(relative);
+        let stored = {
+            let at = attributes
+                .at_entry(AsRef::<gix::bstr::BStr>::as_ref(&name), None, &*objects)
+                .ok()?;
+            read_all(
+                pipeline
+                    .convert_to_git(
+                        now,
+                        relative,
+                        &mut |_, out| {
+                            at.matching_attributes(out);
+                        },
+                        &mut |buf| {
+                            Ok(indexed.as_ref().map(|indexed| {
+                                buf.clear();
+                                buf.extend_from_slice(indexed);
+                            }))
+                        },
+                    )
+                    .ok()?,
+            )?
+        };
+        let at = attributes
+            .at_entry(AsRef::<gix::bstr::BStr>::as_ref(&name), None, &*objects)
+            .ok()?;
+        read_all(
+            pipeline
+                .convert_to_worktree(
+                    &stored,
+                    name.as_ref(),
+                    &mut |_, out| {
+                        at.matching_attributes(out);
+                    },
+                    Default::default(),
+                )
+                .ok()?,
+        )
+    }
+}
+
+/// A repository's own way of converting a file, built once for every file
+/// it is asked about.
+struct Checkout<'repo> {
+    repository: &'repo gix::Repository,
+    pipeline: Option<(
+        gix::filter::Pipeline<'repo>,
+        gix::worktree::IndexPersistedOrInMemory,
+    )>,
+}
+
+impl<'repo> Checkout<'repo> {
+    fn of(repository: &'repo gix::Repository) -> Self {
+        Self {
+            repository,
+            pipeline: repository.filter_pipeline(None).ok(),
+        }
+    }
+
+    fn base(&mut self, data: &[u8], relative: &Path) -> Base {
+        let text = self.written(data, relative);
+        Base {
+            returns: text.contains('\r'),
+            text,
+            rewrite: self.rewrite(relative),
+        }
+    }
+
+    /// A stored blob as it would be on disk.
+    ///
+    /// The one place this matters is here, and it is why: everywhere else
+    /// that Obelus reads an old version of a file, it compares it against
+    /// *another* stored version, and two blobs converted the same way or not
+    /// at all give the same answer. The margin compares a stored version
+    /// against the reader's own buffer, which came off the disk -- so a
+    /// project whose `.gitattributes` says `eol=crlf` had every line of
+    /// every file marked as changed, because git stores `\n` and the file on
+    /// disk holds `\r\n`.
+    ///
+    /// The bytes unchanged where there is nothing to convert or the
+    /// conversion fails, which is what the diff had before and is never
+    /// worse than it.
+    fn written(&mut self, data: &[u8], relative: &Path) -> String {
+        let text = || String::from_utf8_lossy(data).into_owned();
+        let Some((pipeline, _)) = self.pipeline.as_mut() else {
+            return text();
+        };
+        let Ok(converted) =
+            pipeline.convert_to_worktree(data, unix_name(relative).as_ref(), Default::default())
+        else {
+            return text();
+        };
+        read_all(converted).map_or_else(text, |out| String::from_utf8_lossy(&out).into_owned())
+    }
+
+    fn rewrite(&self, relative: &Path) -> Option<Rewrite> {
+        let (_, index) = self.pipeline.as_ref()?;
+        let mut options = gix::filter::Pipeline::options(self.repository).ok()?;
+        options.drivers.clear();
+        options.crlf_roundtrip_check = gix::filter::plumbing::pipeline::CrlfRoundTripCheck::Skip;
+        options.encodings_with_roundtrip_check.clear();
+        let attributes = self
+            .repository
+            .attributes_only(
+                index,
+                gix::worktree::stack::state::attributes::Source::WorktreeThenIdMapping,
+            )
+            .ok()?
+            .detach();
+        let indexed = index
+            .entry_by_path(unix_name(relative).as_ref())
+            .and_then(|entry| self.repository.find_object(entry.id).ok())
+            .map(|object| object.detach().data);
+        Some(Rewrite {
+            pipeline: gix::filter::plumbing::Pipeline::new(
+                self.repository.command_context().ok()?,
+                options,
+            ),
+            attributes,
+            objects: self.repository.objects.clone(),
+            relative: relative.to_path_buf(),
+            indexed,
+        })
+    }
+}
+
+/// The name the attributes are matched against, which is a repository path
+/// with forward slashes whatever this platform writes.
+fn unix_name(relative: &Path) -> gix::bstr::BString {
+    gix::path::to_unix_separators_on_windows(gix::path::into_bstr(relative)).into_owned()
+}
+
+fn read_all(mut from: impl std::io::Read) -> Option<Vec<u8>> {
+    let mut out = Vec::new();
+    from.read_to_end(&mut out).ok()?;
+    Some(out)
 }
 
 /// Whether a section of the configuration may be read from.
@@ -944,38 +1220,6 @@ pub fn head_text(path: &Path) -> Option<String> {
 /// Obelus refuses is a program named by the thing it was pointed at.
 fn nothing_the_repository_named(meta: &gix::config::file::Metadata) -> bool {
     meta.source.kind() != gix::config::source::Kind::Repository
-}
-
-/// A stored blob as it would be on disk.
-///
-/// The one place this matters is here, and it is why: everywhere else that
-/// Obelus reads an old version of a file, it compares it against *another*
-/// stored version, and two blobs converted the same way or not at all give
-/// the same answer. The margin compares a stored version against the
-/// reader's own buffer, which came off the disk -- so a project whose
-/// `.gitattributes` says `eol=crlf` had every line of every file marked as
-/// changed, because git stores `\n` and the file on disk holds `\r\n`.
-///
-/// The bytes unchanged where there is nothing to convert or the conversion
-/// fails, which is what the diff had before and is never worse than it.
-fn as_checked_out(repository: &gix::Repository, data: &[u8], relative: &Path) -> String {
-    let text = || String::from_utf8_lossy(data).into_owned();
-    // The name the attributes are matched against, which is a repository
-    // path with forward slashes whatever this platform writes.
-    let name: gix::bstr::BString =
-        gix::path::to_unix_separators_on_windows(gix::path::into_bstr(relative)).into_owned();
-    let Ok((mut pipeline, _index)) = repository.filter_pipeline(None) else {
-        return text();
-    };
-    let Ok(converted) = pipeline.convert_to_worktree(data, name.as_ref(), Default::default())
-    else {
-        return text();
-    };
-    let mut out = Vec::with_capacity(data.len());
-    match std::io::Read::read_to_end(&mut { converted }, &mut out) {
-        Ok(_) => String::from_utf8_lossy(&out).into_owned(),
-        Err(_) => text(),
-    }
 }
 
 #[cfg(test)]

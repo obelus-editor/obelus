@@ -435,6 +435,12 @@ modifier check (`component::composer`).
 **`dispatch` has no wildcard arm** and warns on one, so a new `Command` fails
 to compile until it is handled. Same idea in `theme`: only fields with readers.
 
+**The working tree is `\n`, on Windows too.** `.gitattributes` keeps `\r\n`
+out of commits, not out of this checkout, which is what the tests run.
+Python's text mode (unless `newline="\n"`) and PowerShell's `Set-Content`,
+`Out-File` and `>` write `\r\n` on Windows; `git ls-files --eol` shows them
+as `w/crlf`, and `nothing_in_the_working_tree_ends_its_lines_in_crlf` fails.
+
 **Nothing writes to stdout.** stdout is the drawing surface; `tracing` goes to
 a file. A stray `println!` lands in the middle of a frame and stays there.
 

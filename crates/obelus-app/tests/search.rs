@@ -920,7 +920,7 @@ fn the_scan_finds_lines_and_finishes() {
     let scratch = temporary("scan");
     // A repository, because `.gitignore` is a git file: `ignore` applies it
     // where git would, and a bare directory is not somewhere git would.
-    std::process::Command::new("git")
+    support::git()
         .arg("-C")
         .arg(scratch.path())
         .args(["init", "--quiet"])

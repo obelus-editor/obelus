@@ -150,7 +150,7 @@ pub(crate) struct Committed {
     /// Which file, and which commit it is being compared with.
     pub(crate) of: (PathBuf, Option<gix::ObjectId>),
     /// What that commit had in it.
-    pub(crate) text: Option<String>,
+    pub(crate) text: Option<obelus_git::Base>,
 }
 
 /// A drag held against the edge of what it is selecting in.

@@ -713,6 +713,31 @@ pub(crate) fn previewed(dump: &str) -> String {
     rows[from..to].join("\n")
 }
 
+/// `git`, for building the repository a test is about, without the reader's
+/// own `~/.gitconfig`.
+///
+/// What a test commits has to be committed whatever machine it runs on, and
+/// a reader's global config is not the one CI has: `core.safecrlf=true`
+/// beside the `core.autocrlf=true` Git for Windows installs refused
+/// twenty-six of these `git add`s before Obelus was asked anything, and
+/// `commit.gpgsign` would ask for a key. A path that is not there is an empty
+/// file to git. Only git's own, and not `[env]` in `.cargo/config.toml`,
+/// which `cargo run` would hand Obelus and every agent it starts: what
+/// Obelus reads under test is the configuration it would read anyway.
+///
+/// Broken deliberately by returning a bare `git` and running the suite with
+/// a global config that says `core.safecrlf = true`: those twenty-six fail
+/// on `LF would be replaced by CRLF`.
+#[allow(dead_code)]
+pub(crate) fn git() -> std::process::Command {
+    let mut git = std::process::Command::new("git");
+    git.env(
+        "GIT_CONFIG_GLOBAL",
+        std::env::temp_dir().join("obelus-tests-have-no-global.gitconfig"),
+    );
+    git
+}
+
 /// Gives the app a channel, so the walks it starts have somewhere to answer.
 ///
 /// The loop does this at startup; a test drives the app by hand and would

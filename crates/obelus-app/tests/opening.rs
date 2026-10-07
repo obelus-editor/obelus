@@ -46,7 +46,7 @@ fn a_file_with_no_repository_says_which_directory_it_is_in() {
 /// one is git's answer to that question, and a hand-made `.git` would only
 /// ever agree with whatever this file assumed about it.
 fn repository_at(path: &std::path::Path) {
-    let outcome = std::process::Command::new("git")
+    let outcome = support::git()
         .arg("-C")
         .arg(path)
         .args(["init", "--quiet", "--initial-branch=master"])
@@ -102,7 +102,7 @@ fn a_file_in_a_worktree_names_that_worktree() {
     let file = scratch.path().join("one.rs");
     std::fs::write(&file, "fn main() {}\n").expect("writing it");
     let git = |arguments: &[&str]| {
-        let outcome = std::process::Command::new("git")
+        let outcome = support::git()
             .arg("-C")
             .arg(scratch.path())
             .args(arguments)

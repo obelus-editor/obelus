@@ -26,7 +26,7 @@ const BUILT: &str = "abc1234";
 /// heard of it, and nothing has to be committed for that.
 fn tree(name: &str, reopen: bool) -> support::Scratch {
     let scratch = support::Scratch::new(name);
-    let outcome = std::process::Command::new("git")
+    let outcome = support::git()
         .arg("-C")
         .arg(scratch.path())
         .args(["init", "--quiet"])
