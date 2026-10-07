@@ -94,8 +94,9 @@ fn a_word_step_does_not_stop_inside_a_cluster() {
 /// Ten cells: eight `a`s and a heart fill the first row, and the `b`s,
 /// with nowhere to break, go on to the second.
 ///
-/// Deliberate breaks: `end - 1` in the `LineEnd` arm, and `row.end - 1` as
-/// the ceiling in `column_in_row` -- each stops at column 9.
+/// Deliberate breaks: `end - 1` in the `LineEnd` arm stops end at column 9,
+/// and `row.end - 1` as the ceiling in `column_in_row` stops up at column 8
+/// -- each between a heart and its selector.
 #[test]
 fn a_wrapped_row_ending_in_a_picture_is_not_ended_inside_it() {
     let width = 10;

@@ -837,26 +837,51 @@ mod tests {
                 .is_some_and(|image| matches!(image.content, cosmic_text::SwashContent::Color));
             (picture, colour, names)
         };
-        for heart in ["\u{2764}\u{fe0f}", "\u{2764}"] {
-            let (picture, colour, names) = drawn_in(&mut fonts, heart);
-            assert!(picture, "{heart:?} was drawn in {names:?}");
+        // As big as any other picture: given the two cells a picture is
+        // given, and shrunk only as far as every picture is to fit two.
+        // Given one, it is half the size of the face beside it.
+        let size = |fonts: &mut Fonts, text: &str| {
+            f32::from_bits(
+                fonts.glyphs(text, false, false, Size::Cell)[0]
+                    .key
+                    .font_size_bits,
+            )
+        };
+        let face = size(&mut fonts, "\u{1f600}");
+        let as_a_picture = |fonts: &mut Fonts, heart: &str| {
+            let (_, colour, _) = drawn_in(fonts, heart);
             assert!(colour, "{heart:?} was drawn in one colour");
-            // As big as any other picture: given the two cells a picture is
-            // given, and shrunk only as far as every picture is to fit two.
-            // Given one, it is half the size of the face beside it.
-            let size = |fonts: &mut Fonts, text: &str| {
-                f32::from_bits(
-                    fonts.glyphs(text, false, false, Size::Cell)[0]
-                        .key
-                        .font_size_bits,
-                )
-            };
-            let face = size(&mut fonts, "\u{1f600}");
+            let drawn = size(fonts, heart);
             assert!(
-                (size(&mut fonts, heart) - face).abs() < 0.01,
-                "{heart:?} was drawn at {}, a face at {face}",
-                size(&mut fonts, heart)
+                (drawn - face).abs() < 0.01,
+                "{heart:?} was drawn at {drawn}, a face at {face}"
             );
+        };
+
+        // Asked for as a picture, it is one on any machine that has them.
+        let (picture, _, names) = drawn_in(&mut fonts, "\u{2764}\u{fe0f}");
+        assert!(
+            picture,
+            "a heart asked to be a picture was drawn in {names:?}"
+        );
+        as_a_picture(&mut fonts, "\u{2764}\u{fe0f}");
+
+        // Written as text, it is a picture where none of this machine's
+        // faces has a heart of its own -- and wherever it is drawn as one it
+        // is counted as two cells, and wherever it is not, as one. Which of
+        // the two depends on the machine; that the drawing and the counting
+        // agree does not.
+        let (picture, _, names) = drawn_in(&mut fonts, "\u{2764}");
+        assert_eq!(
+            picture,
+            obelus_text::text_width("\u{2764}") == 2,
+            "a heart drawn in {names:?} is counted {} cells wide",
+            obelus_text::text_width("\u{2764}")
+        );
+        if picture {
+            as_a_picture(&mut fonts, "\u{2764}");
+        } else {
+            eprintln!("this machine's own face has a heart, and it is drawn in that");
         }
         // Every picture face has a `#`, for the keycap; the reader's has
         // one too, and theirs is the one drawn.
