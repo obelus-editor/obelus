@@ -2499,13 +2499,19 @@ fn hear_update(
         .get("sessionId")
         .and_then(serde_json::Value::as_str)
         .map(|id| SessionId::new(id.to_string()));
-    if let (Some(session), Some(update)) = (session.as_ref(), params.get("update"))
+    if let Some(update) = params.get("update")
         && let Some(read) = dialect.read(update)
     {
+        // One of the dialect's that names no conversation is as unreadable
+        // as one with no id: it is about work nobody can be shown.
+        let read = match session {
+            Some(session) => read.map(|news| (session, news)),
+            None => Err("no sessionId".to_string()),
+        };
         match read {
-            Ok(news) => {
+            Ok((session, news)) => {
                 let _ = events.send(Event::Acp(Incoming::Update {
-                    session: session.clone(),
+                    session,
                     update: Update::Task(news),
                 }));
             }

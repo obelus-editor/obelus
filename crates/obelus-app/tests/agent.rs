@@ -14161,10 +14161,14 @@ fn background_work_nobody_offered_is_never_heard() {
 }
 
 /// A dialect spoken badly enough is given up on: what it said was running
-/// ends, the count goes, and the conversation goes on.
+/// ends, the count goes, and the conversation goes on. Work with no id and
+/// work in no conversation are both counted as badly spoken -- six of each,
+/// and neither alone is enough.
 ///
 /// Broken deliberately: take the giving up out of `hear_update`, and the
-/// count is still there when this gives up.
+/// count is still there when this gives up; or let an update with no
+/// `sessionId` go on to the protocol's parsing, where it is dropped
+/// uncounted, and so is it.
 #[test]
 fn background_work_spoken_badly_is_given_up_on() {
     let (mut app, events) = playing(&["air"]);
