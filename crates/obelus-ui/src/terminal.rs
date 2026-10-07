@@ -9,6 +9,7 @@
 //! it was named.
 
 use obelus_terminal::{Terminal, vt100};
+use obelus_text::text_width;
 use obelus_theme::Theme;
 use ratatui::{
     buffer::Buffer as CellBuffer,
@@ -64,6 +65,7 @@ impl Widget for TerminalView<'_> {
                     "" => " ",
                     said => said,
                 };
+                let contents = as_given(contents, cell.is_wide());
                 // As much room as is left on the row, so a wide character
                 // in the last column is not drawn over the edge.
                 let room = usize::from(area.width - column);
@@ -76,6 +78,21 @@ impl Widget for TerminalView<'_> {
                 cells.set_stringn(area.x + column, area.y + row, contents, room, style);
             }
         }
+    }
+}
+
+/// A cell of a program's screen, as wide as the program was given it.
+///
+/// Which is the one thing about a cell that is not Obelus's to decide. A
+/// character a window draws as a picture is two cells to Obelus and one to
+/// the program that wrote it, and drawn at two it covers the next one -- so
+/// it is asked for as text, which is one cell and is what the program
+/// meant. Everything else is left as it came.
+#[must_use]
+pub fn as_given(contents: &str, wide: bool) -> std::borrow::Cow<'_, str> {
+    match !wide && text_width(contents) > 1 {
+        true => format!("{contents}\u{fe0e}").into(),
+        false => contents.into(),
     }
 }
 
