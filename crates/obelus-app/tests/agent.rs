@@ -14683,8 +14683,7 @@ fn a_pull_request_is_reviewed_on_the_readers_word() {
     });
     let text = screen(&mut app);
     assert!(
-        text.contains("Keep the fold when a hunk is reverted")
-            && text.contains("#123 \u{b7} alice"),
+        text.contains("#123 Keep the fold when a hunk is reverted") && text.contains("alice"),
         "the pull request is not in the list:\n{text}"
     );
 
@@ -14840,6 +14839,49 @@ fn the_list_of_pull_requests_says_why_it_is_empty() {
             && !text.contains("Not signed in"),
         "a checkout off GitHub was told to sign in:\n{text}"
     );
+}
+
+/// A pull request is found by typing its number, which is in front of its
+/// title and quieter than it.
+///
+/// Broken deliberately two ways. Leaving the number out of the label, as
+/// it was when it sat beside the author: the row no longer starts with it,
+/// which is what fails first, and `124` would match nothing. And leaving
+/// the number's colouring off draws it in the title's ink.
+#[test]
+fn a_pull_request_is_found_by_its_number() {
+    let scratch = support::Scratch::new("agent-pull-request-by-number");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, two_pull_requests()).expect("the answer");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 2)
+    });
+    // The row the reader is not on, whose ground is the page's: the one
+    // under the selection is drawn on another, and what is compared here
+    // is the ink.
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert_ne!(
+        support::drawn_in(&dump, "#124 "),
+        support::drawn_in(&dump, "Pick up the agent"),
+        "the number is drawn in the title's ink"
+    );
+    support::type_text(&mut app, "124");
+    let found: Vec<u64> = app
+        .picker()
+        .map(|picker| {
+            picker
+                .matches()
+                .filter_map(|row| match row.value {
+                    obelus_component::picker::PickerValue::PullRequest(number) => Some(number),
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    assert_eq!(found, [124], "typing its number did not find it");
 }
 
 /// A query that matches none of the pull requests says so, and does not say

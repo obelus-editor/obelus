@@ -250,12 +250,20 @@ impl App {
             enabled,
             trailing,
         } = self.what_a_pull_request_row_says(pull, now);
+        // The number in the label, in front of the title, because the label
+        // is what a query is matched against: a pull request is named by
+        // its number as often as by what it says, and a number on the far
+        // side of the row could be read and not typed. Quieter than the
+        // title, in the colour a comment is -- it says which, and the title
+        // says what.
+        let number = format!("#{}", pull.number);
+        let quiet = u16::try_from(number.chars().count()).unwrap_or(u16::MAX);
         PickerItem {
             // A sentence, which loses its end where it has to lose anything.
             prose: true,
             icon: None,
             marker,
-            label: pull.title.clone(),
+            label: format!("{number} {}", pull.title),
             detail: pull.draft.then(|| "Draft".to_string()),
             trailing,
             changed: None,
@@ -264,7 +272,7 @@ impl App {
             opens: None,
             status: None,
             enabled,
-            colours: None,
+            colours: Some(vec![(0, quiet, obelus_text::kind::SyntaxKind::Comment)]),
             kind: None,
             tab: None,
             section: None,
@@ -300,9 +308,9 @@ impl App {
             }
             (false, None) => None,
         };
-        // The number first, where the width is taken out of the title's
-        // before it is cut: it is how a pull request is found again.
-        let mut trailing = format!("#{} \u{b7} {}", pull.number, pull.author);
+        // Who and when, where the width is taken out of the title's before
+        // it is cut. The number is in the label, where it can be typed.
+        let mut trailing = pull.author.clone();
         if let Some(updated) = pull.updated {
             trailing.push_str(&format!(
                 " \u{b7} {}",
