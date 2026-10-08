@@ -376,6 +376,20 @@ fn screen(app: &mut App) -> String {
     support::text_block(&dump).to_string()
 }
 
+/// The same, below a conversation's header.
+///
+/// The header names the conversation by the reader's first words until the
+/// agent names it, so a test looking for those words in the transcript
+/// would otherwise find them there.
+fn under_the_header(app: &mut App) -> String {
+    screen(app)
+        .lines()
+        .skip_while(|line| line.trim().is_empty())
+        .skip(1)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// What is painted behind a run of words on the row they are on.
 ///
 /// The whole legend entry, and one per distinct style: a test about a hold
@@ -563,7 +577,7 @@ fn a_whole_turn_of_conversation() {
 
     support::press(&mut app, KeyCode::Enter);
     // Sent, so the row is empty again and the transcript has the question.
-    assert!(screen(&mut app).contains("what is this file"));
+    assert!(under_the_header(&mut app).contains("what is this file"));
 
     pump(
         &mut app,
@@ -706,7 +720,7 @@ fn escape_stops_the_turn_and_never_closes_the_conversation() {
     assert!(app.chat().is_some(), "escape closed a document");
 
     support::press_function(&mut app, 4);
-    let text = screen(&mut app);
+    let text = under_the_header(&mut app);
     assert!(
         text.contains("remember this"),
         "reopening lost the conversation:\n{text}"
@@ -1358,7 +1372,7 @@ fn enter_on_something_already_said_copies_it_to_the_box() {
         Some("/forever".to_string()),
         "the words were not put in the box"
     );
-    let text = screen(&mut app);
+    let text = under_the_header(&mut app);
     assert_eq!(
         text.matches("/forever").count(),
         2,
@@ -1832,7 +1846,7 @@ fn the_box_takes_a_paragraph() {
 
     // And enter sends all three lines as one message.
     support::press(&mut app, KeyCode::Enter);
-    let text = screen(&mut app);
+    let text = under_the_header(&mut app);
     assert!(
         text.contains("first") && text.contains("second") && text.contains("third"),
         "the message did not reach the transcript:\n{text}"
@@ -5803,6 +5817,58 @@ fn a_name_given_while_the_open_list_is_up_is_said_on_it() {
     assert!(
         on_the_file(&app),
         "the name moved the reader off the row they were on"
+    );
+}
+
+/// The conversation's header says what it is called: the reader's first
+/// words until the agent names it, then that name, and then whatever it
+/// renames it to -- each as it arrives, with nothing pressed in between.
+///
+/// Broken deliberately: drawing the header from the agent's name alone, as
+/// it was, fails at the first words; and taking the agent's title out of
+/// `conversation_name` fails at the agent's name.
+#[test]
+fn the_header_says_what_the_conversation_is_called_now() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // The header's own row, so that the first words in the transcript are
+    // not taken for it.
+    let header = |app: &mut App| {
+        screen(app)
+            .lines()
+            .find(|line| !line.trim().is_empty())
+            .unwrap_or_default()
+            .to_string()
+    };
+    support::type_text(&mut app, "/titled about the counts");
+    support::press(&mut app, KeyCode::Enter);
+    assert!(
+        header(&mut app).contains("/titled about the counts"),
+        "the first words are not in the header: {:?}",
+        header(&mut app)
+    );
+
+    // Waited on by what the header is drawn from, because waiting needs the
+    // application unborrowed and drawing it needs it borrowed to change.
+    pump(&mut app, &events, "the agent's name", |app| {
+        app.what_this_conversation_is_called().as_deref() == Some("Renamed by the agent")
+    });
+    assert!(
+        header(&mut app).contains("Renamed by the agent"),
+        "the agent's name is not in the header: {:?}",
+        header(&mut app)
+    );
+    support::type_text(&mut app, "/retitled");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the new name", |app| {
+        app.what_this_conversation_is_called().as_deref() == Some("Renamed again")
+    });
+    let now = header(&mut app);
+    assert!(
+        now.contains("Renamed again") && !now.contains("Renamed by the agent"),
+        "the header did not take the new name: {now:?}"
     );
 }
 

@@ -426,6 +426,9 @@ pub trait Screen {
     /// The branch the conversation being read is working on, once its
     /// agent has changed a file.
     fn branch_this_conversation_works_on(&self) -> Option<&obelus_git::Head>;
+    /// What the conversation being read is called: the agent's name for
+    /// it, or the note it is about, or the reader's first words.
+    fn what_this_conversation_is_called(&self) -> Option<String>;
     /// Where Obelus was started, and the root every path is shown relative to.
     fn working_directory(&self) -> &Path;
     /// Which branch that tree has checked out, where it is a repository.

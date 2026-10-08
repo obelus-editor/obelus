@@ -1,6 +1,6 @@
 screen 76x24  editor 76x22  status 76x1
 -- text --
- 0| Fake Agent                                                                 
+ 0| Fake Agent  /markdown                                                      
  1|────────────────────────────────────────────────────────────────────────────
  2| >  /markdown                                                               
  3|                                                                            

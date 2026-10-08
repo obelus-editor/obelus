@@ -67,6 +67,12 @@ const MARGIN: u16 = 1;
 /// read by.
 const INDENT: u16 = 3;
 
+/// The fewest cells a conversation's name is cut down to in the header.
+///
+/// Below this what is left is a letter and an ellipsis, which says only that
+/// something was there; a name that fits whole is drawn however short.
+const SHORTEST_NAME: usize = 8;
+
 /// Who is speaking, for a terminal with no Nerd Font.
 ///
 /// Distinct marks rather than a colour each: colours say it as well, and a
@@ -620,6 +626,9 @@ pub struct ChatView<'a> {
     state: Talking,
     /// What to call it.
     name: Option<&'a str>,
+    /// What the conversation is called, which the agent may rename at any
+    /// moment and which is therefore asked for on every frame.
+    title: Option<String>,
     /// Everything about the session the agent lets the reader change, in
     /// the agent's own order.
     settings: &'a [acp::Setting],
@@ -681,6 +690,7 @@ impl<'a> ChatView<'a> {
             theme: app.theme(),
             state: app.talking(),
             name: app.agent_name(),
+            title: app.what_this_conversation_is_called(),
             settings: app.agent_settings(),
             focus: app.chat()?.focus(),
             card: app.card(),
@@ -1952,15 +1962,20 @@ impl ChatView<'_> {
         (placed, None)
     }
 
-    /// Who is being talked to, and where its work is going.
+    /// Who is being talked to, what about, and where its work is going.
     ///
     /// A header says what the thing it names *is*, which for an agent is its
-    /// name -- and, once it has changed something, the branch the change
-    /// is on. What is *happening* goes at the foot of the transcript,
-    /// where the next thing will appear; what went wrong is a line in the
-    /// transcript where it went wrong. Five states used to sit here, two of
-    /// them saying what the screen already said better and one of them
-    /// saying "not started yet" about an agent that had failed to start.
+    /// name, then what this conversation is called -- the name the agent
+    /// gives it, and renames it to whenever it likes -- and, once it has
+    /// changed something, the branch the change is on. The branch is ours
+    /// and short and the conversation's name is anybody's length, so the
+    /// branch has its room first and the name is cut to what is left, or
+    /// left out where that is too little to read. What is *happening* goes at
+    /// the foot of the transcript, where the next thing will appear; what
+    /// went wrong is a line in the transcript where it went wrong. Five
+    /// states used to sit here, two of them saying what the screen already
+    /// said better and one of them saying "not started yet" about an agent
+    /// that had failed to start.
     fn header(&self, cells: &mut CellBuffer, area: Rect, plain: Style, dim: Style) {
         let mut column = area.x + MARGIN;
         if obelus_icons::enabled() {
@@ -1975,16 +1990,39 @@ impl ChatView<'_> {
             name,
             plain.fg(self.theme.gutter_current),
         );
-        // The branch, dimmed after it, in the badge the status row gives
+        // The branch, dimmed at the end, in the badge the status row gives
         // the reader's own. Dropped whole where it does not fit, the rule
         // that row follows: half a branch name is worse than none.
+        let end = usize::from(area.x + area.width);
         let branch = crate::status::branch_badge(self.branch);
-        let wide = 2 + text_width(branch.trim_end());
-        if branch.is_empty() || usize::from(column) + wide > usize::from(area.x + area.width) {
+        let branch = branch.trim_end();
+        let branch_wide = match branch.is_empty() {
+            true => 0,
+            false => 2 + text_width(branch),
+        };
+        let branch_wide = match usize::from(column) + branch_wide > end {
+            true => 0,
+            false => branch_wide,
+        };
+        // And between the two what the conversation is called, which is
+        // somebody else's text -- an agent's name for it, or the reader's
+        // first words -- so it gets what the branch leaves and is cut there.
+        if let Some(title) = self.title.as_deref() {
+            let room = end.saturating_sub(usize::from(column) + 2 + branch_wide);
+            let title = match text_width(title) <= room || room >= SHORTEST_NAME {
+                true => crate::truncate_from_right(title, room),
+                false => String::new(),
+            };
+            if !title.is_empty() {
+                column = write(cells, column, area.y, "  ", plain);
+                column = write(cells, column, area.y, &title, plain);
+            }
+        }
+        if branch_wide == 0 {
             return;
         }
         column = write(cells, column, area.y, "  ", dim);
-        write(cells, column, area.y, branch.trim_end(), dim);
+        write(cells, column, area.y, branch, dim);
     }
 
     /// The glyph and colour one speaker's rows are drawn in.
@@ -2210,6 +2248,7 @@ mod tests {
             theme: &obelus_theme::builtin::DARK,
             state: obelus_agent::Talking::Ready,
             name: None,
+            title: None,
             settings: &[],
             focus: obelus_component::chat::Focus::Writing,
             card: None,
@@ -2233,6 +2272,107 @@ mod tests {
         assert!(
             row.contains("2 in the background"),
             "the count was written over: {row:?}"
+        );
+    }
+
+    /// A long name for the conversation is cut where the branch begins, and
+    /// the branch is whole at the end of the row.
+    ///
+    /// Broken deliberately: leave the branch out of the room the name gets,
+    /// and the name runs to the edge and puts the branch off the row.
+    #[test]
+    fn a_long_name_gives_way_to_the_branch() {
+        let _held = crate::glyphs_held();
+        obelus_icons::use_glyphs(false);
+        let chat = obelus_component::chat::Chat::new();
+        let branch = obelus_git::Head::Branch("feature".to_string());
+        let area = ratatui::layout::Rect::new(0, 0, 40, 1);
+        let view = super::ChatView {
+            chat: &chat,
+            theme: &obelus_theme::builtin::DARK,
+            state: obelus_agent::Talking::Ready,
+            name: Some("Fake Agent"),
+            title: Some("A conversation about a great many things at once".to_string()),
+            settings: &[],
+            focus: obelus_component::chat::Focus::Writing,
+            card: None,
+            in_front: true,
+            pointer: None,
+            root: std::path::Path::new("/"),
+            phase: 0,
+            branch: Some(&branch),
+            about_a_note: false,
+            note: None,
+            note_is_wrong: false,
+            usage: None,
+            tasks: None,
+            remote: None,
+        };
+        let mut cells = ratatui::buffer::Buffer::empty(area);
+        let plain = ratatui::style::Style::default();
+        view.header(&mut cells, area, plain, plain);
+        let row: String = (area.x..area.right())
+            .map(|x| cells[(x, area.y)].symbol().to_string())
+            .collect();
+        assert_eq!(
+            row, " Fake Agent  A conversation ab\u{2026}  feature",
+            "the name and the branch did not share the row"
+        );
+    }
+
+    /// And where what the branch leaves is too little to say anything of
+    /// a long name, the name is not drawn at all -- but a short one that
+    /// fits is.
+    ///
+    /// Broken deliberately: take the shortest a name may be cut to out of
+    /// the condition, and the first row reads `Fake Agent  A conv…  feature`.
+    #[test]
+    fn a_name_cut_to_almost_nothing_is_not_drawn() {
+        let _held = crate::glyphs_held();
+        obelus_icons::use_glyphs(false);
+        let chat = obelus_component::chat::Chat::new();
+        let branch = obelus_git::Head::Branch("feature".to_string());
+        // Ten for the agent's name and the margin, nine for the branch, and
+        // two before the name leave it seven.
+        let area = ratatui::layout::Rect::new(0, 0, 11 + 2 + 7 + 9, 1);
+        let row = |title: &str| {
+            let view = super::ChatView {
+                chat: &chat,
+                theme: &obelus_theme::builtin::DARK,
+                state: obelus_agent::Talking::Ready,
+                name: Some("Fake Agent"),
+                title: Some(title.to_string()),
+                settings: &[],
+                focus: obelus_component::chat::Focus::Writing,
+                card: None,
+                in_front: true,
+                pointer: None,
+                root: std::path::Path::new("/"),
+                phase: 0,
+                branch: Some(&branch),
+                about_a_note: false,
+                note: None,
+                note_is_wrong: false,
+                usage: None,
+                tasks: None,
+                remote: None,
+            };
+            let mut cells = ratatui::buffer::Buffer::empty(area);
+            let plain = ratatui::style::Style::default();
+            view.header(&mut cells, area, plain, plain);
+            (area.x..area.right())
+                .map(|x| cells[(x, area.y)].symbol().to_string())
+                .collect::<String>()
+        };
+        assert_eq!(
+            row("A conversation about a great many things").trim_end(),
+            " Fake Agent  feature",
+            "a stub of the name was drawn"
+        );
+        assert_eq!(
+            row("Renamed").trim_end(),
+            " Fake Agent  Renamed  feature",
+            "a name that fits was left out"
         );
     }
 
@@ -2376,6 +2516,7 @@ mod tests {
                 theme: &obelus_theme::builtin::DARK,
                 state,
                 name: None,
+                title: None,
                 settings: &[],
                 focus: obelus_component::chat::Focus::Writing,
                 card,
@@ -2504,6 +2645,7 @@ mod caret {
                         theme: &obelus_theme::builtin::DARK,
                         state: obelus_agent::Talking::Ready,
                         name: None,
+                        title: None,
                         settings: &[],
                         // On a row of the call, so the tint behind a selected
                         // row is drawn as well as the marks after it.
