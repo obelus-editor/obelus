@@ -32,6 +32,8 @@ impl obelus_ui::shapes::Shapes for Heard {
 
     fn ticked(&self, _area: Rect, _on: bool) {}
 
+    fn spun(&self, _area: Rect) {}
+
     fn ruled(&self, _area: Rect) {}
 
     fn capped(&self, keys: &str, area: Rect, _cap: Color, _page: Color, _edge: Color) {
@@ -105,6 +107,184 @@ fn a_window_does_not_run_the_welcome_screens_clock() {
     assert!(
         !app.is_waking(),
         "the window is drawing the sheen and the application is ticking for it too"
+    );
+}
+
+/// A glyph on the status row has one blank after it in a window, not two.
+///
+/// Two is a terminal's: its Nerd Font draws the glyph two cells wide in the
+/// one cell it was given, and the first blank is the half it bleeds into.
+/// The window draws the `Mono` face it carries, one cell wide, so the
+/// second blank was a cell of nothing between a file's glyph and its path.
+///
+/// Deliberate break: answer two blanks for a window in `gap_after_a_glyph`.
+#[test]
+fn a_glyph_has_one_blank_after_it_in_a_window() {
+    let _turn = turn();
+    obelus_config::drawn_in_a_window();
+    obelus_icons::use_glyphs(true);
+
+    let path = std::path::Path::new("tests/fixtures/long.rs");
+    let mut app = App::new(vec![obelus_buffer::Buffer::open(path).expect("opening it")]);
+    let dump = support::render(&mut app, 80, 12);
+    let status = support::text_block(&dump)
+        .lines()
+        .filter_map(|row| row.split_once('|'))
+        .map(|(_, cells)| cells.to_string())
+        .next_back()
+        .expect("a status row");
+    let glyph = obelus_icons::for_path(path);
+    let after: String = status
+        .split_once(glyph)
+        .unwrap_or_else(|| panic!("no file glyph on {status:?}"))
+        .1
+        .chars()
+        .take(2)
+        .collect();
+    assert!(
+        after.starts_with(' ') && !after.ends_with(' '),
+        "not one blank between the glyph and the path: {status:?}"
+    );
+}
+
+/// And so does the speaker's glyph in a conversation: the words begin one
+/// blank after it, where a terminal leaves two.
+///
+/// Asked of the screen rather than of `reading_width`, which works its
+/// width out from the very indent this is about.
+///
+/// Deliberate break: put `indent` back to a constant three, and the words
+/// begin a cell further right with two blanks before them.
+#[test]
+fn a_conversations_words_begin_one_blank_after_the_speaker() {
+    use crossterm::event::KeyCode;
+
+    let _turn = turn();
+    obelus_config::drawn_in_a_window();
+    obelus_icons::use_glyphs(true);
+
+    let (sender, events) = std::sync::mpsc::channel();
+    let mut app = App::new(Vec::new());
+    app.events_for_test(sender);
+    app.agents_root_for_test(
+        std::env::temp_dir().join(format!("obelus-window-indent-{}", std::process::id())),
+    );
+    let (width, height) = (76, 24);
+    support::lay_out(&mut app, width, height);
+    app.talk_to(
+        "fake",
+        std::path::Path::new(support::sh()),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.new_conversation();
+    app.open_a_session_for_test();
+    // Until the message is on the screen, however many events that takes:
+    // the handshake, the session, and the words going into the transcript.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    let mut said = false;
+    let row = loop {
+        let dump = support::render(&mut app, width, height);
+        let found = support::text_block(&dump)
+            .lines()
+            .filter_map(|row| row.split_once('|'))
+            .map(|(_, cells)| cells.to_string())
+            // From the foot: the header names the conversation by its
+            // first words too.
+            .rfind(|row| row.contains("words of mine"));
+        if let Some(row) = found {
+            break row;
+        }
+        if !said && app.talking() == obelus_agent::Talking::Ready {
+            support::type_text(&mut app, "words of mine");
+            support::press(&mut app, KeyCode::Enter);
+            said = true;
+            continue;
+        }
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        assert!(!left.is_zero(), "the message never arrived:\n{dump}");
+        let event = events
+            .recv_timeout(left)
+            .unwrap_or_else(|_| panic!("nothing arrived, and the screen is:\n{dump}"));
+        app.handle(event);
+    };
+    let before: Vec<char> = row.chars().take(4).collect();
+    assert!(
+        before[1] != ' ' && before[2] == ' ' && before[3] == 'w',
+        "not the speaker, one blank and the words: {row:?}"
+    );
+}
+
+/// An agent at work does not run the application's clock where a window
+/// is drawing its mark, and does again where the reader turned animation
+/// off.
+///
+/// The window turns the mark itself, on its own clock; what this clock
+/// moves is the braille in the cell, which the window does not draw -- so
+/// it was twelve pages a second for as long as an agent worked, pushed at
+/// a front end that threw them away. With animation off the window turns
+/// the mark a frame a tick, and the tick is this clock's.
+///
+/// Deliberate break: drop `window_turns` from `wants_animating` and the
+/// first assertion goes; leave out its `config.animation` and the second.
+#[test]
+fn a_window_turns_an_agents_mark_on_its_own_clock() {
+    use crossterm::event::KeyCode;
+
+    let _turn = turn();
+    obelus_config::drawn_in_a_window();
+    obelus_icons::use_glyphs(false);
+
+    let (sender, events) = std::sync::mpsc::channel();
+    let mut app = App::new(Vec::new());
+    app.events_for_test(sender);
+    app.agents_root_for_test(
+        std::env::temp_dir().join(format!("obelus-window-clock-{}", std::process::id())),
+    );
+    let (width, height) = (76, 24);
+    support::lay_out(&mut app, width, height);
+    app.talk_to(
+        "fake",
+        std::path::Path::new(support::sh()),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.new_conversation();
+    app.open_a_session_for_test();
+    let pump = |app: &mut App, what: &str, until: obelus_agent::Talking| {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        while app.talking() != until {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            assert!(!left.is_zero(), "gave up waiting for {what}");
+            let event = events
+                .recv_timeout(left)
+                .unwrap_or_else(|_| panic!("nothing arrived while waiting for {what}"));
+            app.handle(event);
+            support::lay_out(app, width, height);
+        }
+    };
+    pump(&mut app, "the handshake", obelus_agent::Talking::Ready);
+    support::type_text(&mut app, "/forever");
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        "it to start thinking",
+        obelus_agent::Talking::Thinking,
+    );
+
+    support::render(&mut app, width, height);
+    assert!(
+        !app.is_waking(),
+        "the window turns the mark and the application is ticking for it too"
+    );
+
+    let still = obelus_config::Config {
+        animation: false,
+        ..obelus_config::Config::default()
+    };
+    app.configure(still, vec!["animation"]);
+    support::render(&mut app, width, height);
+    assert!(
+        app.is_waking(),
+        "with animation off the mark turns on this clock, and it has stopped"
     );
 }
 
@@ -190,6 +370,10 @@ fn the_keys_a_conversation_names_wear_caps() {
         std::env::temp_dir().join(format!("obelus-window-tests-{}", std::process::id())),
     );
     let (width, height) = (76, 24);
+    // The width the view wraps the transcript to, asked of the view: it is
+    // a cell wider in a window than in a terminal, where the gap after the
+    // speaker's glyph is two.
+    let reading = obelus_ui::chat::reading_width(Rect::new(0, 0, width, height));
     support::lay_out(&mut app, width, height);
     app.talk_to(
         "fake",
@@ -261,7 +445,7 @@ fn the_keys_a_conversation_names_wear_caps() {
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, "something to scroll", &|app| {
         app.chat()
-            .is_some_and(|chat| chat.rows(width - 5).len() > usize::from(height))
+            .is_some_and(|chat| chat.rows(reading).len() > usize::from(height))
     });
     pump(&mut app, "that turn to end", &|app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -303,7 +487,7 @@ fn the_keys_a_conversation_names_wear_caps() {
         let on = app.chat().map(obelus_component::chat::Chat::focus);
         if let Some(obelus_component::chat::Focus::Transcript(place)) = on
             && app.chat().is_some_and(|chat| {
-                chat.rows(width - 5)
+                chat.rows(reading)
                     .get(place.row)
                     .is_some_and(|row| row.unsent.is_some())
             })

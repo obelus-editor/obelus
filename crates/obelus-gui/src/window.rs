@@ -71,7 +71,7 @@ use crate::{
     font::Fonts,
     grid::{
         Barred, Behind, Capped, Cells, Going, Marked, Marking, Measured, Page, Parted, Rolled,
-        Ruled, Said, Sheened, Spelling, Stroked, Ticked, Update,
+        Ruled, Said, Sheened, Spelling, Spun, Stroked, Ticked, Update,
     },
     keys,
     motion::{Lane, Motion, Wake},
@@ -137,6 +137,7 @@ struct Left {
     marked: Vec<Marked>,
     capped: Vec<Capped>,
     ticked: Vec<Ticked>,
+    spun: Vec<Spun>,
     showing: Vec<Barred>,
     ruled: Vec<Ruled>,
     sheened: Option<Sheened>,
@@ -154,6 +155,7 @@ impl Left {
             marked: &self.marked,
             capped: &self.capped,
             ticked: &self.ticked,
+            spun: &self.spun,
             barred: &self.showing,
             ruled: &self.ruled,
             sheened: self.sheened.as_ref(),
@@ -355,12 +357,15 @@ struct Showing {
     holding: (Color, Color),
     /// Which cells are switches on the frame being shown.
     ticked: Vec<Ticked>,
+    /// Which cells are the mark that turns on the frame being shown.
+    spun: Vec<Spun>,
     /// The mark the light runs across, where the frame drew one.
     sheened: Option<Sheened>,
     /// Which rows begin something new on the frame being shown.
     parted: Vec<Parted>,
     /// And on the one being laid out.
     ticking: Vec<Ticked>,
+    spinning: Vec<Spun>,
     sheening: Option<Sheened>,
     parting: Vec<Parted>,
     /// Which columns are bars on the frame being shown.
@@ -476,6 +481,8 @@ impl Showing {
             titled: 0.0,
             holding: (Color::Reset, Color::Reset),
             ticked: Vec::new(),
+            spun: Vec::new(),
+            spinning: Vec::new(),
             sheened: None,
             sheening: None,
             parted: Vec::new(),
@@ -1034,6 +1041,7 @@ impl ApplicationHandler<Waking> for Showing {
                         Update::Ticked { area, on } => {
                             self.ticking.push(Ticked { area, on });
                         }
+                        Update::Spun { area } => self.spinning.push(Spun { area }),
                         Update::Parted { area } => {
                             self.parting.push(Parted { area });
                         }
@@ -1068,6 +1076,7 @@ impl ApplicationHandler<Waking> for Showing {
                                     marked: std::mem::take(&mut self.marked),
                                     capped: std::mem::take(&mut self.capped),
                                     ticked: std::mem::take(&mut self.ticked),
+                                    spun: std::mem::take(&mut self.spun),
                                     showing: self.showing.clone(),
                                     ruled: std::mem::take(&mut self.ruled),
                                     sheened: self.sheened.take(),
@@ -1083,6 +1092,13 @@ impl ApplicationHandler<Waking> for Showing {
                             self.marked = std::mem::take(&mut self.marking);
                             self.capped = std::mem::take(&mut self.capping);
                             self.ticked = std::mem::take(&mut self.ticking);
+                            // Only the ones the page still holds, for the
+                            // light's reason: whether anything here turns
+                            // is what decides the frames, and a mark a list
+                            // was opened over is not turning on screen.
+                            self.spun = std::mem::take(&mut self.spinning);
+                            self.spun.retain(|mark| mark.round(&self.page).is_some());
+                            self.motion.spin_drawn(!self.spun.is_empty());
                             self.barred = std::mem::take(&mut self.barring_up);
                             // Said here and not at the drawing: what
                             // stirs a bar is its mark being somewhere
@@ -1440,6 +1456,7 @@ impl ApplicationHandler<Waking> for Showing {
                         marked: &self.marked,
                         capped: &self.capped,
                         ticked: &self.ticked,
+                        spun: &self.spun,
                         barred: &self.showing,
                         ruled: &self.ruled,
                         sheened: self.sheened.as_ref(),

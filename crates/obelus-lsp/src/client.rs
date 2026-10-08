@@ -175,6 +175,9 @@ impl Client {
         let _inside = obelus_runtime::handle().enter();
         let mut starting = tokio::process::Command::new(command);
         obelus_program::without_a_window(starting.as_std_mut());
+        // A server that builds -- rust-analyzer's `cargo check` -- builds
+        // inside the machine's pool like everything else Obelus starts.
+        obelus_jobs::lend(starting.as_std_mut());
         let mut process = starting
             .args(server.arguments)
             .current_dir(root)

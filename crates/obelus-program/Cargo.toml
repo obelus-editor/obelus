@@ -12,6 +12,11 @@ workspace = true
 [dependencies]
 which.workspace = true
 
+# For `setsid`: a shell asked for its environment is put in a session of its
+# own -- see `login`.
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
 # For `CREATE_NO_WINDOW`: see `without_a_window`.
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true

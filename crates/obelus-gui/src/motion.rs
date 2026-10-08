@@ -289,6 +289,23 @@ impl Bars {
 /// the time is a wipe, and one crossing for ever is a screensaver.
 const SHEEN_PASS: Duration = Duration::from_millis(2600);
 
+/// How long the mark that says something is happening takes to go round.
+///
+/// A little slower than the braille in a terminal, whose ten frames at the
+/// ticker's eighty milliseconds are a turn in eight hundred.
+const TURN: Duration = Duration::from_millis(900);
+
+/// How often the mark that turns is drawn again.
+///
+/// A moment and not a rate, though it is an animation, because of how
+/// long it lasts: a rate is `ControlFlow::Poll`, and a loop that polls
+/// runs flat out between the frames the screen paces -- which for the
+/// fifth of a second a pane slides is nothing, and for the minutes an
+/// agent works was a whole core, measured at a hundred per cent against
+/// six for this. Sixty a second is a turn the eye cannot count, which is
+/// all the braille could not be.
+const TURN_STEP: Duration = Duration::from_micros(16_667);
+
 /// And how long the mark rests between passes.
 ///
 /// Longer than it feels, because the screen it is on is the one a reader
@@ -358,6 +375,11 @@ pub(crate) struct Moving {
     /// one end and leaves off the other, so what the mark shows at the
     /// start and the end of a pass is the same still mark the rest shows.
     pub(crate) sheen: Option<f32>,
+    /// How far round the marks that turn are, as a part of a whole turn,
+    /// or `None` where the reader has said nothing is to move on its own:
+    /// then each is as far round as the frame in its cell, which the
+    /// application turns on its own clock the way a terminal's does.
+    pub(crate) turn: Option<f32>,
     /// How far from where the page says it is the caret is drawn, in
     /// cells.
     ///
@@ -379,6 +401,7 @@ impl Moving {
             leaving: None,
             card: None,
             sheen: None,
+            turn: None,
             drift: (0.0, 0.0),
         }
     }
@@ -787,6 +810,16 @@ pub(crate) struct Motion {
     since: Instant,
     /// Whether the frame drew a mark for it to run across.
     sheening: bool,
+    /// Whether the frame drew a mark that turns.
+    ///
+    /// No moment of its own to measure from, unlike the light: a turn has
+    /// no edge for a mark to arrive at, so where it has got to is the
+    /// window's clock and nothing else -- see `turn`.
+    spinning: bool,
+    /// What that clock is measured from.
+    started: Instant,
+    /// When the mark is next drawn further round -- see [`TURN_STEP`].
+    next_turn: Instant,
 }
 
 impl Motion {
@@ -818,6 +851,9 @@ impl Motion {
             bars: Bars::default(),
             since: now,
             sheening: false,
+            spinning: false,
+            started: now,
+            next_turn: now,
         }
     }
 
@@ -981,7 +1017,14 @@ impl Motion {
         let left = self.leaving.settle(now);
         let faded = self.card.settle(now);
         let blinked = self.blink.advance(now, caret);
-        flew || caught || slid || left || faded || blinked
+        // A step, which `advance` speaks for, because nothing else would
+        // ask for the frame: the turn is a moment to `wake`, and a moment
+        // arriving draws nothing on its own -- see `wants_a_frame`.
+        let turned = self.turn(now).is_some() && now >= self.next_turn;
+        if turned {
+            self.next_turn = now + TURN_STEP;
+        }
+        flew || caught || slid || left || faded || blinked || turned
     }
 
     /// When the window wants the loop back, or `None` for nothing moving.
@@ -1005,8 +1048,19 @@ impl Motion {
             return Some(Wake::EveryFrame);
         }
         soonest(
-            self.blink.wake(now, caret),
-            self.sheen_due(now).map(Wake::At),
+            soonest(
+                self.blink.wake(now, caret),
+                self.sheen_due(now).map(Wake::At),
+            ),
+            // The step after a due one, which `advance` is about to draw:
+            // the loop asks this before it advances, and a moment that has
+            // already come is one more pass through it for nothing.
+            self.turn(now).map(|_| {
+                Wake::At(match self.next_turn > now {
+                    true => self.next_turn,
+                    false => now + TURN_STEP,
+                })
+            }),
         )
     }
 
@@ -1069,7 +1123,36 @@ impl Motion {
             leaving: self.leaving.along(now),
             card: self.card.along(now),
             sheen: self.sheen(now),
+            turn: self.turn(now),
         }
+    }
+
+    /// The frame drew a mark that turns, or it did not.
+    ///
+    /// Told rather than read off the page, for the light's reason: what
+    /// says a cell is the mark is the view saying so.
+    pub(crate) fn spin_drawn(&mut self, showing: bool) {
+        self.spinning = showing;
+    }
+
+    /// How far round a mark that turns is at this moment.
+    ///
+    /// `None` on a screen with nothing turning, and where the reader has
+    /// turned animation off -- which is not a mark held still, the way it
+    /// is for the light: what says something is still happening is worth
+    /// more than the setting is against it, so the mark keeps the turn the
+    /// application gives it, a frame a tick, which is what that switch
+    /// leaves a terminal too.
+    fn turn(&self, now: Instant) -> Option<f32> {
+        if !self.spinning || !self.animates {
+            return None;
+        }
+        // The part of a turn taken in whole nanoseconds, and only then a
+        // float: seconds since the window opened, in an `f32`, are a
+        // sixtieth of a turn apart after two days, and a window left up
+        // over a weekend turned in jerks.
+        let along = now.duration_since(self.started).as_nanos() % TURN.as_nanos();
+        Some(along as f32 / TURN.as_nanos() as f32)
     }
 
     /// The frame drew a mark for the light to run across, or it did not.
@@ -1951,6 +2034,81 @@ mod tests {
         motion.sheen_drawn(true, later);
         let half = motion.sheen(later).expect("halfway across");
         assert!((half - 0.5).abs() < 0.01, "the pass started again: {half}");
+    }
+
+    /// A mark that turns goes round on the window's clock, is drawn again
+    /// at a moment rather than at a rate, and stops asking once it has
+    /// gone or the reader has turned animation off.
+    ///
+    /// Break: answer `Wake::EveryFrame` while it turns -- the first
+    /// assertion goes, and a window with an agent at work polls a core
+    /// flat out. Or drop `turned` from `advance`, and the third does: the
+    /// moment arrives and nothing is drawn for it. Or take the seconds
+    /// since the window opened as an `f32` in `turn`, and a week on the
+    /// mark is an eighth of a turn from where it should be. Or name
+    /// `next_turn` in `wake` once it has passed, and the loop is woken
+    /// twice for every step.
+    #[test]
+    fn a_mark_that_turns_is_drawn_at_moments_and_only_while_it_is_there() {
+        let mut motion = Motion::new(None);
+        let since = motion.started;
+        motion.spin_drawn(true);
+
+        match motion.wake(since, false) {
+            Some(Wake::At(when)) => assert!(
+                when.duration_since(since) <= TURN_STEP,
+                "the next step is {:?} away",
+                when.duration_since(since)
+            ),
+            other => panic!("a turn is a moment, not {other:?}"),
+        }
+        // Asked with a step due and not yet drawn, which is how the loop
+        // asks: the moment named is the next one, not this one again.
+        let due = since + TURN_STEP;
+        assert!(
+            matches!(motion.wake(due, false), Some(Wake::At(when)) if when > due),
+            "woken again for the step it is about to draw"
+        );
+        let quarter = motion.moving(since + TURN / 4).turn.expect("turning");
+        assert!(
+            (quarter - 0.25).abs() < 0.01,
+            "a quarter of the way: {quarter}"
+        );
+        // And as precisely a week on, which is a window nobody closed:
+        // the time is not a float until it is a part of one turn.
+        let week = TURN * (7 * 24 * 60 * 60 * 10 / 9);
+        let later = motion
+            .moving(since + week + TURN / 4)
+            .turn
+            .expect("turning");
+        assert!((later - 0.25).abs() < 0.001, "a week on: {later}");
+        let step = motion
+            .moving(since + week + TURN / 4 + TURN_STEP)
+            .turn
+            .expect("turning");
+        let one = TURN_STEP.as_secs_f32() / TURN.as_secs_f32();
+        assert!(
+            (step - later - one).abs() < 0.001,
+            "a step a week on is {}, not {one}",
+            step - later
+        );
+        assert!(
+            motion.advance(since + TURN_STEP, false),
+            "a step is a frame"
+        );
+        assert!(
+            !motion.advance(since + TURN_STEP, false),
+            "and the same step is not a second frame"
+        );
+
+        motion.animates(false);
+        assert_eq!(motion.moving(since).turn, None, "the cell's frame, then");
+        assert_eq!(motion.wake(since, false), None);
+
+        motion.animates(true);
+        motion.spin_drawn(false);
+        assert_eq!(motion.moving(since).turn, None);
+        assert_eq!(motion.wake(since, false), None, "nothing left to turn");
     }
 
     /// And the window sleeps through the rest rather than drawing it.

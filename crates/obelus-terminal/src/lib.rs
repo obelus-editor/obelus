@@ -700,11 +700,11 @@ fn pasted(words: &str, bracketed: bool) -> Vec<u8> {
 
 /// The command for a program, and the words it was started with.
 fn command_for(program: &Program) -> (CommandBuilder, String) {
-    match program {
+    let (mut command, said, env) = match program {
         Program::Shell => {
             let command = CommandBuilder::new_default_prog();
             let said = command.get_shell();
-            (command, said)
+            (command, said, &[][..])
         }
         Program::Command {
             program,
@@ -714,16 +714,24 @@ fn command_for(program: &Program) -> (CommandBuilder, String) {
             let (program, arguments) = obelus_program::as_started_here(program, arguments);
             let mut command = CommandBuilder::new(&program);
             command.args(&arguments);
-            for (key, value) in env {
-                command.env(key, value);
-            }
             let said = std::iter::once(program.display().to_string())
                 .chain(arguments.iter().map(|argument| quoted(argument)))
                 .collect::<Vec<_>>()
                 .join(" ");
-            (command, said)
+            (command, said, env.as_slice())
         }
+    };
+    // Where the machine's pool of build jobs is, for every program alike --
+    // the reader's shell is a build started from inside Obelus as surely as
+    // an agent's is -- and before what a program was given by name, which
+    // is believed over it.
+    for (name, value) in obelus_jobs::lent() {
+        command.env(name, value);
     }
+    for (key, value) in env {
+        command.env(key, value);
+    }
+    (command, said)
 }
 
 /// An argument as a shell would need it written, so the words on the page

@@ -1,0 +1,23 @@
+[package]
+name = "obelus-jobs"
+description = "How many build jobs run at once, across every Obelus on this machine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Cargo inherits nothing here on its own; every member says it.
+[lints]
+workspace = true
+
+[dependencies]
+obelus-program.workspace = true
+obelus-runtime.workspace = true
+tracing.workspace = true
+
+# The pool is a named pipe on one and a named semaphore on the other: one
+# protocol, and each platform's own way of putting it.
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true

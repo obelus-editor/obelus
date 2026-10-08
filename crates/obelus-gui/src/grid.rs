@@ -188,6 +188,11 @@ pub(crate) enum Update {
         /// Whether it is set.
         on: bool,
     },
+    /// A cell that is the mark that turns while something is happening.
+    Spun {
+        /// Which cell it is.
+        area: Rect,
+    },
     /// A row that is a line between two things.
     Ruled {
         /// Which cells it is.
@@ -249,6 +254,8 @@ pub(crate) struct Said<'a> {
     pub(crate) capped: &'a [Capped],
     /// And which cells are switches.
     pub(crate) ticked: &'a [Ticked],
+    /// And which cells are the mark that turns.
+    pub(crate) spun: &'a [Spun],
     /// And which columns are bars, with how the window is showing each.
     pub(crate) barred: &'a [Barred],
     /// And which rows are lines between two things.
@@ -416,6 +423,23 @@ impl Ticked {
             .text
             .chars()
             .eq(std::iter::once(obelus_ui::tick(self.on)))
+    }
+}
+
+/// Where the mark that turns is in the frame being drawn.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Spun {
+    /// Which cell it is.
+    pub(crate) area: Rect,
+}
+
+impl Spun {
+    /// How far round the cell's own frame of the turn is, or `None` where
+    /// the cell holds something else by now -- the question
+    /// `Ticked::still_said` asks, answered with the one thing a front end
+    /// that has stopped its own clock still wants from the cell.
+    pub(crate) fn round(&self, page: &Page) -> Option<f32> {
+        obelus_ui::how_far_round(page.look(self.area.x, self.area.y).text)
     }
 }
 
@@ -810,6 +834,10 @@ impl Capped {
 impl obelus_ui::shapes::Shapes for Marking {
     fn ticked(&self, area: Rect, on: bool) {
         let _ = self.updates.send(Update::Ticked { area, on });
+    }
+
+    fn spun(&self, area: Rect) {
+        let _ = self.updates.send(Update::Spun { area });
     }
 
     fn scrolled(&self, area: Rect, top: i64, bar: Option<Bar>) {
@@ -1393,6 +1421,7 @@ impl Page {
             // with the marks.
             Update::Capped { area, .. }
             | Update::Ticked { area, .. }
+            | Update::Spun { area }
             | Update::Ruled { area }
             | Update::Sheened { area, .. }
             | Update::Parted { area }

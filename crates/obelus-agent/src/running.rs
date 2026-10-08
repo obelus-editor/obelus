@@ -163,6 +163,9 @@ impl Runs {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        // Before what the agent asked for, so that an agent naming a pool
+        // of its own is believed.
+        obelus_jobs::lend(process.as_std_mut());
         for (name, value) in env {
             process.env(name, value);
         }

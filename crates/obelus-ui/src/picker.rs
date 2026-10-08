@@ -760,7 +760,8 @@ impl PickerView<'_> {
                 Marking::Unwritten | Marking::Waiting => self.theme.status_stale,
                 Marking::Aside | Marking::Working => self.theme.gutter,
             };
-            let marker = match marker.is_empty() {
+            let turns = marker.is_empty();
+            let marker = match turns {
                 true => crate::spinning(self.phase).to_string(),
                 false => marker.clone(),
             };
@@ -773,6 +774,9 @@ impl PickerView<'_> {
                 style.fg(colour),
                 &Marked::plain(),
             );
+            if turns {
+                crate::shapes::spun(area.x + 1, area.y);
+            }
         }
 
         let mut y = area.y;
@@ -955,13 +959,17 @@ impl PickerView<'_> {
             // A mark with nothing in it is one that turns: the frame comes
             // from the ticker rather than from the row, because what it is
             // saying is that time is passing somewhere else.
-            let marker = match marker.is_empty() {
+            let turns = marker.is_empty();
+            let marker = match turns {
                 true => crate::spinning(self.phase).to_string(),
                 false => marker.clone(),
             };
             // With a blank column after it, the way the icon has one: two
             // glyphs touching read as one glyph nobody has seen before.
             let marker = format!("{marker} ");
+            if turns {
+                crate::shapes::spun(area.x + column, y);
+            }
             column = at(
                 cells,
                 area,

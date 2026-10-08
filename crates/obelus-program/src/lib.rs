@@ -31,6 +31,13 @@
 //! it has none to share -- which is `obg`, a window and not a console program.
 //! [`without_a_window`] is the telling, and every program Obelus starts with
 //! its pipes held asks it.
+//!
+//! And one that is everywhere but Windows: what is on the path at all
+//! depends on who started Obelus, and a desktop is not a shell (`login`,
+//! which is not a module on Windows).
+
+#[cfg(unix)]
+pub mod login;
 
 use std::{
     path::{Path, PathBuf},
