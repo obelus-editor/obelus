@@ -9010,7 +9010,7 @@ fn an_agent_is_told_what_the_note_says_only_when_it_does_not_know_it() {
 /// The key that goes from a conversation to the notes lands the caret in
 /// them.
 ///
-/// `alt+t` is the way across, and the conversation's own status row names
+/// `ctrl+t` is the way across, and the conversation's own status row names
 /// it. What it reaches is the notes as the reader left them -- going back
 /// to an open page on purpose, because reading the file again would lose
 /// their place in the list -- so a page whose box had been taken away was
@@ -9049,10 +9049,10 @@ fn the_key_from_a_conversation_to_the_notes_lands_the_caret_in_them() {
     };
 
     // Across to the notes, which puts the caret in one of them.
-    support::press_alt(&mut app, 't');
-    assert!(app.notes().is_some(), "alt+t did not reach the notes");
+    support::press_control(&mut app, 't');
+    assert!(app.notes().is_some(), "ctrl+t did not reach the notes");
     let in_a_note = caret(&mut app);
-    assert_ne!(in_a_note, "none", "alt+t reached the notes with no caret");
+    assert_ne!(in_a_note, "none", "ctrl+t reached the notes with no caret");
 
     // Escape, back to the conversation, and across again: the page is the
     // one the reader left, so the caret has to still be in it.
@@ -9064,7 +9064,7 @@ fn the_key_from_a_conversation_to_the_notes_lands_the_caret_in_them() {
     );
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationNew);
     assert!(app.chat().is_some(), "the conversation is not back");
-    support::press_alt(&mut app, 't');
+    support::press_control(&mut app, 't');
     assert_eq!(
         caret(&mut app),
         in_a_note,

@@ -733,6 +733,72 @@ fn alt_o_goes_to_what_a_note_is_about() {
     assert_eq!(buffer.cursor().line.get(), 1, "not the line it is about");
 }
 
+/// The mnemonic layout's keys for the views are not keys a view keeps for
+/// itself: pressed where the old ones were somebody's switch, they leave the
+/// switch alone. `alt+i` was the symbols and is the file list's ignored
+/// files; `alt+o` was the outline and is the notes' way to where a note
+/// points.
+///
+/// Pressed from the table rather than spelt here, so a layout that moves
+/// them back is what fails.
+///
+/// Broken deliberately by putting the symbols back on `alt+i`, which turned
+/// the ignored files on, and the outline on `alt+o`, which left the notes
+/// for the file.
+#[test]
+fn the_mnemonic_keys_are_not_a_views_own() {
+    use crossterm::event::KeyEvent;
+    let scratch = tree("mnemonic", THREE);
+    std::fs::write(scratch.path().join("sample.rs"), "one\ntwo\nthree\n").expect("the file");
+    let mut app = open(&scratch, 76, 18);
+    app.configure(
+        obelus_config::Config {
+            keys_from: "mnemonic".to_string(),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    let key_for = |app: &App, command: Command| app.keymap().chord_for(command).expect("a key");
+    // The chord as it is written, which is the only way it says which key
+    // it is: `Ctrl+o`, `Alt+u`.
+    let press_chord = |app: &mut App, chord: obelus_editing::keymap::KeyChord| {
+        let text = chord.label_in(false);
+        let (modifiers, letter) = text.rsplit_once('+').expect("a modifier");
+        let modifiers = match modifiers {
+            "Ctrl" => crossterm::event::KeyModifiers::CONTROL,
+            _ => crossterm::event::KeyModifiers::ALT,
+        };
+        let letter = letter.chars().next().expect("a letter");
+        app.handle(Event::Key(KeyEvent::new(KeyCode::Char(letter), modifiers)));
+    };
+
+    // In the notes, on the note that points at a line.
+    press(&mut app, KeyCode::Down);
+    let outline = key_for(&app, Command::SymbolOutline);
+    press_chord(&mut app, outline);
+    assert!(
+        app.notes().is_some()
+            && app
+                .current_buffer()
+                .is_none_or(|buffer| !buffer.path().ends_with("sample.rs")),
+        "{} went where the note points",
+        outline.label_in(false)
+    );
+
+    // In the list of files, on its first tab.
+    dispatch::dispatch(&mut app, Command::FileOpen);
+    assert!(app.picker().is_some(), "the files did not open");
+    let ignored = app.config().ignored_files;
+    let symbols = key_for(&app, Command::SearchSymbols);
+    press_chord(&mut app, symbols);
+    assert_eq!(
+        app.config().ignored_files,
+        ignored,
+        "{} turned the ignored files over",
+        symbols.label_in(false)
+    );
+}
+
 /// A note about the project has nowhere to go, and nothing is the answer.
 #[test]
 fn alt_o_on_a_note_about_nothing_goes_nowhere() {
@@ -1608,8 +1674,8 @@ fn each_note_gets_a_conversation_of_its_own() {
 
     // Back to the list, which lands on the note this one came out of -- and
     // then on to the other note.
-    support::press_alt(&mut app, 't');
-    assert!(app.notes().is_some(), "alt+t did not bring the notes back");
+    support::press_control(&mut app, 't');
+    assert!(app.notes().is_some(), "ctrl+t did not bring the notes back");
     support::press(&mut app, KeyCode::Down);
     support::press_alt(&mut app, 'a');
     let second = app.current_document_for_test().expect("a document");
@@ -1621,7 +1687,7 @@ fn each_note_gets_a_conversation_of_its_own() {
 
     // And asking for the first one again comes back to the first, rather
     // than starting a third.
-    support::press_alt(&mut app, 't');
+    support::press_control(&mut app, 't');
     support::press(&mut app, KeyCode::Up);
     support::press_alt(&mut app, 'a');
     assert_eq!(
@@ -1654,11 +1720,11 @@ fn the_notes_come_back_on_the_note_a_conversation_is_about() {
     assert!(app.chat().is_some(), "no conversation about the third note");
     let talk = app.current_document_for_test().expect("the conversation");
     // The notes closed, so that coming back opens them again.
-    support::press_alt(&mut app, 't');
+    support::press_control(&mut app, 't');
     app.close_current();
     app.go_to_document_for_test(talk);
 
-    support::press_alt(&mut app, 't');
+    support::press_control(&mut app, 't');
     let file = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
     app.handle(Event::Watched(obelus_watch::Changed { path: file }));
     support::lay_out(&mut app, 76, 24);
@@ -3177,6 +3243,27 @@ fn escape_writes_the_note_down_and_leaves_the_caret_in_it() {
     );
 }
 
+/// A conversation about a note names the key back to it, and the key it
+/// names is the one the table has: the row wrote `alt+t` in so many words,
+/// and went on writing it when the key moved to `ctrl+t`.
+///
+/// Broken deliberately by writing `alt+t` on the row again.
+#[test]
+fn a_conversation_names_the_key_back_to_its_note() {
+    let scratch = tree("key-back", THREE);
+    let mut app = open(&scratch, 120, 18);
+    app.handle(alt(KeyCode::Char('a')));
+    assert!(app.chat().is_some(), "alt+a did not open the conversation");
+    let dump = support::render(&mut app, 120, 18);
+    let row = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("The note"))
+        .map(str::to_string)
+        .unwrap_or_else(|| panic!("nothing says how to get back:\n{dump}"));
+    assert!(row.contains("Ctrl+t"), "{row}");
+    assert!(!row.contains("Alt+t"), "{row}");
+}
+
 /// Leaving the notes for somewhere and coming back leaves the caret in
 /// them.
 ///
@@ -3217,10 +3304,10 @@ fn leaving_the_notes_and_coming_back_leaves_the_caret_in_them() {
     assert_ne!(in_a_note, "none", "the notes opened with no caret");
     app.handle(alt(KeyCode::Char('a')));
     assert!(app.chat().is_some(), "alt+a did not open the conversation");
-    app.handle(alt(KeyCode::Char('t')));
+    support::press_control(&mut app, 't');
     assert!(
         app.notes().is_some(),
-        "alt+t did not come back to the notes"
+        "ctrl+t did not come back to the notes"
     );
     assert_eq!(
         caret(&mut app),

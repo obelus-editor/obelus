@@ -276,8 +276,9 @@ impl App {
     ///
     /// Called `todo` rather than `notes`, which is Obelus's own word for it
     /// in prose: `todo` is what the reader types into the palette, what
-    /// `alt+t` stands for, and what the file is called. The mark is the
-    /// command's, so the row and the row that opened it wear the same one.
+    /// `ctrl+t` and `alt+t` stand for, and what the file is called. The mark
+    /// is the command's, so the row and the row that opened it wear the same
+    /// one.
     fn notes_row(index: usize, notes: &obelus_component::todo::TodoView) -> PickerItem {
         let left = notes.todo().notes.iter().filter(|note| !note.done).count();
         PickerItem {

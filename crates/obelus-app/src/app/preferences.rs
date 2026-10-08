@@ -429,6 +429,21 @@ impl App {
             "workflow" => super::opening::workflows()
                 .map(|(name, _, about)| (name.to_string(), Some(about.to_string())))
                 .collect(),
+            // What each layout puts the opening keys on, because the name
+            // is a word to remember it by and not a description of it.
+            "keys_from" => choices
+                .iter()
+                .map(|choice| {
+                    let about = match *choice {
+                        "classic" => Some("The function keys, in banks of four"),
+                        "mnemonic" => Some(
+                            "Control and alt, on the letter of the word -- which a running terminal keeps for its program",
+                        ),
+                        _ => None,
+                    };
+                    ((*choice).to_string(), about.map(str::to_string))
+                })
+                .collect(),
             // The chats Obelus can be reached from, after none: which there
             // are is the remote crate's list, not a row of the table.
             "remote" => std::iter::once(String::new())
@@ -485,8 +500,9 @@ impl App {
         picker.when_empty("This setting has no choices");
         // Read whole, the way the list of conversations is, because what
         // is under each workflow is a few sentences rather than a word --
-        // and all of them, because they are Obelus's own.
-        if key == "workflow" {
+        // and all of them, because they are Obelus's own. A layout's is
+        // one, and its last words are the ones about a terminal.
+        if matches!(key, "workflow" | "keys_from") {
             picker.wraps(None);
             picker.details_whole();
         }
@@ -668,6 +684,11 @@ impl App {
             "remote" => match word {
                 "" => Some("Off".into()),
                 key => obelus_remote::platform::named(key).map(|platform| platform.name.into()),
+            },
+            "keys_from" => match word {
+                "classic" => Some("Classic".into()),
+                "mnemonic" => Some("Mnemonic".into()),
+                _ => None,
             },
             // A share of the machine, with what it comes to on this one:
             // the word is the same on every machine the file is read on,
@@ -999,7 +1020,12 @@ impl App {
         // defaults, and applying them to a table that has already had them
         // applied would leave a rebind that was undone in the file still in
         // force.
-        let (keymap, unbound) = obelus_editing::keymap::Keymap::with(&self.settled.config.keys);
+        // A layout nothing answers to has already been marked where the
+        // file was read, and starts from the default like a missing line.
+        let layout = obelus_editing::keymap::Layout::named(&self.settled.config.keys_from)
+            .unwrap_or_default();
+        let (keymap, unbound) =
+            obelus_editing::keymap::Keymap::with(layout, &self.settled.config.keys);
         self.keymap = keymap;
         self.settled.unbound = unbound;
         // What a server works out is drawn or it is not, and the switch has

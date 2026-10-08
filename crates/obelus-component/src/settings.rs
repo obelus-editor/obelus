@@ -467,6 +467,33 @@ impl Shown<'_> {
     }
 }
 
+/// Whether a setting is one of those left by what has been typed, already
+/// lowercased: by its name, or by what it is called in the file.
+fn narrowed_to(setting: &Setting, query: &str) -> bool {
+    query.is_empty() || setting.name.to_lowercase().contains(query) || setting.key.contains(query)
+}
+
+/// One row of the keys page.
+#[derive(Clone, Copy, Debug)]
+pub enum KeyRow {
+    /// A setting about the whole table, above the commands it changes:
+    /// which layout the reader's keys start from.
+    Setting(&'static Setting),
+    /// A command, and the key it is on.
+    Command(Command),
+}
+
+impl KeyRow {
+    /// The name on the row.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Setting(setting) => setting.name,
+            Self::Command(command) => command.name(),
+        }
+    }
+}
+
 /// The settings view.
 #[derive(Debug)]
 pub struct Settings {
@@ -746,10 +773,13 @@ impl Settings {
     /// something to bind is looking for the ones that have none, and a page
     /// that hid them could not be used for that.
     #[must_use]
-    pub fn keys(&self, keymap: &Keymap) -> Vec<(Command, Option<KeyChord>)> {
+    pub fn keys(&self, keymap: &Keymap) -> Vec<(KeyRow, Option<KeyChord>)> {
         self.key_rows()
             .into_iter()
-            .map(|command| (command, keymap.chord_for(command)))
+            .map(|row| match row {
+                KeyRow::Setting(_) => (row, None),
+                KeyRow::Command(command) => (row, keymap.chord_for(command)),
+            })
             .collect()
     }
 
@@ -760,14 +790,20 @@ impl Settings {
     /// counting the rows does not need the table and the callers that
     /// count do not have it.
     #[must_use]
-    pub fn key_rows(&self) -> Vec<Command> {
+    pub fn key_rows(&self) -> Vec<KeyRow> {
         if !self.on_keys() {
             return Vec::new();
         }
         let query = self.query.said().to_lowercase();
+        // The layout first: it decides where every key below it starts.
+        let settings = obelus_config::ALL
+            .iter()
+            .filter(|setting| setting.group == Group::Keys && setting.shown())
+            .filter(|setting| narrowed_to(setting, &query))
+            .map(KeyRow::Setting);
         // What this front end can never do has no key worth giving it here,
         // for the reason the palette leaves it out.
-        obelus_command::ALL
+        let commands = obelus_command::ALL
             .iter()
             .filter(|spec| spec.command.shown())
             .filter(|spec| {
@@ -775,8 +811,8 @@ impl Settings {
                     || spec.name.to_lowercase().contains(&query)
                     || spec.title.to_lowercase().contains(&query)
             })
-            .map(|spec| spec.command)
-            .collect()
+            .map(|spec| KeyRow::Command(spec.command));
+        settings.chain(commands).collect()
     }
 
     /// How many rows the page showing has.
@@ -934,10 +970,7 @@ impl Settings {
                 .iter()
                 .filter(|setting| setting.group == group && setting.shown())
             {
-                if !(query.is_empty()
-                    || setting.name.to_lowercase().contains(&query)
-                    || setting.key.contains(&query))
-                {
+                if !narrowed_to(setting, &query) {
                     continue;
                 }
                 rows.push(Shown::Obelus {
@@ -1318,11 +1351,15 @@ impl Settings {
             }
             // On the keys page, enter is the reader saying "the next key I
             // press is this command's".
-            KeyCode::Enter if bare && self.on_keys() => {
-                self.binding = keys.get(self.window.focus()).map(|(command, _)| *command);
-                self.refused = None;
-                SettingsOutcome::Consumed
-            }
+            KeyCode::Enter if bare && self.on_keys() => match keys.get(self.window.focus()) {
+                Some((KeyRow::Setting(setting), _)) => Self::change(setting, config),
+                Some((KeyRow::Command(command), _)) => {
+                    self.binding = Some(*command);
+                    self.refused = None;
+                    SettingsOutcome::Consumed
+                }
+                None => SettingsOutcome::Consumed,
+            },
             // A row of the remote page asks for what it is about, and the
             // application does it.
             KeyCode::Enter if bare && self.on_remote() => match rows.get(self.window.focus()) {
@@ -1351,33 +1388,7 @@ impl Settings {
             }
             KeyCode::Enter if bare => {
                 match rows.get(self.window.focus()).and_then(Shown::setting) {
-                    Some(setting) => match setting.kind {
-                        Kind::Switch => {
-                            let on = matches!(Self::value_of(setting, config), Value::Switch(true));
-                            SettingsOutcome::Changed(setting.key, Value::Switch(!on))
-                        }
-                        // Both open the same short list. A number is picked
-                        // from one the way a word is, and the only difference
-                        // is what it is written down as.
-                        Kind::Choice(choices) | Kind::Count(choices) => {
-                            let word = match Self::value_of(setting, config) {
-                                Value::Choice(word) => word,
-                                Value::Count(count) => count.to_string(),
-                                Value::Switch(_) | Value::Names(_) | Value::Text(_) => {
-                                    String::new()
-                                }
-                            };
-                            SettingsOutcome::Choose(setting.key, choices, word)
-                        }
-                        // A list the reader builds rather than one Obelus
-                        // offers, so what opens is not the short list of
-                        // choices but the thing that adds and orders.
-                        Kind::Names => SettingsOutcome::Names(setting.key),
-                        Kind::Text => match Self::value_of(setting, config) {
-                            Value::Text(said) => SettingsOutcome::Type(setting.key, said),
-                            _ => SettingsOutcome::Type(setting.key, String::new()),
-                        },
-                    },
+                    Some(setting) => Self::change(setting, config),
                     None => SettingsOutcome::Consumed,
                 }
             }
@@ -1453,6 +1464,36 @@ impl Settings {
         }
     }
 
+    /// What enter on one of Obelus's own settings asks for, whichever page
+    /// the row is on.
+    fn change(setting: &'static Setting, config: &Config) -> SettingsOutcome {
+        match setting.kind {
+            Kind::Switch => {
+                let on = matches!(Self::value_of(setting, config), Value::Switch(true));
+                SettingsOutcome::Changed(setting.key, Value::Switch(!on))
+            }
+            // Both open the same short list. A number is picked
+            // from one the way a word is, and the only difference
+            // is what it is written down as.
+            Kind::Choice(choices) | Kind::Count(choices) => {
+                let word = match Self::value_of(setting, config) {
+                    Value::Choice(word) => word,
+                    Value::Count(count) => count.to_string(),
+                    Value::Switch(_) | Value::Names(_) | Value::Text(_) => String::new(),
+                };
+                SettingsOutcome::Choose(setting.key, choices, word)
+            }
+            // A list the reader builds rather than one Obelus
+            // offers, so what opens is not the short list of
+            // choices but the thing that adds and orders.
+            Kind::Names => SettingsOutcome::Names(setting.key),
+            Kind::Text => match Self::value_of(setting, config) {
+                Value::Text(said) => SettingsOutcome::Type(setting.key, said),
+                _ => SettingsOutcome::Type(setting.key, String::new()),
+            },
+        }
+    }
+
     /// Moves to the next tab, or the previous one, wrapping.
     fn step_tab(&mut self, forward: bool, offering: Option<&Offering>) {
         // Every tab, not every group: the agents are a tab and not a group,
@@ -1504,7 +1545,21 @@ impl Settings {
     pub fn settle_rows(&mut self, room: (u16, u16), offering: Option<&Offering>) {
         let heights: Vec<u16> = match self.on_keys() {
             // A key is a name and a chord: one row, the way it always was.
-            true => vec![1; self.row_count(offering)],
+            // The layout above them is a setting, and as tall as one.
+            true => self
+                .key_rows()
+                .into_iter()
+                .map(|row| match row {
+                    KeyRow::Setting(setting) => self.setting_rows(
+                        &Shown::Obelus {
+                            setting,
+                            opens: None,
+                        },
+                        description_width(room.0),
+                    ),
+                    KeyRow::Command(_) => 1,
+                })
+                .collect(),
             false => self
                 .rows(offering)
                 .iter()

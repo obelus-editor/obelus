@@ -6,8 +6,10 @@
 //! `ctrl+w` to close it as anything is closed, leaving Obelus, and the
 //! function keys -- and writes everything else down the pty, escape and
 //! `ctrl+c` included, because those are a shell's before they are
-//! anybody's. Once the program has ended there is nothing to type to, and
-//! the keys go back to Obelus.
+//! anybody's. So the mnemonic layout's keys for the views go to the program
+//! here, where the function keys they stand in for do not: every one of
+//! them is a chord a shell already has. Once the program has ended there is
+//! nothing to type to, and the keys go back to Obelus.
 //!
 //! **The pointer is the program's where it asked for it, and the reader's
 //! otherwise.** A program that asked to hear the pointer -- an editor, a

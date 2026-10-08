@@ -7,7 +7,8 @@
 
 use obelus_agent::Listed;
 use obelus_component::settings::{
-    DESCRIPTION_INDENT, GROUP_INDENT, HEADING_ROWS, Offering, Refused, RemoteRow, Settings, Shown,
+    DESCRIPTION_INDENT, GROUP_INDENT, HEADING_ROWS, KeyRow, Offering, Refused, RemoteRow, Settings,
+    Shown,
 };
 use obelus_config::{Config, Kind, Value};
 use obelus_text::text_width;
@@ -80,11 +81,9 @@ pub struct SettingsView<'a> {
     failure: Option<&'a str>,
     /// The agents' own marks, for a terminal that can draw one.
     images: &'a crate::image::Images,
-    /// Every command and the key it is on, for the keys page.
-    keys: Vec<(
-        obelus_command::Command,
-        Option<obelus_editing::keymap::KeyChord>,
-    )>,
+    /// Every command and the key it is on, for the keys page -- under the
+    /// layout they start from.
+    keys: Vec<(KeyRow, Option<obelus_editing::keymap::KeyChord>)>,
     /// What the active agent offers to be set, and what the reader has
     /// said about each. `None` where no agent is active.
     offering: Option<Offering>,
@@ -224,9 +223,9 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
         },
         _ => (
             "Change",
-            match settings.on_keys() {
-                true => "Put this command on another key",
-                false => "Change it, or open what it can be",
+            match settings.key_rows().get(settings.focus()) {
+                Some(KeyRow::Command(_)) => "Put this command on another key",
+                Some(KeyRow::Setting(_)) | None => "Change it, or open what it can be",
             },
         ),
     };
@@ -308,10 +307,7 @@ pub fn rows_region(area: Rect, settings: &Settings, offering: Option<&Offering>)
 /// a walk written twice is two answers about where a row is. The drawing
 /// goes down this and so does the pointer.
 ///
-/// `one_row_each` is the keys page, which is a table rather than a column
-/// of entries: a key is a name, what it does and the chord it is on, all
-/// on the one row, and there is no gloss under it for a blank to keep off
-/// the next name.
+/// A row of the keys page's table is the exception -- see [`Row::entry`].
 /// How many rows of the screen one entry takes: the heading it opens
 /// where it opens one, its name, the rows its description takes, and the
 /// blank that keeps the next name off it.
@@ -321,9 +317,9 @@ pub fn rows_region(area: Rect, settings: &Settings, offering: Option<&Offering>)
 /// to is how many rows are above the first entry showing rather than
 /// which entry that is, and the two are not the same number. A front end
 /// told the second slides a band one row while the cells moved four.
-fn entry_rows(row: &Row, one_row_each: bool) -> u16 {
+fn entry_rows(row: &Row) -> u16 {
     let heading = row.opens.as_ref().map_or(0, Heading::rows);
-    heading + own_rows(row) + u16::from(!one_row_each)
+    heading + own_rows(row) + u16::from(row.entry)
 }
 
 /// And how many of those are the entry's own: its name, where it has one,
@@ -337,19 +333,14 @@ fn own_rows(row: &Row) -> u16 {
 }
 
 /// How many rows of the screen are above the first entry a page shows.
-fn rows_above(rows: &[Row], first: usize, one_row_each: bool) -> usize {
+fn rows_above(rows: &[Row], first: usize) -> usize {
     rows.iter()
         .take(first)
-        .map(|row| usize::from(entry_rows(row, one_row_each)))
+        .map(|row| usize::from(entry_rows(row)))
         .sum()
 }
 
-fn placed(
-    region: Rect,
-    rows: &[Row],
-    window: &obelus_component::window::Window,
-    one_row_each: bool,
-) -> Vec<Placed> {
+fn placed(region: Rect, rows: &[Row], window: &obelus_component::window::Window) -> Vec<Placed> {
     let mut placed = Vec::new();
     let mut y = region.y;
     for (at, row) in rows
@@ -381,14 +372,14 @@ fn placed(
                 ..region
             },
         });
-        // And the blank under it, whatever it says, wherever the rows are
-        // entries: the blank is what makes an entry an entry, and a setting
+        // And the blank under it, whatever it says, wherever the row is an
+        // entry: the blank is what makes an entry an entry, and a setting
         // whose name is the whole of it has no gloss to keep it off the
-        // next name. Asked of the page rather than of the row -- a row with
-        // an empty gloss and a row of a table look the same from here, and
-        // `Settings::setting_rows`, which the window is settled by, counts
-        // the blank for the first and is not asked about the second.
-        y += tall + u16::from(!one_row_each);
+        // next name. Said on the row rather than read off its gloss -- a row
+        // with an empty gloss and a row of a table look the same from here,
+        // and `Settings::setting_rows`, which the window is settled by,
+        // counts the blank for the first and is not asked about the second.
+        y += tall + u16::from(row.entry);
     }
     placed
 }
@@ -414,7 +405,7 @@ impl SettingsView<'_> {
         }
         let rows = self.rows(region);
         let window = self.settings.window();
-        let found = placed(region, &rows, window, self.settings.on_keys())
+        let found = placed(region, &rows, window)
             .into_iter()
             .find(|placed| y >= placed.area.y && y < placed.area.y + placed.area.height)?;
         let room = match window.scrollable(region.height) {
@@ -513,16 +504,30 @@ impl Widget for SettingsView<'_> {
             let rows: Vec<Row> = self
                 .keys
                 .iter()
-                .map(|(command, chord)| Row {
-                    opens: None,
-                    label: command.name().to_string(),
-                    matched: self.settings.matched_in(command.name()),
-                    detail: self.saying(*command),
-                    aside: Aside::Words(chord.map(|chord| chord.label()).unwrap_or_default()),
-                    body: Vec::new(),
-                    warning: Vec::new(),
-                    pinned: None,
-                    scope: None,
+                .map(|(row, chord)| match row {
+                    // The entry the settings page would draw for it, gloss
+                    // and blank and all: it is a setting, and drawn as one
+                    // more row of the table under it, it read as a command
+                    // called `Layout`.
+                    KeyRow::Setting(setting) => self.row(
+                        &Shown::Obelus {
+                            setting,
+                            opens: None,
+                        },
+                        obelus_component::settings::description_width(region.width),
+                    ),
+                    KeyRow::Command(command) => Row {
+                        opens: None,
+                        label: command.name().to_string(),
+                        matched: self.settings.matched_in(command.name()),
+                        detail: self.saying(*command),
+                        aside: Aside::Words(chord.map(|chord| chord.label()).unwrap_or_default()),
+                        body: Vec::new(),
+                        entry: false,
+                        warning: Vec::new(),
+                        pinned: None,
+                        scope: None,
+                    },
                 })
                 .collect();
             self.column(cells, region, &rows, "No command by that name");
@@ -602,6 +607,7 @@ impl SettingsView<'_> {
                 // explain.
                 body: self.settings.wrapped(setting.about, width),
                 warning: Vec::new(),
+                entry: true,
                 aside: Aside::Control(setting.kind, self.value_of(setting)),
                 // On the reader's page, the file that has this one
                 // instead of them. On the project's, nothing: a setting
@@ -645,6 +651,7 @@ impl SettingsView<'_> {
                         .settings
                         .wrapped(offer.about.as_deref().unwrap_or_default(), width),
                     warning: Vec::new(),
+                    entry: true,
                     aside: Aside::Chosen(word, said),
                     // Neither column is this group's: what an agent
                     // starts on is the reader's alone, so no project can
@@ -660,6 +667,7 @@ impl SettingsView<'_> {
                 detail: None,
                 body: self.settings.wrapped(shown.about(), width),
                 warning: Vec::new(),
+                entry: true,
                 aside: self.remote_aside(*row),
                 // The reader's alone, the whole page: there is no project
                 // that could have taken a row of it, and no layer to name.
@@ -673,6 +681,7 @@ impl SettingsView<'_> {
                 detail: None,
                 body: self.settings.wrapped(saying, width),
                 warning: Vec::new(),
+                entry: true,
                 aside: Aside::Nothing,
                 pinned: None,
                 scope: None,
@@ -695,8 +704,15 @@ struct Row {
     detail: Option<(String, ratatui::style::Color)>,
     aside: Aside,
     /// What it does, under the name and indented, already broken into the
-    /// rows it takes. Empty on a page whose rows are one row each.
+    /// rows it takes. Empty on a row of the keys page's table.
     body: Vec<String>,
+    /// Whether it is an entry, with a blank under it, or a row of a table.
+    ///
+    /// The row's and not the page's, because the keys page is both: the
+    /// layout is a setting, with its gloss under it and the blank keeping
+    /// it off the commands, and a command is a name, what it does and its
+    /// chord on the one row, with no gloss for a blank to keep off the next.
+    entry: bool,
     /// What is wrong with what it is set to, under what it does and in the
     /// colour of something that will not work, broken into its rows --
     /// see `Shown::warning`. Empty where nothing is.
@@ -855,7 +871,7 @@ impl SettingsView<'_> {
         // see `entry_rows`. The bar above is the other question and takes
         // the entry, because what it says is a proportion.
         let first = window.top().min(rows.len());
-        if let Ok(top) = i64::try_from(rows_above(rows, first, self.settings.on_keys())) {
+        if let Ok(top) = i64::try_from(rows_above(rows, first)) {
             crate::shapes::scrolled(
                 Rect {
                     width: region.width.saturating_sub(crate::editor::SCROLLBAR_WIDTH),
@@ -895,7 +911,7 @@ impl SettingsView<'_> {
         // row it looks like it landed on: the drawing going one way and the
         // pointing going the other down two copies of this would be two
         // answers about where a row is.
-        for at in placed(region, rows, window, self.settings.on_keys()) {
+        for at in placed(region, rows, window) {
             let (index, row) = (at.at, &rows[at.at]);
             let y = at.area.y;
             let focused = self.in_front && index == self.settings.focus();
@@ -1780,6 +1796,7 @@ mod tests {
             aside: Aside::Nothing,
             body: vec!["what it does".to_string(); about],
             warning: Vec::new(),
+            entry: true,
             scope: None,
             pinned: None,
         }
@@ -1821,17 +1838,17 @@ mod tests {
 
         // Each entry is drawn where the number says it is, heading and
         // all -- which is the whole of what the number means.
-        for at in placed(region, &rows, &window, false) {
+        for at in placed(region, &rows, &window) {
             let heading = usize::from(rows[at.at].opens.as_ref().map_or(0, Heading::rows));
             assert_eq!(
                 usize::from(at.area.y - region.y),
-                rows_above(&rows, at.at, false) + heading,
+                rows_above(&rows, at.at) + heading,
                 "entry {}",
                 at.at
             );
         }
         // And the number is not the entry, which is the mistake it is
         // here to stop: every entry on this page is three rows or more.
-        assert_ne!(rows_above(&rows, 2, false), 2);
+        assert_ne!(rows_above(&rows, 2), 2);
     }
 }

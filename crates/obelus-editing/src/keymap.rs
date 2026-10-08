@@ -50,6 +50,10 @@
 //! row there is the page's own filter, and a passing note would be cleared by
 //! the very next keystroke.
 //!
+//! Which table the changes are laid over is a setting of its own,
+//! `keys_from`, on the same page: the function keys ([`Layout::Classic`]),
+//! or the same commands on control and alt ([`Layout::Mnemonic`]).
+//!
 //! Modifiers are judged exactly, in one place. `keymap::modifiers_of` is the
 //! only judge; `SUPER`/`HYPER`/`META` disqualify a key rather than being masked
 //! away. Masking meant `ctrl+super+q` quit.
@@ -373,6 +377,85 @@ pub struct Keymap {
     bindings: Vec<Binding>,
 }
 
+/// Where the keys that open something to look at are.
+///
+/// The function keys are a row some keyboards do not have and some laptops
+/// put behind `fn`, so a reader can start from a table with none: the same
+/// twelve commands on control and alt, by the letter of the word. A choice
+/// of where to *start*, and nothing more -- the reader's own `[keys]` are
+/// laid over whichever it is, the way they are laid over the shipped table.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Layout {
+    /// The function keys, in their banks of four.
+    #[default]
+    Classic,
+    /// Control and alt, on the letter of the word.
+    Mnemonic,
+}
+
+impl Layout {
+    /// Every layout, in the order a list offers them.
+    pub const ALL: [Self; 2] = [Self::Classic, Self::Mnemonic];
+
+    /// What it is called in the settings file.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Classic => "classic",
+            Self::Mnemonic => "mnemonic",
+        }
+    }
+
+    /// The layout the file's word names, if one does.
+    #[must_use]
+    pub fn named(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|layout| layout.name() == name)
+    }
+}
+
+/// Where [`Layout::Mnemonic`] puts what the function keys hold.
+///
+/// Control where a letter of the word was free -- `o` open, `e` the editor
+/// list JetBrains has there, `g` git, `n` the conversation a new one starts
+/// in, `f` find -- and alt for the rest, because control has no more letters
+/// that every terminal sends as themselves. `alt+.` for a definition is
+/// Emacs's, and `alt+b` blame. In a terminal these are the shell's: unlike
+/// a function key, every one of them already means something there.
+///
+/// Not `alt+i` and `alt+o` for the symbols and the outline, which were the
+/// first letters to hand: a view that names one of these swaps to it from
+/// another, and the list of files keeps `alt+i` for its ignored files and
+/// the notes `alt+o` for going where a note points -- so from there they
+/// would have been a switch rather than a way out. `y` and `u` are the
+/// next letters of the two words that nothing has.
+const MNEMONIC: [(Command, KeyChord); 12] = [
+    (Command::FileOpen, mnemonic('o', KeyModifiers::CONTROL)),
+    (Command::DocumentList, mnemonic('e', KeyModifiers::CONTROL)),
+    (Command::FileChanged, mnemonic('g', KeyModifiers::CONTROL)),
+    (
+        Command::ConversationSelect,
+        mnemonic('n', KeyModifiers::CONTROL),
+    ),
+    (Command::SearchFile, mnemonic('f', KeyModifiers::CONTROL)),
+    (Command::SearchProject, mnemonic('/', KeyModifiers::ALT)),
+    (Command::SymbolOutline, mnemonic('u', KeyModifiers::ALT)),
+    (Command::SearchSymbols, mnemonic('y', KeyModifiers::ALT)),
+    (Command::HistoryFile, mnemonic('l', KeyModifiers::ALT)),
+    (Command::HistoryProject, mnemonic('g', KeyModifiers::ALT)),
+    (Command::HistoryLine, mnemonic('b', KeyModifiers::ALT)),
+    (Command::SymbolDefinition, mnemonic('.', KeyModifiers::ALT)),
+];
+
+/// A chord of [`MNEMONIC`]'s, built where a `const` can be: every one of
+/// them is a lowercase letter or a mark, which `KeyChord::new` would leave
+/// as it is anyway.
+const fn mnemonic(character: char, modifiers: KeyModifiers) -> KeyChord {
+    KeyChord {
+        code: KeyCode::Char(character),
+        modifiers,
+    }
+}
+
 impl Keymap {
     /// The bindings Obelus ships with.
     ///
@@ -396,10 +479,11 @@ impl Keymap {
     /// this whole program is for. Each is argued where it is bound.
     ///
     /// **Control does something to the file in front of you**, on the
-    /// letter of the word: `p` the palette, `w` close, `r` re-read, `t`
-    /// toggle the reading its format has, `l` a line number, `a` all of it,
-    /// `c` copy, `q` leave. `ctrl+v` was left alone until there was a paste
-    /// to give it, and that is the one chord every reader will try there.
+    /// letter of the word: `p` the palette, `w` close, `r` re-read, `d`
+    /// display it the way its format reads, `t` the notes, `l` a line
+    /// number, `a` all of it, `c` copy, `q` leave. `ctrl+v` was left alone
+    /// until there was a paste to give it, and that is the one chord every
+    /// reader will try there.
     ///
     /// **Alt asks about the cursor, or walks what was found**: `alt+enter`
     /// the symbol under it, `alt+d` its diff, `alt+f` the run of lines it is
@@ -532,29 +616,21 @@ impl Keymap {
                 // `alt+t` for todo, on the letter of the word like the rest
                 // of the alt family, and asking the question alt asks: a
                 // note is about the line under the cursor.
-                //
-                // Writing one down has a key and reading them back does
-                // not: the banks are full. `todo` is in the palette, and
-                // the keys page is where a reader who opens it often puts
-                // it on a key of their own.
                 Binding {
                     command: Command::TodoAdd,
                     context: Context::Normal,
                     chord: KeyChord::new(KeyCode::Char('t'), KeyModifiers::ALT),
                 },
-                // The same key in a conversation, meaning the same thing a
-                // level up: "the note about what I am looking at". In a
-                // file that is one to write; here it is the one this came
-                // out of, and the list opens standing on it.
-                //
-                // Which is also the only way back, and was worth a key on
-                // its own account: `TodoOpen` has been in the palette and
-                // on nothing since it was written, so the round trip had an
-                // outward leg and no return.
+                // And `ctrl+t` for the notes themselves, from a file or from
+                // a conversation -- which falls back to this table, and
+                // from one about a note the list opens standing on it. It
+                // was `alt+t` there and nothing in a file, so one key named
+                // two commands and the palette offered `todo` on a key that
+                // did something else wherever the palette had been opened.
                 Binding {
                     command: Command::TodoOpen,
-                    context: Context::Chat,
-                    chord: KeyChord::new(KeyCode::Char('t'), KeyModifiers::ALT),
+                    context: Context::Normal,
+                    chord: control('t'),
                 },
                 // Control, on the letter of the word. `ctrl+p` for the
                 // palette; `ctrl+w` is "close this" in every browser and
@@ -646,17 +722,18 @@ impl Keymap {
                     context: Context::Normal,
                     chord: control('r'),
                 },
-                // `ctrl+t` for toggle, which is what the command is
-                // called. It sat in the third bank of function keys until
-                // that bank was given to git, and it belongs here anyway:
-                // control does something to the file in front of the
-                // reader, and a reading of the file is that rather than a
-                // thing opened to look at. Not `p`, which is the palette,
-                // and not `v`, which is the paste it was being kept for.
+                // `ctrl+d` for display: the file the way its format reads.
+                // It sat in the third bank of function keys until that bank
+                // was given to git, and on `ctrl+t` until the notes needed
+                // it, and it belongs to control anyway: control does
+                // something to the file in front of the reader, and a
+                // reading of the file is that rather than a thing opened to
+                // look at. Not `p`, which is the palette, and not `v`, which
+                // is the paste it was being kept for.
                 Binding {
                     command: Command::PreviewToggle,
                     context: Context::Normal,
-                    chord: control('t'),
+                    chord: control('d'),
                 },
                 // `ctrl+l` for a line. Free in a full-screen program: the
                 // shell's `ctrl+l` clears a screen Obelus is drawing.
@@ -995,6 +1072,23 @@ impl Keymap {
         }
     }
 
+    /// The bindings a layout starts from.
+    ///
+    /// [`Layout::Mnemonic`] is [`Self::new`] with the twelve function keys
+    /// moved onto letters and nothing else touched, so everything argued
+    /// over the shipped table holds for both -- control, alt and the
+    /// palette are the same keys in each.
+    #[must_use]
+    pub fn laid_out(layout: Layout) -> Self {
+        let mut keymap = Self::new();
+        if layout == Layout::Mnemonic {
+            for (command, chord) in MNEMONIC {
+                keymap.rebind(command, Some(chord));
+            }
+        }
+        keymap
+    }
+
     /// The command a key event runs in `context`, if any.
     ///
     /// The specific context wins over [`Context::Always`], so a view can
@@ -1135,9 +1229,22 @@ impl Keymap {
     /// nothing looks from the outside exactly like one that bound
     /// something -- and the file it is in is a file the reader can be
     /// shown.
+    ///
+    /// Laid over the layout the reader chose, and a line of theirs beats
+    /// it: a chord the file gives one command is taken off whatever the
+    /// layout put there. Otherwise switching layouts could put a layout's
+    /// key over one the reader had chosen, and the first binding in the
+    /// table is the one that fires.
+    ///
+    /// Taken off only where the reader's command is bound: a line putting a
+    /// file's command on `ctrl+p` is no reason for a terminal, where that
+    /// command cannot run, to lose its way to the palette.
     #[must_use]
-    pub fn with(bindings: &std::collections::BTreeMap<String, String>) -> (Self, Vec<Unbound>) {
-        let mut keymap = Self::new();
+    pub fn with(
+        layout: Layout,
+        bindings: &std::collections::BTreeMap<String, String>,
+    ) -> (Self, Vec<Unbound>) {
+        let mut keymap = Self::laid_out(layout);
         let mut unbound = Vec::new();
         let skipped = |name: &String, text: &String, why: Unbindable| Unbound {
             name: name.clone(),
@@ -1170,6 +1277,17 @@ impl Keymap {
                 continue;
             }
             keymap.rebind(command, Some(chord));
+            let contexts: Vec<Context> = keymap
+                .bindings
+                .iter()
+                .filter(|binding| binding.command == command)
+                .map(|binding| binding.context)
+                .collect();
+            keymap.bindings.retain(|binding| {
+                binding.chord != chord
+                    || binding.command == command
+                    || !contexts.contains(&binding.context)
+            });
         }
         (keymap, unbound)
     }
@@ -1392,7 +1510,7 @@ pub fn control(character: char) -> KeyChord {
 mod tests {
     use crossterm::event::{KeyCode, KeyModifiers};
 
-    use super::{Context, KeyChord, Keymap};
+    use super::{Context, KeyChord, Keymap, Layout};
 
     /// Every binding Obelus ships with is one a reader could have made.
     ///
@@ -1401,7 +1519,8 @@ mod tests {
     /// gives itself and refuses to the reader.
     #[test]
     fn every_default_binding_is_one_the_reader_could_make() {
-        for binding in Keymap::new().bindings() {
+        let tables = Layout::ALL.map(Keymap::laid_out);
+        for binding in tables.iter().flat_map(Keymap::bindings) {
             let chord = binding.chord;
             // Escape is the one key Obelus keeps and a reader cannot have:
             // the rule is about what may be *taken*, and what escape means
@@ -1530,7 +1649,7 @@ mod tests {
             );
         }
         assert_eq!(
-            keymap.command_on(super::control('t')),
+            keymap.command_on(super::control('d')),
             Some(obelus_command::Command::PreviewToggle)
         );
         // The third bank is git's for three of its four: the same subject
@@ -1555,6 +1674,108 @@ mod tests {
             keymap.command_on(KeyChord::new(KeyCode::F(12), KeyModifiers::NONE)),
             Some(obelus_command::Command::SymbolDefinition)
         );
+    }
+
+    /// The mnemonic layout has every command the function keys open, and
+    /// on keys of its own: none of them a function key, and none of them a
+    /// key something else is already on.
+    ///
+    /// Broken deliberately by putting `search-symbols` on `alt+u`, the key
+    /// the outline is on, and by not rebinding at all in `laid_out`.
+    #[test]
+    fn the_mnemonic_layout_moves_the_function_keys_onto_letters() {
+        let classic = Keymap::laid_out(Layout::Classic);
+        let mnemonic = Keymap::laid_out(Layout::Mnemonic);
+        for number in 1..=12 {
+            let function = KeyChord::new(KeyCode::F(number), KeyModifiers::NONE);
+            let command = classic.command_on(function).expect("a bank with a gap");
+            assert_eq!(
+                mnemonic.command_on(function),
+                None,
+                "f{number} is still bound"
+            );
+            let chord = mnemonic
+                .chord_for(command)
+                .unwrap_or_else(|| panic!("{} lost its key", command.name()));
+            assert_eq!(
+                mnemonic.command_on(chord),
+                Some(command),
+                "{} is on {}, which {} is on first",
+                command.name(),
+                chord.label_in(false),
+                mnemonic
+                    .command_on(chord)
+                    .map_or("nothing", |other| other.name()),
+            );
+        }
+        // And nothing else moved: every key the classic table has that is
+        // not a function key means the same in the mnemonic one, in the
+        // same context -- `ctrl+p` is bound in two of them.
+        for binding in classic.bindings() {
+            if matches!(binding.chord.code, KeyCode::F(_)) {
+                continue;
+            }
+            assert_eq!(
+                mnemonic.find(binding.chord, binding.context),
+                Some(binding.command),
+                "{} moved in {:?}",
+                binding.chord.label_in(false),
+                binding.context
+            );
+        }
+    }
+
+    /// A key the reader gave a command in their own file is that command's,
+    /// whatever the layout under it had put there.
+    ///
+    /// Broken deliberately by leaving the layout's binding where it was in
+    /// `Keymap::with`: `ctrl+e` still opens the list of what is open,
+    /// because that binding comes first.
+    #[test]
+    fn a_line_of_the_readers_beats_the_layout() {
+        let lines = [("choose-theme".to_string(), "ctrl+e".to_string())]
+            .into_iter()
+            .collect();
+        let (keymap, unbound) = Keymap::with(Layout::Mnemonic, &lines);
+        assert!(unbound.is_empty(), "{unbound:?}");
+        assert_eq!(
+            keymap.lookup(
+                &crossterm::event::KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL),
+                Context::Normal
+            ),
+            Some(obelus_command::Command::ThemeSelect)
+        );
+        assert_eq!(
+            keymap.chord_for(obelus_command::Command::DocumentList),
+            None
+        );
+    }
+
+    /// A line of the reader's takes its chord only where its own command is
+    /// bound, so what the chord means anywhere else stays.
+    ///
+    /// Broken deliberately by taking the chord off every other command in
+    /// every context, which is what `Keymap::with` first did: a terminal
+    /// lost its way to the palette to a command it cannot run.
+    #[test]
+    fn a_line_of_the_readers_takes_its_chord_only_where_it_is_bound() {
+        let lines = [("choose-theme".to_string(), "ctrl+p".to_string())]
+            .into_iter()
+            .collect();
+        let control_p = crossterm::event::KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL);
+        for layout in Layout::ALL {
+            let (keymap, _) = Keymap::with(layout, &lines);
+            assert_eq!(
+                keymap.lookup(&control_p, Context::Normal),
+                Some(obelus_command::Command::ThemeSelect),
+                "{layout:?}"
+            );
+            assert_eq!(
+                keymap.lookup(&control_p, Context::Terminal),
+                Some(obelus_command::Command::CommandPalette),
+                "{layout:?}"
+            );
+        }
     }
 
     /// The context every command with no default binding would land in.
