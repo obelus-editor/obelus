@@ -2261,6 +2261,51 @@ mod tests {
         );
     }
 
+    /// A long name for the conversation is cut where the branch begins, and
+    /// the branch is whole at the end of the row.
+    ///
+    /// Broken deliberately: leave the branch out of the room the name gets,
+    /// and the name runs to the edge and puts the branch off the row.
+    #[test]
+    fn a_long_name_gives_way_to_the_branch() {
+        let _held = crate::glyphs_held();
+        obelus_icons::use_glyphs(false);
+        let chat = obelus_component::chat::Chat::new();
+        let branch = obelus_git::Head::Branch("feature".to_string());
+        let area = ratatui::layout::Rect::new(0, 0, 40, 1);
+        let view = super::ChatView {
+            chat: &chat,
+            theme: &obelus_theme::builtin::DARK,
+            state: obelus_agent::Talking::Ready,
+            name: Some("Fake Agent"),
+            title: Some("A conversation about a great many things at once".to_string()),
+            settings: &[],
+            focus: obelus_component::chat::Focus::Writing,
+            card: None,
+            in_front: true,
+            pointer: None,
+            root: std::path::Path::new("/"),
+            phase: 0,
+            branch: Some(&branch),
+            about_a_note: false,
+            note: None,
+            note_is_wrong: false,
+            usage: None,
+            tasks: None,
+            remote: None,
+        };
+        let mut cells = ratatui::buffer::Buffer::empty(area);
+        let plain = ratatui::style::Style::default();
+        view.header(&mut cells, area, plain, plain);
+        let row: String = (area.x..area.right())
+            .map(|x| cells[(x, area.y)].symbol().to_string())
+            .collect();
+        assert_eq!(
+            row, " Fake Agent  A conversation ab\u{2026}  feature",
+            "the name and the branch did not share the row"
+        );
+    }
+
     use std::path::{Path, PathBuf};
 
     use super::{Speaker, mark, said_place};
