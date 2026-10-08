@@ -20,24 +20,43 @@
 //! terminal draws Obelus in a window away. So the platform is asked, and
 //! `Family::Monospace` is only what is left when it says nothing.
 //!
-//! The other two platforms have one answer each and it does not change:
-//! macOS ships `Menlo` and Windows ships `Consolas`, and both are what
-//! their own terminals use. Neither is asked for at runtime, because
-//! neither has a `fc-match` to ask -- what they have is a setting inside
-//! whichever terminal the reader uses, which is not a thing about the
-//! machine.
+//! macOS has the same question with a different name: CoreText's
+//! user fixed-pitch face, which is the one the system itself sets code in.
+//! It is `Menlo` almost everywhere, and `Menlo` is what is left when the
+//! name it answers with is not one the font database has -- a face of the
+//! system's own goes by a name starting with a dot, which is a name nothing
+//! else can ask for.
+//!
+//! Windows has no such question: what it has is a setting inside whichever
+//! terminal the reader uses, which is not a thing about the machine. So it
+//! is the face its own terminal draws in where the machine has it installed
+//! -- `Cascadia Mono`; Windows Terminal carries a copy of its own, but inside
+//! its package, where no walk looks -- and `Consolas`, which every Windows
+//! has, where it has not.
+
+use cosmic_text::fontdb;
 
 /// What this machine draws monospaced text in, where it says.
 #[must_use]
-pub(crate) fn here() -> Option<String> {
-    let found = of_this_platform();
+pub(crate) fn here(db: &fontdb::Database) -> Option<String> {
+    let found = of_this_platform(db);
     tracing::info!(?found, "what this machine calls monospaced");
     found
 }
 
+/// Whether the font database has a family by this name.
+#[cfg(any(target_os = "macos", windows))]
+fn has(db: &fontdb::Database, name: &str) -> bool {
+    db.faces().any(|face| {
+        face.families
+            .iter()
+            .any(|(family, _)| family.eq_ignore_ascii_case(name))
+    })
+}
+
 /// Linux asks fontconfig, which is what every other program here does.
 #[cfg(all(unix, not(target_os = "macos")))]
-fn of_this_platform() -> Option<String> {
+fn of_this_platform(_: &fontdb::Database) -> Option<String> {
     let said = std::process::Command::new("fc-match")
         // The family alone, rather than the file and the style `fc-match`
         // prints by default: what is wanted is a name to look up, and the
@@ -50,16 +69,29 @@ fn of_this_platform() -> Option<String> {
     first_family(&said)
 }
 
-/// macOS has one, and it is what its own terminal uses.
+/// macOS asks CoreText, and is `Menlo` where the answer is no face here.
 #[cfg(target_os = "macos")]
-fn of_this_platform() -> Option<String> {
-    Some("Menlo".to_string())
+fn of_this_platform(db: &fontdb::Database) -> Option<String> {
+    use objc2_core_text::{CTFont, CTFontUIFontType};
+
+    // SAFETY: a size of nothing is the face's own size, and no language is
+    // the reader's own.
+    let said =
+        unsafe { CTFont::new_ui_font_for_language(CTFontUIFontType::UserFixedPitch, 0.0, None) }
+            // SAFETY: a font CoreText made always has a family.
+            .map(|font| unsafe { font.family_name() }.to_string())
+            .filter(|name| has(db, name));
+    Some(said.unwrap_or_else(|| "Menlo".to_string()))
 }
 
-/// So does Windows.
+/// Windows has its terminal's face where it has it, and `Consolas`.
 #[cfg(windows)]
-fn of_this_platform() -> Option<String> {
-    Some("Consolas".to_string())
+fn of_this_platform(db: &fontdb::Database) -> Option<String> {
+    let face = match has(db, "Cascadia Mono") {
+        true => "Cascadia Mono",
+        false => "Consolas",
+    };
+    Some(face.to_string())
 }
 
 /// The first of the names fontconfig answers with.

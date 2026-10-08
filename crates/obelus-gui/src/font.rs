@@ -60,7 +60,7 @@ use cosmic_text::{
 const SYMBOLS: &[u8] = include_bytes!("../fonts/SymbolsNerdFontMono-Regular.ttf");
 
 /// What the symbols face is called, once it is loaded.
-const SYMBOLS_FAMILY: &str = "Symbols Nerd Font Mono";
+pub(crate) const SYMBOLS_FAMILY: &str = "Symbols Nerd Font Mono";
 
 /// The selector that asks for the character before it to be drawn as a
 /// picture.
@@ -157,6 +157,35 @@ pub(crate) struct Fonts {
     /// That last one, kept so that changing the reader's list does not
     /// mean asking the platform again.
     otherwise: Option<String>,
+    /// What this machine falls back to after its monospaced face, in its
+    /// order -- see [`crate::cascade`]. Kept for the same reason.
+    cascade: Vec<String>,
+    /// The same, less what is already in `families`: what is tried once
+    /// neither those nor a picture face drew the character.
+    after: Vec<String>,
+    /// The faces CoreText draws rather than swash, and which of CoreText's
+    /// faces each is drawn in, plainly and in bold -- see
+    /// [`crate::coretext`]. Empty on every other platform.
+    by_coretext: HashMap<fontdb::ID, crate::coretext::Names>,
+    /// What CoreText drew of them, kept the way `pictures` keeps swash's.
+    drawn_by_coretext: HashMap<CacheKey, Option<SwashImage>>,
+    /// Every face by the families it goes by, in lower case: what `tried`
+    /// asks of every name in a list, for every character none of them had.
+    named: Named,
+}
+
+/// Every face by the families it goes by, in lower case.
+type Named = HashMap<String, Vec<fontdb::ID>>;
+
+/// The faces a character is asked of, and how to find them.
+#[derive(Clone, Copy)]
+struct Lists<'a> {
+    /// Every face by its families -- see [`Fonts::named`].
+    named: &'a Named,
+    /// The reader's, and the machine's monospaced one.
+    families: &'a [String],
+    /// What the machine falls back to after them.
+    after: &'a [String],
 }
 
 impl std::fmt::Debug for Fonts {
@@ -176,10 +205,17 @@ impl Fonts {
     /// whatever the window says the screen's scale is.
     pub(crate) fn new(size: f32) -> Self {
         let mut system = FontSystem::new();
+        let by_coretext = crate::faces::settle(system.db_mut());
         // Loaded into the same database the system's own faces are in, so
         // that asking for it by name is the ordinary path rather than a
         // second one.
         system.db_mut().load_font_data(SYMBOLS.to_vec());
+        // All three asked once the database is whole: each is kept to the
+        // faces it has.
+        let otherwise = crate::monospace::here(system.db());
+        let fallback = crate::coretext::Fallback::after(otherwise.as_deref());
+        let cascade = crate::cascade::here(system.db(), otherwise.as_deref(), &fallback);
+        let by_coretext = crate::coretext::names(system.db(), by_coretext, &fallback);
 
         let mut fonts = Self {
             system,
@@ -194,9 +230,27 @@ impl Fonts {
             },
             shaped: HashMap::new(),
             families: Vec::new(),
-            otherwise: crate::monospace::here(),
+            otherwise,
+            cascade,
+            after: Vec::new(),
+            by_coretext,
+            drawn_by_coretext: HashMap::new(),
+            named: HashMap::new(),
         };
+        for face in fonts.system.db().faces() {
+            for (family, _) in &face.families {
+                fonts
+                    .named
+                    .entry(family.to_lowercase())
+                    .or_default()
+                    .push(face.id);
+            }
+        }
+        for faces in fonts.named.values_mut() {
+            faces.dedup();
+        }
         fonts.families = chain(&[], fonts.otherwise.as_deref());
+        fonts.after = rest(&fonts.cascade, &fonts.families);
         fonts.measure();
         fonts.say_what_is_a_picture();
         fonts
@@ -212,6 +266,7 @@ impl Fonts {
         if self.families == wanted {
             return;
         }
+        self.after = rest(&self.cascade, &wanted);
         self.families = wanted;
         self.shaped.clear();
         self.measure();
@@ -386,14 +441,19 @@ impl Fonts {
             Size::Cell => self.cell.width,
             Size::Capped => self.cell.width * SMALLER,
         };
-        let families = &self.families;
+        let (families, after, named) = (&self.families, &self.after, &self.named);
         let shaped = self.shaped.entry(face).or_default();
         // Asked with the text borrowed and copied only on a miss. One flat
         // map keyed by the whole lot would have to own the string to ask
         // the question, which is an allocation per cell per frame -- and a
         // screenful is a few thousand cells that were all in the cache.
         if !shaped.contains_key(text) {
-            let placed = shape(system, metrics, width, families, text, face);
+            let lists = Lists {
+                named,
+                families,
+                after,
+            };
+            let placed = shape(system, metrics, width, lists, text, face);
             shaped.insert(text.to_string(), placed);
         }
         &shaped[text]
@@ -401,7 +461,14 @@ impl Fonts {
 
     /// The pixels of one glyph, or nothing where the face has none.
     pub(crate) fn picture(&mut self, key: CacheKey) -> Option<&SwashImage> {
-        self.pictures.get_image(&mut self.system, key).as_ref()
+        match self.by_coretext.get(&key.font_id) {
+            Some(names) => self
+                .drawn_by_coretext
+                .entry(key)
+                .or_insert_with(|| crate::coretext::draw(names.at(key.font_weight), key))
+                .as_ref(),
+            None => self.pictures.get_image(&mut self.system, key).as_ref(),
+        }
     }
 }
 
@@ -455,10 +522,15 @@ fn shape(
     system: &mut FontSystem,
     metrics: Metrics,
     width: f32,
-    families: &[String],
+    lists: Lists<'_>,
     text: &str,
     face: Face,
 ) -> Vec<Placed> {
+    let Lists {
+        named,
+        families,
+        after,
+    } = lists;
     // At least one: a cell that measures zero -- a combining mark on its
     // own, a zero-width space -- still has the cell it was written into.
     let columns = obelus_text::text_width(text).max(1);
@@ -504,29 +576,35 @@ fn shape(
         }
         false => families,
     };
-    let (placed, drawn, used) = match mark {
+    let found = match mark {
         true => {
             let (placed, drawn) = lay(system, metrics, text, &attrs);
-            (placed, drawn, None)
+            Some((placed, drawn, None))
         }
-        false => match tried(system, metrics, families, text, &attrs) {
+        false => tried(system, metrics, named, families, text, &attrs)
             // In none of the reader's faces: the faces that draw pictures
             // before the fallback chain, which is what every other program
             // on the machine does -- an input method's `❤` comes without a
             // selector, and everywhere else the reader puts one it is red.
             // Only where one of them has it, so a character they do not
-            // have still goes to the chain, and from the reader's attempt:
-            // the chain prefers a face like the one it was asked for, and
-            // asked for a picture face it puts Chinese in a proportional one.
-            (placed, drawn, None) if !text.contains(PICTURE) && !text.contains(WORDS) => {
-                match tried(system, metrics, &pictures(), text, &attrs) {
-                    found @ (_, _, Some(_)) => found,
-                    _ => (placed, drawn, None),
-                }
-            }
-            found => found,
-        },
+            // have still goes to the chain.
+            .or_else(|| match !text.contains(PICTURE) && !text.contains(WORDS) {
+                true => tried(system, metrics, named, &pictures(), text, &attrs),
+                false => None,
+            })
+            // Still in none of them: what this machine falls back to,
+            // before cosmic-text's own table of what it thinks the machine
+            // has.
+            .or_else(|| tried(system, metrics, named, after, text, &attrs))
+            .map(|(placed, drawn, used)| (placed, drawn, Some(used))),
     };
+    // In nothing anybody named: the chain, from the reader's attempt. The
+    // chain prefers a face like the one it was asked for, and asked for a
+    // picture face it puts Chinese in a proportional one.
+    let (placed, drawn, used) = found.unwrap_or_else(|| {
+        let (placed, drawn) = fallen(system, metrics, named, families, text, &attrs);
+        (placed, drawn, None)
+    });
     // Too wide for its cells, which happens where a fallback face is not a
     // monospaced one at all. Drawn again at the size that fits rather than
     // squeezed afterwards: a bitmap stretched sideways is a blurred letter,
@@ -585,7 +663,26 @@ fn chain(names: &[String], otherwise: Option<&str>) -> Vec<String> {
     chain
 }
 
-/// Lays the text out in the first of the reader's faces that draws it.
+/// What the machine falls back to, less what is tried before it: the
+/// reader's faces, and the faces that draw pictures.
+fn rest(cascade: &[String], families: &[String]) -> Vec<String> {
+    let before = |name: &String| {
+        families
+            .iter()
+            .map(String::as_str)
+            .chain(PICTURES)
+            .any(|family| family.eq_ignore_ascii_case(name))
+    };
+    cascade
+        .iter()
+        .filter(|name| !before(name))
+        .cloned()
+        .collect()
+}
+
+/// Lays the text out in the first of these faces that draws it, and says
+/// which -- the reader's, the faces that draw pictures, or what the machine
+/// falls back to.
 ///
 /// "Draws it" is asked of the answer rather than of the font database: a
 /// family that is installed but has no glyph for this character is a family
@@ -594,33 +691,32 @@ fn chain(names: &[String], otherwise: Option<&str>) -> Vec<String> {
 /// from is compared with the face that was asked for, and a substitution
 /// counts as a miss.
 ///
-/// Where none of them draws it -- or the reader has named none -- the last
-/// attempt stands, which is the machine's own answer and is what a reader
-/// who has said nothing gets.
-///
-/// And which of them drew it, where one did.
+/// A family none of whose faces has the first character is stepped over
+/// without laying anything out. That is a miss the character map can
+/// answer, and asking the layout instead costs a walk of every face on the
+/// machine each time: forty families on a Mac's list made a character
+/// nobody has twenty milliseconds the first time it was drawn.
 fn tried(
     system: &mut FontSystem,
     metrics: Metrics,
+    named: &Named,
     families: &[String],
     text: &str,
     attrs: &Attrs<'_>,
-) -> (Vec<Placed>, f32, Option<String>) {
-    let mut last = None;
+) -> Option<(Vec<Placed>, f32, String)> {
+    let first = text.chars().next()?;
     for family in families {
-        let wanted: Vec<fontdb::ID> = system
-            .db()
-            .faces()
-            .filter(|face| {
-                face.families
-                    .iter()
-                    .any(|(name, _)| name.eq_ignore_ascii_case(family))
-            })
-            .map(|face| face.id)
-            .collect();
-        if wanted.is_empty() {
-            // Not on this machine, which the list the reader built says
-            // about itself as well.
+        // Not on this machine, which the list the reader built says about
+        // itself as well.
+        let Some(wanted) = named.get(&family.to_lowercase()) else {
+            continue;
+        };
+        let has = wanted.iter().any(|id| {
+            system
+                .get_font(*id, Weight::NORMAL)
+                .is_some_and(|font| font.as_swash().charmap().map(first) != 0)
+        });
+        if !has {
             continue;
         }
         let asked = Attrs {
@@ -629,15 +725,40 @@ fn tried(
         };
         let (placed, drawn, faces) = laid(system, metrics, text, &asked);
         if !faces.is_empty() && faces.iter().all(|face| wanted.contains(face)) {
-            return (placed, drawn, Some(family.clone()));
+            return Some((placed, drawn, family.clone()));
         }
-        last = Some((placed, drawn));
     }
-    // Nothing of theirs drew it. Whatever the last attempt put there is
-    // still a drawing of this character, and where they named nothing at
-    // all there is no attempt to keep.
-    let (placed, drawn) = last.unwrap_or_else(|| lay(system, metrics, text, attrs));
-    (placed, drawn, None)
+    None
+}
+
+/// What is drawn where none of the faces anybody named draws the text: the
+/// last of the reader's that is on this machine, left to cosmic-text's
+/// fallback -- which is the machine's own answer, and is what a reader who
+/// has said nothing gets.
+fn fallen(
+    system: &mut FontSystem,
+    metrics: Metrics,
+    named: &Named,
+    families: &[String],
+    text: &str,
+    attrs: &Attrs<'_>,
+) -> (Vec<Placed>, f32) {
+    let last = families
+        .iter()
+        .rev()
+        .find(|family| named.contains_key(&family.to_lowercase()));
+    match last {
+        Some(family) => lay(
+            system,
+            metrics,
+            text,
+            &Attrs {
+                family: Family::Name(family),
+                ..attrs.clone()
+            },
+        ),
+        None => lay(system, metrics, text, attrs),
+    }
 }
 
 /// One laying out, and how wide it came out.
@@ -658,6 +779,8 @@ fn laid(
     text: &str,
     attrs: &Attrs<'_>,
 ) -> (Vec<Placed>, f32, Vec<fontdb::ID>) {
+    #[cfg(test)]
+    LAID.with(|laid| laid.set(laid.get() + 1));
     let mut buffer = Buffer::new(system, metrics);
     let mut shaping = buffer.borrow_with(system);
     shaping.set_size(None, None);
@@ -683,6 +806,13 @@ fn laid(
         }
     }
     (placed, drawn, faces)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How many times this thread has laid text out, which is what a
+    /// character nobody has costs.
+    static LAID: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// Whether this is one of the marks Obelus carries its own face for.
@@ -943,6 +1073,323 @@ mod tests {
             );
         }
     }
+
+    /// A character in none of the reader's faces, the machine's monospaced
+    /// one or a picture face is drawn in what this machine falls back to,
+    /// before cosmic-text's own guess at it.
+    ///
+    /// The fallback is made to differ from that guess: what the guess drew
+    /// `中` in is found first, and the fallback is set to some other face
+    /// this machine has that draws it, so the face it came out in says
+    /// which of the two answered. On a machine with one face for it there
+    /// is nothing to tell apart, and it says so.
+    ///
+    /// Deliberate break: leaving out the turn to `after` in `shape` draws
+    /// it in the guess's face.
+    #[test]
+    fn what_none_of_the_faces_has_is_asked_of_what_the_machine_falls_back_to() {
+        const HAN: &str = "\u{4e2d}";
+        let mut fonts = Fonts::new(16.0);
+        fonts.cascade.clear();
+        fonts.use_families(&[]);
+        fonts.after.clear();
+        let family_of = |fonts: &mut Fonts| {
+            let first = *fonts
+                .glyphs(HAN, false, false, Size::Cell)
+                .first()
+                .expect("it was laid out");
+            fonts
+                .system
+                .db()
+                .face(first.key.font_id)
+                .and_then(|face| face.families.first().map(|(name, _)| name.clone()))
+                .expect("the face it was laid out in")
+        };
+        let guessed = family_of(&mut fonts);
+        let faces: Vec<(fontdb::ID, String)> = fonts
+            .system
+            .db()
+            .faces()
+            // Upright and of an ordinary weight, which is what the line asks
+            // for: a family with neither, and nothing to vary, is one
+            // cosmic-text will not match the line to at all.
+            .filter(|face| face.weight == Weight::NORMAL && face.style == Style::Normal)
+            .filter_map(|face| Some((face.id, face.families.first()?.0.clone())))
+            .filter(|(_, name)| !name.eq_ignore_ascii_case(&guessed) && !name.starts_with('.'))
+            .collect();
+        let other = faces.into_iter().find_map(|(id, name)| {
+            let font = fonts.system.get_font(id, Weight::NORMAL)?;
+            (font.as_swash().charmap().map('\u{4e2d}') != 0).then_some(name)
+        });
+        let Some(other) = other else {
+            eprintln!("one face for {HAN} on this machine; nothing to tell apart");
+            return;
+        };
+        fonts.cascade = vec![other.clone()];
+        fonts.shaped.clear();
+        fonts.use_families(&["Nobody's Face".to_string()]);
+        assert_eq!(family_of(&mut fonts), other, "the guess said {guessed}");
+    }
+
+    /// A character in a face only CoreText can draw is drawn, by CoreText:
+    /// `中` in `PingFang SC`, which is the face macOS draws Chinese in.
+    ///
+    /// On a machine with no such face there is nothing to draw and it says
+    /// so.
+    ///
+    /// Deliberate break: `picture` asking swash whatever the face draws the
+    /// character as nothing, which is what a window did with every Chinese
+    /// character once `PingFang SC` was found.
+    #[test]
+    fn a_face_only_coretext_can_draw_is_drawn_by_coretext() {
+        let mut fonts = Fonts::new(32.0);
+        if fonts.by_coretext.is_empty() {
+            eprintln!("no face only CoreText draws on this machine; nothing to check");
+            return;
+        }
+        let key = fonts.glyphs("\u{4e2d}", false, false, Size::Cell)[0].key;
+        assert!(
+            fonts.by_coretext.contains_key(&key.font_id),
+            "{:?} drew it",
+            fonts
+                .system
+                .db()
+                .face(key.font_id)
+                .map(|face| face.families.clone())
+        );
+        let picture = fonts.picture(key).expect("it has pixels");
+        assert!(picture.data.iter().any(|coverage| *coverage > 0));
+    }
+
+    /// And the right way up, and on the line: `上` has its long stroke at
+    /// the foot, so the bottom of its picture is the inkiest, and its top is
+    /// above the baseline by most of the size it was drawn at.
+    ///
+    /// Deliberate breaks: reading the bitmap's rows from the bottom puts the
+    /// long stroke in the first rows; and counting `top` from the bitmap's
+    /// bottom edge rather than its top hangs the character below the line.
+    #[test]
+    fn what_coretext_draws_is_the_right_way_up_and_on_the_line() {
+        let mut fonts = Fonts::new(32.0);
+        let key = fonts.glyphs("\u{4e0a}", false, false, Size::Cell)[0].key;
+        if !fonts.by_coretext.contains_key(&key.font_id) {
+            eprintln!("this machine does not draw it with CoreText; nothing to check");
+            return;
+        }
+        let picture = fonts.picture(key).expect("it has pixels").clone();
+        let width = picture.placement.width as usize;
+        let rows = picture.placement.height as usize;
+        let ink = |row: usize| -> u32 {
+            picture.data[row * width..(row + 1) * width]
+                .iter()
+                .map(|coverage| u32::from(*coverage))
+                .sum()
+        };
+        let upper = (0..rows / 4).map(ink).max();
+        let lower = (rows * 3 / 4..rows).map(ink).max();
+        assert!(
+            lower > upper,
+            "the long stroke is at the top: {upper:?} above, {lower:?} below"
+        );
+        let top = picture.placement.top;
+        assert!(
+            (20..=34).contains(&top),
+            "drawn at 32, it stands {top} above the line"
+        );
+    }
+
+    /// Drawn in the face CoreText itself would draw after the monospaced
+    /// one, at the weight the text is: lighter than the one face of it the
+    /// font database knows, which for `PingFang SC` is Medium, and heavier
+    /// again in bold.
+    ///
+    /// Measured in ink, which is what the reader saw: Chinese beside Menlo
+    /// that read as bold. Through `picture`, which is what the window asks,
+    /// for a `中` laid out plainly and one laid out in bold.
+    ///
+    /// Deliberate breaks: drawing every weight in the face's own name puts
+    /// as much ink in the plain `中` as in the Medium one; drawing bold in
+    /// the plain name, in `Names::at`, puts no more in the bold; and so
+    /// does `picture` asking for the plain one whatever the key's weight.
+    #[test]
+    fn a_face_coretext_draws_is_drawn_at_the_weight_the_text_is() {
+        const HAN: &str = "\u{4e2d}";
+        let mut fonts = Fonts::new(32.0);
+        let plain = fonts.glyphs(HAN, false, false, Size::Cell)[0].key;
+        let bold = fonts.glyphs(HAN, true, false, Size::Cell)[0].key;
+        if !fonts.by_coretext.contains_key(&plain.font_id) {
+            eprintln!("this machine does not draw it with CoreText; nothing to check");
+            return;
+        }
+        assert!(fonts.by_coretext.contains_key(&bold.font_id));
+        let own = fonts
+            .system
+            .db()
+            .face(plain.font_id)
+            .expect("the face it was shaped in")
+            .post_script_name
+            .clone();
+        let ink = |picture: Option<&SwashImage>| -> u32 {
+            picture
+                .expect("it has pixels")
+                .data
+                .iter()
+                .map(|coverage| u32::from(*coverage))
+                .sum()
+        };
+        let medium = ink(crate::coretext::draw(&own, plain).as_ref());
+        let (plain, bold) = (ink(fonts.picture(plain)), ink(fonts.picture(bold)));
+        assert!(plain < medium, "plain {plain}, {own} {medium}");
+        assert!(bold > plain, "plain {plain}, bold {bold}");
+    }
+
+    /// Slanted in an italic line, the way swash slants the glyphs beside
+    /// it, where the face has no italic of its own: the middle stroke of a
+    /// `中` leans right, so the ink at the top of its picture is further
+    /// right than the ink at the bottom.
+    ///
+    /// Deliberate break: leaving the matrix the identity whatever the key's
+    /// flags draws it upright, its top and its bottom in one column.
+    #[test]
+    fn what_coretext_draws_in_an_italic_line_leans() {
+        const HAN: &str = "\u{4e2d}";
+        let mut fonts = Fonts::new(32.0);
+        let key = fonts.glyphs(HAN, false, true, Size::Cell)[0].key;
+        if !fonts.by_coretext.contains_key(&key.font_id) {
+            eprintln!("this machine does not draw it with CoreText; nothing to check");
+            return;
+        }
+        assert!(key.flags.contains(cosmic_text::CacheKeyFlags::FAKE_ITALIC));
+        let picture = fonts.picture(key).expect("it has pixels").clone();
+        let width = picture.placement.width as usize;
+        let rows = picture.placement.height as usize;
+        // Where the ink is across a band of rows, as a column.
+        #[expect(clippy::cast_precision_loss, reason = "a few thousand pixels")]
+        let middle = |band: std::ops::Range<usize>| -> f64 {
+            let (mut sum, mut ink) = (0.0, 0.0);
+            for row in band {
+                for (column, coverage) in picture.data[row * width..(row + 1) * width]
+                    .iter()
+                    .enumerate()
+                {
+                    sum += column as f64 * f64::from(*coverage);
+                    ink += f64::from(*coverage);
+                }
+            }
+            sum / ink
+        };
+        let (top, bottom) = (middle(0..rows / 4), middle(rows * 3 / 4..rows));
+        assert!(
+            top - bottom > 2.0,
+            "the top is at {top}, the bottom at {bottom}"
+        );
+    }
+
+    /// A character that is in none of the faces anybody named, and is in
+    /// some other face on the machine, is laid out once, by the fallback --
+    /// not once for each name in each list, every one of which cosmic-text
+    /// would answer by walking every face on the machine to substitute it.
+    ///
+    /// The machine's list is made five families that have not got `中`, and
+    /// the reader's a name nobody has, so every list is one with nothing in
+    /// it to find. On a machine with no face that has `中` there is nothing
+    /// to substitute, a miss costs the same either way, and it says so.
+    ///
+    /// Deliberate break: not asking the character map before laying out in
+    /// a family lays it out in the monospaced face and in each of the five.
+    #[test]
+    fn what_is_in_nothing_anybody_named_is_laid_out_once() {
+        const HAN: char = '\u{4e2d}';
+        let mut fonts = Fonts::new(16.0);
+        let has = |fonts: &mut Fonts, name: &str| {
+            let faces = fonts
+                .named
+                .get(&name.to_lowercase())
+                .cloned()
+                .unwrap_or_default();
+            faces.into_iter().any(|id| {
+                fonts
+                    .system
+                    .get_font(id, Weight::NORMAL)
+                    .is_some_and(|font| font.as_swash().charmap().map(HAN) != 0)
+            })
+        };
+        let names: Vec<String> = fonts.named.keys().cloned().collect();
+        if !names.iter().any(|name| has(&mut fonts, name)) {
+            eprintln!("no face has {HAN} on this machine; nothing to check");
+            return;
+        }
+        let lacking: Vec<String> = names
+            .into_iter()
+            .filter(|name| !name.starts_with('.') && !has(&mut fonts, name))
+            .take(5)
+            .collect();
+        fonts.cascade = lacking;
+        fonts.use_families(&["Nobody's Face".to_string()]);
+        assert!(
+            PICTURES.iter().all(|picture| !has(&mut fonts, picture)),
+            "a face that draws pictures has {HAN}"
+        );
+        LAID.with(|laid| laid.set(0));
+        let _ = fonts.glyphs(&HAN.to_string(), false, false, Size::Cell);
+        assert_eq!(LAID.with(std::cell::Cell::get), 1);
+    }
+
+    /// Every face CoreText has is one the reader can choose, which is the
+    /// whole of why it is asked: `PingFang SC` was the one missing.
+    ///
+    /// Asked of every file CoreText names, read by itself: each face in it
+    /// that fontdb reads and that swash or CoreText draws -- `PingFang SC`
+    /// is one CoreText draws, see [`crate::coretext`] -- less the system's
+    /// own, whose names start with a dot and are not names anybody can ask
+    /// for. A face a machine has that Obelus could never draw is not one it
+    /// owes the reader, so a machine with one does not fail this.
+    ///
+    /// Deliberate break: `settle` adding nothing leaves the faces fontdb's
+    /// walk does not visit out of the list.
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn every_face_coretext_has_can_be_chosen() {
+        use objc2_core_foundation::{CFArray, CFRetained, CFURL};
+
+        let fonts = Fonts::new(16.0);
+        let here: std::collections::HashSet<String> = fonts
+            .here()
+            .iter()
+            .map(|name| name.to_lowercase())
+            .collect();
+        // SAFETY: takes nothing, and hands back an array the caller owns.
+        let urls = unsafe { objc2_core_text::CTFontManagerCopyAvailableFontURLs() };
+        // SAFETY: an array of `CFURL`s is what it is documented to return.
+        let urls = unsafe { CFRetained::cast_unchecked::<CFArray<CFURL>>(urls) };
+        // Each file read by itself, and asked of the faces in it that Obelus
+        // could draw at all: one fontdb cannot read, or that nothing here
+        // draws, is a machine's face this test is not about.
+        let mut missing = std::collections::BTreeSet::new();
+        for url in &*urls {
+            let Some(path) = url.to_file_path() else {
+                continue;
+            };
+            let mut file = fontdb::Database::new();
+            if file.load_font_file(&path).is_err() {
+                continue;
+            }
+            for face in file.faces() {
+                let Some((family, _)) = face.families.first() else {
+                    continue;
+                };
+                let drawn = file.with_face_data(face.id, crate::faces::can_be_drawn) == Some(true)
+                    || crate::coretext::draws(&face.post_script_name);
+                if drawn && !family.starts_with('.') && !here.contains(&family.to_lowercase()) {
+                    missing.insert(family.clone());
+                }
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "CoreText has these and Obelus does not: {missing:?}"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -984,6 +1431,28 @@ mod chains {
         assert_eq!(
             chain(&["jetbrains mono".to_string()], Some("JetBrains Mono")),
             ["jetbrains mono"]
+        );
+    }
+
+    /// What is already tried is not fallen back to again, however it is
+    /// spelled, and the rest keep the machine's order.
+    ///
+    /// Deliberate breaks: returning the cascade whole tries `Menlo` a second
+    /// time for every character it has not got; leaving `PICTURES` out of
+    /// `before` tries `Apple Color Emoji` twice.
+    #[test]
+    fn what_is_tried_already_is_not_fallen_back_to() {
+        let cascade =
+            ["Menlo", "PingFang SC", "Apple Color Emoji", "Hiragino Sans"].map(String::from);
+        assert_eq!(
+            rest(&cascade, &["menlo".to_string()]),
+            ["PingFang SC", "Hiragino Sans"]
+        );
+        // A face that draws pictures is gone whatever the reader chose,
+        // because those are tried before it.
+        assert_eq!(
+            rest(&cascade, &[]),
+            ["Menlo", "PingFang SC", "Hiragino Sans"]
         );
     }
 

@@ -448,6 +448,9 @@ windows-sys = { version = "0.61.2", features = [
     # And the window's title bar, drawn in the page's colour: see
     # `obelus-gui`'s `title.rs`.
     "Win32_Graphics_Dwm",
+    # And which faces Windows links to the one code is drawn in, for the
+    # characters it has not got: see `obelus-gui`'s `cascade.rs`.
+    "Win32_System_Registry",
 ] }
 
 # The icon, into the executable's own resources. A build-dependency, and
@@ -456,6 +459,11 @@ windows-sys = { version = "0.61.2", features = [
 # resource in a PE, and there is nowhere else for Explorer or a taskbar to
 # read a program's icon from.
 winresource = "0.1.31"
+
+# Which language the reader reads, which on Windows decides which face Han is
+# drawn in: see `obelus-gui`'s `cascade.rs`. The crate cosmic-text asks the
+# same question with, so the two cannot answer it differently.
+sys-locale = "0.3.2"
 
 # macOS's pasteboard, for the same reason, and the window's title bar: how
 # tall the strip is that the system draws its title in -- see
@@ -472,6 +480,34 @@ objc2-foundation = { version = "0.3", features = [
     "NSData",
     "NSString",
     "NSURL",
+] }
+# And the fonts: which files the machine has, what it draws code in, and what
+# it falls back to after that, which only CoreText can say -- see
+# `obelus-gui`'s `faces.rs`, `monospace.rs` and `cascade.rs`. And the glyphs
+# of the faces only CoreText can draw, drawn by it: see `coretext.rs`.
+objc2-core-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "CFArray",
+    "CFCGTypes",
+    "CFLocale",
+    "CFString",
+    "CFURL",
+] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = [
+    "std",
+    "CGBitmapContext",
+    "CGColorSpace",
+    "CGContext",
+    "CGFont",
+    "CGImage",
+] }
+objc2-core-text = { version = "0.3", default-features = false, features = [
+    "std",
+    "CTFont",
+    "CTFontDescriptor",
+    "CTFontManager",
+    "CTFontTraits",
+    "objc2-core-graphics",
 ] }
 
 # Where a chat's tokens are kept: the system's own keyring, through the core

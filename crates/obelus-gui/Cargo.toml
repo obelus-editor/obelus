@@ -67,10 +67,16 @@ wayland-client.workspace = true
 wayland-protocols.workspace = true
 x11rb.workspace = true
 
-# How tall the title bar is, which only AppKit can say. See `title.rs`.
+# How tall the title bar is, which only AppKit can say. See `title.rs`. And
+# the fonts the machine has, draws code in and falls back to, which only
+# CoreText can say: see `faces.rs`, `monospace.rs` and `cascade.rs` -- and
+# the glyphs only CoreText can draw, in `coretext.rs`.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2.workspace = true
 objc2-app-kit.workspace = true
+objc2-core-foundation.workspace = true
+objc2-core-graphics.workspace = true
+objc2-core-text.workspace = true
 
 # For `GetCaretBlinkTime`: how fast a caret blinks is the one thing of the
 # three platforms that has an API rather than a setting to read -- see
@@ -78,6 +84,8 @@ objc2-app-kit.workspace = true
 # `title.rs`.
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true
+# Which language the reader reads: see `cascade.rs`.
+sys-locale.workspace = true
 
 # A build-dependency's `cfg` is the *host's*, which is the right question
 # here: this drives a program that only exists on Windows. See `build.rs`.
