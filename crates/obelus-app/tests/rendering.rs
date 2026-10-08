@@ -3000,8 +3000,8 @@ fn the_status_row_says_which_project() {
 ///
 /// Deliberate breaks: taking the selector arm out of `cells_of` puts the
 /// caret a column short of the `x`, which is drawn where it always was;
-/// and drawing the editor's glyphs with `put` rather than `put_before`
-/// leaves the heart's cell without its selector.
+/// and drawing the editor's glyphs a character at a time with `put` leaves
+/// the heart's cell without its selector.
 #[test]
 fn a_character_asked_to_be_a_picture_is_two_cells_with_its_selector_in_the_first() {
     let scratch = support::Scratch::new("a-picture-is-two-cells");
@@ -3032,6 +3032,52 @@ fn a_character_asked_to_be_a_picture_is_two_cells_with_its_selector_in_the_first
         support::cursor_line(&dump),
         format!("{},{y}", x + 3),
         "the caret after the line is not after the x"
+    );
+}
+
+/// A cluster of several pictures is one cell, as wide as the one picture it
+/// is drawn as.
+///
+/// A family joined by U+200D, a keycap and a flag: each is one picture two
+/// columns wide, and each was drawn a character at a time -- the family six
+/// columns of separate people, the keycap's enclosing mark a cell of its
+/// own, the flag two letters a window could not put together. All of a
+/// cluster goes in its first cell, the cell after it is its own, and the
+/// caret at the end of the line is where a terminal puts the next character.
+///
+/// Deliberate breaks: measuring a cluster as the sum of its characters puts
+/// the family in six cells and the caret four columns on; and writing only
+/// the first character of each cluster leaves the man without his family,
+/// the keycap without its frame and the flag half a flag.
+#[test]
+fn a_cluster_of_pictures_is_one_cell_two_wide() {
+    let family = "\u{1f468}\u{200d}\u{1f469}\u{200d}\u{1f467}";
+    let keycap = "1\u{fe0f}\u{20e3}";
+    let flag = "\u{1f1e8}\u{1f1f3}";
+    let scratch = support::Scratch::new("a-cluster-is-one-cell");
+    let path = scratch.write("pictures.txt", &format!("a{family}b{keycap}c{flag}d\n"));
+    let mut app = App::new(vec![
+        obelus_buffer::Buffer::open(&path).expect("opening the file"),
+    ]);
+    let cells = support::cells_of(&mut app, WIDTH, HEIGHT);
+    let (x, y) = (0..HEIGHT)
+        .flat_map(|y| (0..WIDTH).map(move |x| (x, y)))
+        .find(|at| cells[*at].symbol().starts_with('\u{1f468}'))
+        .expect("the family is on the screen");
+    assert_eq!(cells[(x - 1, y)].symbol(), "a");
+    let row: Vec<&str> = (x..x + 9).map(|at| cells[(at, y)].symbol()).collect();
+    assert_eq!(
+        row,
+        [family, "", "b", keycap, "", "c", flag, "", "d"],
+        "a cluster is not one cell two wide"
+    );
+
+    press(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert_eq!(
+        support::cursor_line(&dump),
+        format!("{},{y}", x + 9),
+        "the caret after the line is not after the d"
     );
 }
 

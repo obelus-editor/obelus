@@ -16,7 +16,7 @@ use ratatui::{
     style::{Modifier, Style},
 };
 
-use crate::{fill, put, put_before, scrollbar};
+use crate::{fill, put, put_cluster, scrollbar};
 
 /// Draws the reading, starting `top` rows in.
 ///
@@ -140,42 +140,35 @@ pub fn write_spans(
         stop,
         held,
     } = *drawn;
+    // The runs as one string, because a cluster is one cell and a run is a
+    // colour, and a colour can change between a heart and its selector
+    // without the two being two things. Each cluster is drawn in the
+    // colour of the run its first character is in.
+    let said: String = spans.iter().map(|span| span.text.as_ref()).collect();
+    let mut runs = spans.iter().scan(0usize, |end, span| {
+        *end += span.text.chars().count();
+        Some((*end, span))
+    });
+    let mut run = runs.next();
     let mut column = x;
-    let mut at = 0usize;
-    // A selector goes in the cell of the character before it -- see
-    // `put_before` -- and was written there, so its own turn is skipped.
-    let mut written = false;
-    for (index, span) in spans.iter().enumerate() {
-        let style = style_of(span.ink, span, theme, base);
-        let mut characters = span.text.chars().peekable();
-        while let Some(character) = characters.next() {
-            if std::mem::take(&mut written) {
-                at += 1;
-                continue;
-            }
-            if column >= stop {
-                return column;
-            }
-            // The character after, which may be the first of the next run:
-            // a run is a colour, and a colour can change between a heart
-            // and its selector without the two being two things.
-            let next = characters.peek().copied().or_else(|| {
-                spans[index + 1..]
-                    .iter()
-                    .find_map(|span| span.text.chars().next())
-            });
-            // What the reader has hold of, in the colour every list in
-            // Obelus marks a run of itself with: a ground under whatever
-            // colour the characters already carry, which is why the ink
-            // above is worked out first and only the ground is replaced.
-            let style = match held.is_some_and(|held| held.contains(&at)) {
-                true => style.bg(theme.selection_background),
-                false => style,
-            };
-            column = column.saturating_add(put_before(cells, column, y, character, next, style));
-            written = next.is_some_and(obelus_text::is_a_presentation);
-            at += 1;
+    for cluster in obelus_text::clusters(&said) {
+        if column >= stop {
+            return column;
         }
+        while run.is_some_and(|(end, _)| end <= cluster.first) {
+            run = runs.next();
+        }
+        let Some((_, span)) = run else { break };
+        let style = style_of(span.ink, span, theme, base);
+        // What the reader has hold of, in the colour every list in
+        // Obelus marks a run of itself with: a ground under whatever
+        // colour the characters already carry, which is why the ink
+        // above is worked out first and only the ground is replaced.
+        let style = match held.is_some_and(|held| held.contains(&cluster.first)) {
+            true => style.bg(theme.selection_background),
+            false => style,
+        };
+        column = column.saturating_add(put_cluster(cells, column, y, cluster.text, style));
     }
     column
 }
@@ -226,7 +219,7 @@ mod tests {
     /// runs change between them -- which is how a conversation is drawn, and
     /// the one row writer that wrote a character at a time.
     ///
-    /// Deliberate break: `put` in place of `put_before`, which writes the
+    /// Deliberate break: writing a character at a time, which writes the
     /// selector into a cell of its own and puts the `x` a cell further on.
     #[test]
     fn a_picture_and_its_selector_are_one_cell_of_two() {

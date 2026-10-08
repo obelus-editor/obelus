@@ -458,7 +458,7 @@ use obelus_component::{
     layers::Layer,
     picker::{Colouring, Picker},
 };
-use obelus_text::{is_a_presentation, text_width, widths};
+use obelus_text::{text_width, widths};
 use obelus_theme::Theme;
 use ratatui::{
     buffer::Buffer as CellBuffer,
@@ -1567,50 +1567,41 @@ pub fn fill(cells: &mut CellBuffer, area: Rect, style: Style) {
 /// does not advance over still advances this, or a caller stepping through a
 /// string would not terminate.
 pub fn put(cells: &mut CellBuffer, x: u16, y: u16, character: char, style: Style) -> u16 {
-    put_before(cells, x, y, character, None, style)
+    let mut one = [0u8; 4];
+    put_cluster(cells, x, y, character.encode_utf8(&mut one), style)
 }
 
-/// The same, knowing the character after it.
+/// The same, for a whole cluster.
 ///
-/// Which matters only where that is a selector saying how this one is
-/// drawn: the two are one cell -- a terminal draws `❤` and U+FE0F after it
-/// as one picture two columns wide -- so the selector goes in this cell
-/// with it, and the width is the pair's. Written into a cell of its own it
-/// is a cell the terminal does not advance over, and the rest of the row
-/// is a column out. Whoever walks a string with this skips the selector it
-/// was handed, which [`is_a_presentation`] says.
+/// A cluster is one cell however many characters it is made of -- a
+/// terminal draws `❤` and U+FE0F after it as one picture two columns wide,
+/// and a family joined by U+200D as one picture too -- so the whole of it
+/// goes in this cell and the width is the cluster's. The rest of it written
+/// into cells of its own is cells the terminal does not advance over, and the
+/// rest of the row a column out for each. Whoever walks a string with this
+/// walks [`obelus_text::clusters`].
 ///
 /// The width is `obelus-text`'s, which is the one the arithmetic used.
-pub fn put_before(
-    cells: &mut CellBuffer,
-    x: u16,
-    y: u16,
-    character: char,
-    next: Option<char>,
-    style: Style,
-) -> u16 {
-    let selector = next.filter(|next| is_a_presentation(*next));
+pub fn put_cluster(cells: &mut CellBuffer, x: u16, y: u16, cluster: &str, style: Style) -> u16 {
+    let mut characters = cluster.chars();
+    let first = characters.next().unwrap_or(' ');
+    let alone = characters.next().is_none();
     // `obelus-text`'s answer, which counts a picture the window draws two
     // cells wide -- except for the attachment's stand-in, whose eleven
     // columns are written by whoever puts the label there, one cell at a
     // time.
-    let width = match character {
-        obelus_text::ATTACHED => character.width().unwrap_or(0),
-        _ => obelus_text::cells_of(character, selector),
+    let width = match first {
+        obelus_text::ATTACHED if alone => first.width().unwrap_or(0),
+        _ => obelus_text::cluster_cells(cluster),
     };
     let width = u16::try_from(width).unwrap_or(0);
     if let Some(cell) = cells.cell_mut((x, y)) {
-        match selector {
-            Some(selector) => {
-                let mut both = [0u8; 8];
-                let base = shown(character).encode_utf8(&mut both).len();
-                let end = base + selector.encode_utf8(&mut both[base..]).len();
-                cell.set_symbol(std::str::from_utf8(&both[..end]).unwrap_or(" "));
-            }
-            None => {
-                cell.set_char(shown(character));
-            }
-        }
+        // A control character is a space whatever comes after it -- the
+        // one cluster that starts with one is a line ending.
+        match alone || first.is_control() {
+            true => cell.set_char(shown(first)),
+            false => cell.set_symbol(cluster),
+        };
         cell.set_style(style);
     }
     for extra in 1..width {
@@ -1654,11 +1645,8 @@ const fn shown(character: char) -> char {
 /// Writes a string, returning the column after it.
 pub fn write(cells: &mut CellBuffer, x: u16, y: u16, contents: &str, style: Style) -> u16 {
     let mut column = x;
-    let mut characters = contents.chars().peekable();
-    while let Some(character) = characters.next() {
-        let next = characters.peek().copied();
-        column = column.saturating_add(put_before(cells, column, y, character, next, style));
-        characters.next_if(|next| is_a_presentation(*next));
+    for cluster in obelus_text::clusters(contents) {
+        column = column.saturating_add(put_cluster(cells, column, y, cluster.text, style));
     }
     column
 }
@@ -1685,20 +1673,15 @@ pub fn write_within(
     stop: u16,
 ) -> u16 {
     let mut column = x;
-    let mut characters = contents.chars().peekable();
-    while let Some(character) = characters.next() {
-        let next = characters.peek().copied();
+    for cluster in obelus_text::clusters(contents) {
         // The width `put` will report, worked out before it is asked, so
         // the decision is made before the cell is written rather than
         // after.
-        let width = u16::try_from(obelus_text::cells_of(character, next))
-            .unwrap_or(0)
-            .max(1);
+        let width = u16::try_from(cluster.cells).unwrap_or(0).max(1);
         if column.saturating_add(width) > stop {
             break;
         }
-        column = column.saturating_add(put_before(cells, column, y, character, next, style));
-        characters.next_if(|next| is_a_presentation(*next));
+        column = column.saturating_add(put_cluster(cells, column, y, cluster.text, style));
     }
     column
 }
@@ -1813,12 +1796,20 @@ pub fn write_marked(
     marked: &Marked<'_>,
 ) -> u16 {
     let mut column = x;
-    let mut characters = contents.chars().enumerate().skip(marked.skip).peekable();
-    while let Some((index, character)) = characters.next() {
+    // A cluster the skip cut into is not drawn: its first character has
+    // gone, and what is left of it says how nothing is drawn.
+    for cluster in obelus_text::clusters(contents).skip_while(|cluster| cluster.first < marked.skip)
+    {
         if column >= area.right() {
             break;
         }
-        let index = u32::try_from(index).unwrap_or(u32::MAX);
+        // Coloured by its first character, and marked where any of it
+        // matched: it is one cell, and a match on the selector of a heart
+        // is a match on the heart.
+        let index = u32::try_from(cluster.first).unwrap_or(u32::MAX);
+        let matched = (index..)
+            .take(cluster.text.chars().count())
+            .any(|index| marked.matched.covers(index));
         // The row's own colours first, then the matched characters over the
         // top: a reader scanning the list is looking for why the row is
         // there, and only then at what it says.
@@ -1833,13 +1824,11 @@ pub fn write_marked(
             },
             None => style,
         };
-        let style = match marked.matched.covers(index) {
+        let style = match matched {
             true => style.bg(marked.mark),
             false => style,
         };
-        let next = characters.peek().map(|(_, next)| *next);
-        column = column.saturating_add(put_before(cells, column, y, character, next, style));
-        characters.next_if(|(_, next)| is_a_presentation(*next));
+        column = column.saturating_add(put_cluster(cells, column, y, cluster.text, style));
     }
     column
 }
@@ -2680,27 +2669,19 @@ pub fn drop_from_left(contents: &str, cells: usize) -> usize {
     }
 
     let budget = cells - 1;
-    let mut kept = 0usize;
+    // A cluster at a time: the rest of one whose first character did not
+    // fit goes with it, because on its own it says how nothing is drawn.
+    let mut first = total;
     let mut width = 0usize;
-    let measured: Vec<(char, usize)> = widths(contents).collect();
-    for (_, character_width) in measured.iter().rev() {
-        if width + character_width > budget {
+    let measured: Vec<obelus_text::Cluster<'_>> = obelus_text::clusters(contents).collect();
+    for cluster in measured.iter().rev() {
+        if width + cluster.cells > budget {
             break;
         }
-        width += character_width;
-        kept += 1;
+        width += cluster.cells;
+        first = cluster.first;
     }
-    // A selector whose character did not fit goes with it: on its own it
-    // says how nothing is drawn.
-    if measured
-        .len()
-        .checked_sub(kept)
-        .and_then(|first| measured.get(first))
-        .is_some_and(|(character, _)| is_a_presentation(*character))
-    {
-        kept -= 1;
-    }
-    total - kept
+    first
 }
 
 /// How many trailing characters to drop so the rest of `contents` fits in
@@ -3086,6 +3067,37 @@ mod tests {
         // rather than leaving it to say how nothing is drawn.
         assert_eq!(drop_from_left("ab\u{2764}\u{fe0f}", 2), 4);
         assert_eq!(drop_from_right("\u{2764}\u{fe0f}ab", 3), 2);
+    }
+
+    /// A family joined by U+200D is written in one cell two wide, counted
+    /// as two by everything that finds a cell, and cut whole.
+    ///
+    /// Deliberate breaks: writing a character at a time puts each person and
+    /// each joiner in a cell of its own and the `x` four cells on; and
+    /// cutting from the left by characters rather than clusters leaves the
+    /// family's joiners and its last two people behind the ellipsis.
+    #[test]
+    fn a_family_is_one_cell_of_two() {
+        use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style};
+
+        let family = "\u{1f468}\u{200d}\u{1f469}\u{200d}\u{1f467}";
+        let said = format!("{family}x");
+        let mut cells = CellBuffer::empty(Rect::new(0, 0, 8, 1));
+        let after = super::write(&mut cells, 0, 0, &said, Style::new());
+        assert_eq!(after, 3, "the family and the x are three cells");
+        assert_eq!(cells[(0, 0)].symbol(), family);
+        assert_eq!(cells[(1, 0)].symbol(), "");
+        assert_eq!(cells[(2, 0)].symbol(), "x");
+
+        let counted: Vec<u16> = obelus_text::drawn_widths(&said)
+            .map(|(_, cells)| cells)
+            .collect();
+        assert_eq!(counted, [2, 0, 0, 0, 0, 1]);
+
+        // Room for the ellipsis and the `x` takes the whole family.
+        assert_eq!(drop_from_left(&said, 2), 5);
+        assert_eq!(drop_from_left(&format!("ab{family}"), 3), 2);
+        assert_eq!(drop_from_right(&format!("{family}ab"), 3), 2);
     }
 
     /// What finds a character from a cell counts the cells `write` drew:
