@@ -1519,8 +1519,12 @@ impl ApplicationHandler<Waking> for Showing {
                     }
                 }
             }
-            WindowEvent::KeyboardInput { event, .. } => {
-                if event.state != ElementState::Pressed {
+            WindowEvent::KeyboardInput {
+                event,
+                is_synthetic,
+                ..
+            } => {
+                if !keys::heard(event.state, is_synthetic) {
                     return;
                 }
                 self.stir();
