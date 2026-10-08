@@ -8383,6 +8383,16 @@ fn talking_in_a_pool() -> (App, Receiver<Event>) {
     (app, events)
 }
 
+/// What names the pool this test binary made: its own process's number.
+///
+/// Not that a pool is named at all. Run from inside an Obelus -- which is
+/// how this suite is run -- every process here has the outer Obelus's pool
+/// in its environment already, and a test asking only for
+/// `--jobserver-auth=` passes with the code it is about taken out.
+fn this_pool() -> String {
+    format!("obelus-jobs-{}-", std::process::id())
+}
+
 /// An agent is started knowing where the pool of build jobs is, so that
 /// what it builds in a shell of its own builds inside it.
 ///
@@ -8403,10 +8413,16 @@ fn an_agent_is_told_where_the_pool_of_build_jobs_is() {
     pump(&mut app, &events, "what the agent was told", |app| {
         said_in_transcript(app, "pool=")
     });
+    let said = app
+        .chat()
+        .expect("the conversation")
+        .rows(WIDTH)
+        .iter()
+        .map(|row| row.text())
+        .collect::<String>();
     assert!(
-        said_in_transcript(&app, "--jobserver-auth="),
-        "the agent was not told where the pool is:\n{}",
-        screen(&mut app)
+        said.contains(&this_pool()),
+        "the agent was not told where this pool is: {said:?}"
     );
 }
 
@@ -8433,8 +8449,8 @@ fn a_command_the_agent_asks_for_is_told_where_the_pool_is() {
         .map(|row| row.text())
         .collect::<String>();
     assert!(
-        said.contains("jobserver-auth="),
-        "the command was not told where the pool is: {said:?}"
+        said.contains(&this_pool()),
+        "the command was not told where this pool is: {said:?}"
     );
 }
 

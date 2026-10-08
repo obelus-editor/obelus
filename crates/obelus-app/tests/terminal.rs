@@ -117,11 +117,15 @@ fn a_shell_is_told_where_the_pool_of_build_jobs_is() {
             .lines()
             .any(|line| line.starts_with("pool-") && line.trim_end().ends_with("-end"))
     });
+    // This binary's own pool, by its process's number: run from inside an
+    // Obelus, the shell would inherit the outer one's whether or not it was
+    // told anything.
+    let this_pool = format!("obelus-jobs-{}-", std::process::id());
     let said = on_the_terminal(&app);
     assert!(
         said.lines()
-            .any(|line| line.starts_with("pool-") && line.contains("--jobserver-auth=")),
-        "the shell was not told where the pool is:\n{said}"
+            .any(|line| line.starts_with("pool-") && line.contains(&this_pool)),
+        "the shell was not told where this pool is:\n{said}"
     );
 }
 

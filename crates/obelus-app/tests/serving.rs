@@ -182,8 +182,11 @@ fn a_language_server_is_told_where_the_pool_of_build_jobs_is() {
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
     };
+    // This binary's own pool, by its process's number: run from inside an
+    // Obelus, the server would inherit the outer one's whether or not it
+    // was told anything.
     assert!(
-        told.contains("--jobserver-auth="),
-        "the server was not told where the pool is: {told:?}"
+        told.contains(&format!("obelus-jobs-{}-", std::process::id())),
+        "the server was not told where this pool is: {told:?}"
     );
 }
