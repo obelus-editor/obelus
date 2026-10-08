@@ -13911,3 +13911,394 @@ fn the_agent_writes_where_the_reader_may_not() {
         "written by the agent\n"
     );
 }
+
+/// Says this into the conversation's box and sends it.
+fn say(app: &mut App, words: &str) {
+    support::type_text(app, words);
+    support::press(app, KeyCode::Enter);
+}
+
+/// Whether the row of the fake agent's backgrounded call ends the way this
+/// says: the glyph where there are glyphs, the word where there are not.
+fn the_call_says(app: &mut App, glyph: char, word: &str) -> bool {
+    let shown = screen(app);
+    shown
+        .lines()
+        .filter(|line| line.contains("npm run dev"))
+        .any(|line| match obelus_icons::enabled() {
+            true => line.contains(glyph),
+            false => line.contains(word),
+        })
+}
+
+/// Opens the list of background work from the count on the row under the
+/// box: down onto the row, and left round to its last stop.
+fn open_the_background_work(app: &mut App) {
+    support::press(app, KeyCode::Down);
+    support::press(app, KeyCode::Left);
+    support::press(app, KeyCode::Enter);
+    assert!(
+        app.picker()
+            .is_some_and(|picker| picker.listing_tasks().is_some()),
+        "enter on the count opened no list of background work:\n{}",
+        screen(app)
+    );
+}
+
+/// What the row the list of background work is standing on says at its end.
+fn standing_on(app: &App) -> String {
+    app.picker()
+        .and_then(obelus_component::picker::Picker::selected_item)
+        .and_then(|item| item.trailing.clone())
+        .unwrap_or_default()
+}
+
+/// A command that returns while what it started goes on is counted on the
+/// conversation's row, and its call does not say it is done until the work
+/// is.
+///
+/// Broken deliberately three ways. Take the `(true, "completed")` arm out
+/// of `Chat::tool` *and* have `say_what_the_work_came_to` say nothing while
+/// the work runs -- either alone is covered by the other, the marker on the
+/// call and the work's own word -- and the call says done while the server
+/// runs. Have `Dialect::chosen` answer `None` always, and nothing is
+/// counted. Have `say_what_the_work_came_to` say nothing once the work has
+/// ended, and the call goes on saying the work runs after it has.
+#[test]
+fn background_work_is_counted_and_its_call_is_not_done_until_it_is() {
+    let (mut app, events) = playing(&["air"]);
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    say(&mut app, "/background");
+    pump(&mut app, &events, "the work counted", |app| {
+        app.background_tasks() == Some((1, 0))
+    });
+    assert!(
+        the_call_says(&mut app, obelus_icons::ui::BACKGROUND, "Background"),
+        "the call does not say its work goes on:\n{}",
+        screen(&mut app)
+    );
+    // And the count says what it is counting, not only how many -- in the
+    // same words with a glyph in front of them or without.
+    let counted = "1 in the background";
+    let shown = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        shown.contains(counted),
+        "the row does not say `{counted}`:\n{shown}"
+    );
+
+    say(&mut app, "/background-ends");
+    pump(&mut app, &events, "the work ended", |app| {
+        app.background_tasks() == Some((0, 1))
+    });
+    // And the count says what has ended, now that nothing is going: the
+    // list is still somewhere to open, for what the work wrote.
+    let shown = support::render(&mut app, WIDTH, HEIGHT);
+    assert!(
+        shown.contains("1 finished") && !shown.contains("in the background"),
+        "the row does not say the work has finished:\n{shown}"
+    );
+    assert!(
+        the_call_says(&mut app, obelus_icons::ui::DONE, "Done"),
+        "the call does not say its work is done:\n{}",
+        screen(&mut app)
+    );
+}
+
+/// Enter on the count opens the list of the work, and the list's own key
+/// stops the row it is on -- and is lit only on a row it can stop. A row
+/// still running says only that; one that has ended says how long it ran,
+/// which is a number that cannot go stale.
+///
+/// Broken deliberately: take `background_key` out of the keys a list hears,
+/// and the work is still running when this gives up; build a row's value
+/// with `stoppable: task.stoppable` alone, and the key is lit on work that
+/// has stopped; give a running row its time so far, and it says more than
+/// `Running`. And what has stopped moves under the heading of what has
+/// ended: give every row no `section`, and it is under none; leave the list
+/// unwrapped, and no heading is drawn.
+#[test]
+fn the_count_opens_the_work_and_its_key_stops_it() {
+    let (mut app, events) = playing(&["air"]);
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    say(&mut app, "/background");
+    pump(&mut app, &events, "the work counted", |app| {
+        app.background_tasks() == Some((1, 0))
+    });
+    open_the_background_work(&mut app);
+    assert_eq!(
+        app.picker()
+            .and_then(obelus_component::picker::Picker::selected_item)
+            .map(|item| item.label.as_str()),
+        Some("npm run dev")
+    );
+    assert_eq!(standing_on(&app), "Running");
+    assert_eq!(
+        app.picker()
+            .and_then(obelus_component::picker::Picker::selected_item)
+            .and_then(|item| item.section.as_deref()),
+        Some("Running")
+    );
+    let lit = |app: &App| {
+        app.picker()
+            .is_some_and(obelus_component::picker::Picker::stops_this_one)
+    };
+    assert!(lit(&app), "the key is not lit on work that is running");
+
+    support::press_alt(&mut app, 's');
+    pump(&mut app, &events, "the work stopped", |app| {
+        app.background_tasks() == Some((0, 1))
+    });
+    pump(&mut app, &events, "the list saying so", |app| {
+        standing_on(app).starts_with("Stopped  ")
+    });
+    assert!(!lit(&app), "the key is lit on work that has stopped");
+    // And it has moved from the run of what is going to the run of what
+    // has ended, under a heading that says so.
+    let section = |app: &App| {
+        app.picker()
+            .and_then(obelus_component::picker::Picker::selected_item)
+            .and_then(|item| item.section.clone())
+    };
+    assert_eq!(section(&app).as_deref(), Some("Finished"));
+    let shown = screen(&mut app);
+    assert!(
+        shown
+            .lines()
+            .any(|line| line.trim_end().ends_with("| Finished")),
+        "no heading over what has ended:\n{shown}"
+    );
+}
+
+/// Where the row has no room for the count, the keys walking it do not
+/// stop there: round from the first setting is the last setting, not a
+/// place with nothing drawn on it.
+///
+/// Broken deliberately: have the keys count the stop whenever there is
+/// work, drawn or not, and enter on the last stop opens the list of work.
+#[test]
+fn the_keys_do_not_stand_on_a_count_the_row_had_no_room_for() {
+    let (mut app, events) = playing(&["air"]);
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    say(&mut app, "/background");
+    pump(&mut app, &events, "the work counted", |app| {
+        app.background_tasks() == Some((1, 0))
+    });
+    pump(&mut app, &events, "the turn over", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    let narrow = 34;
+    support::lay_out(&mut app, narrow, HEIGHT);
+    let shown = support::render(&mut app, narrow, HEIGHT);
+    assert!(
+        !shown.contains("in the background"),
+        "the row had room after all, so this proves nothing:\n{shown}"
+    );
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Left);
+    support::press(&mut app, KeyCode::Enter);
+    assert!(
+        app.picker()
+            .is_none_or(|picker| picker.listing_tasks().is_none()),
+        "the keys stood on a count nothing drew"
+    );
+}
+
+/// An answer to a stop that nobody can read takes the stopping back: the
+/// row is running again, and the key is lit for another try.
+///
+/// Broken deliberately: count only a plain no as refused, the way it was,
+/// and the row says it is stopping for ever.
+#[test]
+fn an_answer_to_a_stop_nobody_can_read_takes_the_stopping_back() {
+    let (mut app, events) = playing(&["air", "odd-stop"]);
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    say(&mut app, "/background");
+    pump(&mut app, &events, "the work counted", |app| {
+        app.background_tasks() == Some((1, 0))
+    });
+    open_the_background_work(&mut app);
+    support::press_alt(&mut app, 's');
+    assert_eq!(standing_on(&app), "Stopping");
+    pump(&mut app, &events, "the row running again", |app| {
+        standing_on(app) == "Running"
+    });
+}
+
+/// An agent that turns out to have no way to stop its work greys the key,
+/// and the work it was asked about is running again rather than stopping
+/// for ever.
+///
+/// Broken deliberately: have the answer to `-32601` send nothing, and the
+/// key is still offered when this gives up.
+#[test]
+fn an_agent_that_cannot_stop_its_work_greys_the_key() {
+    let (mut app, events) = playing(&["air", "cannot-stop"]);
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    say(&mut app, "/background");
+    pump(&mut app, &events, "the work counted", |app| {
+        app.background_tasks() == Some((1, 0))
+    });
+    open_the_background_work(&mut app);
+    support::press_alt(&mut app, 's');
+    pump(&mut app, &events, "the key greyed", |app| {
+        app.picker()
+            .and_then(obelus_component::picker::Picker::listing_tasks)
+            == Some(false)
+    });
+    pump(&mut app, &events, "the row running again", |app| {
+        standing_on(app).starts_with("Running")
+    });
+    assert_eq!(app.background_tasks(), Some((1, 0)));
+}
+
+/// An agent that never offered to tell of background work is never heard
+/// on it, whatever it sends: nothing is counted, the call says done as it
+/// always did, and the conversation goes on. And the same for one that
+/// offers a later version of the extension than Obelus reads.
+///
+/// Broken deliberately: have `air::offered` ignore the version, and the
+/// second agent's work is counted.
+#[test]
+fn background_work_nobody_offered_is_never_heard() {
+    for how in [&[][..], &["air2"][..]] {
+        let (mut app, events) = playing(how);
+        pump(&mut app, &events, "the handshake", |app| {
+            app.talking() == obelus_agent::Talking::Ready
+        });
+        say(&mut app, "/background");
+        say(&mut app, "/hello");
+        pump(&mut app, &events, "the next answer", |app| {
+            said_in_transcript(app, "ran hello")
+        });
+        assert_eq!(app.background_tasks(), None, "counted for {how:?}");
+        assert!(
+            the_call_says(&mut app, obelus_icons::ui::DONE, "Done"),
+            "the call does not say it is done for {how:?}:\n{}",
+            screen(&mut app)
+        );
+    }
+}
+
+/// A dialect spoken badly enough is given up on: what it said was running
+/// ends, the count goes, and the conversation goes on. Work with no id and
+/// work in no conversation are both counted as badly spoken -- six of each,
+/// and neither alone is enough.
+///
+/// Broken deliberately: take the giving up out of `hear_update`, and the
+/// count is still there when this gives up; or let an update with no
+/// `sessionId` go on to the protocol's parsing, where it is dropped
+/// uncounted, and so is it.
+#[test]
+fn background_work_spoken_badly_is_given_up_on() {
+    let (mut app, events) = playing(&["air"]);
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    say(&mut app, "/background");
+    pump(&mut app, &events, "the work counted", |app| {
+        app.background_tasks() == Some((1, 0))
+    });
+    say(&mut app, "/garbled");
+    pump(&mut app, &events, "the count gone", |app| {
+        app.background_tasks().is_none() && said_in_transcript(app, "after the garble")
+    });
+    assert!(
+        the_call_says(&mut app, obelus_icons::ui::STAYING, "Stopped"),
+        "the call still says its work goes on:\n{}",
+        screen(&mut app)
+    );
+}
+
+/// An agent found unable to stop its work after Obelus had given up on what
+/// it says of it does not bring the count back: given up on is given up on.
+///
+/// Broken deliberately: send that the work is heard whatever became of the
+/// dialect in the meantime, and the count is back when this looks.
+#[test]
+fn an_agent_given_up_on_stays_given_up_on() {
+    let (mut app, events) = playing(&["air", "cannot-stop", "garbles-first"]);
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    say(&mut app, "/background");
+    pump(&mut app, &events, "the work counted", |app| {
+        app.background_tasks() == Some((1, 0))
+    });
+    open_the_background_work(&mut app);
+    support::press_alt(&mut app, 's');
+    pump(&mut app, &events, "the count gone", |app| {
+        app.background_tasks().is_none()
+    });
+    // And the answer to the stop, which arrives after the garble.
+    settle(&mut app, &events, Duration::from_millis(500));
+    assert_eq!(app.background_tasks(), None, "the count came back");
+}
+
+/// A call's row says what its work last said, whichever way that went: a
+/// work reported stopped and then running after all is running again on
+/// the row as it is on the list.
+///
+/// Broken deliberately: have `background_says` change only a row that says
+/// the work goes on, the way it first did, and the row stays stopped.
+#[test]
+fn a_calls_row_follows_its_work_back_from_stopped() {
+    let (mut app, events) = playing(&["air"]);
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    say(&mut app, "/background");
+    pump(&mut app, &events, "the work counted", |app| {
+        app.background_tasks() == Some((1, 0))
+    });
+    // The turn over first: two things said into a running turn wait and go
+    // as one prompt, and the fixture answers only the first of them.
+    pump(&mut app, &events, "the turn over", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    say(&mut app, "/background-wavers");
+    say(&mut app, "/hello");
+    pump(&mut app, &events, "the next answer", |app| {
+        said_in_transcript(app, "ran hello")
+    });
+    assert_eq!(app.background_tasks(), Some((1, 0)));
+    assert!(
+        the_call_says(&mut app, obelus_icons::ui::BACKGROUND, "Background"),
+        "the call does not say its work goes on:\n{}",
+        screen(&mut app)
+    );
+}
+
+/// Work that ended before its call was marked as having left it going is
+/// done on the row, not going on for ever.
+///
+/// Broken deliberately: take `say_what_the_work_came_to` out of the arm for
+/// a tool call, and the marker that arrives last leaves the row saying the
+/// work goes on.
+#[test]
+fn work_that_ended_before_its_call_was_marked_is_done() {
+    let (mut app, events) = playing(&["air"]);
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    say(&mut app, "/background-late");
+    say(&mut app, "/hello");
+    pump(&mut app, &events, "the next answer", |app| {
+        said_in_transcript(app, "ran hello")
+    });
+    assert_eq!(app.background_tasks(), Some((0, 1)));
+    assert!(
+        the_call_says(&mut app, obelus_icons::ui::DONE, "Done"),
+        "the call does not say its work is done:\n{}",
+        screen(&mut app)
+    );
+}

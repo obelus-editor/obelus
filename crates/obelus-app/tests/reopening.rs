@@ -569,3 +569,85 @@ fn leave(app: &mut App) {
         ratatui::Terminal::new(ratatui::backend::TestBackend::new(80, 24)).expect("a terminal");
     obelus_app::app::run(&mut terminal, app, events).expect("running");
 }
+
+/// A conversation about nothing in particular, put back from last time, is
+/// listed as this window's: the reader can go to it, and its row says so.
+///
+/// Until it is shown it has asked for nothing, so the session it is to take
+/// up is the only name it goes by. Asked only for the session it has, the
+/// list found it open nowhere here and drew it under a lock -- the lock
+/// this window took when it put the conversation back -- and the reader,
+/// looking for it, found only somebody else's.
+///
+/// Broken deliberately by matching a loose conversation on `talk.session`
+/// alone in `conversation_open`, the way it was: the row is locked.
+#[test]
+fn a_loose_conversation_put_back_is_listed_as_this_windows() {
+    let scratch = tree("reopening-loose-listed", true);
+    let root = scratch.path();
+    let which = obelus_agent::chats::ChatId::Loose("s-9".to_string());
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs() as i64);
+    obelus_agent::acp::sessions::change(root, 0, None, |remembered| {
+        remembered.put(
+            &which,
+            "fake",
+            root,
+            obelus_agent::acp::sessions::Kept {
+                session: "s-9".to_string(),
+                title: Some("Put back".to_string()),
+                told: None,
+                introduced: false,
+                last: Some(now),
+            },
+        );
+    });
+    // What a window that had it open writes down as it goes.
+    let tree_root = root.canonicalize().expect("the tree is there");
+    let record = obelus_logging::state_directory()
+        .expect("somewhere to keep state")
+        .join("open")
+        .join(format!("{}.toml", obelus_git::file_name_of(&tree_root)));
+    std::fs::create_dir_all(record.parent().expect("a directory")).expect("making it");
+    std::fs::write(
+        &record,
+        format!(
+            "tree = '{}'\ncurrent = 0\n\n[[open]]\nconversation = \"{}\"\n",
+            root.display(),
+            which.file_name()
+        ),
+    )
+    .expect("writing what was open");
+
+    let mut app = App::new(Vec::new());
+    app.configure(
+        obelus_config::Config {
+            agent: Some("fake".to_string()),
+            ..obelus_config::Config::default()
+        },
+        Vec::new(),
+    );
+    app.working_directory_for_test(root.to_path_buf());
+    app.reopen_what_was_open();
+    arrive(&mut app);
+    assert!(
+        documents(&app)
+            .iter()
+            .any(|document| document.chat().is_some()),
+        "the conversation was not put back, so this proves nothing"
+    );
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ConversationSelect);
+    let row = app
+        .picker()
+        .expect("the list of conversations")
+        .matches()
+        .find(|item| item.label == "Put back")
+        .cloned()
+        .expect("the conversation is not on the list");
+    assert!(
+        row.enabled,
+        "the conversation open here is listed as somebody else's"
+    );
+}

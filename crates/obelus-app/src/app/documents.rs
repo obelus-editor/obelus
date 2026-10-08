@@ -1103,11 +1103,17 @@ impl App {
             // entry would answer correctly for as long as the file stayed shut,
             // and then be one version behind whoever opened it next.
             self.tokens.remove(buffer.path());
-            self.say(format!(
-                "Closed {}",
-                relative(buffer.path(), &self.working_directory)
-            ));
+            // Nothing said about it. The reader closed it and is looking at
+            // what is there instead; a line naming what went is news to
+            // nobody, and for a file outside the project -- what background
+            // work wrote, somewhere under a temporary directory -- it was a
+            // path the row had no room for.
         }
+        // And whatever the row was saying goes with it, however it was
+        // closed. A key quiets the row on its own way in; a press, a card's
+        // answer, a sign-in's terminal ending does not, and what was said
+        // about the document that went was left standing over the next one.
+        self.quiet();
         // And a conversation's thread hears that it was, so that a reader
         // there is not left talking to something nobody is listening for.
         if let Some(talk) = document.chat() {

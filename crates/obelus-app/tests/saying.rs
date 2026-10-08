@@ -92,6 +92,11 @@ fn a_refusal_is_in_the_ink_of_things_that_went_wrong() {
 /// the way the first one is handed it. A note alone on an otherwise empty
 /// row is then drawn in the colour of something standing beside
 /// something else, with nothing there for it to stand beside.
+///
+/// And closing a file says nothing on the way, and leaves nothing said
+/// about it: the reader did it, and is looking at what is there instead.
+/// Broken deliberately by saying `Closed {}` again where a file is shut,
+/// or by taking the `quiet` out of `close`.
 #[test]
 fn a_note_alone_on_the_row_is_the_row() {
     let scratch = support::Scratch::new("said-alone");
@@ -113,12 +118,15 @@ fn a_note_alone_on_the_row_is_the_row() {
     dispatch::dispatch(&mut app, Command::FileNew);
     support::type_text(&mut app, "made.rs");
     support::press(&mut app, crossterm::event::KeyCode::Enter);
+    // Something said about the file before it goes, the way a press on the
+    // row or a card's answer leaves it -- neither of which quiets the row
+    // the way a key does on its way in.
+    app.say_for_test("Saved");
     dispatch::dispatch(&mut app, Command::DocumentClose);
-    assert!(
-        app.note().is_some_and(|said| said.starts_with("Closed")),
-        "{:?}",
-        app.note()
-    );
+    // Closing says nothing, and takes what was said about the file with it:
+    // the reader is looking at what is there instead.
+    assert_eq!(app.note(), None, "closing a file left something said");
+    app.say_for_test("Saved");
     assert_eq!(
         ink(&mut app),
         DARK.status_foreground,
@@ -141,16 +149,16 @@ fn reads_as_copy(said: &str, name: Option<&str>) -> bool {
 /// a name begins it.
 ///
 /// A handful of notes rather than a list of every one, and each from a
-/// different corner: what a command reports, what it refuses, what is said
-/// about a file being put down, and what leads with a path. A list of the
-/// notes that exist would be a test that asks the rule what it expects.
+/// different corner: what a command reports, what it refuses, what a file
+/// being called something else is said as, and what leads with a path. A list
+/// of the notes that exist would be a test that asks the rule what it expects.
 ///
 /// One app per case, because what is being checked is the note and not the
 /// state a previous case left behind -- a close that asks about unwritten
 /// work is a key that answered something else.
 ///
-/// Deliberate break: lowercase any one of `Saved`, `Closed {}`, `Renamed
-/// to {}` or `Thinking\u{2026}`. Which is how this was found: five of them
+/// Deliberate break: lowercase any one of `Saved`, `Renamed to {}` or
+/// `Thinking\u{2026}`. Which is how this was found: five of them
 /// had been lowercase since they were written, against the one sentence in
 /// the guide about how Obelus writes.
 #[test]
@@ -167,12 +175,6 @@ fn what_is_said_reads_as_copy() {
     dispatch::dispatch(&mut app, Command::Undo);
     let said = app.note().unwrap_or_default();
     assert!(reads_as_copy(said, None), "undoing nothing: {said:?}");
-
-    // What is said about a file being put down.
-    let (_c, mut app) = reading("copy-closed");
-    dispatch::dispatch(&mut app, Command::DocumentClose);
-    let said = app.note().unwrap_or_default();
-    assert!(reads_as_copy(said, None), "closing: {said:?}");
 
     // What a file being called something else is said as.
     let (_d, mut app) = reading("copy-renamed");

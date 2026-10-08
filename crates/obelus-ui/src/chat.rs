@@ -577,6 +577,36 @@ fn said(setting: &acp::Setting) -> (String, Option<bool>) {
     }
 }
 
+/// What the count of background work says on the row: how much is still
+/// going, in words, behind the mark a call wears for the same thing -- and
+/// where none is, how much has ended, which is there to be opened rather
+/// than to be watched.
+///
+/// Words and not a bare number: a glyph and a digit at the end of a row of
+/// settings read as one more setting on some value, and a reader has to
+/// open it to find out it was a count. The same words with the glyph and
+/// without it, so that they say the whole of it on their own.
+///
+/// One blank after the glyph in a window and two in a terminal: a terminal's
+/// Nerd Font draws the glyph two cells wide and the first blank is the one
+/// it bleeds into, where the window's `Mono` face fits it to one cell and a
+/// second blank is a gap between the mark and what it marks.
+///
+/// Whether there are glyphs and whether this is a window are handed in
+/// rather than read here, so that both answers can be asked of it in one
+/// test binary without moving a switch every other test reads.
+fn tasks_said(running: usize, finished: usize, glyphs: bool, window: bool) -> String {
+    let going = match running {
+        0 => format!("{finished} finished"),
+        _ => format!("{running} in the background"),
+    };
+    match (glyphs, window) {
+        (true, true) => format!("{} {going}", obelus_icons::ui::BACKGROUND),
+        (true, false) => format!("{}  {going}", obelus_icons::ui::BACKGROUND),
+        (false, _) => going,
+    }
+}
+
 /// How many cells one setting takes on the row, its tick and all.
 fn said_width((word, tick): &(String, Option<bool>)) -> usize {
     text_width(word) + tick.map_or(0, |_| usize::from(crate::TICK_WIDTH))
@@ -631,6 +661,10 @@ pub struct ChatView<'a> {
     /// How full the agent's memory of this conversation is, once it has
     /// said.
     usage: Option<&'a acp::Usage>,
+    /// How much of the agent's background work here is still going and
+    /// how much has ended, where it has told Obelus of any: the last stop on
+    /// the row of settings.
+    tasks: Option<(usize, usize)>,
     /// The chat this window can be reached from, and where it stands: the
     /// same mark a file's row carries, since this row is the one a reader
     /// working from a chat is most often on.
@@ -659,6 +693,7 @@ impl<'a> ChatView<'a> {
             note: app.note(),
             note_is_wrong: app.note_is_wrong(),
             usage: app.agent_usage(),
+            tasks: app.background_tasks(),
             remote: app.remote(),
         })
     }
@@ -1550,6 +1585,23 @@ impl ChatView<'_> {
             );
             return;
         }
+        // The count of background work, beside the memory and for the same
+        // reason: it stays put while the settings scroll. At the end of
+        // them it was the first thing cut, on a row the settings fill.
+        if let Some((at, word)) = self.tasks_placed(area) {
+            let chosen = matches!(self.focus, Focus::Settings(at) if at >= self.settings.len());
+            let ground = match chosen {
+                true => self.theme.selected_row_background,
+                false => self.theme.background,
+            };
+            // Bright while something is going, which is news; dim once it
+            // has all ended, which is only somewhere to look.
+            let ink = match self.tasks {
+                Some((0, _)) => self.theme.gutter,
+                _ => self.theme.gutter_current,
+            };
+            write(cells, at, area.y, &word, plain.fg(ink).bg(ground));
+        }
         self.settings(cells, area, self.status_room(area), plain);
     }
 
@@ -1574,12 +1626,15 @@ impl ChatView<'_> {
             // Only once there is a session: before that the row would be
             // saying that an agent which has not spoken yet has nothing to
             // say about itself.
+            // In the room the settings have and no further: the count of
+            // background work is at the end of it, and words written past
+            // the end are written over that.
             if matches!(self.state, Talking::Ready | Talking::Thinking) {
                 write(
                     cells,
                     area.x + 1,
                     area.y,
-                    "Nothing to change",
+                    &super::truncate_from_right("Nothing to change", room),
                     plain.fg(self.theme.gutter),
                 );
             }
@@ -1589,10 +1644,7 @@ impl ChatView<'_> {
         // What each one says, and what it takes to say it. The focused one
         // carries the arrow Obelus puts on everything with a list behind
         // it, so it is wider than the others by exactly that.
-        let chosen = match self.focus {
-            Focus::Settings(at) => Some(at.min(self.settings.len() - 1)),
-            Focus::Transcript(_) | Focus::Writing => None,
-        };
+        let chosen = self.chosen_setting();
         let words = self.setting_words();
         let first = self.first_setting(&words, room);
 
@@ -1671,12 +1723,57 @@ impl ChatView<'_> {
             .collect()
     }
 
-    /// Which setting the keys are on, if they are up here at all.
+    /// Which setting the keys are on, if they are up here at all -- and not
+    /// on the count of background work, which is the stop after the last.
     fn chosen_setting(&self) -> Option<usize> {
         match self.focus {
-            Focus::Settings(at) => Some(at.min(self.settings.len().saturating_sub(1))),
-            Focus::Transcript(_) | Focus::Writing => None,
+            Focus::Settings(at) if at < self.settings.len() => Some(at),
+            Focus::Settings(_) | Focus::Transcript(_) | Focus::Writing => None,
         }
+    }
+
+    /// Where the count of background work goes on the status row, and what
+    /// it says -- or nothing, where the agent has told of none, or the row
+    /// has no room for it beside the settings.
+    ///
+    /// The last stop the keys walk to, and drawn after the settings for
+    /// that reason, at the end of the room they have. One answer for the
+    /// drawing, for the room the settings are given, for a press -- and for
+    /// the keys, which may only stand on it where it is drawn (see
+    /// [`Self::shows_tasks`]).
+    ///
+    /// Whether it fits is measured with the arrow it wears under the keys,
+    /// whether or not they are on it: measured without, a count that fitted
+    /// until the keys reached it would stop fitting because they had, and
+    /// the keys would be put back where they came from.
+    fn tasks_placed(&self, area: Rect) -> Option<(u16, String)> {
+        let (running, finished) = self.tasks?;
+        let mut word = tasks_said(
+            running,
+            finished,
+            obelus_icons::enabled(),
+            obelus_config::in_a_window(),
+        );
+        let at_most = text_width(&word) + text_width(&opens(false));
+        if matches!(self.focus, Focus::Settings(at) if at >= self.settings.len()) {
+            word.push_str(&opens(false));
+        }
+        let room = self.room_beside_the_marks(area);
+        if room <= at_most + GAP + LEAST_SETTINGS {
+            return None;
+        }
+        let at = u16::try_from(1 + room - text_width(&word)).ok()?;
+        Some((area.x + at, word))
+    }
+
+    /// Whether the count of background work is on the status row, which is
+    /// whether the keys walking the row have it as a stop.
+    ///
+    /// A stop the row has no room to draw is somewhere the keys would stand
+    /// with nothing on screen saying where they are.
+    #[must_use]
+    pub fn shows_tasks(&self, area: Rect) -> bool {
+        self.tasks_placed(area).is_some()
     }
 
     /// Which setting the row starts at.
@@ -1750,6 +1847,15 @@ impl ChatView<'_> {
     /// other, both of which stay put. Asked by the drawing and by a press,
     /// because a press has to be measured against the row that is there.
     fn status_room(&self, area: Rect) -> usize {
+        let room = self.room_beside_the_marks(area);
+        match self.tasks_placed(area) {
+            Some((_, word)) => room - text_width(&word) - GAP,
+            None => room,
+        }
+    }
+
+    /// The same, before the count of background work has taken its share.
+    fn room_beside_the_marks(&self, area: Rect) -> usize {
         let hint = self.status_hint();
         let taken = hint.as_deref().map_or(0, |hint| text_width(hint) + 2);
         let over = usize::from(area.width).saturating_sub(taken + 2);
@@ -1777,9 +1883,20 @@ impl ChatView<'_> {
     /// `None` for a point that is not on one of them: the keys at the end
     /// of the row, the memory beside them, the marks that say there are
     /// more in either direction.
+    ///
+    /// One past the last setting is the count of background work.
     #[must_use]
     pub fn setting_at(&self, area: Rect, x: u16, y: u16) -> Option<usize> {
-        if y != area.y || self.settings.is_empty() {
+        if y != area.y {
+            return None;
+        }
+        if let Some((at, word)) = self.tasks_placed(area) {
+            let wide = u16::try_from(text_width(&word)).unwrap_or(0);
+            if x >= at && x < at.saturating_add(wide) {
+                return Some(self.settings.len());
+            }
+        }
+        if self.settings.is_empty() {
             return None;
         }
         let room = self.status_room(area);
@@ -1984,6 +2101,14 @@ impl ChatView<'_> {
                 self.theme.gutter_current,
             ),
             "completed" => (obelus_icons::ui::DONE, "Done", self.theme.gutter),
+            // Returned, with what it started still going: as bright as a
+            // running call, because it is, and still, because the agent is
+            // not the one busy with it.
+            acp::BACKGROUNDED => (
+                obelus_icons::ui::BACKGROUND,
+                "Background",
+                self.theme.gutter_current,
+            ),
             // The word the transcript already uses for the turn this call
             // was in, because it is the same fact said about a smaller
             // thing.
@@ -2046,6 +2171,69 @@ mod tests {
                 "{keys} is not at {along} of {said:?}"
             );
         }
+    }
+
+    /// The glyph in front of the count is as far from it as the front end
+    /// draws a glyph wide needs: one blank in a window, where the mark is
+    /// one cell, and two in a terminal, where it bleeds into the first.
+    ///
+    /// Broken deliberately: give the window the terminal's two blanks, and
+    /// the mark stands a cell off from its count; give the terminal one,
+    /// and the glyph runs into the number.
+    #[test]
+    fn the_mark_on_the_count_is_as_far_from_it_as_the_front_end_needs() {
+        let mark = obelus_icons::ui::BACKGROUND;
+        assert_eq!(
+            super::tasks_said(2, 1, true, true),
+            format!("{mark} 2 in the background")
+        );
+        assert_eq!(
+            super::tasks_said(2, 1, true, false),
+            format!("{mark}  2 in the background")
+        );
+        assert_eq!(super::tasks_said(2, 1, false, true), "2 in the background");
+        // And with nothing going, what has ended.
+        assert_eq!(super::tasks_said(0, 3, false, true), "3 finished");
+    }
+
+    /// The count of background work is whole on a row with no settings, at
+    /// a width where what the row says in their place does not fit beside it.
+    ///
+    /// Broken deliberately: write `Nothing to change` whole again, and it
+    /// runs over the count.
+    #[test]
+    fn the_count_of_background_work_is_not_written_over() {
+        let chat = obelus_component::chat::Chat::new();
+        let area = ratatui::layout::Rect::new(0, 0, 34, 1);
+        let view = super::ChatView {
+            chat: &chat,
+            theme: &obelus_theme::builtin::DARK,
+            state: obelus_agent::Talking::Ready,
+            name: None,
+            settings: &[],
+            focus: obelus_component::chat::Focus::Writing,
+            card: None,
+            in_front: true,
+            pointer: None,
+            root: std::path::Path::new("/"),
+            phase: 0,
+            branch: None,
+            about_a_note: false,
+            note: None,
+            note_is_wrong: false,
+            usage: None,
+            tasks: Some((2, 0)),
+            remote: None,
+        };
+        let mut cells = ratatui::buffer::Buffer::empty(area);
+        view.status(&mut cells, area);
+        let row: String = (area.x..area.right())
+            .map(|x| cells[(x, area.y)].symbol().to_string())
+            .collect();
+        assert!(
+            row.contains("2 in the background"),
+            "the count was written over: {row:?}"
+        );
     }
 
     use std::path::{Path, PathBuf};
@@ -2168,6 +2356,7 @@ mod tests {
                 places: Vec::new(),
                 change: None,
                 ran: None,
+                backgrounded: false,
             },
             "pending",
         );
@@ -2199,6 +2388,7 @@ mod tests {
                 note: None,
                 note_is_wrong: false,
                 usage: None,
+                tasks: None,
                 remote: None,
             };
             let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2293,6 +2483,7 @@ mod caret {
                                 after: "after\n".to_string(),
                             }),
                             ran: None,
+                            backgrounded: false,
                         },
                         status,
                     );
@@ -2332,6 +2523,7 @@ mod caret {
                         note: None,
                         note_is_wrong: false,
                         usage: None,
+                        tasks: None,
                         remote: None,
                     };
                     let mut cells = ratatui::buffer::Buffer::empty(area);
@@ -2400,6 +2592,7 @@ mod caret {
             false,
             room,
             &[],
+            false,
         );
         let caret = super::ChatView::caret(area, &chat, None).expect("a caret in the transcript");
         assert!(
@@ -2443,6 +2636,7 @@ mod caret {
                     true,
                     room,
                     &[],
+                    false,
                 );
             }
             let caret = super::ChatView::caret(area, &chat, None).expect("a caret in the box");

@@ -1317,6 +1317,204 @@ impl App {
             })
     }
 
+    /// How much of the agent's background work in the conversation on
+    /// screen is still going, and how much has ended -- or nothing, where
+    /// the agent does not speak of such work or has started none here.
+    ///
+    /// Both, because work that has ended is still worth opening: what it
+    /// wrote is the reason to have asked for it, and the list is where that
+    /// is reached from.
+    #[must_use]
+    pub fn background_tasks(&self) -> Option<(usize, usize)> {
+        let session = self.session_now();
+        let board = self.talker.as_ref()?.tasks(session.as_ref())?;
+        let running = board.running();
+        let finished = board.listed().len() - running;
+        (running + finished > 0).then_some((running, finished))
+    }
+
+    /// Whether the count of background work is on the conversation's status
+    /// row, which is whether the keys walking that row have it as a stop.
+    ///
+    /// Asked of the view that draws the row, which is the one thing that
+    /// knows whether there was room: a stop the keys could reach and the row
+    /// did not draw is somewhere to stand with nothing on screen saying so.
+    fn background_count_on_row(&self) -> bool {
+        let status = obelus_ui::regions(self.screen_area).status;
+        obelus_ui::chat::ChatView::new(self).is_some_and(|view| view.shows_tasks(status))
+    }
+
+    /// The agent's background work in this conversation, as the ordinary
+    /// compact list: what is still going first, and what has ended under
+    /// it, each saying the last thing it said about itself.
+    ///
+    /// What enter on the count at the end of the row opens. Choosing a row
+    /// opens what that work has written; the list's own key stops one.
+    pub(super) fn open_background_tasks(&mut self) {
+        let session = self.session_now();
+        let Some(talker) = self.talker.as_ref() else {
+            return;
+        };
+        let Some(board) = talker.tasks(session.as_ref()) else {
+            return;
+        };
+        let stoppable = talker.can_stop_tasks();
+        let items: Vec<PickerItem> = board.listed().into_iter().map(task_row).collect();
+        let mut picker = Picker::new(
+            items,
+            PickerLayout::Compact {
+                rows: BACKGROUND_ROWS,
+            },
+        );
+        // In two runs under their headings, what is going and what has
+        // ended, and kept in that order whatever is typed: a query ranking
+        // the rows would scatter them out from under their headings, which
+        // is what the conversations' list does by day for the same reason.
+        picker.wraps(None);
+        picker.keeps_order(true);
+        picker.before_typing("Filter background work");
+        picker.ask("Background work");
+        picker.when_empty("Nothing has been left running here");
+        picker.lists_tasks(stoppable);
+        self.show_list(picker);
+    }
+
+    /// Opens what one piece of background work has written, as a file like
+    /// any other -- the way Obelus's own log is opened, and for the same
+    /// reason: the watcher reloads it as it grows, and reading it is what
+    /// Obelus is for.
+    pub(super) fn open_background_output(&mut self, id: &str) {
+        let session = self.session_now();
+        let output = self
+            .talker
+            .as_ref()
+            .and_then(|talker| talker.tasks(session.as_ref()))
+            .and_then(|board| board.find(id))
+            .map(|task| task.output.clone());
+        match output {
+            Some(Some(path)) if path.is_file() => self.open(&path),
+            Some(Some(_)) => self.wrong("Its output is not there any more".to_string()),
+            Some(None) => self.wrong("It said nowhere its output goes".to_string()),
+            None => {}
+        }
+    }
+
+    /// Stops the piece of background work the list is standing on, for the
+    /// key a list of it has. Says whether the key was this.
+    pub(super) fn background_key(&mut self, key: &crossterm::event::KeyEvent) -> bool {
+        use crossterm::event::{KeyCode, KeyModifiers};
+        if key.modifiers != KeyModifiers::ALT || key.code != KeyCode::Char('s') {
+            return false;
+        }
+        let Some(picker) = self.picker.as_ref() else {
+            return false;
+        };
+        if picker.listing_tasks().is_none() {
+            return false;
+        }
+        // The key's, whatever it does: on a row it cannot stop it does
+        // nothing, which is what its greyed word at the foot says.
+        if !picker.stops_this_one() {
+            return true;
+        }
+        let Some(PickerValue::Task { id, .. }) =
+            picker.selected_item().map(|item| item.value.clone())
+        else {
+            return true;
+        };
+        let session = self.session_now();
+        if let Some(talker) = self.talker.as_mut() {
+            talker.stop_task(session.as_ref(), &id);
+        }
+        self.refresh_background_tasks();
+        true
+    }
+
+    /// Builds the open list of background work again from what is known,
+    /// standing on the same row -- after a key that changed one, and
+    /// whenever the agent says one has moved on.
+    fn refresh_background_tasks(&mut self) {
+        let session = self.session_now();
+        let Some(talker) = self.talker.as_ref() else {
+            return;
+        };
+        let Some(board) = talker.tasks(session.as_ref()) else {
+            return;
+        };
+        let items: Vec<PickerItem> = board.listed().into_iter().map(task_row).collect();
+        if let Some(picker) = self
+            .picker
+            .as_mut()
+            .filter(|picker| picker.listing_tasks().is_some())
+        {
+            picker.renew(items, |one, other| match (one, other) {
+                (PickerValue::Task { id: one, .. }, PickerValue::Task { id: other, .. }) => {
+                    one == other
+                }
+                _ => false,
+            });
+        }
+    }
+
+    /// What a conversation does about news of its background work: the row
+    /// of the call that started it says what became of it, and an open list
+    /// of it is built again.
+    fn hear_of_background_work(&mut self, whose: Whose, news: &obelus_agent::acp::tasks::News) {
+        let session = self.talk_mut(whose).and_then(|talk| talk.session.clone());
+        let call = self
+            .talker
+            .as_ref()
+            .and_then(|talker| talker.tasks(session.as_ref()))
+            .and_then(|board| board.find(news.id()))
+            .and_then(|task| task.call.clone());
+        if let Some(call) = call {
+            self.say_what_the_work_came_to(whose, &call);
+        }
+        if session.is_some() && session == self.session_now() {
+            self.refresh_background_tasks();
+        }
+    }
+
+    /// Puts on a call's row what the work it started last said, where it
+    /// started any.
+    ///
+    /// Asked when the work moves on and again when the call does: the two
+    /// arrive in whichever order the agent sends them, and the row is right
+    /// only if whichever came second asks.
+    fn say_what_the_work_came_to(&mut self, whose: Whose, call: &str) {
+        let session = self.talk_mut(whose).and_then(|talk| talk.session.clone());
+        let said = self
+            .talker
+            .as_ref()
+            .and_then(|talker| talker.tasks(session.as_ref()))
+            .and_then(|board| board.started_by(call))
+            .map(|task| {
+                task.state
+                    .as_call()
+                    .unwrap_or(obelus_agent::acp::BACKGROUNDED)
+            });
+        if let Some(said) = said {
+            self.in_talk(whose, |chat| chat.background_says(call, said));
+        }
+    }
+
+    /// Every row in every conversation still saying its work goes on, ended:
+    /// nothing is left that will say otherwise.
+    fn background_work_ended_everywhere(&mut self) {
+        for document in self.documents.iter_mut().flatten() {
+            if let Some(talk) = Document::chat_mut(document) {
+                talk.chat.background_ended_everywhere();
+            }
+        }
+        if self
+            .picker
+            .as_ref()
+            .is_some_and(|picker| picker.listing_tasks().is_some())
+        {
+            self.leave(Layer::Picker);
+        }
+    }
+
     /// One setting's values, as the ordinary compact list.
     ///
     /// What enter on the conversation's own row opens, for a setting whose
@@ -2182,10 +2380,11 @@ impl App {
         // the view does. Cloned because the box is about to be borrowed to
         // take the key.
         let settings = self.agent_settings().to_vec();
+        let tasks = self.background_count_on_row();
         let Some(talk) = self.conversation_mut() else {
             return false;
         };
-        match talk.chat.handle_key(key, thinking, room, &settings) {
+        match talk.chat.handle_key(key, thinking, room, &settings, tasks) {
             ChatOutcome::Consumed => true,
             ChatOutcome::Send(parts) => {
                 self.send_to_agent(&parts);
@@ -2242,6 +2441,10 @@ impl App {
             }
             ChatOutcome::Toggle(id) => {
                 self.flip_agent_setting(&id);
+                true
+            }
+            ChatOutcome::Tasks => {
+                self.open_background_tasks();
                 true
             }
             ChatOutcome::StepMode => {
@@ -3109,7 +3312,7 @@ impl App {
         // that are really there: they are the agent's, and it can take one
         // away in the middle of a sentence -- a model with no thinking
         // levels does exactly that.
-        let settings = self.agent_settings().len();
+        let settings = self.agent_settings().len() + usize::from(self.background_count_on_row());
         if let Some(talk) = self.conversation_mut() {
             talk.chat.settle_focus(settings);
         }
@@ -3181,6 +3384,10 @@ impl App {
             // let go before this arrived.
             | acp::Incoming::Offers { .. }
             | acp::Incoming::Failed(..)
+            // What this agent tells of background work is about the agent,
+            // and asking for one to stop is answered in the handle.
+            | acp::Incoming::Tasks { .. }
+            | acp::Incoming::NotStopped { .. }
             | acp::Incoming::Gone(_)
             | acp::Incoming::Finished { .. }
             | acp::Incoming::Read { .. }
@@ -3676,6 +3883,9 @@ impl App {
                 acp::Update::Tool { call, status } => {
                     self.mirror_paused(whose);
                     self.in_talk(whose, |chat| chat.tool(&call, &status));
+                    // And what the work it started has come to, which may
+                    // have been said before this.
+                    self.say_what_the_work_came_to(whose, &call.id);
                     self.hear_where_it_wrote(whose, &call.id);
                 }
                 // What it means to do about this turn. Not a thing said --
@@ -3703,6 +3913,10 @@ impl App {
                 | acp::Update::Orders(_)
                 | acp::Update::Settings(_)
                 | acp::Update::Used(_) => {}
+                // Kept by the handle too, and drawn from there; what is left
+                // for the conversation is the row of the call that started
+                // the work, which says what became of it.
+                acp::Update::Task(news) => self.hear_of_background_work(whose, &news),
             },
             acp::Incoming::Ended { why: reason, .. } => {
                 // Only the ends that are not the ordinary one: a turn that
@@ -3853,6 +4067,9 @@ impl App {
                 // had given.
                 self.forget_what_the_agent_held();
                 self.agents.asking = None;
+                // Nothing is left to say what became of the work it had
+                // going, so no row goes on saying it goes on.
+                self.background_work_ended_everywhere();
                 match why {
                     Some(why) => self.in_talk(whose, |chat| {
                         chat.note(&format!("The agent stopped: {why}"))
@@ -3868,6 +4085,25 @@ impl App {
             acp::Incoming::Ready { .. }
             | acp::Incoming::Started { .. }
             | acp::Incoming::Offers { .. } => {}
+            // Asking for one to stop came to nothing: a list of the work
+            // stops saying it is stopping.
+            acp::Incoming::NotStopped { .. } => self.refresh_background_tasks(),
+            // The agent has stopped telling Obelus of background work, or
+            // never did: the handle has ended what it knew of, and the rows
+            // that were waiting on it end with it. Or it turned out not to
+            // stop any, and a list of it greys the key that asks.
+            acp::Incoming::Tasks { heard, stoppable } => {
+                if !heard {
+                    self.background_work_ended_everywhere();
+                }
+                if let Some(picker) = self
+                    .picker
+                    .as_mut()
+                    .filter(|picker| picker.listing_tasks().is_some())
+                {
+                    picker.lists_tasks(stoppable);
+                }
+            }
             // A turn that needed a sign-in, which has ended and said so:
             // the ways in go up after it, in the conversation it was.
             acp::Incoming::SignIn { why, .. } => self.ask_to_sign_in(whose, why),
@@ -4371,6 +4607,82 @@ fn said_of(parts: &[Part]) -> Vec<acp::link::Said> {
             }),
         })
         .collect()
+}
+
+/// How tall the list of background work may be.
+///
+/// What the list of conversations is given, and for its reasons: its rows
+/// wrap -- a name, and under it what the work last said -- and under two
+/// headings, so the ten a compact list gets is three or four pieces of
+/// work. And what it is drawn over is the conversation that started them,
+/// which the reader has put down to look at this.
+const BACKGROUND_ROWS: u16 = 24;
+
+/// One piece of background work, as a row of the list of it.
+///
+/// Its name, what it last said about itself, and how far it has got -- and,
+/// once it has ended, how long it ran. Not how long it has been running:
+/// that is a number that goes stale between one update and the next, on a
+/// list that is built again only when the agent says something, and a row
+/// of a list says what is true now.
+fn task_row(task: &obelus_agent::acp::tasks::Task) -> PickerItem {
+    use obelus_agent::acp::tasks::State;
+    let state = match &task.state {
+        State::Running if task.stopping => "Stopping".to_string(),
+        State::Running => "Running".to_string(),
+        State::Paused => "Paused".to_string(),
+        State::Done => "Done".to_string(),
+        State::Failed => "Failed".to_string(),
+        State::Stopped => "Stopped".to_string(),
+        State::Other(word) => word.clone(),
+    };
+    let trailing = match task.ended {
+        Some(ended) => format!("{state}  {}", lasted_said(ended - task.began)),
+        None => state,
+    };
+    PickerItem {
+        prose: false,
+        marker: None,
+        icon: None,
+        label: task.name.clone(),
+        detail: task.summary.clone().or_else(|| task.about.clone()),
+        trailing: Some(trailing),
+        changed: None,
+        value: PickerValue::Task {
+            id: task.id.clone(),
+            // And not while it is already being stopped: asking twice is
+            // a second request about one thing.
+            stoppable: task.stoppable && !task.state.is_over() && !task.stopping,
+        },
+        // Ended work is still there to open: what it wrote is the reason
+        // to keep it on the list at all.
+        enabled: true,
+        colours: None,
+        status: None,
+        depth: 0,
+        opens: None,
+        kind: None,
+        tab: None,
+        // Which run it is in. `listed` already puts what is going first,
+        // so each heading is said once, where its run starts.
+        section: Some(
+            match task.state.is_over() {
+                false => "Running",
+                true => "Finished",
+            }
+            .to_string(),
+        ),
+    }
+}
+
+/// How long something has been going, as shortly as it can be said.
+fn lasted_said(lasted: std::time::Duration) -> String {
+    let seconds = lasted.as_secs();
+    match seconds {
+        0..60 => format!("{seconds}s"),
+        60..3600 => format!("{}m", seconds / 60),
+        _ => format!("{}h", seconds / 3600),
+    }
 }
 
 #[cfg(test)]

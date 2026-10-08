@@ -2456,6 +2456,12 @@ impl App {
         self.note = Some(saying::Note::said(said));
     }
 
+    /// Says something on the status row, for a test about how a note is
+    /// drawn rather than about what put it there.
+    pub fn say_for_test(&mut self, said: &str) {
+        self.say(said);
+    }
+
     /// Says what would not go.
     ///
     /// Two doors rather than a flag set beside the words: a flag is a
@@ -4799,6 +4805,9 @@ impl Screen for App {
     }
     fn agent_usage(&self) -> Option<&acp::Usage> {
         App::agent_usage(self)
+    }
+    fn background_tasks(&self) -> Option<(usize, usize)> {
+        App::background_tasks(self)
     }
     fn blame(&self) -> Option<&[Option<obelus_git::Blamed>]> {
         App::blame(self)

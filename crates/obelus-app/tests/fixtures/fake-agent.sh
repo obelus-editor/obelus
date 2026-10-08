@@ -57,6 +57,36 @@
 #                            stays in flight until it is cancelled
 #   session/cancel       -> the turn ends, cancelled
 #
+# And background work, in JetBrains' extension, as claude-agent-acp speaks
+# it. Offered in the handshake only when run with `air` (version 1, the one
+# Obelus reads) or `air2` (a later one it does not), and only to a client
+# that asked -- but the prompts below send their updates whatever was
+# offered, because an agent sending what a client never asked for is a case
+# Obelus has to survive:
+#
+#   session/prompt "/background"
+#                         -> a command that returns while what it started
+#                            goes on: the call, marked backgrounded, and the
+#                            work it started, with what it says about itself
+#   session/prompt "/background-ends"
+#                         -> that work ends, well
+#   session/prompt "/background-wavers"
+#                         -> that work is said to have stopped, and then to
+#                            be running after all
+#   session/prompt "/background-late"
+#                         -> a call whose work starts and ends before the
+#                            call is marked as having left it going
+#   session/prompt "/garbled"
+#                         -> a run of updates about background work, half
+#                            with no id and half in no conversation, and
+#                            then a word
+#   _session/async_task/stop
+#                         -> stopped, and says so; run with `cannot-stop` it
+#                            has no such method, with `odd-stop` it answers
+#                            something nobody can read, and with `garbles-first`
+#                            it says a run of nonsense about its work before
+#                            it answers
+#
 # Every reply's id is read out of the request rather than assumed, because
 # the point of the exercise is that Obelus's numbering is its own business.
 
@@ -166,6 +196,12 @@ prompts=''
 pictures=''
 # Whether what it replays of a conversation taken up again has a plan in it.
 replans=''
+# Which version of JetBrains' extension it offers, if any, and whether it
+# can stop what it started.
+air=''
+cannot_stop=''
+garbles_first=''
+odd_stop=''
 for word in "$@"; do
     case "$word" in
         mode-as-option) both_ways='yes' ;;
@@ -180,6 +216,11 @@ for word in "$@"; do
         prompts) prompts='yes' ;;
         pictures) pictures='yes' ;;
         replans) replans='yes' ;;
+        air) air='1' ;;
+        air2) air='2' ;;
+        cannot-stop) cannot_stop='yes' ;;
+        garbles-first) garbles_first='yes' ;;
+        odd-stop) odd_stop='yes' ;;
     esac
 done
 
@@ -283,7 +324,17 @@ while IFS= read -r line; do
             # that hands an address to an agent which cannot fetch it has
             # offered nothing, so a fixture that stayed quiet here could not
             # tell a client that offers its tools from one that does not.
-            printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentCapabilities":{%s"mcpCapabilities":{"http":true}},"agentInfo":{"name":"fake-agent-acp","title":"%s","version":"0.1"}}}\n' "$(id_of "$line")" "$able" "$me"
+            # Background work, in the version it was told to offer, to a
+            # client that asked for it -- the way the real one decides.
+            spoken=''
+            case "$line" in
+                *'"asyncTasks"'*)
+                    if [ -n "$air" ]; then
+                        spoken='"_meta":{"jetbrains":{"air":{"version":'"$air"',"capabilities":["sessionFailure","asyncTasks"]}}},'
+                    fi
+                    ;;
+            esac
+            printf '{"jsonrpc":"2.0","id":%s,"result":{%s"protocolVersion":1,"agentCapabilities":{%s"mcpCapabilities":{"http":true}},"agentInfo":{"name":"fake-agent-acp","title":"%s","version":"0.1"}}}\n' "$(id_of "$line")" "$spoken" "$able" "$me"
             ;;
         *'"method":"session/new"'*)
             opened=$((opened + 1))
@@ -942,6 +993,72 @@ while IFS= read -r line; do
             set_turn "$session" "$(id_of "$line")"
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"session_info_update","title":"Renamed by the agent"}}}\n'
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
+        *'"method":"session/prompt"'*'"text":"/background-ends'*)
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"async_task_state_update","asyncTaskId":"t-1","state":"completed","summary":"exited 0"}}}\n'
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
+        *'"method":"session/prompt"'*'"text":"/background-wavers'*)
+            # Said to have stopped, and then taken back: the extension
+            # reports work that left the agent's list as stopped, and
+            # corrects it when the real word arrives.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"async_task_state_update","asyncTaskId":"t-1","state":"stopped"}}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"async_task_state_update","asyncTaskId":"t-1","state":"running"}}}\n'
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
+        *'"method":"session/prompt"'*'"text":"/background-late'*)
+            # The work starts and ends before the call that started it is
+            # said to have left it going.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call","toolCallId":"bg-1","title":"npm run dev","kind":"execute","status":"in_progress"}}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"async_task_spawned","asyncTaskId":"t-1","name":"npm run dev","taskType":"shell","canStop":true,"toolCallId":"bg-1"}}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"async_task_state_update","asyncTaskId":"t-1","state":"completed"}}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call_update","toolCallId":"bg-1","status":"completed","_meta":{"jetbrains":{"air":{"asyncTasks":{"backgrounded":true}}}}}}}\n'
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
+        *'"method":"session/prompt"'*'"text":"/background'*)
+            # A dev server: the call returns as soon as it is started, says
+            # it is done, and is marked as having left its work going.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call","toolCallId":"bg-1","title":"npm run dev","kind":"execute","status":"completed","_meta":{"jetbrains":{"air":{"asyncTasks":{"backgrounded":true}}}}}}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"async_task_spawned","asyncTaskId":"t-1","name":"npm run dev","taskType":"shell","description":"the dev server","showInTranscript":true,"canStop":true,"toolCallId":"bg-1"}}}\n'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"async_task_progress","asyncTaskId":"t-1","summary":"ready on 5173"}}}\n'
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
+        *'"method":"session/prompt"'*'"text":"/garbled'*)
+            # Two kinds of nonsense, six of each: work with no id, and work
+            # in no conversation. Neither alone is enough to give up on.
+            set_turn "$session" "$(id_of "$line")"
+            garbled=0
+            while [ "$garbled" -lt 6 ]; do
+                printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"async_task_spawned","name":"no id"}}}\n'
+                printf '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"sessionUpdate":"async_task_spawned","asyncTaskId":"t-9","name":"nowhere"}}}\n'
+                garbled=$((garbled + 1))
+            done
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"after the garble"}}}}\n'
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
+        *'"method":"_session/async_task/stop"'*)
+            # Garbled first, where it was told to: what it says about its
+            # work stops making sense while the answer is still on its way.
+            if [ -n "$garbles_first" ]; then
+                garbled=0
+                while [ "$garbled" -lt 12 ]; do
+                    printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"async_task_spawned","name":"no id"}}}\n'
+                    garbled=$((garbled + 1))
+                done
+            fi
+            if [ -n "$cannot_stop" ]; then
+                printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32601,"message":"Method not found"}}\n' "$(id_of "$line")"
+            elif [ -n "$odd_stop" ]; then
+                # An answer, and not one anybody can read.
+                printf '{"jsonrpc":"2.0","id":%s,"result":{"done":"maybe"}}\n' "$(id_of "$line")"
+            else
+                printf '{"jsonrpc":"2.0","id":%s,"result":{"stopped":true}}\n' "$(id_of "$line")"
+                printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"async_task_state_update","asyncTaskId":"t-1","state":"stopped"}}}\n'
+            fi
             ;;
         *'"method":"session/prompt"'*'"text":"/'*)
             # A command: the text starts with a slash, and everything after
