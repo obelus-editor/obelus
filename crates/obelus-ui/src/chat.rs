@@ -654,9 +654,12 @@ pub struct ChatView<'a> {
     /// anywhere, and an agent told to work on a branch of its own is out
     /// of sight of the status row, which says the reader's.
     branch: Option<&'a obelus_git::Head>,
-    /// Whether it is about a note that is still there, for the key back to
-    /// it.
-    about_a_note: bool,
+    /// The key back to the note it is about, where it is about one that is
+    /// still there and that key is on something.
+    ///
+    /// Read from the table, so the row names the key that works: it named
+    /// `alt+t` in so many words, and went on naming it when the key moved.
+    back_to_the_note: Option<obelus_editing::keymap::KeyChord>,
     /// What Obelus has to say, until the next key.
     ///
     /// A conversation has a status row of its own, so it has to carry this
@@ -699,7 +702,10 @@ impl<'a> ChatView<'a> {
             root: app.working_directory(),
             phase: app.phase(),
             branch: app.branch_this_conversation_works_on(),
-            about_a_note: app.is_about_a_note(),
+            back_to_the_note: app
+                .is_about_a_note()
+                .then(|| app.keymap().chord_for(obelus_command::Command::TodoOpen))
+                .flatten(),
             note: app.note(),
             note_is_wrong: app.note_is_wrong(),
             usage: app.agent_usage(),
@@ -1834,8 +1840,8 @@ impl ChatView<'_> {
     /// run are the key, and a run that had already been joined cannot say.
     fn status_keys(&self) -> Vec<(String, &'static str)> {
         let back = self
-            .about_a_note
-            .then(|| (chord(KeyCode::Char('t'), KeyModifiers::ALT), "The note"));
+            .back_to_the_note
+            .map(|chord| (chord.label(), "The note"));
         let mode = self
             .mode()
             .is_some_and(|mode| mode.values.len() > 1)
@@ -2257,7 +2263,7 @@ mod tests {
             root: std::path::Path::new("/"),
             phase: 0,
             branch: None,
-            about_a_note: false,
+            back_to_the_note: None,
             note: None,
             note_is_wrong: false,
             usage: None,
@@ -2301,7 +2307,7 @@ mod tests {
             root: std::path::Path::new("/"),
             phase: 0,
             branch: Some(&branch),
-            about_a_note: false,
+            back_to_the_note: None,
             note: None,
             note_is_wrong: false,
             usage: None,
@@ -2350,7 +2356,7 @@ mod tests {
                 root: std::path::Path::new("/"),
                 phase: 0,
                 branch: Some(&branch),
-                about_a_note: false,
+                back_to_the_note: None,
                 note: None,
                 note_is_wrong: false,
                 usage: None,
@@ -2525,7 +2531,7 @@ mod tests {
                 root: std::path::Path::new("/"),
                 phase: 0,
                 branch: None,
-                about_a_note: false,
+                back_to_the_note: None,
                 note: None,
                 note_is_wrong: false,
                 usage: None,
@@ -2661,7 +2667,7 @@ mod caret {
                         root: std::path::Path::new("/"),
                         phase: 0,
                         branch: None,
-                        about_a_note: false,
+                        back_to_the_note: None,
                         note: None,
                         note_is_wrong: false,
                         usage: None,

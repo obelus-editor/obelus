@@ -1608,8 +1608,8 @@ fn each_note_gets_a_conversation_of_its_own() {
 
     // Back to the list, which lands on the note this one came out of -- and
     // then on to the other note.
-    support::press_alt(&mut app, 't');
-    assert!(app.notes().is_some(), "alt+t did not bring the notes back");
+    support::press_control(&mut app, 't');
+    assert!(app.notes().is_some(), "ctrl+t did not bring the notes back");
     support::press(&mut app, KeyCode::Down);
     support::press_alt(&mut app, 'a');
     let second = app.current_document_for_test().expect("a document");
@@ -1621,7 +1621,7 @@ fn each_note_gets_a_conversation_of_its_own() {
 
     // And asking for the first one again comes back to the first, rather
     // than starting a third.
-    support::press_alt(&mut app, 't');
+    support::press_control(&mut app, 't');
     support::press(&mut app, KeyCode::Up);
     support::press_alt(&mut app, 'a');
     assert_eq!(
@@ -1654,11 +1654,11 @@ fn the_notes_come_back_on_the_note_a_conversation_is_about() {
     assert!(app.chat().is_some(), "no conversation about the third note");
     let talk = app.current_document_for_test().expect("the conversation");
     // The notes closed, so that coming back opens them again.
-    support::press_alt(&mut app, 't');
+    support::press_control(&mut app, 't');
     app.close_current();
     app.go_to_document_for_test(talk);
 
-    support::press_alt(&mut app, 't');
+    support::press_control(&mut app, 't');
     let file = obelus_git::todo::path(scratch.path()).expect("a tree that is there");
     app.handle(Event::Watched(obelus_watch::Changed { path: file }));
     support::lay_out(&mut app, 76, 24);
@@ -3177,6 +3177,27 @@ fn escape_writes_the_note_down_and_leaves_the_caret_in_it() {
     );
 }
 
+/// A conversation about a note names the key back to it, and the key it
+/// names is the one the table has: the row wrote `alt+t` in so many words,
+/// and went on writing it when the key moved to `ctrl+t`.
+///
+/// Broken deliberately by writing `alt+t` on the row again.
+#[test]
+fn a_conversation_names_the_key_back_to_its_note() {
+    let scratch = tree("key-back", THREE);
+    let mut app = open(&scratch, 120, 18);
+    app.handle(alt(KeyCode::Char('a')));
+    assert!(app.chat().is_some(), "alt+a did not open the conversation");
+    let dump = support::render(&mut app, 120, 18);
+    let row = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("The note"))
+        .map(str::to_string)
+        .unwrap_or_else(|| panic!("nothing says how to get back:\n{dump}"));
+    assert!(row.contains("Ctrl+t"), "{row}");
+    assert!(!row.contains("Alt+t"), "{row}");
+}
+
 /// Leaving the notes for somewhere and coming back leaves the caret in
 /// them.
 ///
@@ -3217,10 +3238,10 @@ fn leaving_the_notes_and_coming_back_leaves_the_caret_in_them() {
     assert_ne!(in_a_note, "none", "the notes opened with no caret");
     app.handle(alt(KeyCode::Char('a')));
     assert!(app.chat().is_some(), "alt+a did not open the conversation");
-    app.handle(alt(KeyCode::Char('t')));
+    support::press_control(&mut app, 't');
     assert!(
         app.notes().is_some(),
-        "alt+t did not come back to the notes"
+        "ctrl+t did not come back to the notes"
     );
     assert_eq!(
         caret(&mut app),
