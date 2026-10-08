@@ -1962,15 +1962,20 @@ impl ChatView<'_> {
         (placed, None)
     }
 
-    /// Who is being talked to, and where its work is going.
+    /// Who is being talked to, what about, and where its work is going.
     ///
     /// A header says what the thing it names *is*, which for an agent is its
-    /// name -- and, once it has changed something, the branch the change
-    /// is on. What is *happening* goes at the foot of the transcript,
-    /// where the next thing will appear; what went wrong is a line in the
-    /// transcript where it went wrong. Five states used to sit here, two of
-    /// them saying what the screen already said better and one of them
-    /// saying "not started yet" about an agent that had failed to start.
+    /// name, then what this conversation is called -- the name the agent
+    /// gives it, and renames it to whenever it likes -- and, once it has
+    /// changed something, the branch the change is on. The branch is ours
+    /// and short and the conversation's name is anybody's length, so the
+    /// branch has its room first and the name is cut to what is left, or
+    /// left out where that is too little to read. What is *happening* goes at
+    /// the foot of the transcript, where the next thing will appear; what
+    /// went wrong is a line in the transcript where it went wrong. Five
+    /// states used to sit here, two of them saying what the screen already
+    /// said better and one of them saying "not started yet" about an agent
+    /// that had failed to start.
     fn header(&self, cells: &mut CellBuffer, area: Rect, plain: Style, dim: Style) {
         let mut column = area.x + MARGIN;
         if obelus_icons::enabled() {

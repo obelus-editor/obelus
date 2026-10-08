@@ -644,10 +644,11 @@ pub struct App {
     /// The project's notes, as Obelus last read them.
     ///
     /// Not the page's copy, which is the reader's and is ahead of the file
-    /// while they are typing in it. This one is the file, for the one
-    /// thing outside that page which has to know what a note says: the
+    /// while they are typing in it. This one is the file, for the two
+    /// things outside that page which have to know what a note says: the
     /// box of the conversation about it, which offers to ask about the
-    /// note again once it has been rewritten.
+    /// note again once it has been rewritten, and the conversation's
+    /// header, which goes by the note until the agent has named it.
     notes_kept: Option<obelus_git::todo::Todo>,
     /// Which conversations somebody has open, as Obelus last looked.
     ///

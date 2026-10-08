@@ -210,8 +210,9 @@ impl App {
     /// What a conversation is called: the agent's name for it, or the note
     /// it is about, or the reader's first words, where it has any of them.
     ///
-    /// The one answer, which the list of what is open and the line saying
-    /// one was closed both read, so the two cannot call it different things.
+    /// The one answer, which the list of what is open, the line saying one
+    /// was closed and the conversation's own header all read, so none of
+    /// them can call it something different.
     ///
     /// The first words are for the wait before the agent names it, which is
     /// the whole of the first turn, and a first turn can run for minutes --
