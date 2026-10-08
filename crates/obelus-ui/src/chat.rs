@@ -67,6 +67,12 @@ const MARGIN: u16 = 1;
 /// read by.
 const INDENT: u16 = 3;
 
+/// The fewest cells a conversation's name is cut down to in the header.
+///
+/// Below this what is left is a letter and an ellipsis, which says only that
+/// something was there; a name that fits whole is drawn however short.
+const SHORTEST_NAME: usize = 8;
+
 /// Who is speaking, for a terminal with no Nerd Font.
 ///
 /// Distinct marks rather than a colour each: colours say it as well, and a
@@ -1998,7 +2004,10 @@ impl ChatView<'_> {
         // first words -- so it gets what the branch leaves and is cut there.
         if let Some(title) = self.title.as_deref() {
             let room = end.saturating_sub(usize::from(column) + 2 + branch_wide);
-            let title = crate::truncate_from_right(title, room);
+            let title = match text_width(title) <= room || room >= SHORTEST_NAME {
+                true => crate::truncate_from_right(title, room),
+                false => String::new(),
+            };
             if !title.is_empty() {
                 column = write(cells, column, area.y, "  ", plain);
                 column = write(cells, column, area.y, &title, plain);
@@ -2303,6 +2312,62 @@ mod tests {
         assert_eq!(
             row, " Fake Agent  A conversation ab\u{2026}  feature",
             "the name and the branch did not share the row"
+        );
+    }
+
+    /// And where what the branch leaves is too little to say anything of
+    /// a long name, the name is not drawn at all -- but a short one that
+    /// fits is.
+    ///
+    /// Broken deliberately: take the shortest a name may be cut to out of
+    /// the condition, and the first row reads `Fake Agent  A conv…  feature`.
+    #[test]
+    fn a_name_cut_to_almost_nothing_is_not_drawn() {
+        let _held = crate::glyphs_held();
+        obelus_icons::use_glyphs(false);
+        let chat = obelus_component::chat::Chat::new();
+        let branch = obelus_git::Head::Branch("feature".to_string());
+        // Ten for the agent's name and the margin, nine for the branch, and
+        // two before the name leave it seven.
+        let area = ratatui::layout::Rect::new(0, 0, 11 + 2 + 7 + 9, 1);
+        let row = |title: &str| {
+            let view = super::ChatView {
+                chat: &chat,
+                theme: &obelus_theme::builtin::DARK,
+                state: obelus_agent::Talking::Ready,
+                name: Some("Fake Agent"),
+                title: Some(title.to_string()),
+                settings: &[],
+                focus: obelus_component::chat::Focus::Writing,
+                card: None,
+                in_front: true,
+                pointer: None,
+                root: std::path::Path::new("/"),
+                phase: 0,
+                branch: Some(&branch),
+                about_a_note: false,
+                note: None,
+                note_is_wrong: false,
+                usage: None,
+                tasks: None,
+                remote: None,
+            };
+            let mut cells = ratatui::buffer::Buffer::empty(area);
+            let plain = ratatui::style::Style::default();
+            view.header(&mut cells, area, plain, plain);
+            (area.x..area.right())
+                .map(|x| cells[(x, area.y)].symbol().to_string())
+                .collect::<String>()
+        };
+        assert_eq!(
+            row("A conversation about a great many things").trim_end(),
+            " Fake Agent  feature",
+            "a stub of the name was drawn"
+        );
+        assert_eq!(
+            row("Renamed").trim_end(),
+            " Fake Agent  Renamed  feature",
+            "a name that fits was left out"
         );
     }
 
