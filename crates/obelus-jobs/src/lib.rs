@@ -198,13 +198,17 @@ impl Pool {
             }
         };
         members.lock_shared()?;
+        // Settled before there is a `Pool` to drop: one that failed here
+        // would be dropped while `setup` is still held, and leaving waits
+        // for `SETUP` through a file of its own -- which this process
+        // already has locked, so it would wait for ever.
+        settle(directory, &channel, &auth, jobs)?;
         let pool = Self {
             directory: directory.to_path_buf(),
             members,
             channel,
             auth,
         };
-        pool.settle(jobs)?;
         if let Ok(mut lent) = LENT.write() {
             lent.push(told(&pool.auth));
         }
@@ -230,31 +234,63 @@ impl Pool {
     pub fn resize(&self, jobs: usize) -> io::Result<()> {
         let setup = lock_file(&self.directory.join(SETUP))?;
         setup.lock()?;
-        self.settle(jobs)
+        settle(&self.directory, &self.channel, &self.auth, jobs)
     }
 
-    /// Puts tokens into the pool or takes them out until it is `jobs` jobs
-    /// at once. Asked with [`SETUP`] held.
+    /// Gives up this Obelus's place in the pool, and the pool with it if
+    /// nobody else is in.
     ///
-    /// One fewer token than jobs, because every program in a pool has one
-    /// of its own that it never puts in: a cargo in an empty pool still
-    /// builds, one job at a time.
-    fn settle(&self, jobs: usize) -> io::Result<()> {
-        let wanted = jobs.saturating_sub(1);
-        let had = read_record(&self.directory).map_or(0, |record| record.tokens);
-        match wanted.cmp(&had) {
-            std::cmp::Ordering::Equal => return Ok(()),
-            std::cmp::Ordering::Greater => self.channel.give(wanted - had)?,
-            std::cmp::Ordering::Less => self.channel.take(had - wanted, &self.auth)?,
+    /// Everything leaving does is done with [`SETUP`] held, the members'
+    /// lock let go of included: the last one out takes it outright to find
+    /// out that it is the last, and held past `SETUP` it would say to the
+    /// next one in that somebody is still here -- in a pool whose record
+    /// has just been taken away.
+    fn leave(&self) {
+        if let Ok(mut lent) = LENT.write() {
+            let mine = told(&self.auth);
+            if let Some(at) = lent.iter().rposition(|told| *told == mine) {
+                lent.remove(at);
+            }
         }
-        write_record(
-            &self.directory,
-            &Record {
-                auth: self.auth.clone(),
-                tokens: wanted,
-            },
-        )
+        let Ok(setup) = lock_file(&self.directory.join(SETUP)) else {
+            return;
+        };
+        if setup.lock().is_err() {
+            return;
+        }
+        let _ = self.members.unlock();
+        // The last one out takes the name with it -- see the module's note
+        // on why a name nobody keeps is worse than none.
+        if self.members.try_lock().is_ok() {
+            channel::forget(&self.auth);
+            let _ = std::fs::remove_file(self.directory.join(RECORD));
+            let _ = self.members.unlock();
+            tracing::info!("the last out of the machine's pool of build jobs");
+        }
     }
+}
+
+/// Puts tokens into a pool or takes them out until it is `jobs` jobs at
+/// once. Asked with [`SETUP`] held.
+///
+/// One fewer token than jobs, because every program in a pool has one of
+/// its own that it never puts in: a cargo in an empty pool still builds,
+/// one job at a time.
+fn settle(directory: &Path, channel: &channel::Channel, auth: &str, jobs: usize) -> io::Result<()> {
+    let wanted = jobs.saturating_sub(1);
+    let had = read_record(directory).map_or(0, |record| record.tokens);
+    match wanted.cmp(&had) {
+        std::cmp::Ordering::Equal => return Ok(()),
+        std::cmp::Ordering::Greater => channel.give(wanted - had)?,
+        std::cmp::Ordering::Less => channel.take(had - wanted, auth)?,
+    }
+    write_record(
+        directory,
+        &Record {
+            auth: auth.to_string(),
+            tokens: wanted,
+        },
+    )
 }
 
 impl Pool {
@@ -275,26 +311,7 @@ impl Pool {
 
 impl Drop for Pool {
     fn drop(&mut self) {
-        if let Ok(mut lent) = LENT.write() {
-            let mine = told(&self.auth);
-            if let Some(at) = lent.iter().rposition(|told| *told == mine) {
-                lent.remove(at);
-            }
-        }
-        let Ok(setup) = lock_file(&self.directory.join(SETUP)) else {
-            return;
-        };
-        if setup.lock().is_err() {
-            return;
-        }
-        let _ = self.members.unlock();
-        // The last one out takes the name with it -- see the module's note
-        // on why a name nobody keeps is worse than none.
-        if self.members.try_lock().is_ok() {
-            channel::forget(&self.auth);
-            let _ = std::fs::remove_file(self.directory.join(RECORD));
-            tracing::info!("the last out of the machine's pool of build jobs");
-        }
+        self.leave();
     }
 }
 
@@ -692,6 +709,91 @@ mod tests {
         );
         drop(second);
         assert!(super::lent().is_empty(), "{:?}", super::lent());
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// A join that fails part-way says so, rather than waiting for ever on
+    /// a lock its own process holds -- and takes nothing away from the
+    /// Obelus already in.
+    ///
+    /// Made to fail by a record nobody may write: the second in finds the
+    /// pool too small, puts tokens in and cannot write the new size down.
+    /// Which is the disk being full, the case the pool exists for.
+    ///
+    /// Deliberate break: build the `Pool` before settling it in `join`, and
+    /// this waits out its ten seconds.
+    #[test]
+    fn a_join_that_fails_says_so() {
+        let _turn = turn();
+        let directory = scratch("fails");
+        let first = Pool::join(&directory, 1).expect("the first in");
+        let record = directory.join(super::RECORD);
+        let mut readonly = std::fs::metadata(&record)
+            .expect("the record")
+            .permissions();
+        readonly.set_readonly(true);
+        std::fs::set_permissions(&record, readonly).expect("read-only");
+        // Somebody the permissions do not stop -- root, on a machine that
+        // runs its tests as root -- writes it anyway, and there is no
+        // failure to see.
+        if std::fs::OpenOptions::new()
+            .write(true)
+            .open(&record)
+            .is_ok()
+        {
+            drop(first);
+            let _ = std::fs::remove_dir_all(&directory);
+            return;
+        }
+
+        let (said, heard) = std::sync::mpsc::channel();
+        let joining = directory.clone();
+        std::thread::spawn(move || {
+            let _ = said.send(Pool::join(&joining, 4).is_err());
+        });
+        let Ok(failed) = heard.recv_timeout(std::time::Duration::from_secs(10)) else {
+            // The joiner waits for ever with `SETUP` held, and the first in
+            // would wait behind it to leave: not dropped, so that this says
+            // what went wrong rather than hanging too.
+            std::mem::forget(first);
+            panic!("a join that failed waited for ever");
+        };
+        assert!(failed, "a join whose record could not be written succeeded");
+        assert!(
+            !super::lent().is_empty(),
+            "a join that failed took away what the first in tells its programs"
+        );
+
+        let mut writable = std::fs::metadata(&record)
+            .expect("the record")
+            .permissions();
+        #[allow(clippy::permissions_set_readonly_false)]
+        writable.set_readonly(false);
+        std::fs::set_permissions(&record, writable).expect("writable");
+        drop(first);
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// The last one out lets go of everything before anybody else can come
+    /// in: a lock still held past `SETUP` tells the next in that somebody
+    /// is still here, in a pool whose record has gone.
+    ///
+    /// Deliberate break: take out the `unlock` after the record is removed
+    /// in `leave`, and the members' lock is still held when it returns.
+    #[test]
+    fn the_last_out_lets_go_before_the_next_comes_in() {
+        let _turn = turn();
+        let directory = scratch("lets-go");
+        let pool = Pool::join(&directory, 2).expect("in");
+        pool.leave();
+        let members = super::lock_file(&directory.join(super::MEMBERS)).expect("the lock");
+        assert!(
+            members.try_lock().is_ok(),
+            "the last out still holds the members' lock"
+        );
+        drop(members);
+        // Left already: what is left of it holds nothing.
+        std::mem::forget(pool);
         let _ = std::fs::remove_dir_all(&directory);
     }
 
