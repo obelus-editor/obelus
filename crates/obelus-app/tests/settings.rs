@@ -1367,12 +1367,14 @@ fn the_ends_and_the_pages_are_reachable() {
 /// page moved under it, and for those two the reader was standing on a row
 /// that was nowhere.
 ///
-/// The keys page, because its rows are one row each: there "the row the
-/// focus is on" and "a row of the page" are the same count, so a step is a
-/// row and the arithmetic has nowhere to hide.
+/// The keys page, because its rows are one row each under the layout's
+/// entry: there "the row the focus is on" and "a row of the page" are
+/// nearly the same count, so a step is a row and the arithmetic has
+/// nowhere to hide.
 ///
 /// Deliberate break: `room.1.saturating_sub(2)` back in `settle_rows`, or
-/// `settings_room` handing back the editor's own size.
+/// `settings_room` handing back the editor's own size -- or `settle_rows`
+/// counting the layout's entry as one row, as tall as a command.
 #[test]
 fn the_row_the_focus_is_on_is_a_row_that_is_drawn() {
     let _turn = SETTINGS
@@ -4497,11 +4499,16 @@ fn the_agents_go_where_their_bar_is_dragged() {
 /// `mnemonic` there moves what the function keys open onto letters -- in
 /// the table a key is looked up in, on the page, and in the file.
 ///
-/// Broken deliberately three ways: `key_rows` without the setting, which
-/// leaves `Layout` off the top of the page; `apply_config` building the
-/// classic table whatever the setting says, which leaves `ctrl+o` on
-/// nothing; and `lay` not writing `keys_from`, which leaves the file
-/// without it.
+/// It is an entry the way a setting on the settings page is -- its gloss
+/// under it and a blank after -- and not one more row of the table under
+/// it, where it read as a command called `Layout`.
+///
+/// Broken deliberately four ways: `key_rows` without the setting, which
+/// leaves `Layout` off the top of the page; its row drawn with `entry`
+/// false, which puts `open-file` straight under the gloss; `apply_config`
+/// building the classic table whatever the setting says, which leaves
+/// `ctrl+o` on nothing; and `lay` not writing `keys_from`, which leaves
+/// the file without it.
 #[test]
 fn the_keys_page_chooses_where_the_keys_start() {
     use crossterm::event::{KeyEvent, KeyModifiers};
@@ -4515,13 +4522,32 @@ fn the_keys_page_chooses_where_the_keys_start() {
     support::press(&mut app, KeyCode::Tab);
     assert!(app.settings().expect("the settings").on_keys());
     let dump = support::render(&mut app, 76, 14);
-    let first = support::text_block(&dump)
+    let rows: Vec<String> = support::text_block(&dump)
         .lines()
-        .find(|row| row.contains("Layout"))
-        .map(str::to_string);
+        .map(|row| {
+            row.split_once('|')
+                .map_or(row, |(_, cells)| cells)
+                .to_string()
+        })
+        .collect();
+    let at = rows
+        .iter()
+        .position(|row| row.contains("Layout"))
+        .unwrap_or_else(|| panic!("the layout is not on the page:\n{dump}"));
+    assert!(rows[at].contains("Classic"), "{dump}");
+    // What it does under it, then the blank, then the table.
     assert!(
-        first.as_deref().is_some_and(|row| row.contains("Classic")),
-        "the layout is not on the page:\n{dump}"
+        rows[at + 1].contains("What your own keys start from"),
+        "{dump}"
+    );
+    let blank = rows.iter().skip(at + 2).position(|row| {
+        row.trim_matches(|cell: char| cell == ' ' || cell == '\u{2588}')
+            .is_empty()
+    });
+    let table = rows.iter().position(|row| row.contains("open-file"));
+    assert!(
+        matches!((blank, table), (Some(blank), Some(table)) if at + 2 + blank + 1 == table),
+        "no blank between the layout and the commands:\n{dump}"
     );
 
     support::press(&mut app, KeyCode::Enter);

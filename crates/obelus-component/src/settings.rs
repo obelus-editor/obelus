@@ -1546,7 +1546,21 @@ impl Settings {
     pub fn settle_rows(&mut self, room: (u16, u16), offering: Option<&Offering>) {
         let heights: Vec<u16> = match self.on_keys() {
             // A key is a name and a chord: one row, the way it always was.
-            true => vec![1; self.row_count(offering)],
+            // The layout above them is a setting, and as tall as one.
+            true => self
+                .key_rows()
+                .into_iter()
+                .map(|row| match row {
+                    KeyRow::Setting(setting) => self.setting_rows(
+                        &Shown::Obelus {
+                            setting,
+                            opens: None,
+                        },
+                        description_width(room.0),
+                    ),
+                    KeyRow::Command(_) => 1,
+                })
+                .collect(),
             false => self
                 .rows(offering)
                 .iter()
