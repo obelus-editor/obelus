@@ -30,8 +30,12 @@ use crate::event::Event;
 ///
 /// Named rather than left to `gh`'s default, which has no `--json` at all:
 /// its table is for people and changes shape with the terminal.
-const FIELDS: &str =
-    "number,title,author,headRefName,baseRefName,headRefOid,isDraft,reviewDecision,updatedAt";
+///
+/// The description and the counts with the rest, in the one call: the
+/// preview walks with the selection, and a question to GitHub per row
+/// walked would be a preview that is always arriving.
+const FIELDS: &str = "number,title,author,headRefName,baseRefName,headRefOid,isDraft,\
+                      reviewDecision,updatedAt,body,additions,deletions,changedFiles";
 
 /// How many to ask for.
 ///
@@ -62,6 +66,14 @@ pub struct PullRequest {
     pub decision: Option<Decision>,
     /// When it last changed, as seconds since the epoch.
     pub updated: Option<i64>,
+    /// What its author wrote about it, as the markdown they wrote.
+    pub body: String,
+    /// How many lines it adds.
+    pub additions: u64,
+    /// How many it takes away.
+    pub deletions: u64,
+    /// How many files it changes.
+    pub files: u64,
 }
 
 /// What the reviews of a pull request have come to.
@@ -125,6 +137,9 @@ impl App {
         // morning's because its title scored better.
         picker.keeps_order(true);
         picker.opened_by(Command::PullRequestReview);
+        // What the selection says about itself, under the list: a title is
+        // a line, and which pull request to review is decided by the rest.
+        picker.previews();
         self.show_list(picker);
         if !self.pulls.asking {
             self.pulls.asking = true;
@@ -149,6 +164,15 @@ impl App {
     /// Takes what `gh` said, and puts it in the list if the list is up.
     pub(super) fn on_pull_requests(&mut self, answer: Result<Vec<PullRequest>, Unlisted>) {
         self.pulls.asking = false;
+        // A preview is kept by its subject, and the subject is a number: the
+        // same number with a new description is not a new subject, so what
+        // was laid out from the last answer has to go with it.
+        if matches!(
+            self.preview.as_ref().map(previewing::Preview::subject),
+            Some(previewing::Subject::PullRequest(_))
+        ) {
+            self.preview = None;
+        }
         match answer {
             Ok(listed) => {
                 self.pulls.listed = listed;
@@ -255,6 +279,55 @@ impl App {
     #[must_use]
     pub(super) fn pull_request(&self, number: u64) -> Option<&PullRequest> {
         self.pulls.listed.iter().find(|pull| pull.number == number)
+    }
+
+    /// What a pull request says about itself, laid out at `width` for the
+    /// preview under the list.
+    ///
+    /// Two rows naming it, in the shape a commit's message names its commit
+    /// -- which, who, from where to where, how long ago, and how much it
+    /// changes -- and then its title and its description as the markdown
+    /// they are, laid out by the same code a markdown file is.
+    pub(super) fn pull_request_reading(&self, number: u64, width: u16) -> Vec<obelus_row::Row> {
+        use obelus_row::{Ink, Row, Span};
+
+        let Some(pull) = self.pull_request(number) else {
+            return Vec::new();
+        };
+        let mut named = format!(
+            "#{}   {}   {} \u{2192} {}",
+            pull.number, pull.author, pull.head, pull.base
+        );
+        if let Some(updated) = pull.updated {
+            named.push_str(&format!(
+                "   {}",
+                obelus_git::how_long_ago(updated, std::time::SystemTime::now())
+            ));
+        }
+        let files = match pull.files {
+            1 => "1 file".to_string(),
+            files => format!("{files} files"),
+        };
+        let mut rows = vec![
+            Row::of(vec![Span::new(named, Ink::Aside)]),
+            Row::of(vec![
+                Span::new(format!("+{}", pull.additions), Ink::Added),
+                Span::new(" ", Ink::Aside),
+                Span::new(format!("\u{2212}{}", pull.deletions), Ink::Removed),
+                Span::new(format!(" \u{b7} {files}"), Ink::Aside),
+            ]),
+            Row::default(),
+        ];
+        // The title as the heading it is, and the description after it as
+        // its author wrote it -- a description with headings of its own
+        // keeps them under this one.
+        let source = format!("# {}\n\n{}", pull.title, pull.body);
+        rows.extend(obelus_markdown::render(&source, width));
+        if pull.body.trim().is_empty() {
+            rows.push(Row::default());
+            rows.push(Row::of(vec![Span::new("No description", Ink::Aside)]));
+        }
+        rows
     }
 
     /// What a review is called before the agent has called it anything.
@@ -371,6 +444,11 @@ fn read(said: &str) -> Result<Vec<PullRequest>, Unlisted> {
     let mut pulls: Vec<PullRequest> = rows
         .iter()
         .filter_map(|row| {
+            let count = |key: &str| {
+                row.get(key)
+                    .and_then(serde_json::Value::as_u64)
+                    .unwrap_or(0)
+            };
             Some(PullRequest {
                 number: row.get("number")?.as_u64()?,
                 title: text(row, "title"),
@@ -396,6 +474,10 @@ fn read(said: &str) -> Result<Vec<PullRequest>, Unlisted> {
                     .parse::<jiff::Timestamp>()
                     .ok()
                     .map(jiff::Timestamp::as_second),
+                body: text(row, "body"),
+                additions: count("additions"),
+                deletions: count("deletions"),
+                files: count("changedFiles"),
             })
         })
         .collect();

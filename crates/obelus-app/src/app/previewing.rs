@@ -50,6 +50,14 @@ impl App {
                     severity: complaint.severity,
                     others: complaint.others,
                 }),
+            reading: preview.reading.as_ref().map(|(_, rows)| {
+                // Kept within the rows by `refresh_preview`, which stores
+                // the scroll back once it knows the room.
+                (
+                    rows.as_slice(),
+                    usize::try_from(preview.scrolled).unwrap_or(0),
+                )
+            }),
         })
     }
 
@@ -272,8 +280,33 @@ impl App {
                 marked: Vec::new(),
                 target: marked.at(),
                 scrolled: 0,
+                reading: None,
             });
             self.preview = read;
+        }
+
+        // A reading is rows and a scroll, and nothing below -- a place
+        // marked, a line centred, a server's units -- is about rows.
+        if let Subject::PullRequest(number) = subject.clone() {
+            let width = obelus_ui::reading::width_in_a_preview(area);
+            let laid = self
+                .preview
+                .as_ref()
+                .and_then(|preview| preview.reading.as_ref())
+                .is_some_and(|(at, _)| *at == width);
+            let rows = (!laid).then(|| self.pull_request_reading(number, width));
+            let Some(preview) = self.preview.as_mut() else {
+                return;
+            };
+            if let Some(rows) = rows {
+                preview.reading = Some((width, rows));
+            }
+            let length = preview.reading.as_ref().map_or(0, |(_, rows)| rows.len());
+            let last = length.saturating_sub(usize::from(area.height));
+            preview.scrolled = preview
+                .scrolled
+                .clamp(0, isize::try_from(last).unwrap_or(isize::MAX));
+            return;
         }
 
         // Whichever encoding the server for this language agreed to. Nothing
@@ -706,7 +739,7 @@ impl App {
                 .is_some_and(|buffer| buffer.path() == path),
             // A file as a commit had it is not the file on disk, whatever
             // its path says, and a message is not a file at all.
-            Subject::Commit { .. } | Subject::Message(_) => false,
+            Subject::Commit { .. } | Subject::Message(_) | Subject::PullRequest(_) => false,
         }
     }
 
@@ -794,9 +827,6 @@ impl App {
             // A conversation has no path and no cursor, and this list is
             // compact anyway: there is no room under it to show one in.
             | PickerValue::Conversation(_)
-            // A pull request is somewhere else's branch, and the review is
-            // the agent's to read: nothing here is a file to show.
-            | PickerValue::PullRequest(_)
             // A thing the server offers to do has nowhere to show: what it
             // would change is not worked out until it is chosen.
             | PickerValue::Action(_)
@@ -829,6 +859,11 @@ impl App {
                 let path = self.working_directory.join(path);
                 let at = self.read_at(&path, Some(*id));
                 Some((Subject::Commit { id: *id, path }, at))
+            }
+            // What it says about itself, which is what a reader choosing
+            // which to review is choosing by.
+            PickerValue::PullRequest(number) => {
+                Some((Subject::PullRequest(*number), Marked::top()))
             }
             // A question is about what is already on screen, and the reader
             // has to be able to see it to answer: a preview would cover the
@@ -924,6 +959,13 @@ impl App {
                 }
                 Some((buffer, None))
             }
+            // An empty buffer, which nothing draws: what is drawn is the
+            // reading `refresh_preview` lays out beside it. A preview that
+            // was not there at all would be a list saying the pull request
+            // has nothing to show.
+            Subject::PullRequest(number) => self
+                .pull_request(*number)
+                .map(|_| (Buffer::from_text(Path::new(""), ""), None)),
         }
     }
 
@@ -1024,6 +1066,12 @@ pub(super) enum Subject {
     },
     /// What a commit said about itself.
     Message(gix::ObjectId),
+    /// What a pull request says about itself, by its number.
+    ///
+    /// A reading rather than a buffer: a description is markdown somebody
+    /// wrote for a page that renders it, and it is shown the way a markdown
+    /// file read as one is.
+    PullRequest(u64),
 }
 
 /// A file read so that the picker's selection can be shown.
@@ -1076,11 +1124,22 @@ pub(super) struct Preview {
     /// set from the target on every frame: without this, a scroll would be
     /// undone before it was drawn.
     scrolled: isize,
+    /// The subject laid out as rows, and the width they were laid out at,
+    /// where it is a reading rather than a file.
+    ///
+    /// Laid out again only when the width changes: a row is the same
+    /// description on every frame, and laying out markdown is the dear part.
+    reading: Option<(u16, Vec<obelus_row::Row>)>,
 }
 
 impl Preview {
     fn language(&self) -> Option<LanguageId> {
         self.buffer.language()
+    }
+
+    /// What it is a preview of.
+    pub(super) const fn subject(&self) -> &Subject {
+        &self.subject
     }
 }
 

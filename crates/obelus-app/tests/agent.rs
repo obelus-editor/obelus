@@ -14516,9 +14516,64 @@ fn work_that_ended_before_its_call_was_marked_is_done() {
 
 /// What `gh pr list` prints for one open pull request at `sha`.
 fn one_pull_request(sha: &str) -> String {
+    described(sha, r"## What changes\n\n- the fold stays\n- the hunk goes")
+}
+
+/// The same, with `body` as its description, escaped as JSON escapes it.
+fn described(sha: &str, body: &str) -> String {
     format!(
-        r#"[{{"number":123,"title":"Keep the fold when a hunk is reverted","author":{{"login":"alice"}},"headRefName":"keep-fold","baseRefName":"master","headRefOid":"{sha}","isDraft":false,"reviewDecision":"APPROVED","updatedAt":""}}]"#
+        r#"[{{"number":123,"title":"Keep the fold when a hunk is reverted","author":{{"login":"alice"}},"headRefName":"keep-fold","baseRefName":"master","headRefOid":"{sha}","isDraft":false,"reviewDecision":"APPROVED","updatedAt":"","body":"{body}","additions":142,"deletions":18,"changedFiles":12}}]"#
     )
+}
+
+/// What the pull request the list has selected says about itself, under
+/// the list: which it is and how much it changes, then its title and its
+/// description, laid out as the markdown they are -- and a description
+/// that is empty says so.
+///
+/// Broken deliberately three ways. Laying the description out as its lines
+/// rather than as markdown leaves the `##` and the dashes on screen. Taking
+/// `previews` off the list leaves no room under it to show anything. And
+/// taking the empty description's line out leaves a title over nothing.
+#[test]
+fn the_selected_pull_request_is_described_under_the_list() {
+    let scratch = support::Scratch::new("agent-pull-request-preview");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, one_pull_request("abc123")).expect("the answer");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 1)
+    });
+    let text = screen(&mut app);
+    for said in [
+        "#123   alice   keep-fold \u{2192} master",
+        "+142 \u{2212}18 \u{b7} 12 files",
+        "What changes",
+        "\u{2022} the fold stays",
+    ] {
+        assert!(
+            text.contains(said),
+            "the preview does not say {said:?}:\n{text}"
+        );
+    }
+    assert!(
+        !text.contains("## What changes") && !text.contains("- the hunk goes"),
+        "the description was shown as its source:\n{text}"
+    );
+
+    support::press(&mut app, KeyCode::Esc);
+    std::fs::write(&answer, described("abc123", "")).expect("no description");
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list again", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 1)
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("No description"),
+        "an empty description said nothing:\n{text}"
+    );
 }
 
 /// An application whose `gh` is the fake one, answering from `answer`.

@@ -204,6 +204,14 @@ pub struct Previewed<'a> {
     /// in a row is a row nobody can read -- so the box is where the whole
     /// of it fits.
     pub complaint: Option<Complained<'a>>,
+    /// What is shown instead of the buffer where the subject is a reading
+    /// rather than a file -- a pull request's description, laid out as the
+    /// markdown it is -- and the first of its rows on screen.
+    ///
+    /// Drawn by [`reading::draw`], which draws a markdown file read as one,
+    /// so a description and a README look the same because they are drawn
+    /// by the same code.
+    pub reading: Option<(&'a [obelus_row::Row], usize)>,
 }
 
 /// What is wrong with the line the reader is on, for the box that says so.
@@ -1356,6 +1364,14 @@ fn list_over(
         );
 
         match app.preview() {
+            Some(Previewed {
+                reading: Some((rows, top)),
+                ..
+            }) => bars::of(Whose::Preview, || {
+                fill(cells, preview, Style::new().bg(app.theme().background));
+                let area = reading::in_a_preview(preview);
+                reading::draw(cells, area, rows, top, app.theme(), app.theme().background);
+            }),
             Some(shown) => bars::of(Whose::Preview, || {
                 editor::EditorView::for_buffer(
                     shown.buffer,

@@ -39,6 +39,10 @@ pub enum Ink {
     Wrong,
     /// Something might be.
     Doubtful,
+    /// Lines a change added, counted: the colour the margin marks them in.
+    Added,
+    /// And the lines it took away.
+    Removed,
     /// Code, in the colour the code itself would be.
     ///
     /// What a fenced block in markdown is made of, once the grammar its
