@@ -61,11 +61,11 @@ use crate::{Screen, fill, put, rule, write, write_within};
 /// speaking.
 const MARGIN: u16 = 1;
 
-/// How far the words are from the mark.
-///
-/// Three: a glyph, the column a Nerd Font's glyph bleeds into, and one to
-/// read by.
-const INDENT: u16 = 3;
+/// How far the words are from the mark: the glyph's cell and the gap after
+/// it, which is a cell more in a terminal -- see `after_a_glyph`.
+fn indent() -> u16 {
+    1 + u16::try_from(crate::after_a_glyph().len()).unwrap_or(2)
+}
 
 /// The fewest cells a conversation's name is cut down to in the header.
 ///
@@ -146,7 +146,7 @@ pub struct Regions {
 /// box needs be worked out before the bands are laid out.
 #[must_use]
 pub fn writing_width(area: Rect) -> u16 {
-    area.width.saturating_sub(MARGIN + INDENT + 1).max(1)
+    area.width.saturating_sub(MARGIN + indent() + 1).max(1)
 }
 
 /// The cells a row of the transcript has to write in.
@@ -156,7 +156,7 @@ pub fn writing_width(area: Rect) -> u16 {
 /// in the transcript stands on a row.
 #[must_use]
 pub fn reading_width(area: Rect) -> u16 {
-    area.width.saturating_sub(MARGIN + INDENT + 1).max(1)
+    area.width.saturating_sub(MARGIN + indent() + 1).max(1)
 }
 
 /// The room the list of an agent's commands has over the conversation.
@@ -274,7 +274,7 @@ fn offer(area: Rect, chat: &Chat) -> Offer {
     // None where the region is too narrow to have the offer beside even an
     // empty row: it would be drawn over the caret.
     let room = offer_at(area).and_then(|at| {
-        usize::from(at - area.x).checked_sub(usize::from(MARGIN + INDENT) + GAP_BETWEEN_HINTS)
+        usize::from(at - area.x).checked_sub(usize::from(MARGIN + indent()) + GAP_BETWEEN_HINTS)
     });
     match room {
         Some(room) if at_the_foot && usize::from(chat.writing().ends_at(width).get()) <= room => {
@@ -606,10 +606,13 @@ fn tasks_said(running: usize, finished: usize, glyphs: bool, window: bool) -> St
         0 => format!("{finished} finished"),
         _ => format!("{running} in the background"),
     };
-    match (glyphs, window) {
-        (true, true) => format!("{} {going}", obelus_icons::ui::BACKGROUND),
-        (true, false) => format!("{}  {going}", obelus_icons::ui::BACKGROUND),
-        (false, _) => going,
+    match glyphs {
+        true => format!(
+            "{}{}{going}",
+            obelus_icons::ui::BACKGROUND,
+            crate::gap_after_a_glyph(window)
+        ),
+        false => going,
     }
 }
 
@@ -829,7 +832,7 @@ impl<'a> ChatView<'a> {
         let first = row.saturating_sub(usize::from(writing.height).saturating_sub(1));
         let y = writing.y + u16::try_from(row - first).unwrap_or(0);
         (y < writing.bottom()).then(|| ratatui::layout::Position {
-            x: (writing.x + MARGIN + INDENT + cell.get()).min(writing.right().saturating_sub(1)),
+            x: (writing.x + MARGIN + indent() + cell.get()).min(writing.right().saturating_sub(1)),
             y,
         })
     }
@@ -854,7 +857,7 @@ impl<'a> ChatView<'a> {
         }
         let width = writing_width(area);
         let writing = words_band(area, regions(area, box_rows(area, chat)).writing, chat);
-        let box_x = writing.x + MARGIN + INDENT;
+        let box_x = writing.x + MARGIN + indent();
         if y < writing.y || y >= writing.bottom() || x < box_x || x >= writing.right() {
             return None;
         }
@@ -959,7 +962,7 @@ fn cell_at(row: &Row, characters: usize, area: Rect) -> u16 {
 
 /// The cell a row's own words start at.
 fn words_begin(row: &Row, area: Rect) -> u16 {
-    area.x + MARGIN + INDENT + u16::from(row.depth) * DEEPER
+    area.x + MARGIN + indent() + u16::from(row.depth) * DEEPER
 }
 
 impl Widget for ChatView<'_> {
@@ -1101,7 +1104,7 @@ impl ChatView<'_> {
 
     /// What has been said, and the commands being completed over it.
     fn transcript(&self, cells: &mut CellBuffer, area: Rect, plain: Style, dim: Style) {
-        let words = area.x + MARGIN + INDENT;
+        let words = area.x + MARGIN + indent();
         let rows = self.chat.rows(reading_width(area));
         if rows.is_empty() {
             write(cells, words, area.y, self.nothing_said(), dim);
@@ -1456,7 +1459,7 @@ impl ChatView<'_> {
                     false => write(cells, area.x + MARGIN, y, ">", dim),
                 };
             }
-            let x = area.x + MARGIN + INDENT;
+            let x = area.x + MARGIN + indent();
             write(cells, x, y, &row.said, plain);
             // Behind the caret rather than in front of it, in the gutter's
             // ink like the keys at the foot: it is not what was written,
@@ -1982,7 +1985,7 @@ impl ChatView<'_> {
         let mut column = area.x + MARGIN;
         if obelus_icons::enabled() {
             put(cells, column, area.y, obelus_icons::ui::AGENT, dim);
-            column += INDENT;
+            column += indent();
         }
         let name = self.name.unwrap_or("No agent");
         column = write(
@@ -2843,7 +2846,7 @@ mod caret {
         assert_eq!(super::offer(area, &chat), super::Offer::Under);
 
         let writing = super::bands(area, &chat, None).writing;
-        let x = writing.x + super::MARGIN + super::INDENT;
+        let x = writing.x + super::MARGIN + super::indent();
         let offer = writing.bottom() - 1;
         assert_eq!(
             super::ChatView::place_at(area, &chat, false, x, offer),

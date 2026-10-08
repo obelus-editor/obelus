@@ -1127,6 +1127,31 @@ pub fn how_far_round(symbol: &str) -> Option<f32> {
     Some(frame as f32 / SPINNING.len() as f32)
 }
 
+/// What goes between a Nerd Font glyph and the words it is in front of,
+/// where there is a gap to read by as well as a glyph.
+///
+/// Two blanks in a terminal and one in a window. A terminal's Nerd Font
+/// draws the glyph two cells wide in the one cell it was given, so the
+/// first blank is the half it bleeds into and only the second is a gap;
+/// the window draws with the `Mono` face it carries, fitted to one cell,
+/// and two blanks there were a gap and a cell of nothing beside it.
+///
+/// Not where a glyph has one blank after it, which is the bleed and no gap:
+/// in a terminal those glyphs sit against their words, and in a window the
+/// blank is the gap a terminal never showed.
+pub(crate) fn after_a_glyph() -> &'static str {
+    gap_after_a_glyph(obelus_config::in_a_window())
+}
+
+/// The same, asked of a front end named rather than of the one drawing,
+/// for whoever has to answer for both in one test binary.
+pub(crate) const fn gap_after_a_glyph(window: bool) -> &'static str {
+    match window {
+        true => " ",
+        false => "  ",
+    }
+}
+
 /// Says that the mark that turns is at this cell, where what was written
 /// there begins with it.
 ///

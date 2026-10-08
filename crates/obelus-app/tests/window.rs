@@ -110,6 +110,43 @@ fn a_window_does_not_run_the_welcome_screens_clock() {
     );
 }
 
+/// A glyph on the status row has one blank after it in a window, not two.
+///
+/// Two is a terminal's: its Nerd Font draws the glyph two cells wide in the
+/// one cell it was given, and the first blank is the half it bleeds into.
+/// The window draws the `Mono` face it carries, one cell wide, so the
+/// second blank was a cell of nothing between a file's glyph and its path.
+///
+/// Deliberate break: answer two blanks for a window in `gap_after_a_glyph`.
+#[test]
+fn a_glyph_has_one_blank_after_it_in_a_window() {
+    let _turn = turn();
+    obelus_config::drawn_in_a_window();
+    obelus_icons::use_glyphs(true);
+
+    let path = std::path::Path::new("tests/fixtures/long.rs");
+    let mut app = App::new(vec![obelus_buffer::Buffer::open(path).expect("opening it")]);
+    let dump = support::render(&mut app, 80, 12);
+    let status = support::text_block(&dump)
+        .lines()
+        .filter_map(|row| row.split_once('|'))
+        .map(|(_, cells)| cells.to_string())
+        .next_back()
+        .expect("a status row");
+    let glyph = obelus_icons::for_path(path);
+    let after: String = status
+        .split_once(glyph)
+        .unwrap_or_else(|| panic!("no file glyph on {status:?}"))
+        .1
+        .chars()
+        .take(2)
+        .collect();
+    assert!(
+        after.starts_with(' ') && !after.ends_with(' '),
+        "not one blank between the glyph and the path: {status:?}"
+    );
+}
+
 /// The cap round a key on the welcome screen does not touch the mark
 /// beside it.
 ///
@@ -192,6 +229,10 @@ fn the_keys_a_conversation_names_wear_caps() {
         std::env::temp_dir().join(format!("obelus-window-tests-{}", std::process::id())),
     );
     let (width, height) = (76, 24);
+    // The width the view wraps the transcript to, asked of the view: it is
+    // a cell wider in a window than in a terminal, where the gap after the
+    // speaker's glyph is two.
+    let reading = obelus_ui::chat::reading_width(Rect::new(0, 0, width, height));
     support::lay_out(&mut app, width, height);
     app.talk_to(
         "fake",
@@ -263,7 +304,7 @@ fn the_keys_a_conversation_names_wear_caps() {
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, "something to scroll", &|app| {
         app.chat()
-            .is_some_and(|chat| chat.rows(width - 5).len() > usize::from(height))
+            .is_some_and(|chat| chat.rows(reading).len() > usize::from(height))
     });
     pump(&mut app, "that turn to end", &|app| {
         app.talking() == obelus_agent::Talking::Ready
@@ -305,7 +346,7 @@ fn the_keys_a_conversation_names_wear_caps() {
         let on = app.chat().map(obelus_component::chat::Chat::focus);
         if let Some(obelus_component::chat::Focus::Transcript(place)) = on
             && app.chat().is_some_and(|chat| {
-                chat.rows(width - 5)
+                chat.rows(reading)
                     .get(place.row)
                     .is_some_and(|row| row.unsent.is_some())
             })

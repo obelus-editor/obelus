@@ -287,7 +287,11 @@ pub(crate) fn branch_badge(head: Option<&obelus_git::Head>) -> String {
         obelus_git::Head::Detached => "Detached",
     };
     match obelus_icons::enabled() {
-        true => format!("{}  {said}  ", obelus_icons::ui::BRANCH),
+        true => format!(
+            "{}{}{said}  ",
+            obelus_icons::ui::BRANCH,
+            crate::after_a_glyph()
+        ),
         false => format!("{said}  "),
     }
 }
@@ -309,12 +313,16 @@ fn server_badge(server: Option<(&'static str, ServerState)>, busy: Option<u32>) 
             // drawn whether or not glyphs are, like every other mark in
             // Obelus that turns.
             if let Some(phase) = busy {
-                return format!("{}  {name} ", crate::spinning(phase));
+                return format!(
+                    "{}{}{name} ",
+                    crate::spinning(phase),
+                    crate::after_a_glyph()
+                );
             }
             match obelus_icons::enabled() {
-                // Two blanks: one that the glyph bleeds into, one to read
-                // by.
-                true => format!("{}  {name} ", state.glyph()),
+                // A blank to read by, after the one a terminal's glyph
+                // bleeds into -- see `after_a_glyph`.
+                true => format!("{}{}{name} ", state.glyph(), crate::after_a_glyph()),
                 false => format!("{} {name} ", state.mark()),
             }
         })
@@ -434,7 +442,11 @@ fn typed(question: Option<&str>, words: &str) -> String {
     let asked = question.map(|question| format!("{question}  "));
     let asked = asked.unwrap_or_default();
     if obelus_icons::enabled() {
-        format!("{asked}{}  {words}", obelus_icons::ui::PROMPT)
+        format!(
+            "{asked}{}{}{words}",
+            obelus_icons::ui::PROMPT,
+            crate::after_a_glyph()
+        )
     } else {
         format!("{asked}> {words}")
     }
@@ -809,7 +821,11 @@ impl StatusView<'_> {
         // reader must know before they press save.
         if buffer.is_dirty() {
             marker.push_str(&match obelus_icons::enabled() {
-                true => format!(" {}  unsaved", obelus_icons::ui::UNSAVED),
+                true => format!(
+                    " {}{}unsaved",
+                    obelus_icons::ui::UNSAVED,
+                    crate::after_a_glyph()
+                ),
                 false => " [unsaved]".to_string(),
             });
         }
@@ -822,13 +838,21 @@ impl StatusView<'_> {
         };
         if let Some(away) = away {
             marker.push_str(&match obelus_icons::enabled() {
-                true => format!(" {}  {away}", obelus_icons::ui::STALE),
+                true => format!(
+                    " {}{}{away}",
+                    obelus_icons::ui::STALE,
+                    crate::after_a_glyph()
+                ),
                 false => format!(" [{away}]"),
             });
         }
         if buffer.is_stale() {
             marker.push_str(&match obelus_icons::enabled() {
-                true => format!(" {}  stale", obelus_icons::ui::STALE),
+                true => format!(
+                    " {}{}stale",
+                    obelus_icons::ui::STALE,
+                    crate::after_a_glyph()
+                ),
                 false => " [stale]".to_string(),
             });
         }
@@ -900,8 +924,9 @@ impl StatusView<'_> {
         // a list and the file on screen are recognizably the same thing.
         let path = match obelus_icons::enabled() {
             true => format!(
-                "{}  {}",
+                "{}{}{}",
                 obelus_icons::for_path(buffer.path()),
+                crate::after_a_glyph(),
                 relative_to(buffer.path(), self.working_directory).display()
             ),
             false => relative_to(buffer.path(), self.working_directory)
@@ -1214,8 +1239,9 @@ impl StatusView<'_> {
     ) {
         let name = match obelus_icons::enabled() {
             true => format!(
-                "{}  Todo",
-                obelus_icons::for_command(obelus_command::Command::TodoOpen)
+                "{}{}Todo",
+                obelus_icons::for_command(obelus_command::Command::TodoOpen),
+                crate::after_a_glyph()
             ),
             false => "Todo".to_string(),
         };
@@ -1298,7 +1324,12 @@ impl StatusView<'_> {
         // The words, cut where the state begins: a command line is as long
         // as the program it names, and the row's own fact goes first.
         let name = match obelus_icons::enabled() {
-            true => format!("{}  {}", obelus_icons::ui::TERMINAL, terminal.said()),
+            true => format!(
+                "{}{}{}",
+                obelus_icons::ui::TERMINAL,
+                crate::after_a_glyph(),
+                terminal.said()
+            ),
             false => terminal.said().to_string(),
         };
         let room = state_at.saturating_sub(3);
