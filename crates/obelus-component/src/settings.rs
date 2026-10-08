@@ -467,6 +467,12 @@ impl Shown<'_> {
     }
 }
 
+/// Whether a setting is one of those left by what has been typed, already
+/// lowercased: by its name, or by what it is called in the file.
+fn narrowed_to(setting: &Setting, query: &str) -> bool {
+    query.is_empty() || setting.name.to_lowercase().contains(query) || setting.key.contains(query)
+}
+
 /// One row of the keys page.
 #[derive(Clone, Copy, Debug)]
 pub enum KeyRow {
@@ -793,11 +799,7 @@ impl Settings {
         let settings = obelus_config::ALL
             .iter()
             .filter(|setting| setting.group == Group::Keys && setting.shown())
-            .filter(|setting| {
-                query.is_empty()
-                    || setting.name.to_lowercase().contains(&query)
-                    || setting.key.contains(&query)
-            })
+            .filter(|setting| narrowed_to(setting, &query))
             .map(KeyRow::Setting);
         // What this front end can never do has no key worth giving it here,
         // for the reason the palette leaves it out.
@@ -968,10 +970,7 @@ impl Settings {
                 .iter()
                 .filter(|setting| setting.group == group && setting.shown())
             {
-                if !(query.is_empty()
-                    || setting.name.to_lowercase().contains(&query)
-                    || setting.key.contains(&query))
-                {
+                if !narrowed_to(setting, &query) {
                     continue;
                 }
                 rows.push(Shown::Obelus {

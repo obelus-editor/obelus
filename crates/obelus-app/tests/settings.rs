@@ -4654,3 +4654,32 @@ fn a_layout_nothing_answers_to_stays_in_the_file() {
         "the line went: {written:?}"
     );
 }
+
+/// Every layout is offered under a name of its own and with what it is:
+/// a name the reader can say, and a line that says which keys it means.
+///
+/// Broken deliberately by giving a third word to `KEY_LAYOUTS`, which has
+/// neither, by taking `mnemonic` out of `called`, and by giving `classic`
+/// nothing to say in the list.
+#[test]
+fn every_layout_is_offered_with_a_name_and_what_it_is() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("layout-words");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+    support::press(&mut app, KeyCode::Tab);
+    support::press(&mut app, KeyCode::Enter);
+    let picker = app.picker().expect("the layouts");
+    for word in obelus_config::KEY_LAYOUTS {
+        let name = app
+            .called("keys_from", word)
+            .unwrap_or_else(|| panic!("{word} has no name"));
+        let item = picker
+            .matches()
+            .find(|item| item.label == name)
+            .unwrap_or_else(|| panic!("{name} is not on the list"));
+        assert!(item.detail.is_some(), "{name} does not say what it is");
+    }
+}

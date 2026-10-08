@@ -435,12 +435,13 @@ impl App {
                 .iter()
                 .map(|choice| {
                     let about = match *choice {
-                        "mnemonic" => {
-                            "Control and alt, on the letter of the word -- which a running terminal keeps for its program"
-                        }
-                        _ => "The function keys, in banks of four",
+                        "classic" => Some("The function keys, in banks of four"),
+                        "mnemonic" => Some(
+                            "Control and alt, on the letter of the word -- which a running terminal keeps for its program",
+                        ),
+                        _ => None,
                     };
-                    ((*choice).to_string(), Some(about.to_string()))
+                    ((*choice).to_string(), about.map(str::to_string))
                 })
                 .collect(),
             // The chats Obelus can be reached from, after none: which there
