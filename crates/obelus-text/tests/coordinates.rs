@@ -964,3 +964,39 @@ fn a_cluster_of_pictures_is_as_wide_as_one() {
     // And a line ending is no cell, joined or not.
     assert_eq!(obelus_text::text_width("a\r\n"), 1);
 }
+
+/// A phantom a server put inside a cluster is drawn after the cluster,
+/// which is one cell and has nowhere inside it to put one.
+///
+/// Deliberate break: emitting the phantom at its own column again puts it
+/// between the `e` and its accent, and the accent comes out after it, in a
+/// cell it was never drawn in.
+#[test]
+fn a_phantom_inside_a_cluster_waits_for_its_end() {
+    use obelus_text::Phantom;
+
+    let line = LineNumber::new(0);
+    let mut text = Text::from_string("ae\u{301}b\n");
+    text.show(&[Phantom {
+        line,
+        column: CharColumn::new(2),
+        cells: 3,
+        which: 0,
+    }]);
+    let glyphs: Vec<(char, bool, Option<usize>)> = text
+        .glyphs(line)
+        .map(|glyph| (glyph.character, glyph.joined, glyph.phantom))
+        .collect();
+    assert_eq!(
+        glyphs,
+        [
+            ('a', false, None),
+            ('e', false, None),
+            ('\u{301}', true, None),
+            (' ', false, Some(0)),
+            ('b', false, None),
+        ],
+        "the phantom went between a letter and its accent"
+    );
+    assert_eq!(text.line_display_width(line), DisplayColumn::new(6));
+}

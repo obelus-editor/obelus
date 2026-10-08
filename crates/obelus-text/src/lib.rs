@@ -1276,7 +1276,18 @@ impl Text {
             // to wait: servers put them there, and a hint about what a
             // chain returns or what a closing brace closes goes after the
             // last thing on its line.
-            if let Some(phantom) = phantoms.get(next).filter(|it| it.column.get() == column) {
+            //
+            // Not inside a cluster, which is one cell: a phantom put between
+            // a letter and its accent would leave the accent with no cell
+            // to be drawn in. It waits for the end of the cluster.
+            let inside = character.is_some()
+                && clustered
+                    .as_ref()
+                    .is_some_and(|cells| cells[column].is_none());
+            if let Some(phantom) = phantoms
+                .get(next)
+                .filter(|it| it.column.get() <= column && !inside)
+            {
                 next += 1;
                 held = character;
                 let glyph = Glyph {
