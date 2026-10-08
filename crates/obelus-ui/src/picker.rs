@@ -74,7 +74,7 @@ fn list_region_rows(picker: &Picker, width: u16) -> u16 {
 #[must_use]
 pub fn hints(picker: &Picker) -> Vec<Hint> {
     let hints = every_hint(picker);
-    match hints.iter().any(|hint| hint.usable) {
+    match hints.iter().any(|hint| hint.usable || hint.held) {
         true => hints,
         false => Vec::new(),
     }
@@ -90,7 +90,10 @@ fn every_hint(picker: &Picker) -> Vec<Hint> {
     // this stops it. Greyed rather than dropped on a row it would do nothing
     // to -- work that has ended, work the agent says cannot be stopped, an
     // agent that turned out to stop nothing -- so the foot says the key
-    // exists and is not working here.
+    // exists and is not working here. Held at the foot as well as on the
+    // card: it is the list's only key, and dropping it took the foot with
+    // it, so the list jumped two rows each time the reader walked from
+    // running work to finished.
     if picker.listing_tasks().is_some() {
         return vec![
             Hint::common(
@@ -98,7 +101,8 @@ fn every_hint(picker: &Picker) -> Vec<Hint> {
                 "Stop",
             )
             .saying("Ask the agent to stop this piece of background work")
-            .when(picker.stops_this_one()),
+            .when(picker.stops_this_one())
+            .held(),
         ];
     }
     // The two enters, where a row both holds something and is somewhere to

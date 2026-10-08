@@ -14073,6 +14073,65 @@ fn the_count_opens_the_work_and_its_key_stops_it() {
     );
 }
 
+/// The list of background work keeps its foot where its key does nothing:
+/// the key is greyed on work that has stopped, and the list stays where it
+/// was rather than growing by the two rows the foot gave up.
+///
+/// Broken deliberately: take `.held()` off the list's key, and the foot
+/// goes with it the moment the work stops -- and, with the foot not looked
+/// for, the work's row moves down two; draw a held key in the ink of one
+/// that works, and it is not greyed.
+#[test]
+fn the_list_of_work_keeps_its_foot_where_its_key_does_nothing() {
+    let (mut app, events) = playing(&["air"]);
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    say(&mut app, "/background");
+    pump(&mut app, &events, "the work counted", |app| {
+        app.background_tasks() == Some((1, 0))
+    });
+    open_the_background_work(&mut app);
+    // Where the foot's key is, and the ink its cap is drawn in.
+    let key = |app: &mut App| {
+        let cells = support::cells_of(app, WIDTH, HEIGHT);
+        let rows = screen(app);
+        let row = rows
+            .lines()
+            .find(|row| row.contains(" Stop "))
+            .unwrap_or_else(|| panic!("no Stop at the foot:\n{rows}"));
+        let y: u16 = row
+            .split_once('|')
+            .and_then(|(number, _)| number.trim().parse().ok())
+            .expect("a row's number");
+        let x = support::column_of(row, " Stop ") - 2;
+        (y, cells[(u16::try_from(x).expect("a column"), y)].fg)
+    };
+    // The list's row, which is the last to name the work: the call's row
+    // in the transcript above it names it too.
+    let list = |app: &mut App| {
+        screen(app)
+            .lines()
+            .enumerate()
+            .filter(|(_, row)| row.contains("npm run dev"))
+            .last()
+            .map(|(y, _)| y)
+            .expect("the work's row")
+    };
+    let (foot, lit) = key(&mut app);
+    let before = list(&mut app);
+    assert_eq!(lit, app.theme().gutter_current);
+
+    support::press_alt(&mut app, 's');
+    pump(&mut app, &events, "the list saying so", |app| {
+        standing_on(app).starts_with("Stopped  ")
+    });
+    let (still, greyed) = key(&mut app);
+    assert_eq!(still, foot, "the foot moved");
+    assert_eq!(greyed, app.theme().gutter, "the key is not greyed");
+    assert_eq!(list(&mut app), before, "the list moved");
+}
+
 /// Where the row has no room for the count, the keys walking it do not
 /// stop there: round from the first setting is the last setting, not a
 /// place with nothing drawn on it.

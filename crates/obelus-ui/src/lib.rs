@@ -2089,6 +2089,12 @@ pub struct Hint {
     /// draws all of them and greys this one out, so what a reader learns is
     /// that the view has eight keys rather than that its keys come and go.
     pub usable: bool,
+    /// Whether the foot keeps it, greyed, where it does nothing.
+    ///
+    /// For the one key a view has: dropped from a foot with nothing else
+    /// on it, it takes the whole foot with it, and the view grows and
+    /// shrinks by two rows as the reader walks past the rows it works on.
+    pub held: bool,
 }
 
 impl Hint {
@@ -2103,6 +2109,7 @@ impl Hint {
             switched: None,
             common: true,
             usable: true,
+            held: false,
         }
     }
 
@@ -2133,6 +2140,13 @@ impl Hint {
     #[must_use]
     pub const fn when(mut self, usable: bool) -> Self {
         self.usable = usable;
+        self
+    }
+
+    /// Says the foot keeps it, greyed, while it does nothing.
+    #[must_use]
+    pub const fn held(mut self) -> Self {
+        self.held = true;
         self
     }
 
@@ -2208,14 +2222,25 @@ pub fn ticked(cells: &mut CellBuffer, x: u16, y: u16, on: bool, style: Style) ->
 /// item from the next by three, which are near enough the same gap that the
 /// eye could not tell which side of it a word belonged to.
 fn capped(cells: &mut CellBuffer, x: u16, y: u16, keys: &str, theme: &Theme) -> u16 {
+    capped_in(cells, x, y, keys, theme.gutter_current, theme)
+}
+
+/// The same cap, with the key in this ink: the dim one, for a key a foot
+/// keeps where it does nothing.
+fn capped_in(
+    cells: &mut CellBuffer,
+    x: u16,
+    y: u16,
+    keys: &str,
+    ink: ratatui::style::Color,
+    theme: &Theme,
+) -> u16 {
     let after = write(
         cells,
         x,
         y,
         &format!(" {keys} "),
-        Style::new()
-            .fg(theme.gutter_current)
-            .bg(theme.raised_background),
+        Style::new().fg(ink).bg(theme.raised_background),
     );
     // And what those cells *are*, for a front end that can draw the shape
     // rather than only its ground -- see `shapes`. The cells above are the
@@ -2490,7 +2515,10 @@ fn row_of_keys(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme
     };
 
     let mut x = area.x + 2;
-    for hint in hints.iter().filter(|hint| hint.common && hint.usable) {
+    for hint in hints
+        .iter()
+        .filter(|hint| hint.common && (hint.usable || hint.held))
+    {
         let keys = hint.keys();
         // Saturating rather than refused: a hint wider than the screen can
         // hold is one that does not fit, which is the same answer the row
@@ -2508,7 +2536,10 @@ fn row_of_keys(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme
         // The key in a cap and the word out of it: what a reader is looking
         // for down here is which key, and the word is read once to find out
         // that it is the one.
-        x = capped(cells, x, y, &keys, theme);
+        x = match hint.usable {
+            true => capped(cells, x, y, &keys, theme),
+            false => capped_in(cells, x, y, &keys, theme.gutter, theme),
+        };
         if let Some(does) = hint.does {
             x = write(
                 cells,
