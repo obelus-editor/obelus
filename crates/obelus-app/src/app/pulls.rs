@@ -557,7 +557,12 @@ fn read(said: &str) -> Result<Vec<PullRequest>, Unlisted> {
                     .parse::<jiff::Timestamp>()
                     .ok()
                     .map(jiff::Timestamp::as_second),
-                body: text(row, "body"),
+                // As `\n`, which is what the markdown is laid out by: a
+                // description written in GitHub's own box arrives with
+                // `\r\n`, and the `\r` left on each line was drawn as a
+                // blank and hid a line ending in two spaces from the break
+                // it asks for.
+                body: text(row, "body").replace("\r\n", "\n"),
                 additions: count("additions"),
                 deletions: count("deletions"),
                 files: count("changedFiles"),
@@ -593,5 +598,17 @@ mod tests {
         assert_eq!(pulls[0].decision, None);
         assert_eq!(pulls[1].decision, Some(Decision::Approved));
         assert!(pulls[1].draft);
+    }
+
+    /// A description written in GitHub's own box arrives with `\r\n`, and
+    /// is read as the `\n` the markdown is laid out by.
+    ///
+    /// Broken deliberately by taking the `replace` out of `read`: the `\r`
+    /// stays at the end of every line.
+    #[test]
+    fn a_description_reads_with_its_lines_ended_as_markdown_ends_them() {
+        let said = r#"[{"number":1,"title":"t","author":{"login":"a"},"headRefName":"h","baseRefName":"b","headRefOid":"s","isDraft":false,"reviewDecision":"","updatedAt":"","body":"one  \r\ntwo\r\n"}]"#;
+        let pulls = read(said).expect("it reads");
+        assert_eq!(pulls[0].body, "one  \ntwo\n");
     }
 }

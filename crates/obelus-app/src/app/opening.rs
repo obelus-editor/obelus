@@ -263,11 +263,7 @@ impl App {
                     sha.to_string(),
                 ))
             }
-            // Nothing to compare against on one side or the other: told
-            // before Obelus knew the commit, or not knowing it now. Saying
-            // it has moved on no evidence would send a review round again
-            // for nothing.
-            Some(was) if was.is_empty() || sha.is_empty() || was == sha => None,
+            Some(was) if !self.has_moved_since(number, was) => None,
             Some(was) => {
                 let words = PUSHED
                     .trim()
@@ -281,6 +277,25 @@ impl App {
                 ))
             }
         }
+    }
+
+    /// Whether a pull request's head is somewhere other than the commit the
+    /// agent was told, `was`.
+    ///
+    /// The question both the opening and the box ask, apart from the words
+    /// the opening makes of the answer: the box asks it every frame, and
+    /// building the paragraph to throw it away was the work a frame must not
+    /// do.
+    ///
+    /// Not where there is nothing to compare against on one side or the
+    /// other -- told before Obelus knew the commit, or not knowing it now.
+    /// Saying it has moved on no evidence would send a review round again
+    /// for nothing.
+    fn has_moved_since(&self, number: u64, was: &str) -> bool {
+        let sha = self
+            .pull_request(number)
+            .map_or("", |pull| pull.sha.as_str());
+        !was.is_empty() && !sha.is_empty() && was != sha
     }
 
     /// What the box offers to say in a conversation, while the next message
@@ -299,14 +314,10 @@ impl App {
                 let now = what_the_note_says(self.the_note_this_is_about()?);
                 (talk.told.as_deref() != Some(now.as_str())).then_some(LOOK)
             }
-            Topic::PullRequest(number) => {
-                let told = talk.told.as_deref();
-                let about = self.about_the_pull_request(*number, told);
-                match told {
-                    None => Some(REVIEW),
-                    Some(_) => about.map(|_| REVIEW_AGAIN),
-                }
-            }
+            Topic::PullRequest(number) => match talk.told.as_deref() {
+                None => Some(REVIEW),
+                Some(was) => self.has_moved_since(*number, was).then_some(REVIEW_AGAIN),
+            },
         }
     }
 

@@ -349,10 +349,11 @@ fn read_from(text: &str) -> Reading {
         else {
             continue;
         };
-        // A row with no note is one about nothing in particular, which is
-        // named by its session and by nothing else. Every row written
-        // before those were remembered has one, so an old file reads as it
-        // always did.
+        // A row with a note is about the note, and one with a pull request
+        // is a review of it. A row with neither is about nothing in
+        // particular, which is named by its session and by nothing else.
+        // Every row written before those were remembered has one, so an
+        // old file reads as it always did.
         let pull = row
             .get("pull")
             .and_then(toml::Value::as_integer)

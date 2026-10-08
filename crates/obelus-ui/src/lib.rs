@@ -2766,17 +2766,22 @@ pub fn nothing(cells: &mut CellBuffer, area: Rect, reason: &str, theme: &Theme) 
 /// has rows and is still being filled has no such line, and keeps the mark
 /// on the row under it -- see `status::still_working`.
 pub fn nothing_yet(cells: &mut CellBuffer, area: Rect, reason: &str, phase: u32, theme: &Theme) {
-    let style = Style::new().fg(theme.gutter).bg(theme.background);
     write(
         cells,
         area.x + 1,
         area.y,
         &spinning(phase).to_string(),
-        style,
+        Style::new().fg(theme.gutter).bg(theme.background),
     );
     shapes::spun(area.x + 1, area.y);
-    // One blank after the mark, as after every glyph.
-    write(cells, area.x + 3, area.y, reason, style);
+    // The words are `nothing`'s, two columns along: the mark and the one
+    // blank after it, as after every glyph.
+    let after = Rect {
+        x: area.x + 2,
+        width: area.width.saturating_sub(2),
+        ..area
+    };
+    nothing(cells, after, reason, theme);
 }
 
 /// How many leading characters to drop so the rest of `contents` fits in
