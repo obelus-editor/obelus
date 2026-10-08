@@ -300,25 +300,55 @@ jobs:
           path: archives/*
           if-no-files-found: error
 
-  macos:
-    # One archive for both architectures, so a reader on a Mac is never
-    # asked which one they have. Both are built here rather than in two jobs
-    # because `lipo` needs the two files side by side.
-    name: universal2-apple-darwin
+  # Each half of the Mac binary on a runner of its own. The two compiles
+  # one after the other were the longest job in a release, and `lipo` needs
+  # only the two files side by side, not the two builds. Both on an arm
+  # runner: the Intel half is cross-compiled, as it always was.
+  macos-half:
+    name: ${{ matrix.target }}
     needs: plan
     runs-on: macos-15
-    timeout-minutes: 120
+    timeout-minutes: 90
+    # One half is no use without the other, so a failure in either stops
+    # both -- which is the default, and why this matrix does not say
+    # `fail-fast: false` as the one above does.
+    strategy:
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-darwin,x86_64-apple-darwin
+          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
-          key: universal2-apple-darwin
+          key: ${{ matrix.target }}
 
-      - run: cargo build --profile dist --locked --target aarch64-apple-darwin -p obelus-cli -p obelus-gui
-      - run: cargo build --profile dist --locked --target x86_64-apple-darwin -p obelus-cli -p obelus-gui
+      - run: cargo build --profile dist --locked --target ${{ matrix.target }} -p obelus-cli -p obelus-gui
+
+      # `macos-` is what keeps these out of the release: see `publish`.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-${{ matrix.target }}
+          path: |
+            target/${{ matrix.target }}/dist/ob
+            target/${{ matrix.target }}/dist/obg
+          if-no-files-found: error
+          retention-days: 1
+
+  macos:
+    # One archive for both architectures, so a reader on a Mac is never
+    # asked which one they have.
+    name: universal2-apple-darwin
+    needs: [plan, macos-half]
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: macos-*
+          path: halves
 
       - name: Make one binary of the two
         shell: bash
@@ -329,8 +359,11 @@ jobs:
             name="$bin-${{ needs.plan.outputs.version }}-universal2-apple-darwin"
             mkdir -p "staging/$name"
             lipo -create -output "staging/$name/$bin" \
-              "target/aarch64-apple-darwin/dist/$bin" \
-              "target/x86_64-apple-darwin/dist/$bin"
+              "halves/macos-aarch64-apple-darwin/$bin" \
+              "halves/macos-x86_64-apple-darwin/$bin"
+            # An artifact is a zip and keeps no file modes, so what came
+            # down is not executable, and nor is what `lipo` made of it.
+            chmod +x "staging/$name/$bin"
 
             # An arm64 binary macOS will not run at all is one with no
             # signature, and rustc's linker signs the arm64 build itself --
@@ -390,8 +423,12 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
+      # Everything but the two halves of the Mac binary, which are only on
+      # their way into `universal2-apple-darwin`. A leading `!` turns the
+      # pattern round.
       - uses: actions/download-artifact@v8
         with:
+          pattern: '!macos-*'
           path: assets
           merge-multiple: true
 
