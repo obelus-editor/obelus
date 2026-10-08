@@ -4592,3 +4592,46 @@ fn every_layout_offered_is_a_table() {
         .collect();
     assert_eq!(named, all, "{:?}", obelus_config::KEY_LAYOUTS);
 }
+
+/// A layout nothing answers to starts the keys from the default, and the
+/// line stays in the file when something else on the page is saved: a
+/// misspelling is the reader's to fix, and a word an older Obelus does not
+/// know is a newer one's.
+///
+/// Broken deliberately by dropping a word `KEY_LAYOUTS` does not have in
+/// `apply`, which took the line out of the file at the first save, and by
+/// `apply_config` falling back to the mnemonic layout, which took `f1`
+/// away.
+#[test]
+fn a_layout_nothing_answers_to_stays_in_the_file() {
+    use crossterm::event::{KeyEvent, KeyModifiers};
+    use obelus_editing::keymap::Context;
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("keys-from-misspelt");
+    let file = settings_file(&scratch);
+    std::fs::write(&file, "keys_from = \"mnemnic\"\n").expect("the file");
+    let mut app = open(&file);
+    assert_eq!(
+        app.keymap().lookup(
+            &KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE),
+            Context::Normal
+        ),
+        Some(Command::FileOpen),
+        "the keys did not start from the default"
+    );
+
+    // Something else changed and written down.
+    support::type_text(&mut app, "wrapping");
+    support::press(&mut app, KeyCode::Enter);
+    let written = std::fs::read_to_string(&file).expect("the file");
+    assert!(
+        written.contains("wrap = true"),
+        "nothing was saved: {written:?}"
+    );
+    assert!(
+        written.contains("keys_from = \"mnemnic\""),
+        "the line went: {written:?}"
+    );
+}

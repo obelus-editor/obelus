@@ -1511,14 +1511,24 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
         }
     }
     // Checked the way the workflow is, and for its reason: a layout nothing
-    // answers to would be read as the default and look obeyed.
-    if let Some(word) = table.get("keys_from").and_then(toml::Value::as_str) {
+    // answers to would be read as the default and look obeyed. But kept as
+    // it was written rather than dropped, because the keys start from the
+    // default anyway when the table is built, and a word dropped here is a
+    // word the next save takes out of the file -- a misspelling the reader
+    // could have fixed, or a layout a newer Obelus beside this one has.
+    // And asked of `allowed` first: a project has no layout to choose,
+    // whatever the word.
+    if let Some(word) = table.get("keys_from").and_then(toml::Value::as_str)
+        && allowed("keys_from")
+    {
         if !KEY_LAYOUTS.contains(&word) {
-            tracing::warn!(word, "no layout by this name, so the line does nothing");
+            tracing::warn!(
+                word,
+                "no layout by this name, so the keys start from the default"
+            );
             no_such_choice.push(("keys_from", word.to_string()));
-        } else if allowed("keys_from") {
-            config.keys_from = word.to_string();
         }
+        config.keys_from = word.to_string();
     }
     if let Some(name) = table.get("speaks_as").and_then(toml::Value::as_str)
         && allowed("speaks_as")
@@ -2367,18 +2377,24 @@ mod tests {
         );
     }
 
-    /// A layout nothing answers to is the default, says so, and is not
-    /// counted among what the file set; one that is answered is taken.
+    /// A layout nothing answers to says so, and is kept as it was written:
+    /// the keys start from the default when the table is built, and a word
+    /// dropped here would be taken out of the file by the next save.
     ///
-    /// Broken deliberately by taking the word without checking it against
-    /// `KEY_LAYOUTS`: the misspelt one is set.
+    /// Broken deliberately by not checking the word against `KEY_LAYOUTS`,
+    /// which says nothing about it, and by leaving it out of the config,
+    /// which writes the file without it.
     #[test]
-    fn a_layout_nothing_answers_to_does_nothing() {
+    fn a_layout_nothing_answers_to_is_marked_and_kept() {
         let mut config = Config::default();
         let table: toml::Table = "keys_from = \"mnemnic\"".parse().expect("toml");
         let applied = apply(&mut config, &table, Whose::Reader);
-        assert_eq!(config.keys_from, "classic");
-        assert!(!applied.set.contains(&"keys_from"), "{:?}", applied.set);
+        assert_eq!(config.keys_from, "mnemnic");
+        assert!(
+            to_toml(&config).contains("keys_from = \"mnemnic\""),
+            "{}",
+            to_toml(&config)
+        );
         assert_eq!(
             applied.ignored,
             vec![super::Ignored {
