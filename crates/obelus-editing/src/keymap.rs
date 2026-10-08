@@ -421,6 +421,13 @@ impl Layout {
 /// that every terminal sends as themselves. `alt+.` for a definition is
 /// Emacs's, and `alt+b` blame. In a terminal these are the shell's: unlike
 /// a function key, every one of them already means something there.
+///
+/// Not `alt+i` and `alt+o` for the symbols and the outline, which were the
+/// first letters to hand: a view that names one of these swaps to it from
+/// another, and the list of files keeps `alt+i` for its ignored files and
+/// the notes `alt+o` for going where a note points -- so from there they
+/// would have been a switch rather than a way out. `y` and `u` are the
+/// next letters of the two words that nothing has.
 const MNEMONIC: [(Command, KeyChord); 12] = [
     (Command::FileOpen, mnemonic('o', KeyModifiers::CONTROL)),
     (Command::DocumentList, mnemonic('e', KeyModifiers::CONTROL)),
@@ -431,8 +438,8 @@ const MNEMONIC: [(Command, KeyChord); 12] = [
     ),
     (Command::SearchFile, mnemonic('f', KeyModifiers::CONTROL)),
     (Command::SearchProject, mnemonic('/', KeyModifiers::ALT)),
-    (Command::SymbolOutline, mnemonic('o', KeyModifiers::ALT)),
-    (Command::SearchSymbols, mnemonic('i', KeyModifiers::ALT)),
+    (Command::SymbolOutline, mnemonic('u', KeyModifiers::ALT)),
+    (Command::SearchSymbols, mnemonic('y', KeyModifiers::ALT)),
     (Command::HistoryFile, mnemonic('l', KeyModifiers::ALT)),
     (Command::HistoryProject, mnemonic('g', KeyModifiers::ALT)),
     (Command::HistoryLine, mnemonic('b', KeyModifiers::ALT)),
@@ -1673,7 +1680,7 @@ mod tests {
     /// on keys of its own: none of them a function key, and none of them a
     /// key something else is already on.
     ///
-    /// Broken deliberately by putting `search-symbols` on `alt+o`, the key
+    /// Broken deliberately by putting `search-symbols` on `alt+u`, the key
     /// the outline is on, and by not rebinding at all in `laid_out`.
     #[test]
     fn the_mnemonic_layout_moves_the_function_keys_onto_letters() {
