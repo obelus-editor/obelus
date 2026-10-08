@@ -105,6 +105,13 @@ impl App {
             },
             many => format!("{many} files are unsaved"),
         };
+        // And what else closing stops, as leaving says it: either answer
+        // closes, and closing takes the programs with it.
+        let what = match self.terminals_running() {
+            0 => what,
+            1 => format!("{what}, and a terminal is still running"),
+            many => format!("{what}, and {many} terminals are still running"),
+        };
         self.stop_to_ask(
             Question::new(what)
                 .way(

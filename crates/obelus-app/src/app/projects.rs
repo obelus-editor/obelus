@@ -407,6 +407,19 @@ impl super::App {
             self.ask_before_closing_the_project(unsaved);
             return;
         }
+        // And a program still running in a terminal, which closing stops:
+        // asked for the reason leaving asks.
+        let running = self.terminals_running();
+        if running > 0 {
+            self.ask_before_stopping_them(
+                running,
+                "close the project",
+                obelus_buffer::question::Answer::ClosingTheProject(
+                    obelus_buffer::question::Leaving::Discard,
+                ),
+            );
+            return;
+        }
         self.leave_the_project();
     }
 
@@ -417,8 +430,18 @@ impl super::App {
     /// concerned.
     pub(super) fn leave_the_project(&mut self) {
         tracing::info!(tree = %self.working_directory.display(), "closing the project");
+        // Asked before the letting go, which takes the chat with it -- and
+        // connected again once there is a project, as going to another
+        // worktree does (`App::move_to_tree`): the reader who reached this
+        // window from the chat did not say "for this project".
+        let reached = self.has_the_remote();
         self.write_down_what_is_open_on_leaving();
         self.let_go_of_the_project();
+        self.remote_at_start = reached;
+        // Kept by `let_go_of_the_project`, which is the process's door, and
+        // with it the claim on the tree -- which a window asking which
+        // project no longer has.
+        self.worktrees.left_the_tree();
         self.ask_which_project();
     }
 

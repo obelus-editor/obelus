@@ -1126,7 +1126,11 @@ impl App {
             for layer in self.layers().nearest_first() {
                 self.leave(layer);
             }
-            self.ask_before_stopping_them(running);
+            self.ask_before_stopping_them(
+                running,
+                "leave",
+                obelus_buffer::question::Answer::Leaving(obelus_buffer::question::Leaving::Discard),
+            );
             return;
         }
         self.should_quit = true;
@@ -1316,7 +1320,7 @@ impl App {
         self.make_room(layers::Room::Screen);
         self.gone = true;
         self.head = None;
-        self.worktrees.tree_has_gone();
+        self.worktrees.left_the_tree();
     }
 
     /// The page saying the tree has gone, answered -- or not, and then

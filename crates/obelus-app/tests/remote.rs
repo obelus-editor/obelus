@@ -3300,3 +3300,48 @@ fn the_chat_goes_with_a_window_to_another_worktree() {
             && app.remote_state_for_test() == obelus_remote::State::Connected
     });
 }
+
+/// A window the chat talks to that closes its project has the chat again
+/// once another is chosen.
+///
+/// Broken deliberately by not saying to connect again in
+/// `App::leave_the_project`: the chat is no longer here.
+#[test]
+fn the_chat_comes_back_once_a_closed_project_is_chosen_again() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-closed");
+    let project = scratch.join("project");
+    std::fs::create_dir_all(&project).expect("the project");
+    std::fs::write(project.join("file.rs"), "fn main() {}\n").expect("a file");
+
+    obelus_remote::platform::connect_for_test(fake_connect);
+    *FAKED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+    std::fs::write(scratch.join("config.toml"), "remote = \"slack\"\n").expect("the settings");
+    obelus_remote::secrets::write("slack", "app_token", "xapp-1-app").expect("kept");
+    obelus_remote::secrets::write("slack", "bot_token", "xoxb-1-bot").expect("kept");
+    let mut app = App::new(Vec::new());
+    app.config_file_for_test(scratch.join("config.toml"));
+    app.working_directory_for_test(project.clone());
+    let (sender, events) = obelus_app::event::channel();
+    app.start(sender);
+    dispatch::dispatch(&mut app, Command::RemoteConnect);
+    until(&mut app, &events, "the connection", |app| {
+        app.remote_state_for_test() == obelus_remote::State::Connected
+    });
+
+    dispatch::dispatch(&mut app, Command::ProjectClose);
+    assert!(!app.has_a_project(), "the project was not closed");
+    // The row that opens a project not in the list, which is the last.
+    support::press_control_key(&mut app, KeyCode::End);
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, &project.display().to_string());
+    support::press(&mut app, KeyCode::Esc);
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.has_a_project(), "it is still asking which project");
+    until(&mut app, &events, "the connection again", |app| {
+        app.holds_the_remote_for_test()
+            && app.remote_state_for_test() == obelus_remote::State::Connected
+    });
+}

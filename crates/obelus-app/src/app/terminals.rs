@@ -29,7 +29,7 @@
 //! that ends badly stays open with what it said on it, because a failed
 //! sign-in is something the reader has to read.
 
-use obelus_buffer::question::{Answer, Closing, Leaving, Question};
+use obelus_buffer::question::{Answer, Closing, Question};
 use obelus_terminal::{Ended, Heard, Mouse, Program, Terminal};
 
 use super::*;
@@ -346,11 +346,13 @@ impl App {
         true
     }
 
-    /// Asks before leaving with programs still running in terminals.
+    /// Asks before leaving, or closing the project, with programs still
+    /// running in terminals: `then` is the word for which, and `answer`
+    /// what saying yes does.
     ///
     /// Which one, when there is only one -- the words it was started with
     /// are what the reader would recognise -- and a count otherwise.
-    pub(super) fn ask_before_stopping_them(&mut self, running: usize) {
+    pub(super) fn ask_before_stopping_them(&mut self, running: usize, then: &str, answer: Answer) {
         let only = self
             .documents
             .iter()
@@ -359,13 +361,16 @@ impl App {
             .find(|terminal| terminal.ended().is_none())
             .map(|terminal| terminal.said().to_string());
         let (what, way) = match (running, only) {
-            (1, Some(said)) => (format!("Still running: {said}"), "Stop it and leave"),
+            (1, Some(said)) => (
+                format!("Still running: {said}"),
+                format!("Stop it and {then}"),
+            ),
             (many, _) => (
                 format!("{many} terminals are still running"),
-                "Stop them and leave",
+                format!("Stop them and {then}"),
             ),
         };
-        self.stop_to_ask(Question::new(what).way(way, Answer::Leaving(Leaving::Discard)));
+        self.stop_to_ask(Question::new(what).way(way, answer));
     }
 
     /// Runs a way of signing in that is a program, for the conversation

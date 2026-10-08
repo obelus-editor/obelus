@@ -236,15 +236,17 @@ impl Worktrees {
         self.present.as_ref().map(|present| present.path.as_path())
     }
 
-    /// Stops saying this window is on a tree, because the tree has gone.
+    /// Stops saying this window is on a tree, because the tree has gone or
+    /// the reader closed the project.
     ///
     /// A window on a tree nobody can open is not somewhere another window
     /// should send the reader: a tree deleted behind git's back is still
     /// listed, and its row is `Missing` and goes nowhere -- and one made
     /// again at the same path is somebody else's tree, which choosing opens
     /// afresh rather than bringing forward a window that has stopped
-    /// hearing anything about it.
-    pub(super) fn tree_has_gone(&mut self) {
+    /// hearing anything about it. Nor is one asking which project: brought
+    /// forward from the tree's row, it is not on the tree.
+    pub(super) fn left_the_tree(&mut self) {
         self.present = None;
     }
 }

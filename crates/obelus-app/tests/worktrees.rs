@@ -1276,3 +1276,37 @@ fn choosing_a_closed_project_again_opens_what_was_open() {
         "what was open in the project was not opened again"
     );
 }
+
+/// A window that closed its project is not a row under the tree it was
+/// on: brought forward from there, it would be asking which project.
+///
+/// Broken deliberately by leaving `left_the_tree` out of
+/// `App::leave_the_project`: the row is still under `feature`, saying
+/// what the window was reading before.
+#[test]
+fn a_window_that_closed_its_project_is_not_on_the_tree() {
+    let scratch = Scratch::new("worktrees-closed");
+    let (main, feature, _) = repository(&scratch);
+    let asked = Arc::new(Asked::default());
+    let (mut app, _events) = window_on(&main, &asked);
+    let (mut other, _other_events) = window_on(&feature, &Arc::new(Asked::default()));
+    other.open_for_test(&feature.join("file.rs"));
+    // A frame, which is where a window says what it is reading.
+    support::lay_out(&mut other, 80, 24);
+
+    dispatch::dispatch(&mut other, Command::ProjectClose);
+    support::lay_out(&mut other, 80, 24);
+
+    dispatch::dispatch(&mut app, Command::WorktreeList);
+    let said = rows(&app);
+    let from = said
+        .iter()
+        .position(|row| row.0 == "feature")
+        .expect("the tree");
+    let under: Vec<&str> = said[from + 1..]
+        .iter()
+        .take_while(|row| row.1.is_none())
+        .map(|row| row.0.as_str())
+        .collect();
+    assert!(under.is_empty(), "{said:?}");
+}
