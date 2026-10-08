@@ -14624,7 +14624,7 @@ fn the_selected_pull_request_is_described_under_the_list() {
     std::fs::write(&answer, described("abc123", "")).expect("no description");
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
     pump(&mut app, &events, "the list again", |app| {
-        app.picker().is_some_and(|picker| picker.row_count() == 1)
+        answered_with(app, 1)
     });
     let text = screen(&mut app);
     assert!(
@@ -14644,6 +14644,15 @@ fn with_a_fake_gh(scratch: &support::Scratch, answer: &Path) -> (App, Receiver<E
         vec![script.display().to_string(), answer.display().to_string()],
     );
     (app, events)
+}
+
+/// Whether `gh`'s answer has landed in the list, with `rows` rows.
+///
+/// Not the count alone: a list opened again shows the last answer's rows
+/// at once, and a test waiting on the count would be looking at those.
+fn answered_with(app: &App, rows: usize) -> bool {
+    app.picker()
+        .is_some_and(|picker| picker.is_filling().is_none() && picker.row_count() == rows)
 }
 
 /// Whether the list on screen has stopped saying it is waiting.
@@ -14728,7 +14737,7 @@ fn a_pull_request_is_reviewed_on_the_readers_word() {
     std::fs::write(&answer, one_pull_request("def456")).expect("the second answer");
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
     pump(&mut app, &events, "the list again", |app| {
-        app.picker().is_some_and(|picker| picker.row_count() == 1)
+        answered_with(app, 1)
     });
     let documents = app.document_count_for_test();
     support::press(&mut app, KeyCode::Enter);
@@ -14882,6 +14891,64 @@ fn a_pull_request_is_found_by_its_number() {
         })
         .unwrap_or_default();
     assert_eq!(found, [124], "typing its number did not find it");
+}
+
+/// The list opened again shows what `gh` said last time at once, turns a
+/// mark on the row under it while it asks again, and puts the new answer
+/// in with the reader still on the pull request they were on.
+///
+/// Broken deliberately two ways. Showing no rows while `gh` is asked, as
+/// this first did, leaves the list empty until the answer lands. And
+/// putting the answer in with `replace` sends the reader to the top, onto
+/// the pull request that arrived above theirs.
+#[test]
+fn the_last_answer_stands_in_while_the_next_is_asked() {
+    let scratch = support::Scratch::new("agent-pull-request-kept");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, one_pull_request("abc123")).expect("the answer");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 1)
+    });
+    support::press(&mut app, KeyCode::Esc);
+
+    // A pull request opened since, newer than the one the reader knows.
+    std::fs::write(
+        &answer,
+        r#"[{"number":125,"title":"A newer one","author":{"login":"carol"},"headRefName":"newer","baseRefName":"master","headRefOid":"fff","isDraft":false,"reviewDecision":"","updatedAt":"2026-10-09T00:00:00Z","body":"","additions":1,"deletions":1,"changedFiles":1},
+            {"number":123,"title":"Keep the fold when a hunk is reverted","author":{"login":"alice"},"headRefName":"keep-fold","baseRefName":"master","headRefOid":"abc123","isDraft":false,"reviewDecision":"","updatedAt":"2026-10-08T00:00:00Z","body":"","additions":1,"deletions":1,"changedFiles":1}]"#,
+    )
+    .expect("the second answer");
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    let text = screen(&mut app);
+    assert!(
+        text.contains("#123 Keep the fold") && !text.contains("Still asking GitHub"),
+        "the list waited for gh when it had an answer to show:\n{text}"
+    );
+    assert!(
+        text.lines().last().is_some_and(|row| row
+            .chars()
+            .any(|cell| ('\u{2800}'..='\u{28ff}').contains(&cell))),
+        "nothing says the list is being asked again:\n{text}"
+    );
+
+    pump(&mut app, &events, "the new answer", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 2)
+    });
+    let standing = app
+        .picker()
+        .and_then(|picker| picker.selected_item())
+        .and_then(|row| match row.value {
+            obelus_component::picker::PickerValue::PullRequest(number) => Some(number),
+            _ => None,
+        });
+    assert_eq!(
+        standing,
+        Some(123),
+        "the answer moved the reader off the pull request they were on"
+    );
 }
 
 /// A query that matches none of the pull requests says so, and does not say

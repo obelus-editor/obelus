@@ -115,6 +115,9 @@ pub(super) struct Pulls {
     /// What `gh` last said, kept after the list closes: a review's opening
     /// is made from it, and so is whether the pull request has moved since.
     listed: Vec<PullRequest>,
+    /// Whether `listed` is an answer at all: none of it before `gh` has
+    /// first answered, and none of it after an answer that was a refusal.
+    answered: bool,
     /// Whether an answer is on its way.
     asking: bool,
     /// Why the last answer was no list, where it was.
@@ -128,9 +131,13 @@ pub(super) struct Pulls {
 impl App {
     /// Opens the list of open pull requests and asks `gh` for them.
     ///
-    /// Empty until the answer lands, rather than showing the last answer and
-    /// replacing it: rows that move under the reader's selection once they
-    /// have started walking it are rows they did not choose.
+    /// With what `gh` said the last time this window asked, at once, and
+    /// the new answer put in under the reader when it lands: asking takes
+    /// seconds, and the pull requests open an hour ago are nearly always the
+    /// ones open now. Put in by [`Picker::renew`], which keeps the reader on
+    /// the pull request they were on -- rows moving under a selection that
+    /// stayed put would be a row they did not choose. Only this window's:
+    /// the first time a window asks, it waits.
     pub fn review_a_pull_request(&mut self) {
         let mut picker = Picker::new(Vec::new(), PickerLayout::FullArea);
         picker.before_typing("Filter pull requests");
@@ -178,6 +185,7 @@ impl App {
         match answer {
             Ok(listed) => {
                 self.pulls.listed = listed;
+                self.pulls.answered = true;
                 self.pulls.unlisted = None;
             }
             Err(why) => {
@@ -185,6 +193,7 @@ impl App {
                 // And none of the last one: rows from an answer before this
                 // one would be a list saying what was open then.
                 self.pulls.listed.clear();
+                self.pulls.answered = false;
                 self.pulls.unlisted = Some(why);
             }
         }
@@ -208,14 +217,16 @@ impl App {
         // review is the thing a claim is for.
         self.reread_who_holds_what();
         let now = std::time::SystemTime::now();
-        let items: Vec<PickerItem> = match self.pulls.asking {
-            true => Vec::new(),
-            false => self
+        // The last answer while the next is on its way, and nothing before
+        // there has been one.
+        let items: Vec<PickerItem> = match self.pulls.answered {
+            true => self
                 .pulls
                 .listed
                 .iter()
                 .map(|pull| self.pull_request_row(pull, now))
                 .collect(),
+            false => Vec::new(),
         };
         // Whatever is typed, while there is no list to type at: the waiting
         // and the refusal are facts about the world, and "No match" would be
@@ -226,15 +237,23 @@ impl App {
             (Some(why), false) => (why.said(), true),
             (None, false) => ("No pull request is open".to_string(), false),
         };
-        // And the mark that turns in front of that line, which every list
-        // still waiting on its rows wears: the line says what it is waiting
-        // for, and only something moving says the waiting is going on.
+        // And the mark that turns while the answer is on its way, which
+        // every list still waiting on its rows wears: in front of that line
+        // where there are no rows, and on the row under the list where the
+        // last answer's are standing in.
         let filling = self
             .pulls
             .asking
             .then(|| "Asking GitHub\u{2026}".to_string());
         if let Some(picker) = self.picker.as_mut() {
-            picker.replace(items);
+            // Standing on the same pull request, wherever the new answer
+            // puts it -- see `review_a_pull_request`.
+            picker.renew(items, |one, other| {
+                matches!(
+                    (one, other),
+                    (PickerValue::PullRequest(one), PickerValue::PullRequest(other)) if one == other
+                )
+            });
             match whatever_is_typed {
                 true => picker.while_empty(&empty),
                 false => picker.when_empty(&empty),
