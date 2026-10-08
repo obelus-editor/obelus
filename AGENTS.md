@@ -39,7 +39,7 @@ ignores them, and mixing the two makes the formatting oscillate. **Always
 Clippy must be silent. The lints are the workspace's, in the root
 `Cargo.toml` -- `missing_docs`, `unreachable_pub`, `private_interfaces` --
 because a `#![deny(..)]` in one crate root would silently stop applying to
-the other twenty-eight. Every member opts in with a `[lints] workspace = true`
+the other twenty-nine. Every member opts in with a `[lints] workspace = true`
 of its own, which Cargo does not inherit for it, and every public item needs
 a doc comment.
 
@@ -742,6 +742,13 @@ crates/
                     giving up on a walk (cancel)
   obelus-program/   whether this machine has a program, and starting what it
                     turned out to be, which are two questions on Windows
+  obelus-jobs/      how many build jobs run at once across every Obelus on
+                    the machine: GNU make's jobserver, made here and handed
+                    to everything Obelus starts -- an agent, a server, a
+                    terminal -- which is the one moment Obelus has a say in
+                    a build it does not run
+                    · a pool replaces a build's own `-j`, the first in fills
+                      it and the last out takes the name away (lib)
   obelus-terminal/  a program on a pty, what it drew, and a key as the bytes
                     a terminal sends for it -- the reader's shell, and an
                     agent's sign-in

@@ -107,6 +107,11 @@ here=$PWD
 ran='git -c "alias.x=!sleep 0.3;printf obelus-ran-this;exit 3" x'
 # And one that does not end on its own.
 forever='git -c "alias.x=!sleep 300" x'
+# And one that prints where the pool of build jobs is, as the command Obelus
+# ran was told. `$` is the one thing the two shells read differently, and
+# here it does not matter which reads it: `sh` puts the value in before git
+# sees the line, and `cmd` leaves it for the `sh` git runs the alias in.
+pooled='git -c "alias.x=!printf pool-%s $CARGO_MAKEFLAGS" x'
 if command -v cygpath >/dev/null 2>&1; then
     here=$(cygpath -m "$here")
 fi
@@ -479,6 +484,19 @@ while IFS= read -r line; do
             esac
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$session" "$said"
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
+        *'"method":"session/prompt"'*'/environment'*)
+            # Where this agent was told the pool of build jobs is, which is
+            # what every command it runs in a shell of its own inherits.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"%s","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"pool=%s"}}}}\n' "$session" "$(json "${CARGO_MAKEFLAGS:-none}")"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
+        *'"method":"session/prompt"'*'/pooled'*)
+            # The same question asked of a command Obelus runs, through the
+            # rest of `/run`'s conversation.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","id":920,"method":"terminal/create","params":{"sessionId":"%s","command":"%s","args":[]}}\n' "$session" "$(json "$pooled")"
             ;;
         *'"method":"session/prompt"'*'/run'*)
             # A command, the way an agent runs one: create, wait, read the

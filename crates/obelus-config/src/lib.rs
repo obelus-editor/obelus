@@ -214,6 +214,15 @@ pub struct Config {
     /// turning one into a list later would leave every file that wrote
     /// the switch with a line that did nothing.
     pub workflow: String,
+    /// How many build jobs every Obelus on this machine runs between them.
+    ///
+    /// A word rather than a number, because what the reader means is a
+    /// share of the machine and one settings file is read on machines of
+    /// different sizes: `half` is twelve here and four on a laptop. And
+    /// `unlimited` is not a large number: it is no pool at all, which
+    /// leaves each build to its own `-j` the way it was before there was
+    /// one.
+    pub build_jobs: String,
     /// What an agent calls itself in a conversation.
     ///
     /// A name rather than "I", because the reader's own messages say "I"
@@ -352,6 +361,11 @@ impl Default for Config {
             // what lets them see the change arrive and decide what becomes
             // of it.
             workflow: "feature-branch".to_string(),
+            // Half, because a pool takes over from cargo's own `-j` -- so this
+            // is also what one build alone gets -- and the machine is still
+            // the reader's while it runs: the disk and the memory a whole
+            // machine's worth of compilers fills are what this is for.
+            build_jobs: "half".to_string(),
             speaks_as: DEFAULT_SPEAKS_AS.to_string(),
             // None until the reader installs one: Obelus does not choose an
             // agent for anybody.
@@ -639,6 +653,11 @@ const DAYS: &[&str] = &["0", "7", "30", "90", "365"];
 /// `obelus-app`, which a test there holds to this list.
 const WORKFLOWS: &[&str] = &["none", "in-place", "feature-branch"];
 
+/// How many build jobs at once, as a share of the machine.
+///
+/// Logical CPUs, which is what a build counts when it sizes itself.
+pub const BUILD_JOBS: &[&str] = &["unlimited", "all", "half"];
+
 /// Every setting Obelus has.
 pub const ALL: &[Setting] = &[
     Setting {
@@ -829,6 +848,18 @@ pub const ALL: &[Setting] = &[
         drawn: Drawn::Anywhere,
     },
     Setting {
+        key: "build_jobs",
+        name: "Build jobs",
+        about: "How many compiler jobs everything Obelus starts runs at once, across every Obelus on this machine -- the agent, the language servers and the terminal. A program already running keeps what it was started with",
+        group: Group::Agent,
+        // The reader's alone: it is one budget for the whole machine, and a
+        // project that could set it would be a downloaded file deciding how
+        // every other project on it builds.
+        reach: Reach::ReaderOnly,
+        kind: Kind::Choice(BUILD_JOBS),
+        drawn: Drawn::Anywhere,
+    },
+    Setting {
         key: "speaks_as",
         name: "Speaks as",
         about: "What an agent calls itself in a conversation, so that an \"I\" there is always yours",
@@ -882,6 +913,7 @@ impl Config {
             "reopen" => Some(Value::Switch(self.reopen)),
             "new_versions" => Some(Value::Switch(self.new_versions)),
             "workflow" => Some(Value::Choice(self.workflow.clone())),
+            "build_jobs" => Some(Value::Choice(self.build_jobs.clone())),
             "speaks_as" => Some(Value::Text(self.speaks_as.clone())),
             "agent" => Some(Value::Choice(self.agent.clone().unwrap_or_default())),
             "remote" => Some(Value::Choice(self.remote.clone().unwrap_or_default())),
@@ -914,6 +946,7 @@ impl Config {
             ("reopen", Value::Switch(on)) => self.reopen = *on,
             ("new_versions", Value::Switch(on)) => self.new_versions = *on,
             ("workflow", Value::Choice(word)) => self.workflow = word.clone(),
+            ("build_jobs", Value::Choice(word)) => self.build_jobs = word.clone(),
             ("speaks_as", Value::Text(name)) => self.speaks_as = speaks_as(name),
             // An empty word is nobody, which is how a reader stops talking
             // to an agent without a second setting meaning "off".
@@ -1340,6 +1373,7 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
     // below has it borrowed for as long as the settings are being read.
     let mut not_a_table: Vec<String> = Vec::new();
     let mut not_a_workflow: Option<String> = None;
+    let mut not_a_share: Option<String> = None;
     let mut allowed = |key: &'static str| {
         if reach_of(key) == Reach::Anywhere || whose == Whose::Reader {
             applied.set.push(key);
@@ -1478,6 +1512,20 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
             config.workflow = word.to_string();
         }
     }
+    if let Some(word) = table.get("build_jobs").and_then(toml::Value::as_str) {
+        // Checked here for the workflow's reason: a word nothing answers to
+        // read as obeyed would be a reader who asked for half the machine
+        // getting whatever the default is, and never told.
+        if !BUILD_JOBS.contains(&word) {
+            tracing::warn!(
+                word,
+                "no share of the machine by this name, so the line does nothing"
+            );
+            not_a_share = Some(word.to_string());
+        } else if allowed("build_jobs") {
+            config.build_jobs = word.to_string();
+        }
+    }
     if let Some(name) = table.get("speaks_as").and_then(toml::Value::as_str)
         && allowed("speaks_as")
     {
@@ -1598,6 +1646,13 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
     if let Some(word) = not_a_workflow {
         applied.ignored.push(Ignored {
             key: "workflow".to_string(),
+            why: Why::NoSuchChoice(word),
+            at: None,
+        });
+    }
+    if let Some(word) = not_a_share {
+        applied.ignored.push(Ignored {
+            key: "build_jobs".to_string(),
             why: Why::NoSuchChoice(word),
             at: None,
         });
@@ -1783,6 +1838,11 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
         "workflow",
         config.workflow != default.workflow,
         toml_edit::value(config.workflow.clone()),
+    );
+    put(
+        "build_jobs",
+        config.build_jobs != default.build_jobs,
+        toml_edit::value(config.build_jobs.clone()),
     );
     put(
         "speaks_as",
@@ -2320,6 +2380,53 @@ mod tests {
         );
     }
 
+    /// How many build jobs the machine runs is the reader's, and a project
+    /// naming it is told so rather than obeyed.
+    ///
+    /// Broken deliberately by giving `build_jobs` `Reach::Anywhere`: the
+    /// project's `unlimited` is taken, and the pool every other project on
+    /// the machine shares is gone because of one file.
+    #[test]
+    fn a_project_may_not_say_how_many_build_jobs() {
+        let mut config = Config::default();
+        let table: toml::Table = "build_jobs = \"unlimited\"".parse().expect("toml");
+        let applied = apply(&mut config, &table, Whose::Project);
+        assert_eq!(config.build_jobs, Config::default().build_jobs);
+        assert_eq!(
+            applied.ignored,
+            vec![super::Ignored {
+                key: "build_jobs".to_string(),
+                why: super::Why::NotForAProject,
+                at: None,
+            }]
+        );
+
+        let applied = apply(&mut config, &table, Whose::Reader);
+        assert_eq!(config.build_jobs, "unlimited");
+        assert!(applied.ignored.is_empty(), "{:?}", applied.ignored);
+    }
+
+    /// A share of the machine nothing answers to does nothing and says so.
+    ///
+    /// Broken deliberately by taking the word without checking it: the
+    /// config holds `quarter`, which every reader of it would have to
+    /// decide what to make of.
+    #[test]
+    fn a_share_nothing_answers_to_does_nothing() {
+        let mut config = Config::default();
+        let table: toml::Table = "build_jobs = \"quarter\"".parse().expect("toml");
+        let applied = apply(&mut config, &table, Whose::Reader);
+        assert_eq!(config.build_jobs, Config::default().build_jobs);
+        assert_eq!(
+            applied.ignored,
+            vec![super::Ignored {
+                key: "build_jobs".to_string(),
+                why: super::Why::NoSuchChoice("quarter".to_string()),
+                at: None,
+            }]
+        );
+    }
+
     /// Written and read back is the same config: the file is the only place
     /// a setting survives, so anything that does not survive the round trip
     /// is a setting the reader has to set twice.
@@ -2346,6 +2453,7 @@ mod tests {
             reopen: false,
             new_versions: false,
             workflow: "none".to_string(),
+            build_jobs: "all".to_string(),
             speaks_as: "Ada".to_string(),
             agent: Some("claude-acp".to_string()),
             // A key moved and a key taken away: both are decisions, and

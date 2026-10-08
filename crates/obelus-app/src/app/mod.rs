@@ -504,6 +504,9 @@ pub struct App {
     /// command is a thing on the page: the row that says what is happening
     /// reads its output, and a key stops it.
     runs: obelus_agent::running::Runs,
+    /// This Obelus's place in the machine's pool of build jobs, while the
+    /// settings ask for one.
+    jobs: Option<obelus_jobs::Pool>,
     /// The last number handed to a terminal, which is how what its program
     /// writes finds it again.
     terminals: obelus_terminal::Id,
@@ -966,6 +969,7 @@ impl App {
             talker: None,
             ctrl_enter_arrives: true,
             runs: obelus_agent::running::Runs::default(),
+            jobs: None,
             terminals: 0,
             signing_in: None,
             shell: None,
@@ -1513,6 +1517,10 @@ impl App {
     /// about what Obelus does on the way up has nothing else to call.
     pub fn start(&mut self, sender: std::sync::mpsc::Sender<Event>) {
         self.events = Some(sender.clone());
+        // First, before anything is started that compiles: an agent, a
+        // server or a terminal is told where the pool is when it starts,
+        // and not after -- the servers below are started a few lines down.
+        self.settle_the_pool();
         // Before anything else is started: the reader is looking at an empty
         // screen until it arrives.
         self.send_the_reopening();

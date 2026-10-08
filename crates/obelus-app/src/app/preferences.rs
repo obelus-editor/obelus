@@ -669,6 +669,19 @@ impl App {
                 "" => Some("Off".into()),
                 key => obelus_remote::platform::named(key).map(|platform| platform.name.into()),
             },
+            // A share of the machine, with what it comes to on this one:
+            // the word is the same on every machine the file is read on,
+            // and the number is what the reader is actually choosing.
+            "build_jobs" => {
+                let cpus = logical_cpus();
+                match word {
+                    "unlimited" => Some("Unlimited".into()),
+                    "all" => Some(format!("All {}", of_the(cpus)).into()),
+                    "half" => jobs_for(word)
+                        .map(|jobs| format!("Half: {jobs} of {}", of_the(cpus)).into()),
+                    _ => None,
+                }
+            }
             "conversation_days" => match word {
                 "0" => Some("Never".into()),
                 "7" => Some("A week".into()),
@@ -997,6 +1010,43 @@ impl App {
         // A switch turned on is a question asked now. Nothing before the
         // loop has a channel, so on the way up this waits for `start`.
         self.ask_about_releases();
+        self.settle_the_pool();
+    }
+
+    /// Puts this Obelus in the machine's pool of build jobs at the size the
+    /// settings ask for, or takes it out.
+    ///
+    /// Not before the loop, like the releases: what is never started --
+    /// a test that lays a screen out and reads it -- is never in a pool,
+    /// and starts nothing that would be told about one. Asked again after
+    /// every change, which costs a lock and a short file when nothing
+    /// moved.
+    ///
+    /// What a pool that will not be made costs is the pool: the reason goes
+    /// in the log and every build sizes itself, which is what happened
+    /// before there was one.
+    pub(super) fn settle_the_pool(&mut self) {
+        if self.events.is_none() {
+            return;
+        }
+        let Some(jobs) = jobs_for(&self.settled.config.build_jobs) else {
+            self.jobs = None;
+            return;
+        };
+        if let Some(pool) = &self.jobs {
+            if let Err(error) = pool.resize(jobs) {
+                tracing::warn!(%error, jobs, "the pool of build jobs would not change size");
+            }
+            return;
+        }
+        let Some(state) = obelus_logging::state_directory() else {
+            tracing::info!("nowhere to keep a pool of build jobs, so none");
+            return;
+        };
+        match obelus_jobs::Pool::join(&state.join("jobs"), jobs) {
+            Ok(pool) => self.jobs = Some(pool),
+            Err(error) => tracing::warn!(%error, "no pool of build jobs"),
+        }
     }
 
     /// Reads the configuration file and applies it.
@@ -1340,5 +1390,42 @@ impl App {
         self.settled.path = Some(path);
         self.settled.readable = true;
         self.read_the_settings();
+    }
+}
+
+/// How many jobs at once a share of the machine comes to, or none for no
+/// pool at all.
+fn jobs_for(share: &str) -> Option<usize> {
+    match share {
+        "all" => Some(logical_cpus()),
+        "half" => Some((logical_cpus() / 2).max(1)),
+        _ => None,
+    }
+}
+
+/// How many CPUs this machine has, as a build counts them when it sizes
+/// itself.
+fn logical_cpus() -> usize {
+    std::thread::available_parallelism().map_or(1, std::num::NonZero::get)
+}
+
+/// A number of CPUs, as a sentence says it.
+fn of_the(cpus: usize) -> String {
+    match cpus {
+        1 => "1 CPU".to_string(),
+        cpus => format!("{cpus} CPUs"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// One CPU is said in the singular, on the one machine that has it.
+    ///
+    /// Deliberate break: take out the arm for one, and the page says
+    /// `All 1 CPUs`.
+    #[test]
+    fn one_cpu_is_one_cpu() {
+        assert_eq!(super::of_the(1), "1 CPU");
+        assert_eq!(super::of_the(24), "24 CPUs");
     }
 }

@@ -8434,6 +8434,92 @@ fn an_agent_that_can_do_neither_is_not_asked() {
     );
 }
 
+/// The fake agent, started by an Obelus that is in the machine's pool of
+/// build jobs -- which the defaults ask for, and settling the settings joins.
+fn talking_in_a_pool() -> (App, Receiver<Event>) {
+    let (mut app, events) = wired();
+    app.configure(obelus_config::Config::default(), Vec::new());
+    app.talk_to(
+        "fake",
+        Path::new(support::sh()),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.new_conversation();
+    app.open_a_session_for_test();
+    (app, events)
+}
+
+/// What names the pool this test binary made: its own process's number.
+///
+/// Not that a pool is named at all. Run from inside an Obelus -- which is
+/// how this suite is run -- every process here has the outer Obelus's pool
+/// in its environment already, and a test asking only for
+/// `--jobserver-auth=` passes with the code it is about taken out.
+fn this_pool() -> String {
+    format!("obelus-jobs-{}-", std::process::id())
+}
+
+/// An agent is started knowing where the pool of build jobs is, so that
+/// what it builds in a shell of its own builds inside it.
+///
+/// The case that matters most and the one Obelus cannot see: an agent that
+/// runs its own commands -- Claude's does -- starts them itself, and its
+/// environment is the only thing of Obelus's they carry.
+///
+/// Broken deliberately by leaving `envs(obelus_jobs::lent())` off the
+/// agent's config in `link::start`: it says `pool=none`.
+#[test]
+fn an_agent_is_told_where_the_pool_of_build_jobs_is() {
+    let (mut app, events) = talking_in_a_pool();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/environment");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "what the agent was told", |app| {
+        said_in_transcript(app, "pool=")
+    });
+    let said = app
+        .chat()
+        .expect("the conversation")
+        .rows(WIDTH)
+        .iter()
+        .map(|row| row.text())
+        .collect::<String>();
+    assert!(
+        said.contains(&this_pool()),
+        "the agent was not told where this pool is: {said:?}"
+    );
+}
+
+/// A command an agent asks Obelus to run is told where the pool is too.
+///
+/// Broken deliberately by leaving `obelus_jobs::lend` out of `Runs::start`:
+/// the command prints `pool-` and nothing after it.
+#[test]
+fn a_command_the_agent_asks_for_is_told_where_the_pool_is() {
+    let (mut app, events) = talking_in_a_pool();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/pooled");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "what the agent read back", |app| {
+        said_in_transcript(app, "it said")
+    });
+    let said = app
+        .chat()
+        .expect("the conversation")
+        .rows(WIDTH)
+        .iter()
+        .map(|row| row.text())
+        .collect::<String>();
+    assert!(
+        said.contains(&this_pool()),
+        "the command was not told where this pool is: {said:?}"
+    );
+}
+
 /// A command the agent asks for is run, and what it said comes back.
 ///
 /// The five `terminal/*` methods want a process, not a screen: started,
