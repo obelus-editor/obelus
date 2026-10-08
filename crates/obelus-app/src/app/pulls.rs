@@ -21,7 +21,9 @@
 //! asks about. Obelus sends nothing itself.
 
 use obelus_command::Command;
-use obelus_component::picker::{Marking, Picker, PickerItem, PickerLayout, PickerValue};
+use obelus_component::picker::{
+    Marking, Picker, PickerItem, PickerLayout, PickerValue, Remark, Said,
+};
 
 use super::*;
 use crate::event::Event;
@@ -190,7 +192,7 @@ impl App {
     }
 
     /// Whether the list showing is the pull requests.
-    fn listing_pull_requests(&self) -> bool {
+    pub(super) fn listing_pull_requests(&self) -> bool {
         self.picker
             .as_ref()
             .is_some_and(|picker| picker.opener() == Some(Command::PullRequestReview))
@@ -243,6 +245,41 @@ impl App {
 
     /// One pull request as a row of the list.
     fn pull_request_row(&self, pull: &PullRequest, now: std::time::SystemTime) -> PickerItem {
+        let Said {
+            marker,
+            enabled,
+            trailing,
+        } = self.what_a_pull_request_row_says(pull, now);
+        PickerItem {
+            // A sentence, which loses its end where it has to lose anything.
+            prose: true,
+            icon: None,
+            marker,
+            label: pull.title.clone(),
+            detail: pull.draft.then(|| "Draft".to_string()),
+            trailing,
+            changed: None,
+            value: PickerValue::PullRequest(pull.number),
+            depth: 0,
+            opens: None,
+            status: None,
+            enabled,
+            colours: None,
+            kind: None,
+            tab: None,
+            section: None,
+        }
+    }
+
+    /// What a row says about itself now: its mark, whether it can be
+    /// chosen, and the words at its end.
+    ///
+    /// The part of a row that is about *now* -- who has its review -- so it
+    /// is asked again every frame by [`App::freshen_the_pull_request_rows`],
+    /// the way a conversation's row is: another window letting go of a
+    /// review is not this reader's keystroke, and the row has to say so
+    /// before they press.
+    fn what_a_pull_request_row_says(&self, pull: &PullRequest, now: std::time::SystemTime) -> Said {
         use obelus_agent::chats::ChatId;
 
         let which = ChatId::PullRequest(pull.number);
@@ -272,24 +309,36 @@ impl App {
                 obelus_git::how_long_ago(updated, now)
             ));
         }
-        PickerItem {
-            // A sentence, which loses its end where it has to lose anything.
-            prose: true,
-            icon: None,
+        Said {
             marker,
-            label: pull.title.clone(),
-            detail: pull.draft.then(|| "Draft".to_string()),
-            trailing: Some(trailing),
-            changed: None,
-            value: PickerValue::PullRequest(pull.number),
-            depth: 0,
-            opens: None,
-            status: None,
             enabled: !elsewhere,
-            colours: None,
-            kind: None,
-            tab: None,
-            section: None,
+            trailing: Some(trailing),
+        }
+    }
+
+    /// Says again, on every row of the list, who has which review.
+    ///
+    /// From the claims as Obelus last looked, which the watch on them keeps
+    /// level; marking rather than rebuilding, so the reader's row and what
+    /// they typed stay where they are.
+    pub(super) fn freshen_the_pull_request_rows(&mut self) {
+        if !self.listing_pull_requests() {
+            return;
+        }
+        let now = std::time::SystemTime::now();
+        let said: std::collections::HashMap<u64, Said> = self
+            .pulls
+            .listed
+            .iter()
+            .map(|pull| (pull.number, self.what_a_pull_request_row_says(pull, now)))
+            .collect();
+        if let Some(picker) = self.picker.as_mut() {
+            picker.remark(|value| match value {
+                PickerValue::PullRequest(number) => said
+                    .get(number)
+                    .map_or(Remark::Keep, |now| Remark::Now(now.clone())),
+                _ => Remark::Keep,
+            });
         }
     }
 
@@ -376,7 +425,12 @@ impl App {
                 let which = obelus_agent::chats::ChatId::PullRequest(number);
                 let Some(claim) = obelus_agent::chats::claim(&self.working_directory, &which)
                 else {
-                    self.show_pull_requests();
+                    // Being refused is news fresher than the watch has: look
+                    // again, and mark the rows rather than rebuild them, so
+                    // the one the reader pressed goes dim under them and the
+                    // selection stays on it.
+                    self.reread_who_holds_what();
+                    self.freshen_the_pull_request_rows();
                     return false;
                 };
                 let (told, introduced) = self.remembered_telling(&which);

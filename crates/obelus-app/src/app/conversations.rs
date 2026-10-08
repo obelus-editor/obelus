@@ -787,7 +787,9 @@ impl App {
         // had, and nothing will be written to it from here.
         let project = self.has_a_project();
         let notes = project && self.notes_document().is_some();
-        let listing = project && !self.conversing.agents.is_empty() && self.picker.is_some();
+        let listing = project
+            && ((!self.conversing.agents.is_empty() && self.picker.is_some())
+                || self.listing_pull_requests());
         let about_a_note = project
             && self
                 .conversation()
@@ -796,7 +798,7 @@ impl App {
         // A directory rather than a file: a claim is a file appearing and
         // going again, so there is nothing here to watch by name. Wanted by
         // the notes, which mark the ones somebody else has, and by the list
-        // of conversations, which greys them.
+        // of conversations and the list of pull requests, which grey them.
         self.settle_a_watch(
             CLAIMS,
             notes || listing,

@@ -2700,6 +2700,8 @@ impl App {
         // or closing one is not this reader's keystroke, and the row has
         // to say so before they press.
         self.freshen_the_conversation_rows();
+        // And the list of pull requests, whose rows carry the same lock.
+        self.freshen_the_pull_request_rows();
         // What the conversation says is happening, read off the state
         // rather than remembered: a row that is worked out every frame
         // cannot be left saying something that stopped being true.

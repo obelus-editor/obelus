@@ -14519,6 +14519,13 @@ fn one_pull_request(sha: &str) -> String {
     described(sha, r"## What changes\n\n- the fold stays\n- the hunk goes")
 }
 
+/// What `gh pr list` prints for two, #123 the newer.
+fn two_pull_requests() -> String {
+    r#"[{"number":123,"title":"Keep the fold when a hunk is reverted","author":{"login":"alice"},"headRefName":"keep-fold","baseRefName":"master","headRefOid":"abc123","isDraft":false,"reviewDecision":"","updatedAt":"2026-10-08T00:00:00Z","body":"","additions":1,"deletions":1,"changedFiles":1},
+        {"number":124,"title":"Pick up the agent's rename in the tab row","author":{"login":"bob"},"headRefName":"rename","baseRefName":"master","headRefOid":"def456","isDraft":false,"reviewDecision":"","updatedAt":"2026-10-07T00:00:00Z","body":"","additions":1,"deletions":1,"changedFiles":1}]"#
+        .to_string()
+}
+
 /// The same, with `body` as its description, escaped as JSON escapes it.
 fn described(sha: &str, body: &str) -> String {
     format!(
@@ -14556,7 +14563,7 @@ fn the_descriptions_bar_moves_the_description() {
         .iter()
         .enumerate()
         .skip(rule + 1)
-        .filter(|(_, row)| row.chars().last() == Some('\u{2588}'))
+        .filter(|(_, row)| row.ends_with('\u{2588}'))
         .map(|(y, _)| u16::try_from(y).expect("a row"))
         .collect();
     let (first, last) = (bar[0], *bar.last().expect("a bar beside the description"));
@@ -14867,29 +14874,45 @@ fn a_query_that_matches_no_pull_request_says_so() {
 /// test passed with the claim taken out, because enter on a dim row never
 /// reached it.
 ///
-/// Broken deliberately two ways. Opening the review without the claim in
+/// On the second of two rows, so that the selection staying where it was
+/// is something the test can see: the list rebuilt on refusal put it back
+/// on the first row, and with one row there is nowhere else to go.
+///
+/// Broken deliberately three ways. Opening the review without the claim in
 /// `App::review` walks into the other window's review. Taking out the
-/// redraw on refusal leaves the row lit under the reader.
+/// marking on refusal leaves the row lit under the reader. And rebuilding
+/// the rows on refusal, as this first did, moves the selection off the row
+/// the reader pressed.
 #[test]
 fn a_review_another_obelus_has_is_not_entered() {
     let scratch = support::Scratch::new("agent-pull-request-claimed");
     let answer = scratch.path().join("gh-answer.json");
-    std::fs::write(&answer, one_pull_request("abc123")).expect("the answer");
+    std::fs::write(&answer, two_pull_requests()).expect("the answer");
     let (mut app, events) = with_a_fake_gh(&scratch, &answer);
 
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
     pump(&mut app, &events, "the list", |app| {
-        app.picker().is_some_and(|picker| picker.row_count() == 1)
+        app.picker().is_some_and(|picker| picker.row_count() == 2)
     });
-    assert!(
+    support::press(&mut app, KeyCode::Down);
+    let selected = |app: &App| {
         app.picker()
             .and_then(|picker| picker.selected_item())
-            .is_some_and(|row| row.enabled),
+            .and_then(|row| match row.value {
+                obelus_component::picker::PickerValue::PullRequest(number) => {
+                    Some((number, row.enabled))
+                }
+                _ => None,
+            })
+    };
+    assert_eq!(
+        selected(&app),
+        Some((124, true)),
         "nobody has the review yet"
     );
     let _theirs = obelus_agent::chats::claim(
         scratch.path(),
-        &obelus_agent::chats::ChatId::PullRequest(123),
+        &obelus_agent::chats::ChatId::PullRequest(124),
     )
     .expect("nobody had it");
 
@@ -14898,10 +14921,67 @@ fn a_review_another_obelus_has_is_not_entered() {
         app.chat().is_none(),
         "the review was entered from two windows"
     );
-    assert!(
+    assert_eq!(
+        selected(&app),
+        Some((124, false)),
+        "the refused row is not the one under the reader, dim"
+    );
+}
+
+/// A review another window takes up or lets go while the list is open
+/// says so on its row, with nothing pressed.
+///
+/// What tells this window is the watcher hearing the claim's file, which
+/// the test delivers by hand -- the watch itself is `obelus_watch`'s.
+///
+/// Broken deliberately two ways. Taking `freshen_the_pull_request_rows` out
+/// of the frame leaves the row as the list was built. And reading the
+/// claims only as the list opens leaves it lit after the other window took
+/// it, which is the same break from the other side.
+#[test]
+fn a_review_taken_elsewhere_greys_its_row_while_the_list_is_open() {
+    let scratch = support::Scratch::new("agent-pull-request-lock-moves");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, two_pull_requests()).expect("the answer");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 2)
+    });
+    let which = obelus_agent::chats::ChatId::PullRequest(123);
+    let file = obelus_agent::chats::directory(scratch.path())
+        .expect("somewhere for claims")
+        .join(which.file_name());
+    let enabled = |app: &App| {
         app.picker()
-            .and_then(|picker| picker.selected_item())
-            .is_some_and(|row| !row.enabled),
-        "the refused row still says it can be entered"
+            .and_then(|picker| {
+                picker.matches().find(|row| {
+                    matches!(
+                        row.value,
+                        obelus_component::picker::PickerValue::PullRequest(123)
+                    )
+                })
+            })
+            .map(|row| row.enabled)
+    };
+    assert_eq!(enabled(&app), Some(true), "nobody has the review yet");
+
+    let theirs = obelus_agent::chats::claim(scratch.path(), &which).expect("nobody had it");
+    app.handle(Event::Watched(obelus_watch::Changed { path: file.clone() }));
+    let _ = screen(&mut app);
+    assert_eq!(
+        enabled(&app),
+        Some(false),
+        "a review another window took is still offered"
+    );
+
+    drop(theirs);
+    app.handle(Event::Watched(obelus_watch::Changed { path: file }));
+    let _ = screen(&mut app);
+    assert_eq!(
+        enabled(&app),
+        Some(true),
+        "a review another window let go is still refused"
     );
 }
