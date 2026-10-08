@@ -137,6 +137,28 @@ fn rows(app: &App) -> Vec<Row> {
         .collect()
 }
 
+/// The mark every list of places puts on where the reader is.
+const HERE: &str = "\u{2022}";
+
+/// The mark on each row of the list on screen, in the order of [`rows`].
+fn marks(app: &App) -> Vec<Option<String>> {
+    app.picker()
+        .expect("a list is showing")
+        .matches()
+        .map(|item| item.marker.as_ref().map(|(_, mark)| mark.clone()))
+        .collect()
+}
+
+/// The rows marked as where the reader is.
+fn here(app: &App) -> Vec<String> {
+    rows(app)
+        .into_iter()
+        .zip(marks(app))
+        .filter(|(_, mark)| mark.as_deref() == Some(HERE))
+        .map(|(row, _)| row.0)
+        .collect()
+}
+
 /// Walks the selection to the row that says `label`.
 fn walk_to(app: &mut App, label: &str) {
     press(app, KeyCode::Home);
@@ -186,7 +208,7 @@ fn terminal_on(tree: &Path) -> (App, Receiver<Event>) {
 /// puts it on another, `ctrl+enter` does nothing, and nothing is listed
 /// under a tree.
 ///
-/// Broken deliberately six ways: `another_worktree` asking for a front
+/// Broken deliberately seven ways: `another_worktree` asking for a front
 /// end again (no tab), `say_where_this_window_is` claiming only where there
 /// is a door (the window does not see the terminal on `feature`), the list
 /// saying this window can go in place whatever it is drawn on (the
@@ -194,7 +216,8 @@ fn terminal_on(tree: &Path) -> (App, Receiver<Event>) {
 /// open a window (enter puts the terminal nowhere), the rows under a tree
 /// drawn in a terminal (the terminal on `main` is listed under it), and a
 /// terminal's row under a tree left to be chosen in a window (it is drawn
-/// as one to go to).
+/// as one to go to), and the tree this one is on marked as any tree with an
+/// Obelus on it is (no row is marked as where the reader is).
 #[test]
 fn a_terminal_lists_the_worktrees_and_says_where_it_is() {
     let scratch = Scratch::new("worktrees-terminal");
@@ -244,10 +267,16 @@ fn a_terminal_lists_the_worktrees_and_says_where_it_is() {
     assert!(asked.brought.lock().expect("the list").is_empty());
     drop(window);
 
-    // Enter is the terminal going, and only the trees are listed.
+    // Enter is the terminal going, and only the trees are listed -- the
+    // one it is on marked as where the reader is.
     dispatch::dispatch(&mut app, Command::WorktreeList);
     let named: Vec<String> = rows(&app).into_iter().map(|row| row.0).collect();
     assert_eq!(named, ["main", "feature", "spare"], "{named:?}");
+    assert_eq!(
+        here(&app),
+        ["feature"],
+        "the terminal's own tree is not marked"
+    );
     choose(&mut app, "main");
     assert_eq!(
         resolved(app.working_directory()),
@@ -377,7 +406,7 @@ fn something_unwritten_is_asked_about_before_going() {
 /// tree this window is on said and stood on.
 ///
 /// Broken deliberately by building the rows without the main checkout,
-/// and by leaving out the word that says which tree is this one's: each
+/// and by leaving out the mark that says which row is this window: each
 /// fails its own line below.
 #[test]
 fn the_worktrees_are_a_tab_of_what_is_open() {
@@ -420,23 +449,18 @@ fn the_worktrees_are_a_tab_of_what_is_open() {
     );
     assert_eq!(
         said[1],
-        (
-            "Nothing open".to_string(),
-            None,
-            Some("This window".to_string()),
-            false,
-            true
-        ),
+        ("Nothing open".to_string(), None, None, true, true),
         "this window is not said under its tree"
     );
+    assert_eq!(here(&app), ["Nothing open"], "this window is not marked");
     assert_eq!(said[2].1.as_deref(), Some("feature"));
     let selected = app
         .picker()
         .and_then(obelus_component::picker::Picker::selected_item)
-        .map(|item| item.trailing.clone());
+        .map(|item| item.label.clone());
     assert_eq!(
-        selected,
-        Some(Some("This window".to_string())),
+        selected.as_deref(),
+        Some("Nothing open"),
         "the list did not open on this window"
     );
 
@@ -894,16 +918,19 @@ fn several_on_one_tree_are_a_row_each() {
 
     dispatch::dispatch(&mut app, Command::WorktreeList);
     let said = rows(&app);
+    let marked = marks(&app);
     let named: Vec<&str> = said.iter().map(|row| row.0.as_str()).collect();
     let under = |tree: &str| -> Vec<String> {
         let from = named
             .iter()
             .position(|name| *name == tree)
             .expect("the tree");
-        let mut under: Vec<String> = said[from + 1..]
-            .iter()
-            .take_while(|row| row.1.is_none())
-            .map(|row| format!("{} {}", row.0, row.2.as_deref().unwrap_or("-")))
+        let mut under: Vec<String> = (from + 1..said.len())
+            .take_while(|at| said[*at].1.is_none())
+            .map(|at| {
+                let here = marked[at].as_deref() == Some(HERE);
+                format!("{} {}", said[at].0, if here { "here" } else { "-" })
+            })
             .collect();
         under.sort();
         under
@@ -915,17 +942,20 @@ fn several_on_one_tree_are_a_row_each() {
     );
     assert_eq!(
         under("main"),
-        ["Nothing open -", "Nothing open This window"],
+        ["Nothing open -", "Nothing open here"],
         "{said:?}"
     );
     assert_eq!(under("spare"), Vec::<String>::new(), "{said:?}");
     let selected = app
         .picker()
         .and_then(obelus_component::picker::Picker::selected_item)
-        .map(|item| (item.label.clone(), item.trailing.clone()));
+        .map(|item| {
+            let mark = item.marker.as_ref().map(|(_, mark)| mark.clone());
+            (item.label.clone(), mark)
+        });
     assert_eq!(
         selected,
-        Some(("Nothing open".to_string(), Some("This window".to_string()))),
+        Some(("Nothing open".to_string(), Some(HERE.to_string()))),
         "the list did not open on this window"
     );
 

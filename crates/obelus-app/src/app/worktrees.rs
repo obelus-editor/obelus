@@ -611,14 +611,13 @@ impl App {
                     obelus_git::Head::Branch(name) => name.clone(),
                     obelus_git::Head::Detached => "Detached".to_string(),
                 }),
-                marked: here || !listed.seen.is_empty(),
-                // Said on the row that is this window: the tree's where
-                // there are no rows under it.
-                trailing: match (here && !under, listed.tree.there) {
-                    (true, _) => Some("This window".to_string()),
-                    (false, false) => Some("Missing".to_string()),
-                    (false, true) => None,
+                // The row that is this window is marked as where the reader
+                // is: the tree's where there are no rows under it.
+                marker: match (here, under) {
+                    (true, false) => Some(super::conversations::here()),
+                    _ => (here || !listed.seen.is_empty()).then(somebody),
                 },
+                trailing: (!listed.tree.there).then(|| "Missing".to_string()),
                 // In a terminal this one is where the reader is, which is
                 // the list closing.
                 enabled: here || listed.tree.there,
@@ -638,7 +637,7 @@ impl App {
                     at: rows.len() - 1,
                     depth: 1,
                     // Which can be brought forward, and which is a terminal
-                    // -- where `ctrl+enter` opens a window instead.
+                    // and cannot be.
                     icon: match seen.door {
                         Some(_) => obelus_icons::ui::WINDOW,
                         None => obelus_icons::ui::IN_A_TERMINAL,
@@ -648,8 +647,8 @@ impl App {
                         false => seen.reading.clone(),
                     },
                     detail: None,
-                    marked: false,
-                    trailing: mine.then(|| "This window".to_string()),
+                    marker: mine.then(super::conversations::here),
+                    trailing: None,
                     enabled: mine || seen.door.is_some(),
                     enter: match mine {
                         true => WorktreeEnter::Stay,
@@ -821,13 +820,27 @@ struct Shown {
     icon: char,
     label: String,
     detail: Option<String>,
-    /// Whether an Obelus is on it, for a tree.
-    marked: bool,
+    /// That an Obelus is on it, for a tree, or that it is this window.
+    marker: Option<(Marking, String)>,
     trailing: Option<String>,
     enabled: bool,
     enter: WorktreeEnter,
     /// Whether `ctrl+enter` puts this window on the row's tree.
     switches: bool,
+}
+
+/// The mark on a tree an Obelus is on.
+///
+/// Not the bullet without a nerd font, which is the mark on the row that is
+/// this window: two rows marked alike would say the reader is on both.
+fn somebody() -> (Marking, String) {
+    (
+        Marking::Aside,
+        match obelus_icons::enabled() {
+            true => obelus_icons::ui::WINDOW.to_string(),
+            false => "\u{25e6}".to_string(),
+        },
+    )
 }
 
 /// A row of the worktrees, as the list draws it.
@@ -837,15 +850,7 @@ fn worktree_row(shown: Shown) -> PickerItem {
         label: shown.label,
         detail: shown.detail,
         prose: false,
-        marker: shown.marked.then(|| {
-            (
-                Marking::Aside,
-                match obelus_icons::enabled() {
-                    true => obelus_icons::ui::WINDOW.to_string(),
-                    false => "\u{2022}".to_string(),
-                },
-            )
-        }),
+        marker: shown.marker,
         trailing: shown.trailing,
         changed: None,
         value: PickerValue::Worktree {
