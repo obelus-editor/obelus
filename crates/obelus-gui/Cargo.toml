@@ -26,6 +26,9 @@ obelus-clipboard.workspace = true
 obelus-config.workspace = true
 obelus-icons.workspace = true
 obelus-logging.workspace = true
+# Asking the reader's shell what is on the path, for a window the desktop
+# started -- see `take_the_shells_environment`.
+obelus-program.workspace = true
 # Starting another Obelus on another tree, as a task on the one runtime that
 # reaps it when it ends -- see `elsewhere`.
 obelus-runtime.workspace = true

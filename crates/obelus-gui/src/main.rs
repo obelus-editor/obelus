@@ -77,6 +77,11 @@ fn main() -> Result<()> {
     #[cfg(windows)]
     take_the_console_it_was_started_from();
     let arguments = Arguments::parse();
+    // Before anything else starts a thread, because changing the
+    // environment while another thread reads it is undefined. And before
+    // the log, which starts one -- so what happened is said after it.
+    #[cfg(unix)]
+    let environment = take_the_shells_environment();
 
     // Held until main returns, so buffered log lines are flushed on the way
     // out.
@@ -84,6 +89,12 @@ fn main() -> Result<()> {
     // Before anything that can panic, so a panic on the way up is in the
     // log as well.
     obelus_logging::catch_panics();
+    #[cfg(unix)]
+    match environment {
+        Ok(None) => {}
+        Ok(Some(taken)) => tracing::info!(taken, "took the login shell's environment"),
+        Err(why) => tracing::warn!(%why, "kept the environment the desktop gave"),
+    }
 
     // Before the settings are read, because what Obelus is drawn on
     // decides what some of them mean: the marks are carried here rather
@@ -108,6 +119,38 @@ fn main() -> Result<()> {
     );
 
     window::show(app)
+}
+
+/// Takes the environment the reader's login shell has, where `obg` was not
+/// started from one -- how many variables, or `None` where it was.
+///
+/// A window opened from the Dock or a launcher has the desktop's
+/// environment, which has none of what the reader's shell files set: no
+/// `/opt/homebrew/bin` on the path, so no `npm` and no `node` for an agent
+/// to run on. Why the shell is asked the way it is, is argued in
+/// `obelus_program::login`.
+///
+/// A standard input that is a terminal is the sign of a shell: `obg` typed
+/// into one already has everything it set, and asking again would only
+/// cost the start a shell. Not Windows, where the path is the registry's
+/// and the desktop hands every program all of it.
+#[cfg(unix)]
+fn take_the_shells_environment() -> Result<Option<usize>, String> {
+    if std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+        return Ok(None);
+    }
+    let shell = std::env::var_os("SHELL").ok_or("nothing says which shell is the reader's")?;
+    let found = obelus_program::login::environment(
+        std::path::Path::new(&shell),
+        std::time::Duration::from_secs(5),
+    )?;
+    let taken = found.len();
+    for (name, value) in found {
+        // Safety: nothing else is running yet -- see `main`. The thread
+        // `environment` reads the shell's pipe on touches nothing else.
+        unsafe { std::env::set_var(name, value) };
+    }
+    Ok(Some(taken))
 }
 
 /// Says what follows on the console `obg` was started from, where it was
