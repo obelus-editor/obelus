@@ -4559,6 +4559,7 @@ dependencies = [
  "obelus-config",
  "obelus-icons",
  "obelus-logging",
+ "obelus-program",
  "obelus-runtime",
  "obelus-text",
  "obelus-ui",
@@ -4661,6 +4662,7 @@ dependencies = [
 name = "obelus-program"
 version = "0.10.1"
 dependencies = [
+ "libc",
  "which",
  "windows-sys 0.61.2",
 ]
