@@ -63,7 +63,8 @@ fn list_region_rows(picker: &Picker, width: u16) -> u16 {
 /// switch must never ask of them -- and it is drawn with the settings page's
 /// own control, so the two places say it the same way.
 ///
-/// And none at all where none of them can be pressed. The file list's
+/// And none at all where none of them can be pressed, unless one of them is
+/// kept there greyed (the list of background work). The file list's
 /// changed tab was the case: every key it has is about the tree, the rows
 /// there are git's answer, so its foot was a rule and a pointer to a card
 /// of keys that were all grey -- two rows of the screen saying that
@@ -74,7 +75,7 @@ fn list_region_rows(picker: &Picker, width: u16) -> u16 {
 #[must_use]
 pub fn hints(picker: &Picker) -> Vec<Hint> {
     let hints = every_hint(picker);
-    match hints.iter().any(|hint| hint.usable) {
+    match hints.iter().any(|hint| hint.usable || hint.kept) {
         true => hints,
         false => Vec::new(),
     }
@@ -87,10 +88,11 @@ fn every_hint(picker: &Picker) -> Vec<Hint> {
         return Vec::new();
     }
     // The agent's background work: enter opens what a row has written, and
-    // this stops it. Greyed rather than dropped on a row it would do nothing
+    // this stops it. Kept at the foot, greyed, on a row it would do nothing
     // to -- work that has ended, work the agent says cannot be stopped, an
-    // agent that turned out to stop nothing -- so the foot says the key
-    // exists and is not working here.
+    // agent that turned out to stop nothing: it is the list's only key, and
+    // dropping it took the foot with it, so the list jumped two rows each
+    // time the reader walked from running work to finished.
     if picker.listing_tasks().is_some() {
         return vec![
             Hint::common(
@@ -98,7 +100,8 @@ fn every_hint(picker: &Picker) -> Vec<Hint> {
                 "Stop",
             )
             .saying("Ask the agent to stop this piece of background work")
-            .when(picker.stops_this_one()),
+            .when(picker.stops_this_one())
+            .kept(),
         ];
     }
     // The two enters, where a row both holds something and is somewhere to
