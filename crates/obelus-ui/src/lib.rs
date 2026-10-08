@@ -2085,16 +2085,17 @@ pub struct Hint {
     ///
     /// Worked out per frame by whoever knows: a note about the project has
     /// nowhere to go, so there is no "go there" on the foot while the
-    /// selection is on one. The foot draws what can be pressed; the card
-    /// draws all of them and greys this one out, so what a reader learns is
-    /// that the view has eight keys rather than that its keys come and go.
+    /// selection is on one. The foot draws what can be pressed, and what it
+    /// was told to keep ([`Hint::kept`]); the card draws all of them and
+    /// greys this one out, so what a reader learns is that the view has
+    /// eight keys rather than that its keys come and go.
     pub usable: bool,
     /// Whether the foot keeps it, greyed, where it does nothing.
     ///
     /// For the one key a view has: dropped from a foot with nothing else
     /// on it, it takes the whole foot with it, and the view grows and
     /// shrinks by two rows as the reader walks past the rows it works on.
-    pub held: bool,
+    pub kept: bool,
 }
 
 impl Hint {
@@ -2109,7 +2110,7 @@ impl Hint {
             switched: None,
             common: true,
             usable: true,
-            held: false,
+            kept: false,
         }
     }
 
@@ -2145,8 +2146,8 @@ impl Hint {
 
     /// Says the foot keeps it, greyed, while it does nothing.
     #[must_use]
-    pub const fn held(mut self) -> Self {
-        self.held = true;
+    pub const fn kept(mut self) -> Self {
+        self.kept = true;
         self
     }
 
@@ -2227,14 +2228,7 @@ fn capped(cells: &mut CellBuffer, x: u16, y: u16, keys: &str, theme: &Theme) -> 
 
 /// The same cap, with the key in this ink: the dim one, for a key a foot
 /// keeps where it does nothing.
-fn capped_in(
-    cells: &mut CellBuffer,
-    x: u16,
-    y: u16,
-    keys: &str,
-    ink: ratatui::style::Color,
-    theme: &Theme,
-) -> u16 {
+fn capped_in(cells: &mut CellBuffer, x: u16, y: u16, keys: &str, ink: Color, theme: &Theme) -> u16 {
     let after = write(
         cells,
         x,
@@ -2440,7 +2434,8 @@ pub fn footed(area: Rect, hints: &[Hint]) -> Rect {
 
 /// The keys a view answers to, along the bottom of it under a rule.
 ///
-/// The common ones that can be pressed at the moment, and
+/// The common ones that can be pressed at the moment, those a view keeps
+/// there greyed where they cannot ([`Hint::kept`]), and
 /// [`obelus_editing::keymap::keys_card`] at the right-hand end saying there
 /// are more. At the foot rather than beside a
 /// title, because a key needs a word and words need room.
@@ -2517,7 +2512,7 @@ fn row_of_keys(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme
     let mut x = area.x + 2;
     for hint in hints
         .iter()
-        .filter(|hint| hint.common && (hint.usable || hint.held))
+        .filter(|hint| hint.common && (hint.usable || hint.kept))
     {
         let keys = hint.keys();
         // Saturating rather than refused: a hint wider than the screen can

@@ -14077,9 +14077,9 @@ fn the_count_opens_the_work_and_its_key_stops_it() {
 /// the key is greyed on work that has stopped, and the list stays where it
 /// was rather than growing by the two rows the foot gave up.
 ///
-/// Broken deliberately: take `.held()` off the list's key, and the foot
+/// Broken deliberately: take `.kept()` off the list's key, and the foot
 /// goes with it the moment the work stops -- and, with the foot not looked
-/// for, the work's row moves down two; draw a held key in the ink of one
+/// for, the work's row moves down two; draw a kept key in the ink of one
 /// that works, and it is not greyed.
 #[test]
 fn the_list_of_work_keeps_its_foot_where_its_key_does_nothing() {
