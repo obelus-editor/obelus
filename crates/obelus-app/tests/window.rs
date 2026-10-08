@@ -147,6 +147,73 @@ fn a_glyph_has_one_blank_after_it_in_a_window() {
     );
 }
 
+/// And so does the speaker's glyph in a conversation: the words begin one
+/// blank after it, where a terminal leaves two.
+///
+/// Asked of the screen rather than of `reading_width`, which works its
+/// width out from the very indent this is about.
+///
+/// Deliberate break: put `indent` back to a constant three, and the words
+/// begin a cell further right with two blanks before them.
+#[test]
+fn a_conversations_words_begin_one_blank_after_the_speaker() {
+    use crossterm::event::KeyCode;
+
+    let _turn = turn();
+    obelus_config::drawn_in_a_window();
+    obelus_icons::use_glyphs(true);
+
+    let (sender, events) = std::sync::mpsc::channel();
+    let mut app = App::new(Vec::new());
+    app.events_for_test(sender);
+    app.agents_root_for_test(
+        std::env::temp_dir().join(format!("obelus-window-indent-{}", std::process::id())),
+    );
+    let (width, height) = (76, 24);
+    support::lay_out(&mut app, width, height);
+    app.talk_to(
+        "fake",
+        std::path::Path::new(support::sh()),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.new_conversation();
+    app.open_a_session_for_test();
+    // Until the message is on the screen, however many events that takes:
+    // the handshake, the session, and the words going into the transcript.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    let mut said = false;
+    let row = loop {
+        let dump = support::render(&mut app, width, height);
+        let found = support::text_block(&dump)
+            .lines()
+            .filter_map(|row| row.split_once('|'))
+            .map(|(_, cells)| cells.to_string())
+            // From the foot: the header names the conversation by its
+            // first words too.
+            .rfind(|row| row.contains("words of mine"));
+        if let Some(row) = found {
+            break row;
+        }
+        if !said && app.talking() == obelus_agent::Talking::Ready {
+            support::type_text(&mut app, "words of mine");
+            support::press(&mut app, KeyCode::Enter);
+            said = true;
+            continue;
+        }
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        assert!(!left.is_zero(), "the message never arrived:\n{dump}");
+        let event = events
+            .recv_timeout(left)
+            .unwrap_or_else(|_| panic!("nothing arrived, and the screen is:\n{dump}"));
+        app.handle(event);
+    };
+    let before: Vec<char> = row.chars().take(4).collect();
+    assert!(
+        before[1] != ' ' && before[2] == ' ' && before[3] == 'w',
+        "not the speaker, one blank and the words: {row:?}"
+    );
+}
+
 /// The cap round a key on the welcome screen does not touch the mark
 /// beside it.
 ///
