@@ -214,6 +214,80 @@ fn a_conversations_words_begin_one_blank_after_the_speaker() {
     );
 }
 
+/// An agent at work does not run the application's clock where a window
+/// is drawing its mark, and does again where the reader turned animation
+/// off.
+///
+/// The window turns the mark itself, on its own clock; what this clock
+/// moves is the braille in the cell, which the window does not draw -- so
+/// it was twelve pages a second for as long as an agent worked, pushed at
+/// a front end that threw them away. With animation off the window turns
+/// the mark a frame a tick, and the tick is this clock's.
+///
+/// Deliberate break: drop `window_turns` from `wants_animating` and the
+/// first assertion goes; leave out its `config.animation` and the second.
+#[test]
+fn a_window_turns_an_agents_mark_on_its_own_clock() {
+    use crossterm::event::KeyCode;
+
+    let _turn = turn();
+    obelus_config::drawn_in_a_window();
+    obelus_icons::use_glyphs(false);
+
+    let (sender, events) = std::sync::mpsc::channel();
+    let mut app = App::new(Vec::new());
+    app.events_for_test(sender);
+    app.agents_root_for_test(
+        std::env::temp_dir().join(format!("obelus-window-clock-{}", std::process::id())),
+    );
+    let (width, height) = (76, 24);
+    support::lay_out(&mut app, width, height);
+    app.talk_to(
+        "fake",
+        std::path::Path::new(support::sh()),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.new_conversation();
+    app.open_a_session_for_test();
+    let mut pump = |app: &mut App, what: &str, until: obelus_agent::Talking| {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        while app.talking() != until {
+            let left = deadline.saturating_duration_since(std::time::Instant::now());
+            assert!(!left.is_zero(), "gave up waiting for {what}");
+            let event = events
+                .recv_timeout(left)
+                .unwrap_or_else(|_| panic!("nothing arrived while waiting for {what}"));
+            app.handle(event);
+            support::lay_out(app, width, height);
+        }
+    };
+    pump(&mut app, "the handshake", obelus_agent::Talking::Ready);
+    support::type_text(&mut app, "/forever");
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        "it to start thinking",
+        obelus_agent::Talking::Thinking,
+    );
+
+    support::render(&mut app, width, height);
+    assert!(
+        !app.is_waking(),
+        "the window turns the mark and the application is ticking for it too"
+    );
+
+    let still = obelus_config::Config {
+        animation: false,
+        ..obelus_config::Config::default()
+    };
+    app.configure(still, vec!["animation"]);
+    support::render(&mut app, width, height);
+    assert!(
+        app.is_waking(),
+        "with animation off the mark turns on this clock, and it has stopped"
+    );
+}
+
 /// The cap round a key on the welcome screen does not touch the mark
 /// beside it.
 ///

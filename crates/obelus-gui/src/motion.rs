@@ -1053,7 +1053,15 @@ impl Motion {
                 self.blink.wake(now, caret),
                 self.sheen_due(now).map(Wake::At),
             ),
-            self.turn(now).map(|_| Wake::At(self.next_turn.max(now))),
+            // The step after a due one, which `advance` is about to draw:
+            // the loop asks this before it advances, and a moment that has
+            // already come is one more pass through it for nothing.
+            self.turn(now).map(|_| {
+                Wake::At(match self.next_turn > now {
+                    true => self.next_turn,
+                    false => now + TURN_STEP,
+                })
+            }),
         )
     }
 
@@ -2038,7 +2046,9 @@ mod tests {
     /// flat out. Or drop `turned` from `advance`, and the third does: the
     /// moment arrives and nothing is drawn for it. Or take the seconds
     /// since the window opened as an `f32` in `turn`, and a week on the
-    /// mark is an eighth of a turn from where it should be.
+    /// mark is an eighth of a turn from where it should be. Or name
+    /// `next_turn` in `wake` once it has passed, and the loop is woken
+    /// twice for every step.
     #[test]
     fn a_mark_that_turns_is_drawn_at_moments_and_only_while_it_is_there() {
         let mut motion = Motion::new(None);
@@ -2053,6 +2063,13 @@ mod tests {
             ),
             other => panic!("a turn is a moment, not {other:?}"),
         }
+        // Asked with a step due and not yet drawn, which is how the loop
+        // asks: the moment named is the next one, not this one again.
+        let due = since + TURN_STEP;
+        assert!(
+            matches!(motion.wake(due, false), Some(Wake::At(when)) if when > due),
+            "woken again for the step it is about to draw"
+        );
         let quarter = motion.moving(since + TURN / 4).turn.expect("turning");
         assert!(
             (quarter - 0.25).abs() < 0.01,
