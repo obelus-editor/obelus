@@ -879,7 +879,22 @@ impl Painter {
             // a degraded picture.
             required_limits: adapter.limits(),
             experimental_features: wgpu::ExperimentalFeatures::disabled(),
-            memory_hints: wgpu::MemoryHints::default(),
+            // Small blocks, because the default reserves for a game: blocks
+            // that start at 128 MiB on the card and 64 MiB in the machine's
+            // own memory, where a window of 1882 by 2052 was measured using
+            // 89 MiB in all. Several Obelus windows open at once is the
+            // normal case, and on NVIDIA that window went from 506 MiB to
+            // 156. Vulkan and DX12 are told; Metal and GL take no notice.
+            //
+            // The smallest there is, and fixed, rather than `MemoryUsage`,
+            // whose blocks double up to 64 MiB and still kept 246: the
+            // pictures the size of the window are each bigger than a block,
+            // so each gets memory of its own and gives it back whole. What
+            // that costs is a resize -- about 3ms where it was 1.5 -- and
+            // nothing a frame was seen to.
+            memory_hints: wgpu::MemoryHints::Manual {
+                suballocated_device_memory_block_size: (4 << 20)..(4 << 20),
+            },
             trace: wgpu::Trace::Off,
         }))
         .context("the graphics adapter would not open a device")?;
