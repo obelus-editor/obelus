@@ -166,7 +166,7 @@ pub(crate) struct Fonts {
     /// The faces CoreText draws rather than swash, by the name CoreText
     /// knows each by -- see [`crate::coretext`]. Empty on every other
     /// platform.
-    by_coretext: HashMap<fontdb::ID, String>,
+    by_coretext: HashMap<fontdb::ID, crate::coretext::Names>,
     /// What CoreText drew of them, kept the way `pictures` keeps swash's.
     drawn_by_coretext: HashMap<CacheKey, Option<SwashImage>>,
 }
@@ -197,6 +197,7 @@ impl Fonts {
         // it has.
         let otherwise = crate::monospace::here(system.db());
         let cascade = crate::cascade::here(system.db(), otherwise.as_deref());
+        let by_coretext = crate::coretext::names(system.db(), by_coretext, otherwise.as_deref());
 
         let mut fonts = Self {
             system,
@@ -425,10 +426,10 @@ impl Fonts {
     /// The pixels of one glyph, or nothing where the face has none.
     pub(crate) fn picture(&mut self, key: CacheKey) -> Option<&SwashImage> {
         match self.by_coretext.get(&key.font_id) {
-            Some(name) => self
+            Some(names) => self
                 .drawn_by_coretext
                 .entry(key)
-                .or_insert_with(|| crate::coretext::draw(name, key))
+                .or_insert_with(|| crate::coretext::draw(names.at(key.font_weight), key))
                 .as_ref(),
             None => self.pictures.get_image(&mut self.system, key).as_ref(),
         }
@@ -1117,6 +1118,53 @@ mod tests {
             (20..=34).contains(&top),
             "drawn at 32, it stands {top} above the line"
         );
+    }
+
+    /// Drawn in the face CoreText itself would draw after the monospaced
+    /// one, at the weight the text is: lighter than the one face of it the
+    /// font database knows, which for `PingFang SC` is Medium, and heavier
+    /// again in bold.
+    ///
+    /// Measured in ink, which is what the reader saw: Chinese beside Menlo
+    /// that read as bold.
+    ///
+    /// Deliberate breaks: drawing every weight in the face's own name puts
+    /// as much ink in the plain `中` as in the Medium one; and drawing bold
+    /// in the plain name puts no more in the bold.
+    #[test]
+    fn a_face_coretext_draws_is_drawn_at_the_weight_the_text_is() {
+        let mut fonts = Fonts::new(32.0);
+        let key = fonts.glyphs("\u{4e2d}", false, false, Size::Cell)[0].key;
+        let Some(names) = fonts.by_coretext.get(&key.font_id).cloned() else {
+            eprintln!("this machine does not draw it with CoreText; nothing to check");
+            return;
+        };
+        let own = fonts
+            .system
+            .db()
+            .face(key.font_id)
+            .expect("the face it was shaped in")
+            .post_script_name
+            .clone();
+        let ink = |name: &str, weight: Weight| -> u32 {
+            let key = CacheKey {
+                font_weight: weight,
+                ..key
+            };
+            crate::coretext::draw(name, key)
+                .expect("it has pixels")
+                .data
+                .iter()
+                .map(|coverage| u32::from(*coverage))
+                .sum()
+        };
+        let (plain, bold) = (
+            ink(names.at(Weight::NORMAL), Weight::NORMAL),
+            ink(names.at(Weight::BOLD), Weight::BOLD),
+        );
+        let medium = ink(&own, Weight::NORMAL);
+        assert!(plain < medium, "{names:?}: plain {plain}, {own} {medium}");
+        assert!(bold > plain, "{names:?}: plain {plain}, bold {bold}");
     }
 
     /// Every face CoreText has is one the reader can choose, which is the

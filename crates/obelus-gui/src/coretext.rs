@@ -13,22 +13,157 @@
 //! the way every other face's are, which is why a glyph number cosmic-text
 //! shaped is the number CoreText is asked for: it is the same file.
 //!
+//! And in the face CoreText itself would draw. `PingFangUI.ttc` holds one
+//! face a region, `PingFang SC Medium`, and every other weight is a place on
+//! its `wght` axis -- so the face the font database knows is Medium, and a
+//! line of Chinese drawn in it stood out from the Menlo beside it as bold.
+//! What macOS draws after Menlo is `PingFangSC-Regular`, and after Menlo
+//! Bold `PingFangSC-Semibold`: its own cascade list says so, by name, and
+//! that is the name each weight is drawn in.
+//!
 //! In one shade, the way swash draws a letter: the coverage, with the colour
 //! coming from the cell. Without font smoothing, which is CoreText thickening
 //! the strokes of light text on a dark page -- a letter from here beside one
 //! from swash would be the heavier of the two.
 
-use cosmic_text::{CacheKey, SwashImage};
+use std::collections::HashMap;
+
+use cosmic_text::{CacheKey, SwashImage, fontdb};
+
+/// What a face only CoreText draws is drawn in, by PostScript name: for
+/// text, and for bold text.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Names {
+    /// For text at an ordinary weight.
+    pub(crate) plain: String,
+    /// For text at a bold one.
+    pub(crate) bold: String,
+}
+
+impl Names {
+    /// The one a glyph at this weight is drawn in.
+    pub(crate) fn at(&self, weight: fontdb::Weight) -> &str {
+        match weight.0 >= fontdb::Weight::SEMIBOLD.0 {
+            true => &self.bold,
+            false => &self.plain,
+        }
+    }
+}
+
+/// What each face CoreText draws is drawn in: the face of its family that
+/// CoreText falls back to after `monospace`, plainly and in bold, where its
+/// cascade list names that family -- and the face's own name where not.
+pub(crate) fn names(
+    db: &fontdb::Database,
+    own: HashMap<fontdb::ID, String>,
+    monospace: Option<&str>,
+) -> HashMap<fontdb::ID, Names> {
+    let chosen = chosen_after(monospace);
+    own.into_iter()
+        .map(|(id, name)| {
+            let family = db
+                .face(id)
+                .and_then(|face| face.families.first())
+                .map(|(family, _)| family.to_lowercase())
+                .unwrap_or_default();
+            let plain = chosen
+                .get(&(family.clone(), false))
+                .cloned()
+                .unwrap_or(name);
+            let bold = chosen
+                .get(&(family, true))
+                .cloned()
+                .unwrap_or_else(|| plain.clone());
+            (id, Names { plain, bold })
+        })
+        .collect()
+}
+
+/// The face of each family CoreText falls back to after `monospace`, by
+/// the family's name in lower case and whether it is bold.
+fn chosen_after(monospace: Option<&str>) -> HashMap<(String, bool), String> {
+    let Some(monospace) = monospace else {
+        return HashMap::new();
+    };
+    let mut chosen = HashMap::new();
+    for bold in [false, true] {
+        for (family, name) in cascade(monospace, bold) {
+            chosen.entry((family.to_lowercase(), bold)).or_insert(name);
+        }
+    }
+    chosen
+}
+
+/// What CoreText falls back to after the face by this family name, plainly
+/// or in bold, in the reader's languages and in its order: each family, and
+/// the face of it CoreText would draw in.
+#[cfg(target_os = "macos")]
+pub(crate) fn cascade(monospace: &str, bold: bool) -> Vec<(String, String)> {
+    use objc2_core_foundation::{CFArray, CFLocale, CFRetained, CFString};
+    use objc2_core_text::{
+        CTFont, CTFontDescriptor, CTFontSymbolicTraits, kCTFontFamilyNameAttribute,
+        kCTFontNameAttribute,
+    };
+
+    // SAFETY: a size of nothing is the face's own size, and no matrix is
+    // the identity.
+    let font = unsafe { CTFont::with_name(&CFString::from_str(monospace), 0.0, std::ptr::null()) };
+    let font = match bold {
+        // SAFETY: as above, and bold asked for under a mask of bold alone.
+        true => unsafe {
+            font.copy_with_symbolic_traits(
+                0.0,
+                std::ptr::null(),
+                CTFontSymbolicTraits::TraitBold,
+                CTFontSymbolicTraits::TraitBold,
+            )
+        }
+        .unwrap_or(font),
+        false => font,
+    };
+    let languages = CFLocale::preferred_languages();
+    // SAFETY: the languages are an array of strings, which is what it asks.
+    let Some(list) = (unsafe { font.default_cascade_list_for_languages(languages.as_deref()) })
+    else {
+        return Vec::new();
+    };
+    // SAFETY: an array of descriptors is what it is documented to return.
+    let list = unsafe { CFRetained::cast_unchecked::<CFArray<CTFontDescriptor>>(list) };
+    let text = |descriptor: &CTFontDescriptor, key: &CFString| {
+        // SAFETY: an attribute asked by its own key.
+        let said = unsafe { descriptor.attribute(key) }?;
+        said.downcast_ref::<CFString>().map(ToString::to_string)
+    };
+    list.iter()
+        .filter_map(|descriptor| {
+            // SAFETY: statics CoreText exports.
+            let (family, name) = unsafe { (kCTFontFamilyNameAttribute, kCTFontNameAttribute) };
+            Some((text(&descriptor, family)?, text(&descriptor, name)?))
+        })
+        .collect()
+}
+
+/// Nor a cascade to ask.
+#[cfg(not(target_os = "macos"))]
+pub(crate) const fn cascade(_: &str, _: bool) -> Vec<(String, String)> {
+    Vec::new()
+}
 
 /// Whether CoreText draws the face by this PostScript name.
 ///
 /// Asked by making the font and seeing whether it is that face: CoreText
 /// answers a name it does not know with some other face rather than with
-/// nothing.
+/// nothing. Not asked at all of a name starting with a dot, which is one of
+/// the system's own: CoreText will not hand one out by name, and says so
+/// on stderr every time it is asked.
 #[cfg(target_os = "macos")]
 pub(crate) fn draws(name: &str) -> bool {
     use objc2_core_foundation::CFString;
     use objc2_core_text::CTFont;
+
+    if name.starts_with('.') {
+        return false;
+    }
 
     // SAFETY: a size of nothing is the face's own size, and no matrix is the
     // identity.

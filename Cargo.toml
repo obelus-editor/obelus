@@ -501,6 +501,7 @@ objc2-core-text = { version = "0.3", default-features = false, features = [
     "CTFont",
     "CTFontDescriptor",
     "CTFontManager",
+    "CTFontTraits",
     "objc2-core-graphics",
 ] }
 

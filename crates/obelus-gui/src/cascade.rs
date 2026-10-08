@@ -54,30 +54,11 @@ fn kept(db: &fontdb::Database, said: Vec<String>) -> Vec<String> {
 /// macOS asks CoreText.
 #[cfg(target_os = "macos")]
 fn of_this_platform(_: &fontdb::Database, monospace: Option<&str>) -> Vec<String> {
-    use objc2_core_foundation::{CFArray, CFLocale, CFRetained, CFString};
-    use objc2_core_text::{CTFont, CTFontDescriptor, kCTFontFamilyNameAttribute};
-
-    let Some(monospace) = monospace else {
-        return Vec::new();
-    };
-    // SAFETY: a size of nothing is the face's own size, and no matrix is
-    // the identity.
-    let font = unsafe { CTFont::with_name(&CFString::from_str(monospace), 0.0, std::ptr::null()) };
-    let languages = CFLocale::preferred_languages();
-    // SAFETY: the languages are an array of strings, which is what it asks.
-    let Some(list) = (unsafe { font.default_cascade_list_for_languages(languages.as_deref()) })
-    else {
-        return Vec::new();
-    };
-    // SAFETY: an array of descriptors is what it is documented to return.
-    let list = unsafe { CFRetained::cast_unchecked::<CFArray<CTFontDescriptor>>(list) };
-    list.iter()
-        .filter_map(|descriptor| {
-            // SAFETY: a static CoreText exports, and an attribute asked by
-            // its own key.
-            let name = unsafe { descriptor.attribute(kCTFontFamilyNameAttribute) }?;
-            name.downcast_ref::<CFString>().map(ToString::to_string)
-        })
+    monospace
+        .map(|monospace| crate::coretext::cascade(monospace, false))
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(family, _)| family)
         .collect()
 }
 
