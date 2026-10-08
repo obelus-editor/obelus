@@ -274,14 +274,14 @@ ob src/main.rs       # the same file, in the terminal</code></pre>
       <div class="feature">
         <div class="text">
       <h3 id="worktrees">Every worktree, one key away</h3>
-      <p>Obelus has no split panes. To see two pieces of code side by side, you open two windows. So it's normal to have several Obelus windows on one project, each on its own worktree. <kbd>F2</kbd> then <kbd>Tab</kbd> lists every worktree of the repository and marks the ones an Obelus is already on; under a tree with several, each gets a row saying what it's reading. <kbd>Enter</kbd> moves this Obelus onto that tree: it asks first about anything unsaved, and reopens what you had open there last time.</p>
+      <p>Obelus has no split panes. To see two pieces of code side by side, you open two windows. So it's normal to have several Obelus windows on one project, each on its own worktree. <kbd>F2</kbd> then <kbd>Tab</kbd> lists every worktree of the repository, and under each tree a row for every Obelus on it, saying what it's reading. Moving this Obelus onto another tree asks first about anything unsaved, and reopens what you had open there last time.</p>
         </div>
         <figure class="shot">
           <a class="dark" href="screens/worktree-list-dark.webp"><img src="screens/worktree-list-dark.webp" width="1300" height="420" loading="lazy" alt="The Worktrees tab: tally on main and tally/.worktree/stable-tie-order on its branch, both with a window open."></a>
           <a class="light" href="screens/worktree-list-light.webp"><img src="screens/worktree-list-light.webp" width="1300" height="420" loading="lazy" alt="The Worktrees tab: tally on main and tally/.worktree/stable-tie-order on its branch, both with a window open."></a>
         </figure>
       </div>
-      <p class="quiet small">In the window version, <code>obg</code>, <kbd>Ctrl+Enter</kbd> goes there in a window of its own instead: it brings that tree's window to the front, or opens a new one. The terminal version, <code>ob</code>, only has <kbd>Enter</kbd>, because it can't open a new terminal for you or bring another terminal window to the front.</p>
+      <p class="quiet small">In the terminal version, <code>ob</code>, that's <kbd>Enter</kbd> on the tree, and it's the only key there is: <code>ob</code> can't open a new terminal for you or bring another terminal window to the front. In the window version, <code>obg</code>, it's <kbd>Ctrl+Enter</kbd>, because <kbd>Enter</kbd> goes to another window instead: on a tree it opens a new one there, and on a window it brings that one to the front.</p>
       <ul>
         <li>All the worktrees of a repository share <em>one</em> set of notes. What you write in one window shows up in the others straight away.</li>
         <li>A conversation can only be open in one window at a time, so two windows can't talk over each other.</li>

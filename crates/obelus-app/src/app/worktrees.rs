@@ -20,8 +20,9 @@
 //! reader would want a new Obelus started in is not something Obelus can
 //! know. So [`Windows`] is what a front end says it can do, and a terminal
 //! says nothing: its list has the one enter, which is a list's ordinary
-//! one, and no foot. And no rows under a tree, which would be windows it
-//! cannot go to.
+//! one, and no foot. The windows on each tree are listed under it all the
+//! same, dim, because where everybody is does not depend on what this one
+//! is drawn on.
 //!
 //! Going is the same either way: what the project was is let go of the way
 //! a tree that went lets go of it (`App::let_go_of_the_project`), with what
@@ -102,8 +103,8 @@ pub trait Windows: std::fmt::Debug + Send + Sync {
     /// Whether another window can be brought forward from here at all.
     ///
     /// A compositor without the protocol for it is a key that would do
-    /// nothing at the other end, so a row held by another window opens a
-    /// new one there instead.
+    /// nothing at the other end, so the rows of the other windows are drawn
+    /// and cannot be chosen.
     fn can_bring(&self) -> bool;
 }
 
@@ -401,7 +402,7 @@ impl App {
 
     /// Fills the list again for the tab the reader is on.
     ///
-    /// On the row they are standing in: this document, or this tree. A list
+    /// On the row they are standing in: this document, or this window. A list
     /// that started somewhere arbitrary would make them find where they are
     /// before they could leave it.
     pub(super) fn refresh_switching(&mut self) {
@@ -508,8 +509,8 @@ impl App {
             .unwrap_or_else(|| self.working_directory.clone())
     }
 
-    /// The row this window is: its own where its tree has rows under it,
-    /// and its tree's where it has none.
+    /// The row this window is: its own under its tree, and the tree's where
+    /// it could not claim one.
     fn row_of_this_window(&self) -> Option<usize> {
         let tree = self.this_tree();
         let own = self.worktrees.own();
@@ -532,20 +533,21 @@ impl App {
         })
     }
 
-    /// One row per checkout, and in a window that can bring another
-    /// forward, a row under it for each Obelus on it.
+    /// One row per checkout, and under it a row for each Obelus on it.
     ///
-    /// A row for each because each is somewhere enter goes, and a tree's
-    /// own row is not: it is a new window. One alone on a tree is a row as
-    /// well, or the only way to it would be gone. And a reader who keeps
-    /// two windows on one tree keeps them because they are reading two
-    /// things -- so each says what it is reading, which is what tells them
-    /// apart. A terminal's is drawn and cannot be chosen: a terminal has no
-    /// door, and that it is there is still worth knowing.
+    /// A row for each because in a window each is somewhere enter goes,
+    /// and a tree's own row is not: it is a new window. One alone on a tree
+    /// is a row as well, or the only way to it would be gone. And a reader
+    /// who keeps two windows on one tree keeps them because they are
+    /// reading two things -- so each says what it is reading, which is what
+    /// tells them apart.
     ///
-    /// None at all where nothing can be brought forward, which is a
-    /// terminal and a compositor without the protocol for it: rows that can
-    /// none of them be gone to say only what the tree's mark says already.
+    /// Drawn the same where one cannot be gone to, and dim: a terminal's,
+    /// which has no door, and every other one where this Obelus cannot
+    /// bring a window forward -- a terminal, or a compositor without the
+    /// protocol for it. That somebody is there, and reading what, is true
+    /// whatever this one is drawn on, and a tree's mark alone could not say
+    /// it for the tree this one is on, whose mark is that the reader is.
     fn worktree_rows(&mut self) -> Vec<PickerItem> {
         let seen = windows_on(&self.working_directory);
         let tree = self.this_tree();
@@ -600,7 +602,10 @@ impl App {
                 _ => obelus_ui::with_home_as_tilde(path),
             };
             let here = same_tree(path, &tree);
-            let under = brings && !listed.seen.is_empty();
+            let mine_under = listed
+                .seen
+                .iter()
+                .any(|seen| Some(&seen.claim) == own.as_ref());
             rows.push(Row::Tree(at));
             items.push(worktree_row(Shown {
                 at: rows.len() - 1,
@@ -612,8 +617,9 @@ impl App {
                     obelus_git::Head::Detached => "Detached".to_string(),
                 }),
                 // The row that is this window is marked as where the reader
-                // is: the tree's where there are no rows under it.
-                marker: match (here, under) {
+                // is: the tree's where this one is not a row under it, which
+                // is a window that could not claim its tree.
+                marker: match (here, mine_under) {
                     (true, false) => Some(super::conversations::here()),
                     _ => (here || !listed.seen.is_empty()).then(somebody),
                 },
@@ -627,9 +633,6 @@ impl App {
                 },
                 switches: windowed && !here && listed.tree.there,
             }));
-            if !under {
-                continue;
-            }
             for (which, seen) in listed.seen.iter().enumerate() {
                 let mine = Some(&seen.claim) == own.as_ref();
                 rows.push(Row::Window(at, which));
@@ -649,7 +652,7 @@ impl App {
                     detail: None,
                     marker: mine.then(super::conversations::here),
                     trailing: None,
-                    enabled: mine || seen.door.is_some(),
+                    enabled: mine || (brings && seen.door.is_some()),
                     enter: match mine {
                         true => WorktreeEnter::Stay,
                         false => WorktreeEnter::Bring,

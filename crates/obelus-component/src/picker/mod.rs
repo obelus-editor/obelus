@@ -1415,10 +1415,18 @@ impl Picker {
         self.in_place
     }
 
-    /// What enter does on the row the reader is on, where it is a worktree.
+    /// What enter does on the row the reader is on, where it is a worktree
+    /// that can be chosen.
+    ///
+    /// Nothing on a dim one, which the selection rests on where a query
+    /// has left nothing else: enter refuses it, so the foot must too.
     #[must_use]
     pub fn worktree_enter(&self) -> Option<WorktreeEnter> {
-        match self.selected_item().map(|item| &item.value) {
+        match self
+            .selected_item()
+            .filter(|item| item.enabled)
+            .map(|item| &item.value)
+        {
             Some(PickerValue::Worktree { enter, .. }) => Some(*enter),
             _ => None,
         }
@@ -1431,7 +1439,9 @@ impl Picker {
     pub fn switches_here(&self) -> bool {
         self.in_place
             && matches!(
-                self.selected_item().map(|item| &item.value),
+                self.selected_item()
+                    .filter(|item| item.enabled)
+                    .map(|item| &item.value),
                 Some(PickerValue::Worktree { switches: true, .. })
             )
     }
