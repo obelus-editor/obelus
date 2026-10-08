@@ -998,7 +998,10 @@ fn pressed(asked: u64, chosen: &str) -> obelus_remote::Event {
 /// turn never ended. And dropping the line in front of
 /// words from afar: the agent's log had no "sent from Slack". The thread's
 /// head twice: never said again, it stayed as it opened; said again with
-/// the state it had, it never said `Waiting` or `Done`.
+/// the state it had, it never said `Waiting` or `Done`. And what it thought
+/// three ways: not mirrored, no thought in the thread; run into the words
+/// after it, the words did not stand on their own; sent calling the reader,
+/// the thought was not quiet.
 #[test]
 fn a_conversation_and_its_thread_say_the_same_things() {
     let _turn = turn();
@@ -1078,6 +1081,31 @@ fn a_conversation_and_its_thread_say_the_same_things() {
     // And what the agent said before it asked, whole, ahead of the
     // question.
     assert!(in_thread(&said, "T1", "it is a rust file"), "{said:#?}");
+    // And what it thought before it said it, quietly and on its own.
+    let words: Vec<(&str, bool)> = said
+        .iter()
+        .filter_map(|out| match out {
+            obelus_remote::model::Out::Say {
+                thread,
+                text,
+                notify,
+                ..
+            } if thread == "T1" && !text.contains("On this machine") => {
+                Some((text.as_str(), *notify))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        words.get(..2),
+        Some(
+            &[
+                ("_Thinking:_\nworking it out", false),
+                ("it is a rust file", false)
+            ][..]
+        ),
+        "not the thought and then the words, quietly: {said:#?}"
+    );
     assert!(
         said.iter().any(|out| matches!(
             out,
