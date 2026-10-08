@@ -45,6 +45,12 @@ use obelus_remote::model::{Head, Out, Question, Turning};
 use super::*;
 use crate::conversation::{Conversation, Topic};
 
+/// What a thought begins with in the thread: a mark rather than a word,
+/// so that it does not read as something the agent said to the reader.
+const THOUGHT: &str = "\u{1f4ad}";
+/// And a plan, for the same reason.
+const PLAN: &str = "\u{1f4cb}";
+
 /// What goes in front of words that came from the chat, for the agent.
 const AFAR: &str = include_str!("afar.txt");
 
@@ -149,15 +155,14 @@ struct Stretch {
 
 impl Stretch {
     /// As the thread is given it, where there is anything to give: a
-    /// thought marked as one, the way the plan is, so that the words the
-    /// agent meant for the reader still read as its own.
+    /// thought marked as one, the way the plan is.
     fn worded(&self) -> Option<String> {
         let text = self.text.trim();
         if text.is_empty() {
             return None;
         }
         Some(if self.thinking {
-            format!("_Thinking:_\n{text}")
+            format!("{THOUGHT} {text}")
         } else {
             text.to_string()
         })
@@ -826,7 +831,7 @@ impl App {
         }
         self.mirror.plans.insert(chat, said);
         self.mirror_paused(whose);
-        let mut plan = "_The plan:_".to_string();
+        let mut plan = PLAN.to_string();
         for step in steps {
             let mark = match step.state.as_str() {
                 "completed" => '\u{2713}',

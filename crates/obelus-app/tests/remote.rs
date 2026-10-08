@@ -1100,7 +1100,7 @@ fn a_conversation_and_its_thread_say_the_same_things() {
         words.get(..2),
         Some(
             &[
-                ("_Thinking:_\nworking it out", false),
+                ("\u{1f4ad} working it out", false),
                 ("it is a rust file", false)
             ][..]
         ),
@@ -1555,17 +1555,17 @@ fn a_plan_is_said_when_its_steps_change() {
         .collect();
     let plans: Vec<&(&str, bool)> = words
         .iter()
-        .filter(|(text, _)| text.starts_with("_The plan:_"))
+        .filter(|(text, _)| text.starts_with('\u{1f4cb}'))
         .collect();
     assert_eq!(
         plans,
         [
             &(
-                "_The plan:_\n\u{25b8} read the counts tree\n\u{25e6} write the test",
+                "\u{1f4cb}\n\u{25b8} read the counts tree\n\u{25e6} write the test",
                 false
             ),
             &(
-                "_The plan:_\n\u{2713} read the counts tree\n\u{25b8} wire it to the search\n\u{25e6} write the test",
+                "\u{1f4cb}\n\u{2713} read the counts tree\n\u{25b8} wire it to the search\n\u{25e6} write the test",
                 false
             ),
         ],
@@ -1578,7 +1578,7 @@ fn a_plan_is_said_when_its_steps_change() {
             .unwrap_or_else(|| panic!("nothing said with {what:?} in it: {words:#?}"))
     };
     assert!(
-        at("thinking it over") < at("_The plan:_"),
+        at("thinking it over") < at("\u{1f4cb}"),
         "the plan went ahead of what was said before it: {words:#?}"
     );
 }
@@ -1593,7 +1593,7 @@ fn plans_in<'a>(said: &'a [obelus_remote::model::Out], thread: &str) -> Vec<(&'a
                 text,
                 notify,
                 ..
-            } if at == thread && text.starts_with("_The plan:_") => Some((text.as_str(), *notify)),
+            } if at == thread && text.starts_with('\u{1f4cb}') => Some((text.as_str(), *notify)),
             _ => None,
         })
         .collect()
