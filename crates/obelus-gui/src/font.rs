@@ -163,6 +163,12 @@ pub(crate) struct Fonts {
     /// The same, less what is already in `families`: what is tried once
     /// neither those nor a picture face drew the character.
     after: Vec<String>,
+    /// The faces CoreText draws rather than swash, by the name CoreText
+    /// knows each by -- see [`crate::coretext`]. Empty on every other
+    /// platform.
+    by_coretext: HashMap<fontdb::ID, String>,
+    /// What CoreText drew of them, kept the way `pictures` keeps swash's.
+    drawn_by_coretext: HashMap<CacheKey, Option<SwashImage>>,
 }
 
 impl std::fmt::Debug for Fonts {
@@ -182,7 +188,7 @@ impl Fonts {
     /// whatever the window says the screen's scale is.
     pub(crate) fn new(size: f32) -> Self {
         let mut system = FontSystem::new();
-        crate::faces::add_the_rest(system.db_mut());
+        let by_coretext = crate::faces::settle(system.db_mut());
         // Loaded into the same database the system's own faces are in, so
         // that asking for it by name is the ordinary path rather than a
         // second one.
@@ -208,6 +214,8 @@ impl Fonts {
             otherwise,
             cascade,
             after: Vec::new(),
+            by_coretext,
+            drawn_by_coretext: HashMap::new(),
         };
         fonts.families = chain(&[], fonts.otherwise.as_deref());
         fonts.after = rest(&fonts.cascade, &fonts.families);
@@ -416,7 +424,14 @@ impl Fonts {
 
     /// The pixels of one glyph, or nothing where the face has none.
     pub(crate) fn picture(&mut self, key: CacheKey) -> Option<&SwashImage> {
-        self.pictures.get_image(&mut self.system, key).as_ref()
+        match self.by_coretext.get(&key.font_id) {
+            Some(name) => self
+                .drawn_by_coretext
+                .entry(key)
+                .or_insert_with(|| crate::coretext::draw(name, key))
+                .as_ref(),
+            None => self.pictures.get_image(&mut self.system, key).as_ref(),
+        }
     }
 }
 
@@ -1037,14 +1052,84 @@ mod tests {
         assert_eq!(family_of(&mut fonts), other, "the guess said {guessed}");
     }
 
+    /// A character in a face only CoreText can draw is drawn, by CoreText:
+    /// `中` in `PingFang SC`, which is the face macOS draws Chinese in.
+    ///
+    /// On a machine with no such face there is nothing to draw and it says
+    /// so.
+    ///
+    /// Deliberate break: `picture` asking swash whatever the face draws the
+    /// character as nothing, which is what a window did with every Chinese
+    /// character once `PingFang SC` was found.
+    #[test]
+    fn a_face_only_coretext_can_draw_is_drawn_by_coretext() {
+        let mut fonts = Fonts::new(32.0);
+        if fonts.by_coretext.is_empty() {
+            eprintln!("no face only CoreText draws on this machine; nothing to check");
+            return;
+        }
+        let key = fonts.glyphs("\u{4e2d}", false, false, Size::Cell)[0].key;
+        assert!(
+            fonts.by_coretext.contains_key(&key.font_id),
+            "{:?} drew it",
+            fonts
+                .system
+                .db()
+                .face(key.font_id)
+                .map(|face| face.families.clone())
+        );
+        let picture = fonts.picture(key).expect("it has pixels");
+        assert!(picture.data.iter().any(|coverage| *coverage > 0));
+    }
+
+    /// And the right way up, and on the line: `上` has its long stroke at
+    /// the foot, so the bottom of its picture is the inkiest, and its top is
+    /// above the baseline by most of the size it was drawn at.
+    ///
+    /// Deliberate breaks: reading the bitmap's rows from the bottom puts the
+    /// long stroke in the first rows; and counting `top` from the bitmap's
+    /// bottom edge rather than its top hangs the character below the line.
+    #[test]
+    fn what_coretext_draws_is_the_right_way_up_and_on_the_line() {
+        let mut fonts = Fonts::new(32.0);
+        let key = fonts.glyphs("\u{4e0a}", false, false, Size::Cell)[0].key;
+        if !fonts.by_coretext.contains_key(&key.font_id) {
+            eprintln!("this machine does not draw it with CoreText; nothing to check");
+            return;
+        }
+        let picture = fonts.picture(key).expect("it has pixels").clone();
+        let width = picture.placement.width as usize;
+        let rows = picture.placement.height as usize;
+        let ink = |row: usize| -> u32 {
+            picture.data[row * width..(row + 1) * width]
+                .iter()
+                .map(|coverage| u32::from(*coverage))
+                .sum()
+        };
+        let upper = (0..rows / 4).map(ink).max();
+        let lower = (rows * 3 / 4..rows).map(ink).max();
+        assert!(
+            lower > upper,
+            "the long stroke is at the top: {upper:?} above, {lower:?} below"
+        );
+        let top = picture.placement.top;
+        assert!(
+            (20..=34).contains(&top),
+            "drawn at 32, it stands {top} above the line"
+        );
+    }
+
     /// Every face CoreText has is one the reader can choose, which is the
     /// whole of why it is asked: `PingFang SC` was the one missing.
     ///
     /// Asked of the families CoreText names, less its own, whose names
     /// start with a dot and are not names anybody can ask for.
     ///
-    /// Deliberate break: `add_the_rest` adding nothing leaves the faces
-    /// fontdb's walk does not visit out of the list.
+    /// Including the ones only CoreText can draw, which `PingFang SC` is --
+    /// see [`crate::coretext`].
+    ///
+    /// Deliberate break: `settle` adding nothing leaves the faces fontdb's
+    /// walk does not visit out of the list.
     #[test]
     #[cfg(target_os = "macos")]
     fn every_face_coretext_has_can_be_chosen() {

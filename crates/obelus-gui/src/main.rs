@@ -39,6 +39,7 @@
 mod blink;
 mod cascade;
 mod clipboard;
+mod coretext;
 mod elsewhere;
 mod faces;
 mod font;

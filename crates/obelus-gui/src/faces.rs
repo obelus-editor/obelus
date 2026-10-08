@@ -18,13 +18,81 @@
 //!
 //! CoreText knows where every face it will draw with is kept, so on macOS it
 //! is asked, and what the walk missed is added to what it found.
+//!
+//! **A face Obelus cannot draw is not a face it has.** `PingFang SC` turned
+//! out to be the reason it is kept where it is: its outlines are in `hvgl`,
+//! a table of Apple's that CoreText draws and swash does not. Added as it
+//! came, it was the face Chinese was shaped in -- its character map is
+//! ordinary -- and then drawn as nothing at all, every character of it,
+//! where before the fallback had stepped past the name to a face it could
+//! draw. So a face is kept only where it has outlines or pictures swash
+//! reads, or where CoreText draws it instead ([`crate::coretext`]) -- which
+//! is a question about the face and not about where it was found, and is
+//! asked of every face the same way.
 
-use cosmic_text::fontdb;
+use std::collections::HashMap;
 
-/// Adds the faces the walk did not find, where this machine can say.
-pub(crate) fn add_the_rest(db: &mut fontdb::Database) {
+use cosmic_text::{
+    fontdb,
+    skrifa::raw::{FontRef, types::Tag},
+};
+
+/// The tables a glyph can be drawn from: outlines, as TrueType and as the two
+/// kinds of CFF, and pictures, as Apple's and as Google's and the older
+/// bitmaps beside them.
+const DRAWN_FROM: [&[u8; 4]; 6] = [b"glyf", b"CFF ", b"CFF2", b"sbix", b"CBDT", b"EBDT"];
+
+/// Adds the faces the walk did not find, where this machine can say, and
+/// lets go of the ones that cannot be drawn.
+///
+/// What it hands back is the faces CoreText draws rather than swash, by the
+/// PostScript name CoreText knows each by.
+pub(crate) fn settle(db: &mut fontdb::Database) -> HashMap<fontdb::ID, String> {
     let added = of_this_platform(db);
-    tracing::info!(added, faces = db.len(), "the faces this machine has");
+    tracing::info!(added, "the faces CoreText named that the walk did not");
+    keep_what_can_be_drawn(db, crate::coretext::draws)
+}
+
+/// Lets go of the faces neither swash nor CoreText draws, and says which of
+/// the rest are CoreText's.
+fn keep_what_can_be_drawn(
+    db: &mut fontdb::Database,
+    coretext_draws: impl Fn(&str) -> bool,
+) -> HashMap<fontdb::ID, String> {
+    let not_swash: Vec<(fontdb::ID, String)> = db
+        .faces()
+        .filter(|face| db.with_face_data(face.id, can_be_drawn) == Some(false))
+        .map(|face| (face.id, face.post_script_name.clone()))
+        .collect();
+    let mut by_coretext = HashMap::new();
+    let mut undrawable = 0_usize;
+    for (id, name) in not_swash {
+        match coretext_draws(&name) {
+            true => {
+                by_coretext.insert(id, name);
+            }
+            false => {
+                db.remove_face(id);
+                undrawable += 1;
+            }
+        }
+    }
+    tracing::info!(
+        by_coretext = by_coretext.len(),
+        undrawable,
+        faces = db.len(),
+        "the faces this machine has"
+    );
+    by_coretext
+}
+
+/// Whether a face has anything swash can draw a glyph from.
+fn can_be_drawn(data: &[u8], index: u32) -> bool {
+    FontRef::from_index(data, index).is_ok_and(|font| {
+        DRAWN_FROM
+            .iter()
+            .any(|tag| font.table_data(Tag::new(tag)).is_some())
+    })
 }
 
 /// macOS asks CoreText for the file every face it has is in.
@@ -64,4 +132,52 @@ fn of_this_platform(db: &mut fontdb::Database) -> usize {
 #[cfg(not(target_os = "macos"))]
 const fn of_this_platform(_: &mut fontdb::Database) -> usize {
     0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A face with outlines is kept, and one whose glyphs live in a table
+    /// nothing here can read is not.
+    ///
+    /// The second is the face Obelus carries with its `glyf` renamed, which
+    /// is what `PingFangUI.ttc` looks like from here: every table a face
+    /// needs to be shaped, and none a glyph can be drawn from.
+    ///
+    /// Kept where CoreText says it draws it, and handed back as CoreText's;
+    /// let go of where it does not.
+    ///
+    /// Deliberate breaks: `can_be_drawn` answering yes whatever the tables
+    /// keeps the renamed face without CoreText, which is the one that drew
+    /// Chinese as nothing; and not asking CoreText lets go of the face it
+    /// would have drawn, which is `PingFang SC`.
+    #[test]
+    fn a_face_with_nothing_to_draw_from_is_not_kept() {
+        let carried = include_bytes!("../fonts/SymbolsNerdFontMono-Regular.ttf").to_vec();
+        assert!(can_be_drawn(&carried, 0));
+
+        let mut renamed = carried;
+        // The table directory: a twelve-byte header, and sixteen bytes a
+        // table, the tag first.
+        let tables = usize::from(u16::from_be_bytes([renamed[4], renamed[5]]));
+        let glyf = (0..tables)
+            .map(|table| 12 + 16 * table)
+            .find(|at| &renamed[*at..*at + 4] == b"glyf")
+            .expect("the face Obelus carries has outlines");
+        renamed[glyf..glyf + 4].copy_from_slice(b"hvgl");
+        assert!(!can_be_drawn(&renamed, 0));
+
+        let mut db = fontdb::Database::new();
+        db.load_font_data(renamed.clone());
+        assert!(keep_what_can_be_drawn(&mut db, |_| false).is_empty());
+        assert_eq!(db.len(), 0, "a face nothing draws was kept");
+
+        let mut db = fontdb::Database::new();
+        db.load_font_data(renamed);
+        let by_coretext = keep_what_can_be_drawn(&mut db, |_| true);
+        assert_eq!(db.len(), 1, "a face CoreText draws was let go of");
+        let id = db.faces().next().expect("the one face").id;
+        assert!(by_coretext.contains_key(&id), "and it is not CoreText's");
+    }
 }

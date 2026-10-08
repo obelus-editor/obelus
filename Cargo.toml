@@ -478,19 +478,30 @@ objc2-foundation = { version = "0.3", features = [
 ] }
 # And the fonts: which files the machine has, what it draws code in, and what
 # it falls back to after that, which only CoreText can say -- see
-# `obelus-gui`'s `faces.rs`, `monospace.rs` and `cascade.rs`.
+# `obelus-gui`'s `faces.rs`, `monospace.rs` and `cascade.rs`. And the glyphs
+# of the faces only CoreText can draw, drawn by it: see `coretext.rs`.
 objc2-core-foundation = { version = "0.3", default-features = false, features = [
     "std",
     "CFArray",
+    "CFCGTypes",
     "CFLocale",
     "CFString",
     "CFURL",
+] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = [
+    "std",
+    "CGBitmapContext",
+    "CGColorSpace",
+    "CGContext",
+    "CGFont",
+    "CGImage",
 ] }
 objc2-core-text = { version = "0.3", default-features = false, features = [
     "std",
     "CTFont",
     "CTFontDescriptor",
     "CTFontManager",
+    "objc2-core-graphics",
 ] }
 
 # Where a chat's tokens are kept: the system's own keyring, through the core

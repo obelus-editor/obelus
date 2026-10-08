@@ -69,11 +69,13 @@ x11rb.workspace = true
 
 # How tall the title bar is, which only AppKit can say. See `title.rs`. And
 # the fonts the machine has, draws code in and falls back to, which only
-# CoreText can say: see `faces.rs`, `monospace.rs` and `cascade.rs`.
+# CoreText can say: see `faces.rs`, `monospace.rs` and `cascade.rs` -- and
+# the glyphs only CoreText can draw, in `coretext.rs`.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2.workspace = true
 objc2-app-kit.workspace = true
 objc2-core-foundation.workspace = true
+objc2-core-graphics.workspace = true
 objc2-core-text.workspace = true
 
 # For `GetCaretBlinkTime`: how fast a caret blinks is the one thing of the
