@@ -1140,8 +1140,12 @@ impl Motion {
         if !self.spinning || !self.animates {
             return None;
         }
-        let along = now.duration_since(self.started).as_secs_f32();
-        Some((along / TURN.as_secs_f32()).fract())
+        // The part of a turn taken in whole nanoseconds, and only then a
+        // float: seconds since the window opened, in an `f32`, are a
+        // sixtieth of a turn apart after two days, and a window left up
+        // over a weekend turned in jerks.
+        let along = now.duration_since(self.started).as_nanos() % TURN.as_nanos();
+        Some(along as f32 / TURN.as_nanos() as f32)
     }
 
     /// The frame drew a mark for the light to run across, or it did not.
@@ -2032,7 +2036,9 @@ mod tests {
     /// Break: answer `Wake::EveryFrame` while it turns -- the first
     /// assertion goes, and a window with an agent at work polls a core
     /// flat out. Or drop `turned` from `advance`, and the third does: the
-    /// moment arrives and nothing is drawn for it.
+    /// moment arrives and nothing is drawn for it. Or take the seconds
+    /// since the window opened as an `f32` in `turn`, and a week on the
+    /// mark is an eighth of a turn from where it should be.
     #[test]
     fn a_mark_that_turns_is_drawn_at_moments_and_only_while_it_is_there() {
         let mut motion = Motion::new(None);
@@ -2051,6 +2057,24 @@ mod tests {
         assert!(
             (quarter - 0.25).abs() < 0.01,
             "a quarter of the way: {quarter}"
+        );
+        // And as precisely a week on, which is a window nobody closed:
+        // the time is not a float until it is a part of one turn.
+        let week = TURN * (7 * 24 * 60 * 60 * 10 / 9);
+        let later = motion
+            .moving(since + week + TURN / 4)
+            .turn
+            .expect("turning");
+        assert!((later - 0.25).abs() < 0.001, "a week on: {later}");
+        let step = motion
+            .moving(since + week + TURN / 4 + TURN_STEP)
+            .turn
+            .expect("turning");
+        let one = TURN_STEP.as_secs_f32() / TURN.as_secs_f32();
+        assert!(
+            (step - later - one).abs() < 0.001,
+            "a step a week on is {}, not {one}",
+            step - later
         );
         assert!(
             motion.advance(since + TURN_STEP, false),
