@@ -101,21 +101,24 @@ fn a_shell() -> (App, Receiver<Event>) {
 /// jobs is: a build typed in a terminal inside Obelus is one Obelus started.
 ///
 /// Broken deliberately by leaving the pool out of `command_for` in
-/// `obelus-terminal`: the shell prints `pool-` and nothing after it.
+/// `obelus-terminal`: the shell prints `pool-42:` and nothing after it.
 #[test]
 fn a_shell_is_told_where_the_pool_of_build_jobs_is() {
     let (mut app, events) = wired();
     app.configure(obelus_config::Config::default(), Vec::new());
     app.shell_for_test(PathBuf::from("/bin/sh"));
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TerminalOpen);
-    support::type_text(&mut app, "echo pool-$CARGO_MAKEFLAGS-end");
+    support::type_text(&mut app, "echo pool-$((40 + 2)):$CARGO_MAKEFLAGS:end");
     press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
-    // The line the shell printed, not the one typed: only the printed one
-    // starts with the word.
+    // The answer by what only the answer has in it, the sum, and not by
+    // where its line starts: typed before the shell is up, the line is
+    // echoed before the prompt is drawn, and the prompt lands at the start
+    // of the answer instead -- which is a line that never starts with the
+    // word, and a wait that ran out on one machine in CI.
     pump(&mut app, &events, "the shell's answer", |app| {
         on_the_terminal(app)
             .lines()
-            .any(|line| line.starts_with("pool-") && line.trim_end().ends_with("-end"))
+            .any(|line| line.contains("pool-42:") && line.trim_end().ends_with(":end"))
     });
     // This binary's own pool, by its process's number: run from inside an
     // Obelus, the shell would inherit the outer one's whether or not it was
@@ -124,7 +127,7 @@ fn a_shell_is_told_where_the_pool_of_build_jobs_is() {
     let said = on_the_terminal(&app);
     assert!(
         said.lines()
-            .any(|line| line.starts_with("pool-") && line.contains(&this_pool)),
+            .any(|line| line.contains("pool-42:") && line.contains(&this_pool)),
         "the shell was not told where this pool is:\n{said}"
     );
 }
