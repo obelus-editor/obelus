@@ -291,6 +291,11 @@ fn open(tree: &Path, token: Option<&str>) {
         .stderr(std::process::Stdio::null())
         .env_remove("XDG_ACTIVATION_TOKEN")
         .env_remove("DESKTOP_STARTUP_ID");
+    // It has this window's environment, which is the shell's or the
+    // terminal's already, and its standard files are nobody's: without this
+    // it asks the shell again and opens a second or two later.
+    #[cfg(unix)]
+    command.env(obelus_program::login::PASSED_ON, "1");
     if let Some(token) = token {
         command
             .env("XDG_ACTIVATION_TOKEN", token)

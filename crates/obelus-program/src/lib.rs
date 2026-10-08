@@ -33,8 +33,8 @@
 //! its pipes held asks it.
 //!
 //! And one that is everywhere but Windows: what is on the path at all
-//! depends on who started Obelus, and a desktop is not a shell
-//! ([`login`]).
+//! depends on who started Obelus, and a desktop is not a shell (`login`,
+//! which is not a module on Windows).
 
 #[cfg(unix)]
 pub mod login;

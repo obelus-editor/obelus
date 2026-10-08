@@ -4662,6 +4662,7 @@ dependencies = [
 name = "obelus-program"
 version = "0.10.1"
 dependencies = [
+ "libc",
  "which",
  "windows-sys 0.61.2",
 ]

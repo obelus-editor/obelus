@@ -91,8 +91,11 @@ fn main() -> Result<()> {
     obelus_logging::catch_panics();
     #[cfg(unix)]
     match environment {
-        Ok(None) => {}
-        Ok(Some(taken)) => tracing::info!(taken, "took the login shell's environment"),
+        Ok(Environment::Terminals) => {}
+        Ok(Environment::PassedOn) => tracing::info!("kept the environment the window before had"),
+        Ok(Environment::Taken(taken)) => {
+            tracing::info!(taken, "took the login shell's environment")
+        }
         Err(why) => tracing::warn!(%why, "kept the environment the desktop gave"),
     }
 
@@ -121,36 +124,59 @@ fn main() -> Result<()> {
     window::show(app)
 }
 
+/// Where the environment `obg` runs with came from.
+#[cfg(unix)]
+enum Environment {
+    /// The terminal it was started from, which read the reader's files.
+    Terminals,
+    /// The window that started this one, which had one of the others.
+    PassedOn,
+    /// The reader's login shell, this many variables of it.
+    Taken(usize),
+}
+
 /// Takes the environment the reader's login shell has, where `obg` was not
-/// started from one -- how many variables, or `None` where it was.
+/// started from one.
 ///
 /// A window opened from the Dock or a launcher has the desktop's
 /// environment, which has none of what the reader's shell files set: no
 /// `/opt/homebrew/bin` on the path, so no `npm` and no `node` for an agent
 /// to run on. Why the shell is asked the way it is, is argued in
-/// `obelus_program::login`.
-///
-/// A standard input that is a terminal is the sign of a shell: `obg` typed
-/// into one already has everything it set, and asking again would only
-/// cost the start a shell. Not Windows, where the path is the registry's
+/// `obelus_program::login`. Not Windows, where the path is the registry's
 /// and the desktop hands every program all of it.
+///
+/// Any of the three standard files on a terminal is the sign of a shell:
+/// `obg` typed into one already has everything it set, and asking would
+/// put the files' answer over the terminal's -- a virtualenv's path, a
+/// variable exported a moment ago -- even where its input was sent
+/// somewhere else. And a window started by another window has whichever
+/// of the two that one had, and is told so (`elsewhere`).
 #[cfg(unix)]
-fn take_the_shells_environment() -> Result<Option<usize>, String> {
-    if std::io::IsTerminal::is_terminal(&std::io::stdin()) {
-        return Ok(None);
+fn take_the_shells_environment() -> Result<Environment, String> {
+    use std::io::IsTerminal as _;
+    let passed_on = std::env::var_os(obelus_program::login::PASSED_ON).is_some();
+    if passed_on {
+        // Safety: nothing else is running yet -- see `main`. Taken off so
+        // that a window this one's agent or terminal starts is not told so.
+        unsafe { std::env::remove_var(obelus_program::login::PASSED_ON) };
+        return Ok(Environment::PassedOn);
     }
-    let shell = std::env::var_os("SHELL").ok_or("nothing says which shell is the reader's")?;
-    let found = obelus_program::login::environment(
-        std::path::Path::new(&shell),
-        std::time::Duration::from_secs(5),
-    )?;
+    if std::io::stdin().is_terminal()
+        || std::io::stdout().is_terminal()
+        || std::io::stderr().is_terminal()
+    {
+        return Ok(Environment::Terminals);
+    }
+    let shell = obelus_program::login::the_readers_shell()
+        .ok_or("nothing says which shell is the reader's")?;
+    let found = obelus_program::login::environment(&shell, std::time::Duration::from_secs(5))?;
     let taken = found.len();
     for (name, value) in found {
         // Safety: nothing else is running yet -- see `main`. The thread
         // `environment` reads the shell's pipe on touches nothing else.
         unsafe { std::env::set_var(name, value) };
     }
-    Ok(Some(taken))
+    Ok(Environment::Taken(taken))
 }
 
 /// Says what follows on the console `obg` was started from, where it was
