@@ -211,7 +211,7 @@ fn question_of(card: &obelus_component::card::Card) -> Question {
 /// What a conversation is called when it is talked about anywhere but here.
 fn chat_of(talk: &Conversation) -> Option<ChatId> {
     match &talk.topic {
-        Topic::Note(note) => Some(ChatId::Note(note.clone())),
+        Topic::Note(_) | Topic::PullRequest(_) => talk.topic.which(),
         Topic::Loose => talk
             .session
             .as_ref()

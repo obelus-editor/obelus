@@ -98,6 +98,8 @@ pub enum Command {
     HistoryProject,
     /// The commit that wrote the line under the cursor.
     HistoryLine,
+    /// The repository's open pull requests, one of which the agent reviews.
+    PullRequestReview,
     /// Fold the run of lines the cursor is in, or unfold the one it is on.
     Fold,
     /// Fold every run in the file.
@@ -611,6 +613,11 @@ pub const ALL: &[CommandSpec] = &[
         title: "Open the commit that wrote this line",
     },
     CommandSpec {
+        command: Command::PullRequestReview,
+        name: "review-pull-request",
+        title: "Have the agent review an open pull request",
+    },
+    CommandSpec {
         command: Command::Fold,
         name: "fold",
         title: "Fold what is here, or unfold it",
@@ -844,6 +851,7 @@ impl Command {
             | Self::HistoryFile
             | Self::HistoryProject
             | Self::HistoryLine
+            | Self::PullRequestReview
             | Self::Fold
             | Self::FoldAll
             | Self::UnfoldAll
@@ -930,6 +938,7 @@ impl Command {
             | Self::SymbolOutline
             | Self::HistoryFile
             | Self::HistoryProject
+            | Self::PullRequestReview
             | Self::CountLines
             | Self::ConfigOpen
             | Self::ConfigProject
@@ -1012,6 +1021,7 @@ impl Command {
             | Self::SymbolOutline
             | Self::HistoryFile
             | Self::HistoryProject
+            | Self::PullRequestReview
             | Self::CountLines
             | Self::ConfigOpen
             | Self::ConfigProject
@@ -1155,7 +1165,8 @@ impl Command {
             | Self::GitNext
             | Self::HistoryFile
             | Self::HistoryProject
-            | Self::HistoryLine => Group::Git,
+            | Self::HistoryLine
+            | Self::PullRequestReview => Group::Git,
             Self::LspRestart
             | Self::LspStop
             | Self::ConversationNew
@@ -1357,6 +1368,10 @@ impl Command {
             // There has to be one to let go of: on the page asking which,
             // this would be asking it again.
             | Self::ProjectClose => Requires::AProject,
+            // A project, and not whether `gh` is there or signed in: that
+            // takes running it, and the list it opens says which of the two
+            // is missing -- a row greyed here would say neither.
+            Self::PullRequestReview => Requires::AProject,
             // A file of its own that only exists once a server has said
             // something, which on a file in a language Obelus has no
             // server for is never. Obelus's own log is not this: it is

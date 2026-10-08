@@ -1,0 +1,1 @@
+Pull request #{number} has moved since it was last handed to you: its head was {was} and is now {sha}. Review what has changed since {was} the same way, and ask the reader again before anything is sent.

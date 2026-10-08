@@ -580,7 +580,10 @@ crates/
                       asked (app/hearing); what is typed in a terminal is the
                       program's (app/terminals); a
                       newer Obelus is asked about once a day, not once a start
-                      (app/releases); in a window, enter is another window
+                      (app/releases); pull requests are asked of `gh`, not of
+                      GitHub, choosing one opens the review and says nothing
+                      yet, and what goes to GitHub goes on the reader's word
+                      (app/pulls); in a window, enter is another window
                       and `ctrl+enter` is this one going, in a terminal, enter
                       is this one going because it is all a terminal can do, a
                       window on a tree is a claim held the way a

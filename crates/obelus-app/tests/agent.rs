@@ -14513,3 +14513,210 @@ fn work_that_ended_before_its_call_was_marked_is_done() {
         screen(&mut app)
     );
 }
+
+/// What `gh pr list` prints for one open pull request at `sha`.
+fn one_pull_request(sha: &str) -> String {
+    format!(
+        r#"[{{"number":123,"title":"Keep the fold when a hunk is reverted","author":{{"login":"alice"}},"headRefName":"keep-fold","baseRefName":"master","headRefOid":"{sha}","isDraft":false,"reviewDecision":"APPROVED","updatedAt":""}}]"#
+    )
+}
+
+/// An application whose `gh` is the fake one, answering from `answer`.
+fn with_a_fake_gh(scratch: &support::Scratch, answer: &Path) -> (App, Receiver<Event>) {
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    // Whole, because it runs in the project and not in this crate.
+    let script = std::path::absolute("tests/fixtures/fake-gh.sh").expect("a directory");
+    app.gh_for_test(
+        std::path::PathBuf::from(support::sh()),
+        vec![script.display().to_string(), answer.display().to_string()],
+    );
+    (app, events)
+}
+
+/// Whether the list on screen has stopped saying it is waiting.
+fn the_list_has_answered(app: &App) -> bool {
+    app.picker()
+        .and_then(|picker| picker.nothing_to_show())
+        .is_none_or(|said| said != "Still asking GitHub")
+}
+
+/// A pull request chosen from the list opens a review that has said
+/// nothing, offers the words that start it, and tells the agent which pull
+/// request it is about with the reader's first message -- and once it has
+/// been pushed to, offers a second look and says where from.
+///
+/// Broken deliberately four ways, each failing here. Answering `None` for
+/// a pull request in `about_the_topic` sends the message with nothing about
+/// the pull request in it. Offering nothing in `what_the_box_offers` leaves
+/// the box empty. Calling a commit that differs from the one told "the
+/// same" never offers the second look. And opening a second review rather
+/// than going back to the first -- `review` not looking for one open --
+/// fails the count of documents.
+#[test]
+fn a_pull_request_is_reviewed_on_the_readers_word() {
+    let scratch = support::Scratch::new("agent-pull-request-review");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, one_pull_request("abc123")).expect("the answer");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+    app.talk_to(
+        "fake",
+        Path::new(support::sh()),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 1)
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Keep the fold when a hunk is reverted")
+            && text.contains("#123 \u{b7} alice"),
+        "the pull request is not in the list:\n{text}"
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.chat().is_some(), "choosing the row opened no review");
+    assert_eq!(
+        app.what_this_conversation_is_called().as_deref(),
+        Some("Review #123: Keep the fold when a hunk is reverted")
+    );
+    app.open_a_session_for_test();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    let _ = screen(&mut app);
+    assert!(
+        app.chat().is_some_and(|chat| !chat.anything_said()),
+        "the review started before the reader said to"
+    );
+    assert_eq!(
+        app.chat().and_then(|chat| chat.suggestion()),
+        Some("Review this pull request"),
+        "the box offered nothing to start the review with"
+    );
+
+    support::type_text(&mut app, "/blocks");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "what it got", |app| {
+        said_in_transcript(app, "blocks=")
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("first=always+review"),
+        "the agent was not told which pull request:\n{text}"
+    );
+    assert!(
+        text.contains("Told the agent which pull request to review"),
+        "Obelus spoke in the reader's name without saying so:\n{text}"
+    );
+    assert_eq!(app.chat().and_then(|chat| chat.suggestion()), None);
+
+    // Pushed to, and the list asked again: the same row is the same review.
+    std::fs::write(&answer, one_pull_request("def456")).expect("the second answer");
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list again", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 1)
+    });
+    let documents = app.document_count_for_test();
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.document_count_for_test(),
+        documents,
+        "choosing it again opened a second review"
+    );
+    let _ = screen(&mut app);
+    assert_eq!(
+        app.chat().and_then(|chat| chat.suggestion()),
+        Some("Review what has been pushed since"),
+        "the box did not see the pull request had moved"
+    );
+    support::type_text(&mut app, "/blocks again");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the second answer", |app| {
+        said_in_transcript(app, "first=pushed")
+    });
+}
+
+/// The list says why it is empty, in words the reader can act on.
+///
+/// Broken deliberately by taking the exit code and the `gh auth login`
+/// test out of `list`: a signed-out `gh` then reads as GitHub refusing,
+/// with `gh`'s own sentence after it.
+#[test]
+fn the_list_of_pull_requests_says_why_it_is_empty() {
+    let scratch = support::Scratch::new("agent-pull-request-empty");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, "signed-out").expect("the answer");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    assert!(
+        screen(&mut app).contains("Still asking GitHub"),
+        "the list said nothing while it waited"
+    );
+    pump(&mut app, &events, "the refusal", the_list_has_answered);
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Not signed in to GitHub: gh auth login signs in"),
+        "a signed-out gh was not said as one:\n{text}"
+    );
+
+    support::press(&mut app, KeyCode::Esc);
+    std::fs::write(&answer, "[]").expect("no pull requests");
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the empty list", the_list_has_answered);
+    let text = screen(&mut app);
+    assert!(
+        text.contains("No pull request is open"),
+        "an empty answer was not said as one:\n{text}"
+    );
+}
+
+/// A review another Obelus walked into after the list was drawn is not this
+/// window's to enter, and the row says so.
+///
+/// Claimed after the list is up, so that what refuses is the claim and not
+/// a row already drawn dim -- claimed before, the first version of this
+/// test passed with the claim taken out, because enter on a dim row never
+/// reached it.
+///
+/// Broken deliberately two ways. Opening the review without the claim in
+/// `App::review` walks into the other window's review. Taking out the
+/// redraw on refusal leaves the row lit under the reader.
+#[test]
+fn a_review_another_obelus_has_is_not_entered() {
+    let scratch = support::Scratch::new("agent-pull-request-claimed");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, one_pull_request("abc123")).expect("the answer");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 1)
+    });
+    assert!(
+        app.picker()
+            .and_then(|picker| picker.selected_item())
+            .is_some_and(|row| row.enabled),
+        "nobody has the review yet"
+    );
+    let _theirs = obelus_agent::chats::claim(
+        scratch.path(),
+        &obelus_agent::chats::ChatId::PullRequest(123),
+    )
+    .expect("nobody had it");
+
+    support::press(&mut app, KeyCode::Enter);
+    assert!(
+        app.chat().is_none(),
+        "the review was entered from two windows"
+    );
+    assert!(
+        app.picker()
+            .and_then(|picker| picker.selected_item())
+            .is_some_and(|row| !row.enabled),
+        "the refused row still says it can be entered"
+    );
+}

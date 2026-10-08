@@ -794,6 +794,9 @@ impl App {
             // A conversation has no path and no cursor, and this list is
             // compact anyway: there is no room under it to show one in.
             | PickerValue::Conversation(_)
+            // A pull request is somewhere else's branch, and the review is
+            // the agent's to read: nothing here is a file to show.
+            | PickerValue::PullRequest(_)
             // A thing the server offers to do has nowhere to show: what it
             // would change is not worked out until it is chosen.
             | PickerValue::Action(_)

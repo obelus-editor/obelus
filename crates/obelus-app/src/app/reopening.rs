@@ -598,10 +598,11 @@ impl App {
             return Some(DocumentId::new(at));
         }
         let claim = obelus_agent::chats::claim(&self.working_directory, &which)?;
-        let (topic, to_take_up) = match &which {
-            ChatId::Note(note) => (Topic::Note(note.clone()), None),
-            ChatId::Loose(session) => (Topic::Loose, Some(session.clone())),
+        let to_take_up = match &which {
+            ChatId::Loose(session) => Some(session.clone()),
+            ChatId::Note(_) | ChatId::PullRequest(_) => None,
         };
+        let topic = Topic::of(&which);
         let talk = crate::conversation::Conversation {
             told: kept.told.clone(),
             introduced: kept.introduced,

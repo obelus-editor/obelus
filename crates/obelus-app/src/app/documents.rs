@@ -184,7 +184,7 @@ impl App {
         talker: Option<&obelus_agent::acp::Talk>,
         notes: &obelus_git::todo::Todo,
     ) -> PickerItem {
-        let about = Self::conversation_about(talk, notes);
+        let about = self.conversation_about(talk, notes);
         let titled = self.conversation_title(talk);
         PickerItem {
             prose: true,
@@ -232,7 +232,7 @@ impl App {
         notes: &obelus_git::todo::Todo,
     ) -> Option<String> {
         self.conversation_title(talk)
-            .or_else(|| Self::conversation_about(talk, notes))
+            .or_else(|| self.conversation_about(talk, notes))
             .or_else(|| talk.chat.first_words())
     }
 
@@ -264,8 +264,10 @@ impl App {
             .clone()
     }
 
-    /// The note a conversation is about, by its title.
+    /// The note a conversation is about, by its title -- or the pull request
+    /// it reviews.
     fn conversation_about(
+        &self,
         talk: &crate::conversation::Conversation,
         notes: &obelus_git::todo::Todo,
     ) -> Option<String> {
@@ -275,6 +277,9 @@ impl App {
                 .iter()
                 .find(|note| note.id == *id)
                 .map(|note| note.title().to_string()),
+            crate::conversation::Topic::PullRequest(number) => {
+                Some(self.what_a_review_is_called(*number))
+            }
             crate::conversation::Topic::Loose => None,
         }
     }

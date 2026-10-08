@@ -102,6 +102,21 @@ const NOTE: &str = include_str!("note.txt");
 /// it needs is what changed.
 const REWORDED: &str = include_str!("reworded.txt");
 
+/// What a review of a pull request says it is about, and how it is to be
+/// done.
+///
+/// The review's shape is here rather than left to the agent: what it does
+/// well first, the issues by weight, what was set aside, and a verdict --
+/// and nothing goes to GitHub that the reader has not chosen on a card.
+const PULL_REQUEST: &str = include_str!("pull_request.txt");
+
+/// And what it says when the pull request has been pushed to since.
+///
+/// The `told` of a review is the commit its head was at, which is the
+/// pull request's equivalent of a note's words: the agent kept the first
+/// telling, and what it needs is where to start again from.
+const PUSHED: &str = include_str!("pushed.txt");
+
 /// What Obelus has to say before the reader's own words, this time.
 ///
 /// Three things rather than one string, because saying it is three things
@@ -209,6 +224,89 @@ impl App {
             // conversation is about is whatever the reader types.
             Topic::Loose => None,
             Topic::Note(note) => self.about_the_note(note, told),
+            Topic::PullRequest(number) => self.about_the_pull_request(*number, told),
+        }
+    }
+
+    /// The pull request a review is about, as much of it as the agent is
+    /// missing.
+    ///
+    /// What Obelus knows of it is what the list of pull requests last said,
+    /// and a review taken up from the list of conversations may be in a
+    /// window that has never asked: then the number is all there is, and
+    /// `gh pr view` is how the agent finds the rest. Where it does know, the
+    /// head's commit is what is written down as told -- so a pull request
+    /// pushed to since is said again, as where to start from, and one that
+    /// has not is said once.
+    fn about_the_pull_request(
+        &self,
+        number: u64,
+        told: Option<&str>,
+    ) -> Option<(String, &'static str, String)> {
+        let pull = self.pull_request(number);
+        let sha = pull.map_or("", |pull| pull.sha.as_str());
+        match told {
+            None => {
+                let about = pull.map_or_else(String::new, |pull| {
+                    format!(
+                        ", \"{}\", by {}: {} into {}, at {}",
+                        pull.title, pull.author, pull.head, pull.base, pull.sha
+                    )
+                });
+                let words = PULL_REQUEST
+                    .trim()
+                    .replace("{number}", &number.to_string())
+                    .replace("{about}", &about);
+                Some((
+                    words,
+                    "Told the agent which pull request to review",
+                    sha.to_string(),
+                ))
+            }
+            // Nothing to compare against on one side or the other: told
+            // before Obelus knew the commit, or not knowing it now. Saying
+            // it has moved on no evidence would send a review round again
+            // for nothing.
+            Some(was) if was.is_empty() || sha.is_empty() || was == sha => None,
+            Some(was) => {
+                let words = PUSHED
+                    .trim()
+                    .replace("{number}", &number.to_string())
+                    .replace("{was}", was)
+                    .replace("{sha}", sha);
+                Some((
+                    words,
+                    "Told the agent what has been pushed since",
+                    sha.to_string(),
+                ))
+            }
+        }
+    }
+
+    /// What the box offers to say in a conversation, while the next message
+    /// would tell the agent what the conversation is about.
+    ///
+    /// By the opening's own test of whether it has anything to say, so the
+    /// box and the prompt cannot disagree: a note rewritten since offers it
+    /// again, a pull request pushed to since offers a second look, and one
+    /// already told offers nothing. From the kept copies, because this is
+    /// asked every frame.
+    pub(super) fn what_the_box_offers(&self) -> Option<&'static str> {
+        let talk = self.conversation()?;
+        match &talk.topic {
+            Topic::Loose => None,
+            Topic::Note(_) => {
+                let now = what_the_note_says(self.the_note_this_is_about()?);
+                (talk.told.as_deref() != Some(now.as_str())).then_some(LOOK)
+            }
+            Topic::PullRequest(number) => {
+                let told = talk.told.as_deref();
+                let about = self.about_the_pull_request(*number, told);
+                match told {
+                    None => Some(REVIEW),
+                    Some(_) => about.map(|_| REVIEW_AGAIN),
+                }
+            }
         }
     }
 
@@ -283,6 +381,17 @@ pub(super) fn what_the_note_says(about: &obelus_git::todo::Note) -> String {
 /// answer -- and typing that every time is the cost of opening a
 /// conversation from a note at all.
 pub(super) const LOOK: &str = "Look into this";
+
+/// The same for a review: choosing the pull request said which, and what
+/// is left is saying go.
+///
+/// Offered rather than sent, because a reader may want to say where to look
+/// first -- and a review started the moment the row was chosen is one they
+/// could not have said that to.
+pub(super) const REVIEW: &str = "Review this pull request";
+
+/// And for one pushed to since the last review.
+pub(super) const REVIEW_AGAIN: &str = "Review what has been pushed since";
 
 /// Fills a template in: Obelus's own values first, the reader's words last.
 ///

@@ -70,10 +70,9 @@ impl App {
         }
         // What the reader is in, before they are somewhere else: a
         // conversation about a note is how the list knows where to stand.
-        let about = match self.conversation().map(|talk| talk.topic.clone()) {
-            Some(crate::conversation::Topic::Note(note)) => Some(note),
-            Some(crate::conversation::Topic::Loose) | None => None,
-        };
+        let about = self
+            .conversation()
+            .and_then(|talk| talk.topic.note().cloned());
         let from = self.here();
         let Some(id) = self.put_the_notes_up(about) else {
             return;

@@ -91,11 +91,10 @@ impl App {
         }
         // The same two lines the reader's first message runs, so that a
         // conversation about a note is taken up rather than replaced.
-        let note = match self.conversation().map(|talk| talk.topic.clone()) {
-            Some(Topic::Note(note)) => Some(note),
-            Some(Topic::Loose) | None => None,
-        };
-        let had = note.as_ref().and_then(|note| self.remembered_session(note));
+        let which = self.conversation().and_then(|talk| talk.topic.which());
+        let had = which
+            .as_ref()
+            .and_then(|which| self.remembered_session(which));
         self.ask_for_a_session(Whose::Whoever, had);
     }
 
@@ -361,10 +360,7 @@ impl App {
             self.stop_agent();
             self.start_agent();
         }
-        let note = match self.talk(whose).map(|talk| &talk.topic) {
-            Some(Topic::Note(note)) => Some(note.clone()),
-            Some(Topic::Loose) | None => None,
-        };
+        let which = self.talk(whose).and_then(|talk| talk.topic.which());
         // Taken rather than read: asked for once, the name is on its way,
         // and a conversation that later loses its session -- the agent
         // stopping, another agent chosen -- gets a new one, the way any
@@ -372,9 +368,9 @@ impl App {
         // has gone with the session, and another window may have taken
         // the old one up.
         let to_take_up = self.talk_mut(whose).and_then(|talk| talk.to_take_up.take());
-        let had = note
+        let had = which
             .as_ref()
-            .and_then(|note| self.remembered_session(note))
+            .and_then(|which| self.remembered_session(which))
             .or(to_take_up);
         self.ask_for_a_session(whose, had);
     }
@@ -589,19 +585,15 @@ impl App {
             .is_some_and(|table| path == table)
     }
 
-    /// The conversation Obelus had about this note with the agent that is
-    /// running, if it wrote one down.
-    fn remembered_session(&self, note: &obelus_git::todo::NoteId) -> Option<String> {
+    /// The conversation Obelus had about this note, or this pull request,
+    /// with the agent that is running, if it wrote one down.
+    fn remembered_session(&self, which: &obelus_agent::chats::ChatId) -> Option<String> {
         let agent = self.talker.as_ref()?.id();
         // Looking one up, so remembering none is an answer this can live
         // with: the cost of it is the conversation being started again.
         Some(
             self.sessions()?
-                .get(
-                    &obelus_agent::chats::ChatId::Note(note.clone()),
-                    agent,
-                    &self.working_directory,
-                )?
+                .get(which, agent, &self.working_directory)?
                 .session
                 .clone(),
         )
@@ -802,24 +794,21 @@ impl App {
             .collect()
     }
 
-    /// Forgets the conversation written down against one note.
+    /// Forgets the conversation written down against one note, or one pull
+    /// request.
     ///
     /// For the one case where Obelus knows there is nothing to come back
     /// to: the agent was asked for it by name and said it has no such
     /// thing. Left in the file, that name is asked for again on the next
     /// start and refused again, and the note goes on saying there is a
     /// conversation in it.
-    fn forget_the_conversation(&mut self, note: &obelus_git::todo::NoteId) {
+    fn forget_the_conversation(&mut self, which: &obelus_agent::chats::ChatId) {
         let Some(agent) = self.talker.as_ref().map(|talker| talker.id().to_string()) else {
             return;
         };
         let here = self.working_directory.clone();
         self.change_the_sessions(|kept| {
-            kept.forget(
-                &obelus_agent::chats::ChatId::Note(note.clone()),
-                &agent,
-                &here,
-            );
+            kept.forget(which, &agent, &here);
         });
     }
 
@@ -962,7 +951,7 @@ impl App {
     /// twenty -- and a conversation builds its view twice a frame, for the
     /// editor and for the status row, so that was the bill twice on every
     /// keystroke of every conversation about a note.
-    fn the_note_this_is_about(&self) -> Option<&obelus_git::todo::Note> {
+    pub(super) fn the_note_this_is_about(&self) -> Option<&obelus_git::todo::Note> {
         let Topic::Note(id) = &self.conversation()?.topic else {
             return None;
         };
@@ -1871,11 +1860,9 @@ impl App {
         // and a running agent is what the key that opens one now leaves
         // behind, and the message would otherwise be held for a session
         // nobody had asked for.
-        let note = match &topic {
-            Topic::Note(note) => Some(note.clone()),
-            Topic::Loose => None,
-        };
-        let had = note.as_ref().and_then(|note| self.remembered_session(note));
+        let had = topic
+            .which()
+            .and_then(|which| self.remembered_session(&which));
         self.ask_for_a_session(whose, had);
         let session = self.talk(whose).and_then(|talk| talk.session.clone());
         let asking = self.talk(whose).and_then(|talk| talk.requested);
@@ -3331,13 +3318,8 @@ impl App {
             talk.chat.settle_focus(settings);
         }
         // And what the box offers, by the opening's own test of whether the
-        // next message carries the note -- so a note rewritten since offers
-        // it again, and one already told does not. From the kept copy of
-        // the notes, because this is asked every frame.
-        let suggested = self.conversation().and_then(|talk| {
-            let now = super::opening::what_the_note_says(self.the_note_this_is_about()?);
-            (talk.told.as_deref() != Some(now.as_str())).then_some(super::opening::LOOK)
-        });
+        // next message carries what the conversation is about.
+        let suggested = self.what_the_box_offers();
         if let Some(talk) = self.conversation_mut() {
             talk.chat.suggest(suggested);
         }
@@ -3687,13 +3669,9 @@ impl App {
             // next start -- the same refusal, the same fresh start, every
             // morning, with the note's row saying all the while that
             // there is something to come back to.
-            let note = match at.and_then(|at| self.documents.get(at)?.as_ref()?.chat()) {
-                Some(talk) => match &talk.topic {
-                    Topic::Note(note) => Some(note.clone()),
-                    Topic::Loose => None,
-                },
-                None => None,
-            };
+            let which = at
+                .and_then(|at| self.documents.get(at)?.as_ref()?.chat())
+                .and_then(|talk| talk.topic.which());
             if let Some(talk) = at
                 .and_then(|at| self.documents.get_mut(at))
                 .and_then(Option::as_mut)
@@ -3714,8 +3692,8 @@ impl App {
                 talk.introduced = false;
                 talk.chat.note(&format!("Starting again, because {why}"));
             }
-            if let Some(note) = note {
-                self.forget_the_conversation(&note);
+            if let Some(which) = which {
+                self.forget_the_conversation(&which);
             }
             return;
         }

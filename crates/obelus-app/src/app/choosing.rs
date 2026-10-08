@@ -530,6 +530,14 @@ impl App {
             self.leave(Layer::Picker);
             return;
         }
+        // A review is claimed the same way, and refused the same way.
+        if let PickerValue::PullRequest(number) = value {
+            if self.review(number) {
+                self.put_the_file_back();
+                self.leave(Layer::Picker);
+            }
+            return;
+        }
         if let PickerValue::Commit(id) = value {
             if self.expand_commit(id) {
                 return;
@@ -653,7 +661,7 @@ impl App {
             PickerValue::CommitFile { id, path } => self.open_at_commit(id, &path, None),
             // Dealt with before the list is closed, for the reason a
             // directory is: choosing one may leave the list where it was.
-            PickerValue::Conversation(_) => {}
+            PickerValue::Conversation(_) | PickerValue::PullRequest(_) => {}
             PickerValue::Worktree { at, enter, .. } => match enter {
                 WorktreeEnter::Switch => self.go_to_worktree(at),
                 WorktreeEnter::Open | WorktreeEnter::Bring => self.go_elsewhere(at),

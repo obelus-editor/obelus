@@ -40,6 +40,7 @@ mod naming;
 mod preferences;
 mod previewing;
 mod projects;
+pub mod pulls;
 mod releases;
 mod remote;
 mod renaming;
@@ -754,6 +755,8 @@ pub struct App {
     amiss: Vec<String>,
     /// Whether a newer Obelus is out, and whether this session asked.
     releases: releases::Releases,
+    /// The repository's open pull requests, as `gh` last listed them.
+    pulls: pulls::Pulls,
     /// The file watcher, once started.
     ///
     /// Held because dropping it stops the watch. `None` means auto-reload is
@@ -1019,6 +1022,7 @@ impl App {
             events: None,
             amiss: Vec::new(),
             releases: releases::Releases::default(),
+            pulls: pulls::Pulls::default(),
             watcher: None,
             theme_watched: Vec::new(),
             highlights: Highlights::default(),
@@ -3197,6 +3201,7 @@ impl App {
                 });
             }
             Event::Released(tag) => self.on_released(&tag),
+            Event::PullRequests(answer) => self.on_pull_requests(answer),
             Event::Agent(obelus_agent::Event::Registry { agents, failure }) => {
                 self.on_registry(agents, failure)
             }

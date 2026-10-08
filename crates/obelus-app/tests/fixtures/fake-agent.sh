@@ -813,6 +813,16 @@ while IFS= read -r line; do
                 *"The note this conversation is about has been rewritten"*)
                     first="${first:+$first+}rewritten" ;;
             esac
+            # Which pull request a review is of, and that it has been
+            # pushed to since: the review's two pieces, as the note's are.
+            case "$line" in
+                *"This conversation is a review of pull request #"*)
+                    first="${first:+$first+}review" ;;
+            esac
+            case "$line" in
+                *"has moved since it was last handed to you"*)
+                    first="${first:+$first+}pushed" ;;
+            esac
             case "$line" in
                 *"This project has a workflow for changing its files"*)
                     first="${first:+$first+}workflow" ;;
