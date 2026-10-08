@@ -269,8 +269,7 @@ const PATH_AT_LEAST: usize = 8;
 ///
 /// Empty outside a repository, so the row spends no column on a question
 /// that does not arise. A trailing pair of blanks is the gap before the
-/// path, and the glyph's own blank is the one the non-`Mono` variants bleed
-/// into.
+/// path, and what follows the glyph is `after_a_glyph`'s.
 ///
 /// A branch keeps its own spelling, because it is a name the reader wrote.
 /// `Detached` is not a name but Obelus saying something, so it is written

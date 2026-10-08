@@ -249,7 +249,7 @@ fn a_window_turns_an_agents_mark_on_its_own_clock() {
     );
     app.new_conversation();
     app.open_a_session_for_test();
-    let mut pump = |app: &mut App, what: &str, until: obelus_agent::Talking| {
+    let pump = |app: &mut App, what: &str, until: obelus_agent::Talking| {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
         while app.talking() != until {
             let left = deadline.saturating_duration_since(std::time::Instant::now());

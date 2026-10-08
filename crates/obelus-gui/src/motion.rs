@@ -291,9 +291,8 @@ const SHEEN_PASS: Duration = Duration::from_millis(2600);
 
 /// How long the mark that says something is happening takes to go round.
 ///
-/// About what the braille takes in a terminal -- ten frames at the
-/// ticker's twelve a second -- so a reader who uses both sees one mark
-/// turning at one speed, and only the steps gone from it here.
+/// A little slower than the braille in a terminal, whose ten frames at the
+/// ticker's eighty milliseconds are a turn in eight hundred.
 const TURN: Duration = Duration::from_millis(900);
 
 /// How often the mark that turns is drawn again.
