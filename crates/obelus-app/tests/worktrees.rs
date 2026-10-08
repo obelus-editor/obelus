@@ -1232,3 +1232,81 @@ fn an_agent_that_never_started_goes_with_the_tree() {
     }
     assert!(!running(), "the agent outlived the tree it was started on");
 }
+
+/// Closing the project is leaving it, as far as the tree is concerned:
+/// choosing it again opens what was open.
+///
+/// Broken deliberately by leaving `write_down_what_is_open_on_leaving` out
+/// of `App::leave_the_project`: nothing is opened again.
+#[test]
+fn choosing_a_closed_project_again_opens_what_was_open() {
+    let scratch = Scratch::new("closing-reopen");
+    let (main, _, _) = repository(&scratch);
+    std::fs::create_dir_all(main.join(".obelus")).expect("making .obelus");
+    std::fs::write(main.join(".obelus/config.toml"), "reopen = true\n")
+        .expect("writing the settings");
+    let asked = Arc::new(Asked::default());
+    let (mut app, events) = window_on(&main, &asked);
+    app.open_for_test(&main.join("file.rs"));
+
+    dispatch::dispatch(&mut app, Command::ProjectClose);
+    assert!(app.reading_nothing());
+    // The row that opens a project not in the list, which is the last.
+    press_control_key(&mut app, KeyCode::End);
+    press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, &main.display().to_string());
+    press(&mut app, KeyCode::Esc);
+    press(&mut app, KeyCode::Enter);
+    assert!(app.has_a_project(), "it is still asking which project");
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline && app.reading_nothing() {
+        if let Ok(event) = events.recv_timeout(Duration::from_millis(100)) {
+            app.handle(event);
+        }
+    }
+    let open: Vec<PathBuf> = app
+        .buffers_for_test()
+        .into_iter()
+        .map(|(path, _)| resolved(&path))
+        .collect();
+    assert_eq!(
+        open,
+        [resolved(&main.join("file.rs"))],
+        "what was open in the project was not opened again"
+    );
+}
+
+/// A window that closed its project is not a row under the tree it was
+/// on: brought forward from there, it would be asking which project.
+///
+/// Broken deliberately by leaving `left_the_tree` out of
+/// `App::leave_the_project`: the row is still under `feature`, saying
+/// what the window was reading before.
+#[test]
+fn a_window_that_closed_its_project_is_not_on_the_tree() {
+    let scratch = Scratch::new("worktrees-closed");
+    let (main, feature, _) = repository(&scratch);
+    let asked = Arc::new(Asked::default());
+    let (mut app, _events) = window_on(&main, &asked);
+    let (mut other, _other_events) = window_on(&feature, &Arc::new(Asked::default()));
+    other.open_for_test(&feature.join("file.rs"));
+    // A frame, which is where a window says what it is reading.
+    support::lay_out(&mut other, 80, 24);
+
+    dispatch::dispatch(&mut other, Command::ProjectClose);
+    support::lay_out(&mut other, 80, 24);
+
+    dispatch::dispatch(&mut app, Command::WorktreeList);
+    let said = rows(&app);
+    let from = said
+        .iter()
+        .position(|row| row.0 == "feature")
+        .expect("the tree");
+    let under: Vec<&str> = said[from + 1..]
+        .iter()
+        .take_while(|row| row.1.is_none())
+        .map(|row| row.0.as_str())
+        .collect();
+    assert!(under.is_empty(), "{said:?}");
+}

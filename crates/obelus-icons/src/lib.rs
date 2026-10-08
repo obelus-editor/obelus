@@ -257,6 +257,9 @@ pub fn for_command(command: obelus_command::Command) -> char {
         // same folder the counts hang their languages from.
         Command::WorktreeList => ui::TREE,
         Command::DocumentClose => '\u{f0b98}',
+        // A folder with a cross on it: what the row above it does to a
+        // file, done to the project.
+        Command::ProjectClose => '\u{f0258}',
         Command::PreviewToggle => '\u{f0354}',
         Command::ThemeSelect => '\u{f03d8}',
         Command::CommandPalette => '\u{f018d}',

@@ -93,6 +93,39 @@ impl App {
         );
     }
 
+    /// Asks before letting go of the project with something unwritten in it.
+    ///
+    /// The question going to another worktree asks, for the same reason:
+    /// the tree is still there to write into.
+    pub(super) fn ask_before_closing_the_project(&mut self, unsaved: usize) {
+        let what = match unsaved {
+            1 => match self.first_unsaved() {
+                Some(id) => format!("{} is unsaved", self.file_path(id)),
+                None => "1 file is unsaved".to_string(),
+            },
+            many => format!("{many} files are unsaved"),
+        };
+        // And what else closing stops, as leaving says it: either answer
+        // closes, and closing takes the programs with it.
+        let what = match self.terminals_running() {
+            0 => what,
+            1 => format!("{what}, and a terminal is still running"),
+            many => format!("{what}, and {many} terminals are still running"),
+        };
+        self.stop_to_ask(
+            Question::new(what)
+                .way(
+                    "Save everything and close",
+                    Answer::ClosingTheProject(Leaving::SaveAll),
+                )
+                .way(
+                    "Close without saving",
+                    Answer::ClosingTheProject(Leaving::Discard),
+                )
+                .saying("Loses your changes"),
+        );
+    }
+
     /// Asks before writing over a file that moved while it was being edited.
     ///
     /// The one question with no safe answer: each way out keeps one of the
@@ -159,6 +192,12 @@ impl App {
                     self.move_to_tree(&tree);
                 }
             }
+            Answer::ClosingTheProject(Leaving::SaveAll) => {
+                if self.save_everything() {
+                    self.leave_the_project();
+                }
+            }
+            Answer::ClosingTheProject(Leaving::Discard) => self.leave_the_project(),
             Answer::Saving(id, Saving::Mine) => self.save_now(id.get()),
             Answer::Saving(id, Saving::Theirs) => self.take_what_is_on_disk(id.get()),
             Answer::Writing(id, Writing::Back) => self.save_now(id.get()),

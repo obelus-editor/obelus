@@ -957,3 +957,102 @@ fn a_copy_a_cut_and_a_paste_work_in_the_page_that_asks() {
         "the paste did not put the cut back"
     );
 }
+
+/// `close-project` lets go of the project and asks which one next --
+/// asking first about what is unwritten, the way going to another
+/// worktree does.
+///
+/// Broken deliberately by leaving the count of what is unwritten out of
+/// `App::close_the_project` (nothing is asked, and the first assertion
+/// fails), and by saving without going on in its answer (Obelus stays on
+/// the project, and the one after the write does).
+#[test]
+fn closing_the_project_asks_about_what_is_unwritten_and_then_which_project() {
+    let scratch = support::Scratch::new("closing-asks");
+    let file = scratch.join("file.rs");
+    std::fs::write(&file, "fn main() {}\n").expect("a file");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.open_for_test(&file);
+    support::type_text(&mut app, "// ");
+    assert!(
+        app.offers(Command::ProjectClose),
+        "there is a project to close"
+    );
+
+    obelus_app::app::dispatch::dispatch(&mut app, Command::ProjectClose);
+    assert_eq!(
+        support::ways(&app),
+        [
+            "Save everything and close",
+            "Close without saving",
+            "cancel"
+        ],
+        "closing with something unwritten did not ask"
+    );
+    support::answer(&mut app, "cancel");
+    assert!(app.has_a_project(), "cancelling let go of the project");
+
+    obelus_app::app::dispatch::dispatch(&mut app, Command::ProjectClose);
+    support::answer(&mut app, "Save everything and close");
+    assert_eq!(
+        std::fs::read_to_string(&file).expect("the file"),
+        "// fn main() {}\n",
+        "what was unwritten was not written"
+    );
+    assert!(
+        app.choosing().is_some(),
+        "saving did not go on to ask which project"
+    );
+    assert!(
+        !app.offers(Command::ProjectClose),
+        "the page asking which project offers closing one"
+    );
+}
+
+/// With nothing unwritten there is nothing to ask: the project goes, and
+/// what was open goes with it.
+///
+/// Broken deliberately by asking which project without letting go of the
+/// one there was in `App::leave_the_project`: the file is still open.
+#[test]
+fn closing_a_project_with_nothing_unwritten_goes_straight_to_asking() {
+    let scratch = support::Scratch::new("closing-clean");
+    let file = scratch.join("file.rs");
+    std::fs::write(&file, "fn main() {}\n").expect("a file");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.open_for_test(&file);
+
+    obelus_app::app::dispatch::dispatch(&mut app, Command::ProjectClose);
+    assert!(app.choosing().is_some(), "it did not ask which project");
+    assert!(
+        app.buffers_for_test().is_empty(),
+        "what was open in the project is still open"
+    );
+}
+
+/// Closing without saving lets the project go and leaves the file as it
+/// was on disk.
+///
+/// Broken deliberately by making that answer do nothing in
+/// `App::answered`: Obelus stays on the project.
+#[test]
+fn closing_without_saving_leaves_the_file_as_it_was() {
+    let scratch = support::Scratch::new("closing-discards");
+    let file = scratch.join("file.rs");
+    std::fs::write(&file, "fn main() {}\n").expect("a file");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    app.open_for_test(&file);
+    support::type_text(&mut app, "// ");
+
+    obelus_app::app::dispatch::dispatch(&mut app, Command::ProjectClose);
+    support::answer(&mut app, "Close without saving");
+    assert!(app.choosing().is_some(), "it did not ask which project");
+    assert_eq!(
+        std::fs::read_to_string(&file).expect("the file"),
+        "fn main() {}\n",
+        "what was unwritten was written"
+    );
+}

@@ -222,6 +222,26 @@ fn ctrl_q_leaves_from_inside_a_terminal_and_asks_first() {
     assert!(app.should_quit(), "the answer did not leave");
 }
 
+/// Closing the project asks first about a program still running in a
+/// terminal, because the program would go with it -- the question leaving
+/// asks, with nothing unsaved to ask it alongside.
+///
+/// Broken deliberately by leaving the count of running terminals out of
+/// `App::close_the_project`: the project closes at the first press.
+#[test]
+fn closing_the_project_asks_about_a_running_terminal_first() {
+    let (mut app, _events) = a_shell();
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::ProjectClose);
+    assert!(app.has_a_project(), "closed without asking");
+    assert_eq!(
+        support::ways(&app),
+        ["Stop it and close the project", "cancel"],
+        "the question was not about the terminal"
+    );
+    support::answer(&mut app, "Stop it and close the project");
+    assert!(!app.has_a_project(), "the answer did not close the project");
+}
+
 /// Where the terminal's cells are on screen: the whole document region.
 fn terminal_area(app: &mut App) -> ratatui::layout::Rect {
     let cells = support::cells_of(app, WIDTH, HEIGHT);

@@ -21,6 +21,7 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::DocumentList => app.open_document_picker(),
         Command::WorktreeList => app.open_switching(super::worktrees::Tab::Worktrees),
         Command::DocumentClose => app.close_current(),
+        Command::ProjectClose => app.close_the_project(),
         Command::FileRename => app.rename_file(),
         Command::FileNew => app.new_file(),
         Command::PreviewToggle => app.toggle_preview(),
