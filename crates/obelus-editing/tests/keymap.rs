@@ -2,7 +2,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use obelus_command::Command;
-use obelus_editing::keymap::{Context, KeyChord, Keymap, control};
+use obelus_editing::keymap::{Context, KeyChord, Keymap, Layout, control};
 
 fn press(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
     KeyEvent {
@@ -295,7 +295,7 @@ fn the_readers_own_bindings_go_over_the_defaults() {
     ]
     .into_iter()
     .collect();
-    let (keymap, _unbound) = Keymap::with(&moved);
+    let (keymap, _unbound) = Keymap::with(Layout::Classic, &moved);
 
     // All of `close-document`'s bindings moved: it is one command with one
     // key, bound in three contexts so that it reaches the list of open files

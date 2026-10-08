@@ -362,7 +362,9 @@ command is gone and `App::blame` reads the setting.
   question at four radii -- this file or every file, its text or its names.
   `f9`-`f12` are git's and the jump to a definition. Bare, never with a
   modifier: one terminal reports `shift+f5` and the next reports `f17` for the
-  same press.
+  same press. That is the `classic` layout; a keyboard without the row starts
+  from `mnemonic` (`keys_from`), the same twelve on control and alt by the
+  letter of the word, and nothing else moved (`keymap::Layout`).
 * **Control does something to the file in front of you**, on the letter of the
   word (`ctrl+p` the palette, `ctrl+w` close, `ctrl+c` copy, `ctrl+q` leave).
 * **Alt asks about the cursor, or walks what was found** -- and alt is the

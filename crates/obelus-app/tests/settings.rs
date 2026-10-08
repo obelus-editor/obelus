@@ -49,11 +49,11 @@ fn open(file: &std::path::Path) -> App {
 ///
 /// Not every setting there is: `font_size` means nothing in a terminal and
 /// is not offered in one, the same way the glyph switch is not offered in a
-/// window.
+/// window. Nor the layout the keys start from, which is on the keys page.
 fn shown() -> usize {
     obelus_config::ALL
         .iter()
-        .filter(|setting| setting.shown())
+        .filter(|setting| setting.shown() && setting.group != obelus_config::Group::Keys)
         .count()
 }
 
@@ -4491,4 +4491,78 @@ fn the_agents_go_where_their_bar_is_dragged() {
         "the foot is not the last card:\n{dump}"
     );
     assert_eq!(app.settings().expect("the settings").focus(), 0);
+}
+
+/// The keys page starts with where the keys start from, and choosing
+/// `mnemonic` there moves what the function keys open onto letters -- in
+/// the table a key is looked up in, on the page, and in the file.
+///
+/// Broken deliberately three ways: `key_rows` without the setting, which
+/// leaves `Layout` off the top of the page; `apply_config` building the
+/// classic table whatever the setting says, which leaves `ctrl+o` on
+/// nothing; and `lay` not writing `keys_from`, which leaves the file
+/// without it.
+#[test]
+fn the_keys_page_chooses_where_the_keys_start() {
+    use crossterm::event::{KeyEvent, KeyModifiers};
+    use obelus_editing::keymap::Context;
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let scratch = temporary("keys-from");
+    let file = settings_file(&scratch);
+    let mut app = open(&file);
+    support::press(&mut app, KeyCode::Tab);
+    assert!(app.settings().expect("the settings").on_keys());
+    let dump = support::render(&mut app, 76, 14);
+    let first = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("Layout"))
+        .map(str::to_string);
+    assert!(
+        first.as_deref().is_some_and(|row| row.contains("Classic")),
+        "the layout is not on the page:\n{dump}"
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.picker().is_some(), "the layouts did not open");
+    // The list opens on the one in force, so the next one is the other.
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+
+    let control_o = KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL);
+    let f1 = KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE);
+    assert_eq!(
+        app.keymap().lookup(&control_o, Context::Normal),
+        Some(Command::FileOpen)
+    );
+    assert_eq!(app.keymap().lookup(&f1, Context::Normal), None);
+    let dump = support::render(&mut app, 76, 14);
+    assert!(
+        support::text_block(&dump).contains("Mnemonic"),
+        "the page does not say which layout:\n{dump}"
+    );
+    assert_eq!(
+        obelus_config::from_toml(&std::fs::read_to_string(&file).expect("the file")).keys_from,
+        "mnemonic",
+        "the file does not say which layout was chosen"
+    );
+}
+
+/// Every layout the settings offer is one the key table can lay out, and
+/// each a different one: a word with no table behind it would be a choice
+/// that silently starts from the classic keys.
+///
+/// Broken deliberately by adding a third word to `KEY_LAYOUTS`.
+#[test]
+fn every_layout_offered_is_a_table() {
+    let named: Vec<_> = obelus_config::KEY_LAYOUTS
+        .iter()
+        .map(|word| obelus_editing::keymap::Layout::named(word))
+        .collect();
+    let all: Vec<_> = obelus_editing::keymap::Layout::ALL
+        .into_iter()
+        .map(Some)
+        .collect();
+    assert_eq!(named, all, "{:?}", obelus_config::KEY_LAYOUTS);
 }

@@ -7,7 +7,8 @@
 
 use obelus_agent::Listed;
 use obelus_component::settings::{
-    DESCRIPTION_INDENT, GROUP_INDENT, HEADING_ROWS, Offering, Refused, RemoteRow, Settings, Shown,
+    DESCRIPTION_INDENT, GROUP_INDENT, HEADING_ROWS, KeyRow, Offering, Refused, RemoteRow, Settings,
+    Shown,
 };
 use obelus_config::{Config, Kind, Value};
 use obelus_text::text_width;
@@ -80,11 +81,9 @@ pub struct SettingsView<'a> {
     failure: Option<&'a str>,
     /// The agents' own marks, for a terminal that can draw one.
     images: &'a crate::image::Images,
-    /// Every command and the key it is on, for the keys page.
-    keys: Vec<(
-        obelus_command::Command,
-        Option<obelus_editing::keymap::KeyChord>,
-    )>,
+    /// Every command and the key it is on, for the keys page -- under the
+    /// layout they start from.
+    keys: Vec<(KeyRow, Option<obelus_editing::keymap::KeyChord>)>,
     /// What the active agent offers to be set, and what the reader has
     /// said about each. `None` where no agent is active.
     offering: Option<Offering>,
@@ -224,9 +223,9 @@ pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
         },
         _ => (
             "Change",
-            match settings.on_keys() {
-                true => "Put this command on another key",
-                false => "Change it, or open what it can be",
+            match settings.key_rows().get(settings.focus()) {
+                Some(KeyRow::Command(_)) => "Put this command on another key",
+                Some(KeyRow::Setting(_)) | None => "Change it, or open what it can be",
             },
         ),
     };
@@ -513,16 +512,33 @@ impl Widget for SettingsView<'_> {
             let rows: Vec<Row> = self
                 .keys
                 .iter()
-                .map(|(command, chord)| Row {
-                    opens: None,
-                    label: command.name().to_string(),
-                    matched: self.settings.matched_in(command.name()),
-                    detail: self.saying(*command),
-                    aside: Aside::Words(chord.map(|chord| chord.label()).unwrap_or_default()),
-                    body: Vec::new(),
-                    warning: Vec::new(),
-                    pinned: None,
-                    scope: None,
+                .map(|(row, chord)| match row {
+                    // One row like the commands under it, so the page keeps
+                    // one height a row: what it does where a command's
+                    // title goes, and the word it is set to where the key
+                    // goes.
+                    KeyRow::Setting(setting) => Row {
+                        opens: None,
+                        label: setting.name.to_string(),
+                        matched: self.settings.matched(setting),
+                        detail: Some((setting.about.to_string(), self.theme.gutter)),
+                        aside: Aside::Control(setting.kind, self.value_of(setting)),
+                        body: Vec::new(),
+                        warning: Vec::new(),
+                        pinned: None,
+                        scope: None,
+                    },
+                    KeyRow::Command(command) => Row {
+                        opens: None,
+                        label: command.name().to_string(),
+                        matched: self.settings.matched_in(command.name()),
+                        detail: self.saying(*command),
+                        aside: Aside::Words(chord.map(|chord| chord.label()).unwrap_or_default()),
+                        body: Vec::new(),
+                        warning: Vec::new(),
+                        pinned: None,
+                        scope: None,
+                    },
                 })
                 .collect();
             self.column(cells, region, &rows, "No command by that name");

@@ -227,6 +227,12 @@ pub struct Config {
     /// One, or none. Two would mean every question having to say which
     /// agent it was for, and a reader having to know.
     pub agent: Option<String>,
+    /// Which table of keys the reader's own are laid over, by the
+    /// layout's name: the function keys, or control and alt.
+    ///
+    /// Beside `keys` rather than in it, because every line of that table
+    /// is a command's name and this is not one.
+    pub keys_from: String,
     /// The keys the reader has moved, by the command's own name.
     ///
     /// Changes rather than the whole table: a reader who rebinds one key
@@ -356,6 +362,7 @@ impl Default for Config {
             // None until the reader installs one: Obelus does not choose an
             // agent for anybody.
             agent: None,
+            keys_from: KEY_LAYOUTS[0].to_string(),
             // Nothing moved: the table Obelus ships with.
             keys: std::collections::BTreeMap::new(),
             // And nothing said about any agent: every conversation starts
@@ -499,10 +506,15 @@ pub enum Group {
     Files,
     /// How an agent goes about its work.
     Agent,
+    /// Which keys there are to start with: drawn above the commands on the
+    /// keys page, because that is the page a reader moving keys is on.
+    Keys,
 }
 
 impl Group {
-    /// Every group, in the order their tabs sit in.
+    /// Every group on the settings page, in the order they sit in.
+    ///
+    /// Not [`Group::Keys`], which is drawn on the keys page instead.
     pub const ALL: [Self; 4] = [Self::Appearance, Self::Reading, Self::Files, Self::Agent];
 
     /// The tab's name.
@@ -513,6 +525,7 @@ impl Group {
             Self::Reading => "Reading",
             Self::Files => "Files",
             Self::Agent => "Agent",
+            Self::Keys => "Keys",
         }
     }
 }
@@ -638,6 +651,12 @@ const DAYS: &[&str] = &["0", "7", "30", "90", "365"];
 /// the list it is chosen from, and to the agent -- is a file in
 /// `obelus-app`, which a test there holds to this list.
 const WORKFLOWS: &[&str] = &["none", "in-place", "feature-branch"];
+
+/// The tables of keys a reader's own can be laid over, the default first.
+///
+/// `obelus_editing::keymap::Layout` is what each one binds, and a test in
+/// `obelus-app` holds the two lists to each other.
+pub const KEY_LAYOUTS: &[&str] = &["classic", "mnemonic"];
 
 /// Every setting Obelus has.
 pub const ALL: &[Setting] = &[
@@ -852,6 +871,17 @@ pub const ALL: &[Setting] = &[
         kind: Kind::Count(DAYS),
         drawn: Drawn::Anywhere,
     },
+    Setting {
+        key: "keys_from",
+        name: "Layout",
+        about: "What your own keys start from: the function keys, or control and alt on the letter of the word",
+        group: Group::Keys,
+        // The reader's, for the reason the keys are: a project that could
+        // choose it would be moving every key that opens anything.
+        reach: Reach::ReaderOnly,
+        kind: Kind::Choice(KEY_LAYOUTS),
+        drawn: Drawn::Anywhere,
+    },
 ];
 
 impl Config {
@@ -882,6 +912,7 @@ impl Config {
             "reopen" => Some(Value::Switch(self.reopen)),
             "new_versions" => Some(Value::Switch(self.new_versions)),
             "workflow" => Some(Value::Choice(self.workflow.clone())),
+            "keys_from" => Some(Value::Choice(self.keys_from.clone())),
             "speaks_as" => Some(Value::Text(self.speaks_as.clone())),
             "agent" => Some(Value::Choice(self.agent.clone().unwrap_or_default())),
             "remote" => Some(Value::Choice(self.remote.clone().unwrap_or_default())),
@@ -914,6 +945,7 @@ impl Config {
             ("reopen", Value::Switch(on)) => self.reopen = *on,
             ("new_versions", Value::Switch(on)) => self.new_versions = *on,
             ("workflow", Value::Choice(word)) => self.workflow = word.clone(),
+            ("keys_from", Value::Choice(word)) => self.keys_from = word.clone(),
             ("speaks_as", Value::Text(name)) => self.speaks_as = speaks_as(name),
             // An empty word is nobody, which is how a reader stops talking
             // to an agent without a second setting meaning "off".
@@ -1339,7 +1371,7 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
     // Collected beside rather than into `applied`, because the closure
     // below has it borrowed for as long as the settings are being read.
     let mut not_a_table: Vec<String> = Vec::new();
-    let mut not_a_workflow: Option<String> = None;
+    let mut no_such_choice: Vec<(&'static str, String)> = Vec::new();
     let mut allowed = |key: &'static str| {
         if reach_of(key) == Reach::Anywhere || whose == Whose::Reader {
             applied.set.push(key);
@@ -1473,9 +1505,19 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
         // for.
         if !WORKFLOWS.contains(&word) {
             tracing::warn!(word, "no workflow by this name, so the line does nothing");
-            not_a_workflow = Some(word.to_string());
+            no_such_choice.push(("workflow", word.to_string()));
         } else if allowed("workflow") {
             config.workflow = word.to_string();
+        }
+    }
+    // Checked the way the workflow is, and for its reason: a layout nothing
+    // answers to would be read as the default and look obeyed.
+    if let Some(word) = table.get("keys_from").and_then(toml::Value::as_str) {
+        if !KEY_LAYOUTS.contains(&word) {
+            tracing::warn!(word, "no layout by this name, so the line does nothing");
+            no_such_choice.push(("keys_from", word.to_string()));
+        } else if allowed("keys_from") {
+            config.keys_from = word.to_string();
         }
     }
     if let Some(name) = table.get("speaks_as").and_then(toml::Value::as_str)
@@ -1595,9 +1637,9 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
             at: None,
         });
     }
-    if let Some(word) = not_a_workflow {
+    for (key, word) in no_such_choice {
         applied.ignored.push(Ignored {
-            key: "workflow".to_string(),
+            key: key.to_string(),
             why: Why::NoSuchChoice(word),
             at: None,
         });
@@ -1783,6 +1825,11 @@ fn lay(existing: &str, config: &Config, every: bool) -> String {
         "workflow",
         config.workflow != default.workflow,
         toml_edit::value(config.workflow.clone()),
+    );
+    put(
+        "keys_from",
+        config.keys_from != default.keys_from,
+        toml_edit::value(config.keys_from.clone()),
     );
     put(
         "speaks_as",
@@ -2320,6 +2367,53 @@ mod tests {
         );
     }
 
+    /// A layout nothing answers to is the default, says so, and is not
+    /// counted among what the file set; one that is answered is taken.
+    ///
+    /// Broken deliberately by taking the word without checking it against
+    /// `KEY_LAYOUTS`: the misspelt one is set.
+    #[test]
+    fn a_layout_nothing_answers_to_does_nothing() {
+        let mut config = Config::default();
+        let table: toml::Table = "keys_from = \"mnemnic\"".parse().expect("toml");
+        let applied = apply(&mut config, &table, Whose::Reader);
+        assert_eq!(config.keys_from, "classic");
+        assert!(!applied.set.contains(&"keys_from"), "{:?}", applied.set);
+        assert_eq!(
+            applied.ignored,
+            vec![super::Ignored {
+                key: "keys_from".to_string(),
+                why: super::Why::NoSuchChoice("mnemnic".to_string()),
+                at: None,
+            }]
+        );
+
+        let table: toml::Table = "keys_from = \"mnemonic\"".parse().expect("toml");
+        apply(&mut config, &table, Whose::Reader);
+        assert_eq!(config.keys_from, "mnemonic");
+    }
+
+    /// A project cannot choose which keys a reader starts from: it would be
+    /// moving every key that opens anything.
+    ///
+    /// Broken deliberately by giving `keys_from` `Reach::Anywhere`.
+    #[test]
+    fn a_project_may_not_choose_the_layout() {
+        let mut config = Config::default();
+        let table: toml::Table = "keys_from = \"mnemonic\"".parse().expect("toml");
+        let applied = apply(&mut config, &table, Whose::Project);
+        assert_eq!(config.keys_from, "classic");
+        assert!(
+            applied
+                .ignored
+                .iter()
+                .any(|ignored| ignored.key == "keys_from"
+                    && ignored.why == super::Why::NotForAProject),
+            "{:?}",
+            applied.ignored
+        );
+    }
+
     /// Written and read back is the same config: the file is the only place
     /// a setting survives, so anything that does not survive the round trip
     /// is a setting the reader has to set twice.
@@ -2348,6 +2442,7 @@ mod tests {
             workflow: "none".to_string(),
             speaks_as: "Ada".to_string(),
             agent: Some("claude-acp".to_string()),
+            keys_from: "mnemonic".to_string(),
             // A key moved and a key taken away: both are decisions, and
             // both have to survive the file or the reader makes them again
             // every time Obelus starts.

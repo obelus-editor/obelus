@@ -429,6 +429,18 @@ impl App {
             "workflow" => super::opening::workflows()
                 .map(|(name, _, about)| (name.to_string(), Some(about.to_string())))
                 .collect(),
+            // What each layout puts the opening keys on, because the name
+            // is a word to remember it by and not a description of it.
+            "keys_from" => choices
+                .iter()
+                .map(|choice| {
+                    let about = match *choice {
+                        "mnemonic" => "Control and alt, on the letter of the word",
+                        _ => "The function keys, in banks of four",
+                    };
+                    ((*choice).to_string(), Some(about.to_string()))
+                })
+                .collect(),
             // The chats Obelus can be reached from, after none: which there
             // are is the remote crate's list, not a row of the table.
             "remote" => std::iter::once(String::new())
@@ -668,6 +680,11 @@ impl App {
             "remote" => match word {
                 "" => Some("Off".into()),
                 key => obelus_remote::platform::named(key).map(|platform| platform.name.into()),
+            },
+            "keys_from" => match word {
+                "classic" => Some("Classic".into()),
+                "mnemonic" => Some("Mnemonic".into()),
+                _ => None,
             },
             "conversation_days" => match word {
                 "0" => Some("Never".into()),
@@ -986,7 +1003,12 @@ impl App {
         // defaults, and applying them to a table that has already had them
         // applied would leave a rebind that was undone in the file still in
         // force.
-        let (keymap, unbound) = obelus_editing::keymap::Keymap::with(&self.settled.config.keys);
+        // A layout nothing answers to has already been marked where the
+        // file was read, and starts from the default like a missing line.
+        let layout = obelus_editing::keymap::Layout::named(&self.settled.config.keys_from)
+            .unwrap_or_default();
+        let (keymap, unbound) =
+            obelus_editing::keymap::Keymap::with(layout, &self.settled.config.keys);
         self.keymap = keymap;
         self.settled.unbound = unbound;
         // What a server works out is drawn or it is not, and the switch has
