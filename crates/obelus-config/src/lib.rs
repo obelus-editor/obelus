@@ -361,7 +361,7 @@ impl Default for Config {
             // what lets them see the change arrive and decide what becomes
             // of it.
             workflow: "feature-branch".to_string(),
-            // Half, because a pool replaces a build's own `-j` -- so this
+            // Half, because a pool takes over from cargo's own `-j` -- so this
             // is also what one build alone gets -- and the machine is still
             // the reader's while it runs: the disk and the memory a whole
             // machine's worth of compilers fills are what this is for.
@@ -850,7 +850,7 @@ pub const ALL: &[Setting] = &[
     Setting {
         key: "build_jobs",
         name: "Build jobs",
-        about: "How many compiler jobs everything Obelus starts runs at once, across every Obelus on this machine -- the agent, the language servers and the terminal. It replaces a build's own -j; a program already running keeps the pool it was started with",
+        about: "How many compiler jobs everything Obelus starts runs at once, across every Obelus on this machine -- the agent, the language servers and the terminal. A program already running keeps what it was started with",
         group: Group::Agent,
         // The reader's alone: it is one budget for the whole machine, and a
         // project that could set it would be a downloaded file deciding how
