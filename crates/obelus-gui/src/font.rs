@@ -60,7 +60,7 @@ use cosmic_text::{
 const SYMBOLS: &[u8] = include_bytes!("../fonts/SymbolsNerdFontMono-Regular.ttf");
 
 /// What the symbols face is called, once it is loaded.
-const SYMBOLS_FAMILY: &str = "Symbols Nerd Font Mono";
+pub(crate) const SYMBOLS_FAMILY: &str = "Symbols Nerd Font Mono";
 
 /// The selector that asks for the character before it to be drawn as a
 /// picture.
@@ -157,6 +157,12 @@ pub(crate) struct Fonts {
     /// That last one, kept so that changing the reader's list does not
     /// mean asking the platform again.
     otherwise: Option<String>,
+    /// What this machine falls back to after its monospaced face, in its
+    /// order -- see [`crate::cascade`]. Kept for the same reason.
+    cascade: Vec<String>,
+    /// The same, less what is already in `families`: what is tried once
+    /// neither those nor a picture face drew the character.
+    after: Vec<String>,
 }
 
 impl std::fmt::Debug for Fonts {
@@ -176,10 +182,15 @@ impl Fonts {
     /// whatever the window says the screen's scale is.
     pub(crate) fn new(size: f32) -> Self {
         let mut system = FontSystem::new();
+        crate::faces::add_the_rest(system.db_mut());
         // Loaded into the same database the system's own faces are in, so
         // that asking for it by name is the ordinary path rather than a
         // second one.
         system.db_mut().load_font_data(SYMBOLS.to_vec());
+        // Both asked once the database is whole: each is kept to the names
+        // it has.
+        let otherwise = crate::monospace::here(system.db());
+        let cascade = crate::cascade::here(system.db(), otherwise.as_deref());
 
         let mut fonts = Self {
             system,
@@ -194,9 +205,12 @@ impl Fonts {
             },
             shaped: HashMap::new(),
             families: Vec::new(),
-            otherwise: crate::monospace::here(),
+            otherwise,
+            cascade,
+            after: Vec::new(),
         };
         fonts.families = chain(&[], fonts.otherwise.as_deref());
+        fonts.after = rest(&fonts.cascade, &fonts.families);
         fonts.measure();
         fonts.say_what_is_a_picture();
         fonts
@@ -212,6 +226,7 @@ impl Fonts {
         if self.families == wanted {
             return;
         }
+        self.after = rest(&self.cascade, &wanted);
         self.families = wanted;
         self.shaped.clear();
         self.measure();
@@ -386,14 +401,14 @@ impl Fonts {
             Size::Cell => self.cell.width,
             Size::Capped => self.cell.width * SMALLER,
         };
-        let families = &self.families;
+        let (families, after) = (&self.families, &self.after);
         let shaped = self.shaped.entry(face).or_default();
         // Asked with the text borrowed and copied only on a miss. One flat
         // map keyed by the whole lot would have to own the string to ask
         // the question, which is an allocation per cell per frame -- and a
         // screenful is a few thousand cells that were all in the cache.
         if !shaped.contains_key(text) {
-            let placed = shape(system, metrics, width, families, text, face);
+            let placed = shape(system, metrics, width, families, after, text, face);
             shaped.insert(text.to_string(), placed);
         }
         &shaped[text]
@@ -456,6 +471,7 @@ fn shape(
     metrics: Metrics,
     width: f32,
     families: &[String],
+    after: &[String],
     text: &str,
     face: Face,
 ) -> Vec<Placed> {
@@ -527,6 +543,17 @@ fn shape(
             found => found,
         },
     };
+    // Still in none of them: what this machine falls back to, before
+    // cosmic-text's own table of what it thinks the machine has. From the
+    // attempt before it where the machine has nothing either, for the same
+    // reason as above.
+    let (placed, drawn, used) = match (mark, used) {
+        (false, None) => match tried(system, metrics, after, text, &attrs) {
+            found @ (_, _, Some(_)) => found,
+            _ => (placed, drawn, None),
+        },
+        (_, used) => (placed, drawn, used),
+    };
     // Too wide for its cells, which happens where a fallback face is not a
     // monospaced one at all. Drawn again at the size that fits rather than
     // squeezed afterwards: a bitmap stretched sideways is a blurred letter,
@@ -583,6 +610,19 @@ fn chain(names: &[String], otherwise: Option<&str>) -> Vec<String> {
         chain.push(last.to_string());
     }
     chain
+}
+
+/// What the machine falls back to, less what is tried before it.
+fn rest(cascade: &[String], families: &[String]) -> Vec<String> {
+    cascade
+        .iter()
+        .filter(|name| {
+            !families
+                .iter()
+                .any(|family| family.eq_ignore_ascii_case(name))
+        })
+        .cloned()
+        .collect()
 }
 
 /// Lays the text out in the first of the reader's faces that draws it.
@@ -943,6 +983,93 @@ mod tests {
             );
         }
     }
+
+    /// A character in none of the reader's faces, the machine's monospaced
+    /// one or a picture face is drawn in what this machine falls back to,
+    /// before cosmic-text's own guess at it.
+    ///
+    /// The fallback is made to differ from that guess: what the guess drew
+    /// `中` in is found first, and the fallback is set to some other face
+    /// this machine has that draws it, so the face it came out in says
+    /// which of the two answered. On a machine with one face for it there
+    /// is nothing to tell apart, and it says so.
+    ///
+    /// Deliberate break: leaving out the turn to `after` in `shape` draws
+    /// it in the guess's face.
+    #[test]
+    fn what_none_of_the_faces_has_is_asked_of_what_the_machine_falls_back_to() {
+        const HAN: &str = "\u{4e2d}";
+        let mut fonts = Fonts::new(16.0);
+        fonts.cascade.clear();
+        fonts.use_families(&[]);
+        fonts.after.clear();
+        let family_of = |fonts: &mut Fonts| {
+            let first = *fonts
+                .glyphs(HAN, false, false, Size::Cell)
+                .first()
+                .expect("it was laid out");
+            fonts
+                .system
+                .db()
+                .face(first.key.font_id)
+                .and_then(|face| face.families.first().map(|(name, _)| name.clone()))
+                .expect("the face it was laid out in")
+        };
+        let guessed = family_of(&mut fonts);
+        let faces: Vec<(fontdb::ID, String)> = fonts
+            .system
+            .db()
+            .faces()
+            .filter_map(|face| Some((face.id, face.families.first()?.0.clone())))
+            .filter(|(_, name)| !name.eq_ignore_ascii_case(&guessed) && !name.starts_with('.'))
+            .collect();
+        let other = faces.into_iter().find_map(|(id, name)| {
+            let font = fonts.system.get_font(id, Weight::NORMAL)?;
+            (font.as_swash().charmap().map('\u{4e2d}') != 0).then_some(name)
+        });
+        let Some(other) = other else {
+            eprintln!("one face for {HAN} on this machine; nothing to tell apart");
+            return;
+        };
+        fonts.cascade = vec![other.clone()];
+        fonts.shaped.clear();
+        fonts.use_families(&["Nobody's Face".to_string()]);
+        assert_eq!(family_of(&mut fonts), other, "the guess said {guessed}");
+    }
+
+    /// Every face CoreText has is one the reader can choose, which is the
+    /// whole of why it is asked: `PingFang SC` was the one missing.
+    ///
+    /// Asked of the families CoreText names, less its own, whose names
+    /// start with a dot and are not names anybody can ask for.
+    ///
+    /// Deliberate break: `add_the_rest` adding nothing leaves the faces
+    /// fontdb's walk does not visit out of the list.
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn every_face_coretext_has_can_be_chosen() {
+        use objc2_core_foundation::{CFArray, CFRetained, CFString};
+
+        let fonts = Fonts::new(16.0);
+        let here: std::collections::HashSet<String> = fonts
+            .here()
+            .iter()
+            .map(|name| name.to_lowercase())
+            .collect();
+        // SAFETY: takes nothing, and hands back an array the caller owns.
+        let names = unsafe { objc2_core_text::CTFontManagerCopyAvailableFontFamilyNames() };
+        // SAFETY: an array of strings is what it is documented to return.
+        let names = unsafe { CFRetained::cast_unchecked::<CFArray<CFString>>(names) };
+        let missing: Vec<String> = names
+            .iter()
+            .map(|name| name.to_string())
+            .filter(|name| !name.starts_with('.') && !here.contains(&name.to_lowercase()))
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "CoreText has these and Obelus does not: {missing:?}"
+        );
+    }
 }
 
 #[cfg(test)]
@@ -985,6 +1112,21 @@ mod chains {
             chain(&["jetbrains mono".to_string()], Some("JetBrains Mono")),
             ["jetbrains mono"]
         );
+    }
+
+    /// What is already tried is not fallen back to again, however it is
+    /// spelled, and the rest keep the machine's order.
+    ///
+    /// Deliberate break: returning the cascade whole tries `Menlo` a second
+    /// time for every character it has not got.
+    #[test]
+    fn what_is_tried_already_is_not_fallen_back_to() {
+        let cascade = ["Menlo", "PingFang SC", "Apple Color Emoji"].map(String::from);
+        assert_eq!(
+            rest(&cascade, &["menlo".to_string()]),
+            ["PingFang SC", "Apple Color Emoji"]
+        );
+        assert_eq!(rest(&cascade, &[]), cascade);
     }
 
     /// A machine that says nothing leaves the chain to the reader alone.

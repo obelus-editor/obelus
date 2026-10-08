@@ -448,6 +448,9 @@ windows-sys = { version = "0.61.2", features = [
     # And the window's title bar, drawn in the page's colour: see
     # `obelus-gui`'s `title.rs`.
     "Win32_Graphics_Dwm",
+    # And which faces Windows links to the one code is drawn in, for the
+    # characters it has not got: see `obelus-gui`'s `cascade.rs`.
+    "Win32_System_Registry",
 ] }
 
 # The icon, into the executable's own resources. A build-dependency, and
@@ -472,6 +475,22 @@ objc2-foundation = { version = "0.3", features = [
     "NSData",
     "NSString",
     "NSURL",
+] }
+# And the fonts: which files the machine has, what it draws code in, and what
+# it falls back to after that, which only CoreText can say -- see
+# `obelus-gui`'s `faces.rs`, `monospace.rs` and `cascade.rs`.
+objc2-core-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "CFArray",
+    "CFLocale",
+    "CFString",
+    "CFURL",
+] }
+objc2-core-text = { version = "0.3", default-features = false, features = [
+    "std",
+    "CTFont",
+    "CTFontDescriptor",
+    "CTFontManager",
 ] }
 
 # Where a chat's tokens are kept: the system's own keyring, through the core

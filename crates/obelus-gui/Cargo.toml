@@ -67,10 +67,14 @@ wayland-client.workspace = true
 wayland-protocols.workspace = true
 x11rb.workspace = true
 
-# How tall the title bar is, which only AppKit can say. See `title.rs`.
+# How tall the title bar is, which only AppKit can say. See `title.rs`. And
+# the fonts the machine has, draws code in and falls back to, which only
+# CoreText can say: see `faces.rs`, `monospace.rs` and `cascade.rs`.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2.workspace = true
 objc2-app-kit.workspace = true
+objc2-core-foundation.workspace = true
+objc2-core-text.workspace = true
 
 # For `GetCaretBlinkTime`: how fast a caret blinks is the one thing of the
 # three platforms that has an API rather than a setting to read -- see
