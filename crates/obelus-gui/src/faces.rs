@@ -38,9 +38,13 @@ use cosmic_text::{
 };
 
 /// The tables a glyph can be drawn from: outlines, as TrueType and as the two
-/// kinds of CFF, and pictures, as Apple's and as Google's and the older
-/// bitmaps beside them.
-const DRAWN_FROM: [&[u8; 4]; 6] = [b"glyf", b"CFF ", b"CFF2", b"sbix", b"CBDT", b"EBDT"];
+/// kinds of CFF, and pictures, as Apple's and as Google's.
+///
+/// Not the older bitmaps, `EBDT`, though swash reads them: cosmic-text asks
+/// it for colour and for outlines and never for a plain bitmap, so a face
+/// that has nothing else draws as nothing -- which is the face this list is
+/// here to let go of.
+const DRAWN_FROM: [&[u8; 4]; 5] = [b"glyf", b"CFF ", b"CFF2", b"sbix", b"CBDT"];
 
 /// Adds the faces the walk did not find, where this machine can say, and
 /// lets go of the ones that cannot be drawn.
@@ -49,7 +53,7 @@ const DRAWN_FROM: [&[u8; 4]; 6] = [b"glyf", b"CFF ", b"CFF2", b"sbix", b"CBDT", 
 /// PostScript name CoreText knows each by.
 pub(crate) fn settle(db: &mut fontdb::Database) -> HashMap<fontdb::ID, String> {
     let added = of_this_platform(db);
-    tracing::info!(added, "the faces CoreText named that the walk did not");
+    tracing::info!(added, "the faces the machine named that the walk did not");
     keep_what_can_be_drawn(db, crate::coretext::draws)
 }
 
@@ -87,7 +91,7 @@ fn keep_what_can_be_drawn(
 }
 
 /// Whether a face has anything swash can draw a glyph from.
-fn can_be_drawn(data: &[u8], index: u32) -> bool {
+pub(crate) fn can_be_drawn(data: &[u8], index: u32) -> bool {
     FontRef::from_index(data, index).is_ok_and(|font| {
         DRAWN_FROM
             .iter()
@@ -154,18 +158,8 @@ mod tests {
     /// would have drawn, which is `PingFang SC`.
     #[test]
     fn a_face_with_nothing_to_draw_from_is_not_kept() {
-        let carried = include_bytes!("../fonts/SymbolsNerdFontMono-Regular.ttf").to_vec();
-        assert!(can_be_drawn(&carried, 0));
-
-        let mut renamed = carried;
-        // The table directory: a twelve-byte header, and sixteen bytes a
-        // table, the tag first.
-        let tables = usize::from(u16::from_be_bytes([renamed[4], renamed[5]]));
-        let glyf = (0..tables)
-            .map(|table| 12 + 16 * table)
-            .find(|at| &renamed[*at..*at + 4] == b"glyf")
-            .expect("the face Obelus carries has outlines");
-        renamed[glyf..glyf + 4].copy_from_slice(b"hvgl");
+        assert!(can_be_drawn(CARRIED, 0));
+        let renamed = outlines_called(b"hvgl");
         assert!(!can_be_drawn(&renamed, 0));
 
         let mut db = fontdb::Database::new();
@@ -179,5 +173,32 @@ mod tests {
         assert_eq!(db.len(), 1, "a face CoreText draws was let go of");
         let id = db.faces().next().expect("the one face").id;
         assert!(by_coretext.contains_key(&id), "and it is not CoreText's");
+    }
+
+    /// Nor is a face whose glyphs are the older bitmaps alone, which swash
+    /// can read and cosmic-text never asks it to.
+    ///
+    /// Deliberate break: putting `EBDT` back in `DRAWN_FROM` keeps it.
+    #[test]
+    fn a_face_of_plain_bitmaps_is_not_one_that_draws() {
+        assert!(!can_be_drawn(&outlines_called(b"EBDT"), 0));
+    }
+
+    /// The face Obelus carries.
+    const CARRIED: &[u8] = include_bytes!("../fonts/SymbolsNerdFontMono-Regular.ttf");
+
+    /// The face Obelus carries, with its outlines in a table by this name:
+    /// every table a face needs to be shaped, and the glyphs somewhere else.
+    fn outlines_called(tag: &[u8; 4]) -> Vec<u8> {
+        let mut renamed = CARRIED.to_vec();
+        // The table directory: a twelve-byte header, and sixteen bytes a
+        // table, the tag first.
+        let tables = usize::from(u16::from_be_bytes([renamed[4], renamed[5]]));
+        let glyf = (0..tables)
+            .map(|table| 12 + 16 * table)
+            .find(|at| &renamed[*at..*at + 4] == b"glyf")
+            .expect("the face Obelus carries has outlines");
+        renamed[glyf..glyf + 4].copy_from_slice(tag);
+        renamed
     }
 }

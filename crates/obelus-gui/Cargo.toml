@@ -84,6 +84,8 @@ objc2-core-text.workspace = true
 # `title.rs`.
 [target.'cfg(windows)'.dependencies]
 windows-sys.workspace = true
+# Which language the reader reads: see `cascade.rs`.
+sys-locale.workspace = true
 
 # A build-dependency's `cfg` is the *host's*, which is the right question
 # here: this drives a program that only exists on Windows. See `build.rs`.

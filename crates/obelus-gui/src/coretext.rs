@@ -1,5 +1,8 @@
 //! The glyphs of the faces only CoreText can draw, drawn by CoreText.
 //!
+//! **A face only CoreText can draw is drawn by CoreText, in the face CoreText
+//! itself would choose.**
+//!
 //! Every glyph is drawn by swash, which reads outlines from `glyf`, `CFF `
 //! and `CFF2` and pictures from the tables beside them. `PingFang SC` has
 //! none of those: its outlines are in `hvgl`, a table of Apple's that only
@@ -56,22 +59,44 @@ impl Names {
 pub(crate) fn names(
     db: &fontdb::Database,
     own: HashMap<fontdb::ID, String>,
-    monospace: Option<&str>,
+    fallback: &Fallback,
 ) -> HashMap<fontdb::ID, Names> {
-    let chosen = chosen_after(monospace);
+    named(db, own, &fallback.chosen(), file_of)
+}
+
+/// The same, from what CoreText chose and where it keeps each face.
+///
+/// A face of the family is taken only from the file the font database read
+/// the family from. A glyph is asked for by the number cosmic-text shaped,
+/// and that number is the file's: another file's face of the same name --
+/// one the reader installed over the system's -- would draw a different
+/// glyph at it.
+fn named(
+    db: &fontdb::Database,
+    own: HashMap<fontdb::ID, String>,
+    chosen: &HashMap<(String, bool), String>,
+    file_of: impl Fn(&str) -> Option<std::path::PathBuf>,
+) -> HashMap<fontdb::ID, Names> {
     own.into_iter()
         .map(|(id, name)| {
-            let family = db
-                .face(id)
+            let face = db.face(id);
+            let family = face
                 .and_then(|face| face.families.first())
                 .map(|(family, _)| family.to_lowercase())
                 .unwrap_or_default();
+            let path = face.and_then(|face| match &face.source {
+                fontdb::Source::File(path) | fontdb::Source::SharedFile(path, _) => Some(path),
+                fontdb::Source::Binary(_) => None,
+            });
+            let same_file = |chosen: &&String| path.is_some() && file_of(chosen).as_ref() == path;
             let plain = chosen
                 .get(&(family.clone(), false))
+                .filter(same_file)
                 .cloned()
                 .unwrap_or(name);
             let bold = chosen
                 .get(&(family, true))
+                .filter(same_file)
                 .cloned()
                 .unwrap_or_else(|| plain.clone());
             (id, Names { plain, bold })
@@ -79,26 +104,77 @@ pub(crate) fn names(
         .collect()
 }
 
-/// The face of each family CoreText falls back to after `monospace`, by
-/// the family's name in lower case and whether it is bold.
-fn chosen_after(monospace: Option<&str>) -> HashMap<(String, bool), String> {
-    let Some(monospace) = monospace else {
-        return HashMap::new();
-    };
-    let mut chosen = HashMap::new();
-    for bold in [false, true] {
-        for (family, name) in cascade(monospace, bold) {
-            chosen.entry((family.to_lowercase(), bold)).or_insert(name);
-        }
+/// The file CoreText draws the face by this PostScript name from.
+#[cfg(target_os = "macos")]
+fn file_of(name: &str) -> Option<std::path::PathBuf> {
+    use objc2_core_foundation::{CFString, CFURL};
+    use objc2_core_text::{CTFont, kCTFontURLAttribute};
+
+    // SAFETY: as in `draws`.
+    let font = unsafe { CTFont::with_name(&CFString::from_str(name), 0.0, std::ptr::null()) };
+    // SAFETY: a static CoreText exports, asked of a font by its own key.
+    let url = unsafe { font.attribute(kCTFontURLAttribute) }?;
+    url.downcast_ref::<CFURL>()?.to_file_path()
+}
+
+/// Nowhere else is there a CoreText to ask.
+#[cfg(not(target_os = "macos"))]
+const fn file_of(_: &str) -> Option<std::path::PathBuf> {
+    None
+}
+
+/// What CoreText falls back to after the monospaced face, plainly and in
+/// bold: each family, and the face of it CoreText would draw in. Asked once,
+/// and read twice -- for the order a character is tried in, and for which
+/// face of a family it is drawn in.
+#[derive(Debug, Default)]
+pub(crate) struct Fallback {
+    plain: Vec<(String, String)>,
+    bold: Vec<(String, String)>,
+}
+
+impl Fallback {
+    /// What CoreText falls back to after this face, where there is a
+    /// CoreText to ask.
+    pub(crate) fn after(monospace: Option<&str>) -> Self {
+        monospace.map_or_else(Self::default, |monospace| Self {
+            plain: cascade(monospace, false),
+            bold: cascade(monospace, true),
+        })
     }
-    chosen
+
+    /// The families, in CoreText's order.
+    #[cfg_attr(
+        not(target_os = "macos"),
+        expect(dead_code, reason = "only CoreText's")
+    )]
+    pub(crate) fn families(&self) -> Vec<String> {
+        self.plain
+            .iter()
+            .map(|(family, _)| family.clone())
+            .collect()
+    }
+
+    /// The face of each family, by the family's name in lower case and
+    /// whether it is bold.
+    fn chosen(&self) -> HashMap<(String, bool), String> {
+        let mut chosen = HashMap::new();
+        for (bold, list) in [(false, &self.plain), (true, &self.bold)] {
+            for (family, name) in list {
+                chosen
+                    .entry((family.to_lowercase(), bold))
+                    .or_insert_with(|| name.clone());
+            }
+        }
+        chosen
+    }
 }
 
 /// What CoreText falls back to after the face by this family name, plainly
 /// or in bold, in the reader's languages and in its order: each family, and
 /// the face of it CoreText would draw in.
 #[cfg(target_os = "macos")]
-pub(crate) fn cascade(monospace: &str, bold: bool) -> Vec<(String, String)> {
+fn cascade(monospace: &str, bold: bool) -> Vec<(String, String)> {
     use objc2_core_foundation::{CFArray, CFLocale, CFRetained, CFString};
     use objc2_core_text::{
         CTFont, CTFontDescriptor, CTFontSymbolicTraits, kCTFontFamilyNameAttribute,
@@ -145,7 +221,7 @@ pub(crate) fn cascade(monospace: &str, bold: bool) -> Vec<(String, String)> {
 
 /// Nor a cascade to ask.
 #[cfg(not(target_os = "macos"))]
-pub(crate) const fn cascade(_: &str, _: bool) -> Vec<(String, String)> {
+const fn cascade(_: &str, _: bool) -> Vec<(String, String)> {
     Vec::new()
 }
 
@@ -185,16 +261,32 @@ pub(crate) const fn draws(_: &str) -> bool {
 pub(crate) fn draw(name: &str, key: CacheKey) -> Option<SwashImage> {
     use std::ptr::NonNull;
 
-    use cosmic_text::{Placement, SwashContent};
-    use objc2_core_foundation::{CFString, CGFloat, CGPoint, CGRect};
+    use cosmic_text::{CacheKeyFlags, Placement, SwashContent};
+    use objc2_core_foundation::{CFString, CGAffineTransform, CGFloat, CGPoint, CGRect};
     use objc2_core_graphics::{
         CGBitmapContextCreate, CGColorSpace, CGContext, CGGlyph, CGImageAlphaInfo,
     };
     use objc2_core_text::{CTFont, CTFontOrientation};
 
     let size = CGFloat::from(f32::from_bits(key.font_size_bits));
-    // SAFETY: as in `draws`.
-    let font = unsafe { CTFont::with_name(&CFString::from_str(name), size, std::ptr::null()) };
+    // Slanted where the text is italic and the face has no italic of its
+    // own, by the fourteen degrees swash slants the glyphs beside it. In the
+    // font's own matrix rather than the context's, so that the box asked
+    // for below is the slanted glyph's.
+    let slant = match key.flags.contains(CacheKeyFlags::FAKE_ITALIC) {
+        true => 14.0_f64.to_radians().tan(),
+        false => 0.0,
+    };
+    let matrix = CGAffineTransform {
+        a: 1.0,
+        b: 0.0,
+        c: slant,
+        d: 1.0,
+        tx: 0.0,
+        ty: 0.0,
+    };
+    // SAFETY: as in `draws`, with a matrix that outlives the call.
+    let font = unsafe { CTFont::with_name(&CFString::from_str(name), size, &raw const matrix) };
     let glyph: CGGlyph = key.glyph_id;
     let mut bounds = CGRect::default();
     // SAFETY: one glyph, and room for its one rectangle.
@@ -243,6 +335,10 @@ pub(crate) fn draw(name: &str, key: CacheKey) -> Option<SwashImage> {
     CGContext::set_should_antialias(Some(&context), true);
     CGContext::set_allows_font_smoothing(Some(&context), false);
     CGContext::set_should_smooth_fonts(Some(&context), false);
+    // Drawn where `offset` says inside its pixel rather than rounded to the
+    // nearest whole one, which is what the key's offset is for.
+    CGContext::set_allows_font_subpixel_positioning(Some(&context), true);
+    CGContext::set_should_subpixel_position_fonts(Some(&context), true);
     // CoreGraphics counts up from the bottom of the bitmap; its first row in
     // memory is the top, which is the row swash puts first too.
     let at = CGPoint {
@@ -273,4 +369,48 @@ pub(crate) fn draw(name: &str, key: CacheKey) -> Option<SwashImage> {
 #[cfg(not(target_os = "macos"))]
 pub(crate) const fn draw(_: &str, _: CacheKey) -> Option<SwashImage> {
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The face CoreText chose is drawn in where it is in the file the
+    /// family was read from, and the face's own name where it is not.
+    ///
+    /// Deliberate break: not asking which file -- `same_file` answering yes
+    /// -- takes the name from the other file, whose glyph numbers are not
+    /// the ones that were shaped.
+    #[test]
+    fn a_chosen_face_is_drawn_in_only_from_the_same_file() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("fonts/SymbolsNerdFontMono-Regular.ttf");
+        let mut db = fontdb::Database::new();
+        db.load_font_file(&path).expect("the face Obelus carries");
+        let face = db.faces().next().expect("one face");
+        let (id, family) = (face.id, face.families[0].0.to_lowercase());
+        let own = HashMap::from([(id, "Own".to_string())]);
+        let chosen = HashMap::from([
+            ((family.clone(), false), "Chosen".to_string()),
+            ((family, true), "Chosen-Bold".to_string()),
+        ]);
+
+        let here = named(&db, own.clone(), &chosen, |_| Some(path.clone()));
+        assert_eq!(
+            here[&id],
+            Names {
+                plain: "Chosen".to_string(),
+                bold: "Chosen-Bold".to_string()
+            }
+        );
+
+        let elsewhere = named(&db, own, &chosen, |_| Some("/somewhere/else.ttc".into()));
+        assert_eq!(
+            elsewhere[&id],
+            Names {
+                plain: "Own".to_string(),
+                bold: "Own".to_string()
+            }
+        );
+    }
 }

@@ -29,9 +29,10 @@
 //!
 //! Windows has no such question: what it has is a setting inside whichever
 //! terminal the reader uses, which is not a thing about the machine. So it
-//! is the face its own terminal draws in where the machine has it --
-//! `Cascadia Mono`, which comes with Windows 11 and with Windows Terminal --
-//! and `Consolas`, which every Windows has, where it has not.
+//! is the face its own terminal draws in where the machine has it installed
+//! -- `Cascadia Mono`; Windows Terminal carries a copy of its own, but inside
+//! its package, where no walk looks -- and `Consolas`, which every Windows
+//! has, where it has not.
 
 use cosmic_text::fontdb;
 

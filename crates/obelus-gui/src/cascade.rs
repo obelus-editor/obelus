@@ -9,6 +9,8 @@
 //! whichever language the reader actually reads. Every system already has
 //! the answer to this, asked of the face and in the reader's languages, and
 //! it is what every other program on the screen draws with, so it is asked.
+//! **What comes after the monospaced face is the machine's own answer, asked
+//! of the machine.**
 //!
 //! * macOS: CoreText's cascade list for the monospaced face, in the reader's
 //!   preferred languages -- which is what puts `PingFang SC` before `PingFang
@@ -17,8 +19,11 @@
 //! * Linux: `fc-match -s`, which is fontconfig's sorted list for `monospace` in
 //!   the locale's language, pruned to the faces that add something.
 //! * Windows: the faces it links to the monospaced one and to `Segoe UI`, which
-//!   is the face Windows draws itself in, and so the list a Chinese Windows
-//!   puts `Microsoft YaHei` at the head of.
+//!   is the face Windows draws itself in -- after the face for Han in the
+//!   reader's own language. `SystemLink` is in the order of the language
+//!   Windows was installed in, so an English Windows puts Japanese and
+//!   traditional faces before `Microsoft YaHei UI`, and a reader of simplified
+//!   Chinese would get the shapes of somebody else's writing.
 //!
 //! Only names the font database has are kept, and each once. Where the
 //! system says nothing, cosmic-text's table is still under all of it.
@@ -29,8 +34,14 @@ use cosmic_text::fontdb;
 
 /// The faces this machine falls back to after `monospace`, in its order.
 #[must_use]
-pub(crate) fn here(db: &fontdb::Database, monospace: Option<&str>) -> Vec<String> {
-    let said = of_this_platform(db, monospace);
+/// On macOS that is what CoreText said, asked already for the faces it draws
+/// as well: see [`crate::coretext::Fallback`].
+pub(crate) fn here(
+    db: &fontdb::Database,
+    monospace: Option<&str>,
+    fallback: &crate::coretext::Fallback,
+) -> Vec<String> {
+    let said = of_this_platform(db, monospace, fallback);
     let found = kept(db, said);
     tracing::info!(faces = found.len(), first = ?found.first(), "what this machine falls back to");
     found
@@ -53,18 +64,21 @@ fn kept(db: &fontdb::Database, said: Vec<String>) -> Vec<String> {
 
 /// macOS asks CoreText.
 #[cfg(target_os = "macos")]
-fn of_this_platform(_: &fontdb::Database, monospace: Option<&str>) -> Vec<String> {
-    monospace
-        .map(|monospace| crate::coretext::cascade(monospace, false))
-        .unwrap_or_default()
-        .into_iter()
-        .map(|(family, _)| family)
-        .collect()
+fn of_this_platform(
+    _: &fontdb::Database,
+    _: Option<&str>,
+    fallback: &crate::coretext::Fallback,
+) -> Vec<String> {
+    fallback.families()
 }
 
 /// Linux asks fontconfig.
 #[cfg(all(unix, not(target_os = "macos")))]
-fn of_this_platform(_: &fontdb::Database, _: Option<&str>) -> Vec<String> {
+fn of_this_platform(
+    _: &fontdb::Database,
+    _: Option<&str>,
+    _: &crate::coretext::Fallback,
+) -> Vec<String> {
     let said = std::process::Command::new("fc-match")
         // One family a line, the first of the names each goes by -- the
         // same one `monospace` takes out of its answer.
@@ -86,19 +100,47 @@ fn lines(said: &str) -> Vec<String> {
         .collect()
 }
 
-/// Windows reads the faces it links to the one asked for.
+/// Windows reads the faces it links to the one asked for, after the one for
+/// Han in the reader's language.
 #[cfg(windows)]
-fn of_this_platform(db: &fontdb::Database, monospace: Option<&str>) -> Vec<String> {
+fn of_this_platform(
+    db: &fontdb::Database,
+    monospace: Option<&str>,
+    _: &crate::coretext::Fallback,
+) -> Vec<String> {
     let files = files(db);
-    monospace
+    let locale = sys_locale::get_locale().unwrap_or_default();
+    let linked = monospace
         .into_iter()
         .chain(std::iter::once("Segoe UI"))
         .flat_map(linked_to)
         .filter_map(|entry| match link(&entry)? {
             Link::Family(name) => Some(name.to_string()),
             Link::File(file) => files.get(&file.to_lowercase()).cloned(),
-        })
+        });
+    han_for(&locale)
+        .iter()
+        .map(|name| (*name).to_string())
+        .chain(linked)
         .collect()
+}
+
+/// The face Windows has for Han in the writing of a reader of this language.
+///
+/// cosmic-text's own table, which is what was drawn with before the machine
+/// was asked, and is still what a reader of anything else gets: simplified
+/// Chinese.
+#[cfg(any(test, windows))]
+fn han_for(locale: &str) -> &'static [&'static str] {
+    let locale = locale.replace('_', "-").to_lowercase();
+    let region = |regions: &[&str]| regions.iter().any(|region| locale.contains(region));
+    match locale.split('-').next().unwrap_or_default() {
+        "ja" => &["Yu Gothic UI", "Yu Gothic"],
+        "ko" => &["Malgun Gothic"],
+        "zh" if region(&["-hk", "-mo"]) => &["MingLiU_HKSCS", "Microsoft JhengHei UI"],
+        "zh" if region(&["-tw", "-hant"]) => &["Microsoft JhengHei UI"],
+        _ => &["Microsoft YaHei UI"],
+    }
 }
 
 /// Which family is in each file the font database read, by the file's name.
@@ -195,6 +237,26 @@ mod tests {
             lines("DejaVu Sans Mono\nNoto Sans CJK SC \n\nNoto Color Emoji\n"),
             ["DejaVu Sans Mono", "Noto Sans CJK SC", "Noto Color Emoji"]
         );
+    }
+
+    /// Han is drawn in the reader's own writing: Japanese for Japanese,
+    /// traditional for Taiwan and Hong Kong however the locale spells it,
+    /// and simplified for everybody else.
+    ///
+    /// Deliberate breaks: matching the whole locale rather than its
+    /// language gives `ja-JP` simplified Chinese; and not reading the script
+    /// gives `zh-Hant` simplified too.
+    #[test]
+    fn han_is_drawn_in_the_readers_writing() {
+        assert_eq!(han_for("ja-JP")[0], "Yu Gothic UI");
+        assert_eq!(han_for("ko_KR"), ["Malgun Gothic"]);
+        assert_eq!(han_for("zh-TW")[0], "Microsoft JhengHei UI");
+        assert_eq!(han_for("zh-Hant")[0], "Microsoft JhengHei UI");
+        assert_eq!(han_for("zh-HK")[0], "MingLiU_HKSCS");
+        assert_eq!(han_for("zh-CN"), ["Microsoft YaHei UI"]);
+        assert_eq!(han_for("zh-Hans-CN"), ["Microsoft YaHei UI"]);
+        assert_eq!(han_for("en-US"), ["Microsoft YaHei UI"]);
+        assert_eq!(han_for(""), ["Microsoft YaHei UI"]);
     }
 
     /// An entry names its family where it has one, and its file where not.

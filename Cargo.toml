@@ -460,6 +460,11 @@ windows-sys = { version = "0.61.2", features = [
 # read a program's icon from.
 winresource = "0.1.31"
 
+# Which language the reader reads, which on Windows decides which face Han is
+# drawn in: see `obelus-gui`'s `cascade.rs`. The crate cosmic-text asks the
+# same question with, so the two cannot answer it differently.
+sys-locale = "0.3.2"
+
 # macOS's pasteboard, for the same reason, and the window's title bar: how
 # tall the strip is that the system draws its title in -- see
 # `obelus-gui`'s `title.rs`. Only on that platform.
