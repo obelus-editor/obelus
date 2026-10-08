@@ -376,6 +376,20 @@ fn screen(app: &mut App) -> String {
     support::text_block(&dump).to_string()
 }
 
+/// The same, below a conversation's header.
+///
+/// The header names the conversation by the reader's first words until the
+/// agent names it, so a test looking for those words in the transcript
+/// would otherwise find them there.
+fn under_the_header(app: &mut App) -> String {
+    screen(app)
+        .lines()
+        .skip_while(|line| line.trim().is_empty())
+        .skip(1)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// What is painted behind a run of words on the row they are on.
 ///
 /// The whole legend entry, and one per distinct style: a test about a hold
@@ -563,7 +577,7 @@ fn a_whole_turn_of_conversation() {
 
     support::press(&mut app, KeyCode::Enter);
     // Sent, so the row is empty again and the transcript has the question.
-    assert!(screen(&mut app).contains("what is this file"));
+    assert!(under_the_header(&mut app).contains("what is this file"));
 
     pump(
         &mut app,
@@ -706,7 +720,7 @@ fn escape_stops_the_turn_and_never_closes_the_conversation() {
     assert!(app.chat().is_some(), "escape closed a document");
 
     support::press_function(&mut app, 4);
-    let text = screen(&mut app);
+    let text = under_the_header(&mut app);
     assert!(
         text.contains("remember this"),
         "reopening lost the conversation:\n{text}"
@@ -1358,14 +1372,7 @@ fn enter_on_something_already_said_copies_it_to_the_box() {
         Some("/forever".to_string()),
         "the words were not put in the box"
     );
-    // Below the header, which names the conversation by these same words.
-    let text = screen(&mut app);
-    let text = text
-        .lines()
-        .skip_while(|line| line.trim().is_empty())
-        .skip(1)
-        .collect::<Vec<_>>()
-        .join("\n");
+    let text = under_the_header(&mut app);
     assert_eq!(
         text.matches("/forever").count(),
         2,
@@ -1839,7 +1846,7 @@ fn the_box_takes_a_paragraph() {
 
     // And enter sends all three lines as one message.
     support::press(&mut app, KeyCode::Enter);
-    let text = screen(&mut app);
+    let text = under_the_header(&mut app);
     assert!(
         text.contains("first") && text.contains("second") && text.contains("third"),
         "the message did not reach the transcript:\n{text}"
