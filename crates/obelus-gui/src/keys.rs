@@ -21,6 +21,18 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use winit::keyboard::{Key, KeyCode as Physical, ModifiersState, NamedKey, PhysicalKey};
 
+/// Whether a key event is the reader pressing a key.
+///
+/// Not a release, which a terminal never reports either. And not a press
+/// winit made up: a window that gains the focus is handed a press for every
+/// key still held at that moment, and the moment it is handed them is the
+/// one after `alt+tab` -- so the tab that brought the reader back was typed
+/// into the file, once for every time they came back. A key the reader
+/// pressed somewhere else is not a key they pressed here.
+pub(crate) fn heard(state: winit::event::ElementState, synthetic: bool) -> bool {
+    state == winit::event::ElementState::Pressed && !synthetic
+}
+
 /// Translates a press, or `None` for one Obelus has no name for.
 ///
 /// `None` covers the modifier keys themselves and the keys a platform sends
@@ -187,6 +199,21 @@ mod tests {
 
     fn character(text: &str) -> Key {
         Key::Character(text.into())
+    }
+
+    /// A press winit made up when the window came back is not heard, and
+    /// neither is a release; a press the reader made is.
+    ///
+    /// Deliberate break: dropping `!synthetic` from `heard` fails this --
+    /// and puts a tab in the file for every `alt+tab` back to the window,
+    /// which is how it was found. What this cannot see is the window asking
+    /// `heard` at all, which takes a window to see.
+    #[test]
+    fn a_key_held_on_the_way_back_is_not_pressed_here() {
+        use winit::event::ElementState::{Pressed, Released};
+        assert!(heard(Pressed, false));
+        assert!(!heard(Pressed, true), "a press winit made up was heard");
+        assert!(!heard(Released, false));
     }
 
     /// The three presses a terminal cannot tell from another key arrive as

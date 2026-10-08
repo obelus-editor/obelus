@@ -106,7 +106,7 @@ use ratatui::{
 };
 
 use crate::{
-    Screen, fill, put, put_before, rule,
+    Screen, fill, put, put_cluster, rule,
     shapes::{About, Side},
 };
 
@@ -1549,13 +1549,11 @@ fn draw_row(
     let mut glyphs = text.glyphs(line).peekable();
     while let Some(glyph) = glyphs.next() {
         let column = glyph.column.get();
-        // A selector was written into the cell of the character before it,
-        // by `put_before` below. Its own cell is the next character's, and
-        // writing it there is a cell that character then has to win back.
-        if glyph.phantom.is_none()
-            && glyph.cells == 0
-            && obelus_text::is_a_presentation(glyph.character)
-        {
+        // The rest of a cluster was written into the cell of its first
+        // character, by `put_cluster` below. Its own cell is the next
+        // character's, and writing it there is a cell that character then
+        // has to win back.
+        if glyph.joined {
             continue;
         }
         // A glyph the left-hand edge has cut in half leaves its cell blank:
@@ -1652,15 +1650,10 @@ fn draw_row(
                         .theme
                         .colour_for(Some(obelus_text::kind::SyntaxKind::Comment)));
                     // Measured the way the hint's room was -- see
-                    // `Hinted::cells` -- and written with each selector in
-                    // the cell of the character before it.
+                    // `Hinted::cells` -- and written a cluster to a cell.
                     let mut cell = 0usize;
-                    let mut said = obelus_text::drawn_widths(&hint.label).peekable();
-                    while let Some((character, taken)) = said.next() {
-                        let taken = usize::from(taken);
-                        if taken == 0 {
-                            continue;
-                        }
+                    for cluster in obelus_text::clusters(&hint.label) {
+                        let taken = cluster.cells.max(1);
                         if cell + taken > glyph.cells {
                             break;
                         }
@@ -1670,8 +1663,7 @@ fn draw_row(
                         if at >= width {
                             break;
                         }
-                        let next = said.peek().map(|(next, _)| *next);
-                        put_before(cells, x + at, y, character, next, style);
+                        put_cluster(cells, x + at, y, cluster.text, style);
                         ended = at + u16::try_from(taken).unwrap_or(1);
                         cell += taken;
                     }
@@ -1690,11 +1682,14 @@ fn draw_row(
             continue;
         }
 
-        let next = glyphs
-            .peek()
-            .filter(|next| next.phantom.is_none())
-            .map(|next| next.character);
-        put_before(cells, x + offset, y, glyph.character, next, style);
+        // The whole cluster, which is this character and every one joined
+        // to it after.
+        let mut cluster = [0u8; 4];
+        let mut cluster = std::borrow::Cow::Borrowed(&*glyph.character.encode_utf8(&mut cluster));
+        while let Some(joined) = glyphs.next_if(|next| next.joined) {
+            cluster.to_mut().push(joined.character);
+        }
+        put_cluster(cells, x + offset, y, &cluster, style);
         ended = offset + u16::try_from(glyph.cells).unwrap_or(1);
     }
     ended

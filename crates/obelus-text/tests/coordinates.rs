@@ -917,3 +917,86 @@ fn a_character_asked_to_be_a_picture_is_two_cells() {
     // And a selector after something that has no picture changes nothing.
     assert_eq!(obelus_text::text_width("a\u{fe0f}"), 1);
 }
+
+/// A cluster of several pictures is as wide as the one picture it is drawn
+/// as: a family joined by U+200D, a hand with a skin tone, a keycap and a
+/// flag are each two cells, and every character after the first is none.
+///
+/// Measured by the walk a line is drawn from and by a string on its own,
+/// for the same reason as the heart above. And a column inside a cluster is
+/// where the cluster starts, so the caret cannot be drawn inside one.
+///
+/// Deliberate break: measuring a cluster as the sum of its characters, as
+/// `cells_of` over each, makes the family six cells and the hand four.
+#[test]
+fn a_cluster_of_pictures_is_as_wide_as_one() {
+    let family = "\u{1f468}\u{200d}\u{1f469}\u{200d}\u{1f467}";
+    for (cluster, said) in [
+        (family, "a family"),
+        ("\u{1f44d}\u{1f3fd}", "a hand with a skin tone"),
+        ("1\u{fe0f}\u{20e3}", "a keycap"),
+        ("\u{1f1e8}\u{1f1f3}", "a flag"),
+        ("\u{1f3f3}\u{fe0f}\u{200d}\u{1f308}", "a rainbow flag"),
+    ] {
+        assert_eq!(obelus_text::text_width(cluster), 2, "{said}");
+        let text = Text::from_string(&format!("a{cluster}b"));
+        let line = LineNumber::new(0);
+        assert_eq!(
+            text.line_display_width(line),
+            DisplayColumn::new(4),
+            "{said}"
+        );
+        let glyphs: Vec<_> = text.glyphs(line).collect();
+        let joined: Vec<bool> = glyphs.iter().map(|glyph| glyph.joined).collect();
+        let length = cluster.chars().count();
+        assert!(
+            !joined[1] && joined[2..=length].iter().all(|it| *it),
+            "{said}: {joined:?}"
+        );
+        assert_eq!(
+            text.display_column(line, CharColumn::new(2)),
+            DisplayColumn::new(3),
+            "{said}: a column inside the cluster is drawn after it"
+        );
+    }
+    // Two clusters of their own, which nothing joins.
+    assert_eq!(obelus_text::text_width("\u{1f468}\u{1f469}"), 4);
+    // And a line ending is no cell, joined or not.
+    assert_eq!(obelus_text::text_width("a\r\n"), 1);
+}
+
+/// A phantom a server put inside a cluster is drawn after the cluster,
+/// which is one cell and has nowhere inside it to put one.
+///
+/// Deliberate break: emitting the phantom at its own column again puts it
+/// between the `e` and its accent, and the accent comes out after it, in a
+/// cell it was never drawn in.
+#[test]
+fn a_phantom_inside_a_cluster_waits_for_its_end() {
+    use obelus_text::Phantom;
+
+    let line = LineNumber::new(0);
+    let mut text = Text::from_string("ae\u{301}b\n");
+    text.show(&[Phantom {
+        line,
+        column: CharColumn::new(2),
+        cells: 3,
+        which: 0,
+    }]);
+    let glyphs: Vec<(char, bool, Option<usize>)> = text
+        .glyphs(line)
+        .map(|glyph| (glyph.character, glyph.joined, glyph.phantom))
+        .collect();
+    assert_eq!(
+        glyphs,
+        [
+            ('a', false, None),
+            ('e', false, None),
+            ('\u{301}', true, None),
+            (' ', false, Some(0)),
+            ('b', false, None),
+        ],
+        "the phantom went between a letter and its accent"
+    );
+    assert_eq!(text.line_display_width(line), DisplayColumn::new(6));
+}

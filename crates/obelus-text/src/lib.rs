@@ -684,8 +684,8 @@ fn char_width(character: char, next: Option<char>, width: usize) -> usize {
 /// which characters have a picture to be drawn as is that crate's table and
 /// not a second copy of it.
 ///
-/// Counted per character rather than per cluster so that a column is still a
-/// character and nothing that counts them has to learn a new unit.
+/// A character on its own, or with a selector after it. A cluster of more
+/// than that is [`cluster_cells`], which this is the commonest case of.
 #[must_use]
 pub fn cells_of(character: char, next: Option<char>) -> usize {
     use unicode_width::UnicodeWidthStr as _;
@@ -712,6 +712,84 @@ pub fn cells_of(character: char, next: Option<char>) -> usize {
     }
 }
 
+/// How many cells a cluster occupies: what a reader sees as one character,
+/// drawn in one cell however many characters it is made of.
+///
+/// `unicode-width`'s measure of the whole cluster, because that is the one
+/// `ratatui` measures a cell's text by when it decides which cells the
+/// terminal has already advanced over: a family joined by U+200D is one
+/// picture two cells wide, and adding up its people made it six -- with the
+/// diff and the arithmetic disagreeing about where the rest of the row went.
+/// A cluster of one character is [`cells_of`] as it always was, and so is a
+/// cluster that starts with a control character: `unicode-width` counts a
+/// string's control characters a cell each, and a character a cell holds
+/// nothing of.
+#[must_use]
+pub fn cluster_cells(cluster: &str) -> usize {
+    use unicode_width::UnicodeWidthStr as _;
+    let mut characters = cluster.chars();
+    let Some(first) = characters.next() else {
+        return 0;
+    };
+    match characters.next() {
+        None => cells_of(first, None),
+        Some(_) if first.is_control() => 0,
+        // As wide as its label whatever was pasted after it: an accent
+        // that joins it changes nothing about what is written there.
+        Some(_) if first == ATTACHED => ATTACHED_WIDTH,
+        Some(_) => match cluster.width() + halfwidth_sound_marks(cluster) {
+            // A picture the window draws for what was written as text, the
+            // way `cells_of` says -- unless something in the cluster asked
+            // for the one or the other in so many words.
+            1 if !cluster.chars().any(is_a_presentation) && drawn_as_a_picture(first) => 2,
+            cells => cells,
+        },
+    }
+}
+
+/// The halfwidth sound marks in a cluster, each a cell of its own.
+///
+/// `unicode-width` gives them none, because they extend the cluster before
+/// them, and a terminal draws each in a cell beside it -- which is what
+/// `ratatui` counts a cell's text as, so it is what this counts too.
+fn halfwidth_sound_marks(cluster: &str) -> usize {
+    cluster
+        .chars()
+        .filter(|character| matches!(character, '\u{ff9e}' | '\u{ff9f}'))
+        .count()
+}
+
+/// One cluster of a string, and the cells it occupies.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Cluster<'a> {
+    /// What it is: everything that goes in its one cell.
+    pub text: &'a str,
+    /// Which character of the string it starts at.
+    pub first: usize,
+    /// How many cells it occupies -- [`cluster_cells`].
+    pub cells: usize,
+}
+
+/// Every cluster of a string, in order.
+///
+/// What anything that writes a row of cells walks: a cluster is one cell
+/// however many characters make it, so a writer stepping a character at a
+/// time put the joiners and the keycap's enclosing mark into cells of their
+/// own and the terminal advanced over none of them.
+pub fn clusters(contents: &str) -> impl Iterator<Item = Cluster<'_>> + '_ {
+    use unicode_segmentation::UnicodeSegmentation as _;
+    let mut first = 0usize;
+    contents.graphemes(true).map(move |text| {
+        let cluster = Cluster {
+            text,
+            first,
+            cells: cluster_cells(text),
+        };
+        first += text.chars().count();
+        cluster
+    })
+}
+
 /// Every character index of a string a caret may stand at, ascending: zero,
 /// each place one cluster ends and the next begins, and the end.
 ///
@@ -734,22 +812,20 @@ pub fn boundaries(contents: &str) -> Vec<usize> {
 /// How many cells each character of a run takes as a row writer draws it.
 ///
 /// For whoever has to find a character from a cell, or a cell from a
-/// character, in something written a character at a time -- a click on a
-/// conversation's row, the caret put back on it, the room an inlay hint is
-/// given. What [`cells_of`] counts, except where a writer cannot do less
-/// than a cell: a character a terminal does not advance over is still
-/// written into one, unless it is a selector after a character, which goes
-/// in that character's cell and takes none.
+/// character, in a row of cells -- a click on a conversation's row, the
+/// caret put back on it, the room an inlay hint is given. What [`widths`]
+/// counts, except where a writer cannot do less than a cell: a cluster a
+/// terminal does not advance over is still written into one. The rest of a
+/// cluster after its first character goes in that character's cell and
+/// takes none.
 pub fn drawn_widths(contents: &str) -> impl Iterator<Item = (char, u16)> + '_ {
-    let mut first = true;
-    widths(contents).map(move |(character, cells)| {
-        let follows = !std::mem::replace(&mut first, false);
-        let cells = match (cells, follows && is_a_presentation(character)) {
-            (_, true) => 0,
-            (0, false) => 1,
-            (cells, false) => cells,
-        };
-        (character, u16::try_from(cells).unwrap_or(1))
+    clusters(contents).flat_map(|cluster| {
+        let cells = u16::try_from(cluster.cells.max(1)).unwrap_or(1);
+        cluster
+            .text
+            .chars()
+            .enumerate()
+            .map(move |(at, character)| (character, if at == 0 { cells } else { 0 }))
     })
 }
 
@@ -836,19 +912,21 @@ pub const fn is_a_presentation(character: char) -> bool {
 
 /// Every character of a string, and the cells each occupies.
 ///
-/// [`cells_of`] over a string, so that anything walking one -- a row being
-/// cut to fit, a label being measured -- gets the width the drawing will
-/// give it, with a picture's selector counted where the drawing counts it.
+/// [`cluster_cells`] over a string, so that anything walking one -- a row
+/// being cut to fit, a label being measured -- gets the width the drawing
+/// will give it: a cluster's cells on its first character, where the drawing
+/// puts the whole of it, and none on the rest.
+///
+/// Counted per character rather than per cluster so that a column is still
+/// a character and nothing that counts them has to learn a new unit.
 pub fn widths(contents: &str) -> impl Iterator<Item = (char, usize)> + '_ {
-    let nexts = contents
-        .chars()
-        .skip(1)
-        .map(Some)
-        .chain(std::iter::once(None));
-    contents
-        .chars()
-        .zip(nexts)
-        .map(|(character, next)| (character, cells_of(character, next)))
+    clusters(contents).flat_map(|cluster| {
+        cluster
+            .text
+            .chars()
+            .enumerate()
+            .map(move |(at, character)| (character, if at == 0 { cluster.cells } else { 0 }))
+    })
 }
 
 /// A thing that is not text, standing in the text that is around it.
@@ -966,8 +1044,11 @@ pub struct Glyph {
     /// The first cell it occupies, counted from the start of the line.
     pub first_cell: usize,
     /// How many cells it occupies. Zero for a character a terminal does not
-    /// advance over.
+    /// advance over, and for the rest of a cluster after its first.
     pub cells: usize,
+    /// Whether it is the rest of the cluster before it, and so drawn in that
+    /// cluster's cell rather than one of its own.
+    pub joined: bool,
 }
 
 impl Text {
@@ -1033,11 +1114,11 @@ impl Text {
             let mut cells = 0usize;
             while fits < glyphs.len() {
                 let glyph = glyphs[fits];
-                // A selector is drawn in the cell of the character before
-                // it, so it takes no room of its own.
-                let taken = match glyph.cells {
-                    0 if glyph.phantom.is_none() && is_a_presentation(glyph.character) => 0,
-                    cells => cells.max(1),
+                // The rest of a cluster is drawn in the cell of its first
+                // character, so it takes no room of its own.
+                let taken = match glyph.joined {
+                    true => 0,
+                    false => glyph.cells.max(1),
                 };
                 // A glyph wider than the whole row still has to go somewhere,
                 // or an empty row would be emitted forever.
@@ -1173,33 +1254,20 @@ impl Text {
     /// Every glyph on a line, with the cells it covers.
     pub fn glyphs(&self, line: LineNumber) -> impl Iterator<Item = Glyph> + '_ {
         let phantoms = self.phantoms(line);
+        let slice = self.line(line);
+        let clustered = clustered(slice);
         // The line's characters, once. `Chars` outlives the slice it came
         // from, which is what lets this be one walk rather than a lookup
         // per character -- and a lookup per character is the line's length
         // squared, forty rows a frame.
-        let mut characters = self.line(line).chars();
+        let mut characters = slice.chars();
         let mut cell = 0usize;
         let mut byte = self.line_start_byte(line).get();
         let mut next = 0usize;
         let mut column = 0usize;
         let mut held: Option<char> = None;
-        // The character after the one being measured, because a selector
-        // after it changes how wide it is. Kept rather than peeked by
-        // cloning the walk: a rope's walk carries a stack, and a clone of
-        // it per character is an allocation per character on every line
-        // that crosses one of the rope's own pieces.
-        let mut ahead = characters.next();
         std::iter::from_fn(move || {
-            let character = match held.take() {
-                Some(character) => Some(character),
-                None => {
-                    let character = ahead;
-                    if character.is_some() {
-                        ahead = characters.next();
-                    }
-                    character
-                }
-            };
+            let character = held.take().or_else(|| characters.next());
             // A phantom comes out in front of the character it sits on, and
             // wears that character's byte so whatever colours the line
             // colours it too. The character waits a turn.
@@ -1208,7 +1276,18 @@ impl Text {
             // to wait: servers put them there, and a hint about what a
             // chain returns or what a closing brace closes goes after the
             // last thing on its line.
-            if let Some(phantom) = phantoms.get(next).filter(|it| it.column.get() == column) {
+            //
+            // Not inside a cluster, which is one cell: a phantom put between
+            // a letter and its accent would leave the accent with no cell
+            // to be drawn in. It waits for the end of the cluster.
+            let inside = character.is_some()
+                && clustered
+                    .as_ref()
+                    .is_some_and(|cells| cells[column].is_none());
+            if let Some(phantom) = phantoms
+                .get(next)
+                .filter(|it| it.column.get() <= column && !inside)
+            {
                 next += 1;
                 held = character;
                 let glyph = Glyph {
@@ -1218,12 +1297,19 @@ impl Text {
                     first_byte: ByteOffset::new(byte),
                     first_cell: cell,
                     cells: phantom.cells,
+                    joined: false,
                 };
                 cell += phantom.cells;
                 return Some(glyph);
             }
             let character = character?;
-            let cells = char_width(character, ahead, cell);
+            let (cells, joined) = match clustered.as_ref().map(|cells| cells[column]) {
+                Some(None) => (0, true),
+                // A tab is a cluster of its own, and how wide depends on
+                // where it starts.
+                Some(Some(cells)) if character != '\t' => (cells, false),
+                _ => (char_width(character, None, cell), false),
+            };
             let glyph = Glyph {
                 character,
                 column: CharColumn::new(column),
@@ -1231,6 +1317,7 @@ impl Text {
                 first_byte: ByteOffset::new(byte),
                 first_cell: cell,
                 cells,
+                joined,
             };
             cell += cells;
             byte += character.len_utf8();
@@ -1238,6 +1325,63 @@ impl Text {
             Some(glyph)
         })
     }
+}
+
+/// The cells of each cluster of a line, on its first character, and `None`
+/// on the rest of it -- or nothing at all for a line of ASCII, where every
+/// character is a cluster of its own and is measured where it stands.
+///
+/// Worked out before the walk rather than during it, because where a
+/// cluster ends is only known by looking past it, and a rope's walk is not
+/// one to look ahead in: it carries a stack, and a clone per character is an
+/// allocation per character on every line that crosses one of the rope's own
+/// pieces.
+fn clustered(slice: RopeSlice<'_>) -> Option<Vec<Option<usize>>> {
+    // A line holds no line ending, so the one cluster of two ASCII
+    // characters is not in it.
+    if slice.len_bytes() == slice.len_chars() {
+        return None;
+    }
+    // Nor anything to join in a line of Chinese, which is most of what is
+    // not ASCII in a file a reader of code opens -- and segmenting it made
+    // a screenful of Chinese comments two thirds slower to lay out, for an
+    // answer the scan below already has.
+    if slice.chars().all(alone) {
+        return None;
+    }
+    let contents: std::borrow::Cow<'_, str> = match slice.as_str() {
+        Some(contents) => contents.into(),
+        None => slice.chars().collect::<String>().into(),
+    };
+    let mut cells = Vec::with_capacity(slice.len_chars());
+    for cluster in clusters(&contents) {
+        cells.push(Some(cluster.cells));
+        cells.extend(cluster.text.chars().skip(1).map(|_| None));
+    }
+    Some(cells)
+}
+
+/// Whether a character is a cluster of its own beside any other character
+/// this says so of.
+///
+/// Printable ASCII, and the scripts of text written without anything to
+/// join -- the CJK ideographs and punctuation, kana, Hangul syllables and
+/// the fullwidth forms -- less the few marks among them that do join: the
+/// ideographic tone marks and kana's voicing marks. A Hangul syllable
+/// followed by a syllable is two clusters; one followed by a trailing jamo
+/// is not, and the jamo is not on this list.
+fn alone(character: char) -> bool {
+    matches!(character,
+        ' '..='~'
+        | '\u{3000}'..='\u{3029}'
+        | '\u{3030}'..='\u{303f}'
+        | '\u{3041}'..='\u{3096}'
+        | '\u{309b}'..='\u{30ff}'
+        | '\u{3400}'..='\u{4dbf}'
+        | '\u{4e00}'..='\u{9fff}'
+        | '\u{ac00}'..='\u{d7a3}'
+        | '\u{ff01}'..='\u{ff60}'
+    )
 }
 
 /// Breaks prose into the rows it takes at this width.
@@ -1354,5 +1498,28 @@ pub fn span_of_bytes(text: &str, bytes: &std::ops::Range<usize>) -> Span {
         column,
         end_line,
         end_column,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// Every character `alone` says is a cluster of its own is one, beside
+    /// itself and beside ASCII -- which is the whole of what lets a line of
+    /// them skip being segmented.
+    ///
+    /// Deliberate break: widening the kana's range to take in U+3099, the
+    /// voicing mark that joins the kana before it, fails this.
+    #[test]
+    fn what_stands_alone_is_a_cluster_of_its_own() {
+        use unicode_segmentation::UnicodeSegmentation as _;
+
+        let alone: Vec<char> = (0..=0x10_ffff)
+            .filter_map(char::from_u32)
+            .filter(|character| super::alone(*character))
+            .collect();
+        for character in alone {
+            let said = format!("a{character}{character}a");
+            assert_eq!(said.graphemes(true).count(), 4, "{character:?} joins");
+        }
     }
 }

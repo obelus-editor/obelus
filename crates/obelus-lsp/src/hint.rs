@@ -56,7 +56,7 @@ impl Hinted {
     /// The width of what is written rather than the length of it: a hint
     /// is a piece of somebody's source language and may be full of
     /// characters a terminal draws two cells wide. Counted the way it is
-    /// drawn, a character at a time, so the room it is given is the room
+    /// drawn, a cluster to a cell, so the room it is given is the room
     /// it takes.
     #[must_use]
     pub fn cells(&self) -> usize {
@@ -238,14 +238,12 @@ mod tests {
         assert_eq!(found[0].cells(), found[0].label.chars().count());
     }
 
-    /// A hint is given the room it is drawn in, which is a cell for each
-    /// character it writes -- an accent included, since it is written into
-    /// a cell of its own -- and none for a selector, which goes in the cell
-    /// before it.
+    /// A hint is given the room it is drawn in, which is a cluster to a
+    /// cell -- an accent goes in the cell of its letter, a selector in its
+    /// picture's, and a family joined by U+200D is one picture two wide.
     ///
-    /// Deliberate break: the label's width as `unicode-width` measures the
-    /// string, which counts the accent as nothing, so the `e` is drawn and
-    /// the room runs out before its accent.
+    /// Deliberate break: counting each character's own width, which gives
+    /// the family six cells for the two it is drawn in.
     #[test]
     fn a_hint_is_given_the_room_it_is_drawn_in() {
         let hinted = |label: &str| Hinted {
@@ -260,8 +258,12 @@ mod tests {
             )[0]
             .clone()
         };
-        assert_eq!(hinted(": e\u{301}").cells(), 4);
+        assert_eq!(hinted(": e\u{301}").cells(), 3);
         assert_eq!(hinted(": \u{2764}\u{fe0f}").cells(), 4);
+        assert_eq!(
+            hinted(": \u{1f468}\u{200d}\u{1f469}\u{200d}\u{1f467}").cells(),
+            4
+        );
     }
 
     /// A server with nothing to say says it in several ways.
