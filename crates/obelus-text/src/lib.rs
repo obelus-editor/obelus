@@ -1328,6 +1328,13 @@ fn clustered(slice: RopeSlice<'_>) -> Option<Vec<Option<usize>>> {
     if slice.len_bytes() == slice.len_chars() {
         return None;
     }
+    // Nor anything to join in a line of Chinese, which is most of what is
+    // not ASCII in a file a reader of code opens -- and segmenting it made
+    // a screenful of Chinese comments two thirds slower to lay out, for an
+    // answer the scan below already has.
+    if slice.chars().all(alone) {
+        return None;
+    }
     let contents: std::borrow::Cow<'_, str> = match slice.as_str() {
         Some(contents) => contents.into(),
         None => slice.chars().collect::<String>().into(),
@@ -1338,6 +1345,29 @@ fn clustered(slice: RopeSlice<'_>) -> Option<Vec<Option<usize>>> {
         cells.extend(cluster.text.chars().skip(1).map(|_| None));
     }
     Some(cells)
+}
+
+/// Whether a character is a cluster of its own beside any other character
+/// this says so of.
+///
+/// Printable ASCII, and the scripts of text written without anything to
+/// join -- the CJK ideographs and punctuation, kana, Hangul syllables and
+/// the fullwidth forms -- less the few marks among them that do join: the
+/// ideographic tone marks and kana's voicing marks. A Hangul syllable
+/// followed by a syllable is two clusters; one followed by a trailing jamo
+/// is not, and the jamo is not on this list.
+fn alone(character: char) -> bool {
+    matches!(character,
+        ' '..='~'
+        | '\u{3000}'..='\u{3029}'
+        | '\u{3030}'..='\u{303f}'
+        | '\u{3041}'..='\u{3096}'
+        | '\u{309b}'..='\u{30ff}'
+        | '\u{3400}'..='\u{4dbf}'
+        | '\u{4e00}'..='\u{9fff}'
+        | '\u{ac00}'..='\u{d7a3}'
+        | '\u{ff01}'..='\u{ff60}'
+    )
 }
 
 /// Breaks prose into the rows it takes at this width.
@@ -1454,5 +1484,28 @@ pub fn span_of_bytes(text: &str, bytes: &std::ops::Range<usize>) -> Span {
         column,
         end_line,
         end_column,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// Every character `alone` says is a cluster of its own is one, beside
+    /// itself and beside ASCII -- which is the whole of what lets a line of
+    /// them skip being segmented.
+    ///
+    /// Deliberate break: widening the kana's range to take in U+3099, the
+    /// voicing mark that joins the kana before it, fails this.
+    #[test]
+    fn what_stands_alone_is_a_cluster_of_its_own() {
+        use unicode_segmentation::UnicodeSegmentation as _;
+
+        let alone: Vec<char> = (0..=0x10_ffff)
+            .filter_map(char::from_u32)
+            .filter(|character| super::alone(*character))
+            .collect();
+        for character in alone {
+            let said = format!("a{character}{character}a");
+            assert_eq!(said.graphemes(true).count(), 4, "{character:?} joins");
+        }
     }
 }
