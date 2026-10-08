@@ -940,6 +940,30 @@ mod tests {
         );
     }
 
+    /// A mark with an accent pasted straight after it is still the room its
+    /// words take.
+    ///
+    /// The accent joins the mark into one cluster, and a cluster is
+    /// measured whole -- by `unicode-width`, which knows nothing of what the
+    /// mark stands for and calls it one column.
+    ///
+    /// Deliberate break: taking the `ATTACHED` arm out of `cluster_cells`
+    /// counts the mark and its accent as one column where ten more are
+    /// drawn.
+    #[test]
+    fn a_mark_with_an_accent_after_it_is_as_wide_as_its_words() {
+        let mut box_ = Composer::new();
+        box_.attach(picture("one"), 80);
+        box_.write_in("\u{301}x", 80);
+
+        let rows = box_.rows(80);
+        assert_eq!(
+            obelus_text::text_width(&box_.text()),
+            obelus_text::text_width(&rows[0]),
+            "the room the wrapping was told is not the room the row takes"
+        );
+    }
+
     /// Text put in from somewhere else cannot bring a mark with it.
     ///
     /// Broken deliberately by dropping the strip in `write_in`: the box

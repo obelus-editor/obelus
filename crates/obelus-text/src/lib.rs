@@ -734,6 +734,9 @@ pub fn cluster_cells(cluster: &str) -> usize {
     match characters.next() {
         None => cells_of(first, None),
         Some(_) if first.is_control() => 0,
+        // As wide as its label whatever was pasted after it: an accent
+        // that joins it changes nothing about what is written there.
+        Some(_) if first == ATTACHED => ATTACHED_WIDTH,
         Some(_) => match cluster.width() + halfwidth_sound_marks(cluster) {
             // A picture the window draws for what was written as text, the
             // way `cells_of` says -- unless something in the cluster asked
