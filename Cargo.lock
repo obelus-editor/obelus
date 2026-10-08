@@ -4358,6 +4358,7 @@ dependencies = [
  "image",
  "libc",
  "obelus-git",
+ "obelus-jobs",
  "obelus-logging",
  "obelus-program",
  "obelus-runtime",
@@ -4397,6 +4398,7 @@ dependencies = [
  "obelus-editing",
  "obelus-git",
  "obelus-icons",
+ "obelus-jobs",
  "obelus-logging",
  "obelus-lsp",
  "obelus-markdown",
@@ -4584,6 +4586,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "obelus-jobs"
+version = "0.10.1"
+dependencies = [
+ "libc",
+ "obelus-program",
+ "obelus-runtime",
+ "tracing",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "obelus-logging"
 version = "0.10.1"
 dependencies = [
@@ -4603,6 +4616,7 @@ dependencies = [
  "lsp-types",
  "obelus-command",
  "obelus-icons",
+ "obelus-jobs",
  "obelus-program",
  "obelus-runtime",
  "obelus-sink",
@@ -4756,6 +4770,7 @@ name = "obelus-terminal"
 version = "0.10.1"
 dependencies = [
  "crossterm",
+ "obelus-jobs",
  "obelus-program",
  "obelus-runtime",
  "obelus-sink",

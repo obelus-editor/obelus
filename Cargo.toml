@@ -25,7 +25,7 @@ description = "A code editor that fits how I work, with the agent built in, in a
 
 # The lints the whole of Obelus is written under. Crate attributes do not
 # travel, so `#![deny(..)]` in one crate root would silently stop applying to
-# the other twenty-eight; here they are stated once and each member opts in with
+# the other twenty-nine; here they are stated once and each member opts in with
 # a `[lints] workspace = true` of its own, which Cargo does not inherit for it.
 [workspace.lints.rust]
 missing_docs = "warn"
@@ -46,6 +46,7 @@ obelus-config = { path = "crates/obelus-config" }
 obelus-editing = { path = "crates/obelus-editing" }
 obelus-git = { path = "crates/obelus-git" }
 obelus-icons = { path = "crates/obelus-icons" }
+obelus-jobs = { path = "crates/obelus-jobs" }
 obelus-logging = { path = "crates/obelus-logging" }
 obelus-lsp = { path = "crates/obelus-lsp" }
 obelus-markdown = { path = "crates/obelus-markdown" }

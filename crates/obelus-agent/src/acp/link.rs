@@ -1222,7 +1222,12 @@ pub fn start(
     // it, and asking twice would wrap a shim in two command processors.
     let started = (command.to_path_buf(), arguments.to_vec());
     let (program, arguments) = obelus_program::as_started_here(command, arguments);
-    let config = AcpAgentConfig::new(&program).args(arguments.iter().cloned());
+    // And where the machine's pool of build jobs is, so that everything
+    // the agent runs in its own shell builds inside it -- the agent starts
+    // its commands, and this is the one moment Obelus has a say in them.
+    let config = AcpAgentConfig::new(&program)
+        .args(arguments.iter().cloned())
+        .envs(obelus_jobs::lent());
     let root = root.to_path_buf();
     let told = events.clone();
     // A task on the one runtime, which is what it was already: a thread

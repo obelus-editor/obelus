@@ -1,0 +1,738 @@
+//! How many build jobs run at once, across every Obelus on this machine.
+//!
+//! Several Obelus processes is the normal case, and each of them starts
+//! things that compile: an agent's shell, a language server's `cargo check`,
+//! the reader's own terminal. Every compiler sizes itself to the whole
+//! machine and none of them knows about the others, so three of them at once
+//! is three machines' worth of jobs on one -- the memory and the disk filled,
+//! and all of it finishing later than one after another would have.
+//!
+//! The answer is not Obelus's own. It is GNU make's jobserver: a pool of
+//! tokens, where a job takes one before it starts and puts it back when it
+//! ends. Cargo, rustc, the `cc` crate, make from 4.4 and ninja from 1.13
+//! already speak it, and find the pool through the environment -- so all
+//! Obelus does is make the pool and tell everything it starts where it is.
+//! Nothing here runs anybody's build, decides which command is one, or asks
+//! an agent to do anything differently.
+//!
+//! What it costs is that a pool *replaces* a cargo's own `-j` and its
+//! `build.jobs`: a program handed one takes the pool's size as the answer,
+//! which is the point -- the budget is the machine's, not the invocation's.
+//!
+//! A pool is a named pipe on unix and a named semaphore on Windows, which
+//! are what the protocol is written in on each, and either lasts exactly as
+//! long as something holds it open. So every Obelus in a pool holds it, and
+//! which of them fills it is decided by a lock: an Obelus that finds nobody
+//! holding the members' lock is alone, and makes the pool afresh. That is
+//! also what puts back a token a killed compiler took with it -- the next
+//! Obelus to start alone starts full. And the last to leave takes the name
+//! away, because a program handed the address of a pool nobody keeps would
+//! wait on tokens nobody puts back, where a name that is not there makes it
+//! fall back on its own `-j`.
+
+use std::{
+    fs::File,
+    io,
+    path::{Path, PathBuf},
+    sync::RwLock,
+};
+
+/// The lock every change to the pool is made under, briefly.
+const SETUP: &str = "setup.lock";
+
+/// The lock every Obelus in the pool holds shared, for as long as it is in.
+///
+/// Apart from [`SETUP`] because this one is held for the whole of a session
+/// and that one for the moment of a change: one file would make every
+/// change wait on every member leaving.
+const MEMBERS: &str = "members.lock";
+
+/// Where the pool is and how many tokens were put in it.
+const RECORD: &str = "pool";
+
+/// What every program Obelus starts is told, while this Obelus is in a pool.
+///
+/// A global, like the glyph switch: it is one fact the whole program
+/// shares, and threading it through would put a parameter on every place a
+/// program is started -- an agent, a language server, a terminal, a command
+/// an agent asked for -- rather than on the pool.
+///
+/// One entry per [`Pool`] held, newest last, rather than one answer: a
+/// process with two of them -- a test binary is one -- would otherwise have
+/// the first to leave take the answer away from the one still in.
+static LENT: RwLock<Vec<Vec<(&'static str, String)>>> = RwLock::new(Vec::new());
+
+/// What a program Obelus starts is to be told about the pool, as names and
+/// values for its environment.
+///
+/// Nothing at all outside a pool, rather than anything saying there is
+/// none: a reader who set `MAKEFLAGS` themselves, or started Obelus from a
+/// make, has a pool of their own, and that is what a program gets.
+#[must_use]
+pub fn lent() -> Vec<(&'static str, String)> {
+    LENT.read()
+        .ok()
+        .and_then(|lent| lent.last().cloned())
+        .unwrap_or_default()
+}
+
+/// Tells a program about to be started where the pool is.
+pub fn lend(command: &mut std::process::Command) -> &mut std::process::Command {
+    for (name, value) in lent() {
+        command.env(name, value);
+    }
+    command
+}
+
+/// The environment for a pool at this address.
+///
+/// `CARGO_MAKEFLAGS` always: cargo looks there first, and nothing else
+/// does, so it changes nothing but cargo. `MAKEFLAGS` only for a make that
+/// can read it, because a make older than 4.4 cannot read a named pipe's
+/// address and does not ignore one -- it stops, and its message says
+/// nothing about Obelus. Ninja reads `MAKEFLAGS` too, and an old one
+/// ignores it.
+///
+/// Leading with `-j`, which is how make writes it for the makes it starts.
+fn told(auth: &str) -> Vec<(&'static str, String)> {
+    let flags = format!("-j --jobserver-auth={auth}");
+    let mut told = vec![("CARGO_MAKEFLAGS", flags.clone())];
+    if make_reads_a_named_pool() {
+        told.push(("MAKEFLAGS", flags));
+    }
+    told
+}
+
+/// Whether the make on this machine reads a pool by its name.
+///
+/// Asked once, of the make Obelus finds: the one a shell finds may be
+/// another, which is the cost of asking at all, and the reader was told it.
+fn make_reads_a_named_pool() -> bool {
+    static READS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *READS.get_or_init(|| {
+        let Some(make) = obelus_program::found("make") else {
+            return false;
+        };
+        let said = obelus_program::without_a_window(&mut std::process::Command::new(make))
+            .arg("--version")
+            .output();
+        let reads = said.is_ok_and(|said| {
+            make_version(&String::from_utf8_lossy(&said.stdout)).is_some_and(|at| at >= (4, 4))
+        });
+        tracing::info!(reads, "whether make reads a pool by its name");
+        reads
+    })
+}
+
+/// The version GNU make says it is, from what `make --version` printed.
+fn make_version(said: &str) -> Option<(u32, u32)> {
+    let version = said.lines().next()?.strip_prefix("GNU Make ")?;
+    let mut parts = version.split('.');
+    let major = parts.next()?.trim().parse().ok()?;
+    let minor = parts.next().map_or(Some(0), |minor| {
+        minor
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .collect::<String>()
+            .parse()
+            .ok()
+    })?;
+    Some((major, minor))
+}
+
+/// This Obelus's place in the machine's pool, which it gives up by being
+/// dropped.
+#[derive(Debug)]
+pub struct Pool {
+    /// Where the pool's locks and record are.
+    directory: PathBuf,
+    /// Held shared for as long as this is: see [`MEMBERS`].
+    members: File,
+    /// The pool itself, held open so that it lasts.
+    channel: channel::Channel,
+    /// Where the pool is, as the protocol writes it.
+    auth: String,
+}
+
+impl Pool {
+    /// Joins the pool kept in `directory`, making it if nobody else is in
+    /// one, and makes it `jobs` jobs at once.
+    ///
+    /// # Errors
+    ///
+    /// Where the directory, its locks or the pool cannot be made or opened.
+    /// What to do then is the caller's: Obelus goes on without a pool, and
+    /// every build sizes itself the way it did before there was one.
+    pub fn join(directory: &Path, jobs: usize) -> io::Result<Self> {
+        std::fs::create_dir_all(directory)?;
+        let setup = lock_file(&directory.join(SETUP))?;
+        setup.lock()?;
+        let members = lock_file(&directory.join(MEMBERS))?;
+        // Asked by trying to take it outright, which only works where
+        // nobody holds it at all: the one question a lock can answer about
+        // who else is there. Under `SETUP`, so nobody can arrive between
+        // the answer and acting on it.
+        let alone = members.try_lock().is_ok();
+        let (auth, channel) = match alone {
+            true => {
+                members.unlock()?;
+                if let Some(old) = read_record(directory) {
+                    channel::forget(&old.auth);
+                }
+                let (auth, channel) = channel::make(directory)?;
+                write_record(
+                    directory,
+                    &Record {
+                        auth: auth.clone(),
+                        tokens: 0,
+                    },
+                )?;
+                (auth, channel)
+            }
+            false => {
+                let record = read_record(directory).ok_or_else(|| {
+                    io::Error::other("a pool somebody is in says nothing about where it is")
+                })?;
+                let channel = channel::open(&record.auth)?;
+                (record.auth, channel)
+            }
+        };
+        members.lock_shared()?;
+        let pool = Self {
+            directory: directory.to_path_buf(),
+            members,
+            channel,
+            auth,
+        };
+        pool.settle(jobs)?;
+        if let Ok(mut lent) = LENT.write() {
+            lent.push(told(&pool.auth));
+        }
+        tracing::info!(
+            auth = pool.auth,
+            alone,
+            jobs,
+            "in the machine's pool of build jobs"
+        );
+        Ok(pool)
+    }
+
+    /// Makes the pool `jobs` jobs at once.
+    ///
+    /// Every Obelus is told when the settings change, and every one of them
+    /// asks for this. The record is what keeps that to one change: the
+    /// first to ask makes it and writes the new size down, and the rest
+    /// find nothing left to do.
+    ///
+    /// # Errors
+    ///
+    /// Where the lock or the pool cannot be reached.
+    pub fn resize(&self, jobs: usize) -> io::Result<()> {
+        let setup = lock_file(&self.directory.join(SETUP))?;
+        setup.lock()?;
+        self.settle(jobs)
+    }
+
+    /// Puts tokens into the pool or takes them out until it is `jobs` jobs
+    /// at once. Asked with [`SETUP`] held.
+    ///
+    /// One fewer token than jobs, because every program in a pool has one
+    /// of its own that it never puts in: a cargo in an empty pool still
+    /// builds, one job at a time.
+    fn settle(&self, jobs: usize) -> io::Result<()> {
+        let wanted = jobs.saturating_sub(1);
+        let had = read_record(&self.directory).map_or(0, |record| record.tokens);
+        match wanted.cmp(&had) {
+            std::cmp::Ordering::Equal => return Ok(()),
+            std::cmp::Ordering::Greater => self.channel.give(wanted - had)?,
+            std::cmp::Ordering::Less => self.channel.take(had - wanted, &self.auth)?,
+        }
+        write_record(
+            &self.directory,
+            &Record {
+                auth: self.auth.clone(),
+                tokens: wanted,
+            },
+        )
+    }
+}
+
+impl Pool {
+    /// Lets go the way an Obelus that was killed does: the members' lock
+    /// goes with the process, and nothing is tidied.
+    #[cfg(test)]
+    fn die(self) {
+        // And the process with it, which takes what it told its programs.
+        if let Ok(mut lent) = LENT.write() {
+            lent.pop();
+        }
+        let this = std::mem::ManuallyDrop::new(self);
+        // Safety: read once, out of a value that is never dropped, so the
+        // file is closed exactly once -- here.
+        drop(unsafe { std::ptr::read(&raw const this.members) });
+    }
+}
+
+impl Drop for Pool {
+    fn drop(&mut self) {
+        if let Ok(mut lent) = LENT.write() {
+            let mine = told(&self.auth);
+            if let Some(at) = lent.iter().rposition(|told| *told == mine) {
+                lent.remove(at);
+            }
+        }
+        let Ok(setup) = lock_file(&self.directory.join(SETUP)) else {
+            return;
+        };
+        if setup.lock().is_err() {
+            return;
+        }
+        let _ = self.members.unlock();
+        // The last one out takes the name with it -- see the module's note
+        // on why a name nobody keeps is worse than none.
+        if self.members.try_lock().is_ok() {
+            channel::forget(&self.auth);
+            let _ = std::fs::remove_file(self.directory.join(RECORD));
+            tracing::info!("the last out of the machine's pool of build jobs");
+        }
+    }
+}
+
+/// Opens a file that is only ever locked, never read.
+fn lock_file(path: &Path) -> io::Result<File> {
+    File::options()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(path)
+}
+
+/// What the pool's record says.
+#[derive(Debug, PartialEq, Eq)]
+struct Record {
+    /// Where the pool is, as the protocol writes it.
+    auth: String,
+    /// How many tokens are meant to be going round.
+    tokens: usize,
+}
+
+fn read_record(directory: &Path) -> Option<Record> {
+    let text = std::fs::read_to_string(directory.join(RECORD)).ok()?;
+    let mut lines = text.lines();
+    let auth = lines.next()?.to_string();
+    let tokens = lines.next()?.parse().ok()?;
+    Some(Record { auth, tokens })
+}
+
+fn write_record(directory: &Path, record: &Record) -> io::Result<()> {
+    std::fs::write(
+        directory.join(RECORD),
+        format!("{}\n{}\n", record.auth, record.tokens),
+    )
+}
+
+/// Somewhere no other pool was ever made, for a name of its own.
+///
+/// A pool made afresh gets a new name rather than the old one's, because
+/// a compiler still running from before can be holding the old one open,
+/// and a name it shares with the new pool would be its tokens counted
+/// twice.
+fn fresh_name() -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_nanos());
+    format!("obelus-jobs-{}-{now}", std::process::id())
+}
+
+#[cfg(unix)]
+mod channel {
+    //! The pool as a named pipe, which is a byte per token.
+
+    use std::{
+        ffi::CString,
+        fs::File,
+        io::{self, Read as _, Write as _},
+        os::unix::{ffi::OsStrExt as _, fs::OpenOptionsExt as _},
+        path::Path,
+    };
+
+    /// The pipe, held open for reading and writing.
+    ///
+    /// Both, because a pipe opened one way waits for somebody to open it
+    /// the other -- and because what keeps the bytes in a pipe is somebody
+    /// having it open, which is the whole of why this is held.
+    #[derive(Debug)]
+    pub(crate) struct Channel {
+        held: File,
+    }
+
+    fn path_of(auth: &str) -> io::Result<&Path> {
+        auth.strip_prefix("fifo:")
+            .map(Path::new)
+            .ok_or_else(|| io::Error::other(format!("not a named pipe: {auth}")))
+    }
+
+    fn opened(path: &Path, waiting: bool) -> io::Result<File> {
+        let mut options = File::options();
+        options.read(true).write(true);
+        if !waiting {
+            options.custom_flags(libc::O_NONBLOCK);
+        }
+        options.open(path)
+    }
+
+    pub(crate) fn make(directory: &Path) -> io::Result<(String, Channel)> {
+        let path = directory.join(super::fresh_name());
+        let named = CString::new(path.as_os_str().as_bytes()).map_err(io::Error::other)?;
+        // Safety: `mkfifo` reads the name it is given, which is this
+        // frame's and ends in the nul `CString` put there.
+        if unsafe { libc::mkfifo(named.as_ptr(), 0o600) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let auth = format!(
+            "fifo:{}",
+            path.to_str()
+                .ok_or_else(|| io::Error::other("a pool's path the environment cannot carry"))?
+        );
+        let channel = open(&auth)?;
+        Ok((auth, channel))
+    }
+
+    pub(crate) fn open(auth: &str) -> io::Result<Channel> {
+        Ok(Channel {
+            held: opened(path_of(auth)?, true)?,
+        })
+    }
+
+    pub(crate) fn forget(auth: &str) {
+        if let Ok(path) = path_of(auth)
+            && let Err(error) = std::fs::remove_file(path)
+            && error.kind() != io::ErrorKind::NotFound
+        {
+            tracing::warn!(%error, auth, "a pool's name outlived it");
+        }
+    }
+
+    impl Channel {
+        pub(crate) fn give(&self, tokens: usize) -> io::Result<()> {
+            (&self.held).write_all(&vec![b'+'; tokens])
+        }
+
+        /// Takes tokens out of the pool: what is in it now at once, and
+        /// what is out with a build as each comes back.
+        ///
+        /// Waited for rather than owed, because the tokens a build holds
+        /// are not in the pipe to take. The waiting is a read the kernel
+        /// wakes, on the runtime the waiting is done on; and a size put
+        /// back up meanwhile is not undone by it, because what is taken
+        /// and what is put in are counted against one total.
+        pub(crate) fn take(&self, tokens: usize, auth: &str) -> io::Result<()> {
+            let path = path_of(auth)?;
+            let mut now = vec![0; tokens];
+            let taken = match opened(path, false)?.read(&mut now) {
+                Ok(taken) => taken,
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => 0,
+                Err(error) => return Err(error),
+            };
+            let owed = tokens - taken;
+            if owed > 0 {
+                let mut later = opened(path, true)?;
+                obelus_runtime::handle().spawn_blocking(move || {
+                    let mut back = vec![0; owed];
+                    if let Err(error) = later.read_exact(&mut back) {
+                        tracing::warn!(%error, "the pool's tokens did not all come back");
+                    }
+                });
+            }
+            Ok(())
+        }
+    }
+}
+
+#[cfg(windows)]
+mod channel {
+    //! The pool as a named semaphore, whose count is the tokens.
+
+    use std::{io, path::Path};
+
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0},
+        System::Threading::{
+            CreateSemaphoreW, INFINITE, OpenSemaphoreW, ReleaseSemaphore, SEMAPHORE_MODIFY_STATE,
+            SYNCHRONIZATION_SYNCHRONIZE, WaitForSingleObject,
+        },
+    };
+
+    /// A handle on the semaphore, which lasts as long as one does.
+    #[derive(Debug)]
+    pub(crate) struct Channel {
+        pub(crate) held: HANDLE,
+    }
+
+    // Safety: a handle is the kernel's, and any thread may use it.
+    unsafe impl Send for Channel {}
+    // Safety: as above; the calls on it are the kernel's to serialise.
+    unsafe impl Sync for Channel {}
+
+    impl Drop for Channel {
+        fn drop(&mut self) {
+            // Safety: the handle is this one's, and nothing uses it after.
+            unsafe { CloseHandle(self.held) };
+        }
+    }
+
+    fn wide(name: &str) -> Vec<u16> {
+        name.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    pub(crate) fn make(_directory: &Path) -> io::Result<(String, Channel)> {
+        let name = super::fresh_name();
+        let named = wide(&name);
+        // Safety: the name is this frame's and ends in a nul; no attributes.
+        let held = unsafe { CreateSemaphoreW(std::ptr::null(), 0, i32::MAX, named.as_ptr()) };
+        if held.is_null() {
+            return Err(io::Error::last_os_error());
+        }
+        Ok((name, Channel { held }))
+    }
+
+    pub(crate) fn open(auth: &str) -> io::Result<Channel> {
+        let named = wide(auth);
+        // Safety: as above.
+        let held = unsafe {
+            OpenSemaphoreW(
+                SYNCHRONIZATION_SYNCHRONIZE | SEMAPHORE_MODIFY_STATE,
+                0,
+                named.as_ptr(),
+            )
+        };
+        if held.is_null() {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(Channel { held })
+    }
+
+    /// Nothing to take away: a semaphore goes with its last handle.
+    pub(crate) fn forget(_auth: &str) {}
+
+    impl Channel {
+        pub(crate) fn give(&self, tokens: usize) -> io::Result<()> {
+            let tokens = i32::try_from(tokens).map_err(io::Error::other)?;
+            // Safety: the handle is this one's; the previous count is not
+            // asked for.
+            match unsafe { ReleaseSemaphore(self.held, tokens, std::ptr::null_mut()) } {
+                0 => Err(io::Error::last_os_error()),
+                _ => Ok(()),
+            }
+        }
+
+        /// The same as the other platform's: what is there now at once,
+        /// and the rest as builds give it back.
+        pub(crate) fn take(&self, tokens: usize, auth: &str) -> io::Result<()> {
+            let mut taken = 0;
+            // Safety: the handle is this one's.
+            while taken < tokens && unsafe { WaitForSingleObject(self.held, 0) } == WAIT_OBJECT_0 {
+                taken += 1;
+            }
+            let owed = tokens - taken;
+            if owed > 0 {
+                let later = open(auth)?;
+                obelus_runtime::handle().spawn_blocking(move || {
+                    // The whole of it, not the field a closure would take
+                    // on its own: the handle is only `Send` inside it.
+                    let later = later;
+                    for _ in 0..owed {
+                        // Safety: the handle is `later`'s, which this owns.
+                        unsafe { WaitForSingleObject(later.held, INFINITE) };
+                    }
+                });
+            }
+            Ok(())
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::{Pool, read_record};
+
+    /// One at a time, because what a program is told is one global and
+    /// every pool sets it.
+    fn turn() -> std::sync::MutexGuard<'static, ()> {
+        static TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        TURN.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn scratch(name: &str) -> PathBuf {
+        let directory =
+            std::env::temp_dir().join(format!("obelus-jobs-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        directory
+    }
+
+    /// What `make --version` prints is read for its version.
+    ///
+    /// Deliberate break: require a minor, and a make that says only `4`
+    /// is read as no make at all.
+    #[test]
+    fn a_make_says_its_version() {
+        assert_eq!(
+            super::make_version("GNU Make 4.4.1\nBuilt for x86_64"),
+            Some((4, 4))
+        );
+        assert_eq!(super::make_version("GNU Make 3.81\n"), Some((3, 81)));
+        assert_eq!(super::make_version("GNU Make 4\n"), Some((4, 0)));
+        assert_eq!(super::make_version("bmake 20240711\n"), None);
+    }
+
+    /// The first in fills the pool; the second finds it full and adds
+    /// nothing; and the last out takes it away.
+    ///
+    /// Deliberate breaks: have a join that is not alone count the pool as
+    /// empty, and the second in doubles what the first put in; or never
+    /// take the name away, and the last assertion fails.
+    #[test]
+    fn the_first_in_fills_the_pool_and_the_last_out_empties_it() {
+        let _turn = turn();
+        let directory = scratch("fills");
+        let first = Pool::join(&directory, 4).expect("the first in");
+        let record = read_record(&directory).expect("a record");
+        assert_eq!(record.tokens, 3);
+        assert_eq!(tokens_in(&record.auth), 3);
+
+        let second = Pool::join(&directory, 4).expect("the second in");
+        assert_eq!(second.auth, first.auth, "one pool, not two");
+        assert_eq!(tokens_in(&record.auth), 3);
+
+        drop(first);
+        assert!(
+            read_record(&directory).is_some(),
+            "the pool went with somebody still in it"
+        );
+        drop(second);
+        assert!(
+            read_record(&directory).is_none(),
+            "the pool outlived everybody in it"
+        );
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// A pool resized by one member is the size everybody asked for, however
+    /// many of them asked.
+    ///
+    /// Deliberate break: have `settle` add `wanted` rather than the
+    /// difference, and the pool grows by every member's request.
+    #[test]
+    fn a_pool_is_resized_once_however_many_ask() {
+        let _turn = turn();
+        let directory = scratch("resized");
+        let first = Pool::join(&directory, 4).expect("the first in");
+        let second = Pool::join(&directory, 4).expect("the second in");
+        first.resize(8).expect("grown");
+        second.resize(8).expect("grown again");
+        assert_eq!(tokens_in(&first.auth), 7);
+        first.resize(2).expect("shrunk");
+        second.resize(2).expect("shrunk again");
+        assert_eq!(tokens_in(&first.auth), 1);
+        drop((first, second));
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// A pool nobody is in any more is made afresh, full, under a new name.
+    ///
+    /// Which is what puts back a token a killed build took: the members'
+    /// lock went with whoever held it, and the next in is alone.
+    ///
+    /// Deliberate break: have `join` decide it is alone by whether the
+    /// record exists, and a record left by a crash is joined as it was.
+    #[test]
+    fn a_pool_left_behind_is_made_again() {
+        let directory = scratch("left");
+        let _turn = turn();
+        let first = Pool::join(&directory, 3).expect("the first in");
+        let old = first.auth.clone();
+        first.die();
+
+        let again = Pool::join(&directory, 3).expect("in again");
+        assert_ne!(again.auth, old);
+        assert_eq!(tokens_in(&again.auth), 2);
+        drop(again);
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// A program started while Obelus is in a pool is told where it is, and
+    /// one started after it has left is told nothing.
+    ///
+    /// Deliberate breaks: leave `LENT` alone in `drop`, and the last
+    /// assertion fails; or empty it in `drop` whoever else holds a pool,
+    /// and the one still in tells nobody.
+    #[test]
+    fn what_a_program_is_told_follows_the_pool() {
+        let _turn = turn();
+        let directory = scratch("told");
+        let pool = Pool::join(&directory, 2).expect("in");
+        let told = super::lent();
+        let flags = told
+            .iter()
+            .find(|(name, _)| *name == "CARGO_MAKEFLAGS")
+            .map(|(_, value)| value.clone())
+            .expect("cargo is told");
+        assert!(
+            flags.ends_with(&format!("--jobserver-auth={}", pool.auth)),
+            "{flags}"
+        );
+        let second = Pool::join(&directory, 2).expect("in twice");
+        drop(pool);
+        assert!(
+            !super::lent().is_empty(),
+            "the first out took the pool away from the second"
+        );
+        drop(second);
+        assert!(super::lent().is_empty(), "{:?}", super::lent());
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// How many tokens are in a pool, counted by taking them all and
+    /// putting them back.
+    #[cfg(unix)]
+    fn tokens_in(auth: &str) -> usize {
+        use std::{
+            io::{Read as _, Write as _},
+            os::unix::fs::OpenOptionsExt as _,
+        };
+        let path = auth.strip_prefix("fifo:").expect("a named pipe");
+        let mut pipe = std::fs::File::options()
+            .read(true)
+            .write(true)
+            .custom_flags(libc::O_NONBLOCK)
+            .open(path)
+            .expect("the pipe");
+        let mut all = vec![0; 4096];
+        let taken = pipe.read(&mut all).unwrap_or(0);
+        pipe.write_all(&all[..taken]).expect("put back");
+        taken
+    }
+
+    #[cfg(windows)]
+    fn tokens_in(auth: &str) -> usize {
+        use windows_sys::Win32::{
+            Foundation::WAIT_OBJECT_0,
+            System::Threading::{ReleaseSemaphore, WaitForSingleObject},
+        };
+        let channel = super::channel::open(auth).expect("the semaphore");
+        let mut taken = 0;
+        // Safety: the handle is `channel`'s, which outlives these calls.
+        unsafe {
+            while WaitForSingleObject(channel.held, 0) == WAIT_OBJECT_0 {
+                taken += 1;
+            }
+            if taken > 0 {
+                ReleaseSemaphore(channel.held, taken, std::ptr::null_mut());
+            }
+        }
+        usize::try_from(taken).expect("a count")
+    }
+}

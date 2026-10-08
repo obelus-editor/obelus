@@ -141,3 +141,49 @@ fn only_what_a_server_calls_an_error_reaches_the_row() {
         "the server's diary is on the row:\n{dump}"
     );
 }
+
+/// A language server is started knowing where the machine's pool of build
+/// jobs is, so that what it builds -- rust-analyzer's `cargo check` --
+/// builds inside it.
+///
+/// Unix only, for the stand-in: a server here is a program with no
+/// arguments, and on Windows a script is not a program.
+///
+/// Broken deliberately by leaving `obelus_jobs::lend` out of
+/// `Client::start`: the server writes down `none`.
+#[cfg(unix)]
+#[test]
+fn a_language_server_is_told_where_the_pool_of_build_jobs_is() {
+    let scratch = support::Scratch::new("serving-pooled");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    let (sender, _events) = std::sync::mpsc::channel();
+    app.events_for_test(sender);
+    support::lay_out(&mut app, 100, 12);
+    app.configure(obelus_config::Config::default(), Vec::new());
+    assert!(
+        app.stand_in_server_for_test(
+            LanguageId::Rust,
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/fixtures/pooled-server.sh"
+            ),
+        ),
+        "the stand-in server would not start"
+    );
+    // Read until the server has written the whole of it: the file appears
+    // a moment before its words do.
+    let written = scratch.path().join("pooled");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let told = loop {
+        let told = std::fs::read_to_string(&written).unwrap_or_default();
+        if !told.is_empty() || std::time::Instant::now() > deadline {
+            break told;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    assert!(
+        told.contains("--jobserver-auth="),
+        "the server was not told where the pool is: {told:?}"
+    );
+}

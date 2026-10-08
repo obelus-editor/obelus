@@ -97,6 +97,34 @@ fn a_shell() -> (App, Receiver<Event>) {
     (app, events)
 }
 
+/// The reader's shell is started knowing where the machine's pool of build
+/// jobs is: a build typed in a terminal inside Obelus is one Obelus started.
+///
+/// Broken deliberately by leaving the pool out of `command_for` in
+/// `obelus-terminal`: the shell prints `pool-` and nothing after it.
+#[test]
+fn a_shell_is_told_where_the_pool_of_build_jobs_is() {
+    let (mut app, events) = wired();
+    app.configure(obelus_config::Config::default(), Vec::new());
+    app.shell_for_test(PathBuf::from("/bin/sh"));
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::TerminalOpen);
+    support::type_text(&mut app, "echo pool-$CARGO_MAKEFLAGS-end");
+    press(&mut app, KeyCode::Enter, KeyModifiers::NONE);
+    // The line the shell printed, not the one typed: only the printed one
+    // starts with the word.
+    pump(&mut app, &events, "the shell's answer", |app| {
+        on_the_terminal(app)
+            .lines()
+            .any(|line| line.starts_with("pool-") && line.trim_end().ends_with("-end"))
+    });
+    let said = on_the_terminal(&app);
+    assert!(
+        said.lines()
+            .any(|line| line.starts_with("pool-") && line.contains("--jobserver-auth=")),
+        "the shell was not told where the pool is:\n{said}"
+    );
+}
+
 /// What a program draws is on the screen, and what is typed reaches it.
 ///
 /// Broken deliberately by drawing nothing for a terminal in `draw_the_frame`

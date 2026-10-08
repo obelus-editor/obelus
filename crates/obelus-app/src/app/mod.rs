@@ -504,6 +504,9 @@ pub struct App {
     /// command is a thing on the page: the row that says what is happening
     /// reads its output, and a key stops it.
     runs: obelus_agent::running::Runs,
+    /// This Obelus's place in the machine's pool of build jobs, while the
+    /// settings ask for one.
+    jobs: Option<obelus_jobs::Pool>,
     /// The last number handed to a terminal, which is how what its program
     /// writes finds it again.
     terminals: obelus_terminal::Id,
@@ -965,6 +968,7 @@ impl App {
             talker: None,
             ctrl_enter_arrives: true,
             runs: obelus_agent::running::Runs::default(),
+            jobs: None,
             terminals: 0,
             signing_in: None,
             shell: None,
@@ -1533,6 +1537,10 @@ impl App {
         // same question wherever this one was started, so it is asked
         // whether or not the reader has said where they work.
         self.ask_about_releases();
+        // Before anything is started that compiles: an agent, a server or
+        // a terminal is told where the pool is when it starts, and not
+        // after.
+        self.settle_the_pool();
         // Before what went wrong, which a chat that is not there to
         // connect to is one of. And not before there is a project, like
         // the tools above: a conversation begun from the chat would be

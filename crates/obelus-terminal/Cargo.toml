@@ -11,6 +11,7 @@ workspace = true
 
 [dependencies]
 crossterm.workspace = true
+obelus-jobs.workspace = true
 obelus-program.workspace = true
 obelus-runtime.workspace = true
 obelus-sink.workspace = true

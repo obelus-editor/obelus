@@ -19,6 +19,7 @@ obelus-config.workspace = true
 obelus-editing.workspace = true
 obelus-git.workspace = true
 obelus-icons.workspace = true
+obelus-jobs.workspace = true
 obelus-logging.workspace = true
 obelus-lsp.workspace = true
 obelus-mcp.workspace = true

@@ -12,6 +12,7 @@ workspace = true
 [dependencies]
 base64.workspace = true
 obelus-git.workspace = true
+obelus-jobs.workspace = true
 obelus-logging.workspace = true
 obelus-program.workspace = true
 obelus-runtime.workspace = true
