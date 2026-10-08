@@ -1358,7 +1358,14 @@ fn enter_on_something_already_said_copies_it_to_the_box() {
         Some("/forever".to_string()),
         "the words were not put in the box"
     );
+    // Below the header, which names the conversation by these same words.
     let text = screen(&mut app);
+    let text = text
+        .lines()
+        .skip_while(|line| line.trim().is_empty())
+        .skip(1)
+        .collect::<Vec<_>>()
+        .join("\n");
     assert_eq!(
         text.matches("/forever").count(),
         2,
@@ -5803,6 +5810,58 @@ fn a_name_given_while_the_open_list_is_up_is_said_on_it() {
     assert!(
         on_the_file(&app),
         "the name moved the reader off the row they were on"
+    );
+}
+
+/// The conversation's header says what it is called: the reader's first
+/// words until the agent names it, then that name, and then whatever it
+/// renames it to -- each as it arrives, with nothing pressed in between.
+///
+/// Broken deliberately: drawing the header from the agent's name alone, as
+/// it was, fails at the first words; and taking the agent's title out of
+/// `conversation_name` fails at the agent's name.
+#[test]
+fn the_header_says_what_the_conversation_is_called_now() {
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the handshake", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    // The header's own row, so that the first words in the transcript are
+    // not taken for it.
+    let header = |app: &mut App| {
+        screen(app)
+            .lines()
+            .find(|line| !line.trim().is_empty())
+            .unwrap_or_default()
+            .to_string()
+    };
+    support::type_text(&mut app, "/titled about the counts");
+    support::press(&mut app, KeyCode::Enter);
+    assert!(
+        header(&mut app).contains("/titled about the counts"),
+        "the first words are not in the header: {:?}",
+        header(&mut app)
+    );
+
+    // Waited on by what the header is drawn from, because waiting needs the
+    // application unborrowed and drawing it needs it borrowed to change.
+    pump(&mut app, &events, "the agent's name", |app| {
+        app.what_this_conversation_is_called().as_deref() == Some("Renamed by the agent")
+    });
+    assert!(
+        header(&mut app).contains("Renamed by the agent"),
+        "the agent's name is not in the header: {:?}",
+        header(&mut app)
+    );
+    support::type_text(&mut app, "/retitled");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the new name", |app| {
+        app.what_this_conversation_is_called().as_deref() == Some("Renamed again")
+    });
+    let now = header(&mut app);
+    assert!(
+        now.contains("Renamed again") && !now.contains("Renamed by the agent"),
+        "the header did not take the new name: {now:?}"
     );
 }
 

@@ -4989,6 +4989,9 @@ impl Screen for App {
     fn branch_this_conversation_works_on(&self) -> Option<&obelus_git::Head> {
         App::branch_this_conversation_works_on(self)
     }
+    fn what_this_conversation_is_called(&self) -> Option<String> {
+        App::what_this_conversation_is_called(self)
+    }
     fn head(&self) -> Option<&obelus_git::Head> {
         App::head(self)
     }

@@ -620,6 +620,9 @@ pub struct ChatView<'a> {
     state: Talking,
     /// What to call it.
     name: Option<&'a str>,
+    /// What the conversation is called, which the agent may rename at any
+    /// moment and which is therefore asked for on every frame.
+    title: Option<String>,
     /// Everything about the session the agent lets the reader change, in
     /// the agent's own order.
     settings: &'a [acp::Setting],
@@ -681,6 +684,7 @@ impl<'a> ChatView<'a> {
             theme: app.theme(),
             state: app.talking(),
             name: app.agent_name(),
+            title: app.what_this_conversation_is_called(),
             settings: app.agent_settings(),
             focus: app.chat()?.focus(),
             card: app.card(),
@@ -1975,16 +1979,36 @@ impl ChatView<'_> {
             name,
             plain.fg(self.theme.gutter_current),
         );
-        // The branch, dimmed after it, in the badge the status row gives
+        // The branch, dimmed at the end, in the badge the status row gives
         // the reader's own. Dropped whole where it does not fit, the rule
         // that row follows: half a branch name is worse than none.
+        let end = usize::from(area.x + area.width);
         let branch = crate::status::branch_badge(self.branch);
-        let wide = 2 + text_width(branch.trim_end());
-        if branch.is_empty() || usize::from(column) + wide > usize::from(area.x + area.width) {
+        let branch = branch.trim_end();
+        let branch_wide = match branch.is_empty() {
+            true => 0,
+            false => 2 + text_width(branch),
+        };
+        let branch_wide = match usize::from(column) + branch_wide > end {
+            true => 0,
+            false => branch_wide,
+        };
+        // And between the two what the conversation is called, which is
+        // somebody else's text -- an agent's name for it, or the reader's
+        // first words -- so it gets what the branch leaves and is cut there.
+        if let Some(title) = self.title.as_deref() {
+            let room = end.saturating_sub(usize::from(column) + 2 + branch_wide);
+            let title = crate::truncate_from_right(title, room);
+            if !title.is_empty() {
+                column = write(cells, column, area.y, "  ", plain);
+                column = write(cells, column, area.y, &title, plain);
+            }
+        }
+        if branch_wide == 0 {
             return;
         }
         column = write(cells, column, area.y, "  ", dim);
-        write(cells, column, area.y, branch.trim_end(), dim);
+        write(cells, column, area.y, branch, dim);
     }
 
     /// The glyph and colour one speaker's rows are drawn in.
@@ -2210,6 +2234,7 @@ mod tests {
             theme: &obelus_theme::builtin::DARK,
             state: obelus_agent::Talking::Ready,
             name: None,
+            title: None,
             settings: &[],
             focus: obelus_component::chat::Focus::Writing,
             card: None,
@@ -2376,6 +2401,7 @@ mod tests {
                 theme: &obelus_theme::builtin::DARK,
                 state,
                 name: None,
+                title: None,
                 settings: &[],
                 focus: obelus_component::chat::Focus::Writing,
                 card,
@@ -2504,6 +2530,7 @@ mod caret {
                         theme: &obelus_theme::builtin::DARK,
                         state: obelus_agent::Talking::Ready,
                         name: None,
+                        title: None,
                         settings: &[],
                         // On a row of the call, so the tint behind a selected
                         // row is drawn as well as the marks after it.

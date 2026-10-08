@@ -32,6 +32,8 @@
 #                            turn ends once the answer to that arrives
 #   session/prompt "/titled"
 #                         -> names the conversation, and ends the turn
+#   session/prompt "/retitled"
+#                         -> names it something else, and ends the turn
 #   session/prompt "/write"
 #                         -> writes `line.txt` through Obelus, relative to
 #                            the tree, says whether it was let, and ends the
@@ -985,6 +987,12 @@ while IFS= read -r line; do
                 *) wrote='wrote the file' ;;
             esac
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"it %s"}}}}\n' "$wrote"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
+        *'"method":"session/prompt"'*'"text":"/retitled'*)
+            # And names it again, which an agent may do whenever it likes.
+            set_turn "$session" "$(id_of "$line")"
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"session_info_update","title":"Renamed again"}}}\n'
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
         *'"method":"session/prompt"'*'"text":"/titled'*)

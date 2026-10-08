@@ -973,6 +973,18 @@ impl App {
             .find(|note| note.id == *id)
     }
 
+    /// What the conversation being read is called, for its header.
+    ///
+    /// By [`App::conversation_name`], so the header and the list of what is
+    /// open cannot call one conversation two things -- and from the copy of
+    /// the notes that is kept, because this is asked on every frame.
+    #[must_use]
+    pub fn what_this_conversation_is_called(&self) -> Option<String> {
+        let none = obelus_git::todo::Todo::default();
+        let notes = self.notes_kept.as_ref().unwrap_or(&none);
+        self.conversation_name(self.conversation()?, notes)
+    }
+
     /// The branch the conversation being read is working on, once its agent
     /// has changed something.
     #[must_use]
