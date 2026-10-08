@@ -4503,12 +4503,13 @@ fn the_agents_go_where_their_bar_is_dragged() {
 /// under it and a blank after -- and not one more row of the table under
 /// it, where it read as a command called `Layout`.
 ///
-/// Broken deliberately four ways: `key_rows` without the setting, which
+/// Broken deliberately five ways: `key_rows` without the setting, which
 /// leaves `Layout` off the top of the page; its row drawn with `entry`
-/// false, which puts `open-file` straight under the gloss; `apply_config`
-/// building the classic table whatever the setting says, which leaves
-/// `ctrl+o` on nothing; and `lay` not writing `keys_from`, which leaves
-/// the file without it.
+/// false, which puts `open-file` straight under the gloss; the list of
+/// layouts without `details_whole`, which loses what a terminal does;
+/// `apply_config` building the classic table whatever the setting says,
+/// which leaves `ctrl+o` on nothing; and `lay` not writing `keys_from`,
+/// which leaves the file without it.
 #[test]
 fn the_keys_page_chooses_where_the_keys_start() {
     use crossterm::event::{KeyEvent, KeyModifiers};
@@ -4552,6 +4553,24 @@ fn the_keys_page_chooses_where_the_keys_start() {
 
     support::press(&mut app, KeyCode::Enter);
     assert!(app.picker().is_some(), "the layouts did not open");
+    // What each is, whole -- the last words of the second are that a
+    // terminal keeps them, which is the one way it is not the first.
+    let dump = support::render(&mut app, 60, 24);
+    let said = support::text_block(&dump)
+        .lines()
+        .filter_map(|row| row.split_once('|').map(|(_, cells)| cells.trim()))
+        .collect::<Vec<_>>()
+        .join(" ");
+    for words in [
+        "The function keys, in banks of four",
+        "Control and alt, on the letter of the word",
+        "a running terminal keeps for its program",
+    ] {
+        assert!(
+            said.contains(words),
+            "{words:?} is not on the list:\n{dump}"
+        );
+    }
     // The list opens on the one in force, so the next one is the other.
     support::press(&mut app, KeyCode::Down);
     support::press(&mut app, KeyCode::Enter);

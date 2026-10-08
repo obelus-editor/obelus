@@ -435,7 +435,9 @@ impl App {
                 .iter()
                 .map(|choice| {
                     let about = match *choice {
-                        "mnemonic" => "Control and alt, on the letter of the word",
+                        "mnemonic" => {
+                            "Control and alt, on the letter of the word -- which a running terminal keeps for its program"
+                        }
                         _ => "The function keys, in banks of four",
                     };
                     ((*choice).to_string(), Some(about.to_string()))
@@ -497,8 +499,9 @@ impl App {
         picker.when_empty("This setting has no choices");
         // Read whole, the way the list of conversations is, because what
         // is under each workflow is a few sentences rather than a word --
-        // and all of them, because they are Obelus's own.
-        if key == "workflow" {
+        // and all of them, because they are Obelus's own. A layout's is
+        // one, and its last words are the ones about a terminal.
+        if matches!(key, "workflow" | "keys_from") {
             picker.wraps(None);
             picker.details_whole();
         }
