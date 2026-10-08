@@ -212,9 +212,7 @@ impl Pool {
         let (auth, channel) = match alone {
             true => {
                 members.unlock()?;
-                if let Some(old) = read_record(directory) {
-                    channel::forget(&old.auth);
-                }
+                channel::sweep(directory);
                 let (auth, channel) = channel::make(directory)?;
                 write_record(
                     directory,
@@ -435,6 +433,21 @@ mod channel {
 
     pub(crate) fn make(directory: &Path) -> io::Result<(String, Channel)> {
         let path = directory.join(super::fresh_name());
+        // Refused rather than made: the flags a pool is handed in are split
+        // on spaces by everything that reads them, so a path with one in it
+        // is a pool no program could find -- and one that half-found it
+        // would be told it is somewhere else.
+        if path
+            .as_os_str()
+            .as_bytes()
+            .iter()
+            .any(u8::is_ascii_whitespace)
+        {
+            return Err(io::Error::other(format!(
+                "a pool cannot be kept at {}, which has a space in it",
+                path.display()
+            )));
+        }
         let named = CString::new(path.as_os_str().as_bytes()).map_err(io::Error::other)?;
         // Safety: `mkfifo` reads the name it is given, which is this
         // frame's and ends in the nul `CString` put there.
@@ -454,6 +467,26 @@ mod channel {
         Ok(Channel {
             held: opened(path_of(auth)?, true)?,
         })
+    }
+
+    /// Takes away every pipe a pool was ever kept in here, for one made
+    /// afresh by somebody who is alone.
+    ///
+    /// Every one, not only the one the record names: an Obelus that died
+    /// between making a pipe and writing it down left one the record never
+    /// named. A compiler still holding an old one open keeps it, because
+    /// what goes is the name and not the pipe.
+    pub(crate) fn sweep(directory: &Path) {
+        let Ok(entries) = std::fs::read_dir(directory) else {
+            return;
+        };
+        for entry in entries.filter_map(Result::ok) {
+            if entry.file_name().as_bytes().starts_with(b"obelus-jobs-")
+                && let Err(error) = std::fs::remove_file(entry.path())
+            {
+                tracing::warn!(%error, path = %entry.path().display(), "a pool's name outlived it");
+            }
+        }
     }
 
     pub(crate) fn forget(auth: &str) {
@@ -508,7 +541,7 @@ mod channel {
     use std::{io, path::Path};
 
     use windows_sys::Win32::{
-        Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0},
+        Foundation::{CloseHandle, ERROR_ALREADY_EXISTS, GetLastError, HANDLE, WAIT_OBJECT_0},
         System::Threading::{
             CreateSemaphoreW, INFINITE, OpenSemaphoreW, ReleaseSemaphore, SEMAPHORE_MODIFY_STATE,
             SYNCHRONIZATION_SYNCHRONIZE, WaitForSingleObject,
@@ -545,6 +578,19 @@ mod channel {
         if held.is_null() {
             return Err(io::Error::last_os_error());
         }
+        // A name somebody already has is their semaphore and their count,
+        // handed back as though it were new. Never, with a name this fresh;
+        // and a pool counted twice if it were.
+        //
+        // Safety: asked straight after the call it is about.
+        if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
+            // Safety: the handle is the one just opened, and nothing else has
+            // it.
+            unsafe { CloseHandle(held) };
+            return Err(io::Error::other(format!(
+                "a pool called {name} already exists"
+            )));
+        }
         Ok((name, Channel { held }))
     }
 
@@ -566,6 +612,9 @@ mod channel {
 
     /// Nothing to take away: a semaphore goes with its last handle.
     pub(crate) fn forget(_auth: &str) {}
+
+    /// Nothing to take away here either, for the same reason.
+    pub(crate) fn sweep(_directory: &Path) {}
 
     impl Channel {
         pub(crate) fn give(&self, tokens: usize) -> io::Result<()> {
@@ -660,6 +709,43 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(10));
         }
         drop(pool);
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// A pipe nobody's record names -- left by an Obelus that died between
+    /// making it and writing it down -- goes when the next one in is alone.
+    ///
+    /// Deliberate break: take only the pipe the record names, as `join`
+    /// did, and the stray one stays for ever.
+    #[cfg(unix)]
+    #[test]
+    fn a_pipe_nobody_wrote_down_is_taken_away() {
+        let _turn = turn();
+        let directory = scratch("stray");
+        std::fs::create_dir_all(&directory).expect("the directory");
+        let stray = directory.join("obelus-jobs-1-1");
+        std::fs::write(&stray, "").expect("a stray");
+        let pool = Pool::join(&directory, 2).expect("in");
+        assert!(
+            !stray.exists(),
+            "the stray pipe outlived a pool made afresh"
+        );
+        drop(pool);
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// A pool is not kept where its path would have a space in it, which
+    /// every program that reads the flags would split in two.
+    ///
+    /// Deliberate break: take the check out of `make`, and the join
+    /// succeeds with an address nobody can read.
+    #[cfg(unix)]
+    #[test]
+    fn a_pool_is_not_kept_where_a_space_would_split_it() {
+        let _turn = turn();
+        let directory = scratch("with space");
+        assert!(Pool::join(&directory, 2).is_err());
+        assert!(super::lent().is_empty(), "{:?}", super::lent());
         let _ = std::fs::remove_dir_all(&directory);
     }
 

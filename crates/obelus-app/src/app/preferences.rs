@@ -676,10 +676,9 @@ impl App {
                 let cpus = logical_cpus();
                 match word {
                     "unlimited" => Some("Unlimited".into()),
-                    "all" => Some(format!("All {cpus} CPUs").into()),
-                    "half" => {
-                        jobs_for(word).map(|jobs| format!("Half: {jobs} of {cpus} CPUs").into())
-                    }
+                    "all" => Some(format!("All {}", of_the(cpus)).into()),
+                    "half" => jobs_for(word)
+                        .map(|jobs| format!("Half: {jobs} of {}", of_the(cpus)).into()),
                     _ => None,
                 }
             }
@@ -1408,4 +1407,25 @@ fn jobs_for(share: &str) -> Option<usize> {
 /// itself.
 fn logical_cpus() -> usize {
     std::thread::available_parallelism().map_or(1, std::num::NonZero::get)
+}
+
+/// A number of CPUs, as a sentence says it.
+fn of_the(cpus: usize) -> String {
+    match cpus {
+        1 => "1 CPU".to_string(),
+        cpus => format!("{cpus} CPUs"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// One CPU is said in the singular, on the one machine that has it.
+    ///
+    /// Deliberate break: take out the arm for one, and the page says
+    /// `All 1 CPUs`.
+    #[test]
+    fn one_cpu_is_one_cpu() {
+        assert_eq!(super::of_the(1), "1 CPU");
+        assert_eq!(super::of_the(24), "24 CPUs");
+    }
 }
