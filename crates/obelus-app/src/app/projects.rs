@@ -350,12 +350,13 @@ fn to_toml(projects: &[Project]) -> String {
 impl super::App {
     /// Asks which project to work in, which nothing else has answered.
     ///
-    /// Called from `startup`, and from the page saying the project has
-    /// gone -- the one moment a window is back where a start with nothing
-    /// to go on began, because everything the project was has gone with it
-    /// (`App::the_tree_has_gone`). Not a state anything else can put the
-    /// reader back into: a reader who wants another project opens another
-    /// Obelus, which is how Obelus is used anyway.
+    /// Called from `startup`, from the page saying the project has gone
+    /// (`App::the_tree_has_gone`), and from `close-project` -- the moments
+    /// a window is back where a start with nothing to go on began, because
+    /// everything the project was has gone with it. A reader at a terminal
+    /// could leave and open another Obelus, but one started from a desktop
+    /// menu has no shell to do that from, and leaving would be closing the
+    /// window to get the page it opened on.
     pub(crate) fn ask_which_project(&mut self) {
         let reading = read();
         // What Obelus could not make of its own file goes where everything
@@ -386,6 +387,39 @@ impl super::App {
             })
             .collect();
         self.chooser = Some(obelus_component::chooser::Chooser::new(known));
+    }
+
+    /// Lets go of this project and asks which one next.
+    ///
+    /// Asking first where something is unwritten, the way going to another
+    /// worktree does, and writing the notes without asking, as on the way
+    /// out.
+    pub(super) fn close_the_project(&mut self) {
+        self.write_the_notes();
+        let unsaved = self
+            .documents
+            .iter()
+            .flatten()
+            .filter_map(super::Document::file)
+            .filter(|buffer| buffer.is_dirty())
+            .count();
+        if unsaved > 0 {
+            self.ask_before_closing_the_project(unsaved);
+            return;
+        }
+        self.leave_the_project();
+    }
+
+    /// The project let go of, once nothing unwritten stands in the way.
+    ///
+    /// What was open is written down first, so that choosing the project
+    /// again opens it again: closing it is leaving, as far as the tree is
+    /// concerned.
+    pub(super) fn leave_the_project(&mut self) {
+        tracing::info!(tree = %self.working_directory.display(), "closing the project");
+        self.write_down_what_is_open_on_leaving();
+        self.let_go_of_the_project();
+        self.ask_which_project();
     }
 
     /// Asks, with these projects, whatever is on this machine.

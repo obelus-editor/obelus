@@ -16,8 +16,8 @@ screen 60x20  editor 60x18  status 60x1
 13| switch-document         Switch to something already o  F2 █
 14| switch-worktree         Go to another worktree of this re █
 15| close-document          Close what is being read   Ctrl+w █
-16| rename-file             Call this file something else, or █
-17| toggle-preview          Show this file rendered,   Ctrl+d █
+16| close-project           Close this project                █
+17| rename-file             Call this file something else, or █
 18|────────────────────────────────────────────────────────────
 19| > Filter commands                                          
 -- style --
@@ -37,8 +37,8 @@ screen 60x20  editor 60x18  status 60x1
 13|aaaaaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccccccccccaaccai
 14|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccci
 15|aaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccccccccccccaaaccccccai
-16|aaaaaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccccccccccccccai
-17|ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccci
+16|aaaaaaaaaaaaaaaaaaaaaaaaaccccccccccccccccccaaaaaaaaaaaaaaaai
+17|aaaaaaaaaaaaaaaaaaaaaaaaacccccccccccccccccccccccccccccccccai
 18|cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 19|jjjcccccccccccccccjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjj
 -- legend --

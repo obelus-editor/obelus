@@ -123,6 +123,8 @@ pub enum Answer {
     Leaving(Leaving),
     /// Going to another worktree with something unwritten in this one.
     Switching(Leaving),
+    /// Letting go of the project with something unwritten in it.
+    ClosingTheProject(Leaving),
     /// Saving over a file that moved while it was being edited.
     Saving(DocumentId, Saving),
     /// Saving a file somebody else took away.

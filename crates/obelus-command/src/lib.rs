@@ -35,6 +35,8 @@ pub enum Command {
     WorktreeList,
     /// Stop showing the current document.
     DocumentClose,
+    /// Let go of this project and choose another.
+    ProjectClose,
     /// Call the file being read something else, or put it somewhere else.
     FileRename,
     /// Show this file as rendered markdown, or stop.
@@ -448,6 +450,11 @@ pub const ALL: &[CommandSpec] = &[
         title: "Close what is being read",
     },
     CommandSpec {
+        command: Command::ProjectClose,
+        name: "close-project",
+        title: "Close this project",
+    },
+    CommandSpec {
         command: Command::FileRename,
         name: "rename-file",
         title: "Call this file something else, or move it",
@@ -809,6 +816,7 @@ impl Command {
             | Self::FileSave
             | Self::DocumentList
             | Self::DocumentClose
+            | Self::ProjectClose
             | Self::FileRename
             | Self::PreviewToggle
             | Self::ThemeSelect
@@ -931,6 +939,7 @@ impl Command {
             | Self::FileReload
             | Self::FileSave
             | Self::DocumentClose
+            | Self::ProjectClose
             | Self::FileRename
             | Self::FileNew
             | Self::PreviewToggle
@@ -1019,6 +1028,7 @@ impl Command {
             | Self::FileReload
             | Self::FileSave
             | Self::DocumentClose
+            | Self::ProjectClose
             | Self::FileRename
             | Self::FileNew
             | Self::PreviewToggle
@@ -1089,6 +1099,7 @@ impl Command {
             | Self::DocumentList
             | Self::WorktreeList
             | Self::DocumentClose
+            | Self::ProjectClose
             | Self::FileRename
             | Self::PreviewToggle
             // A question about the project's files, asked before any of them
@@ -1342,7 +1353,10 @@ impl Command {
             | Self::ConversationNew
             | Self::ConversationSelect
             | Self::TodoOpen
-            | Self::ConfigProject => Requires::AProject,
+            | Self::ConfigProject
+            // There has to be one to let go of: on the page asking which,
+            // this would be asking it again.
+            | Self::ProjectClose => Requires::AProject,
             // A file of its own that only exists once a server has said
             // something, which on a file in a language Obelus has no
             // server for is never. Obelus's own log is not this: it is
@@ -1434,6 +1448,7 @@ mod tests {
             Command::RemoteConnect,
             Command::RemoteDisconnect,
             Command::DocumentClose,
+            Command::ProjectClose,
             Command::FileRename,
             Command::PreviewToggle,
             Command::ThemeSelect,
