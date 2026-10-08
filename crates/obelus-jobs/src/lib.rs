@@ -59,8 +59,11 @@ const RECORD: &str = "pool";
 ///
 /// One entry per [`Pool`] held, newest last, rather than one answer: a
 /// process with two of them -- a test binary is one -- would otherwise have
-/// the first to leave take the answer away from the one still in.
-static LENT: RwLock<Vec<Vec<(&'static str, String)>>> = RwLock::new(Vec::new());
+/// the first to leave take the answer away from the one still in. Each is
+/// where its pool is; what that comes to as an environment is worked out
+/// when a program is started, because part of it -- whether make can read
+/// it -- is asked on a thread and may not be known yet.
+static LENT: RwLock<Vec<String>> = RwLock::new(Vec::new());
 
 /// What a program Obelus starts is to be told about the pool, as names and
 /// values for its environment.
@@ -72,7 +75,7 @@ static LENT: RwLock<Vec<Vec<(&'static str, String)>>> = RwLock::new(Vec::new());
 pub fn lent() -> Vec<(&'static str, String)> {
     LENT.read()
         .ok()
-        .and_then(|lent| lent.last().cloned())
+        .and_then(|lent| lent.last().map(|auth| told(auth)))
         .unwrap_or_default()
 }
 
@@ -97,31 +100,63 @@ pub fn lend(command: &mut std::process::Command) -> &mut std::process::Command {
 fn told(auth: &str) -> Vec<(&'static str, String)> {
     let flags = format!("-j --jobserver-auth={auth}");
     let mut told = vec![("CARGO_MAKEFLAGS", flags.clone())];
-    if make_reads_a_named_pool() {
+    if MAKE_READS.get().copied().unwrap_or(false) {
         told.push(("MAKEFLAGS", flags));
     }
     told
 }
 
-/// Whether the make on this machine reads a pool by its name.
+/// Whether the make on this machine reads a pool by its name, once that
+/// has been asked.
+static MAKE_READS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+
+/// Asks whether the make on this machine reads a pool by its name, on a
+/// thread, once.
 ///
-/// Asked once, of the make Obelus finds: the one a shell finds may be
-/// another, which is the cost of asking at all, and the reader was told it.
-fn make_reads_a_named_pool() -> bool {
-    static READS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *READS.get_or_init(|| {
-        let Some(make) = obelus_program::found("make") else {
-            return false;
-        };
-        let said = obelus_program::without_a_window(&mut std::process::Command::new(make))
-            .arg("--version")
-            .output();
-        let reads = said.is_ok_and(|said| {
-            make_version(&String::from_utf8_lossy(&said.stdout)).is_some_and(|at| at >= (4, 4))
+/// Not where a pool is joined, which is the first thing a starting Obelus
+/// does, in front of its first screen and with every other Obelus's
+/// changes waiting on `SETUP`: finding a program and starting it is
+/// milliseconds here and tens of them on Windows. Until the answer is in, a
+/// program is told only `CARGO_MAKEFLAGS` -- a language server started on
+/// the way up, which is cargo's anyway.
+///
+/// Asked of the make Obelus finds: the one a shell finds may be another,
+/// which is the cost of asking at all.
+fn ask_about_make() {
+    static ASKED: std::sync::Once = std::sync::Once::new();
+    ASKED.call_once(|| {
+        obelus_runtime::handle().spawn_blocking(|| {
+            MAKE_READS.get_or_init(|| {
+                let Some(make) = obelus_program::found("make") else {
+                    return false;
+                };
+                if known_too_old(&make, cfg!(target_os = "macos")) {
+                    return false;
+                }
+                let said = obelus_program::without_a_window(&mut std::process::Command::new(make))
+                    .arg("--version")
+                    .output();
+                let reads = said.is_ok_and(|said| {
+                    make_version(&String::from_utf8_lossy(&said.stdout))
+                        .is_some_and(|at| at >= (4, 4))
+                });
+                tracing::info!(reads, "whether make reads a pool by its name");
+                reads
+            });
         });
-        tracing::info!(reads, "whether make reads a pool by its name");
-        reads
-    })
+    });
+}
+
+/// Whether a make is one whose answer is known without running it.
+///
+/// Apple's: GNU make became GPLv3 at 3.82 and Apple ships no GPLv3, so the
+/// make in `/usr/bin` on a Mac has been 3.81 for as long as there has been
+/// one -- and without the command line tools it is a stub, and running it
+/// puts up a dialog offering to install them, at every start. A make of the
+/// reader's own, a Homebrew one first on `PATH`, is somewhere else and is
+/// asked like any other.
+fn known_too_old(make: &Path, on_a_mac: bool) -> bool {
+    on_a_mac && make == Path::new("/usr/bin/make")
 }
 
 /// The version GNU make says it is, from what `make --version` printed.
@@ -164,6 +199,7 @@ impl Pool {
     /// What to do then is the caller's: Obelus goes on without a pool, and
     /// every build sizes itself the way it did before there was one.
     pub fn join(directory: &Path, jobs: usize) -> io::Result<Self> {
+        ask_about_make();
         std::fs::create_dir_all(directory)?;
         let setup = lock_file(&directory.join(SETUP))?;
         setup.lock()?;
@@ -210,7 +246,7 @@ impl Pool {
             auth,
         };
         if let Ok(mut lent) = LENT.write() {
-            lent.push(told(&pool.auth));
+            lent.push(pool.auth.clone());
         }
         tracing::info!(
             auth = pool.auth,
@@ -246,11 +282,10 @@ impl Pool {
     /// next one in that somebody is still here -- in a pool whose record
     /// has just been taken away.
     fn leave(&self) {
-        if let Ok(mut lent) = LENT.write() {
-            let mine = told(&self.auth);
-            if let Some(at) = lent.iter().rposition(|told| *told == mine) {
-                lent.remove(at);
-            }
+        if let Ok(mut lent) = LENT.write()
+            && let Some(at) = lent.iter().rposition(|auth| *auth == self.auth)
+        {
+            lent.remove(at);
         }
         let Ok(setup) = lock_file(&self.directory.join(SETUP)) else {
             return;
@@ -603,6 +638,46 @@ mod tests {
         assert_eq!(super::make_version("GNU Make 3.81\n"), Some((3, 81)));
         assert_eq!(super::make_version("GNU Make 4\n"), Some((4, 0)));
         assert_eq!(super::make_version("bmake 20240711\n"), None);
+    }
+
+    /// Whether make can read a pool is asked once a pool is joined, and
+    /// answered -- whatever the answer is on this machine, which is not
+    /// this test's to know.
+    ///
+    /// Deliberate break: take `ask_about_make` out of `join`, and nothing
+    /// ever asks, so no program is ever told `MAKEFLAGS`.
+    #[test]
+    fn whether_make_can_read_a_pool_is_asked() {
+        let _turn = turn();
+        let directory = scratch("make");
+        let pool = Pool::join(&directory, 2).expect("in");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while super::MAKE_READS.get().is_none() {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "nobody asked whether make can read a pool"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        drop(pool);
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    /// Apple's own make is known to be too old without being run, and any
+    /// other is asked.
+    ///
+    /// Deliberate break: answer `false` in `known_too_old` whatever it is
+    /// given, and the first assertion fails -- which on a Mac without the
+    /// command line tools is a dialog at every start.
+    #[test]
+    fn apples_make_is_not_asked() {
+        let apple = std::path::Path::new("/usr/bin/make");
+        assert!(super::known_too_old(apple, true));
+        assert!(!super::known_too_old(apple, false), "only on a Mac");
+        assert!(!super::known_too_old(
+            std::path::Path::new("/opt/homebrew/opt/make/libexec/gnubin/make"),
+            true
+        ));
     }
 
     /// The first in fills the pool; the second finds it full and adds
