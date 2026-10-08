@@ -118,15 +118,31 @@ fn every_hint(picker: &Picker) -> Vec<Hint> {
                 .saying("Leave the list and read the line this row names"),
         ];
     }
-    // Said for the reason the two enters above are: what enter does is not
-    // news, and that a second one does something else is.
-    if picker.takes_elsewhere() {
-        return vec![
-            Hint::common(
-                obelus_editing::keymap::KeyChord::new(KeyCode::Enter, KeyModifiers::CONTROL),
+    // The worktrees in a window, for the reason the two enters above are
+    // said: here enter is not taking the row into this window but going to
+    // another one, which is news, and the enter that does take it is the
+    // second one. Both say what they do on the row the reader is on.
+    if picker.goes_in_place() {
+        use obelus_component::picker::WorktreeEnter;
+        let enter = |modifiers| obelus_editing::keymap::KeyChord::new(KeyCode::Enter, modifiers);
+        let switch = "Put this window on this tree in place of the one it is on";
+        let does = picker.worktree_enter();
+        let (word, saying) = match does {
+            Some(WorktreeEnter::Bring) => ("Go to it", "Bring the window this row is forward"),
+            Some(WorktreeEnter::Stay) => ("Stay", "Leave the list and go on in this window"),
+            Some(WorktreeEnter::Switch) => ("Switch", switch),
+            Some(WorktreeEnter::Open) | None => (
                 "New window",
-            )
-            .saying("Go to this tree in a window of its own, or to the one already on it"),
+                "Open another Obelus on this tree, in a window of its own",
+            ),
+        };
+        return vec![
+            Hint::common(enter(KeyModifiers::NONE), word)
+                .saying(saying)
+                .when(does.is_some()),
+            Hint::common(enter(KeyModifiers::CONTROL), "Switch")
+                .saying(switch)
+                .when(picker.switches_here()),
         ];
     }
     let alt =

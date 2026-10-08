@@ -168,11 +168,12 @@ fn fresh() -> (Marking, String) {
 
 /// The mark on the conversation the reader is in.
 ///
-/// The one a history puts on the branch the reader is on, for the same
-/// reason: it is the one row in a list of places that they do not need to
-/// go to. Opened from inside a conversation, the list would otherwise draw
-/// the conversation they came from as a row like any other.
-fn here() -> (Marking, String) {
+/// The one a history puts on the branch the reader is on, and the
+/// worktrees on this window, for the same reason: it is the one row in a
+/// list of places that they do not need to go to. Opened from inside a
+/// conversation, the list would otherwise draw the conversation they came
+/// from as a row like any other.
+pub(super) fn here() -> (Marking, String) {
     (Marking::Aside, "\u{2022}".to_string())
 }
 

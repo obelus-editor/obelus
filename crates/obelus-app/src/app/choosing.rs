@@ -3,6 +3,8 @@
 //! The list itself is [`obelus_component::picker`]; what is here is which
 //! rows go in it and what a chosen row means.
 
+use obelus_component::picker::WorktreeEnter;
+
 use super::*;
 
 impl App {
@@ -476,10 +478,11 @@ impl App {
                 self.accept(value);
                 true
             }
-            // Only the worktrees say their rows go elsewhere.
-            PickerOutcome::Elsewhere(value) => {
-                if let PickerValue::Worktree(at) = value {
-                    self.go_elsewhere(at);
+            // Only the worktrees say this window can go to their rows.
+            PickerOutcome::InPlace(value) => {
+                if let PickerValue::Worktree { at, .. } = value {
+                    self.leave(Layer::Picker);
+                    self.go_to_worktree(at);
                 }
                 true
             }
@@ -649,7 +652,11 @@ impl App {
             // Dealt with before the list is closed, for the reason a
             // directory is: choosing one may leave the list where it was.
             PickerValue::Conversation(_) => {}
-            PickerValue::Worktree(at) => self.go_to_worktree(at),
+            PickerValue::Worktree { at, enter, .. } => match enter {
+                WorktreeEnter::Switch => self.go_to_worktree(at),
+                WorktreeEnter::Open | WorktreeEnter::Bring => self.go_elsewhere(at),
+                WorktreeEnter::Stay => {}
+            },
             PickerValue::Task { id, .. } => self.open_background_output(&id),
             PickerValue::Nothing => {}
         }

@@ -5,21 +5,29 @@
 //! open documents could not say is where the other two are. Its second tab
 //! is every checkout the repository has, and which of them an Obelus is on.
 //!
-//! **Enter puts this window on the tree, in a terminal and in a window
-//! alike.** What the project was is let go of the way a tree that went
-//! lets go of it (`App::let_go_of_the_project`), with what was unwritten
-//! asked about first -- the tree is still there to write it in -- and what
-//! was open written down, so going back opens it again.
+//! **In a window, enter is another window and `ctrl+enter` is this one
+//! going.** Going to another window is starting an Obelus or bringing one
+//! forward, and a window can do both: it can start a program that opens a
+//! window, and it can hand that window -- or another Obelus's -- the
+//! compositor's permission to come to the front. So a tree's row opens a
+//! new window on it, this window's own tree among them, and each Obelus on
+//! a tree is a row under it that brings that one forward. Putting this
+//! window on the tree instead is the second enter, and the foot says both,
+//! because a list whose enter does not take the row here is news.
 //!
-//! **`ctrl+enter` is a window of its own, and only where Obelus draws
-//! one.** Going there is starting an Obelus or bringing one forward, and a
-//! window can do both: it can start a program that opens a window, and it
-//! can hand that window -- or another Obelus's -- the compositor's
-//! permission to come to the front. A terminal can do neither. The window
-//! it is in is the terminal's, and which terminal the reader would want a
-//! new Obelus started in is not something Obelus can know. So [`Windows`]
-//! is what a front end says it can do, and a terminal says nothing: its
-//! list has the one enter.
+//! **In a terminal, enter is this one going, because it is all a terminal
+//! can do.** The window it is in is the terminal's, and which terminal the
+//! reader would want a new Obelus started in is not something Obelus can
+//! know. So [`Windows`] is what a front end says it can do, and a terminal
+//! says nothing: its list has the one enter, which is a list's ordinary
+//! one, and no foot. The windows on each tree are listed under it all the
+//! same, dim, because where everybody is does not depend on what this one
+//! is drawn on.
+//!
+//! Going is the same either way: what the project was is let go of the way
+//! a tree that went lets go of it (`App::let_go_of_the_project`), with what
+//! was unwritten asked about first -- the tree is still there to write it
+//! in -- and what was open written down, so going back opens it again.
 //!
 //! **A window on a tree is a claim, held the way a conversation's is.** A
 //! lock the kernel gives up with the process, and a file beside it for the
@@ -58,7 +66,9 @@ use std::{
     sync::Arc,
 };
 
-use obelus_component::picker::{Marking, Picker, PickerItem, PickerLayout, PickerValue};
+use obelus_component::picker::{
+    Marking, Picker, PickerItem, PickerLayout, PickerValue, WorktreeEnter,
+};
 
 use super::*;
 use crate::event::Event;
@@ -93,8 +103,8 @@ pub trait Windows: std::fmt::Debug + Send + Sync {
     /// Whether another window can be brought forward from here at all.
     ///
     /// A compositor without the protocol for it is a key that would do
-    /// nothing at the other end, so a row held by another window opens a
-    /// new one there instead.
+    /// nothing at the other end, so the rows of the other windows are drawn
+    /// and cannot be chosen.
     fn can_bring(&self) -> bool;
 }
 
@@ -392,7 +402,7 @@ impl App {
 
     /// Fills the list again for the tab the reader is on.
     ///
-    /// On the row they are standing in: this document, or this tree. A list
+    /// On the row they are standing in: this document, or this window. A list
     /// that started somewhere arbitrary would make them find where they are
     /// before they could leave it.
     pub(super) fn refresh_switching(&mut self) {
@@ -429,7 +439,7 @@ impl App {
             Tab::Documents => picker.previews(),
             Tab::Worktrees => picker.stops_previewing(),
         }
-        picker.goes_elsewhere(tab == Tab::Worktrees && self.worktrees.windows.is_some());
+        picker.switches_in_place(tab == Tab::Worktrees && self.worktrees.windows.is_some());
         picker.when_empty(empty);
         picker.before_typing(typing);
         // By the row itself rather than by its label, which is what
@@ -441,7 +451,7 @@ impl App {
         // here already, so it can be pointed at outright.
         let row = picker.matches().position(|item| match (tab, &item.value) {
             (Tab::Documents, PickerValue::Document(id)) => Some(*id) == here,
-            (Tab::Worktrees, PickerValue::Worktree(at)) => Some(*at) == this_window,
+            (Tab::Worktrees, PickerValue::Worktree { at, .. }) => Some(*at) == this_window,
             _ => false,
         });
         if let Some(row) = row {
@@ -499,8 +509,8 @@ impl App {
             .unwrap_or_else(|| self.working_directory.clone())
     }
 
-    /// The row this window is: its own where its tree has several Obelus
-    /// on it, and its tree's where it is the only one.
+    /// The row this window is: its own under its tree, and the tree's where
+    /// it could not claim one.
     fn row_of_this_window(&self) -> Option<usize> {
         let tree = self.this_tree();
         let own = self.worktrees.own();
@@ -523,14 +533,21 @@ impl App {
         })
     }
 
-    /// One row per checkout, and under one with several Obelus on it a row
-    /// for each.
+    /// One row per checkout, and under it a row for each Obelus on it.
     ///
-    /// Under it only where there are several. One Obelus on a tree is that
-    /// tree's mark, and `ctrl+enter` on the tree goes to it; two are two
-    /// places the key could go, and a reader who keeps two windows on one
-    /// tree keeps them because they are reading two things -- so each says
-    /// what it is reading, which is what tells them apart.
+    /// A row for each because in a window each is somewhere enter goes,
+    /// and a tree's own row is not: it is a new window. One alone on a tree
+    /// is a row as well, or the only way to it would be gone. And a reader
+    /// who keeps two windows on one tree keeps them because they are
+    /// reading two things -- so each says what it is reading, which is what
+    /// tells them apart.
+    ///
+    /// Drawn the same where one cannot be gone to, and dim: a terminal's,
+    /// which has no door, and every other one where this Obelus cannot
+    /// bring a window forward -- a terminal, or a compositor without the
+    /// protocol for it. That somebody is there, and reading what, is true
+    /// whatever this one is drawn on, and a tree's mark alone could not say
+    /// it for the tree this one is on, whose mark is that the reader is.
     fn worktree_rows(&mut self) -> Vec<PickerItem> {
         let seen = windows_on(&self.working_directory);
         let tree = self.this_tree();
@@ -565,6 +582,12 @@ impl App {
             .first()
             .and_then(|first| named_from(&first.tree.path));
         let own = self.worktrees.own().map(Path::to_path_buf);
+        let windowed = self.worktrees.windows.is_some();
+        let brings = self
+            .worktrees
+            .windows
+            .as_ref()
+            .is_some_and(|windows| windows.can_bring());
         let mut rows = Vec::new();
         let mut items = Vec::new();
         for (at, listed) in self.worktrees.listed.iter().enumerate() {
@@ -579,7 +602,10 @@ impl App {
                 _ => obelus_ui::with_home_as_tilde(path),
             };
             let here = same_tree(path, &tree);
-            let several = listed.seen.len() > 1;
+            let mine_under = listed
+                .seen
+                .iter()
+                .any(|seen| Some(&seen.claim) == own.as_ref());
             rows.push(Row::Tree(at));
             items.push(worktree_row(Shown {
                 at: rows.len() - 1,
@@ -590,28 +616,31 @@ impl App {
                     obelus_git::Head::Branch(name) => name.clone(),
                     obelus_git::Head::Detached => "Detached".to_string(),
                 }),
-                marked: here || !listed.seen.is_empty(),
-                // Said on the row that is this window: the tree's where it
-                // is the only Obelus there.
-                trailing: match (here && !several, listed.tree.there) {
-                    (true, _) => Some("This window".to_string()),
-                    (false, false) => Some("Missing".to_string()),
-                    (false, true) => None,
+                // The row that is this window is marked as where the reader
+                // is: the tree's where this one is not a row under it, which
+                // is a window that could not claim its tree.
+                marker: match (here, mine_under) {
+                    (true, false) => Some(super::conversations::here()),
+                    _ => (here || !listed.seen.is_empty()).then(somebody),
                 },
-                // This one is where the reader is, which is the list
-                // closing.
+                trailing: (!listed.tree.there).then(|| "Missing".to_string()),
+                // In a terminal this one is where the reader is, which is
+                // the list closing.
                 enabled: here || listed.tree.there,
+                enter: match windowed {
+                    true => WorktreeEnter::Open,
+                    false => WorktreeEnter::Switch,
+                },
+                switches: windowed && !here && listed.tree.there,
             }));
-            if !several {
-                continue;
-            }
             for (which, seen) in listed.seen.iter().enumerate() {
+                let mine = Some(&seen.claim) == own.as_ref();
                 rows.push(Row::Window(at, which));
                 items.push(worktree_row(Shown {
                     at: rows.len() - 1,
                     depth: 1,
                     // Which can be brought forward, and which is a terminal
-                    // -- where `ctrl+enter` opens a window instead.
+                    // and cannot be.
                     icon: match seen.door {
                         Some(_) => obelus_icons::ui::WINDOW,
                         None => obelus_icons::ui::IN_A_TERMINAL,
@@ -621,10 +650,14 @@ impl App {
                         false => seen.reading.clone(),
                     },
                     detail: None,
-                    marked: false,
-                    trailing: (Some(&seen.claim) == own.as_ref())
-                        .then(|| "This window".to_string()),
-                    enabled: true,
+                    marker: mine.then(super::conversations::here),
+                    trailing: None,
+                    enabled: mine || (brings && seen.door.is_some()),
+                    enter: match mine {
+                        true => WorktreeEnter::Stay,
+                        false => WorktreeEnter::Bring,
+                    },
+                    switches: false,
                 }));
             }
         }
@@ -647,7 +680,7 @@ impl App {
             .as_ref()
             .and_then(Picker::selected_item)
             .and_then(|item| match item.value {
-                PickerValue::Worktree(at) => self.worktrees.place_of(at),
+                PickerValue::Worktree { at, .. } => self.worktrees.place_of(at),
                 _ => None,
             });
         let items = self.worktree_rows();
@@ -662,9 +695,9 @@ impl App {
         };
         picker.replace(items);
         let row = at.and_then(|at| {
-            picker
-                .matches()
-                .position(|item| matches!(item.value, PickerValue::Worktree(row) if row == at))
+            picker.matches().position(
+                |item| matches!(item.value, PickerValue::Worktree { at: row, .. } if row == at),
+            )
         });
         if let Some(row) = row {
             picker.select_row(row);
@@ -736,37 +769,29 @@ impl App {
         }
     }
 
-    /// Goes to the tree a row names in a window of its own: the one the row
-    /// is, or one on the tree, or a new one.
+    /// Goes to a row in a window of its own: the window the row is, or a
+    /// new one on the tree the row is.
     ///
-    /// Which window is asked again here rather than read off the row,
-    /// because the row was drawn a moment ago and a window may have closed
-    /// since -- and bringing forward a window that has gone is a key that
-    /// does nothing. A window that closed is a tree to open a window on.
-    /// The list is left either way, as choosing any row leaves it.
+    /// A tree's row is always a new window, this window's own tree among
+    /// them: the windows already on a tree are rows of their own under it,
+    /// so a tree's row is never the way to one of them. Which window a
+    /// window's row is is asked again here rather than read off the row,
+    /// because the row was drawn a moment ago and the window may have
+    /// closed since -- and bringing forward a window that has gone is a key
+    /// that does nothing. A window that closed is a tree to open a window
+    /// on.
     pub(super) fn go_elsewhere(&mut self, at: usize) {
         let (Some((path, claim)), Some(windows)) =
             (self.worktrees.place_of(at), self.worktrees.windows.clone())
         else {
             return;
         };
-        let own = self.worktrees.own().map(Path::to_path_buf);
-        self.leave(super::layers::Layer::Picker);
-        let this_one = match &claim {
-            Some(claim) => Some(claim) == own.as_ref(),
-            None => same_tree(&path, &self.this_tree()),
-        };
-        if this_one {
-            return;
-        }
-        let seen = windows_on(&self.working_directory);
-        let door = match &claim {
-            Some(claim) => seen.iter().find(|seen| seen.claim == *claim),
-            None => seen
-                .iter()
-                .find(|seen| seen.door.is_some() && same_tree(&seen.tree, &path)),
-        }
-        .and_then(|seen| seen.door.clone());
+        let door = claim.and_then(|claim| {
+            windows_on(&self.working_directory)
+                .into_iter()
+                .find(|seen| seen.claim == claim)
+                .and_then(|seen| seen.door)
+        });
         match door {
             Some(door) if windows.can_bring() => {
                 tracing::info!(tree = %path.display(), "bringing the window on a worktree forward");
@@ -798,10 +823,27 @@ struct Shown {
     icon: char,
     label: String,
     detail: Option<String>,
-    /// Whether an Obelus is on it, for a tree.
-    marked: bool,
+    /// That an Obelus is on it, for a tree, or that it is this window.
+    marker: Option<(Marking, String)>,
     trailing: Option<String>,
     enabled: bool,
+    enter: WorktreeEnter,
+    /// Whether `ctrl+enter` puts this window on the row's tree.
+    switches: bool,
+}
+
+/// The mark on a tree an Obelus is on.
+///
+/// Not the bullet without a nerd font, which is the mark on the row that is
+/// this window: two rows marked alike would say the reader is on both.
+fn somebody() -> (Marking, String) {
+    (
+        Marking::Aside,
+        match obelus_icons::enabled() {
+            true => obelus_icons::ui::WINDOW.to_string(),
+            false => "\u{25e6}".to_string(),
+        },
+    )
 }
 
 /// A row of the worktrees, as the list draws it.
@@ -811,18 +853,14 @@ fn worktree_row(shown: Shown) -> PickerItem {
         label: shown.label,
         detail: shown.detail,
         prose: false,
-        marker: shown.marked.then(|| {
-            (
-                Marking::Aside,
-                match obelus_icons::enabled() {
-                    true => obelus_icons::ui::WINDOW.to_string(),
-                    false => "\u{2022}".to_string(),
-                },
-            )
-        }),
+        marker: shown.marker,
         trailing: shown.trailing,
         changed: None,
-        value: PickerValue::Worktree(shown.at),
+        value: PickerValue::Worktree {
+            at: shown.at,
+            enter: shown.enter,
+            switches: shown.switches,
+        },
         depth: shown.depth,
         opens: None,
         status: None,

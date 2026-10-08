@@ -1,6 +1,6 @@
 //! Going to another of the repository's worktrees, from the list of what
-//! is open: enter puts this Obelus there, and `ctrl+enter` a window of its
-//! own.
+//! is open: in a window enter is another window and `ctrl+enter` puts this
+//! one there, and in a terminal enter puts it there and is all there is.
 //!
 //! Against real git and a front end that writes down what it was asked:
 //! what a window does with a request -- a process started, a compositor
@@ -137,6 +137,28 @@ fn rows(app: &App) -> Vec<Row> {
         .collect()
 }
 
+/// The mark every list of places puts on where the reader is.
+const HERE: &str = "\u{2022}";
+
+/// The mark on each row of the list on screen, in the order of [`rows`].
+fn marks(app: &App) -> Vec<Option<String>> {
+    app.picker()
+        .expect("a list is showing")
+        .matches()
+        .map(|item| item.marker.as_ref().map(|(_, mark)| mark.clone()))
+        .collect()
+}
+
+/// The rows marked as where the reader is.
+fn here(app: &App) -> Vec<String> {
+    rows(app)
+        .into_iter()
+        .zip(marks(app))
+        .filter(|(_, mark)| mark.as_deref() == Some(HERE))
+        .map(|(row, _)| row.0)
+        .collect()
+}
+
 /// Walks the selection to the row that says `label`.
 fn walk_to(app: &mut App, label: &str) {
     press(app, KeyCode::Home);
@@ -159,8 +181,8 @@ fn choose(app: &mut App, label: &str) {
     press(app, KeyCode::Enter);
 }
 
-/// The same, for a window of its own.
-fn choose_elsewhere(app: &mut App, label: &str) {
+/// The same with `ctrl+enter`, which in a window puts this one there.
+fn choose_in_place(app: &mut App, label: &str) {
     walk_to(app, label);
     press_control_key(app, KeyCode::Enter);
 }
@@ -182,14 +204,22 @@ fn terminal_on(tree: &Path) -> (App, Receiver<Event>) {
     (app, events)
 }
 
-/// A terminal lists the worktrees too, and says which tree it is on -- but
-/// `ctrl+enter`, which is a window of its own, does nothing there.
+/// A terminal lists the worktrees too, and says which tree it is on: enter
+/// puts it on another, `ctrl+enter` does nothing, and the windows on a tree
+/// are listed under it and cannot be gone to.
 ///
-/// Broken deliberately three ways: `another_worktree` asking for a front
+/// Broken deliberately eight ways: `another_worktree` asking for a front
 /// end again (no tab), `say_where_this_window_is` claiming only where there
-/// is a door (the window does not see the terminal on `feature`), and the
-/// list saying it goes elsewhere whatever it is drawn on (the terminal's
-/// foot offers a window).
+/// is a door (the window does not see the terminal on `feature`), the list
+/// saying this window can go in place whatever it is drawn on (the
+/// terminal's foot says `Stay`), a terminal's tree rows saying they open a
+/// window (enter puts the terminal nowhere), the rows under a tree drawn
+/// only where a window can be brought forward (the terminal lists nobody),
+/// another Obelus's row left to be chosen in a terminal (the window on
+/// `main` is offered), a
+/// terminal's row under a tree left to be chosen in a window (it is drawn
+/// as one to go to), and this one's own row left unmarked (no row is marked
+/// as where the reader is).
 #[test]
 fn a_terminal_lists_the_worktrees_and_says_where_it_is() {
     let scratch = Scratch::new("worktrees-terminal");
@@ -204,12 +234,16 @@ fn a_terminal_lists_the_worktrees_and_says_where_it_is() {
         "a terminal's list has no worktrees"
     );
     dispatch::dispatch(&mut app, Command::WorktreeList);
+    // Nothing at the foot at all, whichever row the terminal opens on: its
+    // own, where a window's foot would say `Stay`.
     let screen = support::render(&mut app, 80, 24);
-    assert!(
-        !screen.contains("New window"),
-        "a terminal offers a window of its own:\n{screen}"
-    );
-    choose_elsewhere(&mut app, "main");
+    for word in ["New window", "Switch", "Go to it", "Stay"] {
+        assert!(
+            !screen.contains(word),
+            "a terminal's foot says {word}:\n{screen}"
+        );
+    }
+    choose_in_place(&mut app, "main");
     assert_eq!(
         resolved(app.working_directory()),
         resolved(&feature),
@@ -219,26 +253,73 @@ fn a_terminal_lists_the_worktrees_and_says_where_it_is() {
     let asked = Arc::new(Asked::default());
     let (mut window, _window_events) = window_on(&main, &asked);
     dispatch::dispatch(&mut window, Command::WorktreeList);
-    let row = rows(&window)
-        .into_iter()
-        .find(|row| row.0 == "feature")
+    let said = rows(&window);
+    let at = said
+        .iter()
+        .position(|row| row.0 == "feature")
         .expect("a row for the tree");
-    assert!(row.3, "a tree a terminal is on is not marked");
-    // And a window on it is still a window to open: a terminal has no
-    // door to knock on.
-    choose_elsewhere(&mut window, "feature");
+    assert!(said[at].3, "a tree a terminal is on is not marked");
+    // Listed under the tree, and not to be chosen: a terminal has no door
+    // to knock on.
+    let under = said.get(at + 1).expect("a row under the tree");
+    assert_eq!(
+        (under.0.as_str(), under.1.as_deref(), under.4),
+        ("Nothing open", None, false),
+        "the terminal on the tree is not drawn as one nobody can go to: {said:?}"
+    );
+    // And the tree's own row is a new window, as any tree's is.
+    choose(&mut window, "feature");
     assert_eq!(asked.opened.lock().expect("the list").len(), 1);
     assert!(asked.brought.lock().expect("the list").is_empty());
+
+    // The terminal lists the window on `main` too, and cannot go to it --
+    // and its own row, under `feature`, is where the reader is.
+    dispatch::dispatch(&mut app, Command::WorktreeList);
+    let said: Vec<String> = rows(&app)
+        .into_iter()
+        .map(|row| format!("{} {}", row.0, if row.4 { "can" } else { "dim" }))
+        .collect();
+    assert_eq!(
+        said,
+        [
+            "main can",
+            "Nothing open dim",
+            "feature can",
+            "Nothing open can",
+            "spare can"
+        ],
+        "the terminal does not list who is where, or offers to go to them"
+    );
+    assert_eq!(
+        here(&app),
+        ["Nothing open"],
+        "the terminal's own row is not marked"
+    );
+    assert_eq!(
+        app.picker()
+            .and_then(obelus_component::picker::Picker::selected_item)
+            .and_then(|item| item.marker.as_ref())
+            .map(|(_, mark)| mark.as_str()),
+        Some(HERE),
+        "the terminal's list did not open on its own row"
+    );
+    // Enter is the terminal going.
+    choose(&mut app, "main");
+    assert_eq!(
+        resolved(app.working_directory()),
+        resolved(&main),
+        "enter did not put the terminal on the tree"
+    );
 }
 
-/// Enter puts this Obelus on the tree, closing what was open in the one it
-/// left and saying where it is now.
+/// In a window, `ctrl+enter` puts this Obelus on the tree, closing what was
+/// open in the one it left and saying where it is now.
 ///
-/// Broken deliberately twice: `go_to_worktree` going elsewhere as it used
-/// to (nothing moves here), and `move_to_tree` letting go without settling
-/// again (the window is on no tree, and nobody sees it on `feature`).
+/// Broken deliberately twice: `go_to_worktree` going elsewhere (nothing
+/// moves here), and `move_to_tree` letting go without settling again (the
+/// window is on no tree, and nobody sees it on `feature`).
 #[test]
-fn enter_puts_this_obelus_on_the_tree() {
+fn ctrl_enter_puts_this_window_on_the_tree() {
     let scratch = Scratch::new("worktrees-switch");
     let (main, feature, _) = repository(&scratch);
     let asked = Arc::new(Asked::default());
@@ -246,7 +327,7 @@ fn enter_puts_this_obelus_on_the_tree() {
     app.open_for_test(&main.join("file.rs"));
 
     dispatch::dispatch(&mut app, Command::WorktreeList);
-    choose(&mut app, "feature");
+    choose_in_place(&mut app, "feature");
     assert_eq!(
         resolved(app.working_directory()),
         resolved(&feature),
@@ -262,9 +343,10 @@ fn enter_puts_this_obelus_on_the_tree() {
 
     let (mut other, _other_events) = terminal_on(&main);
     dispatch::dispatch(&mut other, Command::WorktreeList);
+    // The trees, which are the rows that say a branch.
     let marked: Vec<String> = rows(&other)
         .into_iter()
-        .filter(|row| row.3)
+        .filter(|row| row.3 && row.1.is_some())
         .map(|row| row.0)
         .collect();
     assert_eq!(
@@ -292,7 +374,7 @@ fn going_to_the_main_checkout_does_not_spell_it_resolved() {
     let (mut app, _events) = window_on(&feature, &asked);
 
     dispatch::dispatch(&mut app, Command::WorktreeList);
-    choose(&mut app, "main");
+    choose_in_place(&mut app, "main");
     assert_eq!(resolved(app.working_directory()), resolved(&main));
     assert!(
         !app.working_directory()
@@ -320,7 +402,7 @@ fn something_unwritten_is_asked_about_before_going() {
     support::type_text(&mut app, "// ");
 
     dispatch::dispatch(&mut app, Command::WorktreeList);
-    choose(&mut app, "feature");
+    choose_in_place(&mut app, "feature");
     assert_eq!(
         support::ways(&app),
         [
@@ -334,7 +416,7 @@ fn something_unwritten_is_asked_about_before_going() {
     assert_eq!(resolved(app.working_directory()), resolved(&main));
 
     dispatch::dispatch(&mut app, Command::WorktreeList);
-    choose(&mut app, "feature");
+    choose_in_place(&mut app, "feature");
     support::answer(&mut app, "Save everything and switch");
     assert_eq!(
         std::fs::read_to_string(&file).expect("the file"),
@@ -352,7 +434,7 @@ fn something_unwritten_is_asked_about_before_going() {
 /// tree this window is on said and stood on.
 ///
 /// Broken deliberately by building the rows without the main checkout,
-/// and by leaving out the word that says which tree is this one's: each
+/// and by leaving out the mark that says which row is this window: each
 /// fails its own line below.
 #[test]
 fn the_worktrees_are_a_tab_of_what_is_open() {
@@ -377,27 +459,37 @@ fn the_worktrees_are_a_tab_of_what_is_open() {
     );
     let said = rows(&app);
     let named: Vec<&str> = said.iter().map(|row| row.0.as_str()).collect();
-    assert_eq!(named, ["main", "feature", "spare"], "{said:?}");
+    assert_eq!(
+        named,
+        ["main", "Nothing open", "feature", "spare"],
+        "{said:?}"
+    );
     assert_eq!(
         said[0],
         (
             "main".to_string(),
             Some("master".to_string()),
-            Some("This window".to_string()),
+            None,
             true,
             true
         ),
         "this window's own tree is not said"
     );
-    assert_eq!(said[1].1.as_deref(), Some("feature"));
+    assert_eq!(
+        said[1],
+        ("Nothing open".to_string(), None, None, true, true),
+        "this window is not said under its tree"
+    );
+    assert_eq!(here(&app), ["Nothing open"], "this window is not marked");
+    assert_eq!(said[2].1.as_deref(), Some("feature"));
     let selected = app
         .picker()
         .and_then(obelus_component::picker::Picker::selected_item)
         .map(|item| item.label.clone());
     assert_eq!(
         selected.as_deref(),
-        Some("main"),
-        "the list did not open on this tree"
+        Some("Nothing open"),
+        "the list did not open on this window"
     );
 
     // And the key that names the first tab goes back to it.
@@ -446,8 +538,8 @@ fn the_worktrees_tab_previews_nothing() {
     // window the worktrees have a foot instead, with a rule of its own,
     // which is the one rule the tabs have the same number of.
     assert!(
-        worktrees.contains("New window"),
-        "the worktrees in a window do not say what ctrl+enter does:\n{worktrees}"
+        worktrees.contains("Stay"),
+        "the worktrees in a window do not say what enter does:\n{worktrees}"
     );
     let ruled = |screen: &str| {
         screen
@@ -462,6 +554,63 @@ fn the_worktrees_tab_previews_nothing() {
         ruled(&worktrees),
         ruled(&documents),
         "the worktrees tab is still cut in two for a preview:\n{worktrees}"
+    );
+}
+
+/// The foot says what the two enters do on the row the reader is on: on a
+/// tree a new window, and this one going where it is not this one's; on
+/// another window, going to it; on this one, staying.
+///
+/// Broken deliberately four ways: `ctrl+enter` lit whatever the row
+/// (another window's row offers `Switch`), enter's word said for the list
+/// rather than the row (every row says `New window`), this window's row
+/// going to itself like another's (it is brought forward), and enter's word
+/// said on a row that cannot be chosen (a tree that has gone offers a
+/// window).
+#[test]
+fn the_foot_says_what_each_enter_does_on_the_row() {
+    let scratch = Scratch::new("worktrees-foot");
+    let (main, feature, spare) = repository(&scratch);
+    let asked = Arc::new(Asked::default());
+    let (mut app, _events) = window_on(&main, &asked);
+    let (mut other, _other_events) = window_on(&feature, &Arc::new(Asked::default()));
+    other.open_for_test(&feature.join("file.rs"));
+    // A frame, which is where a window says what it is reading.
+    support::lay_out(&mut other, 80, 24);
+
+    dispatch::dispatch(&mut app, Command::WorktreeList);
+    let said = |app: &mut App, label: &str| -> Vec<&'static str> {
+        walk_to(app, label);
+        let screen = support::render(app, 80, 24);
+        ["New window", "Switch", "Go to it", "Stay"]
+            .into_iter()
+            .filter(|word| screen.contains(word))
+            .collect()
+    };
+    assert_eq!(said(&mut app, "feature"), ["New window", "Switch"]);
+    assert_eq!(said(&mut app, "main"), ["New window"]);
+    assert_eq!(said(&mut app, "file.rs"), ["Go to it"]);
+    assert_eq!(said(&mut app, "Nothing open"), ["Stay"]);
+
+    // And staying is what it does: the list closes, and nothing is opened
+    // or brought forward.
+    choose(&mut app, "Nothing open");
+    assert!(app.picker().is_none(), "staying did not close the list");
+    assert!(asked.opened.lock().expect("the list").is_empty());
+    assert!(
+        asked.brought.lock().expect("the list").is_empty(),
+        "staying brought this window forward"
+    );
+
+    // A query can leave the selection on a row that cannot be chosen, and
+    // the foot says nothing enter would refuse.
+    std::fs::remove_dir_all(&spare).expect("deleting a worktree behind git's back");
+    dispatch::dispatch(&mut app, Command::WorktreeList);
+    support::type_text(&mut app, "spare");
+    let screen = support::render(&mut app, 80, 24);
+    assert!(
+        !screen.contains("New window"),
+        "the foot offers enter on a tree that has gone:\n{screen}"
     );
 }
 
@@ -492,8 +641,13 @@ fn a_tree_inside_the_main_checkout_is_named_from_where_it_sits() {
 
     dispatch::dispatch(&mut app, Command::WorktreeList);
     let said = rows(&app);
-    // Sorted, because the order of the linked trees is git's to choose.
-    let mut named: Vec<String> = said.iter().map(|row| row.0.clone()).collect();
+    // Sorted, because the order of the linked trees is git's to choose. A
+    // tree's row is the one that says its branch.
+    let mut named: Vec<String> = said
+        .iter()
+        .filter(|row| row.1.is_some())
+        .map(|row| row.0.clone())
+        .collect();
     named.sort();
     let inside = Path::new("main").join(".worktree").join("nested");
     assert_eq!(
@@ -503,30 +657,34 @@ fn a_tree_inside_the_main_checkout_is_named_from_where_it_sits() {
     );
 }
 
-/// `ctrl+enter` on a tree no window is on opens a new one, and leaves this
-/// window where it was; this window's own is where the reader already is.
+/// Enter on a tree opens a new window on it and leaves this window where it
+/// was -- on this window's own tree too, which is a second window there --
+/// while `ctrl+enter` on this window's own tree has nowhere to go.
 ///
-/// Broken deliberately by opening a window for whatever row is chosen: the
-/// tree this window is on gets a second one.
+/// Broken deliberately twice: a tree's row bringing forward a window already
+/// on it, as it used to (this window comes forward and nothing opens on
+/// `main`), and this window's own tree offered to `ctrl+enter` (the list
+/// closes on a key that went nowhere).
 #[test]
-fn a_tree_no_window_is_on_is_opened_in_one() {
+fn enter_on_a_tree_opens_a_window_on_it() {
     let scratch = Scratch::new("worktrees-open");
     let (main, feature, _) = repository(&scratch);
     let asked = Arc::new(Asked::default());
     let (mut app, _events) = window_on(&main, &asked);
 
     dispatch::dispatch(&mut app, Command::WorktreeList);
-    choose_elsewhere(&mut app, "main");
+    choose_in_place(&mut app, "main");
     assert!(
-        app.picker().is_none(),
-        "choosing this tree did not close the list"
+        app.picker().is_some(),
+        "ctrl+enter on this window's own tree did something"
     );
-    dispatch::dispatch(&mut app, Command::WorktreeList);
-    choose_elsewhere(&mut app, "feature");
+    choose(&mut app, "main");
     assert!(
         app.picker().is_none(),
         "opening a window did not close the list"
     );
+    dispatch::dispatch(&mut app, Command::WorktreeList);
+    choose(&mut app, "feature");
     assert_eq!(resolved(app.working_directory()), resolved(&main));
 
     // Resolved, because the path is the one git wrote down and git spells
@@ -541,29 +699,35 @@ fn a_tree_no_window_is_on_is_opened_in_one() {
         .collect();
     assert_eq!(
         opened,
-        [resolved(&feature)],
+        [resolved(&main), resolved(&feature)],
         "the wrong windows were opened"
     );
     assert!(asked.brought.lock().expect("the list").is_empty());
 }
 
-/// A tree another window is on is marked, and `ctrl+enter` on it brings
-/// that window forward -- through a knock the other window hears.
+/// A tree another window is on is marked, with that window under it, and
+/// enter on the window brings it forward -- through a knock the other
+/// window hears.
 ///
 /// Both halves in one test, because they are one format: what a window
 /// writes about itself, what another reads, and what it says through the
-/// door it read. Broken deliberately three ways: the other window's claim
-/// left unread (no mark, and a second window opened), the key checked on
-/// the way in left out of the knock (nothing comes forward), and the
-/// compositor that cannot bring a window forward asked to anyway.
+/// door it read. Broken deliberately four ways: the other window's claim
+/// left unread (no mark, and no row to choose), the key checked on the way
+/// in left out of the knock (nothing comes forward), the compositor that
+/// cannot bring a window forward asked to anyway, and the other windows'
+/// rows left to be chosen where nothing can bring them forward (the third
+/// window's row for the other can be).
 #[test]
-fn a_tree_another_window_is_on_brings_that_window_forward() {
+fn a_window_on_a_tree_is_brought_forward() {
     let scratch = Scratch::new("worktrees-bring");
     let (main, feature, _) = repository(&scratch);
     let here = Arc::new(Asked::default());
     let there = Arc::new(Asked::default());
     let (mut app, _events) = window_on(&main, &here);
     let (mut other, other_events) = window_on(&feature, &there);
+    other.open_for_test(&feature.join("file.rs"));
+    // A frame, which is where a window says what it is reading.
+    support::lay_out(&mut other, 80, 24);
 
     dispatch::dispatch(&mut app, Command::WorktreeList);
     let feature_row = rows(&app)
@@ -571,7 +735,7 @@ fn a_tree_another_window_is_on_brings_that_window_forward() {
         .find(|row| row.0 == "feature")
         .expect("a row for the tree");
     assert!(feature_row.3, "a tree another window is on is not marked");
-    choose_elsewhere(&mut app, "feature");
+    choose(&mut app, "file.rs");
     assert!(
         here.opened.lock().expect("the list").is_empty(),
         "a second window was opened"
@@ -605,7 +769,12 @@ fn a_tree_another_window_is_on_brings_that_window_forward() {
     });
     let (mut third, _third_events) = window_on(&main, &unable);
     dispatch::dispatch(&mut third, Command::WorktreeList);
-    choose_elsewhere(&mut third, "feature");
+    let row = rows(&third)
+        .into_iter()
+        .find(|row| row.0 == "file.rs")
+        .expect("the other window is not listed");
+    assert!(!row.4, "a window nothing can bring forward can be chosen");
+    choose(&mut third, "feature");
     assert_eq!(unable.opened.lock().expect("the list").len(), 1);
     assert!(unable.brought.lock().expect("the list").is_empty());
 }
@@ -736,10 +905,10 @@ fn going_back_opens_what_was_open() {
     app.open_for_test(&main.join("file.rs"));
 
     dispatch::dispatch(&mut app, Command::WorktreeList);
-    choose(&mut app, "feature");
+    choose_in_place(&mut app, "feature");
     assert!(app.reading_nothing());
     dispatch::dispatch(&mut app, Command::WorktreeList);
-    choose(&mut app, "main");
+    choose_in_place(&mut app, "main");
 
     let deadline = Instant::now() + Duration::from_secs(10);
     while Instant::now() < deadline && app.reading_nothing() {
@@ -760,15 +929,16 @@ fn going_back_opens_what_was_open() {
 }
 
 /// Several Obelus on one tree are a row each under it, saying what each is
-/// reading, and `ctrl+enter` on one brings that one forward and no other.
+/// reading, and enter on one brings that one forward and no other.
 ///
 /// Three on `feature` -- a terminal, a window reading `file.rs` and one
 /// reading `other.rs` -- and two on `main`, this one among them.
-/// Broken deliberately three ways: never saying again what a window is
+/// Broken deliberately four ways: never saying again what a window is
 /// reading after it claimed its tree (no row says `file.rs`), bringing
 /// forward whichever window is on the tree rather than the row's (the
-/// wrong one comes, on one of the two presses), and leaving the reader on
-/// the tree's row rather than on their own (the list opens on `main`).
+/// wrong one comes, on one of the two presses), leaving the reader on the
+/// tree's row rather than on their own (the list opens on `main`), and
+/// a window's row offered to `ctrl+enter` (this window goes to `feature`).
 #[test]
 fn several_on_one_tree_are_a_row_each() {
     let scratch = Scratch::new("worktrees-several");
@@ -788,16 +958,19 @@ fn several_on_one_tree_are_a_row_each() {
 
     dispatch::dispatch(&mut app, Command::WorktreeList);
     let said = rows(&app);
+    let marked = marks(&app);
     let named: Vec<&str> = said.iter().map(|row| row.0.as_str()).collect();
     let under = |tree: &str| -> Vec<String> {
         let from = named
             .iter()
             .position(|name| *name == tree)
             .expect("the tree");
-        let mut under: Vec<String> = said[from + 1..]
-            .iter()
-            .take_while(|row| row.1.is_none())
-            .map(|row| format!("{} {}", row.0, row.2.as_deref().unwrap_or("-")))
+        let mut under: Vec<String> = (from + 1..said.len())
+            .take_while(|at| said[*at].1.is_none())
+            .map(|at| {
+                let here = marked[at].as_deref() == Some(HERE);
+                format!("{} {}", said[at].0, if here { "here" } else { "-" })
+            })
             .collect();
         under.sort();
         under
@@ -809,17 +982,20 @@ fn several_on_one_tree_are_a_row_each() {
     );
     assert_eq!(
         under("main"),
-        ["Nothing open -", "Nothing open This window"],
+        ["Nothing open -", "Nothing open here"],
         "{said:?}"
     );
     assert_eq!(under("spare"), Vec::<String>::new(), "{said:?}");
     let selected = app
         .picker()
         .and_then(obelus_component::picker::Picker::selected_item)
-        .map(|item| (item.label.clone(), item.trailing.clone()));
+        .map(|item| {
+            let mark = item.marker.as_ref().map(|(_, mark)| mark.clone());
+            (item.label.clone(), mark)
+        });
     assert_eq!(
         selected,
-        Some(("Nothing open".to_string(), Some("This window".to_string()))),
+        Some(("Nothing open".to_string(), Some(HERE.to_string()))),
         "the list did not open on this window"
     );
 
@@ -842,7 +1018,7 @@ fn several_on_one_tree_are_a_row_each() {
         ("other.rs", &other_events, &reading_events),
     ] {
         dispatch::dispatch(&mut app, Command::WorktreeList);
-        choose_elsewhere(&mut app, row);
+        choose(&mut app, row);
         let brought = asked.brought.lock().expect("the list").pop();
         let brought = brought.expect("nothing was brought forward");
         obelus_app::app::knock(&brought, None);
@@ -852,6 +1028,15 @@ fn several_on_one_tree_are_a_row_each() {
             "a window the row was not came forward"
         );
     }
+
+    // A window's row is somewhere to be brought to, not a tree to go to.
+    dispatch::dispatch(&mut app, Command::WorktreeList);
+    choose_in_place(&mut app, "file.rs");
+    assert_eq!(
+        resolved(app.working_directory()),
+        resolved(&main),
+        "ctrl+enter on a window's row put this one on its tree"
+    );
 }
 
 /// A conversation is named on another window's row the way the list of
@@ -949,7 +1134,7 @@ fn what_one_tree_had_open_is_not_taken_for_anothers() {
     // Read, and waiting in the channel, before the window goes.
     std::thread::sleep(Duration::from_millis(300));
     dispatch::dispatch(&mut app, Command::WorktreeList);
-    choose(&mut app, "feature");
+    choose_in_place(&mut app, "feature");
 
     let deadline = Instant::now() + Duration::from_secs(10);
     while Instant::now() < deadline && app.reading_nothing() {
@@ -983,7 +1168,7 @@ fn what_was_asked_of_a_tree_left_behind_is_not_done() {
     let asked = Arc::new(Asked::default());
     let (mut app, _events) = window_on(&main, &asked);
     dispatch::dispatch(&mut app, Command::WorktreeList);
-    choose(&mut app, "feature");
+    choose_in_place(&mut app, "feature");
     assert_eq!(resolved(app.working_directory()), resolved(&feature));
 
     let (answer, mut said) = futures::channel::oneshot::channel();
@@ -1038,7 +1223,7 @@ fn an_agent_that_never_started_goes_with_the_tree() {
     assert!(running());
 
     dispatch::dispatch(&mut app, Command::WorktreeList);
-    choose(&mut app, "feature");
+    choose_in_place(&mut app, "feature");
     let deadline = Instant::now() + Duration::from_secs(5);
     while Instant::now() < deadline && running() {
         if let Ok(event) = events.recv_timeout(Duration::from_millis(50)) {

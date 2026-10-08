@@ -578,7 +578,9 @@ crates/
                       asked (app/hearing); what is typed in a terminal is the
                       program's (app/terminals); a
                       newer Obelus is asked about once a day, not once a start
-                      (app/releases); only where Obelus draws its own window, a
+                      (app/releases); in a window, enter is another window
+                      and `ctrl+enter` is this one going, in a terminal, enter
+                      is this one going because it is all a terminal can do, a
                       window on a tree is a claim held the way a
                       conversation's is, a claim appears already held, and a
                       tree that has gone is nowhere to go (app/worktrees); a

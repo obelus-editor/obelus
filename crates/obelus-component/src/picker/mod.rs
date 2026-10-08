@@ -78,6 +78,19 @@ use crate::{
     window::{Move, Window, Wrap},
 };
 
+/// What enter does on a row of the worktrees.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WorktreeEnter {
+    /// Puts this window on the tree: a terminal's one way of going.
+    Switch,
+    /// Opens another window on the tree.
+    Open,
+    /// Brings the window the row is forward.
+    Bring,
+    /// Stays where it is: the row is this window.
+    Stay,
+}
+
 /// What accepting an item means.
 #[derive(Clone, Debug)]
 pub enum PickerValue {
@@ -177,11 +190,21 @@ pub enum PickerValue {
     /// id, a claim, where it is already open -- and a list of rows is not
     /// where that belongs.
     Conversation(usize),
-    /// One of the repository's worktrees, to go to.
+    /// One of the repository's worktrees, or an Obelus on one, to go to.
     ///
     /// By its place in the list, as a conversation is: which window has it
     /// open, and how to reach that window, is the application's to know.
-    Worktree(usize),
+    /// What the two enters do on the row is said here rather than worked
+    /// out from it, because the foot says it too, and the key and the foot
+    /// have to be one answer.
+    Worktree {
+        /// Where in the list.
+        at: usize,
+        /// What enter does.
+        enter: WorktreeEnter,
+        /// Whether `ctrl+enter` puts this window on the row's tree.
+        switches: bool,
+    },
     /// A piece of the agent's background work: choosing it opens what it
     /// has written.
     Task {
@@ -560,11 +583,13 @@ pub enum PickerOutcome {
     Open,
     /// The user chose something.
     Accepted(PickerValue),
-    /// The user chose something, to have it somewhere else than here.
+    /// The user chose something, to have it in this window in place of
+    /// what is here.
     ///
-    /// `ctrl+enter`, on a list that said its rows have somewhere else to
-    /// be ([`Picker::goes_elsewhere`]).
-    Elsewhere(PickerValue),
+    /// `ctrl+enter`, on a list that said this window can go to its rows
+    /// ([`Picker::switches_in_place`]) and on a row that says it can be
+    /// gone to.
+    InPlace(PickerValue),
     /// The user gave up.
     Cancelled,
 }
@@ -841,13 +866,13 @@ pub struct Picker {
     /// before them, rather than commands out of the table: nothing else
     /// binds them and there is nothing for a reader to rebind.
     opens: bool,
-    /// Whether `ctrl+enter` takes a row somewhere other than here.
+    /// Whether `ctrl+enter` puts this window where a row is.
     ///
-    /// The worktrees in a window: enter puts this window on the tree, and
-    /// `ctrl+enter` puts the tree in a window of its own. Said by whoever
-    /// filled the list, and per tab, because the other tab of that list is
-    /// documents, which are only ever here.
-    elsewhere: bool,
+    /// The worktrees in a window: enter is another window, and `ctrl+enter`
+    /// is this one going. Said by whoever filled the list, and per tab,
+    /// because the other tab of that list is documents, which are only ever
+    /// here.
+    in_place: bool,
     /// Whether this is a list of the agent's background work, and whether
     /// its rows can be stopped from here -- which is the one key of its own
     /// such a list has.
@@ -957,7 +982,7 @@ impl Picker {
             prefer: None,
             nests: false,
             opens: false,
-            elsewhere: false,
+            in_place: false,
             tasks: None,
             reads: false,
             filling: None,
@@ -1376,17 +1401,49 @@ impl Picker {
         self.previews = false;
     }
 
-    /// Says whether `ctrl+enter` takes a row somewhere else, which is the
-    /// one key of its own such a list has, and so whether its foot says so.
-    pub const fn goes_elsewhere(&mut self, elsewhere: bool) {
-        self.elsewhere = elsewhere;
-        self.footed = elsewhere;
+    /// Says whether `ctrl+enter` puts this window where a row is, which
+    /// makes the two enters two different things, and so whether its foot
+    /// says what each of them does.
+    pub const fn switches_in_place(&mut self, in_place: bool) {
+        self.in_place = in_place;
+        self.footed = in_place;
     }
 
     /// Whether it does.
     #[must_use]
-    pub const fn takes_elsewhere(&self) -> bool {
-        self.elsewhere
+    pub const fn goes_in_place(&self) -> bool {
+        self.in_place
+    }
+
+    /// What enter does on the row the reader is on, where it is a worktree
+    /// that can be chosen.
+    ///
+    /// Nothing on a dim one, which the selection rests on where a query
+    /// has left nothing else: enter refuses it, so the foot must too.
+    #[must_use]
+    pub fn worktree_enter(&self) -> Option<WorktreeEnter> {
+        match self
+            .selected_item()
+            .filter(|item| item.enabled)
+            .map(|item| &item.value)
+        {
+            Some(PickerValue::Worktree { enter, .. }) => Some(*enter),
+            _ => None,
+        }
+    }
+
+    /// Whether `ctrl+enter` does anything on the row the reader is on: the
+    /// list says this window can go to its rows, and the row says it is
+    /// somewhere to go.
+    #[must_use]
+    pub fn switches_here(&self) -> bool {
+        self.in_place
+            && matches!(
+                self.selected_item()
+                    .filter(|item| item.enabled)
+                    .map(|item| &item.value),
+                Some(PickerValue::Worktree { switches: true, .. })
+            )
     }
 
     /// Says this is a list of the agent's background work, and whether a
@@ -2363,13 +2420,13 @@ impl Picker {
             // goes there -- the pair a list of places that hold places
             // needs, since one key cannot mean both.
             KeyCode::Enter if bare && self.opens => PickerOutcome::Open,
-            KeyCode::Enter if self.elsewhere && control => self
+            KeyCode::Enter if self.in_place && control => self
                 .matched
                 .get(self.window.focus())
                 .map(|(index, _)| &self.items[*index])
-                .filter(|item| item.enabled)
+                .filter(|item| item.enabled && self.switches_here())
                 .map_or(PickerOutcome::Consumed, |item| {
-                    PickerOutcome::Elsewhere(item.value.clone())
+                    PickerOutcome::InPlace(item.value.clone())
                 }),
             KeyCode::Enter if bare || (self.opens && modifiers == KeyModifiers::ALT) => self
                 .matched

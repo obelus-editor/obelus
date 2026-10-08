@@ -274,14 +274,14 @@ ob src/main.rs       # 同一个文件，在终端里打开</code></pre>
       <div class="feature">
         <div class="text">
       <h3 id="worktrees">所有 worktree，一个键就到</h3>
-      <p>Obelus 不分屏，想同时看两份代码就开两个窗口。所以同一个项目开着好几个 Obelus、各看一个 worktree，是很平常的事。按 <kbd>F2</kbd> 再按 <kbd>Tab</kbd>，能看到这个仓库所有的 worktree，哪些已经有 Obelus 开着也标出来了；一棵树上开着好几个的，下面每个占一行，写着它正在看什么。按 <kbd>Enter</kbd>，当前这个 Obelus 就换到那棵树上：有没保存的文件会先问你，上次在那边开着的东西会重新打开。</p>
+      <p>Obelus 不分屏，想同时看两份代码就开两个窗口。所以同一个项目开着好几个 Obelus、各看一个 worktree，是很平常的事。按 <kbd>F2</kbd> 再按 <kbd>Tab</kbd>，能看到这个仓库所有的 worktree，每棵树下面，开着的每个 Obelus 各占一行，写着它正在看什么。把当前这个 Obelus 换到另一棵树上时，有没保存的文件会先问你，上次在那边开着的东西会重新打开。</p>
         </div>
         <figure class="shot">
           <a class="dark" href="../screens/worktree-list-dark.webp"><img src="../screens/worktree-list-dark.webp" width="1300" height="420" loading="lazy" alt="Worktrees 标签页：tally 在 main 上，tally/.worktree/stable-tie-order 在它自己的分支上，两棵都有窗口开着。"></a>
           <a class="light" href="../screens/worktree-list-light.webp"><img src="../screens/worktree-list-light.webp" width="1300" height="420" loading="lazy" alt="Worktrees 标签页：tally 在 main 上，tally/.worktree/stable-tie-order 在它自己的分支上，两棵都有窗口开着。"></a>
         </figure>
       </div>
-      <p class="quiet small">在窗口版 <code>obg</code> 里，<kbd>Ctrl+Enter</kbd> 是另开一个窗口过去：那棵树已经有窗口开着，就把它调到前面，没有就新开一个。终端版 <code>ob</code> 只有 <kbd>Enter</kbd>：它没法替你开新终端，也没法把别的终端窗口调到前面。</p>
+      <p class="quiet small">终端版 <code>ob</code> 里，换过去就是在树上按 <kbd>Enter</kbd>，也只有这一个键：<code>ob</code> 没法替你开新终端，也没法把别的终端窗口调到前面。窗口版 <code>obg</code> 里换过去是 <kbd>Ctrl+Enter</kbd>，因为 <kbd>Enter</kbd> 是去另一个窗口：在树上按是在那里新开一个，在某个窗口那一行上按是把它调到前面。</p>
       <ul>
         <li>同一个仓库的所有 worktree 共用<em>一份</em>笔记，这个窗口记的，那个窗口马上能看到。</li>
         <li>一段对话同时只能在一个窗口里打开，不会两边各说各的。</li>
