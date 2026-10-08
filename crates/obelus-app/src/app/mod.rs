@@ -2115,12 +2115,28 @@ impl App {
         //
         // Nor while Obelus is asking which project: that screen is not the
         // welcome screen and has no mark to run a sheen across.
-        (self.current.is_none()
+        let sheen = self.current.is_none()
             && self.chooser.is_none()
             && !self.layers().filling()
-            && !obelus_config::in_a_window())
-            // An agent at work in the conversation being read.
-            || working
+            && !obelus_config::in_a_window();
+        // And a drag held against an edge, which is the one of these that
+        // is waiting on the reader's hand rather than on something
+        // happening by itself. It is here for the same reason as the
+        // rest: without a tick it stops, and a selection that stops at the
+        // edge of the screen is a selection of what fits on it.
+        //
+        // The rest are all a mark that turns, which a window turns itself
+        // on its own clock -- the same reason the sheen is not ticked
+        // there. Except where the reader turned animation off: then the
+        // window turns it a frame a tick, the frame this clock writes.
+        let window_turns = obelus_config::in_a_window() && self.settled.config.animation;
+        sheen || self.dragging.is_some() || (!window_turns && self.turning(working))
+    }
+
+    /// Whether a mark that turns is on the screen -- see `wants_animating`.
+    fn turning(&self, working: bool) -> bool {
+        // An agent at work in the conversation being read.
+        working
             // Or in one that is not, while the list that says so is open.
             || (self.selected_document().is_some() && self.anything_working())
             // Or while the notes are, which say the same thing about the
@@ -2144,13 +2160,6 @@ impl App {
             || self.server_busy()
             // And the chat's mark, while the window it talks to connects.
             || self.remote_turning()
-            // And a drag held against an edge, which is the one of these
-            // that is waiting on the reader's hand rather than on
-            // something happening by itself. It is here for the same
-            // reason as the rest: without a tick it stops, and a
-            // selection that stops at the edge of the screen is a
-            // selection of what fits on it.
-            || self.dragging.is_some()
             // And a list being matched somewhere else. The same rule once
             // more: the row that says so turns, and a mark drawn once and
             // never again is a mark saying nothing is happening -- which

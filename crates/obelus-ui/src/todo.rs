@@ -621,6 +621,9 @@ impl TodoUi<'_> {
                     mark.as_str(),
                     Style::new().fg(ink).bg(background),
                 );
+                if matches!(talked, Talked::Working) {
+                    crate::shapes::spun(area.x + 1, y);
+                }
             }
             // And that there is one at all, in the colour a mark beside a
             // name wears: the column before it carries what is going on,

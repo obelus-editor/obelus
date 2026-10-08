@@ -1109,6 +1109,66 @@ pub fn spinning(phase: u32) -> char {
     SPINNING[phase as usize % SPINNING.len()]
 }
 
+/// How far round its turn a cell holding one of those frames is, from
+/// nought to one, or `None` for a cell holding anything else.
+///
+/// For a window, which draws the turn itself and has two things to ask of
+/// the cell it was told about: whether it still holds the mark, and --
+/// where the reader has said nothing is to move on its own -- where the
+/// turn has got to on the application's clock rather than its own.
+#[must_use]
+pub fn how_far_round(symbol: &str) -> Option<f32> {
+    let mut characters = symbol.chars();
+    let glyph = characters.next()?;
+    if characters.next().is_some() {
+        return None;
+    }
+    let frame = SPINNING.iter().position(|&frame| frame == glyph)?;
+    Some(frame as f32 / SPINNING.len() as f32)
+}
+
+/// What goes between a Nerd Font glyph and the words it is in front of,
+/// where there is a gap to read by as well as a glyph.
+///
+/// Two blanks in a terminal and one in a window. A terminal's Nerd Font
+/// draws the glyph two cells wide in the one cell it was given, so the
+/// first blank is the half it bleeds into and only the second is a gap;
+/// the window draws with the `Mono` face it carries, fitted to one cell,
+/// and two blanks there were a gap and a cell of nothing beside it.
+///
+/// Not where a glyph has one blank after it, which is the bleed and no gap:
+/// in a terminal those glyphs sit against their words, and in a window the
+/// blank is the gap a terminal never showed.
+pub(crate) fn after_a_glyph() -> &'static str {
+    gap_after_a_glyph(obelus_config::in_a_window())
+}
+
+/// The same, asked of a front end named rather than of the one drawing,
+/// for whoever has to answer for both in one test binary.
+pub(crate) const fn gap_after_a_glyph(window: bool) -> &'static str {
+    match window {
+        true => " ",
+        false => "  ",
+    }
+}
+
+/// Says that the mark that turns is at this cell, where what was written
+/// there begins with it.
+///
+/// For the marks that are a word as well as a glyph -- a server's badge, an
+/// install's progress -- which are put together somewhere else and written
+/// here, and only begin with the mark while it turns. Everywhere else the
+/// view knows which branch it is in and says so with `shapes::spun`.
+pub(crate) fn turning_at(x: u16, y: u16, said: &str) {
+    if said
+        .chars()
+        .next()
+        .is_some_and(|first| SPINNING.contains(&first))
+    {
+        shapes::spun(x, y);
+    }
+}
+
 /// Where the list of an agent's commands goes.
 ///
 /// The editor region, less what a conversation's box has taken from the

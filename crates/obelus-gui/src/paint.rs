@@ -42,7 +42,7 @@ use crate::{
     font::{self, CellSize, Fonts, Size},
     grid::{
         Barred, Behind, Capped, Going, Look, Marked, Page, Parted, Rolled, Ruled, Said, Spelling,
-        Stroked, Ticked,
+        Spun, Stroked, Ticked,
     },
     motion::Moving,
 };
@@ -522,6 +522,12 @@ const FROSTED: u32 = 4_194_304;
 /// sheen on it.
 const SHEENED: u32 = 2048;
 
+/// The mark that turns, as an arc whose tail fades into nothing -- see
+/// `paint.wgsl`. How far round its head is rides in the quad's `radius`,
+/// which a ring has no corners to need. Past the turns, for the wedge's
+/// reason.
+const TURNING: u32 = 16_777_216;
+
 /// A run the reader has hold of, whose four corners each turn one of
 /// three ways -- see `held` in the shader, and `Turn`.
 const HELD_PLATE: u32 = 4096;
@@ -622,6 +628,13 @@ const BOX_CORNER: f32 = 0.30;
 const BOX_EDGE: f32 = 0.11;
 /// How far above the cell's middle it sits, as a part of the cell.
 const ABOVE: f32 = 0.05;
+
+/// How much of a cell the ring the turning mark goes round takes, across.
+///
+/// Less than a switch's box: the braille it stands in for is a few dots in
+/// the middle of its cell, and a ring as wide as the cell reads as a
+/// button rather than as a mark beside a word.
+const RING: f32 = 0.9;
 
 /// How wide a bar's track is drawn, as a part of the cell it sits in.
 ///
@@ -1464,8 +1477,15 @@ impl Painter {
             .filter(|mark| mark.still_said(page))
             .cloned()
             .collect();
+        let spun: Vec<Spun> = said
+            .spun
+            .iter()
+            .copied()
+            .filter(|mark| mark.round(page).is_some())
+            .collect();
         let said = Said {
             ticked: &ticked,
+            spun: &spun,
             marked: &marked,
             ..said
         };
@@ -1506,6 +1526,9 @@ impl Painter {
         // Over the letters: a switch replaces the glyph standing in for
         // it, rather than sitting beside one.
         self.ticks(page, said.ticked, panes, &framed, &capped, cell);
+        // And so does the mark that turns: what a terminal turns a frame a
+        // tick, a window turns at whatever rate it draws.
+        self.turns(page, said.spun, moving.turn, cell);
         // And so does a bar, for the same reason: what a terminal has for
         // a track is a column of full blocks, and a window has a shape.
         self.bars(page, said.barred, cell);
@@ -2852,6 +2875,41 @@ impl Painter {
                     );
                 }
             }
+        }
+    }
+
+    /// The marks that turn, each an arc going round in the ink of its own
+    /// cell.
+    ///
+    /// Where the window has a clock running, every one is as far round as
+    /// that says, so two of them on a screen turn together the way the
+    /// braille does. Where it has not, each is as far round as the frame in
+    /// its cell -- which still turns, a step a tick, on the application's.
+    fn turns(&mut self, page: &Page, spun: &[Spun], turn: Option<f32>, cell: CellSize) {
+        for mark in spun {
+            let Some(round) = turn.or_else(|| mark.round(page)) else {
+                continue;
+            };
+            let look = page.look(mark.area.x, mark.area.y);
+            let side = (cell.width.min(cell.height) * RING).round().max(3.0);
+            let left = f32::from(mark.area.x) * cell.width;
+            let top = f32::from(mark.area.y) * cell.height;
+            // Where a switch's box sits, and for its reason: the middle of
+            // the writing is a shade above the middle of the cell.
+            self.quads.push(Quad {
+                rect: [
+                    left + (cell.width - side) / 2.0,
+                    (top + (cell.height - side) / 2.0 - cell.height * ABOVE).round(),
+                    side,
+                    side,
+                ],
+                uv: self.atlas.white,
+                colour: rgba(look.foreground, Ink::Foreground),
+                flags: TURNING,
+                radius: round,
+                layer: 0,
+                lower: 0.0,
+            });
         }
     }
 
@@ -4301,6 +4359,7 @@ fn drawn_as_a_shape(
         || framed.iter().any(|card| card.ring_holds(page, column, row))
         || capped.iter().any(|cap| within(cap.area))
         || said.ticked.iter().any(|tick| within(tick.area))
+        || said.spun.iter().any(|mark| within(mark.area))
         // Asked of the cell and not of the column, the same as a rule's:
         // a panel drawn over a scrollbar leaves cells in that column that
         // are the panel's, and the letters there are its own.
@@ -5832,6 +5891,45 @@ mod tests {
         assert!(!seen_through(&[], 2, 1, ground), "no pane at all");
     }
 
+    /// The mark that turns is drawn as an arc and not as braille as well,
+    /// and only while its cell still holds a frame of the turn.
+    ///
+    /// Deliberate break: take the `spun` clause out of `drawn_as_a_shape`,
+    /// and the braille is drawn under the arc. Or have `Spun::round` answer
+    /// for any cell, and the arc goes on turning over whatever a list put
+    /// there.
+    #[test]
+    fn the_mark_that_turns_is_not_drawn_as_letters_as_well() {
+        let page = page("ab\u{2819}c");
+        let one = |x: u16| Spun {
+            area: ratatui::layout::Rect {
+                x,
+                y: 0,
+                width: 1,
+                height: 1,
+            },
+        };
+        let spun = [one(2)];
+        let said = Said {
+            marked: &[],
+            capped: &[],
+            ticked: &[],
+            spun: &spun,
+            barred: &[],
+            ruled: &[],
+            sheened: None,
+            parted: &[],
+            stroked: &[],
+            stack: &[],
+            bands: &[],
+        };
+        assert!(drawn_as_a_shape(&page, &said, &[], &[], 2, 0), "its cell");
+        assert!(!drawn_as_a_shape(&page, &said, &[], &[], 1, 0), "beside it");
+        assert!(!drawn_as_a_shape(&page, &said, &[], &[], 3, 0), "nor after");
+        assert_eq!(one(2).round(&page), Some(0.1), "the second frame");
+        assert_eq!(one(1).round(&page), None, "a letter is not the mark");
+    }
+
     /// A bar's cells are the window's to draw, so the letters leave them
     /// alone -- and only while the cells are still the bar's.
     ///
@@ -5872,6 +5970,7 @@ mod tests {
             marked: &[],
             capped: &[],
             ticked: &[],
+            spun: &[],
             barred: &barred,
             ruled: &[],
             sheened: None,
@@ -6182,6 +6281,7 @@ mod tests {
             marked: &[],
             capped: &[],
             ticked: &[],
+            spun: &[],
             barred: &[],
             ruled: &[],
             stroked: &stroked,

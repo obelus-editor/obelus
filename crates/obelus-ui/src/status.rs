@@ -269,8 +269,7 @@ const PATH_AT_LEAST: usize = 8;
 ///
 /// Empty outside a repository, so the row spends no column on a question
 /// that does not arise. A trailing pair of blanks is the gap before the
-/// path, and the glyph's own blank is the one the non-`Mono` variants bleed
-/// into.
+/// path, and what follows the glyph is `after_a_glyph`'s.
 ///
 /// A branch keeps its own spelling, because it is a name the reader wrote.
 /// `Detached` is not a name but Obelus saying something, so it is written
@@ -287,7 +286,11 @@ pub(crate) fn branch_badge(head: Option<&obelus_git::Head>) -> String {
         obelus_git::Head::Detached => "Detached",
     };
     match obelus_icons::enabled() {
-        true => format!("{}  {said}  ", obelus_icons::ui::BRANCH),
+        true => format!(
+            "{}{}{said}  ",
+            obelus_icons::ui::BRANCH,
+            crate::after_a_glyph()
+        ),
         false => format!("{said}  "),
     }
 }
@@ -309,12 +312,16 @@ fn server_badge(server: Option<(&'static str, ServerState)>, busy: Option<u32>) 
             // drawn whether or not glyphs are, like every other mark in
             // Obelus that turns.
             if let Some(phase) = busy {
-                return format!("{}  {name} ", crate::spinning(phase));
+                return format!(
+                    "{}{}{name} ",
+                    crate::spinning(phase),
+                    crate::after_a_glyph()
+                );
             }
             match obelus_icons::enabled() {
-                // Two blanks: one that the glyph bleeds into, one to read
-                // by.
-                true => format!("{}  {name} ", state.glyph()),
+                // A blank to read by, after the one a terminal's glyph
+                // bleeds into -- see `after_a_glyph`.
+                true => format!("{}{}{name} ", state.glyph(), crate::after_a_glyph()),
                 false => format!("{} {name} ", state.mark()),
             }
         })
@@ -434,7 +441,11 @@ fn typed(question: Option<&str>, words: &str) -> String {
     let asked = question.map(|question| format!("{question}  "));
     let asked = asked.unwrap_or_default();
     if obelus_icons::enabled() {
-        format!("{asked}{}  {words}", obelus_icons::ui::PROMPT)
+        format!(
+            "{asked}{}{}{words}",
+            obelus_icons::ui::PROMPT,
+            crate::after_a_glyph()
+        )
     } else {
         format!("{asked}> {words}")
     }
@@ -538,6 +549,7 @@ pub fn still_working(
         &crate::spinning(phase).to_string(),
         Style::new().fg(theme.gutter).bg(theme.background),
     );
+    crate::shapes::spun(area.x + offset, area.y);
 }
 
 /// The row a list is typed into: what was typed, what is held, and
@@ -808,7 +820,11 @@ impl StatusView<'_> {
         // reader must know before they press save.
         if buffer.is_dirty() {
             marker.push_str(&match obelus_icons::enabled() {
-                true => format!(" {}  unsaved", obelus_icons::ui::UNSAVED),
+                true => format!(
+                    " {}{}unsaved",
+                    obelus_icons::ui::UNSAVED,
+                    crate::after_a_glyph()
+                ),
                 false => " [unsaved]".to_string(),
             });
         }
@@ -821,13 +837,21 @@ impl StatusView<'_> {
         };
         if let Some(away) = away {
             marker.push_str(&match obelus_icons::enabled() {
-                true => format!(" {}  {away}", obelus_icons::ui::STALE),
+                true => format!(
+                    " {}{}{away}",
+                    obelus_icons::ui::STALE,
+                    crate::after_a_glyph()
+                ),
                 false => format!(" [{away}]"),
             });
         }
         if buffer.is_stale() {
             marker.push_str(&match obelus_icons::enabled() {
-                true => format!(" {}  stale", obelus_icons::ui::STALE),
+                true => format!(
+                    " {}{}stale",
+                    obelus_icons::ui::STALE,
+                    crate::after_a_glyph()
+                ),
                 false => " [stale]".to_string(),
             });
         }
@@ -899,8 +923,9 @@ impl StatusView<'_> {
         // a list and the file on screen are recognizably the same thing.
         let path = match obelus_icons::enabled() {
             true => format!(
-                "{}  {}",
+                "{}{}{}",
                 obelus_icons::for_path(buffer.path()),
+                crate::after_a_glyph(),
                 relative_to(buffer.path(), self.working_directory).display()
             ),
             false => relative_to(buffer.path(), self.working_directory)
@@ -970,6 +995,7 @@ impl StatusView<'_> {
         {
             let colour = badge_colour(self.server, self.theme);
             write(cells, area.x + offset, area.y, &badge, style.fg(colour));
+            crate::turning_at(area.x + offset, area.y, &badge);
         }
 
         // The chat beside the server, and for the same reason: both say
@@ -980,6 +1006,7 @@ impl StatusView<'_> {
             && remote_start > after_path + marker_width
         {
             write(cells, area.x + offset, area.y, &remote, style.fg(ink));
+            crate::turning_at(area.x + offset, area.y, &remote);
         }
 
         let wrong_start = remote_start.saturating_sub(wrong_width);
@@ -1096,6 +1123,7 @@ impl StatusView<'_> {
         match u16::try_from(start) {
             Ok(offset) if start >= width / 2 => {
                 write(cells, area.x + offset, area.y, &mark, style.fg(ink));
+                crate::turning_at(area.x + offset, area.y, &mark);
                 start.saturating_sub(usize::from(LABEL_GAP))
             }
             _ => width.saturating_sub(1),
@@ -1210,8 +1238,9 @@ impl StatusView<'_> {
     ) {
         let name = match obelus_icons::enabled() {
             true => format!(
-                "{}  Todo",
-                obelus_icons::for_command(obelus_command::Command::TodoOpen)
+                "{}{}Todo",
+                obelus_icons::for_command(obelus_command::Command::TodoOpen),
+                crate::after_a_glyph()
             ),
             false => "Todo".to_string(),
         };
@@ -1294,7 +1323,12 @@ impl StatusView<'_> {
         // The words, cut where the state begins: a command line is as long
         // as the program it names, and the row's own fact goes first.
         let name = match obelus_icons::enabled() {
-            true => format!("{}  {}", obelus_icons::ui::TERMINAL, terminal.said()),
+            true => format!(
+                "{}{}{}",
+                obelus_icons::ui::TERMINAL,
+                crate::after_a_glyph(),
+                terminal.said()
+            ),
             false => terminal.said().to_string(),
         };
         let room = state_at.saturating_sub(3);

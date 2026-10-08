@@ -252,6 +252,20 @@ pub trait Shapes: Send + Sync {
     /// anybody is listening here.
     fn ticked(&self, area: Rect, on: bool);
 
+    /// This cell is the mark that turns while something is happening.
+    ///
+    /// A terminal says it in braille, a frame a tick: ten dots on a clock
+    /// the application keeps, which is the smoothest a cell can turn. What
+    /// a window has that a cell has not is a turn with no frames in it --
+    /// an arc going round at whatever rate the screen is drawn -- and that
+    /// is the same mark drawn rather than spelled.
+    ///
+    /// No colours, for the reason a switch has none: the ink is the one
+    /// the view wrote in the cell. Which frame the cell holds travels in
+    /// the cell too, and is what says it is still the mark -- see
+    /// [`crate::how_far_round`].
+    fn spun(&self, area: Rect);
+
     /// This row is a line between two things.
     ///
     /// A terminal draws it in `─`, which is a glyph: it sits where the
@@ -400,6 +414,13 @@ pub(crate) fn behind(area: Rect, joined: Joined, ground: Color, cells: &CellBuff
 pub(crate) fn ticked(area: Rect, on: bool) {
     if let Some(shapes) = DRAWING.get() {
         shapes.ticked(area, on);
+    }
+}
+
+/// Tells whoever is drawing that the mark that turns is in this cell.
+pub(crate) fn spun(x: u16, y: u16) {
+    if let Some(shapes) = DRAWING.get() {
+        shapes.spun(Rect::new(x, y, 1, 1));
     }
 }
 
