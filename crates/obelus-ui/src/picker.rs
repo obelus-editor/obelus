@@ -567,7 +567,10 @@ impl Widget for PickerView<'_> {
         // of that region. Below the tabs rather than instead of them: an
         // empty tab is the one place a reader most needs to see the others.
         if let Some(reason) = self.picker.nothing_to_show() {
-            crate::nothing(cells, list, reason, self.theme);
+            match self.picker.is_filling() {
+                Some(_) => crate::nothing_yet(cells, list, reason, self.phase, self.theme),
+                None => crate::nothing(cells, list, reason, self.theme),
+            }
             return;
         }
         if self.picker.is_wrapping() {

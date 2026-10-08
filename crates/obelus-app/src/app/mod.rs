@@ -2168,14 +2168,17 @@ impl App {
             || self.server_busy()
             // And the chat's mark, while the window it talks to connects.
             || self.remote_turning()
-            // And a list being matched somewhere else. The same rule once
-            // more: the row that says so turns, and a mark drawn once and
-            // never again is a mark saying nothing is happening -- which
-            // is the one thing this row exists to contradict.
+            // And a list being matched somewhere else, or still being
+            // filled. The same rule once more: the row that says so turns,
+            // and a mark drawn once and never again is a mark saying
+            // nothing is happening -- which is the one thing this row
+            // exists to contradict. Filled as well as matched, because a
+            // list waiting on one answer from somewhere else -- the pull
+            // requests, from `gh` -- has no batches arriving to redraw it.
             || self
                 .picker
                 .as_ref()
-                .is_some_and(obelus_component::picker::Picker::is_matching)
+                .is_some_and(|picker| picker.is_filling().is_some())
             // And an install, while the page of agents is open: a card
             // whose package manager says nothing until it is done has only
             // its mark to say the install is still going.

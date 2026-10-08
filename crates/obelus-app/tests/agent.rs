@@ -14694,28 +14694,65 @@ fn a_pull_request_is_reviewed_on_the_readers_word() {
     });
 }
 
-/// The list says why it is empty, in words the reader can act on.
+/// The list says why it is empty, in words the reader can act on -- and
+/// while it is still asking, a mark turns in front of those words.
 ///
-/// Broken deliberately by taking the exit code and the `gh auth login`
-/// test out of `list`: a signed-out `gh` then reads as GitHub refusing,
-/// with `gh`'s own sentence after it.
+/// Broken deliberately four ways. Taking the exit code and the `gh auth
+/// login` test out of `list`: a signed-out `gh` then reads as GitHub
+/// refusing, with `gh`'s own sentence after it. Not marking the list as
+/// filling leaves no mark on its line. Drawing the row under the list's
+/// mark whether or not the list is empty says the waiting twice. And
+/// asking the clock only about a list being matched draws the mark and
+/// never turns it.
 #[test]
 fn the_list_of_pull_requests_says_why_it_is_empty() {
     let scratch = support::Scratch::new("agent-pull-request-empty");
     let answer = scratch.path().join("gh-answer.json");
     std::fs::write(&answer, "signed-out").expect("the answer");
     let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+    // A file under the list, because with nothing open the welcome screen's
+    // own sheen keeps the screen awake whatever the list is doing.
+    let file = scratch.path().join("read.txt");
+    std::fs::write(&file, "something to read\n").expect("a file");
+    app.open_for_test(&file);
 
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    let text = screen(&mut app);
     assert!(
-        screen(&mut app).contains("Still asking GitHub"),
+        text.contains("Still asking GitHub"),
         "the list said nothing while it waited"
+    );
+    // And a mark turns in front of the line that says so -- there, where
+    // the reader is looking, and not again on the row under the list. One
+    // answer with nothing arriving before it is nothing to redraw the
+    // screen by, so something has to wake it to turn.
+    let turns = |row: &str| {
+        row.chars()
+            .any(|cell| ('\u{2800}'..='\u{28ff}').contains(&cell))
+    };
+    assert!(
+        text.lines()
+            .find(|row| row.contains("Still asking GitHub"))
+            .is_some_and(turns),
+        "nothing on the list's line says it is still waiting:\n{text}"
+    );
+    assert!(
+        !text.lines().last().is_some_and(turns),
+        "the waiting is said twice, on the list and on the row under it:\n{text}"
+    );
+    assert!(
+        app.is_waking(),
+        "the mark is drawn and nothing is waking the screen to turn it"
     );
     pump(&mut app, &events, "the refusal", the_list_has_answered);
     let text = screen(&mut app);
     assert!(
         text.contains("Not signed in to GitHub: gh auth login signs in"),
         "a signed-out gh was not said as one:\n{text}"
+    );
+    assert!(
+        !app.is_waking(),
+        "the screen is still being woken with nothing moving on it"
     );
 
     support::press(&mut app, KeyCode::Esc);

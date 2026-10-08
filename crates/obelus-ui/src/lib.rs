@@ -2757,6 +2757,28 @@ pub fn nothing(cells: &mut CellBuffer, area: Rect, reason: &str, theme: &Theme) 
     );
 }
 
+/// What a list says when it has nothing in it *yet*: the same line, with
+/// the mark that turns in front of it.
+///
+/// On the line rather than on the row under the list, because the line is
+/// where the reader is looking and already says what is being waited for:
+/// a mark down there as well would be the waiting said twice. A list that
+/// has rows and is still being filled has no such line, and keeps the mark
+/// on the row under it -- see `status::still_working`.
+pub fn nothing_yet(cells: &mut CellBuffer, area: Rect, reason: &str, phase: u32, theme: &Theme) {
+    let style = Style::new().fg(theme.gutter).bg(theme.background);
+    write(
+        cells,
+        area.x + 1,
+        area.y,
+        &spinning(phase).to_string(),
+        style,
+    );
+    shapes::spun(area.x + 1, area.y);
+    // One blank after the mark, as after every glyph.
+    write(cells, area.x + 3, area.y, reason, style);
+}
+
 /// How many leading characters to drop so the rest of `contents` fits in
 /// `cells`, with one cell left for the ellipsis that marks the cut.
 ///

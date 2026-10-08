@@ -590,8 +590,10 @@ pub fn prompt_row(
         style,
         theme,
     );
-    // And that the list has not answered for what is in it yet.
-    if picker.is_filling().is_some() {
+    // And that the list has not answered for what is in it yet -- where it
+    // has rows to show. An empty one says so on its own line, with the
+    // mark in front of it, and the reader is looking there.
+    if picker.is_filling().is_some() && picker.nothing_to_show().is_none() {
         still_working(
             cells,
             area,

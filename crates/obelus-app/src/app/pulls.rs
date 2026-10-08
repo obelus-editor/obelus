@@ -217,9 +217,18 @@ impl App {
             (Some(why), false) => why.said(),
             (None, false) => "No pull request is open".to_string(),
         };
+        // And the mark that turns on the row under the list, which every
+        // list still waiting on its rows wears: a sentence in the middle
+        // says what it is waiting for, and only something moving says the
+        // waiting is still going on.
+        let filling = self
+            .pulls
+            .asking
+            .then(|| "Asking GitHub\u{2026}".to_string());
         if let Some(picker) = self.picker.as_mut() {
             picker.replace(items);
             picker.while_empty(&empty);
+            picker.filling(filling);
         }
     }
 
