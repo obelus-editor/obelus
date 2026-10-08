@@ -538,6 +538,7 @@ pub fn still_working(
         &crate::spinning(phase).to_string(),
         Style::new().fg(theme.gutter).bg(theme.background),
     );
+    crate::shapes::spun(area.x + offset, area.y);
 }
 
 /// The row a list is typed into: what was typed, what is held, and
@@ -970,6 +971,7 @@ impl StatusView<'_> {
         {
             let colour = badge_colour(self.server, self.theme);
             write(cells, area.x + offset, area.y, &badge, style.fg(colour));
+            crate::turning_at(area.x + offset, area.y, &badge);
         }
 
         // The chat beside the server, and for the same reason: both say
@@ -980,6 +982,7 @@ impl StatusView<'_> {
             && remote_start > after_path + marker_width
         {
             write(cells, area.x + offset, area.y, &remote, style.fg(ink));
+            crate::turning_at(area.x + offset, area.y, &remote);
         }
 
         let wrong_start = remote_start.saturating_sub(wrong_width);
@@ -1096,6 +1099,7 @@ impl StatusView<'_> {
         match u16::try_from(start) {
             Ok(offset) if start >= width / 2 => {
                 write(cells, area.x + offset, area.y, &mark, style.fg(ink));
+                crate::turning_at(area.x + offset, area.y, &mark);
                 start.saturating_sub(usize::from(LABEL_GAP))
             }
             _ => width.saturating_sub(1),

@@ -33,6 +33,7 @@ struct Said {
 struct Heard {
     caps: Mutex<Vec<Said>>,
     switches: Mutex<Vec<(Rect, bool)>>,
+    turning: Mutex<Vec<Rect>>,
     bars: Mutex<Vec<obelus_ui::shapes::Bar>>,
     strokes: Mutex<Vec<obelus_ui::shapes::Stroke>>,
     rules: Mutex<Vec<Rect>>,
@@ -70,6 +71,12 @@ impl obelus_ui::shapes::Shapes for Heard {
     fn ticked(&self, area: Rect, on: bool) {
         if let Ok(mut switches) = self.switches.lock() {
             switches.push((area, on));
+        }
+    }
+
+    fn spun(&self, area: Rect) {
+        if let Ok(mut turning) = self.turning.lock() {
+            turning.push(area);
         }
     }
 
@@ -142,6 +149,69 @@ fn a_switch_says_which_cell_it_is_in_and_which_way_it_is_set() {
         cells[(where_it_is.x, where_it_is.y)].symbol(),
         obelus_ui::tick(true).to_string(),
         "and the cell still says it, which is all a terminal has"
+    );
+}
+
+/// Break: drop the `shapes::spun` after the glyph in `still_working`, and
+/// a window has a mark with nothing saying it turns -- so it draws the
+/// braille a frame a tick, which is the terminal's answer and not its own.
+#[test]
+fn the_mark_that_turns_says_which_cell_it_is_in() {
+    let heard = heard();
+    // A row of its own, for the reason the switch's test has one.
+    let row = 17;
+    let area = Rect {
+        x: 0,
+        y: row,
+        width: 40,
+        height: 1,
+    };
+    let mut cells = CellBuffer::empty(Rect {
+        height: row + 1,
+        y: 0,
+        ..area
+    });
+    obelus_ui::status::still_working(&mut cells, area, None, "ab", None, 3, &DARK);
+
+    let said = heard.turning.lock().expect("nothing poisoned it").clone();
+    let mine: Vec<Rect> = said.into_iter().filter(|area| area.y == row).collect();
+    assert_eq!(mine.len(), 1, "one mark: {mine:?}");
+    let cell = mine[0];
+    assert_eq!((cell.width, cell.height), (1, 1));
+    assert_eq!(
+        cells[(cell.x, cell.y)].symbol(),
+        obelus_ui::spinning(3).to_string(),
+        "and the cell still says it, which is all a terminal has"
+    );
+}
+
+/// What a window asks of a cell it was told turns: a frame of the turn is
+/// a place round it, each one further than the last, and anything else is
+/// not the mark.
+///
+/// Break: answer `Some(0.0)` for every frame, and a window told not to
+/// animate draws an arc that never moves while the terminal's turns.
+#[test]
+fn a_frame_of_the_turn_says_how_far_round_it_is() {
+    let rounds: Vec<f32> = (0..10)
+        .map(|phase| {
+            obelus_ui::how_far_round(&obelus_ui::spinning(phase).to_string())
+                .expect("a frame of the turn")
+        })
+        .collect();
+    assert_eq!(rounds[0], 0.0, "the turn starts at the top: {rounds:?}");
+    assert!(
+        rounds
+            .windows(2)
+            .all(|pair| pair[0] < pair[1] && pair[1] < 1.0),
+        "each frame further round than the last, short of a whole turn: {rounds:?}"
+    );
+    assert_eq!(obelus_ui::how_far_round("a"), None);
+    assert_eq!(obelus_ui::how_far_round(" "), None);
+    // A frame with something after it is a word that begins with one.
+    assert_eq!(
+        obelus_ui::how_far_round(&format!("{}x", obelus_ui::spinning(0))),
+        None
     );
 }
 

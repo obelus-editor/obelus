@@ -1109,6 +1109,41 @@ pub fn spinning(phase: u32) -> char {
     SPINNING[phase as usize % SPINNING.len()]
 }
 
+/// How far round its turn a cell holding one of those frames is, from
+/// nought to one, or `None` for a cell holding anything else.
+///
+/// For a window, which draws the turn itself and has two things to ask of
+/// the cell it was told about: whether it still holds the mark, and --
+/// where the reader has said nothing is to move on its own -- where the
+/// turn has got to on the application's clock rather than its own.
+#[must_use]
+pub fn how_far_round(symbol: &str) -> Option<f32> {
+    let mut characters = symbol.chars();
+    let glyph = characters.next()?;
+    if characters.next().is_some() {
+        return None;
+    }
+    let frame = SPINNING.iter().position(|&frame| frame == glyph)?;
+    Some(frame as f32 / SPINNING.len() as f32)
+}
+
+/// Says that the mark that turns is at this cell, where what was written
+/// there begins with it.
+///
+/// For the marks that are a word as well as a glyph -- a server's badge, an
+/// install's progress -- which are put together somewhere else and written
+/// here, and only begin with the mark while it turns. Everywhere else the
+/// view knows which branch it is in and says so with `shapes::spun`.
+pub(crate) fn turning_at(x: u16, y: u16, said: &str) {
+    if said
+        .chars()
+        .next()
+        .is_some_and(|first| SPINNING.contains(&first))
+    {
+        shapes::spun(x, y);
+    }
+}
+
 /// Where the list of an agent's commands goes.
 ///
 /// The editor region, less what a conversation's box has taken from the

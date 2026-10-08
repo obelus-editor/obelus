@@ -1260,6 +1260,7 @@ impl ChatView<'_> {
                         crate::spinning(self.phase),
                         style.fg(self.theme.gutter_current),
                     );
+                    crate::shapes::spun(at, y);
                 } else if obelus_icons::enabled() {
                     put(cells, at, y, glyph, style);
                 } else {
@@ -1566,6 +1567,7 @@ impl ChatView<'_> {
                 let at = 1 + room - text_width(&mark);
                 if let Ok(offset) = u16::try_from(at) {
                     write(cells, area.x + offset, area.y, &mark, plain.fg(ink));
+                    crate::turning_at(area.x + offset, area.y, &mark);
                 }
                 room - wide
             }

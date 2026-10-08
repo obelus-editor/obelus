@@ -69,6 +69,8 @@ impl obelus_ui::shapes::Shapes for Heard {
 
     fn ticked(&self, _area: Rect, _on: bool) {}
 
+    fn spun(&self, _area: Rect) {}
+
     fn ruled(&self, _area: Rect) {}
 
     fn capped(&self, _keys: &str, _area: Rect, _cap: Color, _page: Color, _edge: Color) {}

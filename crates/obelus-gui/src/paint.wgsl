@@ -59,12 +59,13 @@ struct Quad {
     // what is behind a pane, blurred one way. 2048: a letter of the
     // welcome screen's mark, which the light runs across. 2097152: a
     // triangle filling the quad, which is the arrow on the seam a
-    // deletion left.
+    // deletion left. 16777216: the mark that turns while something is
+    // happening.
     @location(3) flags: u32,
     // How far those corners are taken off, in pixels -- and for the two
     // quads that carry no corners, the one number each of them needs
-    // instead: how far a sliding pane has still to come, and which way a
-    // wedge points.
+    // instead: how far a sliding pane has still to come, which way a
+    // wedge points, and how far round a turning mark's head is.
     @location(4) radius: f32,
     // Which layer of the atlas its picture is on: the letters', or the
     // pictures' where it has colours of its own.
@@ -320,8 +321,33 @@ const ENDS: vec2<f32> = vec2<f32>(0.76, 0.31);
 // line is: a mark with cut ends reads as two strokes rather than one.
 const NIB: f32 = 0.085;
 
+// The mark that turns: a ring the pen goes round, in the quad's own units
+// from nought to one, and how much of the ring is ink behind the head.
+// Three quarters, fading to nothing at the tail, so what the eye follows is
+// the head and there is no second end for it to catch on.
+const RING_AT: f32 = 0.38;
+const RING_NIB: f32 = 0.09;
+const RING_TAIL: f32 = 0.75;
+const WHOLE_TURN: f32 = 6.2831855;
+
 @fragment
 fn fragment(in: Fragment) -> @location(0) vec4<f32> {
+    // The mark that turns, its head `radius` of a turn round from the top
+    // and going clockwise, which is the way the braille it stands in for
+    // goes.
+    if ((in.flags & 16777216u) != 0u) {
+        let at = in.middle / (in.half_size * 2.0);
+        let ring = abs(length(at) - RING_AT);
+        // Back into pixels for the softening, the same as the switch.
+        let covered = clamp((RING_NIB - ring) * in.half_size.x * 2.0, 0.0, 1.0);
+        // How far behind the head this point is, as a part of a turn:
+        // clockwise from the top on a screen whose second axis points
+        // down is `atan2(x, -y)`.
+        let angle = fract(atan2(at.x, -at.y) / WHOLE_TURN);
+        let behind = fract(in.radius - angle + 1.0);
+        let tail = clamp(1.0 - behind / RING_TAIL, 0.0, 1.0);
+        return vec4<f32>(in.colour.rgb, in.colour.a * covered * tail);
+    }
     // The arrow on the seam a deletion left: a triangle filling the quad,
     // its point in the middle of one short side. `radius` says which side,
     // because the direction is the one thing a wedge has to carry and the
