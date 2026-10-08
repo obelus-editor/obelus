@@ -39,18 +39,31 @@ fn with(share: &str) -> obelus_config::Config {
 /// machine, and `unlimited` takes it out again -- so that a program started
 /// afterwards is told nothing and sizes itself.
 ///
-/// Broken deliberately three ways. Dropping `settle_the_pool` from
-/// `apply_config` leaves Obelus out of any pool. Resizing only on the way in
+/// Started, it is in one before anything else: the language servers are
+/// started a few lines into `App::start`, and one started before the pool
+/// was made was told nothing -- which is what the first run of this in a
+/// window found, rust-analyzer without the variable.
+///
+/// Broken deliberately four ways. Dropping `settle_the_pool` from
+/// `App::start` leaves a started Obelus out of any pool until a setting
+/// changes. Dropping it from `apply_config` leaves Obelus out of the pool a
+/// change asks for. Resizing only on the way in
 /// leaves `all` at half the machine. And keeping the pool on `unlimited`
 /// goes on telling every program where it is.
 #[test]
 fn the_setting_puts_obelus_in_the_pool_and_takes_it_out() {
     let (sender, _events) = std::sync::mpsc::channel();
     let mut app = App::new(Vec::new());
-    app.events_for_test(sender);
     support::lay_out(&mut app, 60, 12);
     let cpus = std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
 
+    app.start(sender);
+    assert!(
+        !obelus_jobs::lent().is_empty(),
+        "a started Obelus is in no pool"
+    );
+
+    app.configure(with("unlimited"), vec!["build_jobs"]);
     app.configure(with("half"), vec!["build_jobs"]);
     assert!(
         obelus_jobs::lent()

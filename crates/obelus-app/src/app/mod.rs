@@ -1516,6 +1516,10 @@ impl App {
     /// about what Obelus does on the way up has nothing else to call.
     pub fn start(&mut self, sender: std::sync::mpsc::Sender<Event>) {
         self.events = Some(sender.clone());
+        // First, before anything is started that compiles: an agent, a
+        // server or a terminal is told where the pool is when it starts,
+        // and not after -- the servers below are started a few lines down.
+        self.settle_the_pool();
         // Before anything else is started: the reader is looking at an empty
         // screen until it arrives.
         self.send_the_reopening();
@@ -1537,10 +1541,6 @@ impl App {
         // same question wherever this one was started, so it is asked
         // whether or not the reader has said where they work.
         self.ask_about_releases();
-        // Before anything is started that compiles: an agent, a server or
-        // a terminal is told where the pool is when it starts, and not
-        // after.
-        self.settle_the_pool();
         // Before what went wrong, which a chat that is not there to
         // connect to is one of. And not before there is a project, like
         // the tools above: a conversation begun from the chat would be
