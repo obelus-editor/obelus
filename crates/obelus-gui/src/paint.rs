@@ -196,7 +196,8 @@ pub(crate) struct Painter {
     /// the whole frame is drawn with, nothing else reading a picture.
     levels: Vec<Seen>,
     /// Where a blur's first way is put, for the second to read, and the
-    /// bindings that read it.
+    /// bindings that read it. Half the window each way, as the blurred
+    /// picture is -- see `halved`.
     scratch: wgpu::TextureView,
     scratch_bindings: wgpu::BindGroup,
     /// And the whole frame as one, which is drawn only while a pane is on
@@ -242,10 +243,11 @@ struct Seen {
 }
 
 impl Seen {
-    /// Both pictures, the size of the window.
+    /// Both pictures: the sharp one the size of the window, and the blurred
+    /// one half of it each way -- see `halved`.
     fn made(binder: &Binder<'_>, format: wgpu::TextureFormat, width: u32, height: u32) -> Self {
         let backdrop = made_to_draw_into(binder.device, format, width, height);
-        let blurred = made_to_draw_into(binder.device, format, width, height);
+        let blurred = made_to_draw_into(binder.device, format, halved(width), halved(height));
         let bindings = binder.bound(&backdrop, &blurred);
         Self {
             backdrop,
@@ -1067,7 +1069,7 @@ impl Painter {
         };
         let nothing = made_to_draw_into(&device, view, 1, 1);
         let levels = vec![Seen::made(&binder, view, width, height)];
-        let scratch = made_to_draw_into(&device, view, width, height);
+        let scratch = made_to_draw_into(&device, view, halved(width), halved(height));
         let scratch_bindings = binder.bound(&scratch, &nothing);
         let picture = made_to_draw_into(&device, view, width, height);
         let showing_bindings = binder.bound(&picture, &nothing);
@@ -1198,7 +1200,7 @@ impl Painter {
         let levels = (0..self.levels.len())
             .map(|_| Seen::made(&binder, self.view, width, height))
             .collect();
-        let scratch = made_to_draw_into(&self.device, self.view, width, height);
+        let scratch = made_to_draw_into(&self.device, self.view, halved(width), halved(height));
         let scratch_bindings = binder.bound(&scratch, &self.nothing);
         let picture = made_to_draw_into(&self.device, self.view, width, height);
         let showing_bindings = binder.bound(&picture, &self.nothing);
@@ -3409,14 +3411,27 @@ impl Painter {
     /// reads nothing outside it, and what is outside it in the picture is
     /// nothing -- a blur that reached out for it would darken the pane's
     /// edges, which is why the shader holds its samples inside `box_`.
+    ///
+    /// Each carries how many of the window's pixels one of the picture it
+    /// draws into is, each way: the blur is worked out in the window's
+    /// pixels, wherever it is drawn.
     fn blurs_over(&mut self, box_: [f32; 4]) -> usize {
         let [left, top, far, low] = box_;
+        let (width, height) = (self.configured.width, self.configured.height);
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "a window is nowhere near 2^24 pixels across"
+        )]
+        let (across, down) = (
+            width as f32 / halved(width).max(1) as f32,
+            height as f32 / halved(height).max(1) as f32,
+        );
         let first = self.quads.len();
         for way in [[1.0, 0.0], [0.0, 1.0]] {
             self.quads.push(Quad {
                 rect: [left, top, (far - left).max(1.0), (low - top).max(1.0)],
                 uv: box_,
-                colour: [way[0], way[1], 0.0, 0.0],
+                colour: [way[0], way[1], across, down],
                 flags: BLUR,
                 radius: 0.0,
                 layer: 0,
@@ -4560,6 +4575,18 @@ enum Ink {
 /// sRGB conversion for exactly this reason. A theme's `#1e1e2e` is the
 /// colour the reader picked, and a pipeline that corrects it draws a
 /// different one.
+/// How big a blurred picture is, against the window: half, each way.
+///
+/// A quarter of the memory and a quarter of the work of one the size of the
+/// window, and nothing lost to the eye, because what is blurred has no detail
+/// a pixel of the window would show -- the spread is five and a half of them,
+/// and the glass reads it through a smooth sampler that puts the pixels back
+/// in between. The sharp picture stays whole: the rim lets it through, and
+/// the rim is where the glass bends the lines behind it.
+fn halved(pixels: u32) -> u32 {
+    pixels.div_ceil(2)
+}
+
 /// A texture the size of the window, to draw a frame into and read back.
 fn made_to_draw_into(
     device: &wgpu::Device,
