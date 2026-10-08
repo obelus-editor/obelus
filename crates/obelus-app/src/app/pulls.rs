@@ -180,6 +180,9 @@ impl App {
             }
             Err(why) => {
                 tracing::info!(?why, "no list of pull requests");
+                // And none of the last one: rows from an answer before this
+                // one would be a list saying what was open then.
+                self.pulls.listed.clear();
                 self.pulls.unlisted = Some(why);
             }
         }
@@ -212,22 +215,28 @@ impl App {
                 .map(|pull| self.pull_request_row(pull, now))
                 .collect(),
         };
-        let empty = match (&self.pulls.unlisted, self.pulls.asking) {
-            (_, true) => "Still asking GitHub".to_string(),
-            (Some(why), false) => why.said(),
-            (None, false) => "No pull request is open".to_string(),
+        // Whatever is typed, while there is no list to type at: the waiting
+        // and the refusal are facts about the world, and "No match" would be
+        // a fact about a query nothing was asked of. With a list, a query
+        // that matches none of it is the query's to say.
+        let (empty, whatever_is_typed) = match (&self.pulls.unlisted, self.pulls.asking) {
+            (_, true) => ("Still asking GitHub".to_string(), true),
+            (Some(why), false) => (why.said(), true),
+            (None, false) => ("No pull request is open".to_string(), false),
         };
-        // And the mark that turns on the row under the list, which every
-        // list still waiting on its rows wears: a sentence in the middle
-        // says what it is waiting for, and only something moving says the
-        // waiting is still going on.
+        // And the mark that turns in front of that line, which every list
+        // still waiting on its rows wears: the line says what it is waiting
+        // for, and only something moving says the waiting is going on.
         let filling = self
             .pulls
             .asking
             .then(|| "Asking GitHub\u{2026}".to_string());
         if let Some(picker) = self.picker.as_mut() {
             picker.replace(items);
-            picker.while_empty(&empty);
+            match whatever_is_typed {
+                true => picker.while_empty(&empty),
+                false => picker.when_empty(&empty),
+            }
             picker.filling(filling);
         }
     }
@@ -428,8 +437,11 @@ fn list(
     if !output.status.success() {
         let said = String::from_utf8_lossy(&output.stderr);
         // `gh` exits 4 when it needs signing in, which is the one failure
-        // with a key the reader can press about it.
-        if output.status.code() == Some(4) || said.contains("gh auth login") {
+        // with a key the reader can press about it. By the code and not by
+        // the words: a checkout whose remotes are not on GitHub at all is
+        // also told to `gh auth login`, and exits 1 -- signing in is not
+        // what that reader is missing.
+        if output.status.code() == Some(4) {
             return Err(Unlisted::SignedOut);
         }
         let first = said.lines().find(|line| !line.trim().is_empty());

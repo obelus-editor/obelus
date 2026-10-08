@@ -578,6 +578,13 @@ impl App {
             }
             Whose::Preview => {
                 if let Some(preview) = self.preview.as_mut() {
+                    // A reading is its rows, one to a row of the screen, and
+                    // the buffer beside it is empty: the bar's row is the
+                    // scroll. Clamped where it is laid out.
+                    if preview.reading.is_some() {
+                        preview.scrolled = isize::try_from(top).unwrap_or(isize::MAX);
+                        return;
+                    }
                     // Kept as rows from its line, which is how the keys
                     // move it: so the viewport is moved now, clamped where
                     // the file ends, and what is kept is how far it went --

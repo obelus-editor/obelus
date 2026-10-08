@@ -14526,6 +14526,56 @@ fn described(sha: &str, body: &str) -> String {
     )
 }
 
+/// The description's bar, taken hold of and dragged to the foot, shows the
+/// end of the description.
+///
+/// Broken deliberately by taking the reading's own arm out of `drag_bar`:
+/// the drag then moves the empty buffer the reading sits beside, and the
+/// description stays at its top.
+#[test]
+fn the_descriptions_bar_moves_the_description() {
+    let scratch = support::Scratch::new("agent-pull-request-preview-bar");
+    let answer = scratch.path().join("gh-answer.json");
+    let body: String = (0..60).map(|line| format!("line {line}\\n\\n")).collect();
+    std::fs::write(&answer, described("abc123", &body)).expect("the answer");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 1)
+    });
+    let text = screen(&mut app);
+    assert!(text.contains("#123   alice"), "no description:\n{text}");
+    // The bar is the last column, in the rows under the list's rule.
+    let rows: Vec<&str> = text.lines().collect();
+    let rule = rows
+        .iter()
+        .position(|row| row.contains('\u{2500}'))
+        .expect("the rule under the list");
+    let bar: Vec<u16> = rows
+        .iter()
+        .enumerate()
+        .skip(rule + 1)
+        .filter(|(_, row)| row.chars().last() == Some('\u{2588}'))
+        .map(|(y, _)| u16::try_from(y).expect("a row"))
+        .collect();
+    let (first, last) = (bar[0], *bar.last().expect("a bar beside the description"));
+    let x = WIDTH - 1;
+    for (kind, y) in [
+        (obelus_app::event::Pointer::Pressed, first),
+        (obelus_app::event::Pointer::Dragged, last + 10),
+        (obelus_app::event::Pointer::Released, last + 10),
+    ] {
+        app.handle(Event::Pointer { kind, x, y });
+        support::lay_out(&mut app, WIDTH, HEIGHT);
+    }
+    let text = screen(&mut app);
+    assert!(
+        !text.contains("#123   alice") && text.contains("line 59"),
+        "the drag did not reach the end of the description:\n{text}"
+    );
+}
+
 /// What the pull request the list has selected says about itself, under
 /// the list: which it is and how much it changes, then its title and its
 /// description, laid out as the markdown they are -- and a description
@@ -14697,9 +14747,10 @@ fn a_pull_request_is_reviewed_on_the_readers_word() {
 /// The list says why it is empty, in words the reader can act on -- and
 /// while it is still asking, a mark turns in front of those words.
 ///
-/// Broken deliberately four ways. Taking the exit code and the `gh auth
-/// login` test out of `list`: a signed-out `gh` then reads as GitHub
-/// refusing, with `gh`'s own sentence after it. Not marking the list as
+/// Broken deliberately five ways. Taking the exit code out of `list`: a
+/// signed-out `gh` then reads as GitHub refusing, with `gh`'s own sentence
+/// after it. Going by `gh auth login` in what it said, as this first did:
+/// a checkout off GitHub is told to sign in. Not marking the list as
 /// filling leaves no mark on its line. Drawing the row under the list's
 /// mark whether or not the list is empty says the waiting twice. And
 /// asking the clock only about a list being matched draws the mark and
@@ -14763,6 +14814,48 @@ fn the_list_of_pull_requests_says_why_it_is_empty() {
     assert!(
         text.contains("No pull request is open"),
         "an empty answer was not said as one:\n{text}"
+    );
+
+    // A checkout whose remotes are not on GitHub is told to `gh auth login`
+    // too, and signing in is not what it is missing.
+    support::press(&mut app, KeyCode::Esc);
+    std::fs::write(&answer, "not-github").expect("not on GitHub");
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(
+        &mut app,
+        &events,
+        "the other refusal",
+        the_list_has_answered,
+    );
+    let text = screen(&mut app);
+    assert!(
+        text.contains("GitHub would not answer: none of the git remotes")
+            && !text.contains("Not signed in"),
+        "a checkout off GitHub was told to sign in:\n{text}"
+    );
+}
+
+/// A query that matches none of the pull requests says so, and does not say
+/// that none are open.
+///
+/// Broken deliberately by setting the empty line with `while_empty` when
+/// there is a list: the reader's query then reads as GitHub having nothing.
+#[test]
+fn a_query_that_matches_no_pull_request_says_so() {
+    let scratch = support::Scratch::new("agent-pull-request-no-match");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, one_pull_request("abc123")).expect("the answer");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 1)
+    });
+    support::type_text(&mut app, "zzzz");
+    let text = screen(&mut app);
+    assert!(
+        text.contains("No match") && !text.contains("No pull request is open"),
+        "a query nothing matched was said as nothing being open:\n{text}"
     );
 }
 
