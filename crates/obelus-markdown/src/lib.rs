@@ -31,6 +31,20 @@ use obelus_text::{Text, coordinates::ByteOffset, kind::SyntaxKind, text_width};
 /// Every row is at most `width` cells, so the caller never has to wrap.
 #[must_use]
 pub fn render(source: &str, width: u16) -> Vec<Row> {
+    // A closing fence is only a closing fence to the grammar with a line
+    // break after it, and what an agent says ends where its last fence
+    // does: the fence was drawn inside the box as a line of the code, and
+    // copied with it. Put at the end, the break moves nothing before it, so
+    // every place a row says it came from is still a place in what was
+    // said.
+    let ended;
+    let source = match source.is_empty() || source.ends_with('\n') {
+        true => source,
+        false => {
+            ended = format!("{source}\n");
+            ended.as_str()
+        }
+    };
     let text = Text::from_string(source);
     let Some(state) = SyntaxState::new(LanguageId::Markdown, &text) else {
         // No grammar for markdown in this build. The words are still the

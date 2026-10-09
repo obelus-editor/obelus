@@ -984,3 +984,30 @@ fn a_block_of_code_carries_its_own_lines() {
         "{rows:?}"
     );
 }
+
+/// A fence at the very end of what was said closes the block.
+///
+/// What an agent says ends where it stops talking, and an answer that ends
+/// with a block of code ends with its closing fence and nothing after it.
+/// The grammar closes a fence only at a line break, so that fence was
+/// drawn inside the box as the last line of the code -- and enter copied
+/// it with the rest.
+///
+/// Broken deliberately by laying out the source as it came, without the
+/// break put after it: the box has a row of backticks in it.
+#[test]
+fn a_fence_at_the_very_end_closes_the_block() {
+    let rows = render("Here:\n\n```rust\nfn a() {}\n```", 30);
+    let code: Vec<String> = rows
+        .iter()
+        .filter(|row| row.code.is_some())
+        .map(text)
+        .collect();
+    assert_eq!(code.len(), 3, "the fence is inside the box: {code:#?}");
+    assert_eq!(
+        rows.iter()
+            .find_map(|row| row.code.as_ref())
+            .map(|code| code.text.as_ref()),
+        Some("fn a() {}")
+    );
+}
