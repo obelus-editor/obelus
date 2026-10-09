@@ -213,19 +213,6 @@ pub struct App {
     /// Bumped every time a file picker opens, so batches from a walk whose
     /// picker has already closed are recognizable and dropped.
     walk_generation: obelus_runtime::cancel::Latest,
-    /// A line whose commit was asked for before anything knew who wrote it.
-    ///
-    /// The walk that names lines is only started for a reader who wants
-    /// names in the margin, so for everyone else the key that opens the
-    /// commit behind a line is the thing that starts it -- and an answer
-    /// that arrives after the key has already been let go is an answer to a
-    /// question nobody is still holding. Held here, and carried out when
-    /// the walk lands, so the key works on the first press for everybody.
-    asked_line: Option<(
-        PathBuf,
-        Option<gix::ObjectId>,
-        obelus_text::coordinates::LineNumber,
-    )>,
     /// Which walk of the history the list is expecting batches from.
     ///
     /// Bumped every time a history starts being read -- a key, a tab, a
@@ -1012,7 +999,6 @@ impl App {
             outside: false,
             search_generation: obelus_runtime::cancel::Latest::default(),
             history_generation: obelus_runtime::cancel::Latest::default(),
-            asked_line: None,
             rendered: None,
             theme_before: None,
             taken_from: None,
@@ -3229,14 +3215,7 @@ impl App {
                 // file: they walked away from it while a walk of its history
                 // was running, and they will walk back.
                 self.asking_blame.remove(&(path.clone(), at));
-                self.blames.insert((path.clone(), at), lines);
-                // And if this is the answer somebody pressed a key for,
-                // that key finishes now rather than needing pressing again.
-                if let Some((asked, version, line)) = self.asked_line.take()
-                    && (asked, version) == (path, at)
-                {
-                    self.open_line_commit_at(line);
-                }
+                self.blames.insert((path, at), lines);
             }
             Event::Git(obelus_git::Event::Logged {
                 generation,

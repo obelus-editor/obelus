@@ -321,8 +321,6 @@ pub fn for_command(command: obelus_command::Command) -> char {
         Command::TodoAdd => '\u{f0417}',
         Command::HistoryFile => '\u{f0214}',
         Command::HistoryProject => '\u{f02a1}',
-        // One commit, which is what a line has.
-        Command::HistoryLine => '\u{f0aa0}',
         // `md-source_pull`: the two branches and the arrow between them
         // that a pull request is drawn as everywhere else.
         Command::PullRequestReview => '\u{f04c2}',

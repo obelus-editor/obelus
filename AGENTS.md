@@ -305,14 +305,15 @@ is a win claimed rather than got.
 
 **A setting about how something is drawn is not a setting about whether it
 can be asked.** Turning the margin's names off turned off the walk that
-finds them, so the key that opens the commit behind a line went dead and
-said "still reading who wrote this" while nothing was being read -- the one
-answer that was false. The margin obeys the setting; the question does not,
-and the key starts the walk itself when nobody else has. A reader who wants
-no names in the margin has not said they never want to know.
+finds them, so the key that opened the commit behind a line (a command since
+removed) went dead and said "still reading who wrote this" while nothing was
+being read -- the one answer that was false. The margin obeys the setting;
+a question about the same thing does not, and starts the walk itself when
+nobody else has. A reader who wants no names in the margin has not said they
+never want to know.
 
-**Gate a command on the question, not on the answer.** `f11` was offered
-only once the blame naming that line had arrived -- which reads as
+**Gate a command on the question, not on the answer.** That same key was
+offered only once the blame naming that line had arrived -- which reads as
 precision and is a trap: for a reader with the margin's names off nothing
 ever starts that walk, so the row was greyed out for ever and the palette
 was the one place they could not get started from. Requirements have to be
@@ -360,7 +361,9 @@ command is gone and `App::blame` reads the setting.
   how they sit on the keyboard: `f1`-`f4` are the things to read (a file, an
   open file, a changed file, a conversation) and `f5`-`f8` are finding, one
   question at four radii -- this file or every file, its text or its names.
-  `f9`-`f12` are git's and the jump to a definition. Bare, never with a
+  `f9`-`f12` are git's history at two widths, the jump to a definition, and
+  what is on its way into the history: the pull requests and issues. Bare,
+  never with a
   modifier: one terminal reports `shift+f5` and the next reports `f17` for the
   same press. That is the `classic` layout; a keyboard without the row starts
   from `mnemonic` (`keys_from`), the same twelve on control and alt by the
