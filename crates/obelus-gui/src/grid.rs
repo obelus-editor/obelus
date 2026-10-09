@@ -1608,6 +1608,50 @@ mod tests {
         assert_eq!(page.look(0, 1).text, "c");
     }
 
+    /// The first frame `ratatui` draws at a new size takes away every cell
+    /// the page kept from the old one, including those it has nothing to
+    /// say about.
+    ///
+    /// What keeping the cells across a resize stands on: `ratatui` diffs
+    /// against the last frame, so a cell it leaves blank at the new size
+    /// is sent only if it clears first. Deliberate break: `Cells::clear`
+    /// returning `Ok(())` without sending `Cleared` -- `bcd` is then still
+    /// on the page after a frame that drew only `x`.
+    #[test]
+    fn the_first_frame_at_a_new_size_takes_the_kept_cells_away() {
+        let (updates, frames) = std::sync::mpsc::channel();
+        let measured = Arc::new(Measured::default());
+        measured.resized(4, 1, 40, 10);
+        let cells = Cells::new(updates, Arc::new(|| {}), Arc::clone(&measured));
+        let mut terminal = ratatui::Terminal::new(cells).expect("a terminal");
+        let mut page = Page::default();
+        page.resized(4, 1);
+        let draw = |terminal: &mut ratatui::Terminal<Cells>, said: &'static str| {
+            terminal
+                .draw(|frame| {
+                    frame
+                        .buffer_mut()
+                        .set_string(0, 0, said, ratatui::style::Style::new());
+                })
+                .expect("a frame");
+        };
+        draw(&mut terminal, "abcd");
+        while let Ok(update) = frames.try_recv() {
+            page.apply(update);
+        }
+        assert_eq!(page.look(1, 0).text, "b");
+        measured.resized(6, 1, 60, 10);
+        page.resized(6, 1);
+        draw(&mut terminal, "x");
+        while let Ok(update) = frames.try_recv() {
+            page.apply(update);
+        }
+        assert_eq!(page.look(0, 0).text, "x");
+        for x in 1..6 {
+            assert_eq!(page.look(x, 0).text, " ", "column {x}");
+        }
+    }
+
     /// A page cleared is cleared onto its ground, so the cells a frame
     /// does not write back are not drawn near black.
     ///
