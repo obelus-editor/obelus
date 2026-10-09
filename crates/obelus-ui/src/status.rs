@@ -328,9 +328,10 @@ fn server_badge(server: Option<(&'static str, ServerState)>, busy: Option<u32>) 
         .unwrap_or_default()
 }
 
-/// The chat, by name, and a mark for where it stands -- only in the window
-/// it talks to, which is the one thing it says about every other window:
-/// nothing.
+/// The chat, by name, and a mark for where it stands -- in the window it
+/// talks to, and in every window heard in it through that one: their
+/// conversations are in the chat too, and the words for what went wrong
+/// are the holder's alone.
 ///
 /// Turning while it connects, and again while it connects again, which is
 /// a wait with an end and the one thing on the row that is not settled.

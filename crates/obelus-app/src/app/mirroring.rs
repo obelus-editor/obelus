@@ -6,7 +6,10 @@
 //! note's at once, one about nothing in particular when its session arrives
 //! -- and kept by that name in a table beside the platform's other state, so
 //! that a conversation closed and taken up again, or a window started again,
-//! goes on in the thread it had.
+//! goes on in the thread it had. Every window heard in the chat writes that
+//! table, so it is read again before a thread is asked for and changed by
+//! the entry rather than written whole: a window's own copy of it is a
+//! table without the threads the others opened since.
 //!
 //! **Both halves of what is said are in both places.** The agent's words go
 //! to the thread a stretch at a time -- whatever it said before it went off
@@ -376,6 +379,17 @@ impl App {
         if wanting.is_empty() {
             return;
         }
+        // Read again first: a conversation that was open in another window
+        // has a thread that window wrote down, and asking for another would
+        // be a second thread for one conversation.
+        self.mirror.threads = read_the_table(platform.key);
+        let wanting: Vec<String> = wanting
+            .into_iter()
+            .filter(|chat| !self.mirror.threads.contains_key(chat))
+            .collect();
+        if wanting.is_empty() {
+            return;
+        }
         let notes = obelus_git::todo::read(&self.working_directory)
             .notes()
             .unwrap_or_default();
@@ -501,8 +515,46 @@ impl App {
         }
     }
 
+    /// Takes the group the window that has the chat paired in as the room,
+    /// which that window has written down already.
+    pub(super) fn room_from_the_relay(&mut self, room: String) {
+        self.settle_the_mirror();
+        self.mirror.room = Some(room);
+    }
+
+    /// The threads of the conversations open here, and of those begun from
+    /// the chat that are not named yet: what the window that has the chat
+    /// sends this one what is said in.
+    pub(super) fn threads_open_here(&self) -> BTreeSet<String> {
+        (0..self.documents.len())
+            .filter_map(|at| self.name_of_document(at))
+            .filter_map(|chat| self.mirror.threads.get(&chat))
+            .map(|thread| thread.thread.clone())
+            .chain(self.mirror.starting.values().cloned())
+            .collect()
+    }
+
+    /// Whether a thread is one of those.
+    pub(super) fn keeps_the_thread(&self, thread: &str) -> bool {
+        self.threads_open_here().contains(thread)
+    }
+
+    /// Changes the table by the entry, read again and written back: another
+    /// window may have written its own since this one read it. What this
+    /// window keeps is what was written.
+    fn change_the_table(
+        &mut self,
+        platform: &'static str,
+        change: impl FnOnce(&mut BTreeMap<String, Thread>),
+    ) {
+        let mut threads = read_the_table(platform);
+        change(&mut threads);
+        write_the_table(platform, &threads);
+        self.mirror.threads = threads;
+    }
+
     /// Says a thread's head again, where it has one Obelus can say.
-    fn retitle(&self, chat: &str, head: Head) {
+    fn retitle(&mut self, chat: &str, head: Head) {
         if let Some(Thread {
             thread,
             room,
@@ -536,19 +588,22 @@ impl App {
         if named.is_empty() {
             return;
         }
-        for (at, thread, chat) in named {
-            self.mirror.starting.remove(&at);
-            self.mirror.threads.insert(
-                chat,
-                Thread {
-                    thread,
-                    room: room.to_string(),
-                    to: to.to_string(),
-                    own: false,
-                },
-            );
+        for (at, ..) in &named {
+            self.mirror.starting.remove(at);
         }
-        write_the_table(platform, &self.mirror.threads);
+        self.change_the_table(platform, |threads| {
+            for (_, thread, chat) in named {
+                threads.insert(
+                    chat,
+                    Thread {
+                        thread,
+                        room: room.to_string(),
+                        to: to.to_string(),
+                        own: false,
+                    },
+                );
+            }
+        });
     }
 
     /// The conversation open here by its name elsewhere.
@@ -578,7 +633,7 @@ impl App {
     /// and lets go of the names of documents that are no longer
     /// conversations. Once a frame, and a lookup apiece.
     fn carry_the_names(&mut self, platform: &'static str) {
-        let mut moved = false;
+        let mut moved = Vec::new();
         for at in 0..self.documents.len() {
             let Some(talk) = self.documents[at].as_ref().and_then(Document::chat) else {
                 self.mirror.named.remove(&at);
@@ -594,7 +649,7 @@ impl App {
                     {
                         tracing::info!(was, now, "a conversation's thread goes by its new name");
                         self.mirror.threads.insert(now.clone(), thread);
-                        moved = true;
+                        moved.push((was.clone(), now.clone()));
                     }
                     if let Some(head) = self.mirror.heads.remove(&was) {
                         self.mirror.heads.insert(now.clone(), head);
@@ -615,8 +670,16 @@ impl App {
                 _ => {}
             }
         }
-        if moved {
-            write_the_table(platform, &self.mirror.threads);
+        if !moved.is_empty() {
+            self.change_the_table(platform, |threads| {
+                for (was, now) in moved {
+                    if !threads.contains_key(&now)
+                        && let Some(thread) = threads.remove(&was)
+                    {
+                        threads.insert(now, thread);
+                    }
+                }
+            });
         }
     }
 
@@ -686,16 +749,17 @@ impl App {
         else {
             return;
         };
-        self.mirror.threads.insert(
-            chat.clone(),
-            Thread {
-                thread,
-                room,
-                to,
-                own: true,
-            },
-        );
-        write_the_table(platform.key, &self.mirror.threads);
+        self.change_the_table(platform.key, |threads| {
+            threads.insert(
+                chat.clone(),
+                Thread {
+                    thread,
+                    room,
+                    to,
+                    own: true,
+                },
+            );
+        });
         // What the head became while the thread was on its way -- a turn
         // started, a name given -- said now there is one to say it on.
         if let Some(head) = self.mirror.heads.get(&chat).cloned() {
@@ -1173,13 +1237,20 @@ impl App {
 
     /// Somebody on the list said something in a thread.
     pub(super) fn heard_in_thread(&mut self, thread: &str, text: &str) {
-        let Some(chat) = self
-            .mirror
-            .threads
-            .iter()
-            .find(|(_, kept)| kept.thread == thread)
-            .map(|(chat, _)| chat.clone())
-        else {
+        let find = |threads: &BTreeMap<String, Thread>| {
+            threads
+                .iter()
+                .find(|(_, kept)| kept.thread == thread)
+                .map(|(chat, _)| chat.clone())
+        };
+        // Read again where it is not known here: another window heard in
+        // the chat may have opened it since this one read the table.
+        let chat = find(&self.mirror.threads).or_else(|| {
+            let platform = self.platform()?;
+            self.mirror.threads = read_the_table(platform.key);
+            find(&self.mirror.threads)
+        });
+        let Some(chat) = chat else {
             tracing::info!(thread, "words in a thread this window keeps nothing about");
             return;
         };
