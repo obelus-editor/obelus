@@ -206,12 +206,26 @@ pub struct Previewed<'a> {
     pub complaint: Option<Complained<'a>>,
     /// What is shown instead of the buffer where the subject is a reading
     /// rather than a file -- a pull request's description, laid out as the
-    /// markdown it is -- and the first of its rows on screen.
+    /// markdown it is.
     ///
     /// Drawn by [`reading::draw`], which draws a markdown file read as one,
     /// so a description and a README look the same because they are drawn
     /// by the same code.
-    pub reading: Option<(&'a [obelus_row::Row], usize)>,
+    pub reading: Option<Reading<'a>>,
+}
+
+/// A reading in a preview, for the view that draws it.
+pub struct Reading<'a> {
+    /// Its rows, laid out.
+    pub rows: &'a [obelus_row::Row],
+    /// The first of them on screen.
+    pub top: usize,
+    /// A row that says something is on its way, with two blank cells at
+    /// its head for the mark that turns to be drawn in.
+    ///
+    /// Drawn here rather than laid out in the row: the rows are laid out
+    /// once and kept, and a mark in them would stand still.
+    pub turning: Option<usize>,
 }
 
 /// What is wrong with the line the reader is on, for the box that says so.
@@ -1365,12 +1379,38 @@ fn list_over(
 
         match app.preview() {
             Some(Previewed {
-                reading: Some((rows, top)),
+                reading: Some(shown),
                 ..
             }) => bars::of(Whose::Preview, || {
                 fill(cells, preview, Style::new().bg(app.theme().background));
                 let area = reading::in_a_preview(preview);
-                reading::draw(cells, area, rows, top, app.theme(), app.theme().background);
+                reading::draw(
+                    cells,
+                    area,
+                    shown.rows,
+                    shown.top,
+                    app.theme(),
+                    app.theme().background,
+                );
+                // The mark at the head of the row that says something is on
+                // its way, where that row is on screen.
+                if let Some(row) = shown.turning
+                    && let Some(below) = row.checked_sub(shown.top)
+                    && let Ok(below) = u16::try_from(below)
+                    && below < area.height
+                {
+                    let y = area.y + below;
+                    write(
+                        cells,
+                        area.x,
+                        y,
+                        &spinning(app.phase()).to_string(),
+                        Style::new()
+                            .fg(app.theme().gutter)
+                            .bg(app.theme().background),
+                    );
+                    shapes::spun(area.x, y);
+                }
             }),
             Some(shown) => bars::of(Whose::Preview, || {
                 editor::EditorView::for_buffer(

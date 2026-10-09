@@ -14583,6 +14583,149 @@ fn the_descriptions_bar_moves_the_description() {
     );
 }
 
+/// Under the description, after a rule each, how the selected pull
+/// request's checks stand and what has been said on it, newest first --
+/// and while `gh` has not said, a line that says so with a mark turning in
+/// front of it.
+///
+/// Broken deliberately four ways. Not asking from the preview leaves the
+/// line waiting for ever. Not laying the preview out again when the answer
+/// lands leaves it waiting too, with the answer kept and unshown. Listing
+/// every check by name puts the one that passed on screen. And taking the
+/// preview out of the clock draws the mark and never turns it.
+#[test]
+fn the_selected_pull_request_shows_its_checks_and_what_was_said() {
+    let scratch = support::Scratch::new("agent-pull-request-discussion");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, described("abc123", "Short.")).expect("the answer");
+    std::fs::write(
+        scratch.path().join("gh-answer.json.view.123"),
+        r#"{
+            "statusCheckRollup": [
+                {"name":"cargo fmt","status":"COMPLETED","conclusion":"SUCCESS"},
+                {"name":"cargo test (windows)","status":"COMPLETED","conclusion":"FAILURE"},
+                {"name":"cargo test (macos)","status":"IN_PROGRESS","conclusion":""}
+            ],
+            "comments": [
+                {"author":{"login":"bob"},"createdAt":"2026-10-01T00:00:00Z","body":"Looked at it."}
+            ],
+            "reviews": [
+                {"author":{"login":"carol"},"state":"APPROVED","submittedAt":"2026-10-02T00:00:00Z","body":"Ship it."}
+            ]
+        }"#,
+    )
+    .expect("what was said");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+    // A file under the list, because with nothing open the welcome screen's
+    // own sheen keeps the screen awake whatever the preview is doing.
+    let file = scratch.path().join("read.txt");
+    std::fs::write(&file, "something to read\n").expect("a file");
+    app.open_for_test(&file);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| answered_with(app, 1));
+    let text = screen(&mut app);
+    let waiting = text
+        .lines()
+        .find(|row| row.contains("Asking GitHub for its checks and comments"))
+        .unwrap_or_else(|| panic!("nothing says it is being asked:\n{text}"));
+    assert!(
+        waiting
+            .chars()
+            .any(|cell| ('\u{2800}'..='\u{28ff}').contains(&cell)),
+        "no mark in front of the line that waits:\n{text}"
+    );
+    assert!(app.is_waking(), "the mark is drawn and nothing turns it");
+
+    pump(&mut app, &events, "what was said", |app| {
+        app.picker().is_some() && !app.is_waking()
+    });
+    // Tall enough for all three parts at once.
+    support::lay_out(&mut app, WIDTH, 48);
+    let dump = support::render(&mut app, WIDTH, 48);
+    let text = support::text_block(&dump).to_string();
+    for said in [
+        "Checks  \u{2717} 1 failed \u{b7} \u{25cc} 1 running \u{b7} \u{2713} 1 passed",
+        "\u{2717} cargo test (windows)",
+        "\u{25cc} cargo test (macos)",
+        "carol  approved",
+        "Ship it.",
+        "bob  commented",
+    ] {
+        assert!(
+            text.contains(said),
+            "the preview does not say {said:?}:\n{text}"
+        );
+    }
+    assert!(
+        !text.contains("cargo fmt"),
+        "a check that passed is listed by name:\n{text}"
+    );
+    let at = |words: &str| text.find(words).expect("on screen");
+    assert!(
+        at("carol  approved") < at("bob  commented"),
+        "what was said is not newest first:\n{text}"
+    );
+    // A rule on the row above each of the two parts.
+    let rows: Vec<&str> = text.lines().collect();
+    for part in ["Checks  ", "carol  approved"] {
+        let at = rows
+            .iter()
+            .position(|row| row.contains(part))
+            .expect("the part is on screen");
+        assert!(
+            rows[at - 1].contains(&"\u{2500}".repeat(20)),
+            "{part:?} is not ruled off from what is above it:\n{text}"
+        );
+    }
+}
+
+/// A row walked onto while another's discussion is on its way is asked
+/// about once that answer lands, and shows what was said on it.
+///
+/// Broken deliberately by writing the row down as asked before looking at
+/// whether an answer is on its way: the row passed while one was is then
+/// never asked about, and waits for ever.
+#[test]
+fn a_row_walked_onto_while_another_is_asked_is_asked_after() {
+    let scratch = support::Scratch::new("agent-pull-request-walked");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, two_pull_requests()).expect("the answer");
+    std::fs::write(
+        scratch.path().join("gh-answer.json.view.124"),
+        r#"{"comments":[{"author":{"login":"dave"},"createdAt":"2026-10-02T00:00:00Z","body":"On the second one."}]}"#,
+    )
+    .expect("what was said on the second");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| answered_with(app, 2));
+    // The first row's preview is drawn, which asks about it; the reader
+    // walks on before that answer is heard.
+    let _ = screen(&mut app);
+    support::press(&mut app, KeyCode::Down);
+    // A frame after every event, as the loop draws one: asking is the
+    // preview's, and a preview is made as a frame is drawn.
+    let deadline = Instant::now() + patience();
+    let text = loop {
+        support::lay_out(&mut app, WIDTH, 48);
+        let dump = support::render(&mut app, WIDTH, 48);
+        let text = support::text_block(&dump).to_string();
+        if text.contains("On the second one.") {
+            break text;
+        }
+        let left = deadline.saturating_duration_since(Instant::now());
+        match events.recv_timeout(left) {
+            Ok(event) => app.handle(event),
+            Err(_) => panic!("the row the reader stopped on was never asked about:\n{text}"),
+        }
+    };
+    assert!(
+        text.contains("dave  commented"),
+        "who said it is missing:\n{text}"
+    );
+}
+
 /// What the pull request the list has selected says about itself, under
 /// the list: which it is and how much it changes, then its title and its
 /// description, laid out as the markdown they are -- and a description

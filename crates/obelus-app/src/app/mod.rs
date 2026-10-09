@@ -2179,6 +2179,10 @@ impl App {
                 .picker
                 .as_ref()
                 .is_some_and(|picker| picker.is_filling().is_some())
+            // And a preview whose last part is still being asked for: what
+            // has happened on a pull request, which is one answer with
+            // nothing arriving before it.
+            || self.preview_turns()
             // And an install, while the page of agents is open: a card
             // whose package manager says nothing until it is done has only
             // its mark to say the install is still going.
@@ -3207,6 +3211,9 @@ impl App {
             }
             Event::Released(tag) => self.on_released(&tag),
             Event::PullRequests(answer) => self.on_pull_requests(answer),
+            Event::PullRequestDiscussion { number, answer } => {
+                self.on_pull_request_discussion(number, answer);
+            }
             Event::Agent(obelus_agent::Event::Registry { agents, failure }) => {
                 self.on_registry(agents, failure)
             }

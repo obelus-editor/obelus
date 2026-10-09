@@ -50,15 +50,38 @@ impl App {
                     severity: complaint.severity,
                     others: complaint.others,
                 }),
-            reading: preview.reading.as_ref().map(|(_, rows)| {
+            reading: preview.reading.as_ref().map(|laid| obelus_ui::Reading {
+                rows: &laid.rows,
                 // Kept within the rows by `refresh_preview`, which stores
                 // the scroll back once it knows the room.
-                (
-                    rows.as_slice(),
-                    usize::try_from(preview.scrolled).unwrap_or(0),
-                )
+                top: usize::try_from(preview.scrolled).unwrap_or(0),
+                turning: laid.turning,
             }),
         })
+    }
+
+    /// Lays the preview of one pull request out again, keeping where the
+    /// reader had scrolled it to, because what it is made of has moved on.
+    ///
+    /// Only the rows go: the subject is the same pull request, and the
+    /// reader's place in it is theirs. `refresh_preview` lays them out on
+    /// the next frame and keeps the scroll within them.
+    pub(super) fn lay_the_preview_out_again(&mut self, number: u64) {
+        if let Some(preview) = self
+            .preview
+            .as_mut()
+            .filter(|preview| preview.subject == Subject::PullRequest(number))
+        {
+            preview.reading = None;
+        }
+    }
+
+    /// Whether the preview is showing a mark that turns.
+    pub(super) fn preview_turns(&self) -> bool {
+        self.preview
+            .as_ref()
+            .and_then(|preview| preview.reading.as_ref())
+            .is_some_and(|laid| laid.turning.is_some())
     }
 
     /// Wears whatever theme the picker's selection names.
@@ -288,20 +311,28 @@ impl App {
         // A reading is rows and a scroll, and nothing below -- a place
         // marked, a line centred, a server's units -- is about rows.
         if let Subject::PullRequest(number) = subject.clone() {
+            // What has happened on it since, which the reading ends with:
+            // asked here because this is where the row the reader is on
+            // becomes a preview.
+            self.ask_about(number);
             let width = obelus_ui::reading::width_in_a_preview(area);
             let laid = self
                 .preview
                 .as_ref()
                 .and_then(|preview| preview.reading.as_ref())
-                .is_some_and(|(at, _)| *at == width);
+                .is_some_and(|laid| laid.width == width);
             let rows = (!laid).then(|| self.pull_request_reading(number, width));
             let Some(preview) = self.preview.as_mut() else {
                 return;
             };
-            if let Some(rows) = rows {
-                preview.reading = Some((width, rows));
+            if let Some((rows, turning)) = rows {
+                preview.reading = Some(Laid {
+                    width,
+                    rows,
+                    turning,
+                });
             }
-            let length = preview.reading.as_ref().map_or(0, |(_, rows)| rows.len());
+            let length = preview.reading.as_ref().map_or(0, |laid| laid.rows.len());
             let last = length.saturating_sub(usize::from(area.height));
             preview.scrolled = preview
                 .scrolled
@@ -1131,12 +1162,25 @@ pub(super) struct Preview {
     /// set from the target on every frame: without this, a scroll would be
     /// undone before it was drawn.
     scrolled: isize,
-    /// The subject laid out as rows, and the width they were laid out at,
-    /// where it is a reading rather than a file.
+    /// The subject laid out as rows, where it is a reading rather than a
+    /// file.
     ///
-    /// Laid out again only when the width changes: a row is the same
-    /// description on every frame, and laying out markdown is the dear part.
-    reading: Option<(u16, Vec<obelus_row::Row>)>,
+    /// Laid out again only when the width changes or what it was made from
+    /// does: a row is the same description on every frame, and laying out
+    /// markdown is the dear part.
+    reading: Option<Laid>,
+}
+
+/// A reading laid out for a preview.
+#[derive(Debug)]
+pub(super) struct Laid {
+    /// The width it was laid out at.
+    width: u16,
+    /// The rows.
+    rows: Vec<obelus_row::Row>,
+    /// The row whose head the view turns a mark at, while it says
+    /// something is on its way.
+    turning: Option<usize>,
 }
 
 impl Preview {

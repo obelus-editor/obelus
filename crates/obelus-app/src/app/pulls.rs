@@ -109,6 +109,77 @@ impl Unlisted {
     }
 }
 
+/// What has happened on a pull request since it was opened: how its checks
+/// stand, and what has been said on it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Discussion {
+    /// Every check, as the last commit has them.
+    pub checks: Vec<Check>,
+    /// What has been said on it -- comments, and reviews that said
+    /// something of their own -- newest first.
+    pub said: Vec<Comment>,
+}
+
+/// One check on a pull request's last commit.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Check {
+    /// What it is called: a job's name, or a status's context.
+    pub name: String,
+    /// Where it stands.
+    pub stands: Stands,
+}
+
+/// Where a check stands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Stands {
+    /// It passed.
+    Passed,
+    /// It failed, timed out, was cancelled or wants something done.
+    Failed,
+    /// It has not finished.
+    Running,
+    /// It was skipped, or finished saying nothing either way.
+    Skipped,
+}
+
+/// One thing said on a pull request.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Comment {
+    /// Who said it, by their login.
+    pub author: String,
+    /// What they did by saying it.
+    pub did: Did,
+    /// When, as seconds since the epoch.
+    pub when: Option<i64>,
+    /// What they wrote, as the markdown they wrote.
+    pub body: String,
+}
+
+/// What a comment did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Did {
+    /// Commented, in the conversation or as a review.
+    Commented,
+    /// Approved it.
+    Approved,
+    /// Asked for changes.
+    RequestedChanges,
+    /// A review since dismissed.
+    Dismissed,
+}
+
+impl Did {
+    /// What the row naming the comment says it did.
+    const fn said(self) -> &'static str {
+        match self {
+            Self::Commented => "commented",
+            Self::Approved => "approved",
+            Self::RequestedChanges => "requested changes",
+            Self::Dismissed => "was dismissed",
+        }
+    }
+}
+
 /// What this window knows about the repository's pull requests.
 #[derive(Debug, Default)]
 pub(super) struct Pulls {
@@ -120,6 +191,19 @@ pub(super) struct Pulls {
     answered: bool,
     /// Whether an answer is on its way.
     asking: bool,
+    /// What has happened on each pull request, as `gh` last said, kept for
+    /// the window's life the way the list is: shown at once the next time
+    /// the row is chosen, and asked about again under it.
+    discussions: std::collections::HashMap<u64, Discussion>,
+    /// Which pull requests have been asked about since the list opened, so
+    /// that walking back onto a row does not ask again.
+    asked_since_opening: std::collections::HashSet<u64>,
+    /// Which pull request's discussion is on its way. One at a time: a
+    /// reader walking the list passes rows they will not stop on.
+    asking_about: Option<u64>,
+    /// Why the last asking about a pull request got nothing, by its number,
+    /// for a preview with nothing kept to show instead.
+    refused: std::collections::HashMap<u64, Unlisted>,
     /// Why the last answer was no list, where it was.
     unlisted: Option<Unlisted>,
     /// What to run in `gh`'s place, and what to tell it first, for a test:
@@ -154,7 +238,58 @@ impl App {
             self.pulls.asking = true;
             self.ask_for_pull_requests();
         }
+        // Every row is worth asking about once more: what was kept is from
+        // the last time the list was open.
+        self.pulls.asked_since_opening.clear();
         self.show_pull_requests();
+    }
+
+    /// Asks what has happened on the pull request the reader is on, unless
+    /// it has been asked since the list opened.
+    ///
+    /// From the preview, which is built for the row the reader is on and so
+    /// is the one place that knows which that is -- every frame, and asked
+    /// once per opening. One at a time: a reader walking the list passes
+    /// rows they will not stop on, so nothing is asked while an answer is on
+    /// its way, and the first frame after it lands asks about whichever row
+    /// the reader has stopped on by then.
+    pub(super) fn ask_about(&mut self, number: u64) {
+        if self.pulls.asked_since_opening.contains(&number) || self.pulls.asking_about.is_some() {
+            return;
+        }
+        let Some(sender) = self.events.clone() else {
+            return;
+        };
+        self.pulls.asked_since_opening.insert(number);
+        self.pulls.asking_about = Some(number);
+        let root = self.working_directory.clone();
+        let instead = self.pulls.instead.clone();
+        obelus_runtime::handle().spawn_blocking(move || {
+            let answer = discussion(&root, instead, number);
+            let _ = sender.send(Event::PullRequestDiscussion { number, answer });
+        });
+    }
+
+    /// Takes what `gh` said has happened on one pull request.
+    pub(super) fn on_pull_request_discussion(
+        &mut self,
+        number: u64,
+        answer: Result<Discussion, Unlisted>,
+    ) {
+        self.pulls.asking_about = None;
+        match answer {
+            Ok(discussion) => {
+                self.pulls.discussions.insert(number, discussion);
+                self.pulls.refused.remove(&number);
+            }
+            // What was kept stays, and is still true as far as anybody
+            // here knows; with nothing kept, the preview says why.
+            Err(why) => {
+                tracing::info!(?why, number, "no word on a pull request");
+                self.pulls.refused.insert(number, why);
+            }
+        }
+        self.lay_the_preview_out_again(number);
     }
 
     /// Runs `gh` on the blocking pool, and sends what it said to the loop.
@@ -176,11 +311,11 @@ impl App {
         // A preview is kept by its subject, and the subject is a number: the
         // same number with a new description is not a new subject, so what
         // was laid out from the last answer has to go with it.
-        if matches!(
-            self.preview.as_ref().map(previewing::Preview::subject),
-            Some(previewing::Subject::PullRequest(_))
-        ) {
-            self.preview = None;
+        if let Some(previewing::Subject::PullRequest(number)) =
+            self.preview.as_ref().map(previewing::Preview::subject)
+        {
+            let number = *number;
+            self.lay_the_preview_out_again(number);
         }
         match answer {
             Ok(listed) => {
@@ -382,11 +517,21 @@ impl App {
     /// -- which, who, from where to where, how long ago, and how much it
     /// changes -- and then its title and its description as the markdown
     /// they are, laid out by the same code a markdown file is.
-    pub(super) fn pull_request_reading(&self, number: u64, width: u16) -> Vec<obelus_row::Row> {
+    ///
+    /// Then, each after a rule, how its checks stand and what has been said
+    /// on it -- or, while `gh` has not said yet, one row saying so, whose
+    /// place is handed back so that the view can turn a mark at its head.
+    /// The rows are laid out once and kept, and a mark in them would stand
+    /// still.
+    pub(super) fn pull_request_reading(
+        &self,
+        number: u64,
+        width: u16,
+    ) -> (Vec<obelus_row::Row>, Option<usize>) {
         use obelus_row::{Ink, Row, Span};
 
         let Some(pull) = self.pull_request(number) else {
-            return Vec::new();
+            return (Vec::new(), None);
         };
         let mut named = format!(
             "#{}   {}   {} \u{2192} {}",
@@ -421,7 +566,34 @@ impl App {
             rows.push(Row::default());
             rows.push(Row::of(vec![Span::new("No description", Ink::Aside)]));
         }
-        rows
+
+        // A rule between one part and the next, the way markdown's `---`
+        // is drawn: the parts are three things, not one long page.
+        let rule = Row {
+            spans: Vec::new(),
+            rule: true,
+        };
+        rows.push(rule.clone());
+        let Some(discussion) = self.pulls.discussions.get(&number) else {
+            match self.pulls.refused.get(&number) {
+                Some(why) => rows.push(Row::of(vec![Span::new(why.said(), Ink::Aside)])),
+                None => {
+                    let turning = rows.len();
+                    // Two blanks in front, where the view puts the mark and
+                    // the one blank after it.
+                    rows.push(Row::of(vec![Span::new(
+                        "  Asking GitHub for its checks and comments",
+                        Ink::Aside,
+                    )]));
+                    return (rows, Some(turning));
+                }
+            }
+            return (rows, None);
+        };
+        rows.extend(checks(&discussion.checks));
+        rows.push(rule);
+        rows.extend(comments(&discussion.said, width));
+        (rows, None)
     }
 
     /// What a review is called before the agent has called it anything.
@@ -484,25 +656,217 @@ impl App {
     }
 }
 
+/// How a pull request's checks stand, as rows: a count of each kind on one
+/// row, and under it by name every one that has not passed.
+///
+/// Not every name: a check that passed is one nobody has to do anything
+/// about, and fourteen rows of them would push what was said off the
+/// preview for a fact one count says.
+fn checks(checks: &[Check]) -> Vec<obelus_row::Row> {
+    use obelus_row::{Ink, Row, Span};
+
+    let heading = Span::new("Checks  ", Ink::Heading(2));
+    if checks.is_empty() {
+        return vec![Row::of(vec![heading, Span::new("None", Ink::Aside)])];
+    }
+    let count = |stands: Stands| checks.iter().filter(|check| check.stands == stands).count();
+    // Worst first, so the count that matters is the one the eye lands on.
+    let kinds = [
+        (Stands::Failed, "\u{2717}", "failed", Ink::Removed),
+        (Stands::Running, "\u{25cc}", "running", Ink::Doubtful),
+        (Stands::Passed, "\u{2713}", "passed", Ink::Added),
+        (Stands::Skipped, "\u{2013}", "skipped", Ink::Aside),
+    ];
+    let mut summary = vec![heading];
+    for (stands, mark, said, ink) in kinds {
+        let count = count(stands);
+        if count == 0 {
+            continue;
+        }
+        if summary.len() > 1 {
+            summary.push(Span::new(" \u{b7} ", Ink::Aside));
+        }
+        summary.push(Span::new(format!("{mark} {count} {said}"), ink));
+    }
+    let mut rows = vec![Row::of(summary)];
+    for (stands, mark, _, ink) in &kinds[..2] {
+        for check in checks.iter().filter(|check| check.stands == *stands) {
+            rows.push(Row::of(vec![
+                Span::new(format!("  {mark} "), *ink),
+                Span::new(check.name.clone(), Ink::Plain),
+            ]));
+        }
+    }
+    rows
+}
+
+/// What has been said on a pull request, as rows, newest first: who and
+/// what they did, then what they wrote, laid out as the markdown it is.
+fn comments(said: &[Comment], width: u16) -> Vec<obelus_row::Row> {
+    use obelus_row::{Ink, Row, Span};
+
+    if said.is_empty() {
+        return vec![Row::of(vec![Span::new("No comments", Ink::Aside)])];
+    }
+    let now = std::time::SystemTime::now();
+    let mut rows = Vec::new();
+    for (at, comment) in said.iter().enumerate() {
+        if at > 0 {
+            rows.push(Row::default());
+        }
+        let mut did = format!("  {}", comment.did.said());
+        if let Some(when) = comment.when {
+            did.push_str(&format!(" \u{b7} {}", obelus_git::how_long_ago(when, now)));
+        }
+        rows.push(Row::of(vec![
+            Span::new(comment.author.clone(), Ink::Name),
+            Span::new(did, Ink::Aside),
+        ]));
+        rows.extend(obelus_markdown::render(&comment.body, width));
+    }
+    rows
+}
+
 /// Asks `gh` for the open pull requests of the repository `root` is in.
 fn list(
     root: &std::path::Path,
     instead: Option<(std::path::PathBuf, Vec<String>)>,
 ) -> Result<Vec<PullRequest>, Unlisted> {
-    let (gh, mut asked) = match instead {
+    let said = gh(
+        root,
+        instead,
+        &[
+            "pr", "list", "--state", "open", "--limit", LIMIT, "--json", FIELDS,
+        ],
+    )?;
+    read(&said)
+}
+
+/// Asks `gh` what has been said about one pull request since it was
+/// opened, and how its checks stand.
+fn discussion(
+    root: &std::path::Path,
+    instead: Option<(std::path::PathBuf, Vec<String>)>,
+    number: u64,
+) -> Result<Discussion, Unlisted> {
+    let number = number.to_string();
+    let said = gh(
+        root,
+        instead,
+        &[
+            "pr",
+            "view",
+            &number,
+            "--json",
+            "comments,reviews,statusCheckRollup",
+        ],
+    )?;
+    read_discussion(&said)
+}
+
+/// What `gh pr view --json comments,reviews,statusCheckRollup` printed.
+fn read_discussion(said: &str) -> Result<Discussion, Unlisted> {
+    let read: serde_json::Value = serde_json::from_str(said)
+        .map_err(|error| Unlisted::Failed(format!("its answer did not read: {error}")))?;
+    let text = |value: &serde_json::Value, key: &str| {
+        value
+            .get(key)
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+            .to_string()
+    };
+    let list = |key: &str| {
+        read.get(key)
+            .and_then(serde_json::Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+    };
+    let when = |value: &serde_json::Value, key: &str| {
+        text(value, key)
+            .parse::<jiff::Timestamp>()
+            .ok()
+            .map(jiff::Timestamp::as_second)
+    };
+    let author = |value: &serde_json::Value| {
+        value
+            .get("author")
+            .map(|author| text(author, "login"))
+            .unwrap_or_default()
+    };
+
+    // A check run says whether it has finished and then how; a status from
+    // outside Actions says both in one word. The two are told apart by
+    // which they carry, not by a type name nobody promised to keep.
+    let checks = list("statusCheckRollup")
+        .iter()
+        .map(|check| {
+            let stands = match check.get("state").and_then(serde_json::Value::as_str) {
+                Some("SUCCESS") => Stands::Passed,
+                Some("PENDING" | "EXPECTED") => Stands::Running,
+                Some(_) => Stands::Failed,
+                None if text(check, "status") != "COMPLETED" => Stands::Running,
+                None => match text(check, "conclusion").as_str() {
+                    "SUCCESS" => Stands::Passed,
+                    "SKIPPED" | "NEUTRAL" => Stands::Skipped,
+                    _ => Stands::Failed,
+                },
+            };
+            let name = match text(check, "name") {
+                name if name.is_empty() => text(check, "context"),
+                name => name,
+            };
+            Check { name, stands }
+        })
+        .collect();
+
+    let mut said: Vec<Comment> = list("comments")
+        .iter()
+        .map(|comment| Comment {
+            author: author(comment),
+            did: Did::Commented,
+            when: when(comment, "createdAt"),
+            body: text(comment, "body").replace("\r\n", "\n"),
+        })
+        .collect();
+    // A review with nothing written in it is the envelope a comment on a
+    // line came in, and those are not shown here.
+    said.extend(
+        list("reviews")
+            .iter()
+            .filter(|review| !text(review, "body").trim().is_empty())
+            .map(|review| Comment {
+                author: author(review),
+                did: match text(review, "state").as_str() {
+                    "APPROVED" => Did::Approved,
+                    "CHANGES_REQUESTED" => Did::RequestedChanges,
+                    "DISMISSED" => Did::Dismissed,
+                    _ => Did::Commented,
+                },
+                when: when(review, "submittedAt"),
+                body: text(review, "body").replace("\r\n", "\n"),
+            }),
+    );
+    // Newest first: what is being looked for is what happened last.
+    said.sort_by_key(|comment| std::cmp::Reverse(comment.when));
+    Ok(Discussion { checks, said })
+}
+
+/// Runs `gh` with `asked`, in the repository `root` is in, and hands back
+/// what it printed -- or why there is nothing.
+fn gh(
+    root: &std::path::Path,
+    instead: Option<(std::path::PathBuf, Vec<String>)>,
+    asked: &[&str],
+) -> Result<String, Unlisted> {
+    let (gh, mut arguments) = match instead {
         Some(instead) => instead,
         None => (
             obelus_program::found("gh").ok_or(Unlisted::NoGh)?,
             Vec::new(),
         ),
     };
-    asked.extend(
-        [
-            "pr", "list", "--state", "open", "--limit", LIMIT, "--json", FIELDS,
-        ]
-        .map(str::to_string),
-    );
-    let (program, arguments) = obelus_program::as_started_here(&gh, &asked);
+    arguments.extend(asked.iter().map(|word| (*word).to_string()));
+    let (program, arguments) = obelus_program::as_started_here(&gh, &arguments);
     let mut command = std::process::Command::new(program);
     command
         .args(arguments)
@@ -530,7 +894,7 @@ fn list(
             first.unwrap_or("it gave no reason").trim().to_string(),
         ));
     }
-    read(&String::from_utf8_lossy(&output.stdout))
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 /// What `gh pr list --json` printed, as pull requests.
@@ -629,5 +993,65 @@ mod tests {
         let said = r#"[{"number":1,"title":"t","author":{"login":"a"},"headRefName":"h","baseRefName":"b","headRefOid":"s","isDraft":false,"reviewDecision":"","updatedAt":"","body":"one  \r\ntwo\r\n"}]"#;
         let pulls = read(said).expect("it reads");
         assert_eq!(pulls[0].body, "one  \ntwo\n");
+    }
+
+    /// What `gh pr view` prints reads as the checks and what was said:
+    /// a check run by its status and then its conclusion, a status from
+    /// outside Actions by its one word, comments and reviews together and
+    /// newest first, and a review that said nothing of its own left out.
+    ///
+    /// Broken deliberately three ways, each failing its own assertion.
+    /// Reading a check run's conclusion before its status calls one still
+    /// running failed. Keeping reviews with no words of their own puts an
+    /// empty comment in the list. And sorting oldest first puts the
+    /// approval last.
+    #[test]
+    fn what_gh_says_about_one_pull_request_reads_as_its_discussion() {
+        use super::{Did, Stands, read_discussion};
+
+        let said = r#"{
+            "statusCheckRollup": [
+                {"__typename":"CheckRun","name":"fmt","status":"COMPLETED","conclusion":"SUCCESS"},
+                {"__typename":"CheckRun","name":"test","status":"COMPLETED","conclusion":"FAILURE"},
+                {"__typename":"CheckRun","name":"build","status":"IN_PROGRESS","conclusion":""},
+                {"__typename":"CheckRun","name":"docs","status":"COMPLETED","conclusion":"SKIPPED"},
+                {"__typename":"StatusContext","context":"ci/legacy","state":"PENDING"}
+            ],
+            "comments": [
+                {"author":{"login":"bob"},"createdAt":"2026-10-01T00:00:00Z","body":"first\r\nsecond"}
+            ],
+            "reviews": [
+                {"author":{"login":"alice"},"state":"APPROVED","submittedAt":"2026-10-03T00:00:00Z","body":"good"},
+                {"author":{"login":"bob"},"state":"COMMENTED","submittedAt":"2026-10-02T00:00:00Z","body":""}
+            ]
+        }"#;
+        let discussion = read_discussion(said).expect("it reads");
+        let stands: Vec<(&str, Stands)> = discussion
+            .checks
+            .iter()
+            .map(|check| (check.name.as_str(), check.stands))
+            .collect();
+        assert_eq!(
+            stands,
+            [
+                ("fmt", Stands::Passed),
+                ("test", Stands::Failed),
+                ("build", Stands::Running),
+                ("docs", Stands::Skipped),
+                ("ci/legacy", Stands::Running),
+            ]
+        );
+        let said: Vec<(&str, Did, &str)> = discussion
+            .said
+            .iter()
+            .map(|comment| (comment.author.as_str(), comment.did, comment.body.as_str()))
+            .collect();
+        assert_eq!(
+            said,
+            [
+                ("alice", Did::Approved, "good"),
+                ("bob", Did::Commented, "first\nsecond"),
+            ]
+        );
     }
 }
