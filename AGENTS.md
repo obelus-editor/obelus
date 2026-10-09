@@ -591,7 +591,8 @@ crates/
                       window is heard in it, which project a thread begun
                       there is for is the reader's to say, a window joined
                       to the chat is quiet about it, and a chat nobody let
-                      go of is taken up (app/relaying); in a window, enter is another window
+                      go of is taken up (app/relaying); in a window,
+                      enter is another window
                       and `ctrl+enter` is this one going, in a terminal, enter
                       is this one going because it is all a terminal can do, a
                       window on a tree is a claim held the way a

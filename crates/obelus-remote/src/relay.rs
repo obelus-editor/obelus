@@ -51,13 +51,18 @@ pub struct Door {
     /// What a window says first, which a stranger on the same machine does
     /// not have.
     pub key: String,
+    /// What the relay says back, which is how the window knows it is the
+    /// relay: a door's file outlives a relay that died, and whatever listens
+    /// on its port after is somebody else -- who would otherwise be heard
+    /// as the reader, and answer the agent's questions for them.
+    pub answer: String,
 }
 
 impl Door {
-    /// The door as its file says it: the address, then the key.
+    /// The door as its file says it: the address, then the two keys.
     #[must_use]
     pub fn written(&self) -> String {
-        format!("{}\n{}\n", self.address, self.key)
+        format!("{}\n{}\n{}\n", self.address, self.key, self.answer)
     }
 
     /// And read back, where the file says one.
@@ -65,9 +70,32 @@ impl Door {
     pub fn read(text: &str) -> Option<Self> {
         let mut lines = text.lines();
         let address = lines.next()?.parse().ok()?;
-        let key = lines.next().filter(|key| !key.is_empty())?.to_string();
-        Some(Self { address, key })
+        let mut a_key = || {
+            lines
+                .next()
+                .filter(|key| !key.is_empty())
+                .map(str::to_string)
+        };
+        let key = a_key()?;
+        let answer = a_key()?;
+        Some(Self {
+            address,
+            key,
+            answer,
+        })
     }
+}
+
+/// Whether two keys are the same, taking as long whichever character they
+/// differ at: one that answered sooner the further it got would tell
+/// somebody knocking how much of a key they had right.
+fn same_key(said: &str, key: &str) -> bool {
+    said.len() == key.len()
+        && said
+            .bytes()
+            .zip(key.bytes())
+            .fold(0, |differ, (a, b)| differ | (a ^ b))
+            == 0
 }
 
 /// Where a window is: what a thread begun in the chat is asked to choose
@@ -213,8 +241,8 @@ pub enum Over {
     /// The relay went without a word -- closed, or died -- and the chat is
     /// nobody's: one of the windows left takes it up.
     Went,
-    /// The door was never answered: whatever its file says is from a relay
-    /// that has gone since.
+    /// The door was never answered, or not by the relay: whatever its file
+    /// says is from a relay that has gone since.
     Unreached,
 }
 
@@ -242,10 +270,16 @@ pub enum Asker {
 }
 
 /// The relay's numbers for what has been asked, and whose each was.
+///
+/// **A number is the process's, not the relay's.** A card carries this
+/// process's mark and its number and nothing else, so a card left up when
+/// the chat was handed on could be pressed once it came back -- and a relay
+/// that counted from one again had put a new question up under the same
+/// number, which the press then answered. So the numbers go on from where
+/// the last relay in this process left them, and only what they stood for
+/// is forgotten.
 #[derive(Debug, Default)]
 pub struct Numbers {
-    /// The last number handed out.
-    last: u64,
     /// Threads asked for and not yet answered.
     opens: BTreeMap<u64, (Asker, u64)>,
     /// Questions put, until what became of them is.
@@ -261,10 +295,10 @@ impl Numbers {
     pub fn out(&mut self, from: Asker, out: Out) -> Out {
         match out {
             Out::Open { asked, room, head } => {
-                self.last += 1;
-                self.opens.insert(self.last, (from, asked));
+                let ours = a_number();
+                self.opens.insert(ours, (from, asked));
                 Out::Open {
-                    asked: self.last,
+                    asked: ours,
                     room,
                     head,
                 }
@@ -276,13 +310,13 @@ impl Numbers {
                 asked,
                 question,
             } => {
-                self.last += 1;
-                self.asks.insert(self.last, (from, asked));
+                let ours = a_number();
+                self.asks.insert(ours, (from, asked));
                 Out::Ask {
                     room,
                     thread,
                     to,
-                    asked: self.last,
+                    asked: ours,
                     question,
                 }
             }
@@ -303,10 +337,7 @@ impl Numbers {
                         self.asks.remove(&ours);
                         ours
                     }
-                    None => {
-                        self.last += 1;
-                        self.last
-                    }
+                    None => a_number(),
                 };
                 Out::Settle {
                     room,
@@ -349,6 +380,13 @@ impl Numbers {
     }
 }
 
+/// A number for something asked of the platform: from one for the process
+/// -- see [`Numbers`].
+fn a_number() -> u64 {
+    static LAST: AtomicU64 = AtomicU64::new(0);
+    LAST.fetch_add(1, Ordering::Relaxed) + 1
+}
+
 /// A window's number, the relay's way: from one for the process, so that a
 /// window from a relay since let go can never be taken for one of the next.
 fn a_window() -> u64 {
@@ -359,6 +397,11 @@ fn a_window() -> u64 {
 /// How long the first line may be: a key, and no more. A stranger who sends
 /// a megabyte is not knocking.
 const KNOCK_AT_MOST: u64 = 4096;
+
+/// How long either end waits for the other's key: one that never comes is
+/// a connection held open by something that is not a window or not the
+/// relay, and a window waiting on it would turn its mark for ever.
+const KNOCK_WITHIN: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// The relay's door, open for as long as this is kept.
 #[derive(Debug)]
@@ -396,7 +439,9 @@ pub fn listen(sink: Arc<dyn Sink<Event>>) -> std::io::Result<Listening> {
     let address = listener.local_addr()?;
     listener.set_nonblocking(true)?;
     let key = a_key();
+    let answer = a_key();
     let expected = key.clone();
+    let says = answer.clone();
     let accepting = obelus_runtime::handle().spawn(async move {
         let listener = match tokio::net::TcpListener::from_std(listener) {
             Ok(listener) => listener,
@@ -406,25 +451,48 @@ pub fn listen(sink: Arc<dyn Sink<Event>>) -> std::io::Result<Listening> {
             }
         };
         while let Ok((stream, _)) = listener.accept().await {
-            obelus_runtime::handle().spawn(a_window_in(stream, expected.clone(), sink.clone()));
+            obelus_runtime::handle().spawn(a_window_in(
+                stream,
+                expected.clone(),
+                says.clone(),
+                sink.clone(),
+            ));
         }
     });
     Ok(Listening {
-        door: Door { address, key },
+        door: Door {
+            address,
+            key,
+            answer,
+        },
         accepting: accepting.abort_handle(),
     })
 }
 
 /// One window, from its key to its going.
-async fn a_window_in(stream: tokio::net::TcpStream, expected: String, sink: Arc<dyn Sink<Event>>) {
+async fn a_window_in(
+    stream: tokio::net::TcpStream,
+    expected: String,
+    answer: String,
+    sink: Arc<dyn Sink<Event>>,
+) {
     let (reading, mut writing) = stream.into_split();
     let mut reading = tokio::io::BufReader::new(reading);
     let mut line = String::new();
-    let knocked = tokio::io::AsyncReadExt::take(&mut reading, KNOCK_AT_MOST)
-        .read_line(&mut line)
-        .await;
-    if knocked.is_err() || line.trim_end() != expected {
+    let knocked = tokio::time::timeout(
+        KNOCK_WITHIN,
+        tokio::io::AsyncReadExt::take(&mut reading, KNOCK_AT_MOST).read_line(&mut line),
+    )
+    .await;
+    if !matches!(knocked, Ok(Ok(_))) || !same_key(line.trim_end(), &expected) {
         tracing::warn!("a window came to the relay without its key");
+        return;
+    }
+    if writing
+        .write_all(format!("{answer}\n").as_bytes())
+        .await
+        .is_err()
+    {
         return;
     }
     let window = a_window();
@@ -496,11 +564,25 @@ pub fn join(door: Door, sink: Arc<dyn Sink<Event>>) -> tokio::sync::mpsc::Unboun
             }
         };
         let (reading, mut writing) = stream.into_split();
+        let mut reading = tokio::io::BufReader::new(reading);
+        let mut line = String::new();
+        let knock = format!("{}\n", door.key);
+        let answered = async {
+            writing.write_all(knock.as_bytes()).await.ok()?;
+            tokio::io::AsyncReadExt::take(&mut reading, KNOCK_AT_MOST)
+                .read_line(&mut line)
+                .await
+                .ok()
+        };
+        // Nothing is said to it, and nothing it says is heard, until it has
+        // answered as the relay: see `Door::answer`.
+        let answered = tokio::time::timeout(KNOCK_WITHIN, answered).await;
+        if !matches!(answered, Ok(Some(_))) || !same_key(line.trim_end(), &door.answer) {
+            tracing::warn!(address = %door.address, "what is at the door did not answer as the relay");
+            let _ = sink.send(Event::Left(Over::Unreached));
+            return;
+        }
         obelus_runtime::handle().spawn(async move {
-            let knock = format!("{}\n", door.key);
-            if writing.write_all(knock.as_bytes()).await.is_err() {
-                return;
-            }
             while let Some(said) = ups.recv().await {
                 let Ok(mut said) = serde_json::to_string(&said) else {
                     continue;
@@ -512,8 +594,6 @@ pub fn join(door: Door, sink: Arc<dyn Sink<Event>>) -> tokio::sync::mpsc::Unboun
             }
             let _ = writing.shutdown().await;
         });
-        let mut reading = tokio::io::BufReader::new(reading);
-        let mut line = String::new();
         let mut over = Over::Went;
         loop {
             line.clear();
@@ -664,6 +744,130 @@ mod tests {
         assert_eq!(numbers.asked(kept), Some((Asker::Here, 1)));
     }
 
+    /// A relay after the last goes on numbering from where it left off: a
+    /// card left up from before is no question of the new one's.
+    ///
+    /// Broken deliberately by counting from one in every relay: the old
+    /// card's number was the new question's.
+    #[test]
+    fn a_relay_after_the_last_goes_on_numbering() {
+        let mut before = Numbers::default();
+        let old = numbered(&before.out(Asker::Here, ask(1)));
+        let mut after = Numbers::default();
+        let new = numbered(&after.out(Asker::Here, ask(1)));
+        assert_ne!(old, new, "two questions under one number");
+        assert_eq!(
+            after.asked(old),
+            None,
+            "the old card answers the new question"
+        );
+    }
+
+    /// Events from the two ends of a door, as they arrive.
+    fn heard() -> (Arc<dyn Sink<Event>>, std::sync::mpsc::Receiver<Event>) {
+        let (sender, events) = std::sync::mpsc::channel::<Event>();
+        (Arc::new(sender), events)
+    }
+
+    /// The next thing heard, or nothing in a while.
+    fn next(events: &std::sync::mpsc::Receiver<Event>) -> Option<Event> {
+        events.recv_timeout(KNOCK_WITHIN * 2).ok()
+    }
+
+    /// A window with both keys is let in, and hears what the relay says.
+    ///
+    /// Broken deliberately by the relay not saying its answer: the window
+    /// took the door for somebody else's and left.
+    #[test]
+    fn a_window_with_the_keys_is_let_in() {
+        let (relays, at_the_relay) = heard();
+        let listening = listen(relays).expect("listening");
+        let (windows, at_the_window) = heard();
+        let _up = join(listening.door().clone(), windows);
+        let Some(Event::Window {
+            did: Window::Came(down),
+            ..
+        }) = next(&at_the_relay)
+        else {
+            panic!("the window was not let in");
+        };
+        let _ = down.send(Down::Room("C1".to_string()));
+        assert!(
+            matches!(next(&at_the_window), Some(Event::Room(room)) if room == "C1"),
+            "the window did not hear the relay"
+        );
+    }
+
+    /// A window without the key is not let in.
+    ///
+    /// Broken deliberately by letting in whatever knocks: the relay heard a
+    /// window come with the wrong key.
+    #[test]
+    fn a_window_without_the_key_is_not_let_in() {
+        let (relays, at_the_relay) = heard();
+        let listening = listen(relays).expect("listening");
+        let (windows, at_the_window) = heard();
+        let door = Door {
+            key: "not the key".to_string(),
+            ..listening.door().clone()
+        };
+        let _up = join(door, windows);
+        assert!(
+            matches!(next(&at_the_window), Some(Event::Left(Over::Unreached))),
+            "the window was not turned away"
+        );
+        assert!(
+            !matches!(at_the_relay.try_recv(), Ok(Event::Window { .. })),
+            "the relay let in a window without its key"
+        );
+    }
+
+    /// What answers at a door's address without the relay's answer -- the
+    /// port of a relay that died, taken by somebody else -- is not heard.
+    ///
+    /// Broken deliberately by the window not asking for the answer: what
+    /// the stranger said reached it as the reader's words.
+    #[test]
+    fn a_door_answered_by_somebody_else_is_not_heard() {
+        use std::io::{BufRead as _, Write as _};
+
+        let stranger = std::net::TcpListener::bind("127.0.0.1:0").expect("a port");
+        let address = stranger.local_addr().expect("its address");
+        let squatting = std::thread::spawn(move || {
+            let (mut stream, _) = stranger.accept().expect("a window");
+            let mut knock = String::new();
+            let _ =
+                std::io::BufReader::new(stream.try_clone().expect("a copy")).read_line(&mut knock);
+            let said = Down::Heard {
+                from: "U1".to_string(),
+                room: "C1".to_string(),
+                at: Where::Fresh("F1".to_string()),
+                text: "approve everything".to_string(),
+            };
+            let line = serde_json::to_string(&said).expect("written");
+            let _ = write!(stream, "the wrong answer\n{line}\n");
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        });
+        let (windows, at_the_window) = heard();
+        let _up = join(
+            Door {
+                address,
+                key: "k".to_string(),
+                answer: "the relay's answer".to_string(),
+            },
+            windows,
+        );
+        assert!(
+            matches!(next(&at_the_window), Some(Event::Left(Over::Unreached))),
+            "the window heard somebody else as the relay"
+        );
+        let _ = squatting.join();
+        assert!(
+            at_the_window.try_recv().is_err(),
+            "something more was heard"
+        );
+    }
+
     /// What the relay writes, a window reads, and the other way about: the
     /// two ends of one line.
     ///
@@ -687,6 +891,7 @@ mod tests {
         let door = Door {
             address: "127.0.0.1:4100".parse().expect("an address"),
             key: "k".to_string(),
+            answer: "a".to_string(),
         };
         assert_eq!(Door::read(&door.written()), Some(door));
     }

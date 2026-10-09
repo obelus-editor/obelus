@@ -3529,12 +3529,12 @@ fn the_first_with_the_chat(
 /// in that thread reaches its agent, and its status row marks the chat
 /// without holding it.
 ///
-/// Broken deliberately three ways. Saying nothing through the relay: no
+/// Broken deliberately four ways. Saying nothing through the relay: no
 /// thread was asked for. Answering every thread in the window that holds
-/// the chat: the words never reached the second window's agent. And
-/// marking the chat only in the window that holds it: the second's row
-/// was empty. And on Unix, writing the door with the default mode: others
-/// could read its key.
+/// the chat: the words never reached the second window's agent. Marking
+/// the chat only in the window that holds it: the second's row was empty.
+/// And on Unix, writing the door with the default mode: others could read
+/// its key.
 #[test]
 fn a_window_without_the_chat_is_heard_in_it_through_the_one_with_it() {
     let _turn = turn();
@@ -3878,4 +3878,135 @@ fn a_chat_handed_on_is_heard_through_the_window_it_went_to() {
     );
     assert!(second.holds_the_remote_for_test());
     assert!(!third.holds_the_remote_for_test());
+}
+
+/// A table of threads that will not read is not written over: the window
+/// keeps its own conversation's thread, and every other conversation's in
+/// the file is left for whoever mends it.
+///
+/// Broken deliberately by taking a table that will not read for an empty
+/// one: the file was written back with one thread in it.
+#[test]
+fn a_table_of_threads_that_will_not_read_is_not_written_over() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-table-unread");
+    let (mut app, events, log) = paired_with_an_agent(&scratch);
+    let table = obelus_logging::state_directory()
+        .expect("a state directory")
+        .join("remote")
+        .join("slack")
+        .join("threads.toml");
+    let unreadable = "[s-9\nthread = \"T9\"\n";
+    std::fs::write(&table, unreadable).expect("the table");
+    app.new_conversation();
+    app.open_a_session_for_test();
+    let said = said_until(&mut app, &events, "a thread to be asked for", |said| {
+        said.iter()
+            .any(|out| matches!(out, obelus_remote::model::Out::Open { .. }))
+    });
+    let asked = said
+        .iter()
+        .find_map(|out| match out {
+            obelus_remote::model::Out::Open { asked, .. } => Some(*asked),
+            _ => None,
+        })
+        .expect("a thread asked for");
+    let _ = the_platform().send(obelus_remote::Event::Opened {
+        asked,
+        thread: "T1".to_string(),
+        link: None,
+    });
+    let _ = the_platform().send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Thread("T1".to_string()),
+        text: "what is in here".to_string(),
+    });
+    until(
+        &mut app,
+        &events,
+        "the words in the thread to reach the agent",
+        |_| std::fs::read_to_string(&log).is_ok_and(|logged| logged.contains("what is in here")),
+    );
+    assert_eq!(
+        std::fs::read_to_string(&table).expect("the table"),
+        unreadable,
+        "a table that would not read was written over"
+    );
+}
+
+/// Of the windows left when the one holding the chat goes without a word,
+/// one takes it up and the rest are heard through that one -- not two
+/// windows each holding a chat.
+///
+/// Broken deliberately by taking it up without asking whether somebody
+/// already had: both windows said they held it.
+#[test]
+fn of_the_windows_left_one_takes_the_chat_up() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-one-takes-up");
+    set_up_for_two(&scratch);
+    // With watchers, so that the one that does not take it up hears where
+    // it went.
+    let started = |scratch: &support::Scratch| {
+        let mut app = App::new(Vec::new());
+        app.config_file_for_test(scratch.join("config.toml"));
+        let (sender, events) = obelus_app::event::channel();
+        app.start(sender);
+        support::lay_out(&mut app, 76, 24);
+        (app, events)
+    };
+    let (mut first, firsts) = started(&scratch);
+    dispatch::dispatch(&mut first, Command::RemoteConnect);
+    until(&mut first, &firsts, "the first to connect", |app| {
+        app.remote_state_for_test() == obelus_remote::State::Connected
+    });
+    let (mut second, seconds) = started(&scratch);
+    let (mut third, thirds) = started(&scratch);
+    // All three driven: the first has to hear both join before its going
+    // can say anything to them.
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while [&second, &third]
+        .iter()
+        .any(|app| app.remote_state_for_test() != obelus_remote::State::Connected)
+    {
+        assert!(
+            std::time::Instant::now() < until,
+            "gave up waiting for both to be heard through the first"
+        );
+        for (app, events) in [
+            (&mut first, &firsts),
+            (&mut second, &seconds),
+            (&mut third, &thirds),
+        ] {
+            while let Ok(event) = events.try_recv() {
+                app.handle(event);
+            }
+            support::lay_out(app, 76, 24);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert!(second.joined_for_test().is_some() && third.joined_for_test().is_some());
+    // Its channel with it, as a process going takes everything it had.
+    drop(first);
+    drop(firsts);
+    both_until(
+        &mut second,
+        &seconds,
+        &mut third,
+        &thirds,
+        "one to take it up and the other to join it",
+        |second, third| {
+            let joined = |holder: &App, other: &App| {
+                holder.holds_the_remote_for_test()
+                    && holder.door_for_test().is_some()
+                    && other.joined_for_test() == holder.door_for_test()
+            };
+            joined(second, third) || joined(third, second)
+        },
+    );
+    assert!(
+        !(second.holds_the_remote_for_test() && third.holds_the_remote_for_test()),
+        "two windows hold the chat"
+    );
 }

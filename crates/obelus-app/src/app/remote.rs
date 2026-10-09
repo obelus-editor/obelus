@@ -1221,8 +1221,12 @@ impl App {
             // waiting: taken back with it, or a holder that lets go later
             // would hand over a chat the reader said they did not want.
             self.remote.given_up = None;
+            self.remote.succeeding = None;
             return;
         }
+        // Nor taken up by a lock that comes back later: the reader has
+        // said they do not want it here.
+        self.remote.succeeding = None;
         if self.remote.holding.is_none() {
             return;
         }

@@ -233,16 +233,27 @@ fn table_for(platform: &str) -> Option<std::path::PathBuf> {
     )
 }
 
-/// The table, read: a conversation's name to its thread and whose it is.
-fn read_the_table(platform: &str) -> BTreeMap<String, Thread> {
-    let Some(text) = table_for(platform).and_then(|path| std::fs::read_to_string(path).ok()) else {
-        return BTreeMap::new();
+/// The table, read: a conversation's name to its thread and whose it is --
+/// nothing where there is no table yet, and `None` where there is one that
+/// will not read, which is not the same answer: a table written back from
+/// nothing is every other conversation's thread forgotten.
+fn read_the_table(platform: &str) -> Option<BTreeMap<String, Thread>> {
+    let path = table_for(platform)?;
+    let text = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Some(BTreeMap::new());
+        }
+        Err(error) => {
+            tracing::warn!(platform, %error, "the table of threads will not read");
+            return None;
+        }
     };
     let Ok(table) = text.parse::<toml::Table>() else {
         tracing::warn!(platform, "the table of threads will not read");
-        return BTreeMap::new();
+        return None;
     };
-    table
+    let threads = table
         .into_iter()
         .filter_map(|(chat, kept)| {
             let said = |key: &str| kept.get(key)?.as_str().map(str::to_string);
@@ -262,7 +273,24 @@ fn read_the_table(platform: &str) -> BTreeMap<String, Thread> {
                 },
             ))
         })
-        .collect()
+        .collect();
+    Some(threads)
+}
+
+/// The lock a change to the table is made under, held until it is dropped
+/// -- a moment, since nothing is done under it but the read and the write.
+/// None where there is nowhere to keep one, and the change goes ahead as it
+/// did before there were other windows writing it.
+fn hold_the_table(platform: &str) -> Option<std::fs::File> {
+    let path = table_for(platform)?.with_extension("lock");
+    std::fs::create_dir_all(path.parent()?).ok()?;
+    let file = std::fs::File::options()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(path)
+        .ok()?;
+    obelus_agent::chats::wait_to_hold(&file).then_some(file)
 }
 
 /// And written, beside and renamed over, the way every file Obelus keeps
@@ -382,7 +410,9 @@ impl App {
         // Read again first: a conversation that was open in another window
         // has a thread that window wrote down, and asking for another would
         // be a second thread for one conversation.
-        self.mirror.threads = read_the_table(platform.key);
+        if let Some(threads) = read_the_table(platform.key) {
+            self.mirror.threads = threads;
+        }
         let wanting: Vec<String> = wanting
             .into_iter()
             .filter(|chat| !self.mirror.threads.contains_key(chat))
@@ -492,7 +522,7 @@ impl App {
         };
         if self.mirror.read_for != Some(platform.key) {
             self.mirror = Mirror {
-                threads: read_the_table(platform.key),
+                threads: read_the_table(platform.key).unwrap_or_default(),
                 room: read_the_room(platform.key),
                 read_for: Some(platform.key),
                 ..Mirror::default()
@@ -542,15 +572,26 @@ impl App {
     /// Changes the table by the entry, read again and written back: another
     /// window may have written its own since this one read it. What this
     /// window keeps is what was written.
+    ///
+    /// Under a lock, the read and the write together: two windows each
+    /// reading before the other wrote would each write a table without the
+    /// other's thread, and renaming over keeps a table whole, not both of
+    /// them. And not written at all while it will not read -- this window
+    /// keeps the change, and the table is left for whoever can mend it.
     fn change_the_table(
         &mut self,
         platform: &'static str,
         change: impl FnOnce(&mut BTreeMap<String, Thread>),
     ) {
-        let mut threads = read_the_table(platform);
-        change(&mut threads);
-        write_the_table(platform, &threads);
-        self.mirror.threads = threads;
+        let _held = hold_the_table(platform);
+        match read_the_table(platform) {
+            Some(mut threads) => {
+                change(&mut threads);
+                write_the_table(platform, &threads);
+                self.mirror.threads = threads;
+            }
+            None => change(&mut self.mirror.threads),
+        }
     }
 
     /// Says a thread's head again, where it has one Obelus can say.
@@ -1247,7 +1288,7 @@ impl App {
         // the chat may have opened it since this one read the table.
         let chat = find(&self.mirror.threads).or_else(|| {
             let platform = self.platform()?;
-            self.mirror.threads = read_the_table(platform.key);
+            self.mirror.threads = read_the_table(platform.key)?;
             find(&self.mirror.threads)
         });
         let Some(chat) = chat else {

@@ -23,6 +23,12 @@
 //! too, and none of the words: what is wrong with the connection is said
 //! once, in the window that holds it.
 //!
+//! **A window hears where the chat is from the door's file moving**, which
+//! the watcher says -- freshness and not a promise: a window that missed it
+//! is one whose conversations are not in the chat until the file moves
+//! again or it is started again, which is a window not heard and nothing
+//! said wrongly.
+//!
 //! **A chat nobody let go of is taken up.** A relay that is let go says why
 //! before it closes the door; one that closes it without a word went with
 //! its process, and the windows joined to it wait in the kernel for the lock
@@ -77,6 +83,17 @@ pub(super) struct Relaying {
     here: Option<(PathBuf, Option<obelus_git::Head>, Option<Place>)>,
 }
 
+impl Drop for Relaying {
+    /// A window that goes holding the chat takes its door's file with it,
+    /// where the file is still its: nothing is to knock on a port somebody
+    /// else may have by the time anybody does.
+    fn drop(&mut self) {
+        if let Some(listening) = &self.listening {
+            close_the_door(listening);
+        }
+    }
+}
+
 /// A window that has joined this one.
 #[derive(Debug)]
 struct Joined {
@@ -86,6 +103,26 @@ struct Joined {
     place: Option<Place>,
     /// The threads it said are its, and the ones handed to it since.
     threads: BTreeSet<String>,
+    /// Threads handed to it that it has not yet said are its: a list of its
+    /// threads it sent before it heard of one would otherwise take that one
+    /// away again, and what was said there in the meantime would go to
+    /// nobody.
+    handed: BTreeSet<String>,
+}
+
+impl Joined {
+    /// Hands it a thread, which is its from now.
+    fn hand(&mut self, thread: &str) {
+        self.threads.insert(thread.to_string());
+        self.handed.insert(thread.to_string());
+    }
+
+    /// What it says its threads are, and those handed to it it has not
+    /// caught up with -- which it has, once it names them.
+    fn says_its_threads_are(&mut self, threads: BTreeSet<String>) {
+        self.handed.retain(|thread| !threads.contains(thread));
+        self.threads = threads.union(&self.handed).cloned().collect();
+    }
 }
 
 /// A thread begun in the chat, and the question of where it goes.
@@ -111,6 +148,16 @@ fn the_door() -> Option<PathBuf> {
 /// The door, as its file says, where it says one.
 fn read_the_door() -> Option<Door> {
     Door::read(&std::fs::read_to_string(the_door()?).ok()?)
+}
+
+/// Takes the door's file away where it still says this door, and leaves it
+/// where another window has written its own since.
+fn close_the_door(listening: &Listening) {
+    if read_the_door().as_ref() == Some(listening.door())
+        && let Some(path) = the_door()
+    {
+        let _ = std::fs::remove_file(path);
+    }
 }
 
 /// And written, beside and renamed over: another window may be reading it.
@@ -165,14 +212,8 @@ impl App {
         for joined in std::mem::take(&mut self.relaying.windows).into_values() {
             let _ = joined.down.send(Down::Over(over));
         }
-        // The file taken away where it is still this door's, so that nobody
-        // knocks on a door that has gone -- and left where another window
-        // has written its own since.
-        if let Some(listening) = self.relaying.listening.take()
-            && read_the_door().as_ref() == Some(listening.door())
-            && let Some(path) = the_door()
-        {
-            let _ = std::fs::remove_file(path);
+        if let Some(listening) = self.relaying.listening.take() {
+            close_the_door(&listening);
         }
         self.relaying.numbers = Numbers::default();
         self.relaying.choosing.clear();
@@ -249,9 +290,11 @@ impl App {
     pub(super) fn window_did(&mut self, window: u64, did: Window) {
         match did {
             Window::Came(down) => {
-                // Dropped where this window has let the chat go since,
-                // which closes it.
+                // Turned away where this window has let the chat go since --
+                // with a word, or the window would take a bare end for one
+                // that died and take the chat up.
                 if self.relaying.listening.is_none() {
+                    let _ = down.send(Down::Over(Over::Stopped));
                     return;
                 }
                 // What it would have heard had it been here all along.
@@ -271,6 +314,7 @@ impl App {
                         down,
                         place: None,
                         threads: BTreeSet::new(),
+                        handed: BTreeSet::new(),
                     },
                 );
             }
@@ -280,7 +324,7 @@ impl App {
                 };
                 match up {
                     Up::Place(place) => joined.place = place,
-                    Up::Threads(threads) => joined.threads = threads,
+                    Up::Threads(threads) => joined.says_its_threads_are(threads),
                     Up::Out(out) => self.send_to_the_platform(Asker::Window(window), out),
                 }
             }
@@ -301,7 +345,10 @@ impl App {
         event: obelus_remote::Event,
     ) -> Option<obelus_remote::Event> {
         use obelus_remote::Event as E;
-        if self.relaying.listening.is_none() {
+        // On the same question as the numbering on the way out: a window
+        // with no door, where the loopback would not be listened on, still
+        // numbers what it asks the relay's way.
+        if self.platform_out().is_none() {
             return Some(event);
         }
         match event {
@@ -314,7 +361,7 @@ impl App {
                     if let Some(joined) = self.relaying.windows.get_mut(&window) {
                         // Its from now, rather than from when it next says
                         // which are: a reply in the thread may come first.
-                        joined.threads.insert(thread.clone());
+                        joined.hand(&thread);
                         let _ = joined.down.send(Down::Opened {
                             asked: theirs,
                             thread,
@@ -540,7 +587,7 @@ impl App {
         }) else {
             return false;
         };
-        joined.threads.insert(thread.to_string());
+        joined.hand(thread);
         let _ = joined.down.send(Down::Heard {
             from: from.to_string(),
             room: room.to_string(),
