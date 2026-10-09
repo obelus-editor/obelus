@@ -305,6 +305,15 @@ impl SyntaxState {
         self.took = std::time::Duration::from_secs(3600);
     }
 
+    /// Says this grammar keeps up, whatever it really costs.
+    ///
+    /// The other side of [`Self::hold_back_for_test`], for the same reason:
+    /// a test that leans on the measurement fails on a machine that is slow
+    /// for a moment, and a CI runner is that machine.
+    pub const fn keep_up_for_test(&mut self) {
+        self.took = std::time::Duration::ZERO;
+    }
+
     /// Whether this grammar answers fast enough to be asked on every
     /// keystroke.
     ///

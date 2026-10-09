@@ -827,6 +827,14 @@ mod catching_up {
     #[test]
     fn a_grammar_that_keeps_up_is_not_held_back() {
         let (_scratch, mut app) = editing("catch-quick", "sample.rs", SOURCE);
+        // Said rather than measured: a first parse that took over two
+        // milliseconds on a busy macOS runner failed this on a change that
+        // touched nothing but the version. Checked by setting `QUICK` to a
+        // microsecond, which failed it without this line and passed it with
+        // one, and by dropping the settle from `Buffer::reparse`'s quick path.
+        app.current_buffer_mut()
+            .expect("a buffer")
+            .let_syntax_keep_up_for_test();
         support::type_text(&mut app, "x");
         assert!(
             !app.current_buffer().expect("a buffer").syntax_is_behind(),
@@ -903,6 +911,11 @@ mod catching_up {
             support::press(app, KeyCode::End);
             support::type_text(app, " // and a comment");
         }
+        // Every keystroke re-measures the parse, so a hook would hold for
+        // the first letter and not the seventeenth: on a runner slow for a
+        // moment `kept` would owe one too, and this would compare two trees
+        // that are both behind.
+        kept.handle(Event::SyntaxSettled);
         assert_ne!(
             support::render(&mut kept, 60, 12),
             support::render(&mut held, 60, 12),
