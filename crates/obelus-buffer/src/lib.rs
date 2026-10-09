@@ -1536,6 +1536,13 @@ impl Buffer {
         }
     }
 
+    /// Says this document's grammar keeps up, whatever it really costs.
+    pub fn let_syntax_keep_up_for_test(&mut self) {
+        if let Some(state) = self.syntax.as_mut() {
+            state.keep_up_for_test();
+        }
+    }
+
     /// Whether the tree is older than the text.
     #[must_use]
     pub fn syntax_is_behind(&self) -> bool {
