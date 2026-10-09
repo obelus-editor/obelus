@@ -121,6 +121,11 @@ fn starting_with_nothing_open_shows_a_welcome_screen() {
     // of whoever's checkout ran it -- and a path outside `$HOME` so the `~`
     // it would otherwise be written with is not this machine's either.
     app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    // And which version, for the same reason with a release in place of a
+    // checkout: left to the manifest, the grid is rewritten at every
+    // release. That the manifest's is what is drawn is
+    // `the_welcome_screen_says_which_version_this_is`'s to say.
+    app.version_for_test("1.2.3");
     support::check("welcome_64x20", &support::render(&mut app, 64, 20));
 }
 
@@ -242,6 +247,7 @@ fn the_welcome_screen_says_a_newer_version_is_out() {
 fn a_narrow_screen_gets_the_keys_without_the_wordmark() {
     let mut app = App::new(Vec::new());
     app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.version_for_test("1.2.3");
     let dump = support::render(&mut app, 34, 10);
 
     let open = obelus_editing::keymap::function(1).label();

@@ -373,6 +373,8 @@ pub trait Screen {
     /// the rows and the chosen row are the picker's, and the box below it
     /// owns the keys.
     fn naming_list(&self) -> Option<&Picker>;
+    /// Which version of Obelus this is.
+    fn version(&self) -> &str;
     /// The version of a newer Obelus, where one is out and the reader
     /// wants to be told.
     fn newer_release(&self) -> Option<&str>;
