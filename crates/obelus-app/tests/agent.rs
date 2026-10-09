@@ -9307,6 +9307,54 @@ fn what_is_held_in_the_transcript_is_copied() {
     );
 }
 
+/// Enter on a block of code an agent wrote copies the code, as it wrote it.
+///
+/// Holding it and copying that takes what is on the screen: the box round
+/// it, and a command longer than the box as two lines. Pasted into a shell,
+/// that is two commands, both wrong.
+///
+/// Broken deliberately by leaving the arm for `ChatOutcome::Copy` in
+/// `talking` doing nothing: the clipboard keeps what it had and nothing
+/// is said.
+#[test]
+fn enter_on_a_block_of_code_copies_the_code() {
+    let _turn = support::clipboard_turn();
+    obelus_clipboard::use_provider_for_test(obelus_clipboard::Provider::Kept);
+    let (mut app, events) = talking();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    support::type_text(&mut app, "/fenced");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the answer", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+            && app.chat().is_some_and(|chat| {
+                chat.rows(WIDTH)
+                    .iter()
+                    .any(|row| row.text().contains("Then look"))
+            })
+    });
+
+    // Up to the words after the block, and back to the block.
+    support::press(&mut app, KeyCode::Up);
+    support::press(&mut app, KeyCode::BackTab);
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Enter  Copies the code"),
+        "the block does not say what enter does:\n{text}"
+    );
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(app.note(), Some("Copied code"), "{text}");
+    assert_eq!(
+        obelus_clipboard::paste().as_deref(),
+        Some(
+            "echo kernel.perf_event_paranoid = 1 | sudo tee /etc/sysctl.d/99-perf.conf \
+             /etc/sysctl.d/99-other.conf"
+        ),
+        "something other than the code went to the clipboard"
+    );
+}
+
 /// A conversation opens on what the reader said conversations should open
 /// on, and says nothing about having done it.
 ///

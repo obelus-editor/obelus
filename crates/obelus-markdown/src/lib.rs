@@ -22,7 +22,7 @@ mod table;
 
 use std::ops::Range;
 
-use obelus_row::{Ink, Row, Span};
+use obelus_row::{Code, Ink, Row, Span};
 use obelus_syntax::{LanguageId, highlight::Highlights, parse::SyntaxState, tree_sitter::Node};
 use obelus_text::{Text, coordinates::ByteOffset, kind::SyntaxKind, text_width};
 
@@ -222,6 +222,7 @@ impl Laying<'_> {
             "thematic_break" => self.rows.push(Row {
                 spans: Vec::new(),
                 rule: true,
+                code: None,
             }),
             // The markers a block is made of rather than anything it says,
             // and the blank lines between blocks.
@@ -376,6 +377,18 @@ impl Laying<'_> {
             .is_some();
         let gathered = self.gather(content.unwrap_or(node), Join::Lines);
         let room = usize::from(prefix.room(width)).saturating_sub(2).max(1);
+        // The newline before the closing fence ends the last line rather
+        // than beginning another, and a copy that kept it would run a
+        // command pasted into a shell before the reader had read it there.
+        let code = Code {
+            at: node.start_byte(),
+            text: gathered
+                .text
+                .strip_suffix('\n')
+                .unwrap_or(&gathered.text)
+                .into(),
+        };
+        let first = self.rows.len();
 
         self.row(prefix, vec![mark(across(room, true))]);
         for line in gathered.text.lines() {
@@ -396,6 +409,9 @@ impl Laying<'_> {
             }
         }
         self.row(prefix, vec![mark(across(room, false))]);
+        for row in &mut self.rows[first..] {
+            row.code = Some(code.clone());
+        }
     }
 
     /// A table, in columns that fit.

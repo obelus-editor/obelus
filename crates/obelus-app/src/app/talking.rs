@@ -2436,6 +2436,10 @@ impl App {
                 self.go_to(&place.path, line, 0);
                 true
             }
+            ChatOutcome::Copy(code) => {
+                self.copied(&code, "code");
+                true
+            }
             ChatOutcome::Choose(id) => {
                 self.open_agent_setting(&id);
                 true
