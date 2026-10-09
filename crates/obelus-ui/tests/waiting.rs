@@ -24,6 +24,7 @@ fn waiting(on: bool) -> Picker {
         detail: None,
         trailing: None,
         changed: None,
+        version: None,
         value: PickerValue::Nothing,
         enabled: true,
         colours: None,
