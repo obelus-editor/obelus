@@ -4046,14 +4046,14 @@ fn a_walk_nobody_wants_stops() {
 
 /// The jump this program is for has a key, and the reader can find it.
 ///
-/// `f12`, which is the one exception to "the symbol questions live in the
+/// `f11`, which is the one exception to "the symbol questions live in the
 /// menu" -- and the thing that makes an exception safe is that it explains
 /// itself: the palette and the menu both read the key table, so the row
 /// carries the key whether or not the reader knew to press it. Its
 /// neighbours there have no key and show none, which is how the exception
 /// reads as one rather than as an arrangement half-built.
 ///
-/// Broken deliberately by taking `f12` off `SymbolDefinition` in
+/// Broken deliberately by taking `f11` off `SymbolDefinition` in
 /// `Keymap::new`: the row shows no key and this goes red.
 #[test]
 fn going_to_a_definition_has_a_key_and_the_palette_says_which() {
@@ -4072,7 +4072,7 @@ fn going_to_a_definition_has_a_key_and_the_palette_says_which() {
         .expect("the row is listed whether or not it can run");
     assert_eq!(
         jump.trailing.as_deref(),
-        Some(obelus_editing::keymap::function(12).label().as_str()),
+        Some(obelus_editing::keymap::function(11).label().as_str()),
         "the one key the symbol questions have is not on its row:\n{palette}"
     );
 
