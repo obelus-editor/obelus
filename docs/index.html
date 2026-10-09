@@ -56,7 +56,7 @@
       <div class="mark">÷</div>
       <h1>Obelus</h1>
       <p class="lede">An editor built around my own habits — <strong>with the agent built in.</strong></p>
-      <p class="sub">Obelus is a code editor that runs in its own window or in a terminal. It doesn't try to have every feature. It's built around how I work: you hand a task to an agent, and it makes the changes in a separate worktree. You can look in on it whenever you like. When it's done you try it, have it reviewed, and open a pull request to merge it. You never leave the editor, and you never type a git command.</p>
+      <p class="sub">Obelus is a code editor that runs in its own window or in a terminal. It doesn't try to have every feature. It's built around how I work: you hand a task to an agent, and it makes the changes in a separate worktree. You can look in on it whenever you like. When it's done you try it, have it reviewed, and open a pull request to merge it. You never leave the editor, and you never type a <code>git</code> command.</p>
 
       <div class="buttons">
         <a class="button primary" href="#start"><span>Install</span></a>
@@ -272,7 +272,7 @@ ob src/main.rs       # the same file, in the terminal</code></pre>
       </ol>
 
       <p>Every one of those decisions shows up as a card in the conversation: arrow keys to choose, <kbd>Enter</kbd> to answer. The agent never pushes, merges, deletes or ticks anything off on its own say-so.</p>
-      <p class="quiet small">This workflow is the default. If you'd rather the agent edited the files in front of you, set <code>workflow</code> to <code>in-place</code> in the settings. The steps are the same but there's no worktree, and every change can be undone with <kbd>Ctrl+z</kbd>. Set it to <code>none</code> and the agent works however it likes. Obelus itself never runs git: every git command above is run by the agent.</p>
+      <p class="quiet small">This workflow is the default. If you'd rather the agent edited the files in front of you, set <code>workflow</code> to <code>in-place</code> in the settings. The steps are the same but there's no worktree, and every change can be undone with <kbd>Ctrl+z</kbd>. Set it to <code>none</code> and the agent works however it likes. Obelus itself never runs <code>git</code>: every <code>git</code> command above is run by the agent.</p>
 
       <div class="feature">
         <div class="text">
@@ -347,7 +347,7 @@ ob src/main.rs       # the same file, in the terminal</code></pre>
             <li><kbd>Alt+d</kbd> opens or closes a change; <kbd>Alt+p</kbd> / <kbd>Alt+n</kbd> jump to the previous / next one</li>
             <li>The margin shows who last changed each line (you can turn it off)</li>
             <li><kbd>F9</kbd> for the file's history, <kbd>F10</kbd> for the project's; a commit opens the file as it left it, and commits not pushed yet are marked</li>
-            <li>Read-only: Obelus never changes your repository and never runs git for you</li>
+            <li>Read-only: Obelus never changes your repository and never runs <code>git</code> for you</li>
           </ul>
         </div>
 
@@ -418,7 +418,7 @@ ob src/main.rs       # the same file, in the terminal</code></pre>
         <li><span><strong>No multiple cursors, no macros.</strong> Big edits are the agent's job now. What's here is what you need to fix a line or two while reading.</span></li>
         <li><span><strong>No split panes.</strong> To see two files side by side, open two windows. Your terminal or window manager arranges them better than an editor can.</span></li>
         <li><span><strong>No modes.</strong> No vim or helix keys, and no setting to turn them on.</span></li>
-        <li><span><strong>No git writes of its own.</strong> Obelus only reads git. Committing, pushing and merging are done by the agent, and only after asking you.</span></li>
+        <li><span><strong>No Git writes of its own.</strong> Obelus only reads Git. Committing, pushing and merging are done by the agent, and only after asking you.</span></li>
         <li><span><strong>One agent at a time.</strong> With two, every question would have to say which agent it's for.</span></li>
         <li><span><strong>No model of its own.</strong> It uses the agent you already have.</span></li>
       </ul>
@@ -470,7 +470,7 @@ ob src/main.rs       # the same file, in the terminal</code></pre>
 
       <p>I never got used to vim. Modes, <code>hjkl</code>, colon commands: muscle memory for the people who have it, and something I had to think about every single time. I wanted to <em>open it and read</em>: arrow keys are arrow keys, <kbd>Ctrl+c</kbd> copies, and there's no mode to get out of first.</p>
 
-      <p>And the way I write code has changed. Most of it is written by Claude Code and Codex sessions now. What I do at the screen is read, check, mark what looks wrong and decide what's next, and I want my to-do list right beside the code. The terminal editors compete on features. Obelus is an editor too, but it goes another way: the syntax tree, git history, the language server and the agent, put together the way I work.</p>
+      <p>And the way I write code has changed. Most of it is written by Claude Code and Codex sessions now. What I do at the screen is read, check, mark what looks wrong and decide what's next, and I want my to-do list right beside the code. The terminal editors compete on features. Obelus is an editor too, but it goes another way: the syntax tree, Git history, the language server and the agent, put together the way I work.</p>
 
       <p>And the name: an <em>obelus</em> (÷, †) is the mark scholars put in a manuscript's margin beside a line they doubted. It's a mark a reader makes while reading.</p>
     </section>

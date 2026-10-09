@@ -56,7 +56,7 @@
       <div class="mark">÷</div>
       <h1>Obelus</h1>
       <p class="lede">照我自己的习惯做的编辑器，<strong>agent 就在里面。</strong></p>
-      <p class="sub">Obelus 是一个代码编辑器，有窗口版，也有终端版。它不追求功能多，只照我自己的干活方式来：你把要做的事交给 agent，它到一个单独的 worktree 里去改；你随时能过去看它改到哪了；改完你试一试，让它审一遍，再开 PR 合进去。从头到尾不用离开编辑器，也不用自己敲 git。</p>
+      <p class="sub">Obelus 是一个代码编辑器，有窗口版，也有终端版。它不追求功能多，只照我自己的干活方式来：你把要做的事交给 agent，它到一个单独的 worktree 里去改；你随时能过去看它改到哪了；改完你试一试，让它审一遍，再开 PR 合进去。从头到尾不用离开编辑器，也不用自己敲 <code>git</code>。</p>
 
       <div class="buttons">
         <a class="button primary" href="#start"><span>安装</span></a>
@@ -272,7 +272,7 @@ ob src/main.rs       # 同一个文件，在终端里打开</code></pre>
       </ol>
 
       <p>每一个要你决定的地方，agent 都会在对话里弹一张卡片，方向键选、回车定。推送、合并、删除、打勾，没有一样是 agent 自己拍板的。</p>
-      <p class="quiet small">这套流程是默认的。想让 agent 直接改你眼前的文件，可以在设置里把 <code>workflow</code> 改成 <code>in-place</code>：步骤一样，只是不开 worktree，每处改动都能 <kbd>Ctrl+z</kbd> 撤掉；改成 <code>none</code>，就是让 agent 按它自己的习惯来。Obelus 自己从不跑 git，上面的 git 命令都是 agent 跑的。</p>
+      <p class="quiet small">这套流程是默认的。想让 agent 直接改你眼前的文件，可以在设置里把 <code>workflow</code> 改成 <code>in-place</code>：步骤一样，只是不开 worktree，每处改动都能 <kbd>Ctrl+z</kbd> 撤掉；改成 <code>none</code>，就是让 agent 按它自己的习惯来。Obelus 自己从不跑 <code>git</code>，上面的 <code>git</code> 命令都是 agent 跑的。</p>
 
       <div class="feature">
         <div class="text">
@@ -347,7 +347,7 @@ ob src/main.rs       # 同一个文件，在终端里打开</code></pre>
             <li><kbd>Alt+d</kbd> 展开 / 收起一处改动，<kbd>Alt+p</kbd> / <kbd>Alt+n</kbd> 跳到上一处 / 下一处</li>
             <li>边栏显示每一行最后是谁改的（可以关掉）</li>
             <li><kbd>F9</kbd> 看这个文件的历史，<kbd>F10</kbd> 看整个项目的历史；选一个提交就打开它当时的文件，还没推到远端的提交会标出来</li>
-            <li>只读：Obelus 不改你的仓库，也不替你跑 git</li>
+            <li>只读：Obelus 不改你的仓库，也不替你跑 <code>git</code></li>
           </ul>
         </div>
 
@@ -418,7 +418,7 @@ ob src/main.rs       # 同一个文件，在终端里打开</code></pre>
         <li><span><strong>没有多光标，没有宏。</strong>大改动现在交给 agent；这里只留读代码时顺手改一两行要用的。</span></li>
         <li><span><strong>不分屏。</strong>想并排看就开两个窗口，终端和窗口管理器排得比编辑器好。</span></li>
         <li><span><strong>没有模式。</strong>没有 vim、helix 的键位，也没有开关能打开。</span></li>
-        <li><span><strong>自己不写 git。</strong>Obelus 只读 git。提交、推送、合并都是 agent 在跑 git，而且先问过你。</span></li>
+        <li><span><strong>自己不写 Git。</strong>Obelus 只读 Git。提交、推送、合并都是 agent 在跑 <code>git</code>，而且先问过你。</span></li>
         <li><span><strong>一次只连一个 agent。</strong>连两个的话，每个问题都得先说清是问哪个。</span></li>
         <li><span><strong>没有自己的模型。</strong>用的是你已经在用的 agent。</span></li>
       </ul>
@@ -470,7 +470,7 @@ ob src/main.rs       # 同一个文件，在终端里打开</code></pre>
 
       <p>vim 那套我一直用不惯。模式、<code>hjkl</code>、冒号命令，习惯的人是肌肉记忆，我却每次都得想一想。我想要的是<em>打开就能看</em>：方向键就是方向键，<kbd>Ctrl+c</kbd> 就是复制，不用先退出什么模式。</p>
 
-      <p>而且我写代码的方式变了。现在大部分代码是一堆 Claude Code、Codex 写的，我坐在屏幕前主要是读、确认、标出可疑的地方、决定下一步，还想把待办清单放在代码旁边。终端里的编辑器都在比谁功能多；Obelus 也是编辑器，但走的是另一条路：把语法树、git 历史、语言服务器和 agent，按我干活的方式摆在一起。</p>
+      <p>而且我写代码的方式变了。现在大部分代码是一堆 Claude Code、Codex 写的，我坐在屏幕前主要是读、确认、标出可疑的地方、决定下一步，还想把待办清单放在代码旁边。终端里的编辑器都在比谁功能多；Obelus 也是编辑器，但走的是另一条路：把语法树、Git 历史、语言服务器和 agent，按我干活的方式摆在一起。</p>
 
       <p>名字的来历：<em>obelus</em>（÷、†）是古代学者在手稿边上做的记号，标在他们觉得可疑的那一行旁边——是读的人边读边留下的。</p>
     </section>
