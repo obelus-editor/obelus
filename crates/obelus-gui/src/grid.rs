@@ -1177,6 +1177,9 @@ pub(crate) struct Page {
     shape: Caret,
     whose: Option<Layer>,
     typing: bool,
+    /// What the page is drawn on, which is what a cell nobody has written
+    /// yet is drawn on too -- see `blank`.
+    ground: Color,
 }
 
 impl Default for Page {
@@ -1192,6 +1195,7 @@ impl Default for Page {
             whose: None,
             // And nothing is typed into a screen with nothing on it.
             typing: false,
+            ground: Color::Reset,
         }
     }
 }
@@ -1332,13 +1336,11 @@ impl Page {
     /// Measuring happens for reasons that are not a resize -- another
     /// font, another size of it -- and most of them leave the grid the
     /// same shape, where there is nothing to move.
-    pub(crate) fn resized(&mut self, columns: u16, rows: u16, ground: Color) {
+    pub(crate) fn resized(&mut self, columns: u16, rows: u16) {
         if self.columns == columns && self.rows == rows {
             return;
         }
-        let mut blank = Cell::default();
-        blank.set_bg(ground);
-        let mut cells = vec![blank; usize::from(columns) * usize::from(rows)];
+        let mut cells = vec![self.blank(); usize::from(columns) * usize::from(rows)];
         for y in 0..rows.min(self.rows) {
             for x in 0..columns.min(self.columns) {
                 if let Some(at) = self.at(x, y) {
@@ -1350,6 +1352,27 @@ impl Page {
         self.columns = columns;
         self.rows = rows;
         self.cells = cells;
+    }
+
+    /// Says what the page is drawn on.
+    pub(crate) const fn drawn_on(&mut self, ground: Color) {
+        self.ground = ground;
+    }
+
+    /// A cell nobody has written: a space on the page's ground.
+    ///
+    /// Not `Cell::default()`, whose background is the reset colour and is
+    /// drawn near black. A frame that clears the page writes back only the
+    /// cells it has room for, and while a corner is dragged it has room
+    /// for less than the window already does: the rest was a black strip
+    /// down the growing edge on every frame of the drag. `ratatui` holds a
+    /// reset cell where this holds a blank, and Obelus paints its own
+    /// background over every cell it draws, so the two only differ where
+    /// nothing has been drawn.
+    fn blank(&self) -> Cell {
+        let mut blank = Cell::default();
+        blank.set_bg(self.ground);
+        blank
     }
 
     /// Blanks the cells a full-width character at this place covers.
@@ -1397,8 +1420,9 @@ impl Page {
                 false
             }
             Update::Cleared => {
+                let blank = self.blank();
                 for cell in &mut self.cells {
-                    *cell = Cell::default();
+                    *cell = blank.clone();
                 }
                 false
             }
@@ -1541,7 +1565,6 @@ mod tests {
         page.resized(
             u16::try_from(width).expect("a short row"),
             u16::try_from(rows.len()).expect("a few rows"),
-            Color::Reset,
         );
         for (y, row) in rows.iter().enumerate() {
             for (x, character) in row.chars().enumerate() {
@@ -1570,7 +1593,8 @@ mod tests {
     fn a_resize_keeps_the_cells_where_they_were() {
         let ground = Color::Rgb(1, 2, 3);
         let mut page = written(&["ab", "cd"]);
-        page.resized(3, 3, ground);
+        page.drawn_on(ground);
+        page.resized(3, 3);
         assert_eq!(page.look(0, 0).text, "a");
         assert_eq!(page.look(1, 0).text, "b");
         assert_eq!(page.look(0, 1).text, "c");
@@ -1579,9 +1603,27 @@ mod tests {
             assert_eq!(page.look(x, y).text, " ");
             assert_eq!(page.look(x, y).background, ground);
         }
-        page.resized(1, 2, ground);
+        page.resized(1, 2);
         assert_eq!(page.look(0, 0).text, "a");
         assert_eq!(page.look(0, 1).text, "c");
+    }
+
+    /// A page cleared is cleared onto its ground, so the cells a frame
+    /// does not write back are not drawn near black.
+    ///
+    /// Deliberate break: `Cell::default()` in the `Cleared` arm of
+    /// `apply`, as it was. Both cells are then `Reset`, which is the strip
+    /// down the growing edge of a window being dragged bigger.
+    #[test]
+    fn a_page_is_cleared_onto_its_ground() {
+        let ground = Color::Rgb(1, 2, 3);
+        let mut page = written(&["ab"]);
+        page.drawn_on(ground);
+        page.apply(Update::Cleared);
+        for x in 0..2 {
+            assert_eq!(page.look(x, 0).text, " ");
+            assert_eq!(page.look(x, 0).background, ground);
+        }
     }
 
     /// A rule is a line only where its cells still say `─`, and a tee
@@ -1757,7 +1799,6 @@ mod tests {
         page.resized(
             u16::try_from(width).expect("a short row"),
             u16::try_from(rows.len()).expect("a few rows"),
-            Color::Reset,
         );
         for (y, (row, ink)) in rows.iter().enumerate() {
             for (x, character) in row.chars().enumerate() {
@@ -1890,7 +1931,7 @@ mod tests {
     #[test]
     fn a_cap_whose_cells_were_drawn_over_is_not_drawn() {
         let mut page = Page::default();
-        page.resized(10, 1, Color::Reset);
+        page.resized(10, 1);
         fn write(page: &mut Page, said: &str) {
             for (at, character) in said.chars().enumerate() {
                 let x = u16::try_from(at).expect("a short run");
@@ -1986,7 +2027,7 @@ mod tests {
     #[test]
     fn a_full_width_character_takes_the_cells_it_covers_with_it() {
         let mut page = Page::default();
-        page.resized(6, 1, Color::Reset);
+        page.resized(6, 1);
         fn put(page: &mut Page, x: u16, said: &str) {
             let mut cell = Cell::default();
             cell.set_symbol(said);
