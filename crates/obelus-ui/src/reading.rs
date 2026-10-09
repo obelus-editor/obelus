@@ -18,6 +18,29 @@ use ratatui::{
 
 use crate::{fill, put, put_cluster, scrollbar};
 
+/// Where a reading goes in a list's preview: one column in from the edge,
+/// where the list's own rows start, so the two read as one page.
+#[must_use]
+pub const fn in_a_preview(area: Rect) -> Rect {
+    let margin = if area.width > 0 { 1 } else { 0 };
+    Rect {
+        x: area.x + margin,
+        width: area.width - margin,
+        ..area
+    }
+}
+
+/// How wide a reading in a list's preview is laid out.
+///
+/// Asked by whoever lays it out and answered from the same room it is drawn
+/// in, so the rows are never laid out a column wider than they are drawn.
+#[must_use]
+pub const fn width_in_a_preview(area: Rect) -> u16 {
+    in_a_preview(area)
+        .width
+        .saturating_sub(crate::editor::SCROLLBAR_WIDTH)
+}
+
 /// Draws the reading, starting `top` rows in.
 ///
 /// `ground` because the same reading is drawn in two places: a markdown
@@ -196,6 +219,8 @@ fn style_of(ink: Ink, span: &obelus_row::Span, theme: &Theme, base: Style) -> St
         Ink::Key => style.fg(theme.syntax.property),
         Ink::Wrong => style.fg(theme.syntax.error),
         Ink::Doubtful => style.fg(theme.syntax.warning),
+        Ink::Added => style.fg(theme.change_added),
+        Ink::Removed => style.fg(theme.change_removed),
     };
     if span.bold {
         style = style.add_modifier(Modifier::BOLD);

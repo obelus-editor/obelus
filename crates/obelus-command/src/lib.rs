@@ -96,8 +96,9 @@ pub enum Command {
     HistoryFile,
     /// Every commit in the project.
     HistoryProject,
-    /// The commit that wrote the line under the cursor.
-    HistoryLine,
+    /// The repository's open pull requests and issues, one of which the
+    /// agent reviews or answers.
+    PullRequestReview,
     /// Fold the run of lines the cursor is in, or unfold the one it is on.
     Fold,
     /// Fold every run in the file.
@@ -606,9 +607,9 @@ pub const ALL: &[CommandSpec] = &[
         title: "Every commit in this project",
     },
     CommandSpec {
-        command: Command::HistoryLine,
-        name: "show-line-commit",
-        title: "Open the commit that wrote this line",
+        command: Command::PullRequestReview,
+        name: "review-pull-request",
+        title: "Open pull requests and issues, for the agent to review or answer",
     },
     CommandSpec {
         command: Command::Fold,
@@ -843,7 +844,7 @@ impl Command {
             | Self::GoBracket
             | Self::HistoryFile
             | Self::HistoryProject
-            | Self::HistoryLine
+            | Self::PullRequestReview
             | Self::Fold
             | Self::FoldAll
             | Self::UnfoldAll
@@ -930,6 +931,7 @@ impl Command {
             | Self::SymbolOutline
             | Self::HistoryFile
             | Self::HistoryProject
+            | Self::PullRequestReview
             | Self::CountLines
             | Self::ConfigOpen
             | Self::ConfigProject
@@ -954,7 +956,6 @@ impl Command {
             | Self::SymbolCalls
             | Self::GoLine
             | Self::GoBracket
-            | Self::HistoryLine
             | Self::Fold
             | Self::FoldAll
             | Self::UnfoldAll
@@ -1012,6 +1013,7 @@ impl Command {
             | Self::SymbolOutline
             | Self::HistoryFile
             | Self::HistoryProject
+            | Self::PullRequestReview
             | Self::CountLines
             | Self::ConfigOpen
             | Self::ConfigProject
@@ -1048,7 +1050,6 @@ impl Command {
             | Self::SymbolCalls
             | Self::GoLine
             | Self::GoBracket
-            | Self::HistoryLine
             | Self::Fold
             | Self::FoldAll
             | Self::UnfoldAll
@@ -1155,7 +1156,7 @@ impl Command {
             | Self::GitNext
             | Self::HistoryFile
             | Self::HistoryProject
-            | Self::HistoryLine => Group::Git,
+            | Self::PullRequestReview => Group::Git,
             Self::LspRestart
             | Self::LspStop
             | Self::ConversationNew
@@ -1249,19 +1250,14 @@ impl Command {
             // repository with a commit in it. Which of the two tabs can
             // answer is settled when the view opens, the way the search
             // settles its own.
-            // All three want the same thing: a repository with a commit in
-            // it. Whether *this line* has a commit behind it is the answer
-            // rather than the question -- it takes a walk to find out, and
-            // a row greyed until that walk lands is a row greyed for ever
-            // for a reader who keeps the margin's names off, because then
-            // nothing starts one. The command says what it found.
+            // Both want the same thing: a repository with a commit in it.
             //
-            // And two of the three are about *this file*, so they want one:
-            // a repository is not enough to ask "what happened to this", and
-            // asked from a conversation they used to run and say "no file
+            // And one of the two is about *this file*, so it wants one: a
+            // repository is not enough to ask "what happened to this", and
+            // asked from a conversation it used to run and say "no file
             // open" into a note nobody sees.
             Self::HistoryProject => Requires::AHistory,
-            Self::HistoryFile | Self::HistoryLine => Requires::AFileInHistory,
+            Self::HistoryFile => Requires::AFileInHistory,
             Self::Fold => Requires::AFoldHere,
             Self::FoldAll => Requires::AFoldableFile,
             Self::UnfoldAll => Requires::SomethingFolded,
@@ -1357,6 +1353,10 @@ impl Command {
             // There has to be one to let go of: on the page asking which,
             // this would be asking it again.
             | Self::ProjectClose => Requires::AProject,
+            // A project, and not whether `gh` is there or signed in: that
+            // takes running it, and the list it opens says which of the two
+            // is missing -- a row greyed here would say neither.
+            Self::PullRequestReview => Requires::AProject,
             // A file of its own that only exists once a server has said
             // something, which on a file in a language Obelus has no
             // server for is never. Obelus's own log is not this: it is

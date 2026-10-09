@@ -50,7 +50,39 @@ impl App {
                     severity: complaint.severity,
                     others: complaint.others,
                 }),
+            reading: preview.reading.as_ref().map(|laid| obelus_ui::Reading {
+                rows: &laid.rows,
+                // Kept within the rows by `refresh_preview`, which stores
+                // the scroll back once it knows the room.
+                top: usize::try_from(preview.scrolled).unwrap_or(0),
+                turning: laid.turning,
+            }),
         })
+    }
+
+    /// Lays the preview of one pull request out again, keeping where the
+    /// reader had scrolled it to, because what it is made of has moved on.
+    ///
+    /// Only the rows go: the subject is the same pull request, and the
+    /// reader's place in it is theirs. `refresh_preview` lays them out on
+    /// the next frame and keeps the scroll within them.
+    pub(super) fn lay_the_preview_out_again(&mut self, number: u64) {
+        // Either kind: GitHub numbers pull requests and issues from one
+        // count, so a number names one of them and not both.
+        if let Some(preview) = self.preview.as_mut().filter(|preview| {
+            preview.subject == Subject::PullRequest(number)
+                || preview.subject == Subject::Issue(number)
+        }) {
+            preview.reading = None;
+        }
+    }
+
+    /// Whether the preview is showing a mark that turns.
+    pub(super) fn preview_turns(&self) -> bool {
+        self.preview
+            .as_ref()
+            .and_then(|preview| preview.reading.as_ref())
+            .is_some_and(|laid| laid.turning.is_some())
     }
 
     /// Wears whatever theme the picker's selection names.
@@ -272,8 +304,51 @@ impl App {
                 marked: Vec::new(),
                 target: marked.at(),
                 scrolled: 0,
+                reading: None,
             });
             self.preview = read;
+        }
+
+        // A reading is rows and a scroll, and nothing below -- a place
+        // marked, a line centred, a server's units -- is about rows.
+        let reading = match subject {
+            Subject::PullRequest(number) => Some(super::pulls::Asked::PullRequest(number)),
+            Subject::Issue(number) => Some(super::pulls::Asked::Issue(number)),
+            Subject::File(_) | Subject::Commit { .. } | Subject::Message(_) => None,
+        };
+        if let Some(asked) = reading {
+            // What has happened on it since, which the reading ends with:
+            // asked here because this is where the row the reader is on
+            // becomes a preview.
+            self.ask_about(asked);
+            let width = obelus_ui::reading::width_in_a_preview(area);
+            let laid = self
+                .preview
+                .as_ref()
+                .and_then(|preview| preview.reading.as_ref())
+                .is_some_and(|laid| laid.width == width);
+            let rows = (!laid).then(|| match asked {
+                super::pulls::Asked::PullRequest(number) => {
+                    self.pull_request_reading(number, width)
+                }
+                super::pulls::Asked::Issue(number) => self.issue_reading(number, width),
+            });
+            let Some(preview) = self.preview.as_mut() else {
+                return;
+            };
+            if let Some((rows, turning)) = rows {
+                preview.reading = Some(Laid {
+                    width,
+                    rows,
+                    turning,
+                });
+            }
+            let length = preview.reading.as_ref().map_or(0, |laid| laid.rows.len());
+            let last = length.saturating_sub(usize::from(area.height));
+            preview.scrolled = preview
+                .scrolled
+                .clamp(0, isize::try_from(last).unwrap_or(isize::MAX));
+            return;
         }
 
         // Whichever encoding the server for this language agreed to. Nothing
@@ -545,6 +620,13 @@ impl App {
             }
             Whose::Preview => {
                 if let Some(preview) = self.preview.as_mut() {
+                    // A reading is its rows, one to a row of the screen, and
+                    // the buffer beside it is empty: the bar's row is the
+                    // scroll. Clamped where it is laid out.
+                    if preview.reading.is_some() {
+                        preview.scrolled = isize::try_from(top).unwrap_or(isize::MAX);
+                        return;
+                    }
                     // Kept as rows from its line, which is how the keys
                     // move it: so the viewport is moved now, clamped where
                     // the file ends, and what is kept is how far it went --
@@ -706,7 +788,10 @@ impl App {
                 .is_some_and(|buffer| buffer.path() == path),
             // A file as a commit had it is not the file on disk, whatever
             // its path says, and a message is not a file at all.
-            Subject::Commit { .. } | Subject::Message(_) => false,
+            Subject::Commit { .. }
+            | Subject::Message(_)
+            | Subject::PullRequest(_)
+            | Subject::Issue(_) => false,
         }
     }
 
@@ -827,6 +912,12 @@ impl App {
                 let at = self.read_at(&path, Some(*id));
                 Some((Subject::Commit { id: *id, path }, at))
             }
+            // What it says about itself, which is what a reader choosing
+            // which to review is choosing by.
+            PickerValue::PullRequest(number) => {
+                Some((Subject::PullRequest(*number), Marked::top()))
+            }
+            PickerValue::Issue(number) => Some((Subject::Issue(*number), Marked::top())),
             // A question is about what is already on screen, and the reader
             // has to be able to see it to answer: a preview would cover the
             // file whose fate is being asked about.
@@ -921,6 +1012,16 @@ impl App {
                 }
                 Some((buffer, None))
             }
+            // An empty buffer, which nothing draws: what is drawn is the
+            // reading `refresh_preview` lays out beside it. A preview that
+            // was not there at all would be a list saying the pull request
+            // has nothing to show.
+            Subject::PullRequest(number) => self
+                .pull_request(*number)
+                .map(|_| (Buffer::from_text(Path::new(""), ""), None)),
+            Subject::Issue(number) => self
+                .issue(*number)
+                .map(|_| (Buffer::from_text(Path::new(""), ""), None)),
         }
     }
 
@@ -1021,6 +1122,14 @@ pub(super) enum Subject {
     },
     /// What a commit said about itself.
     Message(gix::ObjectId),
+    /// What a pull request says about itself, by its number.
+    ///
+    /// A reading rather than a buffer: a description is markdown somebody
+    /// wrote for a page that renders it, and it is shown the way a markdown
+    /// file read as one is.
+    PullRequest(u64),
+    /// And what an issue says about itself, for the same reason.
+    Issue(u64),
 }
 
 /// A file read so that the picker's selection can be shown.
@@ -1073,11 +1182,35 @@ pub(super) struct Preview {
     /// set from the target on every frame: without this, a scroll would be
     /// undone before it was drawn.
     scrolled: isize,
+    /// The subject laid out as rows, where it is a reading rather than a
+    /// file.
+    ///
+    /// Laid out again only when the width changes or what it was made from
+    /// does: a row is the same description on every frame, and laying out
+    /// markdown is the dear part.
+    reading: Option<Laid>,
+}
+
+/// A reading laid out for a preview.
+#[derive(Debug)]
+pub(super) struct Laid {
+    /// The width it was laid out at.
+    width: u16,
+    /// The rows.
+    rows: Vec<obelus_row::Row>,
+    /// The row whose head the view turns a mark at, while it says
+    /// something is on its way.
+    turning: Option<usize>,
 }
 
 impl Preview {
     fn language(&self) -> Option<LanguageId> {
         self.buffer.language()
+    }
+
+    /// What it is a preview of.
+    pub(super) const fn subject(&self) -> &Subject {
+        &self.subject
     }
 }
 

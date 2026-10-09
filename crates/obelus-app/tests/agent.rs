@@ -14513,3 +14513,942 @@ fn work_that_ended_before_its_call_was_marked_is_done() {
         screen(&mut app)
     );
 }
+
+/// What `gh pr list` prints for one open pull request at `sha`.
+fn one_pull_request(sha: &str) -> String {
+    described(sha, r"## What changes\n\n- the fold stays\n- the hunk goes")
+}
+
+/// What `gh pr list` prints for two, #123 the newer.
+fn two_pull_requests() -> String {
+    r#"[{"number":123,"title":"Keep the fold when a hunk is reverted","author":{"login":"alice"},"headRefName":"keep-fold","baseRefName":"master","headRefOid":"abc123","isDraft":false,"reviewDecision":"","updatedAt":"2026-10-08T00:00:00Z","body":"","additions":1,"deletions":1,"changedFiles":1},
+        {"number":124,"title":"Pick up the agent's rename in the tab row","author":{"login":"bob"},"headRefName":"rename","baseRefName":"master","headRefOid":"def456","isDraft":false,"reviewDecision":"","updatedAt":"2026-10-07T00:00:00Z","body":"","additions":1,"deletions":1,"changedFiles":1}]"#
+        .to_string()
+}
+
+/// The same, with `body` as its description, escaped as JSON escapes it.
+fn described(sha: &str, body: &str) -> String {
+    format!(
+        r#"[{{"number":123,"title":"Keep the fold when a hunk is reverted","author":{{"login":"alice"}},"headRefName":"keep-fold","baseRefName":"master","headRefOid":"{sha}","isDraft":false,"reviewDecision":"APPROVED","updatedAt":"","body":"{body}","additions":142,"deletions":18,"changedFiles":12}}]"#
+    )
+}
+
+/// The description's bar, taken hold of and dragged to the foot, shows the
+/// end of the description.
+///
+/// Broken deliberately by taking the reading's own arm out of `drag_bar`:
+/// the drag then moves the empty buffer the reading sits beside, and the
+/// description stays at its top.
+#[test]
+fn the_descriptions_bar_moves_the_description() {
+    let scratch = support::Scratch::new("agent-pull-request-preview-bar");
+    let answer = scratch.path().join("gh-answer.json");
+    let body: String = (0..60).map(|line| format!("line {line}\\n\\n")).collect();
+    std::fs::write(&answer, described("abc123", &body)).expect("the answer");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 1)
+    });
+    let text = screen(&mut app);
+    assert!(text.contains("#123   alice"), "no description:\n{text}");
+    // The bar is the last column, in the rows under the list's rule.
+    let rows: Vec<&str> = text.lines().collect();
+    let rule = rows
+        .iter()
+        .position(|row| row.contains('\u{2500}'))
+        .expect("the rule under the list");
+    let bar: Vec<u16> = rows
+        .iter()
+        .enumerate()
+        .skip(rule + 1)
+        .filter(|(_, row)| row.ends_with('\u{2588}'))
+        .map(|(y, _)| u16::try_from(y).expect("a row"))
+        .collect();
+    let (first, last) = (bar[0], *bar.last().expect("a bar beside the description"));
+    let x = WIDTH - 1;
+    for (kind, y) in [
+        (obelus_app::event::Pointer::Pressed, first),
+        (obelus_app::event::Pointer::Dragged, last + 10),
+        (obelus_app::event::Pointer::Released, last + 10),
+    ] {
+        app.handle(Event::Pointer { kind, x, y });
+        support::lay_out(&mut app, WIDTH, HEIGHT);
+    }
+    let text = screen(&mut app);
+    assert!(
+        !text.contains("#123   alice") && text.contains("line 59"),
+        "the drag did not reach the end of the description:\n{text}"
+    );
+}
+
+/// Under the description, after a rule each, how the selected pull
+/// request's checks stand and what has been said on it, newest first --
+/// and while `gh` has not said, a line that says so with a mark turning in
+/// front of it.
+///
+/// Broken deliberately four ways. Not asking from the preview leaves the
+/// line waiting for ever. Not laying the preview out again when the answer
+/// lands leaves it waiting too, with the answer kept and unshown. Listing
+/// every check by name puts the one that passed on screen. And taking the
+/// preview out of the clock draws the mark and never turns it.
+#[test]
+fn the_selected_pull_request_shows_its_checks_and_what_was_said() {
+    let scratch = support::Scratch::new("agent-pull-request-discussion");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, described("abc123", "Short.")).expect("the answer");
+    std::fs::write(
+        scratch.path().join("gh-answer.json.view.123"),
+        r#"{
+            "statusCheckRollup": [
+                {"name":"cargo fmt","status":"COMPLETED","conclusion":"SUCCESS"},
+                {"name":"cargo test (windows)","status":"COMPLETED","conclusion":"FAILURE"},
+                {"name":"cargo test (macos)","status":"IN_PROGRESS","conclusion":""}
+            ],
+            "comments": [
+                {"author":{"login":"bob"},"createdAt":"2026-10-01T00:00:00Z","body":"Looked at it."}
+            ],
+            "reviews": [
+                {"author":{"login":"carol"},"state":"APPROVED","submittedAt":"2026-10-02T00:00:00Z","body":"Ship it."}
+            ]
+        }"#,
+    )
+    .expect("what was said");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+    // A file under the list, because with nothing open the welcome screen's
+    // own sheen keeps the screen awake whatever the preview is doing.
+    let file = scratch.path().join("read.txt");
+    std::fs::write(&file, "something to read\n").expect("a file");
+    app.open_for_test(&file);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| answered_with(app, 1));
+    let text = screen(&mut app);
+    let waiting = text
+        .lines()
+        .find(|row| row.contains("Asking GitHub for its checks and comments"))
+        .unwrap_or_else(|| panic!("nothing says it is being asked:\n{text}"));
+    assert!(
+        waiting
+            .chars()
+            .any(|cell| ('\u{2800}'..='\u{28ff}').contains(&cell)),
+        "no mark in front of the line that waits:\n{text}"
+    );
+    assert!(app.is_waking(), "the mark is drawn and nothing turns it");
+
+    pump(&mut app, &events, "what was said", |app| {
+        app.picker().is_some() && !app.is_waking()
+    });
+    // Tall enough for all three parts at once.
+    support::lay_out(&mut app, WIDTH, 48);
+    let dump = support::render(&mut app, WIDTH, 48);
+    let text = support::text_block(&dump).to_string();
+    for said in [
+        "Checks  \u{2717} 1 failed \u{b7} \u{25cc} 1 running \u{b7} \u{2713} 1 passed",
+        "\u{2717} cargo test (windows)",
+        "\u{25cc} cargo test (macos)",
+        "carol  approved",
+        "Ship it.",
+        "bob  commented",
+    ] {
+        assert!(
+            text.contains(said),
+            "the preview does not say {said:?}:\n{text}"
+        );
+    }
+    assert!(
+        !text.contains("cargo fmt"),
+        "a check that passed is listed by name:\n{text}"
+    );
+    let at = |words: &str| text.find(words).expect("on screen");
+    assert!(
+        at("carol  approved") < at("bob  commented"),
+        "what was said is not newest first:\n{text}"
+    );
+    // A rule on the row above each of the two parts.
+    let rows: Vec<&str> = text.lines().collect();
+    for part in ["Checks  ", "carol  approved"] {
+        let at = rows
+            .iter()
+            .position(|row| row.contains(part))
+            .expect("the part is on screen");
+        assert!(
+            rows[at - 1].contains(&"\u{2500}".repeat(20)),
+            "{part:?} is not ruled off from what is above it:\n{text}"
+        );
+    }
+}
+
+/// A row walked onto while another's discussion is on its way is asked
+/// about once that answer lands, and shows what was said on it.
+///
+/// Broken deliberately by writing the row down as asked before looking at
+/// whether an answer is on its way: the row passed while one was is then
+/// never asked about, and waits for ever.
+#[test]
+fn a_row_walked_onto_while_another_is_asked_is_asked_after() {
+    let scratch = support::Scratch::new("agent-pull-request-walked");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, two_pull_requests()).expect("the answer");
+    std::fs::write(
+        scratch.path().join("gh-answer.json.view.124"),
+        r#"{"comments":[{"author":{"login":"dave"},"createdAt":"2026-10-02T00:00:00Z","body":"On the second one."}]}"#,
+    )
+    .expect("what was said on the second");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| answered_with(app, 2));
+    // The first row's preview is drawn, which asks about it; the reader
+    // walks on before that answer is heard.
+    let _ = screen(&mut app);
+    support::press(&mut app, KeyCode::Down);
+    // A frame after every event, as the loop draws one: asking is the
+    // preview's, and a preview is made as a frame is drawn.
+    let deadline = Instant::now() + patience();
+    let text = loop {
+        support::lay_out(&mut app, WIDTH, 48);
+        let dump = support::render(&mut app, WIDTH, 48);
+        let text = support::text_block(&dump).to_string();
+        if text.contains("On the second one.") {
+            break text;
+        }
+        let left = deadline.saturating_duration_since(Instant::now());
+        match events.recv_timeout(left) {
+            Ok(event) => app.handle(event),
+            Err(_) => panic!("the row the reader stopped on was never asked about:\n{text}"),
+        }
+    };
+    assert!(
+        text.contains("dave  commented"),
+        "who said it is missing:\n{text}"
+    );
+}
+
+/// What the pull request the list has selected says about itself, under
+/// the list: which it is and how much it changes, then its title and its
+/// description, laid out as the markdown they are -- and a description
+/// that is empty says so.
+///
+/// Broken deliberately three ways. Laying the description out as its lines
+/// rather than as markdown leaves the `##` and the dashes on screen. Taking
+/// `previews` off the list leaves no room under it to show anything. And
+/// taking the empty description's line out leaves a title over nothing.
+#[test]
+fn the_selected_pull_request_is_described_under_the_list() {
+    let scratch = support::Scratch::new("agent-pull-request-preview");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, one_pull_request("abc123")).expect("the answer");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 1)
+    });
+    let text = screen(&mut app);
+    for said in [
+        "#123   alice   keep-fold \u{2192} master",
+        "+142 \u{2212}18 \u{b7} 12 files",
+        "What changes",
+        "\u{2022} the fold stays",
+    ] {
+        assert!(
+            text.contains(said),
+            "the preview does not say {said:?}:\n{text}"
+        );
+    }
+    assert!(
+        !text.contains("## What changes") && !text.contains("- the hunk goes"),
+        "the description was shown as its source:\n{text}"
+    );
+
+    support::press(&mut app, KeyCode::Esc);
+    std::fs::write(&answer, described("abc123", "")).expect("no description");
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list again", |app| {
+        answered_with(app, 1)
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("No description"),
+        "an empty description said nothing:\n{text}"
+    );
+}
+
+/// An application whose `gh` is the fake one, answering from `answer`.
+fn with_a_fake_gh(scratch: &support::Scratch, answer: &Path) -> (App, Receiver<Event>) {
+    let (mut app, events) = wired();
+    app.working_directory_for_test(scratch.path().to_path_buf());
+    // Whole, because it runs in the project and not in this crate.
+    let script = std::path::absolute("tests/fixtures/fake-gh.sh").expect("a directory");
+    app.gh_for_test(
+        std::path::PathBuf::from(support::sh()),
+        vec![script.display().to_string(), answer.display().to_string()],
+    );
+    (app, events)
+}
+
+/// Whether `gh`'s answer has landed in the list, with `rows` rows.
+///
+/// Not the count alone: a list opened again shows the last answer's rows
+/// at once, and a test waiting on the count would be looking at those.
+fn answered_with(app: &App, rows: usize) -> bool {
+    app.picker()
+        .is_some_and(|picker| picker.is_filling().is_none() && picker.row_count() == rows)
+}
+
+/// Whether the list on screen has stopped saying it is waiting.
+fn the_list_has_answered(app: &App) -> bool {
+    app.picker()
+        .and_then(|picker| picker.nothing_to_show())
+        .is_none_or(|said| said != "Still asking GitHub")
+}
+
+/// A pull request chosen from the list opens a review that has said
+/// nothing, offers the words that start it, and tells the agent which pull
+/// request it is about with the reader's first message -- and once it has
+/// been pushed to, offers a second look and says where from.
+///
+/// Broken deliberately four ways, each failing here. Answering `None` for
+/// a pull request in `about_the_topic` sends the message with nothing about
+/// the pull request in it. Offering nothing in `what_the_box_offers` leaves
+/// the box empty. Calling a commit that differs from the one told "the
+/// same" never offers the second look. And opening a second review rather
+/// than going back to the first -- `review` not looking for one open --
+/// fails the count of documents.
+#[test]
+fn a_pull_request_is_reviewed_on_the_readers_word() {
+    let scratch = support::Scratch::new("agent-pull-request-review");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, one_pull_request("abc123")).expect("the answer");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+    app.talk_to(
+        "fake",
+        Path::new(support::sh()),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 1)
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("#123 Keep the fold when a hunk is reverted") && text.contains("alice"),
+        "the pull request is not in the list:\n{text}"
+    );
+
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.chat().is_some(), "choosing the row opened no review");
+    assert_eq!(
+        app.what_this_conversation_is_called().as_deref(),
+        Some("Review #123: Keep the fold when a hunk is reverted")
+    );
+    app.open_a_session_for_test();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    let _ = screen(&mut app);
+    assert!(
+        app.chat().is_some_and(|chat| !chat.anything_said()),
+        "the review started before the reader said to"
+    );
+    assert_eq!(
+        app.chat().and_then(|chat| chat.suggestion()),
+        Some("Review this pull request"),
+        "the box offered nothing to start the review with"
+    );
+
+    support::type_text(&mut app, "/blocks");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "what it got", |app| {
+        said_in_transcript(app, "blocks=")
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("first=always+review"),
+        "the agent was not told which pull request:\n{text}"
+    );
+    assert!(
+        text.contains("Told the agent which pull request to review"),
+        "Obelus spoke in the reader's name without saying so:\n{text}"
+    );
+    assert_eq!(app.chat().and_then(|chat| chat.suggestion()), None);
+
+    // Pushed to, and the list asked again: the same row is the same review.
+    std::fs::write(&answer, one_pull_request("def456")).expect("the second answer");
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list again", |app| {
+        answered_with(app, 1)
+    });
+    let documents = app.document_count_for_test();
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.document_count_for_test(),
+        documents,
+        "choosing it again opened a second review"
+    );
+    let _ = screen(&mut app);
+    assert_eq!(
+        app.chat().and_then(|chat| chat.suggestion()),
+        Some("Review what has been pushed since"),
+        "the box did not see the pull request had moved"
+    );
+    support::type_text(&mut app, "/blocks again");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the second answer", |app| {
+        said_in_transcript(app, "first=pushed")
+    });
+}
+
+/// The list says why it is empty, in words the reader can act on -- and
+/// while it is still asking, a mark turns in front of those words.
+///
+/// Broken deliberately five ways. Taking the exit code out of `list`: a
+/// signed-out `gh` then reads as GitHub refusing, with `gh`'s own sentence
+/// after it. Going by `gh auth login` in what it said, as this first did:
+/// a checkout off GitHub is told to sign in. Not marking the list as
+/// filling leaves no mark on its line. Drawing the row under the list's
+/// mark whether or not the list is empty says the waiting twice. And
+/// asking the clock only about a list being matched draws the mark and
+/// never turns it.
+#[test]
+fn the_list_of_pull_requests_says_why_it_is_empty() {
+    let scratch = support::Scratch::new("agent-pull-request-empty");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, "signed-out").expect("the answer");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+    // A file under the list, because with nothing open the welcome screen's
+    // own sheen keeps the screen awake whatever the list is doing.
+    let file = scratch.path().join("read.txt");
+    std::fs::write(&file, "something to read\n").expect("a file");
+    app.open_for_test(&file);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Still asking GitHub"),
+        "the list said nothing while it waited"
+    );
+    // And a mark turns in front of the line that says so -- there, where
+    // the reader is looking, and not again on the row under the list. One
+    // answer with nothing arriving before it is nothing to redraw the
+    // screen by, so something has to wake it to turn.
+    let turns = |row: &str| {
+        row.chars()
+            .any(|cell| ('\u{2800}'..='\u{28ff}').contains(&cell))
+    };
+    assert!(
+        text.lines()
+            .find(|row| row.contains("Still asking GitHub"))
+            .is_some_and(turns),
+        "nothing on the list's line says it is still waiting:\n{text}"
+    );
+    assert!(
+        !text.lines().last().is_some_and(turns),
+        "the waiting is said twice, on the list and on the row under it:\n{text}"
+    );
+    assert!(
+        app.is_waking(),
+        "the mark is drawn and nothing is waking the screen to turn it"
+    );
+    pump(&mut app, &events, "the refusal", the_list_has_answered);
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Not signed in to GitHub: gh auth login signs in"),
+        "a signed-out gh was not said as one:\n{text}"
+    );
+    assert!(
+        !app.is_waking(),
+        "the screen is still being woken with nothing moving on it"
+    );
+
+    support::press(&mut app, KeyCode::Esc);
+    std::fs::write(&answer, "[]").expect("no pull requests");
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the empty list", the_list_has_answered);
+    let text = screen(&mut app);
+    assert!(
+        text.contains("No pull request is open"),
+        "an empty answer was not said as one:\n{text}"
+    );
+
+    // A checkout whose remotes are not on GitHub is told to `gh auth login`
+    // too, and signing in is not what it is missing.
+    support::press(&mut app, KeyCode::Esc);
+    std::fs::write(&answer, "not-github").expect("not on GitHub");
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(
+        &mut app,
+        &events,
+        "the other refusal",
+        the_list_has_answered,
+    );
+    let text = screen(&mut app);
+    assert!(
+        text.contains("GitHub would not answer: none of the git remotes")
+            && !text.contains("Not signed in"),
+        "a checkout off GitHub was told to sign in:\n{text}"
+    );
+}
+
+/// A pull request is found by typing its number, which is in front of its
+/// title and quieter than it.
+///
+/// Broken deliberately two ways. Leaving the number out of the label, as
+/// it was when it sat beside the author: the row no longer starts with it,
+/// which is what fails first, and `124` would match nothing. And leaving
+/// the number's colouring off draws it in the title's ink.
+#[test]
+fn a_pull_request_is_found_by_its_number() {
+    let scratch = support::Scratch::new("agent-pull-request-by-number");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, two_pull_requests()).expect("the answer");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 2)
+    });
+    // The row the reader is not on, whose ground is the page's: the one
+    // under the selection is drawn on another, and what is compared here
+    // is the ink.
+    let dump = support::render(&mut app, WIDTH, HEIGHT);
+    assert_ne!(
+        support::drawn_in(&dump, "#124 "),
+        support::drawn_in(&dump, "Pick up the agent"),
+        "the number is drawn in the title's ink"
+    );
+    support::type_text(&mut app, "124");
+    let found: Vec<u64> = app
+        .picker()
+        .map(|picker| {
+            picker
+                .matches()
+                .filter_map(|row| match row.value {
+                    obelus_component::picker::PickerValue::PullRequest(number) => Some(number),
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    assert_eq!(found, [124], "typing its number did not find it");
+}
+
+/// The list opened again shows what `gh` said last time at once, turns a
+/// mark on the row under it while it asks again, and puts the new answer
+/// in with the reader still on the pull request they were on.
+///
+/// Broken deliberately two ways. Showing no rows while `gh` is asked, as
+/// this first did, leaves the list empty until the answer lands. And
+/// putting the answer in with `replace` sends the reader to the top, onto
+/// the pull request that arrived above theirs.
+#[test]
+fn the_last_answer_stands_in_while_the_next_is_asked() {
+    let scratch = support::Scratch::new("agent-pull-request-kept");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, one_pull_request("abc123")).expect("the answer");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 1)
+    });
+    support::press(&mut app, KeyCode::Esc);
+
+    // A pull request opened since, newer than the one the reader knows.
+    std::fs::write(
+        &answer,
+        r#"[{"number":125,"title":"A newer one","author":{"login":"carol"},"headRefName":"newer","baseRefName":"master","headRefOid":"fff","isDraft":false,"reviewDecision":"","updatedAt":"2026-10-09T00:00:00Z","body":"","additions":1,"deletions":1,"changedFiles":1},
+            {"number":123,"title":"Keep the fold when a hunk is reverted","author":{"login":"alice"},"headRefName":"keep-fold","baseRefName":"master","headRefOid":"abc123","isDraft":false,"reviewDecision":"","updatedAt":"2026-10-08T00:00:00Z","body":"","additions":1,"deletions":1,"changedFiles":1}]"#,
+    )
+    .expect("the second answer");
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    let text = screen(&mut app);
+    assert!(
+        text.contains("#123 Keep the fold") && !text.contains("Still asking GitHub"),
+        "the list waited for gh when it had an answer to show:\n{text}"
+    );
+    assert!(
+        text.lines().last().is_some_and(|row| row
+            .chars()
+            .any(|cell| ('\u{2800}'..='\u{28ff}').contains(&cell))),
+        "nothing says the list is being asked again:\n{text}"
+    );
+
+    pump(&mut app, &events, "the new answer", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 2)
+    });
+    let standing = app
+        .picker()
+        .and_then(|picker| picker.selected_item())
+        .and_then(|row| match row.value {
+            obelus_component::picker::PickerValue::PullRequest(number) => Some(number),
+            _ => None,
+        });
+    assert_eq!(
+        standing,
+        Some(123),
+        "the answer moved the reader off the pull request they were on"
+    );
+}
+
+/// What `gh issue list` prints for one open issue last updated at `stamp`.
+fn one_issue(stamp: &str) -> String {
+    format!(
+        r#"[{{"number":348,"title":"Translate a message I cannot read","author":{{"login":"dragosol"}},"labels":[{{"name":"enhancement"}}],"updatedAt":"{stamp}","body":"It would help."}}]"#
+    )
+}
+
+/// The issues are the list's second tab: an issue there is described under
+/// the list without checks, and choosing it opens an answer that has said
+/// nothing, offers the words that start it, and tells the agent which
+/// issue with the reader's first message -- and once the issue has been
+/// commented on, offers a second look and says since when.
+///
+/// Broken deliberately six ways, each failing here. Not filling the list
+/// again when the tab moves leaves the pull requests' rows under the issues'
+/// tab. Asking for checks on an issue puts a part on its preview that an
+/// issue cannot have. Laying out again only a pull request's preview when
+/// what was said arrives, as this first did, leaves an issue's saying it is
+/// still asking. Answering `None` for an issue in `about_the_topic`
+/// sends the message with nothing about the issue in it. Offering nothing in
+/// `what_the_box_offers` leaves the box empty. And calling a stamp that
+/// differs from the one told "the same" never offers the second look.
+#[test]
+fn an_issue_is_answered_on_the_readers_word() {
+    let scratch = support::Scratch::new("agent-issue-answer");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, one_pull_request("abc123")).expect("the pull requests");
+    let issues = scratch.path().join("gh-answer.json.issues");
+    std::fs::write(&issues, one_issue("2026-10-08T00:00:00Z")).expect("the issues");
+    std::fs::write(
+        scratch.path().join("gh-answer.json.view.348"),
+        r#"{"comments":[{"author":{"login":"erin"},"createdAt":"2026-10-08T01:00:00Z","body":"Me too."}]}"#,
+    )
+    .expect("what was said on it");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+    app.talk_to(
+        "fake",
+        Path::new(support::sh()),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the pull requests", |app| {
+        answered_with(app, 1)
+    });
+    support::press(&mut app, KeyCode::Tab);
+    pump(&mut app, &events, "the issues", |app| answered_with(app, 1));
+    // Both answers are in now, so what fills a tab from here is the tab
+    // moving and nothing else: back to the pull requests, and over again.
+    let first = |app: &App| {
+        app.picker()
+            .and_then(|picker| picker.matches().next())
+            .map(|row| row.label.clone())
+            .unwrap_or_default()
+    };
+    support::press_shift(&mut app, KeyCode::BackTab);
+    assert!(
+        first(&app).starts_with("#123 "),
+        "the pull requests' tab shows {:?}",
+        first(&app)
+    );
+    support::press(&mut app, KeyCode::Tab);
+    assert!(
+        first(&app).starts_with("#348 "),
+        "the issues' tab shows {:?}",
+        first(&app)
+    );
+    // A frame after every event until what was said on it is under the
+    // list: asking is the preview's, and a preview is made as a frame is.
+    let deadline = Instant::now() + patience();
+    let text = loop {
+        support::lay_out(&mut app, WIDTH, 40);
+        let dump = support::render(&mut app, WIDTH, 40);
+        let text = support::text_block(&dump).to_string();
+        if text.contains("Me too.") {
+            break text;
+        }
+        let left = deadline.saturating_duration_since(Instant::now());
+        match events.recv_timeout(left) {
+            Ok(event) => app.handle(event),
+            Err(_) => panic!("what was said on the issue never came under it:\n{text}"),
+        }
+    };
+    for said in [
+        "#348 Translate a message I cannot read",
+        "dragosol",
+        "enhancement",
+        "It would help.",
+        "erin  commented",
+    ] {
+        assert!(
+            text.contains(said),
+            "the issue does not say {said:?}:\n{text}"
+        );
+    }
+    assert!(
+        !text.contains("Checks") && !text.contains("checks and comments"),
+        "an issue is previewed with checks:\n{text}"
+    );
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.chat().is_some(), "choosing the issue opened nothing");
+    assert_eq!(
+        app.what_this_conversation_is_called().as_deref(),
+        Some("Issue #348: Translate a message I cannot read")
+    );
+    app.open_a_session_for_test();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    let _ = screen(&mut app);
+    assert!(
+        app.chat().is_some_and(|chat| !chat.anything_said()),
+        "the answer started before the reader said to"
+    );
+    assert_eq!(
+        app.chat().and_then(|chat| chat.suggestion()),
+        Some("Read this issue and suggest a reply"),
+        "the box offered nothing to start the answer with"
+    );
+    support::type_text(&mut app, "/blocks");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "what it got", |app| {
+        said_in_transcript(app, "blocks=")
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("first=always+issue"),
+        "the agent was not told which issue:\n{text}"
+    );
+    assert!(
+        text.contains("Told the agent which issue to answer"),
+        "Obelus spoke in the reader's name without saying so:\n{text}"
+    );
+
+    // Commented on since, and the list asked again: the same row is the
+    // same answer.
+    std::fs::write(&issues, one_issue("2026-10-09T00:00:00Z")).expect("the second answer");
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    support::press(&mut app, KeyCode::Tab);
+    pump(&mut app, &events, "the issues again", |app| {
+        answered_with(app, 1)
+    });
+    let documents = app.document_count_for_test();
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.document_count_for_test(),
+        documents,
+        "choosing it again opened a second answer"
+    );
+    let _ = screen(&mut app);
+    assert_eq!(
+        app.chat().and_then(|chat| chat.suggestion()),
+        Some("Read what has been said since"),
+        "the box did not see the issue had moved"
+    );
+    support::type_text(&mut app, "/blocks again");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the second answer", |app| {
+        said_in_transcript(app, "first=answered")
+    });
+}
+
+/// Every title in the list starts in one column, whatever the width of the
+/// number in front of it.
+///
+/// Broken deliberately twice, by writing the number at its own width in
+/// each kind of row: `#8`'s title then starts two columns before `#348`'s,
+/// and `#9`'s before `#123`'s.
+#[test]
+fn the_titles_start_in_one_column() {
+    let scratch = support::Scratch::new("agent-issue-numbers-aligned");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(
+        &answer,
+        r#"[{"number":123,"title":"Longer","author":{"login":"a"},"headRefName":"h","baseRefName":"b","headRefOid":"s","isDraft":false,"reviewDecision":"","updatedAt":"2026-10-08T00:00:00Z","body":"","additions":1,"deletions":1,"changedFiles":1},
+            {"number":9,"title":"Shorter","author":{"login":"a"},"headRefName":"h","baseRefName":"b","headRefOid":"s","isDraft":false,"reviewDecision":"","updatedAt":"2026-10-07T00:00:00Z","body":"","additions":1,"deletions":1,"changedFiles":1}]"#,
+    )
+    .expect("the pull requests");
+    std::fs::write(
+        scratch.path().join("gh-answer.json.issues"),
+        r#"[{"number":348,"title":"Wider","author":{"login":"a"},"labels":[],"updatedAt":"2026-10-08T00:00:00Z","body":""},
+            {"number":8,"title":"Narrower","author":{"login":"a"},"labels":[],"updatedAt":"2026-10-07T00:00:00Z","body":""}]"#,
+    )
+    .expect("the issues");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    let column = |text: &str, title: &str| {
+        text.lines()
+            .find_map(|row| row.find(title).map(|at| row[..at].chars().count()))
+            .unwrap_or_else(|| panic!("{title:?} is not on screen:\n{text}"))
+    };
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the pull requests", |app| {
+        answered_with(app, 2)
+    });
+    let text = screen(&mut app);
+    assert_eq!(
+        column(&text, "Shorter"),
+        column(&text, "Longer"),
+        "the pull requests' titles start in two columns:\n{text}"
+    );
+
+    support::press(&mut app, KeyCode::Tab);
+    pump(&mut app, &events, "the issues", |app| answered_with(app, 2));
+    let text = screen(&mut app);
+    assert_eq!(
+        column(&text, "Narrower"),
+        column(&text, "Wider"),
+        "the issues' titles start in two columns:\n{text}"
+    );
+}
+
+/// A query that matches none of the pull requests says so, and does not say
+/// that none are open.
+///
+/// Broken deliberately by setting the empty line with `while_empty` when
+/// there is a list: the reader's query then reads as GitHub having nothing.
+#[test]
+fn a_query_that_matches_no_pull_request_says_so() {
+    let scratch = support::Scratch::new("agent-pull-request-no-match");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, one_pull_request("abc123")).expect("the answer");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 1)
+    });
+    support::type_text(&mut app, "zzzz");
+    let text = screen(&mut app);
+    assert!(
+        text.contains("No match") && !text.contains("No pull request is open"),
+        "a query nothing matched was said as nothing being open:\n{text}"
+    );
+}
+
+/// A review another Obelus walked into after the list was drawn is not this
+/// window's to enter, and the row says so.
+///
+/// Claimed after the list is up, so that what refuses is the claim and not
+/// a row already drawn dim -- claimed before, the first version of this
+/// test passed with the claim taken out, because enter on a dim row never
+/// reached it.
+///
+/// On the second of two rows, so that the selection staying where it was
+/// is something the test can see: the list rebuilt on refusal put it back
+/// on the first row, and with one row there is nowhere else to go.
+///
+/// Broken deliberately three ways. Opening the review without the claim in
+/// `App::review` walks into the other window's review. Taking out the
+/// marking on refusal leaves the row lit under the reader. And rebuilding
+/// the rows on refusal, as this first did, moves the selection off the row
+/// the reader pressed.
+#[test]
+fn a_review_another_obelus_has_is_not_entered() {
+    let scratch = support::Scratch::new("agent-pull-request-claimed");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, two_pull_requests()).expect("the answer");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 2)
+    });
+    support::press(&mut app, KeyCode::Down);
+    let selected = |app: &App| {
+        app.picker()
+            .and_then(|picker| picker.selected_item())
+            .and_then(|row| match row.value {
+                obelus_component::picker::PickerValue::PullRequest(number) => {
+                    Some((number, row.enabled))
+                }
+                _ => None,
+            })
+    };
+    assert_eq!(
+        selected(&app),
+        Some((124, true)),
+        "nobody has the review yet"
+    );
+    let _theirs = obelus_agent::chats::claim(
+        scratch.path(),
+        &obelus_agent::chats::ChatId::PullRequest(124),
+    )
+    .expect("nobody had it");
+
+    support::press(&mut app, KeyCode::Enter);
+    assert!(
+        app.chat().is_none(),
+        "the review was entered from two windows"
+    );
+    assert_eq!(
+        selected(&app),
+        Some((124, false)),
+        "the refused row is not the one under the reader, dim"
+    );
+}
+
+/// A review another window takes up or lets go while the list is open
+/// says so on its row, with nothing pressed.
+///
+/// What tells this window is the watcher hearing the claim's file, which
+/// the test delivers by hand -- the watch itself is `obelus_watch`'s.
+///
+/// Broken deliberately two ways. Taking `freshen_the_pull_request_rows` out
+/// of the frame leaves the row as the list was built. And reading the
+/// claims only as the list opens leaves it lit after the other window took
+/// it, which is the same break from the other side.
+#[test]
+fn a_review_taken_elsewhere_greys_its_row_while_the_list_is_open() {
+    let scratch = support::Scratch::new("agent-pull-request-lock-moves");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, two_pull_requests()).expect("the answer");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| {
+        app.picker().is_some_and(|picker| picker.row_count() == 2)
+    });
+    let which = obelus_agent::chats::ChatId::PullRequest(123);
+    let file = obelus_agent::chats::directory(scratch.path())
+        .expect("somewhere for claims")
+        .join(which.file_name());
+    let enabled = |app: &App| {
+        app.picker()
+            .and_then(|picker| {
+                picker.matches().find(|row| {
+                    matches!(
+                        row.value,
+                        obelus_component::picker::PickerValue::PullRequest(123)
+                    )
+                })
+            })
+            .map(|row| row.enabled)
+    };
+    assert_eq!(enabled(&app), Some(true), "nobody has the review yet");
+
+    let theirs = obelus_agent::chats::claim(scratch.path(), &which).expect("nobody had it");
+    app.handle(Event::Watched(obelus_watch::Changed { path: file.clone() }));
+    let _ = screen(&mut app);
+    assert_eq!(
+        enabled(&app),
+        Some(false),
+        "a review another window took is still offered"
+    );
+
+    drop(theirs);
+    app.handle(Event::Watched(obelus_watch::Changed { path: file }));
+    let _ = screen(&mut app);
+    assert_eq!(
+        enabled(&app),
+        Some(true),
+        "a review another window let go is still refused"
+    );
+}

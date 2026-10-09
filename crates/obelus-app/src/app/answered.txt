@@ -1,0 +1,1 @@
+Issue #{number} has changed since it was last handed to you: it was last updated at {was}, and now at {now}. Read what has been said or changed since then the same way, and ask the reader again before anything is posted.

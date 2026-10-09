@@ -77,6 +77,56 @@ pub enum Topic {
     Loose,
     /// One of the project's notes, by the name that outlives its position.
     Note(NoteId),
+    /// A review of one of the repository's pull requests, by its number.
+    ///
+    /// A note's shape again rather than a loose one's: the list of pull
+    /// requests is a door into it that opens before there is a session, and
+    /// choosing the same one again is coming back to the same review.
+    PullRequest(u64),
+    /// An answer to one of the repository's issues, by its number -- the
+    /// pull request's shape, for the same reasons.
+    Issue(u64),
+}
+
+impl Topic {
+    /// What a conversation written down as `which` is about.
+    #[must_use]
+    pub fn of(which: &obelus_agent::chats::ChatId) -> Self {
+        use obelus_agent::chats::ChatId;
+
+        match which {
+            ChatId::Note(note) => Self::Note(note.clone()),
+            ChatId::PullRequest(number) => Self::PullRequest(*number),
+            ChatId::Issue(number) => Self::Issue(*number),
+            ChatId::Loose(_) => Self::Loose,
+        }
+    }
+
+    /// What names it before it has a session, where anything does.
+    ///
+    /// A note, a pull request and an issue are all things in the world
+    /// that a conversation is found by; one about nothing in particular is
+    /// found by nothing but its session.
+    #[must_use]
+    pub fn which(&self) -> Option<obelus_agent::chats::ChatId> {
+        use obelus_agent::chats::ChatId;
+
+        match self {
+            Self::Note(note) => Some(ChatId::Note(note.clone())),
+            Self::PullRequest(number) => Some(ChatId::PullRequest(*number)),
+            Self::Issue(number) => Some(ChatId::Issue(*number)),
+            Self::Loose => None,
+        }
+    }
+
+    /// The note it is about, where it is about one.
+    #[must_use]
+    pub const fn note(&self) -> Option<&NoteId> {
+        match self {
+            Self::Note(note) => Some(note),
+            Self::Loose | Self::PullRequest(_) | Self::Issue(_) => None,
+        }
+    }
 }
 
 /// A conversation with an agent, whether or not it is on screen.
@@ -297,7 +347,7 @@ impl Conversation {
     #[must_use]
     pub fn which(&self) -> Option<obelus_agent::chats::ChatId> {
         match &self.topic {
-            Topic::Note(note) => Some(obelus_agent::chats::ChatId::Note(note.clone())),
+            Topic::Note(_) | Topic::PullRequest(_) | Topic::Issue(_) => self.topic.which(),
             Topic::Loose => self
                 .session
                 .as_ref()

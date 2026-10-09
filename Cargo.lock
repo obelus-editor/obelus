@@ -4403,6 +4403,7 @@ dependencies = [
  "obelus-lsp",
  "obelus-markdown",
  "obelus-mcp",
+ "obelus-program",
  "obelus-reading",
  "obelus-remote",
  "obelus-row",

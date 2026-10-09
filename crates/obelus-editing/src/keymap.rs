@@ -419,7 +419,8 @@ impl Layout {
 /// list JetBrains has there, `g` git, `n` the conversation a new one starts
 /// in, `f` find -- and alt for the rest, because control has no more letters
 /// that every terminal sends as themselves. `alt+.` for a definition is
-/// Emacs's, and `alt+b` blame. In a terminal these are the shell's: unlike
+/// Emacs's, and `ctrl+u` the pull requests, on the one control letter left.
+/// In a terminal these are the shell's: unlike
 /// a function key, every one of them already means something there.
 ///
 /// Not `alt+i` and `alt+o` for the symbols and the outline, which were the
@@ -442,8 +443,14 @@ const MNEMONIC: [(Command, KeyChord); 12] = [
     (Command::SearchSymbols, mnemonic('y', KeyModifiers::ALT)),
     (Command::HistoryFile, mnemonic('l', KeyModifiers::ALT)),
     (Command::HistoryProject, mnemonic('g', KeyModifiers::ALT)),
-    (Command::HistoryLine, mnemonic('b', KeyModifiers::ALT)),
     (Command::SymbolDefinition, mnemonic('.', KeyModifiers::ALT)),
+    // On control, because it opens something to look at -- and `u`, the
+    // next letter of "pull" that nothing has: every control letter but it
+    // is taken, by a command, by tmux, or by the wire.
+    (
+        Command::PullRequestReview,
+        mnemonic('u', KeyModifiers::CONTROL),
+    ),
 ];
 
 /// A chord of [`MNEMONIC`]'s, built where a `const` can be: every one of
@@ -580,25 +587,15 @@ impl Keymap {
                     context: Context::Normal,
                     chord: function(10),
                 },
-                // `f11` beside them, because it is the same subject asked
-                // at the narrowest width there is: not this file's commits
-                // but this *line's* one.
-                Binding {
-                    command: Command::HistoryLine,
-                    context: Context::Normal,
-                    chord: function(11),
-                },
-                // And `f12`, which is not one of those three: it is the one
-                // jump this whole program is for. "Join the semantic graph
-                // to the git timeline -- jump to a definition from inside a
-                // diff" is the first paragraph Obelus was written under, and
-                // the jump had no key at all while every editor a reader
-                // arrives from puts it here.
-                //
-                // Held for git's fourth question once, and nothing ever
-                // came: the three widths above are what a history has, and a
-                // fourth would be a fourth width of the same question rather
-                // than a new one. So git's row is three keys and says so.
+                // `f11`, which is not one of those two: it is the one jump
+                // this whole program is for. "Join the semantic graph to the
+                // git timeline -- jump to a definition from inside a diff" is
+                // the first paragraph Obelus was written under, and the jump
+                // had no key at all while every editor a reader arrives from
+                // puts it on `f12`. It was there, until `f12` went to the
+                // pull requests; it is here because the key that held it,
+                // the commit behind one line, was a command nobody used and
+                // went.
                 //
                 // The one exception to "the symbol questions live in the
                 // menu" -- see the note over them in `command`. Its
@@ -610,6 +607,15 @@ impl Keymap {
                 // were all along.
                 Binding {
                     command: Command::SymbolDefinition,
+                    context: Context::Normal,
+                    chord: function(11),
+                },
+                // And `f12` for the repository's pull requests and issues:
+                // somewhere to look, like everything on a function key, and
+                // the history's neighbour -- what is on its way into the
+                // history beside what is in it.
+                Binding {
+                    command: Command::PullRequestReview,
                     context: Context::Normal,
                     chord: function(12),
                 },
@@ -1652,8 +1658,8 @@ mod tests {
             keymap.command_on(super::control('d')),
             Some(obelus_command::Command::PreviewToggle)
         );
-        // The third bank is git's for three of its four: the same subject
-        // at three widths -- this file, the project, this line.
+        // The third bank opens with git's history at two widths -- this
+        // file, the project.
         assert_eq!(
             keymap.command_on(KeyChord::new(KeyCode::F(9), KeyModifiers::NONE)),
             Some(obelus_command::Command::HistoryFile)
@@ -1662,17 +1668,16 @@ mod tests {
             keymap.command_on(KeyChord::new(KeyCode::F(10), KeyModifiers::NONE)),
             Some(obelus_command::Command::HistoryProject)
         );
+        // Then the jump this program was written for.
         assert_eq!(
             keymap.command_on(KeyChord::new(KeyCode::F(11), KeyModifiers::NONE)),
-            Some(obelus_command::Command::HistoryLine)
+            Some(obelus_command::Command::SymbolDefinition)
         );
-        // And the fourth is not git's. It was held for a fourth question
-        // about a history and none came -- three widths is what a history
-        // has -- so it went to the jump this program was written for, which
-        // is also where every editor a reader arrives from puts it.
+        // And what is on its way into the history: the pull requests, and
+        // the issues beside them.
         assert_eq!(
             keymap.command_on(KeyChord::new(KeyCode::F(12), KeyModifiers::NONE)),
-            Some(obelus_command::Command::SymbolDefinition)
+            Some(obelus_command::Command::PullRequestReview)
         );
     }
 

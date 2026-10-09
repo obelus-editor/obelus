@@ -5,13 +5,37 @@
 //! mark that says the answer to what was typed has not arrived, and that
 //! it says so by moving.
 
-use obelus_component::picker::{Picker, PickerLayout};
+use obelus_component::picker::{Picker, PickerItem, PickerLayout, PickerValue};
 use obelus_theme::builtin::DARK;
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect};
 
-/// A picker with something typed into it, waiting or not.
+/// A picker with something typed into it and a row it matches, waiting or
+/// not.
+///
+/// A row, because a list with none says it is waiting on its own line --
+/// see [`an_empty_list_says_so_on_its_line`] -- and the row under it is for
+/// a list that has rows and is still being filled.
 fn waiting(on: bool) -> Picker {
-    let mut picker = Picker::new(Vec::new(), PickerLayout::FullArea);
+    let found = PickerItem {
+        prose: false,
+        marker: None,
+        icon: None,
+        label: "abc".to_string(),
+        detail: None,
+        trailing: None,
+        changed: None,
+        version: None,
+        value: PickerValue::Nothing,
+        enabled: true,
+        colours: None,
+        status: None,
+        depth: 0,
+        opens: None,
+        kind: None,
+        tab: None,
+        section: None,
+    };
+    let mut picker = Picker::new(vec![found], PickerLayout::FullArea);
     picker.set_query("ab");
     if on {
         picker.filling(Some("Still reading\u{2026}".to_string()));
@@ -67,6 +91,48 @@ fn a_row_that_is_not_waiting_wears_no_mark() {
     assert!(
         !line.contains(obelus_ui::spinning(0)),
         "a finished list is still turning: {line:?}"
+    );
+}
+
+/// A list with nothing in it yet says so on its own line, with the mark in
+/// front of the words -- and the row under it says nothing more.
+///
+/// Deliberate breaks: draw the line with `nothing` whatever `is_filling`
+/// says, and the line wears no mark; draw the row's mark whether or not
+/// the list is empty, and the waiting is said in two places.
+#[test]
+fn an_empty_list_says_so_on_its_line() {
+    use ratatui::widgets::Widget as _;
+
+    let mut picker = Picker::new(Vec::new(), PickerLayout::FullArea);
+    picker.while_empty("Still asking");
+    picker.filling(Some("Asking\u{2026}".to_string()));
+    let area = Rect {
+        x: 0,
+        y: 0,
+        width: 40,
+        height: 6,
+    };
+    let mut cells = CellBuffer::empty(area);
+    obelus_ui::picker::PickerView::new(&picker, &DARK, 0, true).render(area, &mut cells);
+    let line = (0..area.height)
+        .map(|y| {
+            (0..area.width)
+                .map(|x| cells[(x, y)].symbol())
+                .collect::<String>()
+        })
+        .find(|line| line.contains("Still asking"))
+        .expect("the list says why it is empty");
+    let mark = line
+        .find(obelus_ui::spinning(0))
+        .expect("no mark on the list's line");
+    assert!(
+        mark < line.find("Still asking").unwrap_or(0),
+        "the mark is not in front of the words: {line:?}"
+    );
+    assert!(
+        !prompt(&picker, 0).contains(obelus_ui::spinning(0)),
+        "the waiting is said on the list and again under it"
     );
 }
 

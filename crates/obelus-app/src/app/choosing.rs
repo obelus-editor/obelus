@@ -413,6 +413,8 @@ impl App {
         // And the list of open documents, whose second tab is the
         // repository's worktrees.
         let switching = !self.worktrees.tabs.is_empty();
+        // And the pull requests, whose second tab is the issues.
+        let pulling = picker.opener() == Some(obelus_command::Command::PullRequestReview);
         let before = (picker.tab(), picker.query().to_string());
         // Where the tree is standing, read before the key can move it: a
         // typed letter filters the rows the list already has, so by the
@@ -463,6 +465,9 @@ impl App {
                 }
                 if switching && after.0 != before.0 {
                     self.refresh_switching();
+                }
+                if pulling && after.0 != before.0 {
+                    self.show_pull_requests();
                 }
                 true
             }
@@ -528,6 +533,22 @@ impl App {
             // file is as they left it for when they come back.
             self.put_the_file_back();
             self.leave(Layer::Picker);
+            return;
+        }
+        // A review is claimed the same way, and refused the same way; and so
+        // is an answer to an issue.
+        let topic = match value {
+            PickerValue::PullRequest(number) => {
+                Some(crate::conversation::Topic::PullRequest(number))
+            }
+            PickerValue::Issue(number) => Some(crate::conversation::Topic::Issue(number)),
+            _ => None,
+        };
+        if let Some(topic) = topic {
+            if self.take_up(topic) {
+                self.put_the_file_back();
+                self.leave(Layer::Picker);
+            }
             return;
         }
         if let PickerValue::Commit(id) = value {
@@ -653,7 +674,7 @@ impl App {
             PickerValue::CommitFile { id, path } => self.open_at_commit(id, &path, None),
             // Dealt with before the list is closed, for the reason a
             // directory is: choosing one may leave the list where it was.
-            PickerValue::Conversation(_) => {}
+            PickerValue::Conversation(_) | PickerValue::PullRequest(_) | PickerValue::Issue(_) => {}
             PickerValue::Worktree { at, enter, .. } => match enter {
                 WorktreeEnter::Switch => self.go_to_worktree(at),
                 WorktreeEnter::Open | WorktreeEnter::Bring => self.go_elsewhere(at),

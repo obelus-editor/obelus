@@ -349,16 +349,24 @@ fn read_from(text: &str) -> Reading {
         else {
             continue;
         };
-        // A row with no note is one about nothing in particular, which is
-        // named by its session and by nothing else. Every row written
-        // before those were remembered has one, so an old file reads as it
-        // always did.
-        let which = match text("note") {
-            Some(note) => match NoteId::read(note) {
+        // A row with a note is about the note, one with a pull request is
+        // a review of it, and one with an issue an answer to it. A row with
+        // none of them is about nothing in particular, which is named by
+        // its session and by nothing else. Every row written before those
+        // were remembered has one, so an old file reads as it always did.
+        let number = |key: &str| {
+            row.get(key)
+                .and_then(toml::Value::as_integer)
+                .and_then(|number| u64::try_from(number).ok())
+        };
+        let which = match (text("note"), number("pull"), number("issue")) {
+            (Some(note), _, _) => match NoteId::read(note) {
                 Some(note) => ChatId::Note(note),
                 None => continue,
             },
-            None => ChatId::Loose(session.to_string()),
+            (None, Some(number), _) => ChatId::PullRequest(number),
+            (None, None, Some(number)) => ChatId::Issue(number),
+            (None, None, None) => ChatId::Loose(session.to_string()),
         };
         kept.insert(
             (which, agent.to_string(), PathBuf::from(tree)),
@@ -442,8 +450,11 @@ fn to_toml(remembered: &Remembered) -> String {
     let mut out = String::new();
     for ((which, agent, tree), kept) in &remembered.kept {
         out.push_str("[[talked]]\n");
-        if let Some(note) = which.note() {
-            out.push_str(&format!("note = \"{note}\"\n"));
+        match which {
+            ChatId::Note(note) => out.push_str(&format!("note = \"{note}\"\n")),
+            ChatId::PullRequest(number) => out.push_str(&format!("pull = {number}\n")),
+            ChatId::Issue(number) => out.push_str(&format!("issue = {number}\n")),
+            ChatId::Loose(_) => {}
         }
         out.push_str(&format!("agent = {}\n", quoted(agent)));
         out.push_str(&format!("tree = {}\n", quoted(&tree.to_string_lossy())));
@@ -613,6 +624,75 @@ mod tests {
             back.get(&note("ABCDEFGH"), "claude-acp", there),
             None,
             "a conversation was offered in a checkout the agent was never told of"
+        );
+    }
+
+    /// A review is the pull request's, through the file and back, with the
+    /// commit it was told about.
+    ///
+    /// Broken deliberately by leaving the `pull` line out of `to_toml`: the
+    /// row reads back as a loose conversation named by its session, and
+    /// the review's number has nothing under it.
+    #[test]
+    fn a_review_is_remembered_against_its_pull_request() {
+        let pull = ChatId::PullRequest(123);
+        let mut remembered = Remembered::default();
+        remembered.put(
+            &pull,
+            "claude-acp",
+            here(),
+            Kept {
+                session: "s-review".to_string(),
+                title: None,
+                told: Some("0123abc".to_string()),
+                introduced: true,
+                last: None,
+            },
+        );
+        let back = match read_from(&to_toml(&remembered)) {
+            Reading::Remembered(back) => back,
+            other => panic!("the file did not read: {other:?}"),
+        };
+        assert_eq!(
+            back.get(&pull, "claude-acp", here())
+                .and_then(|kept| kept.told.as_deref()),
+            Some("0123abc")
+        );
+    }
+
+    /// An answer to an issue is the issue's, through the file and back --
+    /// and not the pull request's of the same number.
+    ///
+    /// Broken deliberately by writing an issue's row with `pull` in
+    /// `to_toml`: it reads back as a review.
+    #[test]
+    fn an_answer_is_remembered_against_its_issue() {
+        let issue = ChatId::Issue(7);
+        let mut remembered = Remembered::default();
+        remembered.put(
+            &issue,
+            "claude-acp",
+            here(),
+            Kept {
+                session: "s-answer".to_string(),
+                title: None,
+                told: None,
+                introduced: false,
+                last: None,
+            },
+        );
+        let back = match read_from(&to_toml(&remembered)) {
+            Reading::Remembered(back) => back,
+            other => panic!("the file did not read: {other:?}"),
+        };
+        assert_eq!(
+            back.get(&issue, "claude-acp", here())
+                .map(|kept| kept.session.as_str()),
+            Some("s-answer")
+        );
+        assert_eq!(
+            back.get(&ChatId::PullRequest(7), "claude-acp", here()),
+            None
         );
     }
 

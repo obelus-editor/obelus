@@ -40,6 +40,7 @@ mod naming;
 mod preferences;
 mod previewing;
 mod projects;
+pub mod pulls;
 mod releases;
 mod remote;
 mod renaming;
@@ -212,19 +213,6 @@ pub struct App {
     /// Bumped every time a file picker opens, so batches from a walk whose
     /// picker has already closed are recognizable and dropped.
     walk_generation: obelus_runtime::cancel::Latest,
-    /// A line whose commit was asked for before anything knew who wrote it.
-    ///
-    /// The walk that names lines is only started for a reader who wants
-    /// names in the margin, so for everyone else the key that opens the
-    /// commit behind a line is the thing that starts it -- and an answer
-    /// that arrives after the key has already been let go is an answer to a
-    /// question nobody is still holding. Held here, and carried out when
-    /// the walk lands, so the key works on the first press for everybody.
-    asked_line: Option<(
-        PathBuf,
-        Option<gix::ObjectId>,
-        obelus_text::coordinates::LineNumber,
-    )>,
     /// Which walk of the history the list is expecting batches from.
     ///
     /// Bumped every time a history starts being read -- a key, a tab, a
@@ -754,6 +742,8 @@ pub struct App {
     amiss: Vec<String>,
     /// Whether a newer Obelus is out, and whether this session asked.
     releases: releases::Releases,
+    /// The repository's open pull requests, as `gh` last listed them.
+    pulls: pulls::Pulls,
     /// The file watcher, once started.
     ///
     /// Held because dropping it stops the watch. `None` means auto-reload is
@@ -1009,7 +999,6 @@ impl App {
             outside: false,
             search_generation: obelus_runtime::cancel::Latest::default(),
             history_generation: obelus_runtime::cancel::Latest::default(),
-            asked_line: None,
             rendered: None,
             theme_before: None,
             taken_from: None,
@@ -1019,6 +1008,7 @@ impl App {
             events: None,
             amiss: Vec::new(),
             releases: releases::Releases::default(),
+            pulls: pulls::Pulls::default(),
             watcher: None,
             theme_watched: Vec::new(),
             highlights: Highlights::default(),
@@ -2164,14 +2154,21 @@ impl App {
             || self.server_busy()
             // And the chat's mark, while the window it talks to connects.
             || self.remote_turning()
-            // And a list being matched somewhere else. The same rule once
-            // more: the row that says so turns, and a mark drawn once and
-            // never again is a mark saying nothing is happening -- which
-            // is the one thing this row exists to contradict.
+            // And a list being matched somewhere else, or still being
+            // filled. The same rule once more: the row that says so turns,
+            // and a mark drawn once and never again is a mark saying
+            // nothing is happening -- which is the one thing this row
+            // exists to contradict. Filled as well as matched, because a
+            // list waiting on one answer from somewhere else -- the pull
+            // requests, from `gh` -- has no batches arriving to redraw it.
             || self
                 .picker
                 .as_ref()
-                .is_some_and(obelus_component::picker::Picker::is_matching)
+                .is_some_and(|picker| picker.is_filling().is_some())
+            // And a preview whose last part is still being asked for: what
+            // has happened on a pull request, which is one answer with
+            // nothing arriving before it.
+            || self.preview_turns()
             // And an install, while the page of agents is open: a card
             // whose package manager says nothing until it is done has only
             // its mark to say the install is still going.
@@ -2693,6 +2690,8 @@ impl App {
         // or closing one is not this reader's keystroke, and the row has
         // to say so before they press.
         self.freshen_the_conversation_rows();
+        // And the list of pull requests, whose rows carry the same lock.
+        self.freshen_the_pull_request_rows();
         // What the conversation says is happening, read off the state
         // rather than remembered: a row that is worked out every frame
         // cannot be left saying something that stopped being true.
@@ -3197,6 +3196,11 @@ impl App {
                 });
             }
             Event::Released(tag) => self.on_released(&tag),
+            Event::PullRequests(answer) => self.on_pull_requests(answer),
+            Event::Issues(answer) => self.on_issues(answer),
+            Event::PullRequestDiscussion { number, answer } => {
+                self.on_pull_request_discussion(number, answer);
+            }
             Event::Agent(obelus_agent::Event::Registry { agents, failure }) => {
                 self.on_registry(agents, failure)
             }
@@ -3212,14 +3216,7 @@ impl App {
                 // file: they walked away from it while a walk of its history
                 // was running, and they will walk back.
                 self.asking_blame.remove(&(path.clone(), at));
-                self.blames.insert((path.clone(), at), lines);
-                // And if this is the answer somebody pressed a key for,
-                // that key finishes now rather than needing pressing again.
-                if let Some((asked, version, line)) = self.asked_line.take()
-                    && (asked, version) == (path, at)
-                {
-                    self.open_line_commit_at(line);
-                }
+                self.blames.insert((path, at), lines);
             }
             Event::Git(obelus_git::Event::Logged {
                 generation,

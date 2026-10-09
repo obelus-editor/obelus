@@ -148,7 +148,10 @@ enum How {
 /// puts it in -- one writer, because the list builds it once and asks for
 /// it again on every frame it is up, and two spellings of one mark is one
 /// chance for those to disagree.
-fn locked() -> (Marking, String) {
+///
+/// And the list of pull requests wears it on a review another Obelus has,
+/// for the same fact.
+pub(super) fn locked() -> (Marking, String) {
     (
         Marking::Aside,
         match obelus_icons::enabled() {
@@ -536,12 +539,19 @@ impl App {
                 // nothing anybody wrote: a conversation an agent never
                 // titled and no note names has only the fact that it
                 // happened.
-                let about = which.note().and_then(|id| {
-                    notes
+                let about = match which {
+                    obelus_agent::chats::ChatId::Note(id) => notes
                         .iter()
                         .find(|note| note.id == *id)
-                        .map(|note| note.title().to_string())
-                });
+                        .map(|note| note.title().to_string()),
+                    obelus_agent::chats::ChatId::PullRequest(number) => {
+                        Some(self.what_a_review_is_called(*number))
+                    }
+                    obelus_agent::chats::ChatId::Issue(number) => {
+                        Some(self.what_an_answer_is_called(*number))
+                    }
+                    obelus_agent::chats::ChatId::Loose(_) => None,
+                };
                 // One that is open here goes by what the list of what is
                 // open calls it, which is newer than anything written down:
                 // the agent's name as it arrives, and the reader's first
@@ -780,7 +790,9 @@ impl App {
         // had, and nothing will be written to it from here.
         let project = self.has_a_project();
         let notes = project && self.notes_document().is_some();
-        let listing = project && !self.conversing.agents.is_empty() && self.picker.is_some();
+        let listing = project
+            && ((!self.conversing.agents.is_empty() && self.picker.is_some())
+                || self.listing_pull_requests());
         let about_a_note = project
             && self
                 .conversation()
@@ -789,7 +801,7 @@ impl App {
         // A directory rather than a file: a claim is a file appearing and
         // going again, so there is nothing here to watch by name. Wanted by
         // the notes, which mark the ones somebody else has, and by the list
-        // of conversations, which greys them.
+        // of conversations and the list of pull requests, which grey them.
         self.settle_a_watch(
             CLAIMS,
             notes || listing,
@@ -1001,10 +1013,7 @@ impl App {
         // note: both are taken up with every word the agent was told, and
         // reading "told nothing" for one sent it all again.
         let (told, introduced) = self.remembered_telling(&listed.which);
-        let topic = match listed.which.note() {
-            Some(note) => Topic::Note(note.clone()),
-            None => Topic::Loose,
-        };
+        let topic = Topic::of(&listed.which);
         let talk = crate::conversation::Conversation {
             told,
             introduced,

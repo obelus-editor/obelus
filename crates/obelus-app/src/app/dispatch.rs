@@ -47,7 +47,7 @@ pub fn dispatch(app: &mut App, command: Command) {
         Command::GoBracket => app.go_to_bracket(),
         Command::HistoryFile => app.open_history(crate::app::About::File),
         Command::HistoryProject => app.open_history(crate::app::About::Project),
-        Command::HistoryLine => app.open_line_commit(),
+        Command::PullRequestReview => app.review_a_pull_request(),
         Command::Fold => app.toggle_fold(),
         Command::FoldAll => app.fold_all(),
         Command::UnfoldAll => app.unfold_all(),

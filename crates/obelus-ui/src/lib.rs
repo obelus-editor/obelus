@@ -204,6 +204,28 @@ pub struct Previewed<'a> {
     /// in a row is a row nobody can read -- so the box is where the whole
     /// of it fits.
     pub complaint: Option<Complained<'a>>,
+    /// What is shown instead of the buffer where the subject is a reading
+    /// rather than a file -- a pull request's description, laid out as the
+    /// markdown it is.
+    ///
+    /// Drawn by [`reading::draw`], which draws a markdown file read as one,
+    /// so a description and a README look the same because they are drawn
+    /// by the same code.
+    pub reading: Option<Reading<'a>>,
+}
+
+/// A reading in a preview, for the view that draws it.
+pub struct Reading<'a> {
+    /// Its rows, laid out.
+    pub rows: &'a [obelus_row::Row],
+    /// The first of them on screen.
+    pub top: usize,
+    /// A row that says something is on its way, with two blank cells at
+    /// its head for the mark that turns to be drawn in.
+    ///
+    /// Drawn here rather than laid out in the row: the rows are laid out
+    /// once and kept, and a mark in them would stand still.
+    pub turning: Option<usize>,
 }
 
 /// What is wrong with the line the reader is on, for the box that says so.
@@ -1356,6 +1378,40 @@ fn list_over(
         );
 
         match app.preview() {
+            Some(Previewed {
+                reading: Some(shown),
+                ..
+            }) => bars::of(Whose::Preview, || {
+                fill(cells, preview, Style::new().bg(app.theme().background));
+                let area = reading::in_a_preview(preview);
+                reading::draw(
+                    cells,
+                    area,
+                    shown.rows,
+                    shown.top,
+                    app.theme(),
+                    app.theme().background,
+                );
+                // The mark at the head of the row that says something is on
+                // its way, where that row is on screen.
+                if let Some(row) = shown.turning
+                    && let Some(below) = row.checked_sub(shown.top)
+                    && let Ok(below) = u16::try_from(below)
+                    && below < area.height
+                {
+                    let y = area.y + below;
+                    write(
+                        cells,
+                        area.x,
+                        y,
+                        &spinning(app.phase()).to_string(),
+                        Style::new()
+                            .fg(app.theme().gutter)
+                            .bg(app.theme().background),
+                    );
+                    shapes::spun(area.x, y);
+                }
+            }),
             Some(shown) => bars::of(Whose::Preview, || {
                 editor::EditorView::for_buffer(
                     shown.buffer,
@@ -2739,6 +2795,33 @@ pub fn nothing(cells: &mut CellBuffer, area: Rect, reason: &str, theme: &Theme) 
         reason,
         Style::new().fg(theme.gutter).bg(theme.background),
     );
+}
+
+/// What a list says when it has nothing in it *yet*: the same line, with
+/// the mark that turns in front of it.
+///
+/// On the line rather than on the row under the list, because the line is
+/// where the reader is looking and already says what is being waited for:
+/// a mark down there as well would be the waiting said twice. A list that
+/// has rows and is still being filled has no such line, and keeps the mark
+/// on the row under it -- see `status::still_working`.
+pub fn nothing_yet(cells: &mut CellBuffer, area: Rect, reason: &str, phase: u32, theme: &Theme) {
+    write(
+        cells,
+        area.x + 1,
+        area.y,
+        &spinning(phase).to_string(),
+        Style::new().fg(theme.gutter).bg(theme.background),
+    );
+    shapes::spun(area.x + 1, area.y);
+    // The words are `nothing`'s, two columns along: the mark and the one
+    // blank after it, as after every glyph.
+    let after = Rect {
+        x: area.x + 2,
+        width: area.width.saturating_sub(2),
+        ..area
+    };
+    nothing(cells, after, reason, theme);
 }
 
 /// How many leading characters to drop so the rest of `contents` fits in

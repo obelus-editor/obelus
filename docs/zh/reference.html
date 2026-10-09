@@ -77,7 +77,7 @@
       <p>没有模式，所以下面每个键什么时候按都是同一个意思——像 VS Code、Emacs，不像 vim、helix。按键分三类：功能键、<kbd>Ctrl</kbd>、<kbd>Alt</kbd>，记住每一类管什么，具体的键就好记了。这里是默认按键，每个都能改，见<a href="#config">设置</a>。</p>
 
       <h3><span class="mono">F1</span>–<span class="mono">F12</span>：打开要看的东西</h3>
-      <p class="quiet small">四个一组，跟键盘上的分组一样：F1–F4 打开要读的东西，F5–F8 是搜索，F9–F12 是 git 和跳转定义。功能键都不带修饰键，因为 <kbd>Shift+F5</kbd> 这类组合在不同终端里发出来的东西不一样，在这台机器上能用，换一台就不行了。</p>
+      <p class="quiet small">四个一组，跟键盘上的分组一样：F1–F4 打开要读的东西，F5–F8 是搜索，F9–F12 是 git 历史、跳转定义，以及 PR 和 issue。功能键都不带修饰键，因为 <kbd>Shift+F5</kbd> 这类组合在不同终端里发出来的东西不一样，在这台机器上能用，换一台就不行了。</p>
 
       <div class="table-wrap">
       <table>
@@ -97,8 +97,8 @@
           <tr><td><kbd>F8</kbd></td><td><code>search-symbols</code></td><td>搜语言服务器知道的名字</td></tr>
           <tr><td><kbd>F9</kbd></td><td><code>show-file-history</code></td><td>改过这个文件的每个提交</td></tr>
           <tr><td><kbd>F10</kbd></td><td><code>show-project-history</code></td><td>项目的提交历史</td></tr>
-          <tr><td><kbd>F11</kbd></td><td><code>show-line-commit</code></td><td>光标这一行是哪个提交写的</td></tr>
-          <tr><td><kbd>F12</kbd></td><td><code>go-to-definition</code></td><td>光标下这个符号定义在哪</td></tr>
+          <tr><td><kbd>F11</kbd></td><td><code>go-to-definition</code></td><td>光标下这个符号定义在哪</td></tr>
+          <tr><td><kbd>F12</kbd></td><td><code>review-pull-request</code></td><td>仓库里 open 的 PR 和 issue</td></tr>
         </tbody>
       </table>
       </div>
@@ -203,7 +203,7 @@
           </tr>
           <tr>
             <td>Git</td>
-            <td><code>show-change</code> <code>go-to-previous-change</code> <code>go-to-next-change</code> <code>show-file-history</code> <code>show-project-history</code> <code>show-line-commit</code></td>
+            <td><code>show-change</code> <code>go-to-previous-change</code> <code>go-to-next-change</code> <code>show-file-history</code> <code>show-project-history</code> <code>review-pull-request</code></td>
           </tr>
           <tr>
             <td>Obelus</td>

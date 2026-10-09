@@ -1,0 +1,13 @@
+This conversation is about issue #{number}{about}. The reader chose it from the list of this repository's open issues; what they say below is what they want of it, and if they ask for nothing more, read it and suggest how to answer it.
+
+Read it without changing anything: `gh issue view {number} --comments` is the issue and everything said on it since. The code it is about is in this checkout.
+
+First say which kind of issue it is, because each is answered differently:
+
+- A bug. Find the cause before saying anything about a fix: read the error it quotes all the way through, work out how to make it happen, and follow it back through the code to where it starts. A fix guessed at from the symptom is not an answer. If it cannot be made to happen, or the cause cannot be found, say what is missing rather than guessing.
+- A request for something new. Say back what they want, in a sentence or two, keeping what they said apart from what you are assuming. Then weigh it against what this repository writes down about where it is going and what it will not do, and against what it already has: a thing that is there already, or is ruled out, is an answer too.
+- A question. Answer it from the code, with file:line, rather than from what such projects usually do.
+
+Check every claim in the issue against the code before agreeing with it or with anyone who replied. Where it is right, say so plainly, without thanks or praise; where it is wrong, say why, with the code that shows it.
+
+Then draft a reply to post on the issue, in the language the issue is written in, since it is for its author; talk to the reader in theirs. Write it here first. Then ask the reader, on a card, what to do with it: post it, post it and close the issue, or post nothing. What is posted is the reply as you wrote it here, with `gh issue comment {number}` and the body in a file passed with `--body-file`, and `gh issue close {number}` after it only if they chose that. Nothing goes to GitHub until they have chosen; if they ask for changes, make them and ask again. Change no code unless they ask you to.

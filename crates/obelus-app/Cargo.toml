@@ -24,6 +24,7 @@ obelus-logging.workspace = true
 obelus-lsp.workspace = true
 obelus-mcp.workspace = true
 obelus-markdown.workspace = true
+obelus-program.workspace = true
 obelus-reading.workspace = true
 obelus-remote.workspace = true
 obelus-row.workspace = true

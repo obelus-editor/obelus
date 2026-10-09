@@ -64,12 +64,19 @@ use obelus_git::todo::NoteId;
 ///
 /// The other kind has no such door. Nothing but the agent's name reaches it,
 /// so that name is what says which.
+///
+/// A pull request is a note's shape again: the list of them is a door that
+/// opens before any session exists, so its number is what says which.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ChatId {
     /// One of the project's notes.
     Note(NoteId),
     /// One about nothing in particular, by the session the agent minted.
     Loose(String),
+    /// A review of one of the repository's pull requests, by its number.
+    PullRequest(u64),
+    /// An answer to one of the repository's issues, by its number.
+    Issue(u64),
 }
 
 /// What tells a loose conversation's file from a note's.
@@ -77,6 +84,13 @@ pub enum ChatId {
 /// A note's name is eight characters of Crockford's alphabet, so no note
 /// can be spelled with this in front of it.
 const LOOSE: &str = "loose-";
+
+/// What tells a pull request's file from the other two, for the same
+/// reason: no note's name has a dash in it, and no loose one starts here.
+const PULL: &str = "pull-";
+
+/// And an issue's.
+const ISSUE: &str = "issue-";
 
 impl ChatId {
     /// The file this claim lives in, under [`directory`].
@@ -95,6 +109,8 @@ impl ChatId {
     pub fn file_name(&self) -> String {
         let session = match self {
             Self::Note(note) => return note.as_str().to_string(),
+            Self::PullRequest(number) => return format!("{PULL}{number}"),
+            Self::Issue(number) => return format!("{ISSUE}{number}"),
             Self::Loose(session) => session,
         };
         let mut name = LOOSE.to_string();
@@ -110,6 +126,21 @@ impl ChatId {
     /// The one that file name names, or nothing where it names neither.
     #[must_use]
     pub fn read(name: &str) -> Option<Self> {
+        // Digits and nothing else: `parse` takes a leading `+`, and a name
+        // that reads back as another name is two files for one claim.
+        let numbered = |number: &str| {
+            number
+                .bytes()
+                .all(|byte| byte.is_ascii_digit())
+                .then(|| number.parse::<u64>().ok())
+                .flatten()
+        };
+        if let Some(number) = name.strip_prefix(PULL) {
+            return numbered(number).map(Self::PullRequest);
+        }
+        if let Some(number) = name.strip_prefix(ISSUE) {
+            return numbered(number).map(Self::Issue);
+        }
         let Some(rest) = name.strip_prefix(LOOSE) else {
             return NoteId::read(name).map(Self::Note);
         };
@@ -133,7 +164,7 @@ impl ChatId {
     pub const fn note(&self) -> Option<&NoteId> {
         match self {
             Self::Note(note) => Some(note),
-            Self::Loose(_) => None,
+            Self::Loose(_) | Self::PullRequest(_) | Self::Issue(_) => None,
         }
     }
 }
@@ -553,6 +584,33 @@ mod tests {
         assert!(held(&root).contains_key(&loose), "the claim does not show");
         drop(first);
         assert!(held(&root).is_empty(), "the claim outlived it");
+    }
+
+    /// A review is claimed by its pull request's number, and that name
+    /// reads back as the same number and as nothing else.
+    ///
+    /// Broken deliberately by having `file_name` leave the prefix off: the
+    /// name then reads as no conversation at all, and `held` stops seeing
+    /// the claim.
+    #[test]
+    fn a_review_is_claimed_by_its_number() {
+        let root = scratch("pull");
+        let pull = ChatId::PullRequest(123);
+
+        let first = claim(&root, &pull).expect("nobody had it");
+        assert!(
+            claim(&root, &pull).is_none(),
+            "a second Obelus was let into the review"
+        );
+        assert_eq!(ChatId::read(&pull.file_name()), Some(pull.clone()));
+        assert_eq!(ChatId::read("pull-+123"), None, "two names for one claim");
+        // And an issue of the same number is another conversation, under a
+        // name of its own.
+        let issue = ChatId::Issue(123);
+        assert_eq!(ChatId::read(&issue.file_name()), Some(issue.clone()));
+        assert_ne!(issue.file_name(), pull.file_name());
+        assert!(held(&root).contains_key(&pull), "the claim does not show");
+        drop(first);
     }
 
     /// Looking at a claim does not announce itself, and still sees it.

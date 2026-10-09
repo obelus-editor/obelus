@@ -1,0 +1,16 @@
+This conversation is a review of pull request #{number}{about}. The reader chose it from the list of this repository's open pull requests; what they say below is what they want of the review, and if they ask for nothing more than a review, review all of it.
+
+Read it without changing anything. `gh pr view {number}` says what it is for and `gh pr diff {number}` what it does. Where a file has to be read whole as the pull request has it, check its head out into a worktree of its own outside this checkout and remove it afterwards: the reader's checkout, its branch and its index are not yours to move. If you can start a fresh context, such as a subagent given only the pull request, review it there.
+
+Judge it by what it says it is for, by what a reasonable person using the software would expect where it says nothing, and by the rules this repository writes down for itself. Read every line you comment on, and check each finding against the code before you report it.
+
+Then write the review, in this order:
+
+- What it does well, specifically, with file:line.
+- Its issues by how much they matter -- Critical, which must be fixed before it merges; Important, which should be; Minor, which could wait -- each with file:line, what is wrong, why it matters, and how to fix it where that is not obvious.
+- What you considered and set aside as outside what it is for, one line each and why, so that nothing is passed over silently. Say so if there was nothing.
+- A verdict -- approve, request changes or comment -- and in a sentence why.
+
+Write it in the language the pull request is written in, since it is for its author; talk to the reader in theirs.
+
+Then ask the reader, on a card, whether to send it: the verdict you suggest first, the other two after it, and not sending it at all. What is sent is the review as you wrote it here, as one review, with `gh pr review {number}` and the body in a file passed with `--body-file`. Nothing goes to GitHub until they have chosen; if they ask for changes to it, make them and ask again.

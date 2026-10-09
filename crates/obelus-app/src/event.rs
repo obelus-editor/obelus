@@ -194,6 +194,18 @@ pub enum Event {
     },
     /// What the newest release of Obelus is called, as its tag says it.
     Released(String),
+    /// The repository's open pull requests, or why `gh` would not list them.
+    PullRequests(Result<Vec<crate::app::pulls::PullRequest>, crate::app::pulls::Unlisted>),
+    /// The repository's open issues, or why `gh` would not list them.
+    Issues(Result<Vec<crate::app::pulls::Issue>, crate::app::pulls::Unlisted>),
+    /// What has happened on one pull request or issue, or why `gh` would
+    /// not say.
+    PullRequestDiscussion {
+        /// Which.
+        number: u64,
+        /// Its checks and what was said on it.
+        answer: Result<crate::app::pulls::Discussion, crate::app::pulls::Unlisted>,
+    },
     /// Another Obelus's reader asked to be brought to this window, with
     /// what that window was given to let it come forward.
     Summoned(Option<String>),
@@ -257,6 +269,9 @@ impl Event {
             Self::Scanned(_) => "Scanned",
             Self::Reopened { .. } => "Reopened",
             Self::Released(_) => "Released",
+            Self::PullRequests(_) => "PullRequests",
+            Self::Issues(_) => "Issues",
+            Self::PullRequestDiscussion { .. } => "PullRequestDiscussion",
             Self::Summoned(_) => "Summoned",
             Self::Remote(_) => "Remote",
             Self::Reached(..) => "Reached",
