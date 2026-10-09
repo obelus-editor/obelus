@@ -21,8 +21,9 @@ struct Screen {
     sheen: vec4<f32>,
     // And the colour it carries the mark to.
     glow: vec4<f32>,
-    // How many pixels a point is.
-    scale: f32,
+    // How far the light round a hold reaches past it and how round the
+    // hold's corners are, in pixels, and nothing.
+    held: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> screen: Screen;
@@ -46,7 +47,8 @@ struct Quad {
     // Where it goes, in pixels: left, top, width, height.
     @location(0) rect: vec4<f32>,
     // And where its picture is in the atlas: left, top, right, bottom --
-    // or for glass, in pixels, the rectangle it is drawn inside.
+    // or for glass, in pixels, the rectangle it is drawn inside, and for a
+    // light round a hold where the runs above and below it begin and end.
     @location(1) uv: vec4<f32>,
     @location(2) colour: vec4<f32>,
     // 1: a solid colour. 2: a picture with colours of its own.
@@ -60,19 +62,21 @@ struct Quad {
     // welcome screen's mark, which the light runs across. 2097152: a
     // triangle filling the quad, which is the arrow on the seam a
     // deletion left. 16777216: the mark that turns while something is
-    // happening.
+    // happening. 536870912: the light round a run the reader has hold of.
     @location(3) flags: u32,
-    // How far those corners are taken off, in pixels -- and for the two
+    // How far those corners are taken off, in pixels -- and for the
     // quads that carry no corners, the one number each of them needs
     // instead: how far a sliding pane has still to come, which way a
-    // wedge points, and how far round a turning mark's head is.
+    // wedge points, how far round a turning mark's head is, and where the
+    // run a light is round begins.
     @location(4) radius: f32,
     // Which layer of the atlas its picture is on: the letters', or the
     // pictures' where it has colours of its own.
     @location(5) layer: u32,
     // How much further down than where it stands a glass reads what is
     // behind it, in pixels: a list catching up is taken from further up
-    // the frame, and its glass with it -- see `glass_kept_still`.
+    // the frame, and its glass with it -- see `glass_kept_still`. And for a
+    // light, where the run it is round ends.
     @location(6) lower: f32,
 };
 
@@ -88,7 +92,9 @@ struct Fragment {
     @location(4) @interpolate(flat) half_size: vec2<f32>,
     @location(5) @interpolate(flat) radius: f32,
     // A rectangle in pixels, for the two quads that put a sliding pane
-    // back together and for glass, which is drawn inside one. Flat,
+    // back together and for glass, which is drawn inside one -- and for a
+    // light, the two runs beside it, which is two spans and not a
+    // rectangle, and comes out of here less the grid's origin. Flat,
     // because what it is is a region rather than something measured
     // across the quad.
     @location(6) @interpolate(flat) box: vec4<f32>,
@@ -252,51 +258,6 @@ const RIM_SHARP: f32 = 0.45;
 // Where the light is, which is above and a little to the left -- the one
 // direction every raised thing in every interface is lit from.
 const LIGHT: vec2<f32> = vec2<f32>(-0.42, -1.0);
-
-// How far a hold's grain moves a pixel either way, toward white or toward
-// black. Small: what is written on a hold has to be read through it, and a
-// grain that can be seen as dots from where the reader sits is noise on
-// the words rather than a surface under them.
-const GRAIN: f32 = 0.04;
-// And how big a grain is, in points, so that it is the same size to the
-// eye on a screen drawn at twice its own pixels as on one that is not. A
-// pixel each was tried, and on a screen drawn at twice its pixels that is
-// half of anything the eye can pick out: a grain that fine is a flat
-// colour again.
-const GRAIN_SIZE: f32 = 1.5;
-
-// A number between -1 and 1 for a place on the grid, the same every frame
-// for the same place. From the place on the grid rather than in the run,
-// so a hold that runs across several quads -- a row each, and the rim
-// under the face -- is one grain and not a seam where each begins. And on
-// the grid rather than the window, because the grid moves in the window by
-// a part of a pixel at every step of a resize, and a grain that stayed
-// where it was would crawl under a hold that had not moved.
-//
-// Smoothed between the corners of a square a grain wide, because a grain
-// bigger than a pixel that is not smoothed is a square, and a field of
-// squares is a mosaic rather than frost.
-fn grain(at: vec2<f32>) -> f32 {
-    let place = at / max(GRAIN_SIZE * screen.scale, 1.0);
-    let corner = floor(place);
-    let along = place - corner;
-    let eased = along * along * (vec2<f32>(3.0) - 2.0 * along);
-    let at_corner = vec2<u32>(corner);
-    let top = mix(speck(at_corner), speck(at_corner + vec2<u32>(1u, 0u)), eased.x);
-    let low = mix(speck(at_corner + vec2<u32>(0u, 1u)), speck(at_corner + vec2<u32>(1u, 1u)), eased.x);
-    return mix(top, low, eased.y);
-}
-
-// A number between -1 and 1 for one corner of that square. An integer
-// hash (PCG), because one made of a sine falls into bands far from the
-// origin on hardware with a short sine.
-fn speck(corner: vec2<u32>) -> f32 {
-    var state = corner.x * 1973u + corner.y * 9277u + 26699u;
-    state = state * 747796405u + 2891336453u;
-    var word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
-    word = (word >> 22u) ^ word;
-    return f32(word) / 4294967295.0 * 2.0 - 1.0;
-}
 
 // How much a Gaussian of the frost's spread weighs a pixel this far out.
 fn gauss(far: f32) -> f32 {
@@ -544,29 +505,65 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
         // as a band of grey with an edge of its own.
         return vec4<f32>(in.colour.rgb, in.colour.a * fall * fall);
     }
+    // The light round a run the reader has hold of, in the hold's own
+    // colour and gone a reach away from it.
+    //
+    // A stretch of one row, which is the only light drawn there: what it
+    // measures to is the run nearest it on its own row and on the rows
+    // above and below, and the nearest of those three is the distance to
+    // the whole hold -- see `lights`. Its own run is a plate with corners
+    // that turn, and the ones beside it are rounded boxes: the only corner
+    // of theirs this row comes near is one they reach past it with, which
+    // is their own.
+    //
+    // Along the grid rather than from the quad's middle, because a stretch
+    // is cut where the nearest run changes and none of the runs is in the
+    // middle of it. Which rows have a run to measure to is three bits from
+    // 25: above, below, its own.
+    if ((in.flags & 536870912u) != 0u) {
+        let near = (in.flags >> 25u) & 7u;
+        let reach = max(screen.held.x, 1.0);
+        let corner = screen.held.y;
+        let row = in.half_size.y;
+        let x = in.position.x - screen.origin.x;
+        // From the middle of the row, down the screen.
+        let y = in.middle.y;
+        // A run a row tall on this row, or one above or below it.
+        let ends = in.box - vec4<f32>(screen.origin, screen.origin);
+        var distance = 1e6;
+        if ((near & 4u) != 0u) {
+            let half = vec2<f32>((in.lower - in.radius) * 0.5, row);
+            let at = vec2<f32>(x - (in.radius + in.lower) * 0.5, y);
+            distance = held(at, half, min(corner, min(half.x, half.y)), (in.flags >> 13u) & 255u);
+        }
+        if ((near & 1u) != 0u) {
+            let half = vec2<f32>((ends.y - ends.x) * 0.5, row);
+            let at = vec2<f32>(x - (ends.x + ends.y) * 0.5, y + row * 2.0);
+            distance = min(distance, outside(at, half, min(corner, min(half.x, half.y)), 0.0));
+        }
+        if ((near & 2u) != 0u) {
+            let half = vec2<f32>((ends.w - ends.z) * 0.5, row);
+            let at = vec2<f32>(x - (ends.z + ends.w) * 0.5, y - row * 2.0);
+            distance = min(distance, outside(at, half, min(corner, min(half.x, half.y)), 0.0));
+        }
+        // Nothing under the hold itself, which is drawn over this.
+        if (distance <= 0.0) {
+            discard;
+        }
+        let fall = 1.0 - clamp(distance / reach, 0.0, 1.0);
+        // Squared, for the shadow's reason: a light that fades in a
+        // straight line reads as a band with an edge of its own.
+        return vec4<f32>(in.colour.rgb, in.colour.a * fall * fall);
+    }
     // A run the reader has hold of, whose corners do not all turn the
     // same way. Before the plain rounded solid, which it also is.
-    //
-    // Frosted: a grain over the colour, a little lighter and a little
-    // darker pixel by pixel, which is what a flat colour does not have and
-    // glass does. Not lit and not shaded -- light on a hold read as a key
-    // standing up off the page -- and grey, and as much lighter as darker,
-    // so that it averages out to the colour the theme chose and moves none
-    // of its hue.
     if ((in.flags & 4096u) != 0u) {
         // The quad reaches a radius past the run either side, because a
         // corner that bends the other way is drawn out there.
         let room = in.half_size - vec2<f32>(in.radius, 0.0);
         let distance = held(in.middle, room, in.radius, (in.flags >> 13u) & 255u);
         let covered = clamp(0.5 - distance, 0.0, 1.0);
-        // The face only: the rim is the line a reader finds the shape
-        // by, and a line that wanders lighter and darker along its length
-        // is not a clean one.
-        var colour = in.colour.rgb;
-        if ((in.flags & 4194304u) != 0u) {
-            colour = clamp(colour + vec3<f32>(grain(in.position.xy - screen.origin) * GRAIN), vec3<f32>(0.0), vec3<f32>(1.0));
-        }
-        return vec4<f32>(colour, in.colour.a * covered);
+        return vec4<f32>(in.colour.rgb, in.colour.a * covered);
     }
     // Before the plain solid, because a rounded one is a solid as well.
     if ((in.flags & 4u) != 0u) {
