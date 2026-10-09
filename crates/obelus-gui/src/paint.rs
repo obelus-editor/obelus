@@ -488,19 +488,22 @@ struct Quad {
     /// Left, top, width, height, in real pixels.
     rect: [f32; 4],
     /// Left, top, right, bottom in the atlas, from zero to one -- and
-    /// for glass, in pixels, the rectangle it is drawn inside.
+    /// for glass, in pixels, the rectangle it is drawn inside. For a
+    /// light round a hold, where the runs on the rows above and below it
+    /// begin and end, in pixels along the grid.
     uv: [f32; 4],
     colour: [f32; 4],
     flags: u32,
     /// How far its corners are rounded, in pixels. Read only where
-    /// `ROUNDED` is set.
+    /// `ROUNDED` is set -- and for a light round a hold, which has no
+    /// corners of its own, where the run on its own row begins.
     radius: f32,
     /// Which layer of the atlas `uv` is on: of the letters', or of the
     /// pictures' where the quad is `COLOURFUL`.
     layer: u32,
     /// How much further down than where it stands a glass reads what is
-    /// behind it, in pixels. Nothing else reads it -- see
-    /// `Painter::glass_kept_still`.
+    /// behind it, in pixels -- see `Painter::glass_kept_still`. And for a
+    /// light round a hold, where the run on its own row ends.
     lower: f32,
 }
 
@@ -533,10 +536,14 @@ const BLUR: u32 = 1024;
 /// from `HELD_TURNS`, and a flag inside that run would be read as a turn.
 const WEDGE: u32 = 2_097_152;
 
-/// The face of a held run, which is frosted, as against the rim under
-/// it, which is not -- see `grain` in the shader. Past the turns for the
-/// same reason the wedge is.
-const FROSTED: u32 = 4_194_304;
+/// A stretch of the light round a hold -- see `lights`, and the shader.
+/// Past the turns, which it carries for its own row's run, and past which
+/// of the three rows it has a run to measure to.
+const LIGHT: u32 = 536_870_912;
+
+/// Where a light says which rows it has a run to measure to, three bits
+/// from here: above, below, and its own.
+const HELD_NEAR: u32 = 25;
 
 /// A letter the light on the welcome screen's mark runs across.
 ///
@@ -606,6 +613,23 @@ const HELD: f32 = 0.85;
 /// hold barely off its page -- one here is `#d1d0d0` on `#faf9f9` -- and
 /// a rim that stopped at the colour would be a step off its own face.
 const HELD_RIM: f32 = 0.25;
+
+/// How far the light round a hold reaches past it, as a share of a row's
+/// height.
+///
+/// A share of the row, the way the rim and the corner are, so a reader who
+/// makes the text bigger gets the same light bigger. Less than half a row,
+/// so the rows above and below are read through the edge of it rather
+/// than under it -- and less than a row is what lets a row's light measure
+/// to the rows beside it and no further (`lights`).
+const HELD_REACH: f32 = 0.35;
+
+/// How much of the hold's colour the light carries where it starts.
+///
+/// The colour the cells wear rather than anything lighter: what a light
+/// round the hold adds is that the shape has no hard outside, and a colour
+/// of its own would be a second thing the theme did not choose.
+const HELD_LIGHT: f32 = 0.55;
 
 /// How wide that rim is, as a share of a row's height.
 ///
@@ -781,11 +805,13 @@ struct Screen {
     sheen: [f32; 4],
     /// And the colour it carries the mark to.
     glow: [f32; 4],
-    /// How many pixels a point is, which is what a hold's grain is
-    /// measured in -- see `GRAIN_SIZE` in the shader.
-    scale: f32,
-    /// The hardware reads a uniform in sixteens; nothing reads these.
-    padding: [f32; 3],
+    /// How far the light round a hold reaches past it and how round the
+    /// hold's corners are, in pixels, and nothing.
+    ///
+    /// In the uniform for the sheen's reason: both are a share of a row,
+    /// the same for every hold on the screen, and a light's quad has its
+    /// room taken by the three runs it measures to.
+    held: [f32; 4],
 }
 
 // A field added without its padding is otherwise found by wgpu, at the
@@ -1744,18 +1770,19 @@ impl Painter {
         };
         #[expect(
             clippy::cast_precision_loss,
-            clippy::cast_possible_truncation,
-            reason = "a window is thousands of pixels, not millions, and a scale factor is a small number"
+            reason = "a window is thousands of pixels, not millions"
         )]
         let screen = Screen {
             size: [self.configured.width as f32, self.configured.height as f32],
             origin: margin,
             sheen,
             glow,
-            // Asked every frame rather than kept: a window dragged to
-            // another screen changes it.
-            scale: self.window.scale_factor() as f32,
-            padding: [0.0; 3],
+            held: [
+                (cell.height * HELD_REACH).round(),
+                cell.height * HELD_CORNER,
+                0.0,
+                0.0,
+            ],
         };
         self.queue
             .write_buffer(&self.uniforms, 0, bytemuck::bytes_of(&screen));
@@ -1981,6 +2008,13 @@ impl Painter {
     ) {
         let rim = (cell.height * HELD_EDGE).round().max(1.0);
         let corner = cell.height * HELD_CORNER;
+        // Every light goes under every plate, so the one round a row does
+        // not lie over the edge of the row beside it.
+        let first = self.quads.len();
+        // The runs of each hold, by the colour it wears and the pane it is
+        // in, a list per row of the grid: what the light round it is
+        // measured from.
+        let mut groups: Vec<((Color, Option<usize>), Runs)> = Vec::new();
         let rows: Vec<Vec<(u16, u16, Color)>> = (0..page.rows())
             .map(|row| self.holds(page, row, capped))
             .collect();
@@ -2029,18 +2063,39 @@ impl Painter {
                 let edge = mixed(ink, away(under, ink), HELD_RIM);
                 // Which way each of the four corners turns, which is a
                 // fact about the row beside it -- see `Turn`.
-                let beside = |up: bool| {
-                    let beside = match up {
-                        true => row.checked_sub(1).and_then(|row| rows.get(row)),
-                        false => rows.get(row + 1),
-                    }?;
-                    beside
-                        .iter()
-                        .find(|&&(from, to, theirs)| theirs == colour && from < end && to > start)
-                        .copied()
+                let beside = |row: Option<usize>| -> Vec<(u16, u16)> {
+                    row.and_then(|row| rows.get(row))
+                        .into_iter()
+                        .flatten()
+                        .filter(|&&(_, _, theirs)| theirs == colour)
+                        .map(|&(from, to, _)| (from, to))
+                        .collect()
                 };
-                let turns = Turn::corners(start, end, beside(true), beside(false), cut);
-                self.plate([left, top, wide, cell.height], corner, edge, turns, 0);
+                let turns = Turn::corners(
+                    start,
+                    end,
+                    &beside(row.checked_sub(1)),
+                    &beside(Some(row + 1)),
+                    cut,
+                );
+                let pane = panes.iter().rposition(|pane| {
+                    (pane.area.left()..pane.area.right()).contains(&start)
+                        && (pane.area.top()..pane.area.bottom()).contains(&at)
+                });
+                let group = match groups.iter().position(|(key, _)| *key == (colour, pane)) {
+                    Some(group) => group,
+                    None => {
+                        groups.push(((colour, pane), vec![Vec::new(); rows.len()]));
+                        groups.len() - 1
+                    }
+                };
+                groups[group].1[row].push((left, left + wide, turns));
+                self.plate(
+                    [left, top, wide, cell.height],
+                    corner,
+                    edge,
+                    turns << HELD_TURNS,
+                );
                 // The face, inside the rim where there is one. No inset
                 // where the hold carries on: an edge there is a seam
                 // across the middle of one thing.
@@ -2056,11 +2111,17 @@ impl Painter {
                     face,
                     (corner - rim).max(0.0),
                     mixed(under, ink, HELD),
-                    turns,
-                    FROSTED,
+                    turns << HELD_TURNS,
                 );
             }
         }
+        let lights = groups
+            .iter()
+            .flat_map(|((colour, pane), runs)| {
+                lights_round(page, panes, *colour, *pane, runs, cell)
+            })
+            .collect::<Vec<_>>();
+        self.quads.splice(first..first, lights);
     }
 
     /// The face a hold is drawn in at this cell, where the cell is part
@@ -2117,14 +2178,14 @@ impl Painter {
     /// The quad reaches a radius past the block on each side, because a
     /// corner bent the other way is drawn out there: the shader takes
     /// that much off again to find the block itself.
-    fn plate(&mut self, rect: [f32; 4], radius: f32, colour: [f32; 4], turns: u32, frosted: u32) {
+    fn plate(&mut self, rect: [f32; 4], radius: f32, colour: [f32; 4], flags: u32) {
         let [left, top, width, height] = rect;
         let radius = radius.max(0.0).min(width.min(height) / 2.0);
         self.quads.push(Quad {
             rect: [left - radius, top, radius.mul_add(2.0, width), height],
             uv: self.atlas.white,
             colour,
-            flags: SOLID | ROUNDED | HELD_PLATE | (turns << HELD_TURNS) | frosted,
+            flags: SOLID | ROUNDED | HELD_PLATE | flags,
             radius,
             layer: 0,
             lower: 0.0,
@@ -4786,21 +4847,33 @@ impl Turn {
     /// level. Without it a selected row with a card over its middle is
     /// two little plates with four round corners each, one at either end
     /// of the row, which read as badges rather than as the row they are.
+    ///
+    /// `above` and `below` are every run of the hold on those rows. A row
+    /// can be in more than one piece -- a box put over the middle of it --
+    /// and which way a corner turns is asked of the piece that reaches
+    /// furthest out past that end of this run, not of whichever came first.
     fn corners(
         start: u16,
         end: u16,
-        above: Option<(u16, u16, Color)>,
-        below: Option<(u16, u16, Color)>,
+        above: &[(u16, u16)],
+        below: &[(u16, u16)],
         cut: (bool, bool),
     ) -> u32 {
-        let left = |beside: Option<(u16, u16, Color)>| match beside {
-            Some((from, _, _)) if from < start => Self::Other,
-            Some((from, _, _)) if from == start => Self::None,
+        let touching = |beside: &[(u16, u16)]| {
+            beside
+                .iter()
+                .filter(|&&(from, to)| from < end && to > start)
+                .copied()
+                .collect::<Vec<_>>()
+        };
+        let left = |beside: &[(u16, u16)]| match touching(beside).iter().map(|run| run.0).min() {
+            Some(from) if from < start => Self::Other,
+            Some(from) if from == start => Self::None,
             _ => Self::Corner,
         };
-        let right = |beside: Option<(u16, u16, Color)>| match beside {
-            Some((_, to, _)) if to > end => Self::Other,
-            Some((_, to, _)) if to == end => Self::None,
+        let right = |beside: &[(u16, u16)]| match touching(beside).iter().map(|run| run.1).max() {
+            Some(to) if to > end => Self::Other,
+            Some(to) if to == end => Self::None,
             _ => Self::Corner,
         };
         let cut_to = |side: bool, turn: Self| match side {
@@ -4817,6 +4890,166 @@ impl Turn {
         .enumerate()
         .fold(0, |turns, (at, turn)| turns | ((turn as u32) << (at * 2)))
     }
+}
+
+/// The light round one hold, as a quad per stretch of a row -- see
+/// `lights`.
+///
+/// Kept to what the hold is in: the pane or box it is drawn on, or the
+/// grid, and never on anything put over that. A light past the grid is
+/// in the margin, which is the page's own ground and nothing else, and
+/// one past a pane's edge is on whatever the pane was put over.
+fn lights_round(
+    page: &Page,
+    panes: &[&Behind],
+    colour: Color,
+    pane: Option<usize>,
+    runs: &[Vec<(f32, f32, u32)>],
+    cell: CellSize,
+) -> Vec<Quad> {
+    let reach = (cell.height * HELD_REACH).round();
+    let ink = rgba(colour, Ink::Background);
+    let area = pane.map_or_else(
+        || ratatui::layout::Rect::new(0, 0, page.columns(), page.rows()),
+        |pane| panes[pane].area,
+    );
+    let room = (
+        f32::from(area.left()) * cell.width,
+        f32::from(area.right()) * cell.width,
+    );
+    let over = &panes[pane.map_or(0, |pane| pane + 1)..];
+    (area.top()..area.bottom())
+        .flat_map(|row| {
+            let holes: Vec<(f32, f32)> = over
+                .iter()
+                .filter(|pane| (pane.area.top()..pane.area.bottom()).contains(&row))
+                .map(|pane| {
+                    (
+                        f32::from(pane.area.left()) * cell.width,
+                        f32::from(pane.area.right()) * cell.width,
+                    )
+                })
+                .collect();
+            lights(runs, usize::from(row), reach, room, &holes)
+                .into_iter()
+                .map(move |light| {
+                    let (own, turns) = light
+                        .own
+                        .map_or(((0.0, 0.0), 0), |(from, to, turns)| ((from, to), turns));
+                    let ((over_from, over_to), (under_from, under_to)) = (
+                        light.above.unwrap_or_default(),
+                        light.below.unwrap_or_default(),
+                    );
+                    let near = u32::from(light.above.is_some())
+                        | u32::from(light.below.is_some()) << 1
+                        | u32::from(light.own.is_some()) << 2;
+                    Quad {
+                        rect: [
+                            light.from,
+                            f32::from(row) * cell.height,
+                            light.to - light.from,
+                            cell.height,
+                        ],
+                        uv: [over_from, over_to, under_from, under_to],
+                        colour: [ink[0], ink[1], ink[2], ink[3] * HELD_LIGHT],
+                        flags: LIGHT | turns << HELD_TURNS | near << HELD_NEAR,
+                        radius: own.0,
+                        layer: 0,
+                        lower: own.1,
+                    }
+                })
+        })
+        .collect()
+}
+
+/// The runs of one hold, a list per row of the grid: where each begins
+/// and ends in pixels, and the way its corners turn.
+type Runs = Vec<Vec<(f32, f32, u32)>>;
+
+/// A stretch of one row of the grid the light round a hold is drawn
+/// across, in pixels, and the run nearest it on each of the three rows a
+/// light can reach from: its own with the way its corners turn, and the
+/// ones above and below.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Light {
+    from: f32,
+    to: f32,
+    own: Option<(f32, f32, u32)>,
+    above: Option<(f32, f32)>,
+    below: Option<(f32, f32)>,
+}
+
+/// Where the light round a hold is drawn on one row, as stretches that
+/// never overlap.
+///
+/// Every pixel round a hold is drawn once, by the row it is on: a light
+/// per run, reaching up and down into the rows beside it, lays two lights
+/// over every place two of them reach, which is where two rows meet at a
+/// corner -- a brighter spot nobody put there. So a row's stretch measures
+/// to the rows above and below it as well as to its own, and the nearest
+/// of the three is the distance to the whole hold, because the reach is
+/// less than a row and nothing two rows off can be nearer.
+///
+/// And a stretch is cut wherever the nearest run on any of the three rows
+/// changes, which is half way between two of them, because the shader is
+/// told one run a row: a row in two pieces measured to only one of them
+/// leaves a step beside the other dark.
+///
+/// `room` is what the hold is in, and `holes` is what was put over it on
+/// this row; no light is drawn outside the one or inside the other.
+fn lights(
+    rows: &[Vec<(f32, f32, u32)>],
+    row: usize,
+    reach: f32,
+    room: (f32, f32),
+    holes: &[(f32, f32)],
+) -> Vec<Light> {
+    let nothing = Vec::new();
+    let runs = |row: Option<usize>| row.and_then(|row| rows.get(row)).unwrap_or(&nothing);
+    let three = [
+        runs(row.checked_sub(1)),
+        runs(Some(row)),
+        runs(Some(row + 1)),
+    ];
+    let mut cuts = vec![room.0, room.1];
+    for runs in three {
+        cuts.extend(runs.windows(2).map(|pair| (pair[0].1 + pair[1].0) / 2.0));
+    }
+    cuts.extend(holes.iter().flat_map(|&(from, to)| [from, to]));
+    cuts.retain(|cut| (room.0..=room.1).contains(cut));
+    cuts.sort_by(f32::total_cmp);
+    cuts.dedup();
+    // How far a run is from a place along the row.
+    let gap = |run: &(f32, f32, u32), at: f32| (run.0 - at).max(at - run.1).max(0.0);
+    cuts.windows(2)
+        .filter_map(|pair| {
+            let middle = (pair[0] + pair[1]) / 2.0;
+            if holes
+                .iter()
+                .any(|&(from, to)| from <= middle && middle < to)
+            {
+                return None;
+            }
+            let [above, own, below] = three.map(|runs| {
+                runs.iter()
+                    .min_by(|one, other| gap(one, middle).total_cmp(&gap(other, middle)))
+                    .copied()
+            });
+            // No further than the light reaches past the runs it measures
+            // to: past that it has nothing left to show.
+            let near = [above, own, below].into_iter().flatten();
+            let from = near.clone().map(|run| run.0).fold(f32::INFINITY, f32::min) - reach;
+            let to = near.map(|run| run.1).fold(f32::NEG_INFINITY, f32::max) + reach;
+            let (from, to) = (pair[0].max(from), pair[1].min(to));
+            (from < to).then_some(Light {
+                from,
+                to,
+                own,
+                above: above.map(|(from, to, _)| (from, to)),
+                below: below.map(|(from, to, _)| (from, to)),
+            })
+        })
+        .collect()
 }
 
 /// One colour as far past another as that one is from it.
@@ -5650,15 +5883,116 @@ mod tests {
         }
     }
 
-    /// A face says it is frosted in a bit the shader does not read as
-    /// one of the four turns, nor as the wedge.
+    /// A light, and which rows it has a run to measure to, are read as
+    /// nothing the shader asks about before it gets to them.
     ///
-    /// Deliberate break: put `FROSTED` at `1 << 14`, inside the turns,
-    /// and every face is read as a plate whose top right corner bends.
+    /// Deliberate break: put `HELD_NEAR` at 24, and a light with a run
+    /// above it is drawn as the mark that turns.
     #[test]
-    fn frosted_is_none_of_the_turns() {
-        assert_eq!(FROSTED & (255 << HELD_TURNS), 0);
-        assert_eq!(FROSTED & WEDGE, 0);
+    fn a_light_s_flags_are_no_other_flag() {
+        let light = LIGHT | 7 << HELD_NEAR;
+        for other in [
+            TURNING,
+            WEDGE,
+            CHECKED,
+            FRAME,
+            SLID,
+            BLUR,
+            GLASS,
+            SHADOW,
+            HELD_PLATE,
+            255 << HELD_TURNS,
+        ] {
+            assert_eq!(light & other, 0, "{other:032b}");
+        }
+        assert_eq!(LIGHT & 7 << HELD_NEAR, 0);
+    }
+
+    /// A row of the light round a hold, in cells a pixel wide.
+    fn lit(rows: &[&[(f32, f32)]], row: usize, holes: &[(f32, f32)]) -> Vec<Light> {
+        let rows: Vec<Vec<(f32, f32, u32)>> = rows
+            .iter()
+            .map(|runs| runs.iter().map(|&(from, to)| (from, to, 0)).collect())
+            .collect();
+        lights(&rows, row, 3.0, (0.0, 100.0), holes)
+    }
+
+    /// Where two rows of a hold meet at no more than a corner, the place
+    /// round that corner is lit by one row, measuring to the other.
+    ///
+    /// Selecting down from the middle of a line leaves the line from
+    /// there to its end and the next one up to there, which touch at a
+    /// point. A light per run reaching into the rows beside it drew both
+    /// lights round that point, and two lights over one place is a brighter
+    /// place.
+    ///
+    /// Deliberate break: give each row's stretch only its own row's run,
+    /// and the row above's stretch beside the corner has nothing below it
+    /// to measure to.
+    #[test]
+    fn rows_that_meet_at_a_corner_are_lit_once_round_it() {
+        let rows: [&[(f32, f32)]; 2] = [&[(40.0, 90.0)], &[(10.0, 40.0)]];
+        let upper = lit(&rows, 0, &[]);
+        let beside = upper
+            .iter()
+            .find(|light| light.from < 39.0 && light.to > 39.0)
+            .expect("lit beside the corner, on the upper row");
+        assert_eq!(beside.below, Some((10.0, 40.0)), "{upper:?}");
+        // And nothing reaches out of its own row: a stretch is a row tall,
+        // and never over another stretch of it.
+        for row in 0..3 {
+            let lit = lit(&rows, row, &[]);
+            for pair in lit.windows(2) {
+                assert!(pair[0].to <= pair[1].from, "row {row}: {lit:?}");
+            }
+        }
+    }
+
+    /// A row lights the step where the row beside it carries on past it,
+    /// all the way along.
+    ///
+    /// Deliberate break: keep each stretch to its own run and a reach
+    /// either side, which is what drew the step lit for a reach and then
+    /// cut square.
+    #[test]
+    fn the_step_where_the_row_above_carries_on_is_lit_along_it() {
+        let rows: [&[(f32, f32)]; 2] = [&[(0.0, 80.0)], &[(0.0, 10.0)]];
+        let lower = lit(&rows, 1, &[]);
+        let to = lower.iter().map(|light| light.to).fold(0.0, f32::max);
+        assert!((to - 83.0).abs() < f32::EPSILON, "{lower:?}");
+    }
+
+    /// A row in two pieces is measured to by the piece nearest each place.
+    ///
+    /// Deliberate break: measure each row to its first run, and the step
+    /// under the right-hand piece is measured to the left-hand one, which
+    /// is too far away to light it.
+    #[test]
+    fn a_row_in_two_pieces_is_measured_to_the_nearer() {
+        let rows: [&[(f32, f32)]; 2] = [&[(0.0, 30.0), (60.0, 90.0)], &[(0.0, 85.0)]];
+        let lower = lit(&rows, 1, &[]);
+        let under = lower
+            .iter()
+            .find(|light| light.from <= 87.0 && light.to > 87.0)
+            .expect("lit under the end of the right-hand piece");
+        assert_eq!(under.above, Some((60.0, 90.0)), "{lower:?}");
+    }
+
+    /// No light outside what the hold is in, nor on what was put over it.
+    ///
+    /// Deliberate break: leave the room out of the cuts and keep every
+    /// stretch, and the first reaches into the margin left of the grid;
+    /// leave the holes out and a stretch is drawn across the box.
+    #[test]
+    fn a_light_stays_in_its_room_and_off_what_is_over_it() {
+        let rows: [&[(f32, f32)]; 1] = [&[(0.0, 50.0)]];
+        let lit = lit(&rows, 0, &[(20.0, 30.0)]);
+        assert!(lit.iter().all(|light| light.from >= 0.0), "{lit:?}");
+        assert!(
+            lit.iter()
+                .all(|light| light.to <= 20.0 || light.from >= 30.0),
+            "{lit:?}"
+        );
     }
 
     /// No turn a plate can carry is read as a shadow.
@@ -5669,18 +6003,18 @@ mod tests {
     /// left -- `Other` at its top left -- is a shadow.
     #[test]
     fn a_shadow_is_none_of_the_turns() {
-        let row = |from: u16, to: u16| Some((from, to, Color::Reset));
+        let row = |from: u16, to: u16| Some((from, to));
         for (above, below) in [
             (row(0, 20), None),
             (None, row(0, 20)),
             (row(5, 20), row(5, 20)),
         ] {
             for cut in [(false, false), (true, false), (false, true)] {
-                let turns = Turn::corners(5, 10, above, below, cut);
+                let turns = Turn::corners(5, 10, above.as_slice(), below.as_slice(), cut);
                 assert_eq!((turns << HELD_TURNS) & SHADOW, 0, "{turns:08b}");
             }
         }
-        assert_eq!(SHADOW & (FROSTED | WEDGE), 0);
+        assert_eq!(SHADOW & (LIGHT | WEDGE), 0);
     }
 
     /// Which way a hold's corner turns is a fact about the row beside it.
@@ -5698,15 +6032,8 @@ mod tests {
     /// notches where there is no corner at all.
     #[test]
     fn a_corner_turns_the_other_way_where_the_row_beside_it_carries_on() {
-        let ink = Color::Rgb(1, 2, 3);
         let turns = |above: Option<(u16, u16)>, below: Option<(u16, u16)>| {
-            Turn::corners(
-                10,
-                20,
-                above.map(|(from, to)| (from, to, ink)),
-                below.map(|(from, to)| (from, to, ink)),
-                (false, false),
-            )
+            Turn::corners(10, 20, above.as_slice(), below.as_slice(), (false, false))
         };
         // Top left, top right, bottom left, bottom right.
         let at = |turns: u32, corner: u32| (turns >> (corner * 2)) & 3;
@@ -5752,7 +6079,7 @@ mod tests {
 
         // And where something was put over the run, the end it stops at
         // is not an end: the row carries on under the box.
-        let under_a_box = Turn::corners(10, 20, None, None, (true, false));
+        let under_a_box = Turn::corners(10, 20, &[], &[], (true, false));
         assert_eq!(at(under_a_box, 0), Turn::None as u32, "top left, cut");
         assert_eq!(at(under_a_box, 2), Turn::None as u32, "bottom left, cut");
         assert_eq!(
@@ -5760,6 +6087,14 @@ mod tests {
             Turn::Corner as u32,
             "and the other end is still the hold's own"
         );
+
+        // A row above in two pieces, a box over the middle of it: each end
+        // turns for the piece that reaches past it, not for the first.
+        // Deliberate break: ask only the first piece, and the top right
+        // corner is the hold's own, under a row that carries on past it.
+        let pieces = Turn::corners(10, 20, &[(0, 12), (18, 30)], &[], (false, false));
+        assert_eq!(at(pieces, 0), Turn::Other as u32, "top left, in two");
+        assert_eq!(at(pieces, 1), Turn::Other as u32, "top right, in two");
     }
 
     /// A quad that wants the whole window covers the whole window.
