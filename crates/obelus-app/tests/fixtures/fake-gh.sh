@@ -2,9 +2,11 @@
 # Stands in for `gh`: prints what the file named first says, so that a test
 # can change the answer between two askings.
 #
-# `gh pr list` is answered from that file. `gh pr view N` is answered from
-# the file beside it named `<that file>.view.N`, and with nothing said at
-# all where there is none.
+# `gh pr list` is answered from that file. `gh issue list` is answered from
+# the file beside it named `<that file>.issues`, and with no issues where
+# there is none. `gh pr view N` and `gh issue view N` are answered from the
+# file beside it named `<that file>.view.N`, and with nothing said at all
+# where there is none.
 #
 # Two answers are `gh`'s refusals rather than lists, each in the words and
 # with the code the real one gives, so that what Obelus makes of them is
@@ -12,6 +14,14 @@
 # for a checkout whose remotes are somewhere else -- which also names
 # `gh auth login`, and is not about signing in.
 answer="$1"
+if [ "$2" = "issue" ] && [ "$3" = "list" ]; then
+    if [ -f "$answer.issues" ]; then
+        answer="$answer.issues"
+    else
+        echo "[]"
+        exit 0
+    fi
+fi
 if [ "$3" = "view" ]; then
     if [ -f "$answer.view.$4" ]; then
         answer="$answer.view.$4"

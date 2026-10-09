@@ -96,7 +96,8 @@ pub enum Command {
     HistoryFile,
     /// Every commit in the project.
     HistoryProject,
-    /// The repository's open pull requests, one of which the agent reviews.
+    /// The repository's open pull requests and issues, one of which the
+    /// agent reviews or answers.
     PullRequestReview,
     /// Fold the run of lines the cursor is in, or unfold the one it is on.
     Fold,
@@ -608,7 +609,7 @@ pub const ALL: &[CommandSpec] = &[
     CommandSpec {
         command: Command::PullRequestReview,
         name: "review-pull-request",
-        title: "Have the agent review an open pull request",
+        title: "Open pull requests and issues, for the agent to review or answer",
     },
     CommandSpec {
         command: Command::Fold,

@@ -193,6 +193,8 @@ pub enum PickerValue {
     /// Have the agent review one of the repository's pull requests, by its
     /// number -- which is also what the review is claimed and remembered by.
     PullRequest(u64),
+    /// Have the agent answer one of the repository's issues, by its number.
+    Issue(u64),
     /// One of the repository's worktrees, or an Obelus on one, to go to.
     ///
     /// By its place in the list, as a conversation is: which window has it

@@ -280,6 +280,9 @@ impl App {
             crate::conversation::Topic::PullRequest(number) => {
                 Some(self.what_a_review_is_called(*number))
             }
+            crate::conversation::Topic::Issue(number) => {
+                Some(self.what_an_answer_is_called(*number))
+            }
             crate::conversation::Topic::Loose => None,
         }
     }

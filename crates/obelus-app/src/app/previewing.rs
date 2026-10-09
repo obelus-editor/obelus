@@ -310,18 +310,28 @@ impl App {
 
         // A reading is rows and a scroll, and nothing below -- a place
         // marked, a line centred, a server's units -- is about rows.
-        if let Subject::PullRequest(number) = subject.clone() {
+        let reading = match subject {
+            Subject::PullRequest(number) => Some(super::pulls::Asked::PullRequest(number)),
+            Subject::Issue(number) => Some(super::pulls::Asked::Issue(number)),
+            Subject::File(_) | Subject::Commit { .. } | Subject::Message(_) => None,
+        };
+        if let Some(asked) = reading {
             // What has happened on it since, which the reading ends with:
             // asked here because this is where the row the reader is on
             // becomes a preview.
-            self.ask_about(number);
+            self.ask_about(asked);
             let width = obelus_ui::reading::width_in_a_preview(area);
             let laid = self
                 .preview
                 .as_ref()
                 .and_then(|preview| preview.reading.as_ref())
                 .is_some_and(|laid| laid.width == width);
-            let rows = (!laid).then(|| self.pull_request_reading(number, width));
+            let rows = (!laid).then(|| match asked {
+                super::pulls::Asked::PullRequest(number) => {
+                    self.pull_request_reading(number, width)
+                }
+                super::pulls::Asked::Issue(number) => self.issue_reading(number, width),
+            });
             let Some(preview) = self.preview.as_mut() else {
                 return;
             };
@@ -777,7 +787,10 @@ impl App {
                 .is_some_and(|buffer| buffer.path() == path),
             // A file as a commit had it is not the file on disk, whatever
             // its path says, and a message is not a file at all.
-            Subject::Commit { .. } | Subject::Message(_) | Subject::PullRequest(_) => false,
+            Subject::Commit { .. }
+            | Subject::Message(_)
+            | Subject::PullRequest(_)
+            | Subject::Issue(_) => false,
         }
     }
 
@@ -903,6 +916,7 @@ impl App {
             PickerValue::PullRequest(number) => {
                 Some((Subject::PullRequest(*number), Marked::top()))
             }
+            PickerValue::Issue(number) => Some((Subject::Issue(*number), Marked::top())),
             // A question is about what is already on screen, and the reader
             // has to be able to see it to answer: a preview would cover the
             // file whose fate is being asked about.
@@ -1003,6 +1017,9 @@ impl App {
             // has nothing to show.
             Subject::PullRequest(number) => self
                 .pull_request(*number)
+                .map(|_| (Buffer::from_text(Path::new(""), ""), None)),
+            Subject::Issue(number) => self
+                .issue(*number)
                 .map(|_| (Buffer::from_text(Path::new(""), ""), None)),
         }
     }
@@ -1110,6 +1127,8 @@ pub(super) enum Subject {
     /// wrote for a page that renders it, and it is shown the way a markdown
     /// file read as one is.
     PullRequest(u64),
+    /// And what an issue says about itself, for the same reason.
+    Issue(u64),
 }
 
 /// A file read so that the picker's selection can be shown.

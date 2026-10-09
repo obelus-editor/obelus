@@ -117,6 +117,21 @@ const PULL_REQUEST: &str = include_str!("pull_request.txt");
 /// telling, and what it needs is where to start again from.
 const PUSHED: &str = include_str!("pushed.txt");
 
+/// What an answer to an issue says it is about, and how to go about it.
+///
+/// What kind of issue it is decides the rest -- a bug is found before it is
+/// fixed, a request is said back before it is weighed, a question is
+/// answered from the code -- and every claim in it is checked against the
+/// code before it is agreed with. Nothing is posted that the reader has not
+/// chosen on a card.
+const ISSUE: &str = include_str!("issue.txt");
+
+/// And what it says when the issue has been commented on or changed since.
+///
+/// The `told` of an answer is when the issue was last updated, as GitHub
+/// says it: there is no commit to name, and a new comment is what moves it.
+const ANSWERED: &str = include_str!("answered.txt");
+
 /// What Obelus has to say before the reader's own words, this time.
 ///
 /// Three things rather than one string, because saying it is three things
@@ -225,7 +240,59 @@ impl App {
             Topic::Loose => None,
             Topic::Note(note) => self.about_the_note(note, told),
             Topic::PullRequest(number) => self.about_the_pull_request(*number, told),
+            Topic::Issue(number) => self.about_the_issue(*number, told),
         }
+    }
+
+    /// The issue an answer is about, as much of it as the agent is missing.
+    ///
+    /// The pull request's shape: what the list last said, or only the
+    /// number where this window has not asked, with when the issue was last
+    /// updated written down as told.
+    fn about_the_issue(
+        &self,
+        number: u64,
+        told: Option<&str>,
+    ) -> Option<(String, &'static str, String)> {
+        let issue = self.issue(number);
+        let stamp = issue.map_or("", |issue| issue.stamp.as_str());
+        match told {
+            None => {
+                let about = issue.map_or_else(String::new, |issue| {
+                    format!(", \"{}\", opened by {}", issue.title, issue.author)
+                });
+                let words = ISSUE
+                    .trim()
+                    .replace("{number}", &number.to_string())
+                    .replace("{about}", &about);
+                Some((
+                    words,
+                    "Told the agent which issue to answer",
+                    stamp.to_string(),
+                ))
+            }
+            Some(was) if !self.has_been_answered_since(number, was) => None,
+            Some(was) => {
+                let words = ANSWERED
+                    .trim()
+                    .replace("{number}", &number.to_string())
+                    .replace("{was}", was)
+                    .replace("{now}", stamp);
+                Some((
+                    words,
+                    "Told the agent what has been said since",
+                    stamp.to_string(),
+                ))
+            }
+        }
+    }
+
+    /// Whether an issue has been updated since `was`, the moment the agent
+    /// was told about it -- the question the box asks every frame, apart
+    /// from the words, as `has_moved_since` is for a pull request.
+    fn has_been_answered_since(&self, number: u64, was: &str) -> bool {
+        let stamp = self.issue(number).map_or("", |issue| issue.stamp.as_str());
+        !was.is_empty() && !stamp.is_empty() && was != stamp
     }
 
     /// The pull request a review is about, as much of it as the agent is
@@ -318,6 +385,12 @@ impl App {
                 None => Some(REVIEW),
                 Some(was) => self.has_moved_since(*number, was).then_some(REVIEW_AGAIN),
             },
+            Topic::Issue(number) => match talk.told.as_deref() {
+                None => Some(ANSWER),
+                Some(was) => self
+                    .has_been_answered_since(*number, was)
+                    .then_some(ANSWER_AGAIN),
+            },
         }
     }
 
@@ -403,6 +476,13 @@ pub(super) const REVIEW: &str = "Review this pull request";
 
 /// And for one pushed to since the last review.
 pub(super) const REVIEW_AGAIN: &str = "Review what has been pushed since";
+
+/// The same for an issue: choosing it said which, and what is left is how
+/// it should be answered.
+pub(super) const ANSWER: &str = "Read this issue and suggest a reply";
+
+/// And for one commented on or changed since.
+pub(super) const ANSWER_AGAIN: &str = "Read what has been said since";
 
 /// Fills a template in: Obelus's own values first, the reader's words last.
 ///

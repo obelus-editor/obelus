@@ -823,6 +823,16 @@ while IFS= read -r line; do
                 *"has moved since it was last handed to you"*)
                     first="${first:+$first+}pushed" ;;
             esac
+            # And an answer's: which issue, and that it has been commented
+            # on since.
+            case "$line" in
+                *"This conversation is about issue #"*)
+                    first="${first:+$first+}issue" ;;
+            esac
+            case "$line" in
+                *"has changed since it was last handed to you"*)
+                    first="${first:+$first+}answered" ;;
+            esac
             case "$line" in
                 *"This project has a workflow for changing its files"*)
                     first="${first:+$first+}workflow" ;;

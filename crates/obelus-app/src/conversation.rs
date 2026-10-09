@@ -83,6 +83,9 @@ pub enum Topic {
     /// requests is a door into it that opens before there is a session, and
     /// choosing the same one again is coming back to the same review.
     PullRequest(u64),
+    /// An answer to one of the repository's issues, by its number -- the
+    /// pull request's shape, for the same reasons.
+    Issue(u64),
 }
 
 impl Topic {
@@ -94,15 +97,16 @@ impl Topic {
         match which {
             ChatId::Note(note) => Self::Note(note.clone()),
             ChatId::PullRequest(number) => Self::PullRequest(*number),
+            ChatId::Issue(number) => Self::Issue(*number),
             ChatId::Loose(_) => Self::Loose,
         }
     }
 
     /// What names it before it has a session, where anything does.
     ///
-    /// A note and a pull request are both things in the world that a
-    /// conversation is found by; one about nothing in particular is found
-    /// by nothing but its session.
+    /// A note, a pull request and an issue are all things in the world
+    /// that a conversation is found by; one about nothing in particular is
+    /// found by nothing but its session.
     #[must_use]
     pub fn which(&self) -> Option<obelus_agent::chats::ChatId> {
         use obelus_agent::chats::ChatId;
@@ -110,6 +114,7 @@ impl Topic {
         match self {
             Self::Note(note) => Some(ChatId::Note(note.clone())),
             Self::PullRequest(number) => Some(ChatId::PullRequest(*number)),
+            Self::Issue(number) => Some(ChatId::Issue(*number)),
             Self::Loose => None,
         }
     }
@@ -119,7 +124,7 @@ impl Topic {
     pub const fn note(&self) -> Option<&NoteId> {
         match self {
             Self::Note(note) => Some(note),
-            Self::Loose | Self::PullRequest(_) => None,
+            Self::Loose | Self::PullRequest(_) | Self::Issue(_) => None,
         }
     }
 }
@@ -342,7 +347,7 @@ impl Conversation {
     #[must_use]
     pub fn which(&self) -> Option<obelus_agent::chats::ChatId> {
         match &self.topic {
-            Topic::Note(_) | Topic::PullRequest(_) => self.topic.which(),
+            Topic::Note(_) | Topic::PullRequest(_) | Topic::Issue(_) => self.topic.which(),
             Topic::Loose => self
                 .session
                 .as_ref()

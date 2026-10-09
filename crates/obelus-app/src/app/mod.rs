@@ -3197,6 +3197,7 @@ impl App {
             }
             Event::Released(tag) => self.on_released(&tag),
             Event::PullRequests(answer) => self.on_pull_requests(answer),
+            Event::Issues(answer) => self.on_issues(answer),
             Event::PullRequestDiscussion { number, answer } => {
                 self.on_pull_request_discussion(number, answer);
             }

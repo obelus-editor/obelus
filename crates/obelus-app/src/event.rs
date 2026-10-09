@@ -196,7 +196,10 @@ pub enum Event {
     Released(String),
     /// The repository's open pull requests, or why `gh` would not list them.
     PullRequests(Result<Vec<crate::app::pulls::PullRequest>, crate::app::pulls::Unlisted>),
-    /// What has happened on one pull request, or why `gh` would not say.
+    /// The repository's open issues, or why `gh` would not list them.
+    Issues(Result<Vec<crate::app::pulls::Issue>, crate::app::pulls::Unlisted>),
+    /// What has happened on one pull request or issue, or why `gh` would
+    /// not say.
     PullRequestDiscussion {
         /// Which.
         number: u64,
@@ -267,6 +270,7 @@ impl Event {
             Self::Reopened { .. } => "Reopened",
             Self::Released(_) => "Released",
             Self::PullRequests(_) => "PullRequests",
+            Self::Issues(_) => "Issues",
             Self::PullRequestDiscussion { .. } => "PullRequestDiscussion",
             Self::Summoned(_) => "Summoned",
             Self::Remote(_) => "Remote",

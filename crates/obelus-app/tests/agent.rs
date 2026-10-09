@@ -15094,6 +15094,149 @@ fn the_last_answer_stands_in_while_the_next_is_asked() {
     );
 }
 
+/// What `gh issue list` prints for one open issue last updated at `stamp`.
+fn one_issue(stamp: &str) -> String {
+    format!(
+        r#"[{{"number":348,"title":"Translate a message I cannot read","author":{{"login":"dragosol"}},"labels":[{{"name":"enhancement"}}],"updatedAt":"{stamp}","body":"It would help."}}]"#
+    )
+}
+
+/// The issues are the list's second tab: an issue there is described under
+/// the list without checks, and choosing it opens an answer that has said
+/// nothing, offers the words that start it, and tells the agent which
+/// issue with the reader's first message -- and once the issue has been
+/// commented on, offers a second look and says since when.
+///
+/// Broken deliberately five ways, each failing here. Not filling the list
+/// again when the tab moves leaves the pull requests' rows under the issues'
+/// tab. Asking for checks on an issue puts a part on its preview that an
+/// issue cannot have. Answering `None` for an issue in `about_the_topic`
+/// sends the message with nothing about the issue in it. Offering nothing in
+/// `what_the_box_offers` leaves the box empty. And calling a stamp that
+/// differs from the one told "the same" never offers the second look.
+#[test]
+fn an_issue_is_answered_on_the_readers_word() {
+    let scratch = support::Scratch::new("agent-issue-answer");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, one_pull_request("abc123")).expect("the pull requests");
+    let issues = scratch.path().join("gh-answer.json.issues");
+    std::fs::write(&issues, one_issue("2026-10-08T00:00:00Z")).expect("the issues");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+    app.talk_to(
+        "fake",
+        Path::new(support::sh()),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the pull requests", |app| {
+        answered_with(app, 1)
+    });
+    support::press(&mut app, KeyCode::Tab);
+    pump(&mut app, &events, "the issues", |app| answered_with(app, 1));
+    // Both answers are in now, so what fills a tab from here is the tab
+    // moving and nothing else: back to the pull requests, and over again.
+    let first = |app: &App| {
+        app.picker()
+            .and_then(|picker| picker.matches().next())
+            .map(|row| row.label.clone())
+            .unwrap_or_default()
+    };
+    support::press_shift(&mut app, KeyCode::BackTab);
+    assert!(
+        first(&app).starts_with("#123 "),
+        "the pull requests' tab shows {:?}",
+        first(&app)
+    );
+    support::press(&mut app, KeyCode::Tab);
+    assert!(
+        first(&app).starts_with("#348 "),
+        "the issues' tab shows {:?}",
+        first(&app)
+    );
+    support::lay_out(&mut app, WIDTH, 40);
+    let dump = support::render(&mut app, WIDTH, 40);
+    let text = support::text_block(&dump).to_string();
+    for said in [
+        "#348 Translate a message I cannot read",
+        "dragosol",
+        "enhancement",
+        "It would help.",
+    ] {
+        assert!(
+            text.contains(said),
+            "the issue does not say {said:?}:\n{text}"
+        );
+    }
+    assert!(
+        !text.contains("Checks") && !text.contains("checks and comments"),
+        "an issue is previewed with checks:\n{text}"
+    );
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+
+    support::press(&mut app, KeyCode::Enter);
+    assert!(app.chat().is_some(), "choosing the issue opened nothing");
+    assert_eq!(
+        app.what_this_conversation_is_called().as_deref(),
+        Some("Issue #348: Translate a message I cannot read")
+    );
+    app.open_a_session_for_test();
+    pump(&mut app, &events, "the session", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+    let _ = screen(&mut app);
+    assert!(
+        app.chat().is_some_and(|chat| !chat.anything_said()),
+        "the answer started before the reader said to"
+    );
+    assert_eq!(
+        app.chat().and_then(|chat| chat.suggestion()),
+        Some("Read this issue and suggest a reply"),
+        "the box offered nothing to start the answer with"
+    );
+    support::type_text(&mut app, "/blocks");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "what it got", |app| {
+        said_in_transcript(app, "blocks=")
+    });
+    let text = screen(&mut app);
+    assert!(
+        text.contains("first=always+issue"),
+        "the agent was not told which issue:\n{text}"
+    );
+    assert!(
+        text.contains("Told the agent which issue to answer"),
+        "Obelus spoke in the reader's name without saying so:\n{text}"
+    );
+
+    // Commented on since, and the list asked again: the same row is the
+    // same answer.
+    std::fs::write(&issues, one_issue("2026-10-09T00:00:00Z")).expect("the second answer");
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    support::press(&mut app, KeyCode::Tab);
+    pump(&mut app, &events, "the issues again", |app| {
+        answered_with(app, 1)
+    });
+    let documents = app.document_count_for_test();
+    support::press(&mut app, KeyCode::Enter);
+    assert_eq!(
+        app.document_count_for_test(),
+        documents,
+        "choosing it again opened a second answer"
+    );
+    let _ = screen(&mut app);
+    assert_eq!(
+        app.chat().and_then(|chat| chat.suggestion()),
+        Some("Read what has been said since"),
+        "the box did not see the issue had moved"
+    );
+    support::type_text(&mut app, "/blocks again");
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the second answer", |app| {
+        said_in_transcript(app, "first=answered")
+    });
+}
+
 /// A query that matches none of the pull requests says so, and does not say
 /// that none are open.
 ///

@@ -547,6 +547,9 @@ impl App {
                     obelus_agent::chats::ChatId::PullRequest(number) => {
                         Some(self.what_a_review_is_called(*number))
                     }
+                    obelus_agent::chats::ChatId::Issue(number) => {
+                        Some(self.what_an_answer_is_called(*number))
+                    }
                     obelus_agent::chats::ChatId::Loose(_) => None,
                 };
                 // One that is open here goes by what the list of what is

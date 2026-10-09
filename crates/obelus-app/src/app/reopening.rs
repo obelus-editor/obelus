@@ -600,7 +600,7 @@ impl App {
         let claim = obelus_agent::chats::claim(&self.working_directory, &which)?;
         let to_take_up = match &which {
             ChatId::Loose(session) => Some(session.clone()),
-            ChatId::Note(_) | ChatId::PullRequest(_) => None,
+            ChatId::Note(_) | ChatId::PullRequest(_) | ChatId::Issue(_) => None,
         };
         let topic = Topic::of(&which);
         let talk = crate::conversation::Conversation {
