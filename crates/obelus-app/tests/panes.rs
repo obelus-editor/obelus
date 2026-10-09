@@ -112,6 +112,7 @@ fn items(labels: &[&str]) -> Vec<PickerItem> {
             marker: None,
             icon: None,
             label: (*label).to_string(),
+            version: None,
             detail: None,
             trailing: None,
             changed: None,

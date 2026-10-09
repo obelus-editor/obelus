@@ -1552,6 +1552,7 @@ impl App {
                 marker: None,
                 icon: None,
                 label: value.name.clone(),
+                version: None,
                 detail: value.about.clone(),
                 // The one that is on says so in words. A list where the
                 // selected row and the current value look the same cannot
@@ -2210,6 +2211,7 @@ impl App {
                 // what these rows are.
                 icon: None,
                 label: format!("/{}", order.name),
+                version: None,
                 detail: Some(order.description.clone()),
                 trailing: order.hint.clone(),
                 changed: None,
@@ -4658,6 +4660,7 @@ fn task_row(task: &obelus_agent::acp::tasks::Task) -> PickerItem {
         marker: None,
         icon: None,
         label: task.name.clone(),
+        version: None,
         detail: task.summary.clone().or_else(|| task.about.clone()),
         trailing: Some(trailing),
         changed: None,

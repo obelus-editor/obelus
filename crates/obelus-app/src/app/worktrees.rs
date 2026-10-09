@@ -853,6 +853,7 @@ fn worktree_row(shown: Shown) -> PickerItem {
     PickerItem {
         icon: obelus_icons::enabled().then_some(shown.icon),
         label: shown.label,
+        version: None,
         detail: shown.detail,
         prose: false,
         marker: shown.marker,

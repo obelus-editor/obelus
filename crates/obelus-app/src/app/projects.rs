@@ -614,6 +614,7 @@ impl super::App {
                         true => format!("{name}{}", std::path::MAIN_SEPARATOR),
                         false => name,
                     },
+                    version: None,
                     detail: None,
                     trailing: None,
                     changed: None,

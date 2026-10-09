@@ -402,6 +402,7 @@ impl App {
                     // every row of a block, so showing it spends the width
                     // where the answer is.
                     label: said.trim_end().trim_start().to_string(),
+                    version: None,
                     detail: None,
                     trailing: Some(format!("{}", number + 1)),
                     changed: None,
@@ -507,6 +508,7 @@ impl App {
             opens: None,
             kind: None,
             label: hit.text,
+            version: None,
             detail: None,
             trailing: Some(format!("{}:{}", hit.path.display(), hit.line + 1)),
             changed: None,

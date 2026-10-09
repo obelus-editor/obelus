@@ -398,6 +398,7 @@ impl App {
                 label: reference.name.clone(),
                 // What it points at, after the name: a name says which
                 // place, and a subject says what is there.
+                version: None,
                 detail: Some(reference.at.subject.clone()),
                 trailing: Some(format!(
                     "{} \u{b7} {}",
@@ -444,6 +445,7 @@ impl App {
                 // behind this row. It is the glyph the key table uses for
                 // the left arrow key, which is a different thing in a
                 // different place and never beside this one.
+                version: None,
                 detail: commit
                     .was
                     .as_ref()
@@ -487,6 +489,7 @@ impl App {
                         // before. Dimmed and after the name, because it is
                         // why this row is here rather than what it is --
                         // and a row too narrow for both keeps the name.
+                        version: None,
                         detail: touched
                             .was
                             .as_ref()

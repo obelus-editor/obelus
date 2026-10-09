@@ -3822,7 +3822,7 @@ fn the_open_files_say_which_commit_they_came_from() {
         .picker()
         .expect("the open files")
         .matches()
-        .map(|item| (item.label.clone(), item.trailing.clone()))
+        .map(|item| (item.label.clone(), item.version.clone()))
         .collect();
     assert_eq!(rows.len(), 2, "not both of them: {rows:?}");
     assert_eq!(
@@ -3837,6 +3837,92 @@ fn the_open_files_say_which_commit_they_came_from() {
     assert_eq!(
         rows[0].0, rows[1].0,
         "they were telling themselves apart some other way, and this test proves nothing"
+    );
+}
+
+/// The commit is said beside the path it is a version of, in the colour the
+/// status row says it in -- and a path too long for the row gives up its
+/// head before the commit gives up anything.
+///
+/// It was at the far end of the row in the gutter's grey, where two rows of
+/// one path read as one file twice: the word telling them apart was as far
+/// from the name as the row could put it, and the colour was the one chosen
+/// to recede.
+///
+/// Broken by drawing `version` in the gutter's grey rather than in
+/// `status_stale`, and by taking the label's room without taking the version's
+/// out of it first: the colour assertion failed on the first and the narrow row
+/// lost the id on the second.
+#[test]
+fn a_commits_version_is_said_beside_its_path() {
+    use crossterm::event::KeyCode;
+    use obelus_app::app::App;
+    use obelus_buffer::Buffer;
+    use obelus_theme::builtin::DARK;
+
+    let repository = Repository::new("a-version-beside-its-path", "first\n");
+    repository.write("second\n");
+    repository.commit("the second");
+
+    let mut app = App::new(vec![Buffer::open(&repository.path()).expect("opening it")]);
+    app.working_directory_for_test(repository.directory());
+    let events = support::drive(&mut app);
+    support::lay_out(&mut app, 60, 14);
+    support::press_function(&mut app, 10);
+    support::read_history(&mut app, &events);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    support::press(&mut app, KeyCode::Down);
+    support::press(&mut app, KeyCode::Enter);
+    let at = app
+        .current_buffer()
+        .expect("a file")
+        .content()
+        .short()
+        .expect("a commit");
+    // Changed on disk, so git has something to say about the file -- which
+    // it does not about a commit's version of it.
+    repository.write("third\n");
+
+    support::press_function(&mut app, 2);
+    let rows: Vec<_> = app
+        .picker()
+        .expect("the open files")
+        .matches()
+        .map(|item| (item.label.clone(), item.version.clone(), item.status))
+        .collect();
+    assert!(
+        rows[0].1.is_none() && rows[0].2.is_some(),
+        "the file on disk is not the first row, or git said nothing of it, so this proves nothing: {rows:?}"
+    );
+    // Broken by taking the `filter` off the row's status: the commit's row
+    // wore the working tree's modified colour.
+    assert_eq!(
+        rows[1].2, None,
+        "the commit's version wears what git says of the file on disk: {rows:?}"
+    );
+    let label = rows[0].0.clone();
+    let dump = support::render(&mut app, 60, 14);
+    assert!(
+        support::text_block(&dump).contains(&format!("{label}  {at}")),
+        "the commit is not beside its path:\n{dump}"
+    );
+    assert!(
+        support::drawn_in(&dump, &at)
+            .contains(&format!("fg={}", support::spelled(DARK.status_stale))),
+        "the commit is not in the colour the status row says it in:\n{dump}"
+    );
+
+    // So narrow the path cannot be whole: it loses its head and the id
+    // stays where it was, after what is left of the name.
+    let narrow = support::render(&mut app, 16, 14);
+    let row = support::text_block(&narrow)
+        .lines()
+        .find(|row| row.contains(&at))
+        .unwrap_or_else(|| panic!("the commit went to make room for the path:\n{narrow}"));
+    assert!(
+        row.contains('\u{2026}') && !row.contains(&label),
+        "the path was not cut, so this proves nothing:\n{narrow}"
     );
 }
 
@@ -5108,7 +5194,7 @@ fn the_document_list_opens_on_this_version_and_not_the_other() {
     assert!(
         picker
             .selected_item()
-            .is_some_and(|item| item.trailing.is_some()),
+            .is_some_and(|item| item.version.is_some()),
         "the list opened on the file rather than on the commit's version"
     );
 }

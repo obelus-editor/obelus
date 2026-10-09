@@ -158,6 +158,7 @@ impl App {
                 // the whole of what a row they cannot choose is for, and
                 // the list steps over such a row, so there is no moment
                 // later at which it could be said instead.
+                version: None,
                 detail: action.disabled.clone(),
                 prose: true,
                 marker: None,

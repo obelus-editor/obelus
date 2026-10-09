@@ -473,6 +473,7 @@ impl App {
                 marker: None,
                 icon: None,
                 label: label(&choice),
+                version: None,
                 detail: about,
                 trailing: None,
                 changed: None,
@@ -544,6 +545,7 @@ impl App {
                 marker: None,
                 icon: None,
                 label,
+                version: None,
                 detail,
                 // The one in force says so in words, the way the
                 // conversation's own list does: a list where the selected

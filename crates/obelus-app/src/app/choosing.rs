@@ -34,6 +34,7 @@ impl App {
                 // name is what says which.
                 icon: obelus_icons::enabled().then_some(obelus_icons::ui::THEME),
                 label: name.clone(),
+                version: None,
                 detail: None,
                 trailing: None,
                 changed: None,
@@ -91,6 +92,7 @@ impl App {
                     .position(|group| *group == spec.command.group())
                     .map(|at| at + 1),
                 section: None,
+                version: None,
                 detail: Some(spec.title.to_string()),
                 // The key it is bound to, if it is bound to one. A command
                 // with nothing here is one the palette is the only way to

@@ -464,6 +464,7 @@ impl App {
             marker: None,
             icon: obelus_icons::enabled().then_some(obelus_icons::ui::TERMINAL),
             label: terminal.title().unwrap_or(terminal.said()).to_string(),
+            version: None,
             detail: None,
             trailing,
             changed: None,

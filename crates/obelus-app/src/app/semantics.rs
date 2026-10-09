@@ -285,6 +285,7 @@ impl App {
                     marker: None,
                     icon: obelus_icons::enabled().then(|| obelus_icons::for_command(command)),
                     label: command.spec().name.to_string(),
+                    version: None,
                     detail: Some(command.spec().title.to_string()),
                     trailing: self.keymap.chord_for(command).map(KeyChord::label),
                     changed: None,
@@ -1458,6 +1459,7 @@ impl App {
                     opens: None,
                     kind: Some(symbol.kind),
                     label: symbol.name.clone(),
+                    version: None,
                     detail: None,
                     trailing: Some(format!("{}", symbol.line.get() + 1)),
                     changed: None,
@@ -1566,6 +1568,7 @@ impl App {
                 opens: None,
                 kind: Some(symbol.kind),
                 label: symbol.name.clone(),
+                version: None,
                 detail: None,
                 trailing: Some(format!("{}", symbol.line.saturating_add(1))),
                 changed: None,
@@ -1750,6 +1753,7 @@ impl App {
                 opens: None,
                 kind: Some(symbol.kind),
                 label: symbol.name.clone(),
+                version: None,
                 detail: None,
                 // Relative to the working directory, the way the file
                 // list shows paths: a server answers with absolute paths,
@@ -2332,6 +2336,7 @@ pub(super) fn problem_row(
     PickerItem {
         icon: obelus_icons::enabled().then(|| obelus_icons::for_problem(severity.kind())),
         label: said.to_string(),
+        version: None,
         detail: None,
         prose: true,
         marker: None,
@@ -2698,6 +2703,7 @@ fn place_rows(places: &[obelus_lsp::action::Place], root: &Path) -> Vec<PickerIt
                 // A line that could not be read leaves the place itself as
                 // the row: it is still somewhere to go.
                 label: text.unwrap_or_else(|| at.clone()),
+                version: None,
                 detail: None,
                 trailing: Some(at),
                 changed: None,

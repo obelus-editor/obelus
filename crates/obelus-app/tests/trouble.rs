@@ -1600,6 +1600,7 @@ fn only_a_list_of_problems_opens_the_words_in_its_preview() {
             marker: None,
             icon: None,
             label: "other.rs:2".to_string(),
+            version: None,
             detail: None,
             trailing: None,
             changed: None,
