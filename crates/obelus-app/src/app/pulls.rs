@@ -14,6 +14,13 @@
 //! leans on it for pull requests. Where it is missing or signed out, the
 //! list says which, because the reader can act on either.
 //!
+//! **Every page comes, a page at a time.** A limit on a list is a limit on
+//! what can be found in it, so the list is walked to its end; and a walk of
+//! a repository with fourteen hundred open is twenty seconds, so each page
+//! is on screen as it lands. A row carries only what a row draws: what a
+//! preview wants is asked for the row the reader is on, and kept until the
+//! list says that row has changed.
+//!
 //! **Choosing one opens the review, and says nothing yet.** The conversation
 //! is a note's shape -- claimed by the pull request's number before there is
 //! a session, and found again by it -- and the box offers the words that
@@ -34,29 +41,45 @@ use obelus_component::picker::{
 use super::*;
 use crate::event::Event;
 
-/// What `gh` is asked for each pull request.
+/// What GitHub is asked for each page of pull requests: what a row draws
+/// and what an opening tells the agent, and nothing only a preview wants.
 ///
-/// Named rather than left to `gh`'s default, which has no `--json` at all:
-/// its table is for people and changes shape with the terminal.
+/// Asked through `gh api graphql --paginate` rather than `gh pr list`,
+/// because `gh` prints each page of the first as it has it and the second
+/// all at once at the end: on a repository with fourteen hundred open, the
+/// first hundred rows land in a second and the rest in twenty, where the
+/// list used to stand empty for two and a half minutes. Newest first, so
+/// what arrives first is what is being looked for, and every page comes --
+/// a list the reader stops reading is not a list with fewer rows to search.
 ///
-/// The description and the counts with the rest, in the one call: the
-/// preview walks with the selection, and a question to GitHub per row
-/// walked would be a preview that is always arriving.
-const FIELDS: &str = "number,title,author,headRefName,baseRefName,headRefOid,isDraft,\
-                      reviewDecision,updatedAt,body,additions,deletions,changedFiles";
+/// `{owner}` and `{repo}` are `gh`'s to fill, from the remote it would pick
+/// for `gh pr view` -- which is what a preview and a review are asked of.
+const PULL_REQUESTS: &str = "query($owner:String!,$name:String!,$endCursor:String){\
+    repository(owner:$owner,name:$name){list:pullRequests(states:OPEN,first:100,\
+    after:$endCursor,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number title \
+    author{login} headRefName baseRefName headRefOid isDraft reviewDecision updatedAt} \
+    pageInfo{hasNextPage endCursor}}}}";
 
-/// What `gh` is asked for each issue, for the same reasons.
-const ISSUE_FIELDS: &str = "number,title,author,labels,updatedAt,body";
+/// The same for the issues.
+const ISSUES: &str = "query($owner:String!,$name:String!,$endCursor:String){\
+    repository(owner:$owner,name:$name){list:issues(states:OPEN,first:100,\
+    after:$endCursor,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number title \
+    author{login} labels(first:100){nodes{name}} updatedAt} \
+    pageInfo{hasNextPage endCursor}}}}";
+
+/// What `gh pr view` is asked about the row the reader is on: its
+/// description and how much it changes, as well as what has happened on it.
+///
+/// Not in the list. The counts are what GitHub gave up on: asked of every
+/// row of a thousand, a page took a minute and ended in a 502.
+const VIEWED: &str =
+    "body,additions,deletions,changedFiles,updatedAt,comments,reviews,statusCheckRollup";
+
+/// And `gh issue view`, which has no counts and no checks to say.
+const ISSUE_VIEWED: &str = "body,updatedAt,comments";
 
 /// The list's tabs, in the order they sit in.
 const TABS: [&str; 2] = ["Pull requests", "Issues"];
-
-/// How many to ask for.
-///
-/// A limit on a list is a limit on what can be found in it, so this is
-/// `gh`'s own pagination asked to go as far as a repository plausibly has
-/// open, not a page.
-const LIMIT: &str = "1000";
 
 /// One open pull request, as `gh` described it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -80,14 +103,9 @@ pub struct PullRequest {
     pub decision: Option<Decision>,
     /// When it last changed, as seconds since the epoch.
     pub updated: Option<i64>,
-    /// What its author wrote about it, as the markdown they wrote.
-    pub body: String,
-    /// How many lines it adds.
-    pub additions: u64,
-    /// How many it takes away.
-    pub deletions: u64,
-    /// How many files it changes.
-    pub files: u64,
+    /// And as GitHub says it, which what was kept about it is checked
+    /// against.
+    pub stamp: String,
 }
 
 /// What the reviews of a pull request have come to.
@@ -137,8 +155,6 @@ pub struct Issue {
     /// And as GitHub says it -- what an answer written down was told, so
     /// that a comment since is something to say again.
     pub stamp: String,
-    /// What its author wrote, as the markdown they wrote.
-    pub body: String,
 }
 
 /// What `gh` is asked about once a row is chosen.
@@ -159,6 +175,41 @@ impl Asked {
     }
 }
 
+/// What one asking for a tab's list sends back, a piece at a time.
+#[derive(Debug)]
+pub enum Listed<T> {
+    /// A page of it: the first of this asking, which the last asking's
+    /// rows give way to, or one after it.
+    Page {
+        /// What the page holds, newest first.
+        rows: Vec<T>,
+        /// Whether it is the first.
+        first: bool,
+    },
+    /// Every page has come.
+    Done,
+    /// Why there is no list, at whatever page that turned out.
+    Refused(Unlisted),
+}
+
+/// A row of a list, by the number GitHub gave it.
+trait Numbered {
+    /// Its number.
+    fn number(&self) -> u64;
+}
+
+impl Numbered for PullRequest {
+    fn number(&self) -> u64 {
+        self.number
+    }
+}
+
+impl Numbered for Issue {
+    fn number(&self) -> u64 {
+        self.number
+    }
+}
+
 /// One of the list's tabs, as `gh` last answered it.
 #[derive(Debug)]
 struct Listing<T> {
@@ -168,7 +219,7 @@ struct Listing<T> {
     /// Whether `listed` is an answer at all: none of it before `gh` has
     /// first answered, and none of it after an answer that was a refusal.
     answered: bool,
-    /// Whether an answer is on its way.
+    /// Whether an answer is on its way, which it is until its last page.
     asking: bool,
     /// Why the last answer was no list, where it was.
     unlisted: Option<Unlisted>,
@@ -185,20 +236,33 @@ impl<T> Default for Listing<T> {
     }
 }
 
-impl<T> Listing<T> {
+impl<T: Numbered> Listing<T> {
     /// Takes what `gh` said.
-    fn answer(&mut self, answer: Result<Vec<T>, Unlisted>) {
-        self.asking = false;
+    fn answer(&mut self, answer: Listed<T>) {
         match answer {
-            Ok(listed) => {
-                self.listed = listed;
+            Listed::Page { rows, first } => {
+                if first {
+                    self.listed.clear();
+                }
+                // Once each. The pages are cut from a list that moves while
+                // they are walked, and one updated ahead of the walk pushes
+                // the rest down a place: the last row of one page is the
+                // first of the next.
+                let mut had: std::collections::HashSet<u64> =
+                    self.listed.iter().map(Numbered::number).collect();
+                self.listed
+                    .extend(rows.into_iter().filter(|row| had.insert(row.number())));
                 self.answered = true;
                 self.unlisted = None;
             }
-            Err(why) => {
+            Listed::Done => self.asking = false,
+            Listed::Refused(why) => {
                 tracing::info!(?why, "no list from gh");
-                // And none of the last one: rows from an answer before this
-                // one would be a list saying what was open then.
+                self.asking = false;
+                // And none of the last one, nor of the pages before the
+                // refusal: rows from an answer before this one would be a
+                // list saying what was open then, and the pages of this one
+                // a list that says "No match" about rows it never fetched.
                 self.listed.clear();
                 self.answered = false;
                 self.unlisted = Some(why);
@@ -220,10 +284,22 @@ impl<T> Listing<T> {
     }
 }
 
-/// What has happened on a pull request since it was opened: how its checks
-/// stand, and what has been said on it.
+/// What a pull request or an issue says beyond its row: what its author
+/// wrote, how much it changes, how its checks stand, and what has been said
+/// on it.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Discussion {
+    /// When it last changed, as GitHub says it -- which the list's word on
+    /// it is checked against before asking again.
+    pub stamp: String,
+    /// What its author wrote, as the markdown they wrote.
+    pub body: String,
+    /// How many lines it adds; nothing for an issue.
+    pub additions: u64,
+    /// How many it takes away.
+    pub deletions: u64,
+    /// How many files it changes.
+    pub files: u64,
     /// Every check, as the last commit has them.
     pub checks: Vec<Check>,
     /// What has been said on it -- comments, and reviews that said
@@ -298,13 +374,15 @@ pub(super) struct Pulls {
     pulls: Listing<PullRequest>,
     /// The issues.
     issues: Listing<Issue>,
-    /// What has happened on each pull request or issue, as `gh` last said,
-    /// by its number -- which GitHub shares between the two, so one key is
-    /// one thing. Kept for the window's life the way the list is: shown at
-    /// once the next time the row is chosen, and asked about again under it.
+    /// What each pull request or issue says beyond its row, as `gh` last
+    /// said, by its number -- which GitHub shares between the two, so one
+    /// key is one thing. Kept for the window's life the way the list is:
+    /// shown at once the next time the row is chosen, and asked about again
+    /// only where the list says it has changed since (`App::kept_is_current`).
     discussions: std::collections::HashMap<u64, Discussion>,
     /// Which have been asked about since the list opened, so that walking
-    /// back onto a row does not ask again.
+    /// back onto a row does not ask again -- a check still running is asked
+    /// about once an opening, not once a frame.
     asked_since_opening: std::collections::HashSet<u64>,
     /// Which one's discussion is on its way. One at a time: a reader
     /// walking the list passes rows they will not stop on.
@@ -353,8 +431,9 @@ impl App {
             self.pulls.issues.asking = true;
             self.ask_for_the_list(true);
         }
-        // Every row is worth asking about once more: what was kept is from
-        // the last time the list was open.
+        // Every row is worth asking about once more, where what was kept
+        // turns out not to be current: the list it is checked against is
+        // the one just asked for.
         self.pulls.asked_since_opening.clear();
         self.show_pull_requests();
     }
@@ -375,7 +454,10 @@ impl App {
     /// the reader has stopped on by then.
     pub(super) fn ask_about(&mut self, asked: Asked) {
         let number = asked.number();
-        if self.pulls.asked_since_opening.contains(&number) || self.pulls.asking_about.is_some() {
+        if self.pulls.asked_since_opening.contains(&number)
+            || self.pulls.asking_about.is_some()
+            || self.kept_is_current(asked)
+        {
             return;
         }
         let Some(sender) = self.events.clone() else {
@@ -389,6 +471,29 @@ impl App {
             let answer = discussion(&root, instead, asked);
             let _ = sender.send(Event::PullRequestDiscussion { number, answer });
         });
+    }
+
+    /// Whether what was kept about one is still what GitHub would say: the
+    /// list's word on when it last changed is the word it was kept at.
+    ///
+    /// A comment, a review, a push and an edit to the description all move
+    /// that; a check finishing does not, so a pull request with one still
+    /// running is asked about again as if nothing were kept.
+    fn kept_is_current(&self, asked: Asked) -> bool {
+        let number = asked.number();
+        let Some(kept) = self.pulls.discussions.get(&number) else {
+            return false;
+        };
+        let listed = match asked {
+            Asked::PullRequest(_) => self.pull_request(number).map(|pull| pull.stamp.as_str()),
+            Asked::Issue(_) => self.issue(number).map(|issue| issue.stamp.as_str()),
+        };
+        !kept.stamp.is_empty()
+            && listed == Some(kept.stamp.as_str())
+            && !kept
+                .checks
+                .iter()
+                .any(|check| check.stands == Stands::Running)
     }
 
     /// Takes what `gh` said has happened on one pull request.
@@ -413,8 +518,8 @@ impl App {
         self.lay_the_preview_out_again(number);
     }
 
-    /// Runs `gh` on the blocking pool for one tab's list, and sends what it
-    /// said to the loop.
+    /// Runs `gh` on the blocking pool for one tab's list, and sends each
+    /// page it prints to the loop as it prints it.
     fn ask_for_the_list(&self, issues: bool) {
         let Some(sender) = self.events.clone() else {
             // No loop to answer into: a test hands the answer over itself.
@@ -422,23 +527,25 @@ impl App {
         };
         let root = self.working_directory.clone();
         let instead = self.pulls.instead.clone();
-        obelus_runtime::handle().spawn_blocking(move || {
-            let _ = sender.send(match issues {
-                true => Event::Issues(list_issues(&root, instead)),
-                false => Event::PullRequests(list(&root, instead)),
-            });
+        obelus_runtime::handle().spawn_blocking(move || match issues {
+            true => walk(&root, instead, ISSUES, read_issues, |listed| {
+                let _ = sender.send(Event::Issues(listed));
+            }),
+            false => walk(&root, instead, PULL_REQUESTS, read, |listed| {
+                let _ = sender.send(Event::PullRequests(listed));
+            }),
         });
     }
 
-    /// Takes what `gh` said the pull requests are, and puts them in the list
-    /// if the list is up.
-    pub(super) fn on_pull_requests(&mut self, answer: Result<Vec<PullRequest>, Unlisted>) {
+    /// Takes a page of what `gh` said the pull requests are, and puts them
+    /// in the list if the list is up.
+    pub(super) fn on_pull_requests(&mut self, answer: Listed<PullRequest>) {
         self.pulls.pulls.answer(answer);
         self.the_list_has_moved();
     }
 
     /// The same for the issues.
-    pub(super) fn on_issues(&mut self, answer: Result<Vec<Issue>, Unlisted>) {
+    pub(super) fn on_issues(&mut self, answer: Listed<Issue>) {
         self.pulls.issues.answer(answer);
         self.the_list_has_moved();
     }
@@ -745,7 +852,9 @@ impl App {
     /// Two rows naming it, in the shape a commit's message names its commit
     /// -- which, who, from where to where, how long ago, and how much it
     /// changes -- and then its title and its description as the markdown
-    /// they are, laid out by the same code a markdown file is.
+    /// they are, laid out by the same code a markdown file is. How much it
+    /// changes and what it says are asked for the row the reader is on
+    /// (`VIEWED`), so until `gh` has said the title stands alone.
     ///
     /// Then, each after a rule, how its checks stand and what has been said
     /// on it -- or, while `gh` has not said yet, one row saying so, whose
@@ -772,29 +881,26 @@ impl App {
                 obelus_git::how_long_ago(updated, std::time::SystemTime::now())
             ));
         }
-        let files = match pull.files {
-            1 => "1 file".to_string(),
-            files => format!("{files} files"),
-        };
-        let mut rows = vec![
-            Row::of(vec![Span::new(named, Ink::Aside)]),
-            Row::of(vec![
-                Span::new(format!("+{}", pull.additions), Ink::Added),
+        let kept = self.pulls.discussions.get(&number);
+        let mut rows = vec![Row::of(vec![Span::new(named, Ink::Aside)])];
+        if let Some(kept) = kept {
+            let files = match kept.files {
+                1 => "1 file".to_string(),
+                files => format!("{files} files"),
+            };
+            rows.push(Row::of(vec![
+                Span::new(format!("+{}", kept.additions), Ink::Added),
                 Span::new(" ", Ink::Aside),
-                Span::new(format!("\u{2212}{}", pull.deletions), Ink::Removed),
+                Span::new(format!("\u{2212}{}", kept.deletions), Ink::Removed),
                 Span::new(format!(" \u{b7} {files}"), Ink::Aside),
-            ]),
-            Row::default(),
-        ];
-        // The title as the heading it is, and the description after it as
-        // its author wrote it -- a description with headings of its own
-        // keeps them under this one.
-        let source = format!("# {}\n\n{}", pull.title, pull.body);
-        rows.extend(obelus_markdown::render(&source, width));
-        if pull.body.trim().is_empty() {
-            rows.push(Row::default());
-            rows.push(Row::of(vec![Span::new("No description", Ink::Aside)]));
+            ]));
         }
+        rows.push(Row::default());
+        rows.extend(described(
+            &pull.title,
+            kept.map(|kept| kept.body.as_str()),
+            width,
+        ));
         self.what_has_happened_since(rows, number, true, width)
     }
 
@@ -826,12 +932,14 @@ impl App {
             )]));
         }
         rows.push(Row::default());
-        let source = format!("# {}\n\n{}", issue.title, issue.body);
-        rows.extend(obelus_markdown::render(&source, width));
-        if issue.body.trim().is_empty() {
-            rows.push(Row::default());
-            rows.push(Row::of(vec![Span::new("No description", Ink::Aside)]));
-        }
+        rows.extend(described(
+            &issue.title,
+            self.pulls
+                .discussions
+                .get(&number)
+                .map(|kept| kept.body.as_str()),
+            width,
+        ));
         self.what_has_happened_since(rows, number, false, width)
     }
 
@@ -872,8 +980,8 @@ impl App {
                     // Two blanks in front, where the view puts the mark and
                     // the one blank after it.
                     let waiting = match with_checks {
-                        true => "  Asking GitHub for its checks and comments",
-                        false => "  Asking GitHub for its comments",
+                        true => "  Asking GitHub for its description, checks and comments",
+                        false => "  Asking GitHub for its description and comments",
                     };
                     rows.push(Row::of(vec![Span::new(waiting, Ink::Aside)]));
                     return (rows, Some(turning));
@@ -970,6 +1078,24 @@ fn widest(numbers: impl Iterator<Item = u64>) -> usize {
         .unwrap_or(0)
 }
 
+/// A title as the heading it is, and the description after it as its
+/// author wrote it -- a description with headings of its own keeps them
+/// under this one.
+///
+/// With no description until `gh` has said what it is: "No description"
+/// is a thing to say about one that came back empty, not one still asked.
+fn described(title: &str, body: Option<&str>, width: u16) -> Vec<obelus_row::Row> {
+    use obelus_row::{Ink, Row, Span};
+
+    let source = format!("# {title}\n\n{}", body.unwrap_or_default());
+    let mut rows = obelus_markdown::render(&source, width);
+    if body.is_some_and(|body| body.trim().is_empty()) {
+        rows.push(Row::default());
+        rows.push(Row::of(vec![Span::new("No description", Ink::Aside)]));
+    }
+    rows
+}
+
 /// How a pull request's checks stand, as rows: a count of each kind on one
 /// row, and under it by name every one that has not passed.
 ///
@@ -1041,47 +1167,102 @@ fn comments(said: &[Comment], width: u16) -> Vec<obelus_row::Row> {
     rows
 }
 
-/// Asks `gh` for the open pull requests of the repository `root` is in.
-fn list(
+/// Asks GitHub, through `gh`, for every page of one tab's list of the
+/// repository `root` is in, and hands each to `send` as `gh` prints it.
+///
+/// What `gh` prints is one JSON object a page, one after another, so each
+/// is read as soon as it closes rather than once the walk is over.
+fn walk<T>(
     root: &std::path::Path,
     instead: Option<(std::path::PathBuf, Vec<String>)>,
-) -> Result<Vec<PullRequest>, Unlisted> {
-    let said = gh(
-        root,
-        instead,
-        &[
-            "pr", "list", "--state", "open", "--limit", LIMIT, "--json", FIELDS,
-        ],
-    )?;
-    read(&said)
+    query: &str,
+    read: fn(&[serde_json::Value]) -> Vec<T>,
+    send: impl Fn(Listed<T>),
+) {
+    use std::io::Read;
+
+    let query = format!("query={query}");
+    let asked = [
+        "api",
+        "graphql",
+        "--paginate",
+        "-F",
+        "owner={owner}",
+        "-F",
+        "name={repo}",
+        "-f",
+        &query,
+    ];
+    let mut command = match command(root, instead, &asked) {
+        Ok(command) => command,
+        Err(why) => return send(Listed::Refused(why)),
+    };
+    command
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => return send(Listed::Refused(Unlisted::Failed(error.to_string()))),
+    };
+    let mut first = true;
+    let mut unread = None;
+    if let Some(stdout) = child.stdout.take() {
+        let pages = serde_json::Deserializer::from_reader(std::io::BufReader::new(stdout))
+            .into_iter::<serde_json::Value>();
+        for page in pages {
+            let page = match page {
+                Ok(page) => page,
+                Err(error) => {
+                    unread = Some(error);
+                    break;
+                }
+            };
+            // A page that is GitHub's error rather than a list is said by
+            // `gh` on its way out, and is not a page of nothing.
+            let Some(rows) = page
+                .pointer("/data/repository/list/nodes")
+                .and_then(serde_json::Value::as_array)
+            else {
+                continue;
+            };
+            send(Listed::Page {
+                rows: read(rows),
+                first,
+            });
+            first = false;
+        }
+    }
+    // What it said about why, once it has nothing left to print: a line or
+    // two, which the pipe holds while the pages are read.
+    let mut said = String::new();
+    if let Some(mut stderr) = child.stderr.take() {
+        let _ = stderr.read_to_string(&mut said);
+    }
+    let status = match child.wait() {
+        Ok(status) => status,
+        Err(error) => return send(Listed::Refused(Unlisted::Failed(error.to_string()))),
+    };
+    if !status.success() {
+        return send(Listed::Refused(refusal(status, &said)));
+    }
+    if let Some(error) = unread {
+        return send(Listed::Refused(Unlisted::Failed(format!(
+            "its answer did not read: {error}"
+        ))));
+    }
+    // A walk with not one page in it still says what is open, which is
+    // nothing.
+    if first {
+        send(Listed::Page {
+            rows: Vec::new(),
+            first,
+        });
+    }
+    send(Listed::Done);
 }
 
-/// Asks `gh` for the open issues of the repository `root` is in.
-fn list_issues(
-    root: &std::path::Path,
-    instead: Option<(std::path::PathBuf, Vec<String>)>,
-) -> Result<Vec<Issue>, Unlisted> {
-    let said = gh(
-        root,
-        instead,
-        &[
-            "issue",
-            "list",
-            "--state",
-            "open",
-            "--limit",
-            LIMIT,
-            "--json",
-            ISSUE_FIELDS,
-        ],
-    )?;
-    read_issues(&said)
-}
-
-/// What `gh issue list --json` printed, as issues, newest first.
-fn read_issues(said: &str) -> Result<Vec<Issue>, Unlisted> {
-    let rows: Vec<serde_json::Value> = serde_json::from_str(said)
-        .map_err(|error| Unlisted::Failed(format!("its answer did not read: {error}")))?;
+/// A page of issues as GitHub described them, newest first.
+fn read_issues(rows: &[serde_json::Value]) -> Vec<Issue> {
     let text = |row: &serde_json::Value, key: &str| {
         row.get(key)
             .and_then(serde_json::Value::as_str)
@@ -1100,7 +1281,7 @@ fn read_issues(said: &str) -> Result<Vec<Issue>, Unlisted> {
                     .map(|author| text(author, "login"))
                     .unwrap_or_default(),
                 labels: row
-                    .get("labels")
+                    .pointer("/labels/nodes")
                     .and_then(serde_json::Value::as_array)
                     .map(|labels| {
                         labels
@@ -1115,13 +1296,11 @@ fn read_issues(said: &str) -> Result<Vec<Issue>, Unlisted> {
                     .ok()
                     .map(jiff::Timestamp::as_second),
                 stamp,
-                // As `\n`, as a pull request's description is read.
-                body: text(row, "body").replace("\r\n", "\n"),
             })
         })
         .collect();
     issues.sort_by_key(|issue| std::cmp::Reverse(issue.updated));
-    Ok(issues)
+    issues
 }
 
 /// Asks `gh` what has been said about one pull request or issue since it
@@ -1133,29 +1312,19 @@ fn discussion(
 ) -> Result<Discussion, Unlisted> {
     let number = asked.number().to_string();
     let said = match asked {
-        Asked::PullRequest(_) => gh(
-            root,
-            instead,
-            &[
-                "pr",
-                "view",
-                &number,
-                "--json",
-                "comments,reviews,statusCheckRollup",
-            ],
-        )?,
+        Asked::PullRequest(_) => gh(root, instead, &["pr", "view", &number, "--json", VIEWED])?,
         Asked::Issue(_) => gh(
             root,
             instead,
-            &["issue", "view", &number, "--json", "comments"],
+            &["issue", "view", &number, "--json", ISSUE_VIEWED],
         )?,
     };
     read_discussion(&said)
 }
 
-/// What `gh pr view --json comments,reviews,statusCheckRollup` printed --
-/// or `gh issue view --json comments`, which is the same with the two
-/// lists it has nothing for left out.
+/// What `gh pr view --json` printed with [`VIEWED`] -- or `gh issue view`
+/// with [`ISSUE_VIEWED`], which is the same with what an issue has nothing
+/// for left out.
 fn read_discussion(said: &str) -> Result<Discussion, Unlisted> {
     let read: serde_json::Value = serde_json::from_str(said)
         .map_err(|error| Unlisted::Failed(format!("its answer did not read: {error}")))?;
@@ -1239,7 +1408,24 @@ fn read_discussion(said: &str) -> Result<Discussion, Unlisted> {
     );
     // Newest first: what is being looked for is what happened last.
     said.sort_by_key(|comment| std::cmp::Reverse(comment.when));
-    Ok(Discussion { checks, said })
+    let count = |key: &str| {
+        read.get(key)
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(0)
+    };
+    Ok(Discussion {
+        stamp: text(&read, "updatedAt"),
+        // As `\n`, which is what the markdown is laid out by: a
+        // description written in GitHub's own box arrives with `\r\n`, and
+        // the `\r` left on each line was drawn as a blank and hid a line
+        // ending in two spaces from the break it asks for.
+        body: text(&read, "body").replace("\r\n", "\n"),
+        additions: count("additions"),
+        deletions: count("deletions"),
+        files: count("changedFiles"),
+        checks,
+        said,
+    })
 }
 
 /// Runs `gh` with `asked`, in the repository `root` is in, and hands back
@@ -1249,6 +1435,24 @@ fn gh(
     instead: Option<(std::path::PathBuf, Vec<String>)>,
     asked: &[&str],
 ) -> Result<String, Unlisted> {
+    let output = command(root, instead, asked)?
+        .output()
+        .map_err(|error| Unlisted::Failed(error.to_string()))?;
+    if !output.status.success() {
+        return Err(refusal(
+            output.status,
+            &String::from_utf8_lossy(&output.stderr),
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// `gh` with `asked`, ready to run in the repository `root` is in.
+fn command(
+    root: &std::path::Path,
+    instead: Option<(std::path::PathBuf, Vec<String>)>,
+    asked: &[&str],
+) -> Result<std::process::Command, Unlisted> {
     let (gh, mut arguments) = match instead {
         Some(instead) => instead,
         None => (
@@ -1267,31 +1471,29 @@ fn gh(
         .env("GH_PROMPT_DISABLED", "1")
         .stdin(std::process::Stdio::null());
     obelus_program::without_a_window(&mut command);
-    let output = command
-        .output()
-        .map_err(|error| Unlisted::Failed(error.to_string()))?;
-    if !output.status.success() {
-        let said = String::from_utf8_lossy(&output.stderr);
-        // `gh` exits 4 when it needs signing in, which is the one failure
-        // with a key the reader can press about it. By the code and not by
-        // the words: a checkout whose remotes are not on GitHub at all is
-        // also told to `gh auth login`, and exits 1 -- signing in is not
-        // what that reader is missing.
-        if output.status.code() == Some(4) {
-            return Err(Unlisted::SignedOut);
-        }
-        let first = said.lines().find(|line| !line.trim().is_empty());
-        return Err(Unlisted::Failed(
-            first.unwrap_or("it gave no reason").trim().to_string(),
-        ));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    Ok(command)
 }
 
-/// What `gh pr list --json` printed, as pull requests.
-fn read(said: &str) -> Result<Vec<PullRequest>, Unlisted> {
-    let rows: Vec<serde_json::Value> = serde_json::from_str(said)
-        .map_err(|error| Unlisted::Failed(format!("its answer did not read: {error}")))?;
+/// Why `gh` ended as it did, from how it exited and what it `said` on
+/// stderr.
+fn refusal(status: std::process::ExitStatus, said: &str) -> Unlisted {
+    // `gh` exits 4 when it needs signing in, which is the one failure with
+    // a key the reader can press about it. By the code and not by the
+    // words: a checkout whose remotes are not on GitHub at all is also told
+    // to `gh auth login`, and exits 1 -- signing in is not what that reader
+    // is missing.
+    if status.code() == Some(4) {
+        return Unlisted::SignedOut;
+    }
+    let first = said.lines().find(|line| !line.trim().is_empty());
+    // `gh api` puts where it was filling `{owner}` in front of why it could
+    // not, which is about the remotes and not about a value anybody typed.
+    let first = first.map(|line| line.trim_start_matches("error parsing \"owner\" value: "));
+    Unlisted::Failed(first.unwrap_or("it gave no reason").trim().to_string())
+}
+
+/// A page of pull requests as GitHub described them, newest first.
+fn read(rows: &[serde_json::Value]) -> Vec<PullRequest> {
     let text = |row: &serde_json::Value, key: &str| {
         row.get(key)
             .and_then(serde_json::Value::as_str)
@@ -1301,11 +1503,7 @@ fn read(said: &str) -> Result<Vec<PullRequest>, Unlisted> {
     let mut pulls: Vec<PullRequest> = rows
         .iter()
         .filter_map(|row| {
-            let count = |key: &str| {
-                row.get(key)
-                    .and_then(serde_json::Value::as_u64)
-                    .unwrap_or(0)
-            };
+            let stamp = text(row, "updatedAt");
             Some(PullRequest {
                 number: row.get("number")?.as_u64()?,
                 title: text(row, "title"),
@@ -1327,35 +1525,32 @@ fn read(said: &str) -> Result<Vec<PullRequest>, Unlisted> {
                     "CHANGES_REQUESTED" => Some(Decision::ChangesRequested),
                     _ => None,
                 },
-                updated: text(row, "updatedAt")
+                updated: stamp
                     .parse::<jiff::Timestamp>()
                     .ok()
                     .map(jiff::Timestamp::as_second),
-                // As `\n`, which is what the markdown is laid out by: a
-                // description written in GitHub's own box arrives with
-                // `\r\n`, and the `\r` left on each line was drawn as a
-                // blank and hid a line ending in two spaces from the break
-                // it asks for.
-                body: text(row, "body").replace("\r\n", "\n"),
-                additions: count("additions"),
-                deletions: count("deletions"),
-                files: count("changedFiles"),
+                stamp,
             })
         })
         .collect();
     // Newest first, by when each last changed rather than by number: a pull
     // request somebody pushed to this morning is the one being looked for.
     pulls.sort_by_key(|pull| std::cmp::Reverse(pull.updated));
-    Ok(pulls)
+    pulls
 }
 
 #[cfg(test)]
 mod tests {
     use super::{Decision, read, read_issues};
 
-    /// What `gh issue list` prints reads as the issues it describes, newest
-    /// first, with their labels by name and when each was updated kept as
-    /// GitHub wrote it.
+    /// A page of rows, as the JSON GitHub sends them in.
+    fn rows(said: &str) -> Vec<serde_json::Value> {
+        serde_json::from_str(said).expect("rows")
+    }
+
+    /// A page of issues reads as the issues it describes, newest first, with
+    /// their labels by name and when each was updated kept as GitHub wrote
+    /// it.
     ///
     /// Broken deliberately two ways. Keeping the label objects' ids rather
     /// than their names leaves the labels empty. And keeping the stamp as
@@ -1364,20 +1559,19 @@ mod tests {
     #[test]
     fn what_gh_prints_reads_as_issues() {
         let said = r#"[
-            {"number":3,"title":"Older","author":{"login":"bob"},"labels":[{"id":"x","name":"bug"}],"updatedAt":"2026-10-01T00:00:00Z","body":"one\r\ntwo"},
-            {"number":5,"title":"Newer","author":{"login":"alice"},"labels":[],"updatedAt":"2026-10-08T00:00:00Z","body":""}
+            {"number":3,"title":"Older","author":{"login":"bob"},"labels":{"nodes":[{"id":"x","name":"bug"}]},"updatedAt":"2026-10-01T00:00:00Z"},
+            {"number":5,"title":"Newer","author":{"login":"alice"},"labels":{"nodes":[]},"updatedAt":"2026-10-08T00:00:00Z"}
         ]"#;
-        let issues = read_issues(said).expect("it reads");
+        let issues = read_issues(&rows(said));
         let numbers: Vec<u64> = issues.iter().map(|issue| issue.number).collect();
         assert_eq!(numbers, [5, 3], "not newest first");
         assert_eq!(issues[1].labels, ["bug"]);
         assert_eq!(issues[1].stamp, "2026-10-01T00:00:00Z");
-        assert_eq!(issues[1].body, "one\ntwo");
         assert_eq!(issues[0].author, "alice");
     }
 
-    /// What `gh` prints reads as the pull requests it describes, newest
-    /// first.
+    /// A page of pull requests reads as the pull requests it describes,
+    /// newest first.
     ///
     /// Broken deliberately by reading `headRefOid` from `headRefName`: the
     /// commit a review is told about becomes a branch name.
@@ -1387,7 +1581,7 @@ mod tests {
             {"number":7,"title":"Older","author":{"login":"bob"},"headRefName":"old","baseRefName":"master","headRefOid":"aaa","isDraft":true,"reviewDecision":"APPROVED","updatedAt":"2026-10-01T00:00:00Z"},
             {"number":9,"title":"Newer","author":{"login":"alice"},"headRefName":"new","baseRefName":"master","headRefOid":"bbb","isDraft":false,"reviewDecision":"","updatedAt":"2026-10-08T00:00:00Z"}
         ]"#;
-        let pulls = read(said).expect("it reads");
+        let pulls = read(&rows(said));
         let numbers: Vec<u64> = pulls.iter().map(|pull| pull.number).collect();
         assert_eq!(numbers, [9, 7], "not newest first");
         assert_eq!(pulls[0].sha, "bbb");
@@ -1400,30 +1594,34 @@ mod tests {
     /// A description written in GitHub's own box arrives with `\r\n`, and
     /// is read as the `\n` the markdown is laid out by.
     ///
-    /// Broken deliberately by taking the `replace` out of `read`: the `\r`
-    /// stays at the end of every line.
+    /// Broken deliberately by taking the `replace` out of `read_discussion`:
+    /// the `\r` stays at the end of every line.
     #[test]
     fn a_description_reads_with_its_lines_ended_as_markdown_ends_them() {
-        let said = r#"[{"number":1,"title":"t","author":{"login":"a"},"headRefName":"h","baseRefName":"b","headRefOid":"s","isDraft":false,"reviewDecision":"","updatedAt":"","body":"one  \r\ntwo\r\n"}]"#;
-        let pulls = read(said).expect("it reads");
-        assert_eq!(pulls[0].body, "one  \ntwo\n");
+        let said = r#"{"body":"one  \r\ntwo\r\n"}"#;
+        let discussion = super::read_discussion(said).expect("it reads");
+        assert_eq!(discussion.body, "one  \ntwo\n");
     }
 
-    /// What `gh pr view` prints reads as the checks and what was said:
-    /// a check run by its status and then its conclusion, a status from
-    /// outside Actions by its one word, comments and reviews together and
-    /// newest first, and a review that said nothing of its own left out.
+    /// What `gh pr view` prints reads as how much it changes, when it last
+    /// changed, the checks and what was said: a check run by its status and
+    /// then its conclusion, a status from outside Actions by its one word,
+    /// comments and reviews together and newest first, and a review that
+    /// said nothing of its own left out.
     ///
-    /// Broken deliberately three ways, each failing its own assertion.
+    /// Broken deliberately four ways, each failing its own assertion.
     /// Reading a check run's conclusion before its status calls one still
     /// running failed. Keeping reviews with no words of their own puts an
-    /// empty comment in the list. And sorting oldest first puts the
-    /// approval last.
+    /// empty comment in the list. Sorting oldest first puts the approval
+    /// last. And reading `changedFiles` as `files`, the name Obelus keeps
+    /// it by, counts none.
     #[test]
     fn what_gh_says_about_one_pull_request_reads_as_its_discussion() {
         use super::{Did, Stands, read_discussion};
 
         let said = r#"{
+            "updatedAt": "2026-10-04T00:00:00Z",
+            "additions": 142, "deletions": 18, "changedFiles": 12,
             "statusCheckRollup": [
                 {"__typename":"CheckRun","name":"fmt","status":"COMPLETED","conclusion":"SUCCESS"},
                 {"__typename":"CheckRun","name":"test","status":"COMPLETED","conclusion":"FAILURE"},
@@ -1440,6 +1638,15 @@ mod tests {
             ]
         }"#;
         let discussion = read_discussion(said).expect("it reads");
+        assert_eq!(
+            (
+                discussion.stamp.as_str(),
+                discussion.additions,
+                discussion.deletions,
+                discussion.files
+            ),
+            ("2026-10-04T00:00:00Z", 142, 18, 12)
+        );
         let stands: Vec<(&str, Stands)> = discussion
             .checks
             .iter()

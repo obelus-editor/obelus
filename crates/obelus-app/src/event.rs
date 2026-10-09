@@ -194,10 +194,11 @@ pub enum Event {
     },
     /// What the newest release of Obelus is called, as its tag says it.
     Released(String),
-    /// The repository's open pull requests, or why `gh` would not list them.
-    PullRequests(Result<Vec<crate::app::pulls::PullRequest>, crate::app::pulls::Unlisted>),
-    /// The repository's open issues, or why `gh` would not list them.
-    Issues(Result<Vec<crate::app::pulls::Issue>, crate::app::pulls::Unlisted>),
+    /// A page of the repository's open pull requests, or why `gh` would not
+    /// list them.
+    PullRequests(crate::app::pulls::Listed<crate::app::pulls::PullRequest>),
+    /// A page of its open issues, or why `gh` would not list them.
+    Issues(crate::app::pulls::Listed<crate::app::pulls::Issue>),
     /// What has happened on one pull request or issue, or why `gh` would
     /// not say.
     PullRequestDiscussion {
