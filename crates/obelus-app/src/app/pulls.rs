@@ -191,6 +191,7 @@ impl<T> Listing<T> {
         self.asking = false;
         match answer {
             Ok(listed) => {
+                tracing::info!(count = listed.len(), "gh listed");
                 self.listed = listed;
                 self.answered = true;
                 self.unlisted = None;
@@ -529,6 +530,16 @@ impl App {
                 false => picker.when_empty(&empty),
             }
             picker.filling(filling);
+            // What was put in and what is left showing, which are the two
+            // numbers a list that looks short is short between.
+            tracing::info!(
+                tab = picker.tab(),
+                rows = picker.row_count(),
+                showing = picker.match_count(),
+                query = %picker.query(),
+                asking,
+                "the pull requests' list filled"
+            );
         }
     }
 
