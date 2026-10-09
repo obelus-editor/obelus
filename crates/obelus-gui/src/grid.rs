@@ -1172,11 +1172,18 @@ impl Backend for Cells {
 pub(crate) struct Page {
     columns: u16,
     rows: u16,
+    /// How many columns and rows `cells` holds, which is never fewer than
+    /// are on the screen and may be more -- see `resized`.
+    kept_columns: u16,
+    kept_rows: u16,
     cells: Vec<Cell>,
     caret: Option<Position>,
     shape: Caret,
     whose: Option<Layer>,
     typing: bool,
+    /// What the page is drawn on, which is what a cell nobody has written
+    /// yet is drawn on too -- see `blank`.
+    ground: Color,
 }
 
 impl Default for Page {
@@ -1184,6 +1191,8 @@ impl Default for Page {
         Self {
             columns: 0,
             rows: 0,
+            kept_columns: 0,
+            kept_rows: 0,
             cells: Vec::new(),
             caret: None,
             // Until the application says otherwise, which it does with the
@@ -1192,6 +1201,7 @@ impl Default for Page {
             whose: None,
             // And nothing is typed into a screen with nothing on it.
             typing: false,
+            ground: Color::Reset,
         }
     }
 }
@@ -1315,29 +1325,66 @@ impl Page {
         self.typing
     }
 
-    /// Makes room for a screen this size, and empties it.
+    /// Makes room for a screen this size, keeping each cell at the place it
+    /// was, and the room it grew by on the page's own ground.
     ///
-    /// Emptied rather than kept: the cells that were here were at other
-    /// places, and a grid reshaped around them would draw the old screen
-    /// slewed. Obelus redraws the whole of it on the frame after a resize,
-    /// which is the frame this is making room for.
+    /// Kept rather than emptied, because the window draws before Obelus
+    /// has answered: a resize asks for a frame at once, and the screen the
+    /// application sends for the new size is a channel and a layout away.
+    /// An emptied page drawn in that gap is every cell in the reset
+    /// colour, which is near black -- a flash on every resize, and one
+    /// after another while a corner is dragged. The old cells at their
+    /// old places are what a terminal shows in the same gap; and they are
+    /// moved row by row rather than reshaped as one run, which would draw
+    /// the old screen slewed. The frame Obelus sends at a new size clears
+    /// the page first, so nothing kept here outlives it.
     ///
-    /// Only when the size really did change, which is the whole of what is
-    /// asked here. Measuring happens for reasons that are not a resize --
-    /// another font, another size of it -- and those leave the grid the
-    /// same shape: the application has nothing new to say, so it sends no
-    /// cells, and a page emptied on the way past is a window that goes
-    /// blank until the reader presses something. What it needs instead is
-    /// exactly what happens: the same cells, drawn again in the new face.
+    /// And what a smaller screen has no room for is kept too, out of
+    /// sight. The window can go one size and come back before Obelus draws
+    /// at all -- a reader's wiggle of the corner, the text a size bigger
+    /// and back -- and then Obelus never saw a new size, so it neither
+    /// clears nor says again what it believes is still there: the cells a
+    /// shrink threw away stayed blank until something else changed them.
     pub(crate) fn resized(&mut self, columns: u16, rows: u16) {
-        if self.columns == columns && self.rows == rows {
-            return;
-        }
         self.columns = columns;
         self.rows = rows;
-        self.cells.clear();
-        self.cells
-            .resize_with(usize::from(columns) * usize::from(rows), Cell::default);
+        if columns <= self.kept_columns && rows <= self.kept_rows {
+            return;
+        }
+        let (wide, tall) = (columns.max(self.kept_columns), rows.max(self.kept_rows));
+        let mut cells = vec![self.blank(); usize::from(wide) * usize::from(tall)];
+        for y in 0..self.kept_rows {
+            for x in 0..self.kept_columns {
+                cells[usize::from(y) * usize::from(wide) + usize::from(x)] = std::mem::take(
+                    &mut self.cells
+                        [usize::from(y) * usize::from(self.kept_columns) + usize::from(x)],
+                );
+            }
+        }
+        self.kept_columns = wide;
+        self.kept_rows = tall;
+        self.cells = cells;
+    }
+
+    /// Says what the page is drawn on.
+    pub(crate) const fn drawn_on(&mut self, ground: Color) {
+        self.ground = ground;
+    }
+
+    /// A cell nobody has written: a space on the page's ground.
+    ///
+    /// Not `Cell::default()`, whose background is the reset colour and is
+    /// drawn near black. A frame that clears the page writes back only the
+    /// cells it has room for, and while a corner is dragged it has room
+    /// for less than the window already does: the rest was a black strip
+    /// down the growing edge on every frame of the drag. `ratatui` holds a
+    /// reset cell where this holds a blank, and Obelus paints its own
+    /// background over every cell it draws, so the two only differ where
+    /// nothing has been drawn.
+    fn blank(&self) -> Cell {
+        let mut blank = Cell::default();
+        blank.set_bg(self.ground);
+        blank
     }
 
     /// Blanks the cells a full-width character at this place covers.
@@ -1385,8 +1432,9 @@ impl Page {
                 false
             }
             Update::Cleared => {
+                let blank = self.blank();
                 for cell in &mut self.cells {
-                    *cell = Cell::default();
+                    *cell = blank.clone();
                 }
                 false
             }
@@ -1489,7 +1537,7 @@ impl Page {
     /// Where a cell is in the list, or nothing when it is off the grid.
     fn at(&self, x: u16, y: u16) -> Option<usize> {
         (x < self.columns && y < self.rows)
-            .then(|| usize::from(y) * usize::from(self.columns) + usize::from(x))
+            .then(|| usize::from(y) * usize::from(self.kept_columns) + usize::from(x))
     }
 }
 
@@ -1542,6 +1590,111 @@ mod tests {
             }
         }
         page
+    }
+
+    /// A resize keeps every cell at the place it was until Obelus's own
+    /// frame for the new size arrives, and the room it grew by is the
+    /// page's ground rather than the reset colour.
+    ///
+    /// Deliberate breaks: emptying the cells, as `resized` once did, leaves
+    /// `a` gone and the page drawn near black until the next frame; one
+    /// `resize_with` over the old run without emptying it puts `c` on the
+    /// first row, because it was the third cell; and `Cell::default()` for
+    /// the new room leaves its background `Reset`.
+    #[test]
+    fn a_resize_keeps_the_cells_where_they_were() {
+        let ground = Color::Rgb(1, 2, 3);
+        let mut page = written(&["ab", "cd"]);
+        page.drawn_on(ground);
+        page.resized(3, 3);
+        assert_eq!(page.look(0, 0).text, "a");
+        assert_eq!(page.look(1, 0).text, "b");
+        assert_eq!(page.look(0, 1).text, "c");
+        assert_eq!(page.look(1, 1).text, "d");
+        for (x, y) in [(2, 0), (2, 1), (0, 2), (2, 2)] {
+            assert_eq!(page.look(x, y).text, " ");
+            assert_eq!(page.look(x, y).background, ground);
+        }
+        page.resized(1, 2);
+        assert_eq!(page.look(0, 0).text, "a");
+        assert_eq!(page.look(0, 1).text, "c");
+    }
+
+    /// A window that goes smaller and back before Obelus draws has every
+    /// cell it had, because Obelus saw no new size and says nothing again.
+    ///
+    /// Deliberate break: dropping what is off the screen on a shrink, as
+    /// the first version of keeping the cells did -- `cd` comes back blank.
+    #[test]
+    fn a_page_made_smaller_and_back_has_what_it_had() {
+        let mut page = written(&["abcd"]);
+        page.resized(2, 1);
+        assert_eq!(page.look(2, 0).text, " ");
+        page.resized(4, 1);
+        assert_eq!(page.look(2, 0).text, "c");
+        assert_eq!(page.look(3, 0).text, "d");
+    }
+
+    /// The first frame `ratatui` draws at a new size takes away every cell
+    /// the page kept from the old one, including those it has nothing to
+    /// say about.
+    ///
+    /// What keeping the cells across a resize stands on: `ratatui` diffs
+    /// against the last frame, so a cell it leaves blank at the new size
+    /// is sent only if it clears first. Deliberate break: `Cells::clear`
+    /// returning `Ok(())` without sending `Cleared` -- `bcd` is then still
+    /// on the page after a frame that drew only `x`.
+    #[test]
+    fn the_first_frame_at_a_new_size_takes_the_kept_cells_away() {
+        let (updates, frames) = std::sync::mpsc::channel();
+        let measured = Arc::new(Measured::default());
+        measured.resized(4, 1, 40, 10);
+        let cells = Cells::new(updates, Arc::new(|| {}), Arc::clone(&measured));
+        let mut terminal = ratatui::Terminal::new(cells).expect("a terminal");
+        let mut page = Page::default();
+        page.resized(4, 1);
+        let draw = |terminal: &mut ratatui::Terminal<Cells>, said: &'static str| {
+            terminal
+                .draw(|frame| {
+                    frame
+                        .buffer_mut()
+                        .set_string(0, 0, said, ratatui::style::Style::new());
+                })
+                .expect("a frame");
+        };
+        draw(&mut terminal, "abcd");
+        while let Ok(update) = frames.try_recv() {
+            page.apply(update);
+        }
+        assert_eq!(page.look(1, 0).text, "b");
+        measured.resized(6, 1, 60, 10);
+        page.resized(6, 1);
+        draw(&mut terminal, "x");
+        while let Ok(update) = frames.try_recv() {
+            page.apply(update);
+        }
+        assert_eq!(page.look(0, 0).text, "x");
+        for x in 1..6 {
+            assert_eq!(page.look(x, 0).text, " ", "column {x}");
+        }
+    }
+
+    /// A page cleared is cleared onto its ground, so the cells a frame
+    /// does not write back are not drawn near black.
+    ///
+    /// Deliberate break: `Cell::default()` in the `Cleared` arm of
+    /// `apply`, as it was. Both cells are then `Reset`, which is the strip
+    /// down the growing edge of a window being dragged bigger.
+    #[test]
+    fn a_page_is_cleared_onto_its_ground() {
+        let ground = Color::Rgb(1, 2, 3);
+        let mut page = written(&["ab"]);
+        page.drawn_on(ground);
+        page.apply(Update::Cleared);
+        for x in 0..2 {
+            assert_eq!(page.look(x, 0).text, " ");
+            assert_eq!(page.look(x, 0).background, ground);
+        }
     }
 
     /// A rule is a line only where its cells still say `─`, and a tee

@@ -981,6 +981,7 @@ impl ApplicationHandler<Waking> for Showing {
                                 crate::title::follow(window, ground);
                             }
                             self.ground = ground;
+                            self.page.drawn_on(ground);
                         }
                         Update::Holding { held, row } => self.holding = (held, row),
                         Update::Mark {
