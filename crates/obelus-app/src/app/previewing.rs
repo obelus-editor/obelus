@@ -67,11 +67,12 @@ impl App {
     /// reader's place in it is theirs. `refresh_preview` lays them out on
     /// the next frame and keeps the scroll within them.
     pub(super) fn lay_the_preview_out_again(&mut self, number: u64) {
-        if let Some(preview) = self
-            .preview
-            .as_mut()
-            .filter(|preview| preview.subject == Subject::PullRequest(number))
-        {
+        // Either kind: GitHub numbers pull requests and issues from one
+        // count, so a number names one of them and not both.
+        if let Some(preview) = self.preview.as_mut().filter(|preview| {
+            preview.subject == Subject::PullRequest(number)
+                || preview.subject == Subject::Issue(number)
+        }) {
             preview.reading = None;
         }
     }

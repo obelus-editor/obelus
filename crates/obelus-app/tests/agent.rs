@@ -15107,10 +15107,12 @@ fn one_issue(stamp: &str) -> String {
 /// issue with the reader's first message -- and once the issue has been
 /// commented on, offers a second look and says since when.
 ///
-/// Broken deliberately five ways, each failing here. Not filling the list
+/// Broken deliberately six ways, each failing here. Not filling the list
 /// again when the tab moves leaves the pull requests' rows under the issues'
 /// tab. Asking for checks on an issue puts a part on its preview that an
-/// issue cannot have. Answering `None` for an issue in `about_the_topic`
+/// issue cannot have. Laying out again only a pull request's preview when
+/// what was said arrives, as this first did, leaves an issue's saying it is
+/// still asking. Answering `None` for an issue in `about_the_topic`
 /// sends the message with nothing about the issue in it. Offering nothing in
 /// `what_the_box_offers` leaves the box empty. And calling a stamp that
 /// differs from the one told "the same" never offers the second look.
@@ -15121,6 +15123,11 @@ fn an_issue_is_answered_on_the_readers_word() {
     std::fs::write(&answer, one_pull_request("abc123")).expect("the pull requests");
     let issues = scratch.path().join("gh-answer.json.issues");
     std::fs::write(&issues, one_issue("2026-10-08T00:00:00Z")).expect("the issues");
+    std::fs::write(
+        scratch.path().join("gh-answer.json.view.348"),
+        r#"{"comments":[{"author":{"login":"erin"},"createdAt":"2026-10-08T01:00:00Z","body":"Me too."}]}"#,
+    )
+    .expect("what was said on it");
     let (mut app, events) = with_a_fake_gh(&scratch, &answer);
     app.talk_to(
         "fake",
@@ -15154,14 +15161,28 @@ fn an_issue_is_answered_on_the_readers_word() {
         "the issues' tab shows {:?}",
         first(&app)
     );
-    support::lay_out(&mut app, WIDTH, 40);
-    let dump = support::render(&mut app, WIDTH, 40);
-    let text = support::text_block(&dump).to_string();
+    // A frame after every event until what was said on it is under the
+    // list: asking is the preview's, and a preview is made as a frame is.
+    let deadline = Instant::now() + patience();
+    let text = loop {
+        support::lay_out(&mut app, WIDTH, 40);
+        let dump = support::render(&mut app, WIDTH, 40);
+        let text = support::text_block(&dump).to_string();
+        if text.contains("Me too.") {
+            break text;
+        }
+        let left = deadline.saturating_duration_since(Instant::now());
+        match events.recv_timeout(left) {
+            Ok(event) => app.handle(event),
+            Err(_) => panic!("what was said on the issue never came under it:\n{text}"),
+        }
+    };
     for said in [
         "#348 Translate a message I cannot read",
         "dragosol",
         "enhancement",
         "It would help.",
+        "erin  commented",
     ] {
         assert!(
             text.contains(said),
