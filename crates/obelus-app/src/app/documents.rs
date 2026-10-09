@@ -38,7 +38,6 @@ impl App {
             }),
             icon: obelus_icons::enabled().then(|| obelus_icons::for_path(buffer.path())),
             label: relative(buffer.path(), root),
-            detail: None,
             // Which commit, for a buffer read from one. Two buffers can
             // wear a path -- the file, and the file as some commit had
             // it -- and without this they are two rows a reader has no
@@ -47,12 +46,20 @@ impl App {
             // margin beside them means. The short id and no more: the
             // status row marks the same fact in the same words, so a
             // reader who has seen one has read the other.
-            trailing: buffer.content().short(),
+            version: buffer.content().short(),
+            detail: None,
+            trailing: None,
             changed: None,
             value: PickerValue::Document(DocumentId::new(index)),
             enabled: true,
             colours: None,
-            status: statuses.get(buffer.path()).map(|standing| standing.status),
+            // What git says of the file on disk, which a commit's version
+            // is not: its row coloured as modified said that commit had
+            // changes nobody had committed.
+            status: statuses
+                .get(buffer.path())
+                .filter(|_| buffer.content().is_file())
+                .map(|standing| standing.status),
             depth: 0,
             opens: None,
             kind: None,
@@ -189,9 +196,9 @@ impl App {
             // The note it is about, under the name the agent gave it. Two
             // facts that are both worth having: what the reader meant to do,
             // and what came of it.
+            version: None,
             detail: titled.and(about),
-            // Whose conversation it is. The same slot a commit's short id
-            // uses, for the same reason: two rows that differ in who is
+            // Whose conversation it is: two rows that differ in who is
             // answering are two rows a reader cannot otherwise tell apart.
             trailing: self.whose_conversation(),
             changed: None,
@@ -290,6 +297,7 @@ impl App {
             // How many are still to come back to, where a changed file puts
             // how much it moved: it is the one number about this row that
             // says whether it is worth opening.
+            version: None,
             detail: None,
             trailing: (left > 0).then(|| left.to_string()),
             changed: None,
@@ -556,6 +564,7 @@ impl App {
                 marker: None,
                 icon: obelus_icons::enabled().then(|| obelus_icons::for_path(path)),
                 label: path.display().to_string(),
+                version: None,
                 detail: None,
                 trailing: None,
                 changed: None,
@@ -622,6 +631,7 @@ impl App {
                 // is one nobody presses twice.
                 opens: (entry.directory && entry.holds).then_some(open),
                 label: name,
+                version: None,
                 detail: None,
                 trailing: None,
                 changed: None,
@@ -822,6 +832,7 @@ impl App {
                         // moved, and what it is, where it is not a file.
                         // The same arrow the history uses for the same
                         // fact, pointing back at the name it had.
+                        version: None,
                         detail: match (&standing.was, standing.submodule) {
                             (Some(was), _) => Some(format!("\u{2190} {}", was.display())),
                             (None, true) => Some("submodule".to_string()),

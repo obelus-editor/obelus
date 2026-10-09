@@ -651,6 +651,7 @@ impl App {
                     marker: mark_of(rung),
                     opens: opens_of(rung),
                     label: called.name.clone(),
+                    version: None,
                     detail: None,
                     trailing: Some(self.where_called(called)),
                     changed: None,

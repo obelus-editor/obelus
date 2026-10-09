@@ -1059,7 +1059,16 @@ impl PickerView<'_> {
         // ran out of row, which a reader cannot tell from a sentence that
         // ends there: a commit subject stopping mid-word reads as a subject
         // whose author stopped mid-word.
-        let room = usize::from(limit.saturating_sub(column));
+        //
+        // A version's room is taken first, as the trailing's is: a path cut
+        // short still says which commit it is, where one run long would
+        // have run over the only word telling it from the file on disk.
+        let version = item.version.as_deref().unwrap_or_default();
+        let versioned = match version.is_empty() {
+            true => 0,
+            false => text_width(version) + 2,
+        };
+        let room = usize::from(limit.saturating_sub(column)).saturating_sub(versioned);
         let label_at = column;
         let total = item.label.chars().count();
         let (dropped, elided) = match item.prose {
@@ -1111,6 +1120,20 @@ impl PickerView<'_> {
         // what it says. The same reason the one in front of a path is.
         if elided > 0 {
             column = at(cells, inner, column, y, "\u{2026}", style, &Marked::plain());
+        }
+        // Beside the name and in the colour the status row writes it in,
+        // after the same path: what is on screen is not simply the file at
+        // this path, which is the one thing a reader must not walk past.
+        if !version.is_empty() {
+            column = at(
+                cells,
+                inner,
+                column.saturating_add(2),
+                y,
+                version,
+                style.fg(self.theme.status_stale),
+                &Marked::plain(),
+            );
         }
 
         let dim = style.fg(self.theme.gutter);

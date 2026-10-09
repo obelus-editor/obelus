@@ -340,6 +340,20 @@ pub struct PickerItem {
     pub icon: Option<char>,
     /// Shown, and matched against the query.
     pub label: String,
+    /// Which version of the thing the label names, where it is not the one
+    /// on disk: right after the label, in the colour the status row marks
+    /// the same fact in, beside the same path.
+    ///
+    /// It was `trailing` once, at the far end of the row in the gutter's
+    /// grey -- and two rows of one path, the file and a commit's version
+    /// of it, read as the same file twice, with the one word that told them
+    /// apart as far from the name as the row could put it. Its room comes
+    /// out of the label's before the label is cut, so a long path cannot
+    /// push it off.
+    ///
+    /// Not matched, like the detail. Drawn on a row of one line only: a list
+    /// whose rows wrap is a list of sentences, and this is said of a name.
+    pub version: Option<String>,
     /// Shown dimmed after the label. Not matched: a command's description is
     /// there to be read once, not to be searched.
     pub detail: Option<String>,
@@ -1030,6 +1044,7 @@ impl Picker {
             // decorations standing in for three different meanings.
             icon: None,
             label,
+            version: None,
             detail: about,
             trailing: None,
             changed: None,
@@ -3140,6 +3155,7 @@ mod tests {
             marker: None,
             icon: None,
             label: label.to_string(),
+            version: None,
             detail: None,
             trailing: None,
             changed: None,
@@ -3173,6 +3189,7 @@ mod tests {
                 marker: None,
                 icon: None,
                 label: name.to_string(),
+                version: None,
                 detail: None,
                 trailing: None,
                 changed: None,

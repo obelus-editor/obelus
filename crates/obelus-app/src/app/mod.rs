@@ -3274,6 +3274,7 @@ impl App {
                             marker: None,
                             icon: Some(obelus_icons::for_path(&path)),
                             label: path.display().to_string(),
+                            version: None,
                             detail: None,
                             trailing: None,
                             changed: None,
