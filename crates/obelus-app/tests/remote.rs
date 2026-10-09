@@ -4010,3 +4010,139 @@ fn of_the_windows_left_one_takes_the_chat_up() {
         "two windows hold the chat"
     );
 }
+
+/// Cancel on a card of a window heard through the one with the chat goes to
+/// that window, under the number it asked with: the agent there hears the
+/// question declined, and the card is closed saying so.
+///
+/// Broken deliberately by passing a cancel through as it came: the window
+/// with the chat took it for one of its own, found nothing, and the agent
+/// in the other window went on waiting.
+#[test]
+fn a_cancel_goes_to_the_window_whose_question_it_is() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-relayed-cancel");
+    let ((mut first, firsts), (mut second, seconds)) = the_first_with_the_chat(&scratch);
+    both_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the second to say where it is",
+        |first, _| first.windows_placed_for_test() == 1,
+    );
+    let _ = the_platform().send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        text: "/ask".to_string(),
+    });
+    let said = both_said_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the card asking which project",
+        |said| !asks_in(said, "F1").is_empty(),
+    );
+    let (which, question) = asks_in(&said, "F1").remove(0);
+    let two = question
+        .choices
+        .iter()
+        .find(|(_, name)| name == "two")
+        .map(|(id, _)| id.clone())
+        .expect("two offered");
+    let _ = the_platform().send(pressed(which, &two));
+    let said = both_said_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the agent's question in the thread",
+        |said| !asks_in(said, "F1").is_empty(),
+    );
+    let how = asks_in(&said, "F1")[0].0;
+    let _ = the_platform().send(obelus_remote::Event::Cancelled {
+        from: "U1".to_string(),
+        asked: how,
+    });
+    let said = both_said_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the question given up on",
+        |said| in_thread(said, "F1", "you would not say"),
+    );
+    assert!(
+        said.iter().any(|out| matches!(
+            out,
+            obelus_remote::model::Out::Settle { asked, said, .. }
+                if *asked == how && said.contains("Not answered")
+        )),
+        "the card was not closed: {said:#?}"
+    );
+}
+
+/// Cancel on the card asking which project closes it, and begins no
+/// conversation anywhere.
+///
+/// Broken deliberately by taking the cancel as this window's own: nothing
+/// closed the card.
+#[test]
+fn cancel_on_which_project_begins_nothing() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-which-cancel");
+    let ((mut first, firsts), (mut second, seconds)) = the_first_with_the_chat(&scratch);
+    both_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the second to say where it is",
+        |first, _| first.windows_placed_for_test() == 1,
+    );
+    let _ = the_platform().send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        text: "what is in here".to_string(),
+    });
+    let said = both_said_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the card asking which project",
+        |said| !asks_in(said, "F1").is_empty(),
+    );
+    let which = asks_in(&said, "F1")[0].0;
+    let _ = the_platform().send(obelus_remote::Event::Cancelled {
+        from: "U1".to_string(),
+        asked: which,
+    });
+    both_said_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the card closed",
+        |said| {
+            said.iter().any(|out| {
+                matches!(
+                    out,
+                    obelus_remote::model::Out::Settle { asked, said, .. }
+                        if *asked == which && said.contains("Not answered")
+                )
+            })
+        },
+    );
+    for log in ["one.log", "two.log"] {
+        assert!(
+            !std::fs::read_to_string(scratch.join(log))
+                .unwrap_or_default()
+                .contains("what is in here"),
+            "a conversation began in {log}"
+        );
+    }
+}

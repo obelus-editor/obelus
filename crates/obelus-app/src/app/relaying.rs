@@ -439,6 +439,31 @@ impl App {
                     }),
                 }
             }
+            E::Cancelled { from, asked } => {
+                if !self.on_the_list(&from) {
+                    return None;
+                }
+                match self.relaying.numbers.asked(asked)? {
+                    (Asker::Window(window), theirs) => {
+                        self.to_the_window(
+                            window,
+                            Down::Cancelled {
+                                from,
+                                asked: theirs,
+                            },
+                        );
+                        None
+                    }
+                    (Asker::Routing, theirs) => {
+                        self.gave_up_on_where(theirs);
+                        None
+                    }
+                    (Asker::Here, theirs) => Some(E::Cancelled {
+                        from,
+                        asked: theirs,
+                    }),
+                }
+            }
             event => Some(event),
         }
     }
@@ -646,6 +671,32 @@ impl App {
                 notify: false,
             });
             self.route_fresh(&from, &room, &thread, &text);
+        }
+    }
+
+    /// The reader gave up on saying which project a thread they began is
+    /// for: the card closed saying so, and no conversation begun.
+    fn gave_up_on_where(&mut self, asked: u64) {
+        let Some(thread) = self
+            .relaying
+            .choosing
+            .iter()
+            .find(|(_, choosing)| choosing.asked == asked)
+            .map(|(thread, _)| thread.clone())
+        else {
+            return;
+        };
+        if let Some(Choosing { room, from, .. }) = self.relaying.choosing.remove(&thread) {
+            self.send_to_the_platform(
+                Asker::Routing,
+                Out::Settle {
+                    room,
+                    thread,
+                    to: from,
+                    asked,
+                    said: "\u{2716} Not answered".to_string(),
+                },
+            );
         }
     }
 

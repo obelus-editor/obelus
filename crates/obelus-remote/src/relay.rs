@@ -177,6 +177,13 @@ pub enum Down {
         /// What they wrote.
         words: Option<String>,
     },
+    /// Somebody gave up on a question of this window's on its card.
+    Cancelled {
+        /// Their id.
+        from: String,
+        /// The number this window asked with.
+        asked: u64,
+    },
     /// The group the threads are in, as the relay has it: paired in there,
     /// perhaps while this window was already joined.
     Room(String),
@@ -225,6 +232,7 @@ impl Down {
                 chosen,
                 words,
             },
+            Self::Cancelled { from, asked } => Event::Cancelled { from, asked },
             Self::Room(room) => Event::Room(room),
             Self::Over(over) => Event::Left(over),
         }
