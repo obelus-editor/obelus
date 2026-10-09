@@ -15258,6 +15258,57 @@ fn an_issue_is_answered_on_the_readers_word() {
     });
 }
 
+/// Every title in the list starts in one column, whatever the width of the
+/// number in front of it.
+///
+/// Broken deliberately twice, by writing the number at its own width in
+/// each kind of row: `#8`'s title then starts two columns before `#348`'s,
+/// and `#9`'s before `#123`'s.
+#[test]
+fn the_titles_start_in_one_column() {
+    let scratch = support::Scratch::new("agent-issue-numbers-aligned");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(
+        &answer,
+        r#"[{"number":123,"title":"Longer","author":{"login":"a"},"headRefName":"h","baseRefName":"b","headRefOid":"s","isDraft":false,"reviewDecision":"","updatedAt":"2026-10-08T00:00:00Z","body":"","additions":1,"deletions":1,"changedFiles":1},
+            {"number":9,"title":"Shorter","author":{"login":"a"},"headRefName":"h","baseRefName":"b","headRefOid":"s","isDraft":false,"reviewDecision":"","updatedAt":"2026-10-07T00:00:00Z","body":"","additions":1,"deletions":1,"changedFiles":1}]"#,
+    )
+    .expect("the pull requests");
+    std::fs::write(
+        scratch.path().join("gh-answer.json.issues"),
+        r#"[{"number":348,"title":"Wider","author":{"login":"a"},"labels":[],"updatedAt":"2026-10-08T00:00:00Z","body":""},
+            {"number":8,"title":"Narrower","author":{"login":"a"},"labels":[],"updatedAt":"2026-10-07T00:00:00Z","body":""}]"#,
+    )
+    .expect("the issues");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    let column = |text: &str, title: &str| {
+        text.lines()
+            .find_map(|row| row.find(title).map(|at| row[..at].chars().count()))
+            .unwrap_or_else(|| panic!("{title:?} is not on screen:\n{text}"))
+    };
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the pull requests", |app| {
+        answered_with(app, 2)
+    });
+    let text = screen(&mut app);
+    assert_eq!(
+        column(&text, "Shorter"),
+        column(&text, "Longer"),
+        "the pull requests' titles start in two columns:\n{text}"
+    );
+
+    support::press(&mut app, KeyCode::Tab);
+    pump(&mut app, &events, "the issues", |app| answered_with(app, 2));
+    let text = screen(&mut app);
+    assert_eq!(
+        column(&text, "Narrower"),
+        column(&text, "Wider"),
+        "the issues' titles start in two columns:\n{text}"
+    );
+}
+
 /// A query that matches none of the pull requests says so, and does not say
 /// that none are open.
 ///

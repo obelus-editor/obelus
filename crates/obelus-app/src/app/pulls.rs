@@ -482,13 +482,16 @@ impl App {
             match self.showing_issues() {
                 true => (
                     match self.pulls.issues.answered {
-                        true => self
-                            .pulls
-                            .issues
-                            .listed
-                            .iter()
-                            .map(|issue| self.issue_row(issue, now))
-                            .collect(),
+                        true => {
+                            let numbered =
+                                widest(self.pulls.issues.listed.iter().map(|issue| issue.number));
+                            self.pulls
+                                .issues
+                                .listed
+                                .iter()
+                                .map(|issue| self.issue_row(issue, numbered, now))
+                                .collect()
+                        }
                         false => Vec::new(),
                     },
                     self.pulls.issues.empty("No issue is open"),
@@ -496,13 +499,16 @@ impl App {
                 ),
                 false => (
                     match self.pulls.pulls.answered {
-                        true => self
-                            .pulls
-                            .pulls
-                            .listed
-                            .iter()
-                            .map(|pull| self.pull_request_row(pull, now))
-                            .collect(),
+                        true => {
+                            let numbered =
+                                widest(self.pulls.pulls.listed.iter().map(|pull| pull.number));
+                            self.pulls
+                                .pulls
+                                .listed
+                                .iter()
+                                .map(|pull| self.pull_request_row(pull, numbered, now))
+                                .collect()
+                        }
                         false => Vec::new(),
                     },
                     self.pulls.pulls.empty("No pull request is open"),
@@ -543,8 +549,14 @@ impl App {
         }
     }
 
-    /// One pull request as a row of the list.
-    fn pull_request_row(&self, pull: &PullRequest, now: std::time::SystemTime) -> PickerItem {
+    /// One pull request as a row of the list, its number as wide as the
+    /// widest the list has.
+    fn pull_request_row(
+        &self,
+        pull: &PullRequest,
+        numbered: usize,
+        now: std::time::SystemTime,
+    ) -> PickerItem {
         let Said {
             marker,
             enabled,
@@ -556,7 +568,11 @@ impl App {
         // side of the row could be read and not typed. Quieter than the
         // title, in the colour a comment is -- it says which, and the title
         // says what.
-        let number = format!("#{}", pull.number);
+        //
+        // And as wide as the widest, set to the right, so every title starts
+        // in one column: a ragged edge reads as rows missing words, and a
+        // reader running down the titles has to find each one's start.
+        let number = format!("{:>numbered$}", format!("#{}", pull.number));
         let quiet = u16::try_from(number.chars().count()).unwrap_or(u16::MAX);
         PickerItem {
             // A sentence, which loses its end where it has to lose anything.
@@ -618,13 +634,13 @@ impl App {
 
     /// One issue as a row of the list: a pull request's row, with what it
     /// has been labelled where a pull request says it is a draft.
-    fn issue_row(&self, issue: &Issue, now: std::time::SystemTime) -> PickerItem {
+    fn issue_row(&self, issue: &Issue, numbered: usize, now: std::time::SystemTime) -> PickerItem {
         let Said {
             marker,
             enabled,
             trailing,
         } = self.what_an_issue_row_says(issue, now);
-        let number = format!("#{}", issue.number);
+        let number = format!("{:>numbered$}", format!("#{}", issue.number));
         let quiet = u16::try_from(number.chars().count()).unwrap_or(u16::MAX);
         PickerItem {
             prose: true,
@@ -945,6 +961,15 @@ impl App {
     pub fn gh_for_test(&mut self, program: std::path::PathBuf, first: Vec<String>) {
         self.pulls.instead = Some((program, first));
     }
+}
+
+/// How wide the widest `#number` of a list is, which every row's number is
+/// set to.
+fn widest(numbers: impl Iterator<Item = u64>) -> usize {
+    numbers
+        .map(|number| format!("#{number}").len())
+        .max()
+        .unwrap_or(0)
 }
 
 /// How a pull request's checks stand, as rows: a count of each kind on one
