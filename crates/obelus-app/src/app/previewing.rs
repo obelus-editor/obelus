@@ -78,11 +78,18 @@ impl App {
     }
 
     /// Whether the preview is showing a mark that turns.
+    ///
+    /// From what `gh` has said, and not from the rows: the frame asks this
+    /// before the preview is laid out, and rows let go of because the other
+    /// tab's list landed are rows that said nothing turns -- so the clock
+    /// stopped, with the mark on screen waiting for it.
     pub(super) fn preview_turns(&self) -> bool {
-        self.preview
-            .as_ref()
-            .and_then(|preview| preview.reading.as_ref())
-            .is_some_and(|laid| laid.turning.is_some())
+        match self.preview.as_ref().map(Preview::subject) {
+            Some(Subject::PullRequest(number) | Subject::Issue(number)) => {
+                self.still_asking_about(*number)
+            }
+            _ => false,
+        }
     }
 
     /// Wears whatever theme the picker's selection names.
