@@ -835,6 +835,12 @@ impl App {
         self.what_has_happened_since(rows, number, false, width)
     }
 
+    /// Whether `gh` has yet to say anything about a pull request or an
+    /// issue, which is when its reading ends in a line that waits.
+    pub(super) fn still_asking_about(&self, number: u64) -> bool {
+        !self.pulls.discussions.contains_key(&number) && !self.pulls.refused.contains_key(&number)
+    }
+
     /// The parts of a reading after the description: how the checks stand
     /// where there are any to ask about, and what has been said -- each
     /// after a rule, the way markdown's `---` is drawn, because they are

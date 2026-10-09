@@ -14728,6 +14728,53 @@ fn the_selected_pull_request_shows_its_checks_and_what_was_said() {
     }
 }
 
+/// The mark in front of the line that waits keeps turning when the other
+/// tab's list lands first.
+///
+/// Both lists are asked for as the view opens, and either may come back
+/// second. One that lands while a pull request is being asked about lays
+/// its preview out again, and the frame used to ask whether anything turns
+/// before the preview was laid out: the clock stopped, and the mark stood
+/// still until `gh` answered. On an arm runner, the issues arriving after
+/// the pull requests failed the test above this way. Broken deliberately
+/// by asking the laid-out rows again in `preview_turns`, which fails here.
+#[test]
+fn the_waiting_mark_turns_through_the_other_list_landing() {
+    let scratch = support::Scratch::new("agent-pull-request-other-list");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, described("abc123", "Short.")).expect("the answer");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+    // A file under the list, because with nothing open the welcome screen's
+    // own sheen keeps the screen awake whatever the preview is doing.
+    let file = scratch.path().join("read.txt");
+    std::fs::write(&file, "something to read\n").expect("a file");
+    app.open_for_test(&file);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| answered_with(app, 1));
+    // Nothing more is taken from the channel, so `gh`'s word on the pull
+    // request is still on its way however quickly it came back.
+    assert!(
+        screen(&mut app).contains("Asking GitHub for its checks and comments"),
+        "nothing says it is being asked"
+    );
+    assert!(app.is_waking(), "the mark is drawn and nothing turns it");
+
+    // One frame, as the loop draws one after an event, and asked before
+    // another: a second frame puts the clock back, which is the frame a
+    // stopped clock never draws.
+    app.handle(Event::Issues(Ok(Vec::new())));
+    support::lay_out(&mut app, WIDTH, HEIGHT);
+    assert!(
+        app.is_waking(),
+        "the issues landing stopped the mark in front of the line that waits"
+    );
+    assert!(
+        screen(&mut app).contains("Asking GitHub for its checks and comments"),
+        "the line that waits went"
+    );
+}
+
 /// A row walked onto while another's discussion is on its way is asked
 /// about once that answer lands, and shows what was said on it.
 ///
