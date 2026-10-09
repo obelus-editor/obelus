@@ -1979,6 +1979,64 @@ fn a_form_is_answered_on_its_cards_in_its_own_conversation() {
     );
 }
 
+/// Cancel on a card gives up on the whole question, as escape does on the
+/// card here: the agent hears it declined, and the card is closed saying
+/// so -- for the reader on the list and nobody else.
+///
+/// Broken deliberately three ways. Taking the cancel as an answer of
+/// nothing: the form would not take it, said why, and the agent waited.
+/// Not closing the card: no `Settle` came. And taking a cancel from
+/// anybody: the stranger's gave up on it.
+#[test]
+fn cancel_on_a_card_gives_up_on_the_question() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-cancel-card");
+    let (mut app, events, _log) = paired_with_an_agent(&scratch);
+    let platform = the_platform();
+    let _ = platform.send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        text: "/ask".to_string(),
+    });
+    let said = said_until(&mut app, &events, "how", |said| {
+        asks_in(said, "F1").len() == 1
+    });
+    let how = asks_in(&said, "F1")[0].0;
+    let cancel = |from: &str| obelus_remote::Event::Cancelled {
+        from: from.to_string(),
+        asked: how,
+    };
+
+    let _ = platform.send(cancel("U9STRANGER"));
+    let mut said = Vec::new();
+    let until = std::time::Instant::now() + std::time::Duration::from_millis(500);
+    while std::time::Instant::now() < until {
+        if let Ok(event) = events.recv_timeout(std::time::Duration::from_millis(50)) {
+            app.handle(event);
+        }
+        support::lay_out(&mut app, 76, 24);
+        said.extend(said_since());
+    }
+    assert!(
+        !in_thread(&said, "F1", "you would not say") && app.asking_in_thread_for_test("F1"),
+        "a stranger's cancel gave up on it: {said:#?}"
+    );
+
+    let _ = platform.send(cancel("U1"));
+    let said = said_until(&mut app, &events, "the question given up on", |said| {
+        in_thread(said, "F1", "you would not say")
+    });
+    assert!(
+        said.iter().any(|out| matches!(
+            out,
+            obelus_remote::model::Out::Settle { asked, said, .. }
+                if *asked == how && said.contains("Not answered")
+        )),
+        "the card was not closed: {said:#?}"
+    );
+}
+
 /// Words in a thread whose question the chat was never given -- a page
 /// to open on the machine -- are told so, rather than sent to a card that
 /// is not there.

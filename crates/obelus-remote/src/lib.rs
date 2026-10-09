@@ -121,6 +121,14 @@ pub enum Event {
         /// What they wrote in the box, where they wrote anything.
         words: Option<String>,
     },
+    /// Somebody gave up on a question on its card: escape on the card
+    /// here, pressed there.
+    Cancelled {
+        /// Their id, which is what they are checked by.
+        from: String,
+        /// The number the question was asked with.
+        asked: u64,
+    },
 }
 
 /// This process's mark, on every card it puts up: a question is numbered

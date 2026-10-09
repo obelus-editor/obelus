@@ -2482,11 +2482,7 @@ impl App {
             // on screen the nearest thing is the question.
             CardOutcome::Cancelled => {
                 self.mirror_answered_here(Whose::Whoever, "Not answered");
-                match self.is_asking_permission() {
-                    true => self.refuse_permission(Whose::Whoever),
-                    false => self.refuse_asking(Whose::Whoever),
-                }
-                self.ask_the_next(Whose::Whoever);
+                self.give_up_the_question(Whose::Whoever);
                 true
             }
             CardOutcome::Answered { chosen, words } => {
@@ -3473,6 +3469,19 @@ impl App {
                 }
             }
             false => self.answer_card(whose, chosen, words),
+        }
+        self.ask_the_next(whose);
+    }
+
+    /// Gives up on the question up in a conversation: escape on its card,
+    /// or cancel on its card in the chat.
+    pub(super) fn give_up_the_question(&mut self, whose: Whose) {
+        match self
+            .talk(whose)
+            .is_some_and(|talk| talk.permission.is_some())
+        {
+            true => self.refuse_permission(whose),
+            false => self.refuse_asking(whose),
         }
         self.ask_the_next(whose);
     }

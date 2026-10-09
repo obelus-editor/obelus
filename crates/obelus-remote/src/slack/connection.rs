@@ -379,11 +379,18 @@ const NAME: usize = 75;
 
 /// A question as blocks: what it is about, calling the reader, then a
 /// button for each answer where one press is the whole answer, or a list
-/// and a box with a button that sends them. Every press names the process
-/// that asked and the question, by `asked` -- with the answer's id after
-/// another colon, on a button that is one.
+/// and a box with a button that sends them -- and beside those a button
+/// that gives up on it, as escape does on the card here. Every press names
+/// the process that asked and the question, by `asked` -- with the answer's
+/// id after another colon, on a button that is one.
 fn asking(asked: u64, question: &Question, to: &str) -> Vec<SlackBlock> {
     let plain = |text: &str| json!({ "type": "plain_text", "text": text });
+    let cancel = json!({
+        "type": "button",
+        "text": plain("Cancel"),
+        "action_id": "cancel",
+        "value": format!("{}:{asked}", crate::this_process()),
+    });
     let mut blocks = vec![json!({
         "type": "section",
         "text": {
@@ -404,6 +411,7 @@ fn asking(asked: u64, question: &Question, to: &str) -> Vec<SlackBlock> {
                     "value": format!("{}:{asked}:{id}", crate::this_process()),
                 })
             })
+            .chain([cancel])
             .collect();
         blocks.push(json!({ "type": "actions", "block_id": "answers", "elements": buttons }));
     } else {
@@ -446,7 +454,7 @@ fn asking(asked: u64, question: &Question, to: &str) -> Vec<SlackBlock> {
                 "text": plain("Send"),
                 "action_id": "send",
                 "value": format!("{}:{asked}", crate::this_process()),
-            }],
+            }, cancel],
         }));
     }
     serde_json::from_value(Value::Array(blocks)).unwrap_or_default()
@@ -491,7 +499,8 @@ async fn pressed(
 /// box.
 fn answer_of(event: &SlackInteractionBlockActionsEvent) -> Option<Event> {
     let from = event.user.as_ref()?.id.to_string();
-    let value = event.actions.as_ref()?.first()?.value.clone()?;
+    let action = event.actions.as_ref()?.first()?;
+    let value = action.value.clone()?;
     let Some(value) = value
         .strip_prefix(crate::this_process())
         .and_then(|value| value.strip_prefix(':'))
@@ -504,6 +513,10 @@ fn answer_of(event: &SlackInteractionBlockActionsEvent) -> Option<Event> {
         None => (value, Vec::new()),
     };
     let asked = asked.parse().ok()?;
+    if action.action_id.0 == "cancel" {
+        tracing::info!(asked, "a question given up on on its message");
+        return Some(Event::Cancelled { from, asked });
+    }
     let held = |block: &str| {
         event
             .state
@@ -602,6 +615,11 @@ mod tests {
         let by = crate::this_process();
         assert_eq!(blocks[1]["elements"][0]["value"], format!("{by}:7:once"));
         assert_eq!(blocks[1]["elements"][1]["value"], format!("{by}:7:never"));
+        assert_eq!(
+            blocks[1]["elements"][2]["action_id"], "cancel",
+            "{blocks:#}"
+        );
+        assert_eq!(blocks[1]["elements"][2]["value"], format!("{by}:7"));
 
         let blocks = drawn(&question(true, Some(("Other".to_string(), false))));
         assert_eq!(blocks.as_array().map(Vec::len), Some(4), "{blocks:#}");
@@ -610,6 +628,10 @@ mod tests {
         assert_eq!(blocks[2]["element"]["type"], "plain_text_input");
         assert_eq!(blocks[2]["optional"], true);
         assert_eq!(blocks[3]["elements"][0]["value"], format!("{by}:7"));
+        assert_eq!(
+            blocks[3]["elements"][1]["action_id"], "cancel",
+            "{blocks:#}"
+        );
 
         // Closed, a question with nothing said about it is the line saying
         // what became of it and no empty section, which Slack refuses.
@@ -698,6 +720,35 @@ mod tests {
                 })
             ),
             Some(("U1".to_string(), 9, vec!["app".to_string()], None))
+        );
+    }
+
+    /// The cancel button is heard as giving up, not as an answer of
+    /// nothing -- which a permission takes as a refusal and a question as
+    /// empty -- though its value is the send button's.
+    ///
+    /// Broken deliberately by not reading which button it was: the press
+    /// came back as `Answered` with nothing chosen.
+    #[test]
+    fn cancel_is_heard_as_giving_up() {
+        let by = crate::this_process();
+        let event: SlackInteractionEvent = serde_json::from_value(json!({
+            "type": "block_actions",
+            "team": { "id": "T1" },
+            "user": { "id": "U1" },
+            "api_app_id": "A1",
+            "container": { "type": "message", "message_ts": "1.2", "channel_id": "C1" },
+            "trigger_id": "t",
+            "actions": [{ "type": "button", "action_id": "cancel", "block_id": "answers", "value": format!("{by}:7") }],
+        }))
+        .expect("a press");
+        let SlackInteractionEvent::BlockActions(event) = event else {
+            panic!("not a press");
+        };
+        let heard = answer_of(&event);
+        assert!(
+            matches!(&heard, Some(Event::Cancelled { from, asked: 7 }) if from == "U1"),
+            "{heard:?}"
         );
     }
 }

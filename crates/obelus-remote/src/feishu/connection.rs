@@ -303,7 +303,8 @@ const NAME: usize = 75;
 
 /// A question as a card: what it is about, calling the reader, and then a
 /// button for each answer where one press is the whole answer, or a form
-/// where it takes several, or words of the reader's own. Every press names
+/// where it takes several, or words of the reader's own -- and a button
+/// that gives up on it, as escape does on the card here. Every press names
 /// the question by `asked`, and the process that asked it by `by`.
 fn asking(asked: u64, question: &Question, to: &str) -> String {
     let asked = asked.to_string();
@@ -354,6 +355,13 @@ fn asking(asked: u64, question: &Question, to: &str) -> String {
         }));
         elements.push(json!({ "tag": "form", "name": "answer", "elements": form }));
     }
+    // Outside the form, so that giving up is not held to what it requires.
+    elements.push(json!({
+        "tag": "button",
+        "text": { "tag": "plain_text", "content": "Cancel" },
+        "width": "fill",
+        "behaviors": [{ "type": "callback", "value": { "asked": asked, "by": by, "cancelled": true } }],
+    }));
     json!({
         "schema": "2.0",
         "config": { "update_multi": true },
@@ -970,6 +978,15 @@ fn heard_press(
         tracing::info!(asked, "a press on a card another window put up");
         return false;
     }
+    if action["value"]["cancelled"] == true {
+        tracing::info!(asked, "a question given up on on its card");
+        return sink
+            .send(Event::Cancelled {
+                from: from.to_string(),
+                asked,
+            })
+            .is_ok();
+    }
     let form = &action["form_value"];
     let chosen: Vec<String> = match (action["value"]["chosen"].as_str(), &form["chosen"]) {
         (Some(id), _) => vec![id.to_string()],
@@ -1226,7 +1243,10 @@ mod tests {
             elements[1]["behaviors"][0]["value"],
             json!({ "asked": "7", "by": crate::this_process(), "chosen": "once" })
         );
-        assert_eq!(elements.len(), 3, "{card:#}");
+        assert_eq!(elements.len(), 4, "{card:#}");
+        let cancel = json!({ "asked": "7", "by": crate::this_process(), "cancelled": true });
+        assert_eq!(elements[3]["text"]["content"], "Cancel", "{card:#}");
+        assert_eq!(elements[3]["behaviors"][0]["value"], cancel);
 
         let card = drawn(&question(true, Some(("Other".to_string(), false))));
         let form = &card["body"]["elements"][1];
@@ -1238,6 +1258,12 @@ mod tests {
         assert_eq!(
             form["elements"][2]["behaviors"][0]["value"],
             json!({ "asked": "7", "by": crate::this_process() })
+        );
+        // Beside the form rather than in it: in it, a list the agent needs
+        // something from would not let the reader give up without choosing.
+        assert_eq!(
+            card["body"]["elements"][2]["behaviors"][0]["value"], cancel,
+            "{card:#}"
         );
 
         // Closed, a question with nothing said about it has no empty
@@ -1265,15 +1291,17 @@ mod tests {
     /// one id, a form's list -- one or several -- and the words in its box,
     /// trimmed and only where there are any. A press Feishu sends twice is
     /// heard once, and one on a card another window put up not at all.
+    /// Cancel is heard as giving up.
     ///
-    /// Broken deliberately six ways. Telling a press by the frame rather
+    /// Broken deliberately seven ways. Telling a press by the frame rather
     /// than by the event: every press went to the messages and was dropped.
     /// Reading only the button's value: the form's choices arrived as nothing
     /// chosen. Reading a form's list only as several: the single one chosen
     /// from a list was dropped. Not keeping the ids of what was heard: the
     /// second sending answered twice. Not reading whose card it was: the
     /// press on the closed window's card answered this one's question. And
-    /// showing every press the same: that one was told "Sent".
+    /// showing every press the same: that one was told "Sent". And not
+    /// reading the cancel's mark: it came back as an answer of nothing.
     #[test]
     fn a_press_is_heard_as_its_answer() {
         let (sender, heard) = std::sync::mpsc::channel::<Event>();
@@ -1371,6 +1399,23 @@ mod tests {
                 ),
                 ("ou_1".to_string(), 9, vec!["app".to_string()], None),
             ]
+        );
+
+        // Giving up is heard as that, and not as an answer of nothing --
+        // which a permission takes as a refusal and a question as empty.
+        heard_frame(
+            press(
+                "e5",
+                json!({ "value": { "asked": "10", "by": by, "cancelled": true } }),
+            )
+            .as_bytes(),
+            &mut seen,
+            &sink,
+        );
+        let heard: Vec<Event> = heard.try_iter().collect();
+        assert!(
+            matches!(&heard[..], [Event::Cancelled { from, asked: 10 }] if from == "ou_1"),
+            "{heard:?}"
         );
     }
 }

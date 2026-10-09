@@ -377,6 +377,11 @@ impl App {
                     self.answered_on_a_card(asked, &chosen, words.as_deref());
                 }
             }
+            obelus_remote::Event::Cancelled { from, asked } => {
+                if self.on_the_list(&from) {
+                    self.cancelled_on_a_card(asked);
+                }
+            }
             obelus_remote::Event::Opened { asked, thread, .. } => self.thread_opened(asked, thread),
             obelus_remote::Event::Unopened { asked, waited } => {
                 self.thread_unopened(asked, waited);
