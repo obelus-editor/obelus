@@ -1329,13 +1329,9 @@ impl Page {
     /// the old screen slewed. The frame Obelus sends after a resize clears
     /// the page first, so nothing kept here outlives it.
     ///
-    /// Only when the size really did change, which is the whole of what is
-    /// asked here. Measuring happens for reasons that are not a resize --
-    /// another font, another size of it -- and those leave the grid the
-    /// same shape: the application has nothing new to say, so it sends no
-    /// cells, and a page emptied on the way past is a window that goes
-    /// blank until the reader presses something. What it needs instead is
-    /// exactly what happens: the same cells, drawn again in the new face.
+    /// Measuring happens for reasons that are not a resize -- another
+    /// font, another size of it -- and most of them leave the grid the
+    /// same shape, where there is nothing to move.
     pub(crate) fn resized(&mut self, columns: u16, rows: u16, ground: Color) {
         if self.columns == columns && self.rows == rows {
             return;
