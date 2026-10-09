@@ -22,7 +22,7 @@ mod table;
 
 use std::ops::Range;
 
-use obelus_row::{Ink, Row, Span};
+use obelus_row::{Code, Ink, Row, Span};
 use obelus_syntax::{LanguageId, highlight::Highlights, parse::SyntaxState, tree_sitter::Node};
 use obelus_text::{Text, coordinates::ByteOffset, kind::SyntaxKind, text_width};
 
@@ -31,6 +31,20 @@ use obelus_text::{Text, coordinates::ByteOffset, kind::SyntaxKind, text_width};
 /// Every row is at most `width` cells, so the caller never has to wrap.
 #[must_use]
 pub fn render(source: &str, width: u16) -> Vec<Row> {
+    // A closing fence is only a closing fence to the grammar with a line
+    // break after it, and what an agent says ends where its last fence
+    // does: the fence was drawn inside the box as a line of the code, and
+    // copied with it. Put at the end, the break moves nothing before it, so
+    // every place a row says it came from is still a place in what was
+    // said.
+    let ended;
+    let source = match source.is_empty() || source.ends_with('\n') {
+        true => source,
+        false => {
+            ended = format!("{source}\n");
+            ended.as_str()
+        }
+    };
     let text = Text::from_string(source);
     let Some(state) = SyntaxState::new(LanguageId::Markdown, &text) else {
         // No grammar for markdown in this build. The words are still the
@@ -222,6 +236,7 @@ impl Laying<'_> {
             "thematic_break" => self.rows.push(Row {
                 spans: Vec::new(),
                 rule: true,
+                code: None,
             }),
             // The markers a block is made of rather than anything it says,
             // and the blank lines between blocks.
@@ -376,6 +391,18 @@ impl Laying<'_> {
             .is_some();
         let gathered = self.gather(content.unwrap_or(node), Join::Lines);
         let room = usize::from(prefix.room(width)).saturating_sub(2).max(1);
+        // The newline before the closing fence ends the last line rather
+        // than beginning another, and a copy that kept it would run a
+        // command pasted into a shell before the reader had read it there.
+        let code = Code {
+            at: node.start_byte(),
+            text: gathered
+                .text
+                .strip_suffix('\n')
+                .unwrap_or(&gathered.text)
+                .into(),
+        };
+        let first = self.rows.len();
 
         self.row(prefix, vec![mark(across(room, true))]);
         for line in gathered.text.lines() {
@@ -396,6 +423,9 @@ impl Laying<'_> {
             }
         }
         self.row(prefix, vec![mark(across(room, false))]);
+        for row in &mut self.rows[first..] {
+            row.code = Some(code.clone());
+        }
     }
 
     /// A table, in columns that fit.

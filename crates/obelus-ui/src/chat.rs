@@ -1148,6 +1148,9 @@ impl ChatView<'_> {
         // its words end, the colour it is drawn in, and whether it is the
         // row escape stops.
         let mut foot = None;
+        // And the first, for a block of code: its box is where enter is
+        // said, and the bottom of a long one can be off the screen.
+        let mut head = None;
         for (offset, row) in rows.iter().skip(first).enumerate() {
             let Ok(offset) = u16::try_from(offset) else {
                 break;
@@ -1335,6 +1338,9 @@ impl ChatView<'_> {
             if footed {
                 foot = Some((y, ended, dim, stops));
             }
+            if acting.as_ref().is_some_and(|on| at == on.start) {
+                head = Some((y, ended));
+            }
             // How to stop it, on the row that says it is going: the one
             // thing escape does here that a reader could not guess, and it
             // belongs beside the thing it would stop. Unless enter is said
@@ -1353,9 +1359,59 @@ impl ChatView<'_> {
                 }
             }
         }
-        if let (Some(on), Some(foot)) = (acting, foot) {
-            self.offer_enter(cells, area, &rows, on, foot, dim);
+        let code = acting
+            .as_ref()
+            .and_then(|on| rows.get(on.start))
+            .is_some_and(|row| row.code.is_some());
+        match (acting, foot) {
+            (Some(on), foot) if code => {
+                let bottom = foot.map(|(y, ended, ..)| (y, ended));
+                if let Some((y, ended)) = bottom.or(head) {
+                    let side = bottom.map_or(on.start, |_| on.end - 1);
+                    self.offer_copy(cells, &rows[side], y, ended, dim);
+                }
+            }
+            (Some(on), Some(foot)) => self.offer_enter(cells, area, &rows, on, foot, dim),
+            _ => {}
         }
+    }
+
+    /// Says that enter copies the block of code the cursor is in, on the
+    /// block's own box: along its bottom, short of the corner, or along
+    /// its top where the bottom is off the screen.
+    ///
+    /// Not after the last row, which is where enter is said for
+    /// everything else: the box is the whole width, so beside it is
+    /// nowhere, and the row under it is the next paragraph as often as it
+    /// is a blank. And a side of the box is a row with nothing written on
+    /// it, so the key takes no room from the code.
+    fn offer_copy(&self, cells: &mut CellBuffer, side: &Row, y: u16, ended: u16, dim: Style) {
+        // The box is the last run of its row: a quote's bar or a list's
+        // indent is in front of it.
+        let Some(edge) = side.spans.last().map(|span| text_width(&span.text)) else {
+            return;
+        };
+        let keys = [(chord(KeyCode::Enter, KeyModifiers::NONE), "Copies the code")];
+        let Some(said) = joined(&keys) else {
+            return;
+        };
+        let said = format!(" {said} ");
+        // Two of the line between it and the corner, and three at the
+        // other end: a key that met the corner would read as the box
+        // being open there.
+        let wide = text_width(&said);
+        let Some(at) = usize::from(ended).checked_sub(wide + 3) else {
+            return;
+        };
+        if at < usize::from(ended).saturating_sub(edge) + 4 {
+            return;
+        }
+        let Ok(at) = u16::try_from(at) else {
+            return;
+        };
+        write(cells, at, y, &said, dim);
+        let ground = dim.bg.unwrap_or(self.theme.background);
+        cap_the_keys(at + 1, y, &keys, ground, self.theme);
     }
 
     /// Says what enter does to the thing the cursor is on, the way the box
@@ -2574,6 +2630,120 @@ mod tests {
         assert!(
             !drawn(obelus_agent::Talking::Ready, None),
             "a call left waiting by a turn that has ended turned"
+        );
+    }
+
+    /// What enter does in a block of code is written on the block's own
+    /// box: along the bottom, short of the corner -- or along the top,
+    /// where the bottom is off the screen -- and not at all with the cursor
+    /// in the prose around it.
+    ///
+    /// Broken deliberately twice. By offering it the way every other row's
+    /// key is offered, after the last row: the box fills the row and the
+    /// next is prose, so nothing is said. And by asking only the foot: a
+    /// block taller than the screen, stood in at its top, says nothing.
+    #[test]
+    fn a_block_of_code_says_on_its_box_that_enter_copies_it() {
+        use obelus_component::chat::{Chat, Place};
+        use ratatui::layout::Rect;
+
+        let area = Rect::new(0, 0, 60, 16);
+        let width = super::reading_width(super::regions(area, 1).transcript);
+        let drawn = |chat: &Chat| -> Vec<String> {
+            let view = super::ChatView {
+                chat,
+                theme: &obelus_theme::builtin::DARK,
+                state: obelus_agent::Talking::Ready,
+                name: None,
+                title: None,
+                settings: &[],
+                focus: chat.focus(),
+                card: None,
+                in_front: true,
+                pointer: None,
+                root: std::path::Path::new("/"),
+                phase: 0,
+                branch: None,
+                back_to_the_note: None,
+                note: None,
+                note_is_wrong: false,
+                usage: None,
+                tasks: None,
+                remote: None,
+            };
+            let mut cells = ratatui::buffer::Buffer::empty(area);
+            ratatui::widgets::Widget::render(view, area, &mut cells);
+            (area.y..area.bottom())
+                .map(|y| {
+                    (area.x..area.right())
+                        .map(|x| cells[(x, y)].symbol().to_string())
+                        .collect::<String>()
+                })
+                .collect()
+        };
+        let said = "Enter  Copies the code";
+        let row_of = |screen: &[String], corner: char| -> String {
+            screen
+                .iter()
+                .find(|row| row.contains(corner))
+                .unwrap_or_else(|| panic!("no {corner} on the screen:\n{}", screen.join("\n")))
+                .clone()
+        };
+
+        let mut chat = Chat::new();
+        chat.chunk(Speaker::Agent, "Run this:\n\n```sh\nls\n```\nThen look.\n");
+        let rows = chat.rows(width);
+        let top = rows
+            .iter()
+            .position(|row| row.code.is_some())
+            .expect("the block");
+        chat.stand_in_transcript(Place {
+            row: top + 1,
+            character: 1,
+        });
+        let screen = drawn(&chat);
+        let bottom = row_of(&screen, '\u{2514}');
+        assert!(
+            bottom.contains(said) && bottom.trim_end().ends_with("\u{2500}\u{2500}\u{2518}"),
+            "the bottom of the box does not say it, short of the corner:\n{}",
+            screen.join("\n")
+        );
+        assert!(!row_of(&screen, '\u{250c}').contains(said), "said twice");
+
+        // In the prose after it, nothing.
+        let prose = rows
+            .iter()
+            .position(|row| row.text().contains("Then look"))
+            .expect("the prose");
+        chat.stand_in_transcript(Place {
+            row: prose,
+            character: 0,
+        });
+        let screen = drawn(&chat);
+        assert!(
+            screen.iter().all(|row| !row.contains(said)),
+            "said with the cursor outside the block:\n{}",
+            screen.join("\n")
+        );
+
+        // And a block taller than the screen, stood in at its top.
+        let mut chat = Chat::new();
+        let lines: Vec<String> = (0..40).map(|line| format!("line {line}")).collect();
+        chat.chunk(Speaker::Agent, &format!("```\n{}\n```\n", lines.join("\n")));
+        chat.scroll(-1000);
+        chat.stand_in_transcript(Place {
+            row: 1,
+            character: 1,
+        });
+        let screen = drawn(&chat);
+        assert!(
+            screen.iter().all(|row| !row.contains('\u{2514}')),
+            "the bottom is on the screen, so this shows nothing"
+        );
+        assert!(
+            row_of(&screen, '\u{250c}').contains(said),
+            "the top of a block whose bottom is off the screen does not say it:\n{}",
+            screen.join("\n")
         );
     }
 }

@@ -855,6 +855,7 @@ impl App {
         let rule = Row {
             spans: Vec::new(),
             rule: true,
+            code: None,
         };
         rows.push(rule.clone());
         let Some(discussion) = self.pulls.discussions.get(&number) else {

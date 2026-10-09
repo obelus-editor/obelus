@@ -133,12 +133,36 @@ pub struct Row {
     pub spans: Vec<Span>,
     /// Whether the row is a horizontal rule, which has no text of its own.
     pub rule: bool,
+    /// The block of code the row is part of, where it is part of one.
+    pub code: Option<Code>,
+}
+
+/// A block of code, as what is inside it rather than as what is drawn.
+///
+/// On every row of the block, the two sides of its box included: what the
+/// reader means by "this code" is the whole block whichever row of it they
+/// are on, and the rows say only what the width made of it -- a box drawn
+/// round it, and a line broken where the room ran out rather than where the
+/// author broke it. A copy read off the rows takes both with it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Code {
+    /// Where the block begins in the source, which tells two blocks apart
+    /// however alike they are.
+    pub at: usize,
+    /// What is inside it, a line for each of its own lines.
+    ///
+    /// Shared rather than owned, because every row of the block carries it.
+    pub text: std::sync::Arc<str>,
 }
 
 impl Row {
     /// A row of runs, with no rule.
     #[must_use]
     pub const fn of(spans: Vec<Span>) -> Self {
-        Self { spans, rule: false }
+        Self {
+            spans,
+            rule: false,
+            code: None,
+        }
     }
 }

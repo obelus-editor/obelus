@@ -914,3 +914,100 @@ fn what_the_reading_adds_points_at_nothing() {
         }
     }
 }
+
+/// Every row of a block of code carries what is inside it, as it was
+/// written: the box's two sides included, and without the box, without the
+/// breaks the width made, and without what a list or a quote puts in front
+/// of the lines.
+///
+/// What enter copies in a conversation, and the reason it is not read off
+/// the rows: a command longer than the box comes out of them as two lines,
+/// each between two bars.
+///
+/// Broken deliberately three ways. By marking only the rows of code and not
+/// the box: the first and last rows carry nothing. By taking the text with
+/// its last newline: the copy ends in one, and a shell it is pasted into
+/// runs it. And by giving every block the same `at`: the two blocks in the
+/// list are one.
+#[test]
+fn a_block_of_code_carries_its_own_lines() {
+    let command = "echo 'kernel.perf_event_paranoid = 1' | sudo tee /etc/sysctl.d/99-perf.conf";
+    let source = format!("Run this:\n\n```sh\n{command}\nsysctl -p\n```\n\nThen look.\n");
+    let rows = render(&source, 30);
+    let block: Vec<&Row> = rows.iter().filter(|row| row.code.is_some()).collect();
+    assert!(
+        block
+            .first()
+            .is_some_and(|row| text(row).starts_with('\u{250c}'))
+            && block
+                .last()
+                .is_some_and(|row| text(row).starts_with('\u{2514}')),
+        "the box is not part of the block: {block:?}"
+    );
+    assert!(
+        block.len() > 4,
+        "the command did not wrap, so this shows nothing: {block:?}"
+    );
+    for row in &block {
+        assert_eq!(
+            row.code.as_ref().map(|code| code.text.as_ref()),
+            Some(format!("{command}\nsysctl -p").as_str()),
+            "{row:?}"
+        );
+    }
+    assert!(
+        rows.iter()
+            .filter(|row| text(row).contains("Run") || text(row).contains("Then"))
+            .all(|row| row.code.is_none()),
+        "the prose is part of the block: {rows:?}"
+    );
+
+    // In a list, each its own block, with the list's indent left out.
+    let rows = render(
+        "- one\n\n  ```\n  a\n  ```\n- two\n\n  ```\n  b\n  ```\n",
+        30,
+    );
+    let mut blocks: Vec<(usize, String)> = rows
+        .iter()
+        .filter_map(|row| row.code.as_ref())
+        .map(|code| (code.at, code.text.to_string()))
+        .collect();
+    // By where each begins and nothing else: two blocks are told apart
+    // by that, not by what is in them.
+    blocks.dedup_by_key(|(at, _)| *at);
+    assert_eq!(
+        blocks
+            .iter()
+            .map(|(_, text)| text.as_str())
+            .collect::<Vec<_>>(),
+        ["a", "b"],
+        "{rows:?}"
+    );
+}
+
+/// A fence at the very end of what was said closes the block.
+///
+/// What an agent says ends where it stops talking, and an answer that ends
+/// with a block of code ends with its closing fence and nothing after it.
+/// The grammar closes a fence only at a line break, so that fence was
+/// drawn inside the box as the last line of the code -- and enter copied
+/// it with the rest.
+///
+/// Broken deliberately by laying out the source as it came, without the
+/// break put after it: the box has a row of backticks in it.
+#[test]
+fn a_fence_at_the_very_end_closes_the_block() {
+    let rows = render("Here:\n\n```rust\nfn a() {}\n```", 30);
+    let code: Vec<String> = rows
+        .iter()
+        .filter(|row| row.code.is_some())
+        .map(text)
+        .collect();
+    assert_eq!(code.len(), 3, "the fence is inside the box: {code:#?}");
+    assert_eq!(
+        rows.iter()
+            .find_map(|row| row.code.as_ref())
+            .map(|code| code.text.as_ref()),
+        Some("fn a() {}")
+    );
+}

@@ -336,6 +336,14 @@ pub struct Row {
     pub marker: Option<obelus_text::marker::Marker>,
     /// How much a change adds and takes away, on the row that heads it.
     pub changed: Option<(usize, usize)>,
+    /// The block of code this row is part of, which enter copies whole.
+    ///
+    /// On every row of it, the box's sides included, so the key answers
+    /// wherever in the block the reader is standing. What it copies is the
+    /// block's own lines: a selection takes what is on the screen, box and
+    /// all, and a line the width broke in two comes out as two -- which is
+    /// not the command the agent wrote.
+    pub code: Option<obelus_row::Code>,
     /// How deep the row sits: the members of an opened run are drawn under
     /// their own heading, so that a run reads as one thing.
     pub depth: u8,
@@ -417,8 +425,9 @@ impl Row {
     /// Whether enter does something on this row.
     ///
     /// A tool call names a file and enter opens it, a heading opens what is
-    /// under it, a row the reader was sent away by sends them again. The
-    /// cursor stands on any row; these are the ones tab goes to.
+    /// under it, a row the reader was sent away by sends them again, and a
+    /// block of code is copied. The cursor stands on any row; these are the
+    /// ones tab goes to.
     ///
     /// The list is the one the key's own `match` answers, and the two have
     /// to say the same thing: a row this lets the cursor stand on and that
@@ -430,6 +439,7 @@ impl Row {
             || self.away.is_some()
             || self.unsent.is_some()
             || self.again.is_some()
+            || self.code.is_some()
     }
 
     /// The rows a key pressed on `row` acts on, or none where it does
@@ -443,9 +453,21 @@ impl Row {
     ///
     /// The words and nothing under them: what an opened call carries is
     /// deeper and from somewhere else, and is not the call.
+    ///
+    /// A block of code is the one thing inside the words that acts on its
+    /// own, and it is asked first: it is copied whole from any row of it,
+    /// and the message around it does nothing.
     #[must_use]
     pub fn acting(rows: &[Self], row: usize) -> Option<std::ops::Range<usize>> {
         let here = rows.get(row)?;
+        if let Some(code) = &here.code {
+            let same = |row: &&Self| {
+                row.code.as_ref().is_some_and(|it| it.at == code.at) && row.from == here.from
+            };
+            let start = row - rows[..row].iter().rev().take_while(same).count();
+            let end = row + rows[row..].iter().take_while(same).count();
+            return Some(start..end);
+        }
         if let Some((said, Source::Text)) = here.from {
             let same =
                 |row: &&Self| row.from == Some((said, Source::Text)) && row.depth == here.depth;
@@ -602,6 +624,8 @@ pub enum ChatOutcome {
     GoTo(obelus_agent::acp::Place),
     /// Send the reader to this web address again.
     Away(String),
+    /// Put this on the clipboard: a block of code, as it was written.
+    Copy(String),
     /// Open the values of one of the agent's settings, by its id.
     Choose(String),
     /// Flip one of its switches, by its id.
@@ -920,11 +944,11 @@ fn plain(text: String) -> Vec<Span> {
 /// The wrapping is markdown's own, because that is where the difficulty
 /// lives: a fenced block does not wrap like a paragraph and a bullet's
 /// second line is indented under its first.
-fn laid_out(text: &str, width: u16, markdown: bool) -> Vec<Vec<Span>> {
+fn laid_out(text: &str, width: u16, markdown: bool) -> Vec<(Vec<Span>, Option<obelus_row::Code>)> {
     if !markdown {
         return obelus_text::wrapped_from(text, width)
             .into_iter()
-            .map(|(said, from)| vec![Span::from_source(said, Ink::Plain, from)])
+            .map(|(said, from)| (vec![Span::from_source(said, Ink::Plain, from)], None))
             .collect();
     }
     obelus_markdown::render(text, width)
@@ -933,11 +957,14 @@ fn laid_out(text: &str, width: u16, markdown: bool) -> Vec<Vec<Span>> {
             // A rule has no words of its own, and the transcript has no
             // room for a view that draws one: it is a row like the others,
             // so it is drawn as what it is.
-            true => vec![Span::new(
-                "\u{2500}".repeat(usize::from(width.max(1))),
-                Ink::Mark,
-            )],
-            false => row.spans,
+            true => (
+                vec![Span::new(
+                    "\u{2500}".repeat(usize::from(width.max(1))),
+                    Ink::Mark,
+                )],
+                None,
+            ),
+            false => (row.spans, row.code),
         })
         .collect()
 }
@@ -1802,6 +1829,7 @@ impl Chat {
                 again: None,
                 marker: None,
                 changed: None,
+                code: None,
                 depth: 0,
             });
             if planning && self.plan_open {
@@ -1827,6 +1855,7 @@ impl Chat {
                             again: None,
                             marker: None,
                             changed: None,
+                            code: None,
                             depth: 1,
                         })
                 }));
@@ -1898,6 +1927,7 @@ impl Chat {
             again: None,
             marker: None,
             changed: None,
+            code: None,
             depth: 0,
         }];
         if open {
@@ -1987,7 +2017,9 @@ impl Chat {
                     .then(|| obelus_git::change::counted(&said.change)),
                 ..self.opening(
                     said,
-                    title.next().unwrap_or_else(|| plain(String::new())),
+                    title
+                        .next()
+                        .map_or_else(|| plain(String::new()), |(spans, _)| spans),
                     depth,
                     Some(Folds::Said(at)),
                     Some((at, Source::Text)),
@@ -2003,7 +2035,7 @@ impl Chat {
                 title
                     .by_ref()
                     .take(shown)
-                    .map(|spans| Self::under(said, spans, depth, Some((at, Source::Text)))),
+                    .map(|(spans, _)| Self::under(said, spans, depth, Some((at, Source::Text)))),
             );
             if open {
                 // Markdown, unless Obelus is running a command for this
@@ -2016,8 +2048,9 @@ impl Chat {
                 rows.extend(carried.iter().flat_map(|(which, words)| {
                     laid_out(words, inside, said.ran.is_none())
                         .into_iter()
-                        .map(|spans| {
-                            Self::under(said, spans, depth + 1, Some((at, Source::Words(*which))))
+                        .map(|(spans, code)| Row {
+                            code,
+                            ..Self::under(said, spans, depth + 1, Some((at, Source::Words(*which))))
                         })
                 }));
                 // A diff's own markers, which words do not get: "it is
@@ -2026,7 +2059,7 @@ impl Chat {
                 rows.extend(said.change.iter().enumerate().flat_map(|(which, line)| {
                     laid_out(&line.text, inside, false)
                         .into_iter()
-                        .map(move |spans| Row {
+                        .map(move |(spans, _)| Row {
                             marker: line.marker,
                             ..Self::under(said, spans, depth + 1, Some((at, Source::Change(which))))
                         })
@@ -2046,9 +2079,12 @@ impl Chat {
             return words
                 .into_iter()
                 .enumerate()
-                .map(|(row, spans)| match row {
-                    0 => self.opening(said, spans, depth, None, Some((at, Source::Text))),
-                    _ => Self::under(said, spans, depth, Some((at, Source::Text))),
+                .map(|(row, (spans, code))| Row {
+                    code,
+                    ..match row {
+                        0 => self.opening(said, spans, depth, None, Some((at, Source::Text))),
+                        _ => Self::under(said, spans, depth, Some((at, Source::Text))),
+                    }
                 })
                 .collect();
         }
@@ -2065,7 +2101,10 @@ impl Chat {
             rows.extend(
                 laid_out(&said.text, inside, true)
                     .into_iter()
-                    .map(|spans| Self::under(said, spans, depth + 1, Some((at, Source::Text)))),
+                    .map(|(spans, code)| Row {
+                        code,
+                        ..Self::under(said, spans, depth + 1, Some((at, Source::Text)))
+                    }),
             );
         }
         rows
@@ -2115,6 +2154,7 @@ impl Chat {
             },
             marker: None,
             changed: None,
+            code: None,
             depth,
         }
     }
@@ -2137,6 +2177,7 @@ impl Chat {
             again: None,
             marker: None,
             changed: None,
+            code: None,
             depth,
         }
     }
@@ -2160,6 +2201,7 @@ impl Chat {
             again: None,
             marker: None,
             changed: None,
+            code: None,
             depth: 0,
         }
     }
@@ -2960,6 +3002,10 @@ impl Chat {
     /// command the stop above is the command's own first row, which is
     /// the call the key was pressed in -- a key that looked as though it
     /// had done nothing.
+    ///
+    /// And one stop for each thing, at the first of its rows: every row of
+    /// a block of code acts, and a key that stepped through them one at a
+    /// time would be the down arrow.
     fn next_stop_in(at: usize, up: bool, laid: &[Row]) -> Option<usize> {
         let at = match up {
             true => Row::acting(laid, at).map_or(at, |on| on.start),
@@ -2968,12 +3014,42 @@ impl Chat {
         let mut stops = laid
             .iter()
             .enumerate()
-            .filter(|(_, row)| row.acts())
+            .filter(|(at, row)| {
+                row.acts() && Row::acting(laid, *at).is_some_and(|on| on.start == *at)
+            })
             .map(|(at, _)| at);
         match up {
             true => stops.take_while(|stop| *stop < at).last(),
             false => stops.find(|stop| *stop > at),
         }
+    }
+
+    /// Where the cursor stands on arriving at a stop.
+    ///
+    /// The start of the row, except in a block of code, where it is the
+    /// first character of the code: the first row of a block is its box,
+    /// and a caret on the corner is standing in nothing anybody wrote.
+    fn standing_at(stop: usize, laid: &[Row]) -> Place {
+        let at_the_start = Place {
+            row: stop,
+            character: 0,
+        };
+        let Some(on) = laid
+            .get(stop)
+            .filter(|row| row.code.is_some())
+            .and(Row::acting(laid, stop))
+        else {
+            return at_the_start;
+        };
+        on.into_iter()
+            .find_map(|row| {
+                let spot = laid[row].spot_at(0)?;
+                Some(Place {
+                    row,
+                    character: laid[row].characters_at(spot)?,
+                })
+            })
+            .unwrap_or(at_the_start)
     }
 
     /// The place in the words the cursor is at, or the nearest there is.
@@ -3202,11 +3278,9 @@ impl Chat {
                     return Some(ChatOutcome::Consumed);
                 };
                 self.let_go();
-                self.focus = Focus::Transcript(Place {
-                    row: stop,
-                    character: 0,
-                });
-                self.show_to(stop, laid.len(), room);
+                let standing = Self::standing_at(stop, &laid);
+                self.focus = Focus::Transcript(standing);
+                self.show_to(standing.row, laid.len(), room);
                 Some(ChatOutcome::Consumed)
             }
             // Whatever the row is: a heading opens and closes what is
@@ -3218,6 +3292,13 @@ impl Chat {
                 let start = Row::acting(&laid, at.row).map_or(at.row, |on| on.start);
                 let row = laid.get(start).cloned();
                 match row {
+                    // A block of code is copied, whichever of its rows the
+                    // reader is on: it is what they would otherwise have
+                    // to hold from corner to corner, and holding it takes
+                    // the box and the width's breaks with it.
+                    Some(Row {
+                        code: Some(code), ..
+                    }) => Some(ChatOutcome::Copy(code.text.to_string())),
                     Some(row) => match (row.unsent, row.again, row.folds, row.place, row.away) {
                         // Something they said that has not gone: one of
                         // the two rows here whose key gives rather than
@@ -4140,6 +4221,98 @@ mod tests {
                 character: start + 1
             }),
             "stepping left from inside the picture"
+        );
+    }
+
+    /// Enter copies a block of code from any row of it, and tab stops on it
+    /// once, at the first character of the code.
+    ///
+    /// The line is longer than the box, so a copy read off the rows would
+    /// be two lines between bars; what enter hands over is the line as the
+    /// agent wrote it. And the prose around the block is not the block:
+    /// enter there does what it did before, which is nothing.
+    ///
+    /// Broken deliberately four ways. By leaving the arm out of the key's
+    /// `match`: enter on the code does nothing. By leaving the block out of
+    /// `Row::acting`: every row of it is a thing of its own, so the first
+    /// of them is the box's corner and tab lands there. By leaving
+    /// `next_stop_in` to stop on every row
+    /// that acts: the second tab is the next row of the block. And by
+    /// standing at the start of the stop: tab puts the cursor on the
+    /// corner of the box.
+    #[test]
+    fn enter_copies_a_block_of_code_and_tab_stops_on_it_once() {
+        let line = "echo 'kernel.perf_event_paranoid = 1' | sudo tee /etc/sysctl.d/99-perf.conf";
+        let mut chat = Chat::new();
+        chat.chunk(
+            Speaker::Agent,
+            &format!("Run this:\n\n```sh\n{line}\n```\n\nThen look.\n\n```\nls\n```\n"),
+        );
+        let rows = chat.rows(ROOM.reading);
+        let at = |row: &Row| row.code.as_ref().map(|code| code.at);
+        let first = rows.iter().find_map(at).expect("no block of code");
+        let block: Vec<usize> = rows
+            .iter()
+            .enumerate()
+            .filter(|(_, row)| at(row) == Some(first))
+            .map(|(at, _)| at)
+            .collect();
+        let (Some(&top), Some(&bottom)) = (block.first(), block.last()) else {
+            panic!("no block of code: {rows:?}");
+        };
+        let second = rows
+            .iter()
+            .rposition(|row| row.text().contains("ls"))
+            .expect("the second block");
+        assert!(
+            bottom - top > 2,
+            "the line did not wrap, so this shows nothing"
+        );
+        let prose = rows
+            .iter()
+            .position(|row| row.text().contains("Then look"))
+            .expect("the prose after the block");
+
+        let copied = |chat: &mut Chat, row: usize| {
+            chat.focus = Focus::Transcript(Place { row, character: 0 });
+            chat.handle_key(&key(KeyCode::Enter), false, ROOM, &[], false)
+        };
+        for row in [top, top + 1, bottom] {
+            assert_eq!(
+                copied(&mut chat, row),
+                ChatOutcome::Copy(line.to_string()),
+                "enter on row {row} of {top}..={bottom}"
+            );
+        }
+        assert_eq!(copied(&mut chat, prose), ChatOutcome::Consumed);
+
+        // From above the block, tab lands in the code rather than on its
+        // box, the next tab goes on past the rest of it to the next block,
+        // and shift and tab comes back to where the first one landed.
+        chat.focus = Focus::Transcript(Place {
+            row: 0,
+            character: 0,
+        });
+        chat.handle_key(&key(KeyCode::Tab), false, ROOM, &[], false);
+        assert_eq!(
+            chat.focus(),
+            Focus::Transcript(Place {
+                row: top + 1,
+                character: 1,
+            }),
+            "tab did not land on the first character of the code"
+        );
+        chat.handle_key(&key(KeyCode::Tab), false, ROOM, &[], false);
+        assert!(
+            matches!(chat.focus(), Focus::Transcript(place) if place.row == second),
+            "tab did not go on to the next block: {:?}",
+            chat.focus()
+        );
+        chat.handle_key(&shifted(KeyCode::BackTab), false, ROOM, &[], false);
+        assert!(
+            matches!(chat.focus(), Focus::Transcript(place) if place.row == top + 1),
+            "shift and tab did not come back to the first block: {:?}",
+            chat.focus()
         );
     }
 

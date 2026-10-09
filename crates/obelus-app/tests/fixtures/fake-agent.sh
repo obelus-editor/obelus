@@ -880,6 +880,15 @@ while IFS= read -r line; do
             printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"tool_call","toolCallId":"h-1","title":"%s","kind":"execute","status":"completed","content":[{"type":"content","content":{"type":"text","text":"1"}}]}}}\n' "$script"
             printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
             ;;
+        *'"method":"session/prompt"'*'"text":"/fenced'*)
+            # An answer with a command in a block of code, longer than the
+            # box it is drawn in, which is what an agent telling the reader
+            # what to run says. The newlines are JSON's, as in `/heredoc`.
+            set_turn "$session" "$(id_of "$line")"
+            said='Run this:\n\n```sh\necho kernel.perf_event_paranoid = 1 | sudo tee /etc/sysctl.d/99-perf.conf /etc/sysctl.d/99-other.conf\n```\n\nThen look.'
+            printf '{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"'"$session"'","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"%s"}}}}\n' "$said"
+            printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$(turn_of "$session")"
+            ;;
         *'"method":"session/prompt"'*'"text":"/many'*)
             # A turn with a run of tool calls of one kind in it, which is
             # what an agent looking around a repository actually does: a
