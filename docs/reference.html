@@ -57,6 +57,7 @@
   <nav class="contents" aria-label="Contents">
     <ol>
       <li><a href="index.html"><span>‹ Obelus</span></a></li>
+      <li><a href="features.html"><span>‹ Features</span></a></li>
       <li><a href="#keys"><span>Keys &amp; commands</span></a></li>
       <li><a href="#tools"><span>The agent's tools</span></a></li>
       <li><a href="#config"><span>Settings &amp; themes</span></a></li>
@@ -77,7 +78,7 @@
       <p>There are no modes, so every key below does the same thing whenever you press it, like VS Code or Emacs and unlike vim or helix. The keys come in three families: function keys, <kbd>Ctrl</kbd> and <kbd>Alt</kbd>. Remember what each family is for and the rest follows. These are the defaults, and you can rebind any of them: see <a href="#config">settings</a>.</p>
 
       <h3>Function keys open something to look at</h3>
-      <p class="quiet small">Three groups of four, the way they sit on the keyboard: F1–F4 open things to read, F5–F8 search, F9–F12 are git's history, go-to-definition, and the pull requests and issues. None of them takes a modifier, because terminals disagree about what something like <kbd>Shift+F5</kbd> sends, so a binding like that works on one machine and not the next.</p>
+      <p class="quiet small">Three groups of four, the way they sit on the keyboard: F1–F4 open things to read, F5–F8 search, F9–F12 are Git's history, go-to-definition, and the pull requests and issues. None of them takes a modifier, because terminals disagree about what something like <kbd>Shift+F5</kbd> sends, so a binding like that works on one machine and not the next.</p>
 
       <div class="table-wrap">
       <table>
@@ -116,7 +117,8 @@
           <tr><td><kbd>Ctrl+w</kbd></td><td><code>close-document</code></td><td>Stop showing this document</td></tr>
           <tr><td><kbd>Ctrl+s</kbd></td><td><code>save-file</code></td><td>Write the file back to disk</td></tr>
           <tr><td><kbd>Ctrl+r</kbd></td><td><code>reload-file</code></td><td>Re-read this file from disk</td></tr>
-          <tr><td><kbd>Ctrl+t</kbd></td><td><code>toggle-preview</code></td><td>Show this file as rendered markdown, or stop</td></tr>
+          <tr><td><kbd>Ctrl+d</kbd></td><td><code>toggle-preview</code></td><td>Lay a markdown file or a log out for reading, or stop</td></tr>
+          <tr><td><kbd>Ctrl+t</kbd></td><td><code>todo</code></td><td>Open the notes</td></tr>
           <tr><td><kbd>Ctrl+l</kbd></td><td><code>go-to-line</code></td><td>Go to a line by number</td></tr>
           <tr><td><kbd>Ctrl+c</kbd> <kbd>Ctrl+x</kbd> <kbd>Ctrl+v</kbd></td><td><code>copy-selection</code> <code>cut-selection</code> <code>paste</code></td><td>Copy, cut, paste — through the system clipboard</td></tr>
           <tr><td><kbd>Ctrl+z</kbd> <kbd>Ctrl+y</kbd></td><td><code>undo</code> <code>redo</code></td><td>Undo, redo</td></tr>
@@ -207,7 +209,7 @@
           </tr>
           <tr>
             <td>Obelus</td>
-            <td><code>choose-theme</code> <code>new-conversation</code> <code>choose-conversation</code> <code>open-terminal</code> <code>open-settings</code> <code>open-project-settings</code> <code>open-settings-file</code> <code>open-log</code> <code>open-server-log</code> <code>restart-server</code> <code>stop-server</code> <code>quit</code></td>
+            <td><code>choose-theme</code> <code>new-conversation</code> <code>choose-conversation</code> <code>open-terminal</code> <code>open-settings</code> <code>connect-remote</code> <code>disconnect-remote</code> <code>open-project-settings</code> <code>open-settings-file</code> <code>open-log</code> <code>open-server-log</code> <code>restart-server</code> <code>stop-server</code> <code>quit</code></td>
           </tr>
         </tbody>
       </table>
@@ -225,7 +227,7 @@
           <tr><td><code>todo_list</code></td><td>Every note in this project: what it says, whether it's done, and where it points</td></tr>
           <tr><td><code>todo_add</code></td><td>Add notes, at the top level or under another note (steps worked out in a conversation about a note go under that note). For things worth coming back to, not a summary of what the agent just did</td></tr>
           <tr><td><code>todo_finish</code></td><td>Tick a note off. It only ticks, never deletes: a list of what you decided against is as useful as a list of what you never got to, and deleting a note is your call</td></tr>
-          <tr><td><code>todo_reword</code></td><td>Change the wording of a note. The only tool here that can lose something (notes aren't in git, and the page has no undo), so the agent has to ask first and show you both the old and the new wording</td></tr>
+          <tr><td><code>todo_reword</code></td><td>Change the wording of a note. The only tool here that can lose something (notes aren't in Git, and the page has no undo), so the agent has to ask first and show you both the old and the new wording</td></tr>
         </tbody>
       </table>
       </div>
@@ -278,7 +280,7 @@
           <tr><td><code>ignored_files</code></td><td><code>false</code></td><td>Include files the project ignores in the file list</td></tr>
           <tr><td><code>hidden_files</code></td><td><code>false</code></td><td>Include hidden files in the file list: names starting with a dot, and on Windows, files marked hidden</td></tr>
           <tr><td><code>new_versions</code></td><td><code>true</code></td><td>Check GitHub once a day for a newer Obelus, and mention it on the welcome screen</td></tr>
-          <tr><td><code>workflow</code></td><td><code>"feature-branch"</code></td><td>How the agent changes the project. <code>feature-branch</code>: on its own branch in its own worktree. <code>in-place</code>: the same steps, but right in the checkout you're reading. <code>none</code>: however the agent likes. A project that isn't a git repository has no branches, so the agent edits in place. See <a href="index.html#how">the workflow</a>. A project may set this</td></tr>
+          <tr><td><code>workflow</code></td><td><code>"feature-branch"</code></td><td>How the agent changes the project. <code>feature-branch</code>: on its own branch in its own worktree. <code>in-place</code>: the same steps, but right in the checkout you're reading. <code>none</code>: however the agent likes. A project that isn't a Git repository has no branches, so the agent edits in place. See <a href="index.html#how">the workflow</a>. A project may set this</td></tr>
           <tr><td><code>conversation_days</code></td><td><code>30</code></td><td>How many days after the last message a conversation that isn't about a note is forgotten. <code>0</code> never forgets. The agent still has the conversation, but Obelus no longer knows how to get back to it, and raising this later won't bring it back. A conversation about a note goes when the note goes, and one open in any window is always kept</td></tr>
         </tbody>
       </table>
@@ -310,7 +312,7 @@ quit = ""            # taken away</code></pre>
         <li>A conversation can be open in only one window at a time. That hold goes away when the window's process ends, so a crash never leaves a conversation stuck.</li>
         <li>Change the settings file in one window, or by hand, and every window picks it up.</li>
         <li>If the worktree a window is on is removed, from your shell or with <code>git worktree remove</code>, a page over the whole window says so. <kbd>Enter</kbd> lets go of everything that was open there (there is nowhere left to save it) and asks which project to open next; <kbd>Ctrl+q</kbd> quits.</li>
-        <li>In the worktree list (<kbd>F2</kbd>, then <kbd>Tab</kbd>), a tree next to the main checkout is shown by its own name, one inside it by the path down to it, and anything else by its full path. A tree deleted without telling git says <code>Missing</code> and can't be chosen.</li>
+        <li>In the worktree list (<kbd>F2</kbd>, then <kbd>Tab</kbd>), a tree next to the main checkout is shown by its own name, one inside it by the path down to it, and anything else by its full path. A tree deleted without telling Git says <code>Missing</code> and can't be chosen.</li>
         <li>Each window runs its own language server and its own agent. Three windows on one Rust project means three rust-analyzers.</li>
       </ul>
     </section>

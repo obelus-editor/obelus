@@ -57,6 +57,7 @@
   <nav class="contents" aria-label="Contents">
     <ol>
       <li><a href="index.html"><span>‹ Obelus</span></a></li>
+      <li><a href="features.html"><span>‹ 功能</span></a></li>
       <li><a href="#keys"><span>按键与命令</span></a></li>
       <li><a href="#tools"><span>给 agent 的工具</span></a></li>
       <li><a href="#config"><span>设置与主题</span></a></li>
@@ -77,7 +78,7 @@
       <p>没有模式，所以下面每个键什么时候按都是同一个意思——像 VS Code、Emacs，不像 vim、helix。按键分三类：功能键、<kbd>Ctrl</kbd>、<kbd>Alt</kbd>，记住每一类管什么，具体的键就好记了。这里是默认按键，每个都能改，见<a href="#config">设置</a>。</p>
 
       <h3><span class="mono">F1</span>–<span class="mono">F12</span>：打开要看的东西</h3>
-      <p class="quiet small">四个一组，跟键盘上的分组一样：F1–F4 打开要读的东西，F5–F8 是搜索，F9–F12 是 git 历史、跳转定义，以及 PR 和 issue。功能键都不带修饰键，因为 <kbd>Shift+F5</kbd> 这类组合在不同终端里发出来的东西不一样，在这台机器上能用，换一台就不行了。</p>
+      <p class="quiet small">四个一组，跟键盘上的分组一样：F1–F4 打开要读的东西，F5–F8 是搜索，F9–F12 是 Git 历史、跳转定义，以及 PR 和 issue。功能键都不带修饰键，因为 <kbd>Shift+F5</kbd> 这类组合在不同终端里发出来的东西不一样，在这台机器上能用，换一台就不行了。</p>
 
       <div class="table-wrap">
       <table>
@@ -116,7 +117,8 @@
           <tr><td><kbd>Ctrl+w</kbd></td><td><code>close-document</code></td><td>关掉当前文档</td></tr>
           <tr><td><kbd>Ctrl+s</kbd></td><td><code>save-file</code></td><td>写回磁盘</td></tr>
           <tr><td><kbd>Ctrl+r</kbd></td><td><code>reload-file</code></td><td>从磁盘重读</td></tr>
-          <tr><td><kbd>Ctrl+t</kbd></td><td><code>toggle-preview</code></td><td>把 markdown 渲染出来看，或者不看</td></tr>
+          <tr><td><kbd>Ctrl+d</kbd></td><td><code>toggle-preview</code></td><td>把 markdown 或日志排好了看，或者不看</td></tr>
+          <tr><td><kbd>Ctrl+t</kbd></td><td><code>todo</code></td><td>打开笔记页</td></tr>
           <tr><td><kbd>Ctrl+l</kbd></td><td><code>go-to-line</code></td><td>跳到某一行</td></tr>
           <tr><td><kbd>Ctrl+c</kbd> <kbd>Ctrl+x</kbd> <kbd>Ctrl+v</kbd></td><td><code>copy-selection</code> <code>cut-selection</code> <code>paste</code></td><td>复制、剪切、粘贴（走系统剪贴板）</td></tr>
           <tr><td><kbd>Ctrl+z</kbd> <kbd>Ctrl+y</kbd></td><td><code>undo</code> <code>redo</code></td><td>撤销、重做</td></tr>
@@ -207,7 +209,7 @@
           </tr>
           <tr>
             <td>Obelus</td>
-            <td><code>choose-theme</code> <code>new-conversation</code> <code>choose-conversation</code> <code>open-terminal</code> <code>open-settings</code> <code>open-project-settings</code> <code>open-settings-file</code> <code>open-log</code> <code>open-server-log</code> <code>restart-server</code> <code>stop-server</code> <code>quit</code></td>
+            <td><code>choose-theme</code> <code>new-conversation</code> <code>choose-conversation</code> <code>open-terminal</code> <code>open-settings</code> <code>connect-remote</code> <code>disconnect-remote</code> <code>open-project-settings</code> <code>open-settings-file</code> <code>open-log</code> <code>open-server-log</code> <code>restart-server</code> <code>stop-server</code> <code>quit</code></td>
           </tr>
         </tbody>
       </table>
@@ -225,7 +227,7 @@
           <tr><td><code>todo_list</code></td><td>这个项目的所有笔记：写了什么、勾没勾、指着哪儿</td></tr>
           <tr><td><code>todo_add</code></td><td>加笔记，放在最外层，或者挂在某条笔记底下（关于某条笔记的对话里商量出的步骤，就挂在那条底下）。记的是以后值得回头看的事，不是「刚才干了什么」的总结</td></tr>
           <tr><td><code>todo_finish</code></td><td>给一条打勾。只打勾，不删除：「决定不做」的清单和「还没顾上」的清单一样有用，删不删由你决定</td></tr>
-          <tr><td><code>todo_reword</code></td><td>改一条笔记的文字。四个工具里只有它会丢东西（笔记不在 git 里，笔记页也没有撤销），所以 agent 必须先问你，并把改前、改后都给你看</td></tr>
+          <tr><td><code>todo_reword</code></td><td>改一条笔记的文字。四个工具里只有它会丢东西（笔记不在 Git 里，笔记页也没有撤销），所以 agent 必须先问你，并把改前、改后都给你看</td></tr>
         </tbody>
       </table>
       </div>
@@ -278,7 +280,7 @@
           <tr><td><code>ignored_files</code></td><td><code>false</code></td><td>文件列表里也显示项目忽略掉的文件</td></tr>
           <tr><td><code>hidden_files</code></td><td><code>false</code></td><td>文件列表里也显示隐藏文件：名字以点开头的，以及 Windows 上设了隐藏属性的</td></tr>
           <tr><td><code>new_versions</code></td><td><code>true</code></td><td>每天去 GitHub 查一次有没有新版本，有的话在欢迎页上说一声</td></tr>
-          <tr><td><code>workflow</code></td><td><code>"feature-branch"</code></td><td>agent 怎么改这个项目。<code>feature-branch</code>：在自己的 worktree 和分支上改；<code>in-place</code>：步骤一样，但直接改你正在看的代码；<code>none</code>：按 agent 自己的习惯来。不是 git 仓库的项目没有分支可开，agent 就直接改。见<a href="index.html#how">工作流</a>。项目可以设</td></tr>
+          <tr><td><code>workflow</code></td><td><code>"feature-branch"</code></td><td>agent 怎么改这个项目。<code>feature-branch</code>：在自己的 worktree 和分支上改；<code>in-place</code>：步骤一样，但直接改你正在看的代码；<code>none</code>：按 agent 自己的习惯来。不是 Git 仓库的项目没有分支可开，agent 就直接改。见<a href="index.html#how">工作流</a>。项目可以设</td></tr>
           <tr><td><code>conversation_days</code></td><td><code>30</code></td><td>不挂在笔记上的对话，最后一条消息之后多少天被忘掉；<code>0</code> 表示永远不忘。agent 那边对话还在，只是 Obelus 找不回去了，事后把天数调大也找不回来。挂在笔记上的对话跟着笔记走；有窗口正开着的对话不会被忘</td></tr>
         </tbody>
       </table>
@@ -310,7 +312,7 @@ quit = ""            # 把这个绑定拿掉</code></pre>
         <li>一段对话同时只能在一个窗口里打开。占用跟着进程走，窗口崩了占用也就没了，不会出现对话「卡住打不开」。</li>
         <li>在一个窗口里改了设置，或者直接改了设置文件，所有窗口都会跟着变。</li>
         <li>窗口所在的 worktree 被删掉了（在 shell 里删的，或者 <code>git worktree remove</code>），整个窗口会弹出一页说明这件事。按 <kbd>Enter</kbd> 放下这个项目里打开的一切（已经没有地方可存了），再选下一个要打开的项目；按 <kbd>Ctrl+q</kbd> 退出。</li>
-        <li>worktree 列表里（按 <kbd>F2</kbd> 再按 <kbd>Tab</kbd>），和主 checkout 并排的 worktree 显示它自己的名字，在主 checkout 里面的显示往下的路径，别处的显示完整路径。没通过 git 就被删掉的 worktree 显示 <code>Missing</code>，选不了。</li>
+        <li>worktree 列表里（按 <kbd>F2</kbd> 再按 <kbd>Tab</kbd>），和主 checkout 并排的 worktree 显示它自己的名字，在主 checkout 里面的显示往下的路径，别处的显示完整路径。没通过 Git 就被删掉的 worktree 显示 <code>Missing</code>，选不了。</li>
         <li>每个窗口有自己的语言服务器和自己的 agent。同一个 Rust 项目开三个窗口，就是三个 rust-analyzer。</li>
       </ul>
     </section>
