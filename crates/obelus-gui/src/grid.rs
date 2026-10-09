@@ -1315,12 +1315,19 @@ impl Page {
         self.typing
     }
 
-    /// Makes room for a screen this size, and empties it.
+    /// Makes room for a screen this size, keeping each cell at the place it
+    /// was, and the room it grew by on the page's own ground.
     ///
-    /// Emptied rather than kept: the cells that were here were at other
-    /// places, and a grid reshaped around them would draw the old screen
-    /// slewed. Obelus redraws the whole of it on the frame after a resize,
-    /// which is the frame this is making room for.
+    /// Kept rather than emptied, because the window draws before Obelus
+    /// has answered: a resize asks for a frame at once, and the screen the
+    /// application sends for the new size is a channel and a layout away.
+    /// An emptied page drawn in that gap is every cell in the reset
+    /// colour, which is near black -- a flash on every resize, and one
+    /// after another while a corner is dragged. The old cells at their
+    /// old places are what a terminal shows in the same gap; and they are
+    /// moved row by row rather than reshaped as one run, which would draw
+    /// the old screen slewed. The frame Obelus sends after a resize clears
+    /// the page first, so nothing kept here outlives it.
     ///
     /// Only when the size really did change, which is the whole of what is
     /// asked here. Measuring happens for reasons that are not a resize --
@@ -1329,15 +1336,24 @@ impl Page {
     /// cells, and a page emptied on the way past is a window that goes
     /// blank until the reader presses something. What it needs instead is
     /// exactly what happens: the same cells, drawn again in the new face.
-    pub(crate) fn resized(&mut self, columns: u16, rows: u16) {
+    pub(crate) fn resized(&mut self, columns: u16, rows: u16, ground: Color) {
         if self.columns == columns && self.rows == rows {
             return;
         }
+        let mut blank = Cell::default();
+        blank.set_bg(ground);
+        let mut cells = vec![blank; usize::from(columns) * usize::from(rows)];
+        for y in 0..rows.min(self.rows) {
+            for x in 0..columns.min(self.columns) {
+                if let Some(at) = self.at(x, y) {
+                    cells[usize::from(y) * usize::from(columns) + usize::from(x)] =
+                        std::mem::take(&mut self.cells[at]);
+                }
+            }
+        }
         self.columns = columns;
         self.rows = rows;
-        self.cells.clear();
-        self.cells
-            .resize_with(usize::from(columns) * usize::from(rows), Cell::default);
+        self.cells = cells;
     }
 
     /// Blanks the cells a full-width character at this place covers.
@@ -1529,6 +1545,7 @@ mod tests {
         page.resized(
             u16::try_from(width).expect("a short row"),
             u16::try_from(rows.len()).expect("a few rows"),
+            Color::Reset,
         );
         for (y, row) in rows.iter().enumerate() {
             for (x, character) in row.chars().enumerate() {
@@ -1542,6 +1559,33 @@ mod tests {
             }
         }
         page
+    }
+
+    /// A resize keeps every cell at the place it was until Obelus's own
+    /// frame for the new size arrives, and the room it grew by is the
+    /// page's ground rather than the reset colour.
+    ///
+    /// Deliberate breaks: emptying the cells, as `resized` once did, leaves
+    /// `a` gone and the page drawn near black until the next frame; one
+    /// `resize_with` over the old run without emptying it puts `c` on the
+    /// first row, because it was the third cell; and `Cell::default()` for
+    /// the new room leaves its background `Reset`.
+    #[test]
+    fn a_resize_keeps_the_cells_where_they_were() {
+        let ground = Color::Rgb(1, 2, 3);
+        let mut page = written(&["ab", "cd"]);
+        page.resized(3, 3, ground);
+        assert_eq!(page.look(0, 0).text, "a");
+        assert_eq!(page.look(1, 0).text, "b");
+        assert_eq!(page.look(0, 1).text, "c");
+        assert_eq!(page.look(1, 1).text, "d");
+        for (x, y) in [(2, 0), (2, 1), (0, 2), (2, 2)] {
+            assert_eq!(page.look(x, y).text, " ");
+            assert_eq!(page.look(x, y).background, ground);
+        }
+        page.resized(1, 2, ground);
+        assert_eq!(page.look(0, 0).text, "a");
+        assert_eq!(page.look(0, 1).text, "c");
     }
 
     /// A rule is a line only where its cells still say `─`, and a tee
@@ -1717,6 +1761,7 @@ mod tests {
         page.resized(
             u16::try_from(width).expect("a short row"),
             u16::try_from(rows.len()).expect("a few rows"),
+            Color::Reset,
         );
         for (y, (row, ink)) in rows.iter().enumerate() {
             for (x, character) in row.chars().enumerate() {
@@ -1849,7 +1894,7 @@ mod tests {
     #[test]
     fn a_cap_whose_cells_were_drawn_over_is_not_drawn() {
         let mut page = Page::default();
-        page.resized(10, 1);
+        page.resized(10, 1, Color::Reset);
         fn write(page: &mut Page, said: &str) {
             for (at, character) in said.chars().enumerate() {
                 let x = u16::try_from(at).expect("a short run");
@@ -1945,7 +1990,7 @@ mod tests {
     #[test]
     fn a_full_width_character_takes_the_cells_it_covers_with_it() {
         let mut page = Page::default();
-        page.resized(6, 1);
+        page.resized(6, 1, Color::Reset);
         fn put(page: &mut Page, x: u16, said: &str) {
             let mut cell = Cell::default();
             cell.set_symbol(said);

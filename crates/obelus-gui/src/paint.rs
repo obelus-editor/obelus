@@ -6235,7 +6235,7 @@ mod tests {
         let word = Color::Rgb(9, 8, 7);
         let trouble = Color::Rgb(0xef, 0x44, 0x44);
         let mut page = Page::default();
-        page.resized(4, 1);
+        page.resized(4, 1, Color::Reset);
         let marked = |x: u16, underline: Color| {
             let mut cell = Cell::default();
             cell.set_symbol("n");
@@ -6334,6 +6334,7 @@ mod tests {
         page.resized(
             12,
             u16::try_from(glyphs.chars().count()).expect("a few rows"),
+            Color::Reset,
         );
         for (row, character) in glyphs.chars().enumerate() {
             let mut cell = Cell::default();
@@ -6467,7 +6468,7 @@ mod tests {
 
     fn page(text: &str) -> Page {
         let mut page = Page::default();
-        page.resized(12, 1);
+        page.resized(12, 1, Color::Reset);
         let mut column = 0;
         for character in text.chars() {
             let written = character.to_string();

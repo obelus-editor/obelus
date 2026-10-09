@@ -613,7 +613,7 @@ impl Showing {
         let rows = ((height / cell.height) as u32).clamp(1, u32::from(u16::MAX)) as u16;
         self.measured
             .resized(columns, rows, size.width, size.height);
-        self.page.resized(columns, rows);
+        self.page.resized(columns, rows, self.ground);
     }
 
     /// Turns the input method on where a character typed would go into
