@@ -1172,6 +1172,10 @@ impl Backend for Cells {
 pub(crate) struct Page {
     columns: u16,
     rows: u16,
+    /// How many columns and rows `cells` holds, which is never fewer than
+    /// are on the screen and may be more -- see `resized`.
+    kept_columns: u16,
+    kept_rows: u16,
     cells: Vec<Cell>,
     caret: Option<Position>,
     shape: Caret,
@@ -1187,6 +1191,8 @@ impl Default for Page {
         Self {
             columns: 0,
             rows: 0,
+            kept_columns: 0,
+            kept_rows: 0,
             cells: Vec::new(),
             caret: None,
             // Until the application says otherwise, which it does with the
@@ -1330,27 +1336,33 @@ impl Page {
     /// after another while a corner is dragged. The old cells at their
     /// old places are what a terminal shows in the same gap; and they are
     /// moved row by row rather than reshaped as one run, which would draw
-    /// the old screen slewed. The frame Obelus sends after a resize clears
+    /// the old screen slewed. The frame Obelus sends at a new size clears
     /// the page first, so nothing kept here outlives it.
     ///
-    /// Measuring happens for reasons that are not a resize -- another
-    /// font, another size of it -- and most of them leave the grid the
-    /// same shape, where there is nothing to move.
+    /// And what a smaller screen has no room for is kept too, out of
+    /// sight. The window can go one size and come back before Obelus draws
+    /// at all -- a reader's wiggle of the corner, the text a size bigger
+    /// and back -- and then Obelus never saw a new size, so it neither
+    /// clears nor says again what it believes is still there: the cells a
+    /// shrink threw away stayed blank until something else changed them.
     pub(crate) fn resized(&mut self, columns: u16, rows: u16) {
-        if self.columns == columns && self.rows == rows {
-            return;
-        }
-        let mut cells = vec![self.blank(); usize::from(columns) * usize::from(rows)];
-        for y in 0..rows.min(self.rows) {
-            for x in 0..columns.min(self.columns) {
-                if let Some(at) = self.at(x, y) {
-                    cells[usize::from(y) * usize::from(columns) + usize::from(x)] =
-                        std::mem::take(&mut self.cells[at]);
-                }
-            }
-        }
         self.columns = columns;
         self.rows = rows;
+        if columns <= self.kept_columns && rows <= self.kept_rows {
+            return;
+        }
+        let (wide, tall) = (columns.max(self.kept_columns), rows.max(self.kept_rows));
+        let mut cells = vec![self.blank(); usize::from(wide) * usize::from(tall)];
+        for y in 0..self.kept_rows {
+            for x in 0..self.kept_columns {
+                cells[usize::from(y) * usize::from(wide) + usize::from(x)] = std::mem::take(
+                    &mut self.cells
+                        [usize::from(y) * usize::from(self.kept_columns) + usize::from(x)],
+                );
+            }
+        }
+        self.kept_columns = wide;
+        self.kept_rows = tall;
         self.cells = cells;
     }
 
@@ -1525,7 +1537,7 @@ impl Page {
     /// Where a cell is in the list, or nothing when it is off the grid.
     fn at(&self, x: u16, y: u16) -> Option<usize> {
         (x < self.columns && y < self.rows)
-            .then(|| usize::from(y) * usize::from(self.columns) + usize::from(x))
+            .then(|| usize::from(y) * usize::from(self.kept_columns) + usize::from(x))
     }
 }
 
@@ -1606,6 +1618,21 @@ mod tests {
         page.resized(1, 2);
         assert_eq!(page.look(0, 0).text, "a");
         assert_eq!(page.look(0, 1).text, "c");
+    }
+
+    /// A window that goes smaller and back before Obelus draws has every
+    /// cell it had, because Obelus saw no new size and says nothing again.
+    ///
+    /// Deliberate break: dropping what is off the screen on a shrink, as
+    /// the first version of keeping the cells did -- `cd` comes back blank.
+    #[test]
+    fn a_page_made_smaller_and_back_has_what_it_had() {
+        let mut page = written(&["abcd"]);
+        page.resized(2, 1);
+        assert_eq!(page.look(2, 0).text, " ");
+        page.resized(4, 1);
+        assert_eq!(page.look(2, 0).text, "c");
+        assert_eq!(page.look(3, 0).text, "d");
     }
 
     /// The first frame `ratatui` draws at a new size takes away every cell
