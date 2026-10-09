@@ -4,6 +4,11 @@
 //! and tells Obelus what somebody said and where. The one thing that is not
 //! words is a question ([`Question`]): what it is made of, for the platform
 //! to draw as a card, and a press on the card is its answer.
+//!
+//! Each of them also crosses from one Obelus to another, to the window the
+//! chat talks to and back (`relay`), which is why they can be written down.
+
+use serde::{Deserialize, Serialize};
 
 /// Where in the room something was said.
 ///
@@ -11,7 +16,7 @@
 /// on Feishu, a private channel on Slack -- and it is the only place Obelus
 /// hears anything. Every conversation is a thread in it, and every thread
 /// in it a conversation.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum Where {
     /// A thread, by the platform's own name for it -- which nothing here
     /// reads, only keeps and hands back.
@@ -24,7 +29,7 @@ pub enum Where {
 }
 
 /// Something Obelus asks a platform to do.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Out {
     /// Say something in a thread.
     Say {
@@ -139,7 +144,7 @@ impl Question {
 }
 
 /// A question the agent is waiting on, as a chat is given it.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Question {
     /// What it is about.
     pub about: String,
@@ -160,7 +165,7 @@ pub struct Question {
 /// Its own type rather than a line of text, because where a platform can
 /// draw a card it draws one -- the state as the card's colour, the name as
 /// its title -- and where it cannot, [`Head::in_words`] is the line.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Head {
     /// What the conversation is called.
     pub title: String,
@@ -172,7 +177,7 @@ pub struct Head {
 }
 
 /// Where a conversation's turn has got to.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Turning {
     /// The agent is working.
     Working,

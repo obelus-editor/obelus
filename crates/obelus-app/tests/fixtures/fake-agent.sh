@@ -209,6 +209,10 @@ air=''
 cannot_stop=''
 garbles_first=''
 odd_stop=''
+# What its sessions are called in front of their number: two of these in
+# one test, each `s-1`, would be one conversation to everything that keys on
+# its name -- which no two real agents are.
+called='s'
 for word in "$@"; do
     case "$word" in
         mode-as-option) both_ways='yes' ;;
@@ -220,6 +224,7 @@ for word in "$@"; do
         tells-settings) tells='yes' ;;
         options-later) later='yes' ;;
         log=*) log="${word#log=}" ;;
+        called=*) called="${word#called=}" ;;
         prompts) prompts='yes' ;;
         pictures) pictures='yes' ;;
         replans) replans='yes' ;;
@@ -345,7 +350,7 @@ while IFS= read -r line; do
             ;;
         *'"method":"session/new"'*)
             opened=$((opened + 1))
-            session="s-$opened"
+            session="$called-$opened"
             # What it can be set to, before the answer, where it was told
             # to.
             if [ -n "$tells" ] && [ -z "$bare" ]; then

@@ -3431,3 +3431,718 @@ fn the_chat_comes_back_once_a_closed_project_is_chosen_again() {
             && app.remote_state_for_test() == obelus_remote::State::Connected
     });
 }
+
+/// Everything said to the fake platform until `done` holds, handling both
+/// windows' events meanwhile.
+fn both_said_until(
+    first: &mut App,
+    firsts: &std::sync::mpsc::Receiver<Event>,
+    second: &mut App,
+    seconds: &std::sync::mpsc::Receiver<Event>,
+    what: &str,
+    done: impl Fn(&[obelus_remote::model::Out]) -> bool,
+) -> Vec<obelus_remote::model::Out> {
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let mut said = Vec::new();
+    loop {
+        support::lay_out(first, 76, 24);
+        support::lay_out(second, 76, 24);
+        said.extend(said_since());
+        if done(&said) {
+            return said;
+        }
+        assert!(
+            std::time::Instant::now() < until,
+            "gave up waiting for {what}; said: {said:#?}"
+        );
+        while let Ok(event) = firsts.try_recv() {
+            first.handle(event);
+        }
+        if let Ok(event) = seconds.recv_timeout(std::time::Duration::from_millis(20)) {
+            second.handle(event);
+        }
+    }
+}
+
+/// A window with a project of its own -- a directory of the scratch -- and
+/// the fake agent to talk to, logging what it is asked into `log`.
+fn a_window_on(
+    scratch: &support::Scratch,
+    tree: &str,
+    log: &std::path::Path,
+) -> (App, std::sync::mpsc::Receiver<Event>) {
+    let root = scratch.join(tree);
+    std::fs::create_dir_all(&root).expect("the tree");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(root);
+    app.config_file_for_test(scratch.join("config.toml"));
+    let events = support::drive(&mut app);
+    app.agents_root_for_test(scratch.join("agents"));
+    app.talk_to(
+        "fake",
+        std::path::Path::new(support::sh()),
+        &[
+            "tests/fixtures/fake-agent.sh".to_string(),
+            format!("log={}", log.display()),
+            format!("called={tree}"),
+            "prompts".to_string(),
+        ],
+    );
+    support::lay_out(&mut app, 76, 24);
+    (app, events)
+}
+
+/// Two windows on two trees, the first holding the chat and the second
+/// heard in it through the first.
+fn the_first_with_the_chat(
+    scratch: &support::Scratch,
+) -> (
+    (App, std::sync::mpsc::Receiver<Event>),
+    (App, std::sync::mpsc::Receiver<Event>),
+) {
+    set_up_for_two(scratch);
+    let (mut first, firsts) = a_window_on(scratch, "one", &scratch.join("one.log"));
+    dispatch::dispatch(&mut first, Command::RemoteConnect);
+    until(&mut first, &firsts, "the first to connect", |app| {
+        app.remote_state_for_test() == obelus_remote::State::Connected
+    });
+    // Started after the first has the chat, so that its first frame reads
+    // the door the first wrote: a window with no watcher hears nothing
+    // after that.
+    let (mut second, seconds) = a_window_on(scratch, "two", &scratch.join("two.log"));
+    both_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the second to be heard through the first",
+        |_, second| {
+            !second.holds_the_remote_for_test()
+                && second.remote_state_for_test() == obelus_remote::State::Connected
+        },
+    );
+    ((first, firsts), (second, seconds))
+}
+
+/// A window that does not hold the chat is heard in it all the same,
+/// through the one that does: its conversation gets a thread, what is said
+/// in that thread reaches its agent, and its status row marks the chat
+/// without holding it.
+///
+/// Broken deliberately four ways. Saying nothing through the relay: no
+/// thread was asked for. Answering every thread in the window that holds
+/// the chat: the words never reached the second window's agent. Marking
+/// the chat only in the window that holds it: the second's row was empty.
+/// And on Unix, writing the door with the default mode: others could read
+/// its key.
+#[test]
+fn a_window_without_the_chat_is_heard_in_it_through_the_one_with_it() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-relayed");
+    let ((mut first, firsts), (mut second, seconds)) = the_first_with_the_chat(&scratch);
+    // Its key read by nobody else on the machine: anybody with it is heard
+    // in the chat as the bot.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let door = obelus_logging::state_directory()
+            .expect("a state directory")
+            .join("remote")
+            .join("door");
+        let mode = std::fs::metadata(&door)
+            .expect("the door")
+            .permissions()
+            .mode();
+        assert_eq!(
+            mode & 0o077,
+            0,
+            "the door's key is readable by others: {mode:o}"
+        );
+    }
+    assert!(
+        status_row(&mut second).contains("\u{25cf} Slack"),
+        "the second's status row does not mark the chat: {}",
+        status_row(&mut second)
+    );
+
+    second.new_conversation();
+    second.open_a_session_for_test();
+    let said = both_said_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the second's conversation to ask for a thread",
+        |said| {
+            said.iter()
+                .any(|out| matches!(out, obelus_remote::model::Out::Open { .. }))
+        },
+    );
+    let asked = said
+        .iter()
+        .find_map(|out| match out {
+            obelus_remote::model::Out::Open { asked, .. } => Some(*asked),
+            _ => None,
+        })
+        .expect("a thread asked for");
+    let _ = the_platform().send(obelus_remote::Event::Opened {
+        asked,
+        thread: "T2".to_string(),
+        link: None,
+    });
+    let _ = the_platform().send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Thread("T2".to_string()),
+        text: "what is in here".to_string(),
+    });
+    let log = scratch.join("two.log");
+    both_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the words to reach the second window's agent",
+        |_, _| std::fs::read_to_string(&log).is_ok_and(|logged| logged.contains("what is in here")),
+    );
+    let logged = std::fs::read_to_string(&log).unwrap_or_default();
+    assert!(logged.contains("sent from Slack"), "{logged}");
+    assert!(
+        !std::fs::read_to_string(scratch.join("one.log"))
+            .unwrap_or_default()
+            .contains("what is in here"),
+        "the words went to the window holding the chat"
+    );
+}
+
+/// A thread begun in the chat, with windows on two trees, is answered with
+/// a card asking which project it is for; a reply while the card is up is
+/// pointed at it, and the press takes what was written to a window on the
+/// tree chosen -- which writes its new thread down beside one the other
+/// window wrote since it last read the table.
+///
+/// Broken deliberately three ways. Answering every fresh thread in the
+/// window holding the chat: no card was put. Handing the words to the tree
+/// the card offered first rather than the one pressed: they reached the
+/// first window's agent. And writing the table of threads whole from what
+/// the window had read: the first window's thread went out of it.
+#[test]
+fn a_thread_begun_in_the_chat_goes_to_the_project_chosen() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-which");
+    let ((mut first, firsts), (mut second, seconds)) = the_first_with_the_chat(&scratch);
+    // A thread of the first window's, written down after the second has
+    // read the table.
+    first.new_conversation();
+    first.open_a_session_for_test();
+    let said = both_said_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the first's conversation to ask for a thread",
+        |said| {
+            said.iter()
+                .any(|out| matches!(out, obelus_remote::model::Out::Open { .. }))
+        },
+    );
+    let asked = said
+        .iter()
+        .find_map(|out| match out {
+            obelus_remote::model::Out::Open { asked, .. } => Some(*asked),
+            _ => None,
+        })
+        .expect("a thread asked for");
+    let _ = the_platform().send(obelus_remote::Event::Opened {
+        asked,
+        thread: "T1".to_string(),
+        link: None,
+    });
+    let table = obelus_logging::state_directory()
+        .expect("a state directory")
+        .join("remote")
+        .join("slack")
+        .join("threads.toml");
+    both_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the first's thread in the table",
+        |_, _| std::fs::read_to_string(&table).is_ok_and(|written| written.contains("\"T1\"")),
+    );
+    both_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the second to say where it is",
+        |first, _| first.windows_placed_for_test() == 1,
+    );
+    let _ = the_platform().send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        text: "what is in here".to_string(),
+    });
+    let said = both_said_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the card asking which project",
+        |said| !asks_in(said, "F1").is_empty(),
+    );
+    let (asked, question) = asks_in(&said, "F1").remove(0);
+    let names: Vec<&str> = question
+        .choices
+        .iter()
+        .map(|(_, name)| name.as_str())
+        .collect();
+    assert_eq!(names, ["one", "two"], "{question:#?}");
+
+    let _ = the_platform().send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Thread("F1".to_string()),
+        text: "hello?".to_string(),
+    });
+    both_said_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the reply to be pointed at the card",
+        |said| in_thread(said, "F1", "Answer on the card above."),
+    );
+
+    let two = question
+        .choices
+        .iter()
+        .find(|(_, name)| name == "two")
+        .map(|(id, _)| id.clone())
+        .expect("two offered");
+    let _ = the_platform().send(pressed(asked, &two));
+    let log = scratch.join("two.log");
+    let said = both_said_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the words to reach the second window's agent",
+        |said| {
+            in_thread(said, "F1", "\u{2714} two")
+                && std::fs::read_to_string(&log)
+                    .is_ok_and(|logged| logged.contains("what is in here"))
+        },
+    );
+    assert!(
+        !std::fs::read_to_string(scratch.join("one.log"))
+            .unwrap_or_default()
+            .contains("what is in here"),
+        "the words went to the first window too: {said:#?}"
+    );
+    both_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the second's thread in the table beside the first's",
+        |_, _| {
+            std::fs::read_to_string(&table)
+                .is_ok_and(|written| written.contains("\"F1\"") && written.contains("\"T1\""))
+        },
+    );
+}
+
+/// The window holding the chat going without letting it go -- closed, or
+/// died -- leaves it to a window that was heard through it, which takes it
+/// up and connects.
+///
+/// Broken deliberately by not taking it up when the relay went: the second
+/// window was left heard through nobody.
+#[test]
+fn a_chat_its_window_did_not_let_go_of_is_taken_up() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-relayed-taken-over");
+    let ((first, _firsts), (mut second, seconds)) = the_first_with_the_chat(&scratch);
+    drop(first);
+    until(
+        &mut second,
+        &seconds,
+        "the second to take the chat up",
+        |app| {
+            app.holds_the_remote_for_test()
+                && app.remote_state_for_test() == obelus_remote::State::Connected
+        },
+    );
+}
+
+/// A chat the reader let go of is let go of: the windows heard through it
+/// stop marking it and do not take it up.
+///
+/// Broken deliberately by taking a relay's `Stopped` for its having gone
+/// without a word: the second window took the chat the reader had just
+/// let go of.
+#[test]
+fn a_chat_let_go_of_is_not_taken_up() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-relayed-given-up");
+    let ((mut first, _firsts), (mut second, seconds)) = the_first_with_the_chat(&scratch);
+    dispatch::dispatch(&mut first, Command::RemoteDisconnect);
+    until(
+        &mut second,
+        &seconds,
+        "the second to stop marking it",
+        |app| !status_row(app).contains("Slack"),
+    );
+    settle(&mut second, &seconds);
+    assert!(
+        !second.holds_the_remote_for_test(),
+        "the second took up a chat the reader let go of"
+    );
+}
+
+/// A chat handed to a window that asked for it is heard through that
+/// window: the windows heard through the one that had it hear where it
+/// went, and join it rather than taking it up.
+///
+/// Broken deliberately by not reading the door again when its file moved:
+/// the third window was left heard through nobody. Which needs the third to
+/// hear of the handing on before the second has the chat -- after, the door
+/// it reads on hearing it is the second's already.
+#[test]
+fn a_chat_handed_on_is_heard_through_the_window_it_went_to() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-handed-on");
+    set_up_for_two(&scratch);
+    // Each with a watcher of its own: the first hears the asking, and the
+    // third hears where the chat went.
+    let started = |scratch: &support::Scratch| {
+        let mut app = App::new(Vec::new());
+        app.config_file_for_test(scratch.join("config.toml"));
+        let (sender, events) = obelus_app::event::channel();
+        app.start(sender);
+        support::lay_out(&mut app, 76, 24);
+        (app, events)
+    };
+    let (mut first, firsts) = started(&scratch);
+    dispatch::dispatch(&mut first, Command::RemoteConnect);
+    until(&mut first, &firsts, "the first to connect", |app| {
+        app.remote_state_for_test() == obelus_remote::State::Connected
+    });
+    let (mut third, thirds) = started(&scratch);
+    both_until(
+        &mut first,
+        &firsts,
+        &mut third,
+        &thirds,
+        "the third to be heard through it",
+        |first, third| {
+            first.door_for_test().is_some() && third.joined_for_test() == first.door_for_test()
+        },
+    );
+    let (mut second, seconds) = a_window(&scratch);
+    dispatch::dispatch(&mut second, Command::RemoteConnect);
+    until(&mut first, &firsts, "the first to let go", |app| {
+        !app.holds_the_remote_for_test()
+    });
+    // The third hears the chat was handed on before the second has it, so
+    // the door it reads then is nobody's: it is the door's file moving that
+    // has to bring it to the second.
+    until(
+        &mut third,
+        &thirds,
+        "the third to hear it was handed on",
+        |app| app.joined_for_test().is_none(),
+    );
+    assert!(
+        !third.holds_the_remote_for_test(),
+        "the third took up a chat that was handed on"
+    );
+    until(&mut second, &seconds, "the second to connect", |app| {
+        app.holds_the_remote_for_test()
+            && app.remote_state_for_test() == obelus_remote::State::Connected
+    });
+    both_until(
+        &mut second,
+        &seconds,
+        &mut third,
+        &thirds,
+        "the third to be heard through the second",
+        |second, third| {
+            second.door_for_test().is_some()
+                && third.joined_for_test() == second.door_for_test()
+                && third.remote_state_for_test() == obelus_remote::State::Connected
+        },
+    );
+    assert!(second.holds_the_remote_for_test());
+    assert!(!third.holds_the_remote_for_test());
+}
+
+/// A table of threads that will not read is not written over: the window
+/// keeps its own conversation's thread, and every other conversation's in
+/// the file is left for whoever mends it.
+///
+/// Broken deliberately by taking a table that will not read for an empty
+/// one: the file was written back with one thread in it.
+#[test]
+fn a_table_of_threads_that_will_not_read_is_not_written_over() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-table-unread");
+    let (mut app, events, log) = paired_with_an_agent(&scratch);
+    let table = obelus_logging::state_directory()
+        .expect("a state directory")
+        .join("remote")
+        .join("slack")
+        .join("threads.toml");
+    let unreadable = "[s-9\nthread = \"T9\"\n";
+    std::fs::write(&table, unreadable).expect("the table");
+    app.new_conversation();
+    app.open_a_session_for_test();
+    let said = said_until(&mut app, &events, "a thread to be asked for", |said| {
+        said.iter()
+            .any(|out| matches!(out, obelus_remote::model::Out::Open { .. }))
+    });
+    let asked = said
+        .iter()
+        .find_map(|out| match out {
+            obelus_remote::model::Out::Open { asked, .. } => Some(*asked),
+            _ => None,
+        })
+        .expect("a thread asked for");
+    let _ = the_platform().send(obelus_remote::Event::Opened {
+        asked,
+        thread: "T1".to_string(),
+        link: None,
+    });
+    let _ = the_platform().send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Thread("T1".to_string()),
+        text: "what is in here".to_string(),
+    });
+    until(
+        &mut app,
+        &events,
+        "the words in the thread to reach the agent",
+        |_| std::fs::read_to_string(&log).is_ok_and(|logged| logged.contains("what is in here")),
+    );
+    assert_eq!(
+        std::fs::read_to_string(&table).expect("the table"),
+        unreadable,
+        "a table that would not read was written over"
+    );
+}
+
+/// Of the windows left when the one holding the chat goes without a word,
+/// one takes it up and the rest are heard through that one -- not two
+/// windows each holding a chat.
+///
+/// Broken deliberately by taking it up without asking whether somebody
+/// already had: both windows said they held it.
+#[test]
+fn of_the_windows_left_one_takes_the_chat_up() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-one-takes-up");
+    set_up_for_two(&scratch);
+    // With watchers, so that the one that does not take it up hears where
+    // it went.
+    let started = |scratch: &support::Scratch| {
+        let mut app = App::new(Vec::new());
+        app.config_file_for_test(scratch.join("config.toml"));
+        let (sender, events) = obelus_app::event::channel();
+        app.start(sender);
+        support::lay_out(&mut app, 76, 24);
+        (app, events)
+    };
+    let (mut first, firsts) = started(&scratch);
+    dispatch::dispatch(&mut first, Command::RemoteConnect);
+    until(&mut first, &firsts, "the first to connect", |app| {
+        app.remote_state_for_test() == obelus_remote::State::Connected
+    });
+    let (mut second, seconds) = started(&scratch);
+    let (mut third, thirds) = started(&scratch);
+    // All three driven: the first has to hear both join before its going
+    // can say anything to them.
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while [&second, &third]
+        .iter()
+        .any(|app| app.remote_state_for_test() != obelus_remote::State::Connected)
+    {
+        assert!(
+            std::time::Instant::now() < until,
+            "gave up waiting for both to be heard through the first"
+        );
+        for (app, events) in [
+            (&mut first, &firsts),
+            (&mut second, &seconds),
+            (&mut third, &thirds),
+        ] {
+            while let Ok(event) = events.try_recv() {
+                app.handle(event);
+            }
+            support::lay_out(app, 76, 24);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert!(second.joined_for_test().is_some() && third.joined_for_test().is_some());
+    // Its channel with it, as a process going takes everything it had.
+    drop(first);
+    drop(firsts);
+    both_until(
+        &mut second,
+        &seconds,
+        &mut third,
+        &thirds,
+        "one to take it up and the other to join it",
+        |second, third| {
+            let joined = |holder: &App, other: &App| {
+                holder.holds_the_remote_for_test()
+                    && holder.door_for_test().is_some()
+                    && other.joined_for_test() == holder.door_for_test()
+            };
+            joined(second, third) || joined(third, second)
+        },
+    );
+    assert!(
+        !(second.holds_the_remote_for_test() && third.holds_the_remote_for_test()),
+        "two windows hold the chat"
+    );
+}
+
+/// Cancel on a card of a window heard through the one with the chat goes to
+/// that window, under the number it asked with: the agent there hears the
+/// question declined, and the card is closed saying so.
+///
+/// Broken deliberately by passing a cancel through as it came: the window
+/// with the chat took it for one of its own, found nothing, and the agent
+/// in the other window went on waiting.
+#[test]
+fn a_cancel_goes_to_the_window_whose_question_it_is() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-relayed-cancel");
+    let ((mut first, firsts), (mut second, seconds)) = the_first_with_the_chat(&scratch);
+    both_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the second to say where it is",
+        |first, _| first.windows_placed_for_test() == 1,
+    );
+    let _ = the_platform().send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        text: "/ask".to_string(),
+    });
+    let said = both_said_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the card asking which project",
+        |said| !asks_in(said, "F1").is_empty(),
+    );
+    let (which, question) = asks_in(&said, "F1").remove(0);
+    let two = question
+        .choices
+        .iter()
+        .find(|(_, name)| name == "two")
+        .map(|(id, _)| id.clone())
+        .expect("two offered");
+    let _ = the_platform().send(pressed(which, &two));
+    let said = both_said_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the agent's question in the thread",
+        |said| !asks_in(said, "F1").is_empty(),
+    );
+    let how = asks_in(&said, "F1")[0].0;
+    let _ = the_platform().send(obelus_remote::Event::Cancelled {
+        from: "U1".to_string(),
+        asked: how,
+    });
+    let said = both_said_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the question given up on",
+        |said| in_thread(said, "F1", "you would not say"),
+    );
+    assert!(
+        said.iter().any(|out| matches!(
+            out,
+            obelus_remote::model::Out::Settle { asked, said, .. }
+                if *asked == how && said.contains("Not answered")
+        )),
+        "the card was not closed: {said:#?}"
+    );
+}
+
+/// Cancel on the card asking which project closes it, and begins no
+/// conversation anywhere.
+///
+/// Broken deliberately by taking the cancel as this window's own: nothing
+/// closed the card.
+#[test]
+fn cancel_on_which_project_begins_nothing() {
+    let _turn = turn();
+    let scratch = support::Scratch::new("remote-which-cancel");
+    let ((mut first, firsts), (mut second, seconds)) = the_first_with_the_chat(&scratch);
+    both_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the second to say where it is",
+        |first, _| first.windows_placed_for_test() == 1,
+    );
+    let _ = the_platform().send(obelus_remote::Event::Heard {
+        from: "U1".to_string(),
+        room: "C1".to_string(),
+        at: obelus_remote::model::Where::Fresh("F1".to_string()),
+        text: "what is in here".to_string(),
+    });
+    let said = both_said_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the card asking which project",
+        |said| !asks_in(said, "F1").is_empty(),
+    );
+    let which = asks_in(&said, "F1")[0].0;
+    let _ = the_platform().send(obelus_remote::Event::Cancelled {
+        from: "U1".to_string(),
+        asked: which,
+    });
+    both_said_until(
+        &mut first,
+        &firsts,
+        &mut second,
+        &seconds,
+        "the card closed",
+        |said| {
+            said.iter().any(|out| {
+                matches!(
+                    out,
+                    obelus_remote::model::Out::Settle { asked, said, .. }
+                        if *asked == which && said.contains("Not answered")
+                )
+            })
+        },
+    );
+    for log in ["one.log", "two.log"] {
+        assert!(
+            !std::fs::read_to_string(scratch.join(log))
+                .unwrap_or_default()
+                .contains("what is in here"),
+            "a conversation began in {log}"
+        );
+    }
+}

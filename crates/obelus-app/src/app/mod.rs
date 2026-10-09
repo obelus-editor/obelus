@@ -41,6 +41,7 @@ mod preferences;
 mod previewing;
 mod projects;
 pub mod pulls;
+mod relaying;
 mod releases;
 mod remote;
 mod renaming;
@@ -851,6 +852,9 @@ pub struct App {
     remote: remote::Remote,
     /// Which of its conversations is which thread in that chat.
     mirror: mirroring::Mirror,
+    /// The other windows heard in that chat through this one, or the one
+    /// this one is heard through.
+    relaying: relaying::Relaying,
     /// Whether to open on the file list.
     ///
     /// A directory on the command line is a reader saying which project
@@ -1040,6 +1044,7 @@ impl App {
             worktrees: worktrees::Worktrees::default(),
             remote: remote::Remote::default(),
             mirror: mirroring::Mirror::default(),
+            relaying: relaying::Relaying::default(),
             list_at_start: false,
             remote_at_start: false,
             headless: false,
@@ -2638,6 +2643,9 @@ impl App {
         // And the connection to that chat, from the same answer: which one
         // is set.
         self.settle_the_connection();
+        // Or the window this one is heard in it through, where another has
+        // it.
+        self.settle_the_relay();
         // And a thread for every conversation there that can be named.
         self.settle_the_threads();
         // And the sessions, from the same question: which conversation is
@@ -3017,6 +3025,9 @@ impl App {
                 } else if self.is_the_remote_wanted(&path) {
                     // Another window asking for the chat this one has.
                     self.somebody_wants_the_remote();
+                } else if self.is_the_relays_door(&path) {
+                    // A window that has the chat saying where it is.
+                    self.the_door_moved();
                 } else if ours && self.is_a_claim(&path) {
                     // A conversation taken up or let go in another window
                     // -- including one let go by that window dying, which

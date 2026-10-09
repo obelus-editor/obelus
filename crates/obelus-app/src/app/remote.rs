@@ -21,9 +21,11 @@
 //! window that is told holds a lock the kernel gives up with its process,
 //! and one told while another holds it asks that one to let go -- a file
 //! written beside the lock, which the holder watches -- and waits in the
-//! kernel for it to. Where the chat stands is said on the status row of
-//! that window and of no other: the settings page holds what the reader
-//! set, and says only what is wrong with it.
+//! kernel for it to. Every other window is heard in the chat through that
+//! one (`app/relaying`). Where the chat stands is said in words on the
+//! status row of that window and of no other, and marked on all of theirs:
+//! the settings page holds what the reader set, and says only what is wrong
+//! with it.
 
 use std::collections::BTreeMap;
 
@@ -114,6 +116,9 @@ pub(super) struct Remote {
     /// What this window last wrote to ask for the chat, which it hears too
     /// and must not take as somebody else asking.
     wrote: Option<String>,
+    /// The number of the waiting thread, while this window waits to take
+    /// up a chat whose window went without letting it go.
+    succeeding: Option<u64>,
 }
 
 /// What a secret is drawn as on its row: the platform's prefix where it
@@ -146,7 +151,7 @@ impl App {
         };
         // What the platform itself said comes first: it is the one that
         // knows whether the tokens work.
-        if self.remote.reaching == Some(platform.key)
+        if (self.remote.reaching == Some(platform.key) || self.joined_the_relay())
             && let Some(state) = self.remote.connection
         {
             return state;
@@ -210,7 +215,9 @@ impl App {
             platform,
             state: self.remote_state(),
             why: platform
-                .filter(|platform| self.remote.reaching == Some(platform.key))
+                .filter(|platform| {
+                    self.remote.reaching == Some(platform.key) || self.joined_the_relay()
+                })
                 .and(self.remote.why.clone()),
             kept,
             people: platform
@@ -288,7 +295,9 @@ impl App {
     /// Hears what the keyring said.
     /// What one connection said, heard only while it is the one wanted.
     pub(super) fn reached_event(&mut self, number: u64, event: obelus_remote::Event) {
-        if number != self.remote.number || self.remote.reaching.is_none() {
+        if number != self.remote.number
+            || (self.remote.reaching.is_none() && !self.joined_the_relay())
+        {
             tracing::info!(number, "a connection let go said something, not heard");
             return;
         }
@@ -301,10 +310,55 @@ impl App {
     /// turn that ended in those five seconds would otherwise never reach
     /// the thread.
     pub(super) fn chat_is_listening(&self) -> bool {
-        self.remote.out.is_some()
+        self.remote.out.is_some() || self.relayed()
+    }
+
+    /// Where to send what is to be said to the platform, while this window
+    /// is connected to it itself.
+    pub(super) fn platform_out(
+        &self,
+    ) -> Option<tokio::sync::mpsc::UnboundedSender<obelus_remote::model::Out>> {
+        self.remote.out.clone()
+    }
+
+    /// What the platform last said about the connection, and why.
+    pub(super) fn connection_said(&self) -> Option<(State, Option<String>)> {
+        self.remote
+            .connection
+            .map(|state| (state, self.remote.why.clone()))
+    }
+
+    /// Forgets what the relay said about the connection, which was about
+    /// a connection this window is no longer heard on.
+    pub(super) fn forget_what_the_relay_said(&mut self) {
+        if self.remote.reaching.is_none() {
+            self.remote.connection = None;
+            self.remote.why = None;
+        }
+    }
+
+    /// A new number for a connection, and where its events go with it on.
+    pub(super) fn a_numbered_connection(
+        &mut self,
+    ) -> Option<std::sync::Arc<dyn obelus_sink::Sink<obelus_remote::Event>>> {
+        let sender = self.events.clone()?;
+        self.remote.number += 1;
+        Some(std::sync::Arc::new(Numbered {
+            number: self.remote.number,
+            sender,
+        }))
     }
 
     pub(super) fn remote_event(&mut self, event: obelus_remote::Event) {
+        let Some(event) = self.whose_is_it(event) else {
+            self.settle_the_connection();
+            self.settle_the_remote_page();
+            return;
+        };
+        // A window heard through another: the relay has heard who it is
+        // from and where, and says nothing about the connection it does
+        // not mean this window to say.
+        let joined = self.joined_the_relay();
         match event {
             obelus_remote::Event::Kept {
                 platform,
@@ -315,12 +369,25 @@ impl App {
                 if self.remote.reaching == Some(platform) {
                     self.remote.out = Some(out);
                     // A new connection knows nothing of what the old one
-                    // was asked: those threads are asked for again.
+                    // was asked: those threads are asked for again, here
+                    // and in every window heard through this one.
                     self.forget_what_was_on_its_way();
+                    self.relay_restarted();
+                }
+            }
+            obelus_remote::Event::Connection { state, why } if joined => {
+                // Marked on the status row, and said in words only by the
+                // window that holds the chat.
+                self.remote.connection = Some(state);
+                self.remote.why = why;
+                if state == State::Connected {
+                    self.no_longer_taking_up_the_chat();
+                    self.threads_may_open_again();
                 }
             }
             obelus_remote::Event::Connection { state, why } => {
                 tracing::info!(?state, ?why, "the chat says where it has got to");
+                self.relay_connection(state, why.clone());
                 let was = self.remote.connection.replace(state);
                 // Said on the status row once, on the way into it: a
                 // connection tried again every few seconds that put the
@@ -373,15 +440,31 @@ impl App {
                 chosen,
                 words,
             } => {
-                if self.on_the_list(&from) {
+                if joined || self.on_the_list(&from) {
                     self.answered_on_a_card(asked, &chosen, words.as_deref());
                 }
             }
             obelus_remote::Event::Cancelled { from, asked } => {
-                if self.on_the_list(&from) {
+                if joined || self.on_the_list(&from) {
                     self.cancelled_on_a_card(asked);
                 }
             }
+            obelus_remote::Event::Restarted => {
+                if joined {
+                    self.relay_has_started();
+                }
+            }
+            obelus_remote::Event::Left(over) => {
+                if joined {
+                    self.left_the_relay(over);
+                }
+            }
+            obelus_remote::Event::Room(room) => {
+                if joined {
+                    self.room_from_the_relay(room);
+                }
+            }
+            obelus_remote::Event::Window { window, did } => self.window_did(window, did),
             obelus_remote::Event::Opened { asked, thread, .. } => self.thread_opened(asked, thread),
             obelus_remote::Event::Unopened { asked, waited } => {
                 self.thread_unopened(asked, waited);
@@ -430,6 +513,9 @@ impl App {
         // A chat set to nothing holds nothing: the next window to want it
         // should not have to ask this one.
         if self.platform().is_none() {
+            if self.remote.holding.is_some() {
+                self.stop_relaying(obelus_remote::relay::Over::Stopped);
+            }
             // And with nobody at the screen, holding nothing is having
             // nothing to do.
             if self.remote.holding.take().is_some() && self.is_headless() {
@@ -437,6 +523,7 @@ impl App {
                 self.leave_unseen();
             }
             self.remote.taking = None;
+            self.remote.succeeding = None;
         }
         let wanted = self.platform().filter(|_| self.remote.holding.is_some());
         if self.remote.reaching != wanted.map(|platform| platform.key) {
@@ -491,12 +578,12 @@ impl App {
         self.remote.naming = None;
     }
 
-    /// Says something in a chat.
-    pub(super) fn say_to(&self, out: obelus_remote::model::Out) {
-        if let Some(sending) = &self.remote.out
-            && sending.send(out).is_err()
-        {
-            tracing::warn!("the chat has stopped listening");
+    /// Says something in a chat: to the platform where this window holds
+    /// it, and through the window that does where it is heard through one.
+    pub(super) fn say_to(&mut self, out: obelus_remote::model::Out) {
+        match self.remote.out.is_some() {
+            true => self.send_to_the_platform(obelus_remote::relay::Asker::Here, out),
+            false => self.to_the_relay(out),
         }
     }
 
@@ -511,6 +598,16 @@ impl App {
         let Some(platform) = self.platform() else {
             return;
         };
+        // Through a relay, which has heard who it is from and where -- and
+        // which may have been told of a person or a room this window's
+        // settings have not caught up with yet.
+        if self.joined_the_relay() {
+            match at {
+                obelus_remote::model::Where::Thread(thread) => self.heard_in_thread(thread, text),
+                obelus_remote::model::Where::Fresh(thread) => self.heard_fresh(thread, text),
+            }
+            return;
+        }
         if let obelus_remote::model::Where::Fresh(thread) = at
             && let Some(code) = &self.remote.pairing
             && same_code(code, text)
@@ -535,15 +632,12 @@ impl App {
             );
             return;
         }
-        match at {
-            obelus_remote::model::Where::Thread(thread) => self.heard_in_thread(thread, text),
-            obelus_remote::model::Where::Fresh(thread) => self.heard_fresh(thread, text),
-        }
+        self.route_heard(from, room, at, text);
     }
 
     /// Whether somebody is on the list of who may talk to this machine:
     /// nobody else is answered, in words or on a card.
-    fn on_the_list(&self, who: &str) -> bool {
+    pub(super) fn on_the_list(&self, who: &str) -> bool {
         self.platform().is_some_and(|platform| {
             self.config()
                 .remote_of(platform.key)
@@ -571,6 +665,7 @@ impl App {
             );
         });
         self.keep_the_room(&room);
+        self.relay_room(&room);
         self.say(format!("Paired {name}"));
         self.say_to(obelus_remote::model::Out::Say {
             room,
@@ -916,13 +1011,16 @@ impl App {
     }
 
     /// The chat and where it stands, for the status row of the window it
-    /// talks to -- or is on its way to, which is connecting -- and nothing
-    /// for any other.
+    /// talks to -- or is on its way to, which is connecting -- and of every
+    /// window heard in it through that one, and nothing for any other.
     pub(super) fn remote_badge(&self) -> Option<(&'static str, State)> {
         let platform = self.platform()?;
         match (&self.remote.holding, &self.remote.taking) {
             (Some(_), _) => Some((platform.name, self.remote_state())),
             (None, Some(_)) => Some((platform.name, State::Connecting)),
+            // Heard through the window that has it: marked, so the reader
+            // knows this window's conversations are in the chat too.
+            (None, None) if self.joined_the_relay() => Some((platform.name, self.remote_state())),
             (None, None) => None,
         }
     }
@@ -1042,7 +1140,14 @@ impl App {
             && self.remote.taking.is_none()
             && self.remote.holding.is_none()
             && self.platform().is_some();
-        if !asking && !late {
+        // Or a chat nobody let go of, taken up -- where this window has not
+        // joined whoever took it up first.
+        let succeeding = self.remote.succeeding == Some(number)
+            && self.remote.taking.is_none()
+            && self.remote.holding.is_none()
+            && !self.joined_the_relay()
+            && self.platform().is_some();
+        if !asking && !late && !succeeding {
             // An asking taken back, or one since replaced: dropped here,
             // which lets go again.
             return;
@@ -1090,7 +1195,12 @@ impl App {
     fn take_the_remote(&mut self, lock: std::fs::File) {
         self.remote.taking = None;
         self.remote.given_up = None;
+        self.remote.succeeding = None;
         self.remote.holding = Some(lock);
+        // Before the next frame would: what this window says to the chat
+        // from now on goes to the platform, and nothing more to the relay.
+        self.settle_the_relay();
+        self.start_relaying();
         if let Some(platform) = self.platform() {
             self.say(format!("{} talks to this window now", platform.name));
         }
@@ -1111,11 +1221,17 @@ impl App {
             // waiting: taken back with it, or a holder that lets go later
             // would hand over a chat the reader said they did not want.
             self.remote.given_up = None;
+            self.remote.succeeding = None;
             return;
         }
-        if self.remote.holding.take().is_none() {
+        // Nor taken up by a lock that comes back later: the reader has
+        // said they do not want it here.
+        self.remote.succeeding = None;
+        if self.remote.holding.is_none() {
             return;
         }
+        self.stop_relaying(obelus_remote::relay::Over::Stopped);
+        self.remote.holding = None;
         self.let_the_chat_go();
         if let Some(platform) = self.platform() {
             self.say(format!("{} talks to no window now", platform.name));
@@ -1140,11 +1256,58 @@ impl App {
         // Only once it is going: this window hears its own asking too, and
         // a code it is waiting to make is the reason it asked.
         self.remote.pair_once_connected = false;
+        self.stop_relaying(obelus_remote::relay::Over::Handed);
         self.remote.holding = None;
         self.let_the_chat_go();
         if let Some(platform) = self.platform() {
             self.say(format!("{} went to another window", platform.name));
         }
         self.leave_unseen();
+    }
+
+    /// The window this one was heard through went without letting the chat
+    /// go: taken up here, at once where nobody has it, and otherwise by
+    /// waiting in the kernel -- another window left behind may have it
+    /// first, and this one joins that one instead.
+    ///
+    /// Never by asking: the window that went is not there to hear it, and
+    /// the window that took it up first would hand it over.
+    pub(super) fn take_up_the_chat(&mut self) {
+        if self.platform().is_none() || self.has_the_remote() {
+            return;
+        }
+        let Some(lock) = the_lock() else {
+            return;
+        };
+        if !obelus_agent::chats::held_by_somebody_else(&lock) {
+            self.take_the_remote(lock);
+            return;
+        }
+        // On the thread already waiting, where there is one: it comes back
+        // with the lock under its own number.
+        if let Some(waiting) = self.remote.waiter {
+            self.remote.succeeding = Some(waiting);
+            return;
+        }
+        let Some(events) = self.events.clone() else {
+            return;
+        };
+        self.remote.asked += 1;
+        let number = self.remote.asked;
+        self.remote.waiter = Some(number);
+        self.remote.waiters += 1;
+        self.remote.succeeding = Some(number);
+        obelus_runtime::handle().spawn_blocking(move || {
+            let _ = match obelus_agent::chats::wait_to_hold(&lock) {
+                true => events.send(Event::Held(number, lock)),
+                false => events.send(Event::NotHeld(number)),
+            };
+        });
+    }
+
+    /// Somebody else took the chat up first, and this window is heard
+    /// through them: a lock that comes back later is let go again.
+    pub(super) fn no_longer_taking_up_the_chat(&mut self) {
+        self.remote.succeeding = None;
     }
 }

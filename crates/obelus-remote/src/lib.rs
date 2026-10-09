@@ -15,10 +15,14 @@
 //! of fields ([`platform`]), and where each is kept -- a secret in the
 //! keyring ([`secrets`]), anything else in `[remotes.<platform>]` -- is
 //! decided here once, for all of them.
+//!
+//! **One window talks to the chat, and every window is heard in it.** The
+//! one holding it relays for the rest ([`relay`]).
 
 pub mod feishu;
 pub mod model;
 pub mod platform;
+pub mod relay;
 pub mod secrets;
 pub mod slack;
 mod waiting;
@@ -129,6 +133,21 @@ pub enum Event {
         /// The number the question was asked with.
         asked: u64,
     },
+    /// The window this one is joined to has a new connection to the
+    /// platform: what was on its way to the last will not arrive.
+    Restarted,
+    /// The window this one was joined to went, and why.
+    Left(relay::Over),
+    /// The group the threads are in, as the window this one is joined to
+    /// has it.
+    Room(String),
+    /// A window joined to this one, which the chat talks to, did something.
+    Window {
+        /// The relay's number for it.
+        window: u64,
+        /// What.
+        did: relay::Window,
+    },
 }
 
 /// This process's mark, on every card it puts up: a question is numbered
@@ -163,7 +182,7 @@ pub(crate) fn capped(text: &str, most: usize) -> String {
 /// One, because the mark on its status row and the rows of the settings
 /// page that say what is wrong both read it, and two answers there would be
 /// the two drifting apart.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum State {
     /// No chat is set.
     #[default]
