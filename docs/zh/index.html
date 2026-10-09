@@ -61,6 +61,7 @@
       <div class="buttons">
         <a class="button primary" href="#start"><span>安装</span></a>
         <a class="button" href="#how"><span>看看工作流</span></a>
+        <a class="button" href="features.html"><span>全部功能</span></a>
         <a class="button" href="https://github.com/obelus-editor/obelus">GitHub</a>
       </div>
 
@@ -103,10 +104,12 @@
       <li><a href="#start"><span>安装</span></a></li>
       <li><a href="#how"><span>工作流</span></a></li>
       <li><a href="#does"><span>编辑器本身</span></a></li>
+      <li><a href="#all"><span>它都有什么</span></a></li>
       <li><a href="#fit"><span>适合谁</span></a></li>
       <li><a href="#not"><span>它不做什么</span></a></li>
       <li><a href="#tenets"><span>设计理念</span></a></li>
       <li><a href="#why"><span>为什么写它</span></a></li>
+      <li><a href="features.html"><span>功能 ›</span></a></li>
       <li><a href="reference.html"><span>参考 ›</span></a></li>
     </ol>
   </nav>
@@ -196,7 +199,7 @@ ob src/main.rs       # 同一个文件，在终端里打开</code></pre>
         <li>列表底部只列<em>现在</em>能用的键；<kbd>Ctrl+k</kbd> 看全部，暂时用不了的是灰的。</li>
         <li><kbd>Ctrl+p</kbd> 是命令面板，记不住快捷键的，都能按名字搜到。</li>
         <li>光标放到一处改动上按 <kbd>Alt+d</kbd>，改之前的样子会<em>就地</em>展开。</li>
-        <li>看到可疑的一行，按 <kbd>Alt+t</kbd> 记一句。再 <kbd>Ctrl+p</kbd> 搜 <code>todo</code> 打开笔记页，选中它按 <kbd>Alt+a</kbd>，和 agent 聊聊——这就是下面那套工作流的起点。</li>
+        <li>看到可疑的一行，按 <kbd>Alt+t</kbd> 记一句。再按 <kbd>Ctrl+t</kbd> 打开笔记页，选中它按 <kbd>Alt+a</kbd>，和 agent 聊聊——这就是下面那套工作流的起点。</li>
         <li><kbd>Ctrl+p</kbd> → <code>open-settings</code> 改颜色、换行、tab 宽度；<code>choose-theme</code> 换主题。</li>
         <li><kbd>Ctrl+q</kbd> 退出。</li>
       </ol>
@@ -214,7 +217,7 @@ ob src/main.rs       # 同一个文件，在终端里打开</code></pre>
           <span class="no">01</span>
           <div>
             <p class="claim">先记一笔，或者直接开聊。</p>
-            <p class="why">看到哪行代码不对劲，在那一行按 <kbd>Alt+t</kbd> 写一句；想做的事不对着哪一行，就写在笔记页里（<kbd>Ctrl+p</kbd> 搜 <code>todo</code>）。不想记笔记也行，<kbd>F4</kbd> 直接开一段新对话。</p>
+            <p class="why">看到哪行代码不对劲，在那一行按 <kbd>Alt+t</kbd> 写一句；想做的事不对着哪一行，就写在笔记页里（<kbd>Ctrl+t</kbd>）。不想记笔记也行，<kbd>F4</kbd> 直接开一段新对话。</p>
           </div>
         </li>
         <li>
@@ -235,7 +238,7 @@ ob src/main.rs       # 同一个文件，在终端里打开</code></pre>
           <span class="no">04</span>
           <div>
             <p class="claim">中途随时过去看。</p>
-            <p class="why">不用等它改完。<kbd>F2</kbd> 再按 <kbd>Tab</kbd>，选那个 worktree，就切到<a href="#worktrees">那棵树上</a>。还没提交的改动，边栏上标着，<kbd>F3</kbd> 列出改过的文件；已经提交的，在它写的那一行上按 <kbd>F11</kbd>，就能看到整个提交。</p>
+            <p class="why">不用等它改完。<kbd>F2</kbd> 再按 <kbd>Tab</kbd>，选那个 worktree，就切到<a href="#worktrees">那棵树上</a>。还没提交的改动，边栏上标着，<kbd>F3</kbd> 列出改过的文件；已经提交的，<kbd>F9</kbd> 列出这个文件的提交，选一个，就打开那个提交时的文件，那次提交改了什么标在边栏上。</p>
           </div>
         </li>
         <li>
@@ -314,7 +317,7 @@ ob src/main.rs       # 同一个文件，在终端里打开</code></pre>
       <div class="feature">
         <div class="text">
       <h3 id="notes">笔记一直指着它说的那一行</h3>
-      <p>在一行上按 <kbd>Alt+t</kbd> 记一条笔记，<kbd>Ctrl+p</kbd> 搜 <code>todo</code> 打开全部。笔记可以对着某一行，也可以对着整个项目，还能一条挂在另一条底下。它记着写下时的提交，所以就算文件后来改了很多，上周写的笔记也还能找到当初那一行。笔记存在 Obelus 自己的目录里，不在仓库里，所以所有 worktree 都看得到，也不会混进你的提交。</p>
+      <p>在一行上按 <kbd>Alt+t</kbd> 记一条笔记，<kbd>Ctrl+t</kbd> 打开全部。笔记可以对着某一行，也可以对着整个项目，还能一条挂在另一条底下。它记着写下时的提交，所以就算文件后来改了很多，上周写的笔记也还能找到当初那一行。笔记存在 Obelus 自己的目录里，不在仓库里，所以所有 worktree 都看得到，也不会混进你的提交。</p>
         </div>
         <figure class="shot">
           <a class="dark" href="../screens/notes-dark.webp"><img src="../screens/notes-dark.webp" width="2100" height="620" loading="lazy" alt="笔记页：一条笔记底下挂着三步，其中一步打了勾，旁边还有两条笔记。"></a>
@@ -343,7 +346,7 @@ ob src/main.rs       # 同一个文件，在终端里打开</code></pre>
             <li>滚动条旁边能看到整个文件的改动分布</li>
             <li><kbd>Alt+d</kbd> 展开 / 收起一处改动，<kbd>Alt+p</kbd> / <kbd>Alt+n</kbd> 跳到上一处 / 下一处</li>
             <li>边栏显示每一行最后是谁改的（可以关掉）</li>
-            <li><kbd>F9</kbd> 看这个文件的历史，<kbd>F10</kbd> 看整个项目的历史，<kbd>F11</kbd> 看这一行是哪个提交写的；还没推到远端的提交会标出来</li>
+            <li><kbd>F9</kbd> 看这个文件的历史，<kbd>F10</kbd> 看整个项目的历史；选一个提交就打开它当时的文件，还没推到远端的提交会标出来</li>
             <li>只读：Obelus 不改你的仓库，也不替你跑 git</li>
           </ul>
         </div>
@@ -372,8 +375,28 @@ ob src/main.rs       # 同一个文件，在终端里打开</code></pre>
       <p>不用先进「插入模式」才能打字——像 VS Code、Emacs，不像 vim、helix。规律很简单：功能键打开要看的东西，<kbd>Ctrl</kbd> 对当前文件做事，<kbd>Alt</kbd> 问光标下面是什么。记不住的，<kbd>Ctrl+p</kbd> 按名字搜命令；列表底部有按键提示的地方，<kbd>Ctrl+k</kbd> 能看到全部按键。完整的按键表在<a href="reference.html#keys">参考</a>里。</p>
     </section>
 
+    <section id="all">
+      <h2><span class="num">04</span><span>它都有什么</span></h2>
+
+      <p>上面是 Obelus 和别人不一样的地方。下面是它的全部，每一行都链到<a href="features.html">功能页</a>里讲它的那一节，连按键带设置。</p>
+
+      <ul class="beats">
+        <li><span><strong>打开与切换。</strong>文件树、打开着的东西、改过的文件、问你开哪个项目的页面，上次开着的下次照样打开</span><a class="where" href="features.html#open">打开 ›</a></li>
+        <li><span><strong>阅读。</strong>边栏上的改动和这行是谁写的、折叠、markdown 和日志排好了看、二十多种语言的高亮、项目代码行数统计</span><a class="where" href="features.html#reading">阅读 ›</a></li>
+        <li><span><strong>查找。</strong>一个搜索界面搜当前文件、整个项目或所有名字；大纲；每次跳转都能后退、前进</span><a class="where" href="features.html#finding">查找 ›</a></li>
+        <li><span><strong>语言服务器。</strong>定义、引用、调用关系、悬停、补全、code action、重命名、问题列表</span><a class="where" href="features.html#code">语言服务器 ›</a></li>
+        <li><span><strong>git。</strong>改动就地展开、文件和项目历史、任何一个提交时的文件、pull request 和 issue</span><a class="where" href="features.html#git">git ›</a></li>
+        <li><span><strong>笔记。</strong>指着某一行，文件改了也找得回来，所有 worktree 共用</span><a class="where" href="features.html#notes">笔记 ›</a></li>
+        <li><span><strong>Agent。</strong>任何 ACP agent，从列表里装；对话能接着聊；它的问题是卡片；能发图片；Obelus 自己给它的工具</span><a class="where" href="features.html#agent">Agent ›</a></li>
+        <li><span><strong>从聊天里用。</strong>在手机上的 Slack 或飞书里接着同一段对话，或者干脆跑一个没有界面的 Obelus</span><a class="where" href="features.html#remote">从聊天里用 ›</a></li>
+        <li><span><strong>Worktree 与多窗口。</strong>每个 worktree、每个开在上面的窗口，一个键就到；编译任务数在窗口之间共享</span><a class="where" href="features.html#worktrees">Worktree ›</a></li>
+        <li><span><strong>终端。</strong>你的 shell，作为一个单独的文档</span><a class="where" href="features.html#terminal">终端 ›</a></li>
+        <li><span><strong>按键与设置。</strong>命令面板、任意改键、主题、设置页、项目自己的设置</span><a class="where" href="features.html#settings">按键与设置 ›</a></li>
+      </ul>
+    </section>
+
     <section id="fit">
-      <h2><span class="num">04</span><span>适合谁</span></h2>
+      <h2><span class="num">05</span><span>适合谁</span></h2>
 
       <p>Obelus 是照一种特定的干活方式做的。下面这些大多说中你的话，它应该会顺手：</p>
 
@@ -387,7 +410,7 @@ ob src/main.rs       # 同一个文件，在终端里打开</code></pre>
     </section>
 
     <section id="not">
-      <h2><span class="num">05</span><span>它不做什么</span></h2>
+      <h2><span class="num">06</span><span>它不做什么</span></h2>
 
       <p>这些是故意不做的，不是没来得及。</p>
 
@@ -404,7 +427,7 @@ ob src/main.rs       # 同一个文件，在终端里打开</code></pre>
     </section>
 
     <section id="tenets">
-      <h2><span class="num">06</span><span>设计理念</span></h2>
+      <h2><span class="num">07</span><span>设计理念</span></h2>
 
       <p>做取舍时拿来对照的几句话，大多是踩过坑才写下来的。</p>
 
@@ -441,7 +464,7 @@ ob src/main.rs       # 同一个文件，在终端里打开</code></pre>
     </section>
 
     <section id="why">
-      <h2><span class="num">07</span>为什么写它</h2>
+      <h2><span class="num">08</span>为什么写它</h2>
 
       <p><strong>说实话，这是我写给自己用的。</strong>每个取舍先问「我用着顺不顺手」，再问「会不会有人因为少了某个功能就不用」——所以这页说的习惯，都是我的习惯。</p>
 

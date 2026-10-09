@@ -676,6 +676,20 @@ pre code { background: none; padding: 0; font-size: inherit; }
 .card ul { margin: 0.4rem 0 0; padding-left: 1.1rem; font-size: 0.93em; color: var(--t-text-muted); }
 .card li { margin-bottom: 0.25rem; }
 
+/* What a feature is reached by -- its key, its command and the settings that
+   change it -- in one quiet line under what it does. The labels are muted so
+   the names are what the eye lands on. */
+.how {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.4rem;
+  font-size: 0.88em;
+  margin-top: -0.2rem;
+}
+.how > span { color: var(--t-text-muted); }
+.how > span:not(:first-child) { margin-left: 0.8rem; }
+
 /* Tables are lists: a rule under the heading and none between rows, and
    the row the pointer is on marked the way a list's selection is. */
 .table-wrap { overflow-x: auto; margin: 1.4rem 0; }
