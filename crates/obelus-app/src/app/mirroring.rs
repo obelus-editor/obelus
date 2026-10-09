@@ -12,7 +12,10 @@
 //! to the thread a stretch at a time -- whatever it said before it went off
 //! to call something, and what it said last when the turn is over -- rather
 //! than as it types, which in a chat is a message edited forty times or
-//! forty messages; and only the end of the turn calls the reader. So do the
+//! forty messages; and only the end of the turn calls the reader. What it
+//! thinks goes the same way, quietly and marked as thinking, a stretch of
+//! its own wherever it stops saying and starts thinking or back -- on a
+//! phone it is most of what says why the turn is taking so long. So do the
 //! questions it asks, as cards the platform draws. What the reader
 //! types here goes there too, marked as said on this machine; what they say
 //! there arrives here like anything they typed, with a line in front of it for
@@ -42,6 +45,12 @@ use obelus_remote::model::{Head, Out, Question, Turning};
 use super::*;
 use crate::conversation::{Conversation, Topic};
 
+/// What a thought begins with in the thread: a mark rather than a word,
+/// so that it does not read as something the agent said to the reader.
+const THOUGHT: &str = "\u{1f4ad}";
+/// And a plan, for the same reason.
+const PLAN: &str = "\u{1f4cb}";
+
 /// What goes in front of words that came from the chat, for the agent.
 const AFAR: &str = include_str!("afar.txt");
 
@@ -62,8 +71,9 @@ pub(super) struct Mirror {
     /// The question up in each conversation, by the number it was put to
     /// the thread with, while it is up.
     questions: BTreeMap<String, u64>,
-    /// What the agent has said in each conversation's turn so far.
-    this_turn: BTreeMap<String, String>,
+    /// What the agent has said in each conversation's turn since it last
+    /// went quiet, or changed from thinking to saying or back.
+    this_turn: BTreeMap<String, Stretch>,
     /// The steps of the plan last said in each conversation's thread this
     /// turn.
     plans: BTreeMap<String, Vec<String>>,
@@ -132,6 +142,30 @@ impl Saying {
                 said,
             },
         }
+    }
+}
+
+/// A stretch of what the agent said, one kind at a time.
+#[derive(Debug, Default)]
+struct Stretch {
+    /// Whether it was thinking it rather than saying it.
+    thinking: bool,
+    text: String,
+}
+
+impl Stretch {
+    /// As the thread is given it, where there is anything to give: a
+    /// thought marked as one, the way the plan is.
+    fn worded(&self) -> Option<String> {
+        let text = self.text.trim();
+        if text.is_empty() {
+            return None;
+        }
+        Some(if self.thinking {
+            format!("{THOUGHT} {text}")
+        } else {
+            text.to_string()
+        })
     }
 }
 
@@ -733,18 +767,28 @@ impl App {
             .is_some_and(|talk| talk.session.is_none() && talk.asked_for.is_some())
     }
 
-    /// Keeps what the agent said, for the end of its turn.
-    pub(super) fn mirror_said(&mut self, whose: talking::Whose, text: &str) {
+    /// Keeps what the agent said, or thought, for the end of its turn. A
+    /// thought after words, or words after a thought, sends what came
+    /// before quietly first: a thread with the two run together is one
+    /// where the reader cannot tell which the agent meant them to read.
+    pub(super) fn mirror_said(&mut self, whose: talking::Whose, text: &str, thinking: bool) {
         if !self.chat_is_listening() || self.replaying(whose) {
             return;
         }
-        if let Some(chat) = self.chat_named(whose) {
-            self.mirror
-                .this_turn
-                .entry(chat)
-                .or_default()
-                .push_str(text);
+        let Some(chat) = self.chat_named(whose) else {
+            return;
+        };
+        if self
+            .mirror
+            .this_turn
+            .get(&chat)
+            .is_some_and(|stretch| stretch.thinking != thinking)
+        {
+            self.mirror_paused(whose);
         }
+        let stretch = self.mirror.this_turn.entry(chat).or_default();
+        stretch.thinking = thinking;
+        stretch.text.push_str(text);
     }
 
     /// The agent has gone to do something: what it said before it went goes
@@ -755,9 +799,13 @@ impl App {
         let Some(chat) = self.chat_named(whose) else {
             return;
         };
-        let said = self.mirror.this_turn.remove(&chat).unwrap_or_default();
-        if !said.trim().is_empty() {
-            self.mirror_in(whose, said.trim().to_string(), false);
+        if let Some(said) = self
+            .mirror
+            .this_turn
+            .remove(&chat)
+            .and_then(|stretch| stretch.worded())
+        {
+            self.mirror_in(whose, said, false);
         }
     }
 
@@ -783,7 +831,7 @@ impl App {
         }
         self.mirror.plans.insert(chat, said);
         self.mirror_paused(whose);
-        let mut plan = "_The plan:_".to_string();
+        let mut plan = PLAN.to_string();
         for step in steps {
             let mark = match step.state.as_str() {
                 "completed" => '\u{2713}',
@@ -806,14 +854,15 @@ impl App {
 
     /// The turn is over: what the agent said since its last call goes to the
     /// thread, and the reader is called -- this is the moment it wants them.
+    /// Not by a thought, which is not what the turn came to.
     pub(super) fn mirror_turn_over(&mut self, whose: talking::Whose) {
         let Some(chat) = self.chat_named(whose) else {
             return;
         };
-        let said = self.mirror.this_turn.remove(&chat).unwrap_or_default();
-        let said = said.trim();
-        if !said.is_empty() {
-            self.mirror_in(whose, said.to_string(), true);
+        if let Some(stretch) = self.mirror.this_turn.remove(&chat)
+            && let Some(said) = stretch.worded()
+        {
+            self.mirror_in(whose, said, !stretch.thinking);
         }
         self.mirror_head(whose, Some(Turning::Done));
     }

@@ -998,7 +998,10 @@ fn pressed(asked: u64, chosen: &str) -> obelus_remote::Event {
 /// turn never ended. And dropping the line in front of
 /// words from afar: the agent's log had no "sent from Slack". The thread's
 /// head twice: never said again, it stayed as it opened; said again with
-/// the state it had, it never said `Waiting` or `Done`.
+/// the state it had, it never said `Waiting` or `Done`. And what it thought
+/// three ways: not mirrored, no thought in the thread; run into the words
+/// after it, the words did not stand on their own; sent calling the reader,
+/// the thought was not quiet.
 #[test]
 fn a_conversation_and_its_thread_say_the_same_things() {
     let _turn = turn();
@@ -1078,6 +1081,31 @@ fn a_conversation_and_its_thread_say_the_same_things() {
     // And what the agent said before it asked, whole, ahead of the
     // question.
     assert!(in_thread(&said, "T1", "it is a rust file"), "{said:#?}");
+    // And what it thought before it said it, quietly and on its own.
+    let words: Vec<(&str, bool)> = said
+        .iter()
+        .filter_map(|out| match out {
+            obelus_remote::model::Out::Say {
+                thread,
+                text,
+                notify,
+                ..
+            } if thread == "T1" && !text.contains("On this machine") => {
+                Some((text.as_str(), *notify))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        words.get(..2),
+        Some(
+            &[
+                ("\u{1f4ad} working it out", false),
+                ("it is a rust file", false)
+            ][..]
+        ),
+        "not the thought and then the words, quietly: {said:#?}"
+    );
     assert!(
         said.iter().any(|out| matches!(
             out,
@@ -1527,17 +1555,17 @@ fn a_plan_is_said_when_its_steps_change() {
         .collect();
     let plans: Vec<&(&str, bool)> = words
         .iter()
-        .filter(|(text, _)| text.starts_with("_The plan:_"))
+        .filter(|(text, _)| text.starts_with('\u{1f4cb}'))
         .collect();
     assert_eq!(
         plans,
         [
             &(
-                "_The plan:_\n\u{25b8} read the counts tree\n\u{25e6} write the test",
+                "\u{1f4cb}\n\u{25b8} read the counts tree\n\u{25e6} write the test",
                 false
             ),
             &(
-                "_The plan:_\n\u{2713} read the counts tree\n\u{25b8} wire it to the search\n\u{25e6} write the test",
+                "\u{1f4cb}\n\u{2713} read the counts tree\n\u{25b8} wire it to the search\n\u{25e6} write the test",
                 false
             ),
         ],
@@ -1550,7 +1578,7 @@ fn a_plan_is_said_when_its_steps_change() {
             .unwrap_or_else(|| panic!("nothing said with {what:?} in it: {words:#?}"))
     };
     assert!(
-        at("thinking it over") < at("_The plan:_"),
+        at("thinking it over") < at("\u{1f4cb}"),
         "the plan went ahead of what was said before it: {words:#?}"
     );
 }
@@ -1565,7 +1593,7 @@ fn plans_in<'a>(said: &'a [obelus_remote::model::Out], thread: &str) -> Vec<(&'a
                 text,
                 notify,
                 ..
-            } if at == thread && text.starts_with("_The plan:_") => Some((text.as_str(), *notify)),
+            } if at == thread && text.starts_with('\u{1f4cb}') => Some((text.as_str(), *notify)),
             _ => None,
         })
         .collect()

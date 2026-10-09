@@ -3881,11 +3881,12 @@ impl App {
         match incoming {
             acp::Incoming::Update { update, .. } => match update {
                 acp::Update::Said(text) => {
-                    self.mirror_said(whose, &text);
+                    self.mirror_said(whose, &text, false);
                     self.in_talk(whose, |chat| chat.chunk(Speaker::Agent, &text));
                 }
                 acp::Update::Thought(text) => {
-                    self.in_talk(whose, |chat| chat.chunk(Speaker::Thought, &text))
+                    self.mirror_said(whose, &text, true);
+                    self.in_talk(whose, |chat| chat.chunk(Speaker::Thought, &text));
                 }
                 // The reader's own words, as the agent has them. What this
                 // is for is a conversation taken up again after Obelus was
