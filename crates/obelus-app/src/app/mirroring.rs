@@ -29,8 +29,9 @@
 //! **The card is the answer.** A question goes to the thread as a card the
 //! platform draws, and a press on it comes back as the ids chosen and the
 //! words written, held to the same counts as the card here and taken as if
-//! pressed here; a reply in words while it is up is pointed back at it, and
-//! once it is answered, here or there, the next reply is talking again.
+//! pressed here -- or as cancel, which is escape on the card here; a reply
+//! in words while it is up is pointed back at it, and once it is answered,
+//! here or there, the next reply is talking again.
 //! Reading words as an answer was Obelus deciding what the reader meant --
 //! `1，3` was no number until it learnt Chinese punctuation -- and taking the
 //! question back so that the agent could read them was a turn stopped under
@@ -997,6 +998,34 @@ impl App {
             Saying::Settle(asked, format!("\u{2714} {}", said.join(", "))),
         );
         self.mirror_head(whose, Some(Turning::Working));
+    }
+
+    /// Somebody pressed cancel on a question's card: given up on, as escape
+    /// gives up on it here, where it is the question still up.
+    pub(super) fn cancelled_on_a_card(&mut self, asked: u64) {
+        let Some(chat) = self
+            .mirror
+            .questions
+            .iter()
+            .find(|(_, now)| **now == asked)
+            .map(|(chat, _)| chat.clone())
+        else {
+            tracing::info!(asked, "a cancel on a question no longer asked");
+            return;
+        };
+        let Some(id) = self.document_named(&chat) else {
+            return;
+        };
+        let whose = talking::Whose::One(id);
+        self.mirror.questions.remove(&chat);
+        self.say_to_thread(
+            &chat,
+            Saying::Settle(asked, "\u{2716} Not answered".to_string()),
+        );
+        // Before the giving up, which may put the next question up and the
+        // thread back to waiting.
+        self.mirror_head(whose, Some(Turning::Working));
+        self.give_up_the_question(whose);
     }
 
     /// Says in the thread what the reader typed here.
