@@ -108,8 +108,9 @@ fn pictures_in_the_box(app: &App) -> usize {
 
 /// With nothing over the box, a picture pasted goes in it.
 ///
-/// What says the clipboard below is one the paste can read, so that the
-/// next test's "nothing arrived" is about the card and not about the fake.
+/// The control for the two after it: it shows the fake clipboard is one a
+/// paste can read, so that their "nothing arrived" is about what covers the
+/// box and not about the fake.
 ///
 /// Deliberate break: `can_take_a_picture` answering `false` leaves the box
 /// empty.
@@ -142,12 +143,40 @@ fn a_picture_pasted_on_a_card_does_not_go_behind_it() {
     support::press(&mut app, KeyCode::Enter);
     support::press(&mut app, KeyCode::Enter);
     pump(&mut app, &events, "the question", App::is_asking);
+    // A card with nowhere to write kept the picture out before the fix as
+    // well, so a test on one would pass whatever `paste` asked.
+    assert!(
+        app.card()
+            .is_some_and(obelus_component::card::Card::takes_words),
+        "the card has no room for words"
+    );
 
     app.paste();
     assert_eq!(
         pictures_in_the_box(&app),
         0,
         "the picture went into the message box under the card"
+    );
+    assert_eq!(app.note(), Some("A picture goes in a message to an agent"));
+}
+
+/// A list open over the conversation is in front of the box the same way a
+/// card is, and a picture pasted there goes nowhere either -- as a picture
+/// dropped there does (`a_file_dropped_with_a_list_in_front_goes_nowhere`).
+///
+/// Deliberate break: `box_takes_a_picture` asking only about the card puts
+/// the picture in the box behind the palette.
+#[test]
+fn a_picture_pasted_on_a_list_does_not_go_behind_it() {
+    let (mut app, _events) = talking();
+    support::press_control(&mut app, 'p');
+    assert!(app.picker().is_some(), "the palette did not open");
+
+    app.paste();
+    assert_eq!(
+        pictures_in_the_box(&app),
+        0,
+        "the picture went into the message box under the palette"
     );
     assert_eq!(app.note(), Some("A picture goes in a message to an agent"));
 }
