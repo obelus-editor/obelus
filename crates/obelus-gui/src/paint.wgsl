@@ -415,9 +415,12 @@ fn fragment(in: Fragment) -> @location(0) vec4<f32> {
     // Every sample held inside the pane, whose rectangle is `box`: what is
     // outside it in the picture is nothing, and a blur that reached for it
     // would darken the glass along every edge.
+    //
+    // In the window's pixels wherever it is drawn: the picture it draws
+    // into is smaller than the window, by what the quad's last two say.
     if ((in.flags & 1024u) != 0u) {
         let way = in.colour.xy;
-        let at = in.position.xy;
+        let at = in.position.xy * in.colour.zw;
         let low = in.box.xy + vec2<f32>(0.5);
         let high = max(in.box.zw - vec2<f32>(0.5), low);
         var sum = textureSampleLevel(behind, behind_sampler, clamp(at, low, high) / screen.size, 0.0).rgb * gauss(0.0);

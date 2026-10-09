@@ -196,22 +196,25 @@ pub(crate) struct Painter {
     /// the whole frame is drawn with, nothing else reading a picture.
     levels: Vec<Seen>,
     /// Where a blur's first way is put, for the second to read, and the
-    /// bindings that read it.
+    /// bindings that read it. Half the window each way, as the blurred
+    /// picture is -- see `halved`.
     scratch: wgpu::TextureView,
     scratch_bindings: wgpu::BindGroup,
     /// And the whole frame as one, which is drawn only while a pane is on
-    /// its way in.
-    picture: wgpu::TextureView,
-    /// The bindings that read that one, for the two quads that put it back
-    /// on the screen.
-    showing_bindings: wgpu::BindGroup,
+    /// its way in, with the bindings the two quads that put it back on the
+    /// screen read it through.
+    ///
+    /// There only while something is over the page -- see
+    /// `picture_while_wanted` -- because a window with nothing open is the
+    /// one most often on the screen, and a picture the size of it is the
+    /// memory of a whole window kept for a moment that is not coming.
+    picture: Option<Whole>,
     /// The screen as it was when a pane went from it, drawn once at that
     /// moment: the page is what Obelus said, and a pane that has gone is
     /// on no page, so this is the one place it is still to be found -- and
-    /// what it is drawn leaving out of (`keep`).
-    left: wgpu::TextureView,
-    /// The bindings that read that one.
-    left_bindings: wgpu::BindGroup,
+    /// what it is drawn leaving out of (`keep`). Made there, and let go by
+    /// the first frame with nothing leaving.
+    left: Option<Whole>,
     /// Where each pane that went stood in it -- its glass, which is where
     /// it was cut from the screen under it -- and the edge it goes along.
     gone: Vec<([f32; 4], Joined)>,
@@ -242,16 +245,37 @@ struct Seen {
 }
 
 impl Seen {
-    /// Both pictures, the size of the window.
+    /// Both pictures: the sharp one the size of the window, and the blurred
+    /// one half of it each way -- see `halved`.
     fn made(binder: &Binder<'_>, format: wgpu::TextureFormat, width: u32, height: u32) -> Self {
         let backdrop = made_to_draw_into(binder.device, format, width, height);
-        let blurred = made_to_draw_into(binder.device, format, width, height);
+        let blurred = made_to_draw_into(binder.device, format, halved(width), halved(height));
         let bindings = binder.bound(&backdrop, &blurred);
         Self {
             backdrop,
             blurred,
             bindings,
         }
+    }
+}
+
+/// A picture of the whole window, and the bindings that read it.
+struct Whole {
+    view: wgpu::TextureView,
+    bindings: wgpu::BindGroup,
+}
+
+impl Whole {
+    fn made(
+        binder: &Binder<'_>,
+        nothing: &wgpu::TextureView,
+        format: wgpu::TextureFormat,
+        width: u32,
+        height: u32,
+    ) -> Self {
+        let view = made_to_draw_into(binder.device, format, width, height);
+        let bindings = binder.bound(&view, nothing);
+        Self { view, bindings }
     }
 }
 
@@ -879,7 +903,22 @@ impl Painter {
             // a degraded picture.
             required_limits: adapter.limits(),
             experimental_features: wgpu::ExperimentalFeatures::disabled(),
-            memory_hints: wgpu::MemoryHints::default(),
+            // Small blocks, because the default reserves for a game: blocks
+            // that start at 128 MiB on the card and 64 MiB in the machine's
+            // own memory, where a window of 1882 by 2052 was measured using
+            // 89 MiB in all. Several Obelus windows open at once is the
+            // normal case, and on NVIDIA that window went from 506 MiB to
+            // 156. Vulkan and DX12 are told; Metal and GL take no notice.
+            //
+            // The smallest there is, and fixed, rather than `MemoryUsage`,
+            // whose blocks double up to 64 MiB and still kept 246: the
+            // pictures the size of the window are each bigger than a block,
+            // so each gets memory of its own and gives it back whole. What
+            // that costs is a resize -- about 3ms where it was 1.5 -- and
+            // nothing a frame was seen to.
+            memory_hints: wgpu::MemoryHints::Manual {
+                suballocated_device_memory_block_size: (4 << 20)..(4 << 20),
+            },
             trace: wgpu::Trace::Off,
         }))
         .context("the graphics adapter would not open a device")?;
@@ -1052,12 +1091,8 @@ impl Painter {
         };
         let nothing = made_to_draw_into(&device, view, 1, 1);
         let levels = vec![Seen::made(&binder, view, width, height)];
-        let scratch = made_to_draw_into(&device, view, width, height);
+        let scratch = made_to_draw_into(&device, view, halved(width), halved(height));
         let scratch_bindings = binder.bound(&scratch, &nothing);
-        let picture = made_to_draw_into(&device, view, width, height);
-        let showing_bindings = binder.bound(&picture, &nothing);
-        let left = made_to_draw_into(&device, view, width, height);
-        let left_bindings = binder.bound(&left, &nothing);
         let plain_bindings = binder.bound(&nothing, &nothing);
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -1143,10 +1178,8 @@ impl Painter {
             levels,
             scratch,
             scratch_bindings,
-            picture,
-            showing_bindings,
-            left,
-            left_bindings,
+            picture: None,
+            left: None,
             gone: Vec::new(),
             plain_bindings,
             nothing,
@@ -1183,19 +1216,46 @@ impl Painter {
         let levels = (0..self.levels.len())
             .map(|_| Seen::made(&binder, self.view, width, height))
             .collect();
-        let scratch = made_to_draw_into(&self.device, self.view, width, height);
+        let scratch = made_to_draw_into(&self.device, self.view, halved(width), halved(height));
         let scratch_bindings = binder.bound(&scratch, &self.nothing);
-        let picture = made_to_draw_into(&self.device, self.view, width, height);
-        let showing_bindings = binder.bound(&picture, &self.nothing);
-        let left = made_to_draw_into(&self.device, self.view, width, height);
-        let left_bindings = binder.bound(&left, &self.nothing);
+        let picture = self
+            .picture
+            .as_ref()
+            .map(|_| Whole::made(&binder, &self.nothing, self.view, width, height));
         self.levels = levels;
         (self.scratch, self.scratch_bindings) = (scratch, scratch_bindings);
-        (self.picture, self.showing_bindings) = (picture, showing_bindings);
+        self.picture = picture;
         // A picture of the window at its old size is a pane leaving from the
         // wrong place, so what was leaving is simply gone.
-        (self.left, self.left_bindings) = (left, left_bindings);
+        self.left = None;
         self.gone.clear();
+    }
+
+    /// A picture of the whole window, at the size it is now.
+    fn whole(&self) -> Whole {
+        let (width, height) = (self.configured.width, self.configured.height);
+        Whole::made(&self.binder(), &self.nothing, self.view, width, height)
+    }
+
+    /// Makes the picture of the frame when the frame just laid out may
+    /// draw into it, and lets it go when it may not.
+    ///
+    /// Kept for as long as anything is over the page rather than only while
+    /// something moves, because the band scrolling under a pane wants it at
+    /// every press of a key that scrolls: made at the press, it would be a
+    /// picture the size of the window made and let go again at every one.
+    ///
+    /// What making it costs is the first frame of a pane coming in: 1.6ms
+    /// where it was 1.25, measured over a dozen openings, for 31 MiB of a
+    /// 1882 by 2052 window given back while nothing is open.
+    fn picture_while_wanted(&mut self) {
+        let placed = &self.placed;
+        let wanted = placed.composed || placed.under.is_some() || !placed.levels.is_empty();
+        match (wanted, self.picture.is_some()) {
+            (true, false) => self.picture = Some(self.whole()),
+            (false, true) => self.picture = None,
+            _ => {}
+        }
     }
 
     /// Every bind group again, over the same pictures, because the atlas
@@ -1208,15 +1268,19 @@ impl Painter {
             .map(|seen| binder.bound(&seen.backdrop, &seen.blurred))
             .collect();
         let scratch = binder.bound(&self.scratch, &self.nothing);
-        let showing = binder.bound(&self.picture, &self.nothing);
-        let left = binder.bound(&self.left, &self.nothing);
+        let showing = (self.picture.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
+        let left = (self.left.as_ref()).map(|whole| binder.bound(&whole.view, &self.nothing));
         let plain = binder.bound(&self.nothing, &self.nothing);
         for (seen, bindings) in self.levels.iter_mut().zip(levels) {
             seen.bindings = bindings;
         }
         self.scratch_bindings = scratch;
-        self.showing_bindings = showing;
-        self.left_bindings = left;
+        if let (Some(whole), Some(bindings)) = (self.picture.as_mut(), showing) {
+            whole.bindings = bindings;
+        }
+        if let (Some(whole), Some(bindings)) = (self.left.as_mut(), left) {
+            whole.bindings = bindings;
+        }
         self.plain_bindings = plain;
     }
 
@@ -1269,6 +1333,10 @@ impl Painter {
         said: Said<'_>,
     ) -> Result<()> {
         self.lay(page, fonts, spelling, moving, said);
+        self.picture_while_wanted();
+        if self.placed.going.is_none() {
+            self.left = None;
+        }
         let acquiring = Instant::now();
         let acquired = self.surface.get_current_texture();
         let waited = acquiring.elapsed();
@@ -1354,7 +1422,13 @@ impl Painter {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("obelus kept"),
             });
-        self.encode(&mut encoder, &self.left);
+        self.picture_while_wanted();
+        if self.left.is_none() {
+            self.left = Some(self.whole());
+        }
+        if let Some(left) = &self.left {
+            self.encode(&mut encoder, &left.view);
+        }
         self.queue.submit([encoder.finish()]);
     }
 
@@ -1718,15 +1792,17 @@ impl Painter {
             // screen is put back in, so what the glass shows moves with
             // what is round it.
             Some((above, put_back)) => {
-                {
-                    let mut pass = self.pass(encoder, "obelus behind, standing", &self.picture);
-                    pass.set_bind_group(0, &self.plain_bindings, &[]);
-                    drawing(&mut pass, 0..placed.behind());
-                    drawing(&mut pass, above);
+                if let Some(picture) = &self.picture {
+                    {
+                        let mut pass = self.pass(encoder, "obelus behind, standing", &picture.view);
+                        pass.set_bind_group(0, &self.plain_bindings, &[]);
+                        drawing(&mut pass, 0..placed.behind());
+                        drawing(&mut pass, above);
+                    }
+                    let mut pass = self.pass(encoder, "obelus behind", &self.levels[0].backdrop);
+                    pass.set_bind_group(0, &picture.bindings, &[]);
+                    drawing(&mut pass, put_back);
                 }
-                let mut pass = self.pass(encoder, "obelus behind", &self.levels[0].backdrop);
-                pass.set_bind_group(0, &self.showing_bindings, &[]);
-                drawing(&mut pass, put_back);
             }
             None if !placed.levels.is_empty() => {
                 let mut pass = self.pass(encoder, "obelus behind", &self.levels[0].backdrop);
@@ -1750,11 +1826,11 @@ impl Painter {
         // first, and the screen is put together out of it below. Only
         // while one is moving -- an arrived pane is drawn straight to the
         // screen like everything else.
-        let composing = placed.composed;
-        if composing {
+        let composing = self.picture.as_ref().filter(|_| placed.composed);
+        if let Some(picture) = composing {
             // The glass is drawn in here, and what it reads is the
             // backdrop -- which this pass is not writing to.
-            let mut pass = self.pass(encoder, "obelus frame", &self.picture);
+            let mut pass = self.pass(encoder, "obelus frame", &picture.view);
             self.the_frame(&mut pass);
         }
         {
@@ -1767,19 +1843,21 @@ impl Painter {
                 // part of the pane and arrives with it. Left standing in
                 // place, it was a pane already open with only its words
                 // sliding into it -- which is not what the list does.
-                true => {
+                Some(picture) => {
                     // What the pane on top was put over, which is the
                     // picture its glass reads.
                     if let Some(top) = placed.levels.iter().rposition(|level| level.pane) {
                         self.beneath(&mut pass, top);
                     }
-                    self.follow(&mut pass, &catching(&placed), &self.showing_bindings);
+                    self.follow(&mut pass, &catching(&placed), &picture.bindings);
                 }
                 // And a pane that went, over the frame it went from.
-                false => {
+                None => {
                     self.the_frame(&mut pass);
-                    if let Some(going) = placed.going {
-                        pass.set_bind_group(0, &self.left_bindings, &[]);
+                    if let Some(going) = placed.going
+                        && let Some(left) = &self.left
+                    {
+                        pass.set_bind_group(0, &left.bindings, &[]);
                         drawing(&mut pass, going);
                     }
                 }
@@ -3394,14 +3472,27 @@ impl Painter {
     /// reads nothing outside it, and what is outside it in the picture is
     /// nothing -- a blur that reached out for it would darken the pane's
     /// edges, which is why the shader holds its samples inside `box_`.
+    ///
+    /// Each carries how many of the window's pixels one of the picture it
+    /// draws into is, each way: the blur is worked out in the window's
+    /// pixels, wherever it is drawn.
     fn blurs_over(&mut self, box_: [f32; 4]) -> usize {
         let [left, top, far, low] = box_;
+        let (width, height) = (self.configured.width, self.configured.height);
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "a window is nowhere near 2^24 pixels across"
+        )]
+        let (across, down) = (
+            width as f32 / halved(width).max(1) as f32,
+            height as f32 / halved(height).max(1) as f32,
+        );
         let first = self.quads.len();
         for way in [[1.0, 0.0], [0.0, 1.0]] {
             self.quads.push(Quad {
                 rect: [left, top, (far - left).max(1.0), (low - top).max(1.0)],
                 uv: box_,
-                colour: [way[0], way[1], 0.0, 0.0],
+                colour: [way[0], way[1], across, down],
                 flags: BLUR,
                 radius: 0.0,
                 layer: 0,
@@ -3479,7 +3570,7 @@ impl Painter {
             let bindings = match reads {
                 Reads::Nothing => otherwise,
                 Reads::Level(level) => &self.levels[*level].bindings,
-                Reads::Left => &self.left_bindings,
+                Reads::Left => self.left.as_ref().map_or(otherwise, |left| &left.bindings),
             };
             pass.set_bind_group(0, bindings, &[]);
             drawing(pass, quads.clone());
@@ -4545,6 +4636,18 @@ enum Ink {
 /// sRGB conversion for exactly this reason. A theme's `#1e1e2e` is the
 /// colour the reader picked, and a pipeline that corrects it draws a
 /// different one.
+/// How big a blurred picture is, against the window: half, each way.
+///
+/// A quarter of the memory and a quarter of the work of one the size of the
+/// window, and nothing lost to the eye, because what is blurred has no detail
+/// a pixel of the window would show -- the spread is five and a half of them,
+/// and the glass reads it through a smooth sampler that puts the pixels back
+/// in between. The sharp picture stays whole: the rim lets it through, and
+/// the rim is where the glass bends the lines behind it.
+fn halved(pixels: u32) -> u32 {
+    pixels.div_ceil(2)
+}
+
 /// A texture the size of the window, to draw a frame into and read back.
 fn made_to_draw_into(
     device: &wgpu::Device,
