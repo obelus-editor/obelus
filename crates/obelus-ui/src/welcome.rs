@@ -159,8 +159,8 @@ const CYCLE: u32 = RAMP_STEPS as u32 * 2;
 /// answered -- "is the fix in the thing I am looking at" -- is a question
 /// somebody asks about a build they are chasing, not one the way in has to
 /// carry, and the log says it on the first line of every run.
-fn label() -> &'static str {
-    concat!("v", env!("CARGO_PKG_VERSION"))
+fn label(version: &str) -> String {
+    format!("v{version}")
 }
 
 /// And a newer one beside it, where there is one.
@@ -173,8 +173,8 @@ fn news(newer: &str) -> String {
 
 /// The version and the news, as one run of text, and which characters of
 /// it are the news.
-fn said(newer: Option<&str>) -> (String, std::ops::Range<usize>) {
-    let version = label();
+fn said(version: &str, newer: Option<&str>) -> (String, std::ops::Range<usize>) {
+    let version = label(version);
     match newer {
         Some(newer) => {
             let news = news(newer);
@@ -182,7 +182,7 @@ fn said(newer: Option<&str>) -> (String, std::ops::Range<usize>) {
             let to = from + news.chars().count();
             (format!("{version} \u{b7} {news}"), from..to)
         }
-        None => (version.to_string(), 0..0),
+        None => (version, 0..0),
     }
 }
 
@@ -197,7 +197,7 @@ fn said(newer: Option<&str>) -> (String, std::ops::Range<usize>) {
 /// way in, and a frame broken open to fit a word into it is worse than a
 /// frame that does not say one. With no room for the news it says the
 /// version alone, which is what it said before there was any.
-fn foot(newer: Option<&str>) -> (String, std::ops::Range<usize>) {
+fn foot(version: &str, newer: Option<&str>) -> (String, std::ops::Range<usize>) {
     let Some(edge) = WORDMARK.last() else {
         return (String::new(), 0..0);
     };
@@ -207,8 +207,8 @@ fn foot(newer: Option<&str>) -> (String, std::ops::Range<usize>) {
         (width >= set.chars().count() + 4).then_some((set, news))
     };
     let set = newer
-        .and_then(|newer| fits(said(Some(newer))))
-        .or_else(|| fits(said(None)));
+        .and_then(|newer| fits(said(version, Some(newer))))
+        .or_else(|| fits(said(version, None)));
     let Some((set, news)) = set else {
         return ((*edge).to_string(), 0..0);
     };
@@ -227,6 +227,8 @@ fn foot(newer: Option<&str>) -> (String, std::ops::Range<usize>) {
 /// The centred block.
 pub struct WelcomeView<'a> {
     keymap: &'a Keymap,
+    /// Which version this is.
+    version: &'a str,
     /// The version of a newer Obelus, where one is out.
     newer: Option<&'a str>,
     theme: &'a Theme,
@@ -262,6 +264,7 @@ impl<'a> WelcomeView<'a> {
     pub fn new(app: &'a impl Screen) -> Self {
         Self {
             keymap: app.keymap(),
+            version: app.version(),
             newer: app.newer_release(),
             theme: app.theme(),
             phase: app.phase(),
@@ -400,7 +403,7 @@ impl WelcomeView<'_> {
         // thing that has stopped.
         let from = self.theme.syntax.keyword;
         let to = self.theme.syntax.function;
-        let (foot, news) = foot(self.newer);
+        let (foot, news) = foot(self.version, self.newer);
         let mut y = top;
         // And the same two colours said as a shape, for a front end that
         // can draw a light rather than a ramp -- see `shapes::sheened`.
@@ -495,8 +498,8 @@ impl WelcomeView<'_> {
         };
         if let Some((said, news)) = self
             .newer
-            .and_then(|newer| fits(said(Some(newer))))
-            .or_else(|| fits(said(None)))
+            .and_then(|newer| fits(said(self.version, Some(newer))))
+            .or_else(|| fits(said(self.version, None)))
             && let Ok(offset) = u16::try_from(usize::from(width).saturating_sub(said.width()))
         {
             for (at, character) in said.chars().enumerate() {

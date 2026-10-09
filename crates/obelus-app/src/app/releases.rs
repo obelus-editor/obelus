@@ -41,12 +41,29 @@ const DAY: Duration = Duration::from_secs(24 * 60 * 60);
 const PATIENCE: Duration = Duration::from_secs(20);
 
 /// What the application knows about releases.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(super) struct Releases {
+    /// Which one this is.
+    ///
+    /// The manifest's, except in a test: a golden grid that drew the
+    /// manifest's would be a fixture rewritten at every release, and the
+    /// length of the number moves the frame it is set in, so no
+    /// substitution afterwards can stand in for it.
+    this: &'static str,
     /// Whether this session has asked.
     asked: bool,
     /// The newer version, once one has been heard of.
     newer: Option<String>,
+}
+
+impl Default for Releases {
+    fn default() -> Self {
+        Self {
+            this: env!("CARGO_PKG_VERSION"),
+            asked: false,
+            newer: None,
+        }
+    }
 }
 
 impl App {
@@ -68,10 +85,21 @@ impl App {
 
     /// Takes what the newest release is called.
     pub(super) fn on_released(&mut self, tag: &str) {
-        self.releases.newer = newer(env!("CARGO_PKG_VERSION"), tag);
+        self.releases.newer = newer(self.releases.this, tag);
         if let Some(newer) = &self.releases.newer {
             tracing::info!(newer, "a newer Obelus is out");
         }
+    }
+
+    /// Which version this is, for the welcome screen.
+    #[must_use]
+    pub fn version(&self) -> &str {
+        self.releases.this
+    }
+
+    /// Makes this a version of the test's choosing.
+    pub fn version_for_test(&mut self, version: &'static str) {
+        self.releases.this = version;
     }
 
     /// The version a newer Obelus is, for the welcome screen.

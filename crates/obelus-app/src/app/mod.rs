@@ -4914,6 +4914,9 @@ impl Screen for App {
         self.naming_list.as_ref()
     }
 
+    fn version(&self) -> &str {
+        App::version(self)
+    }
     fn newer_release(&self) -> Option<&str> {
         App::newer_release(self)
     }
