@@ -599,7 +599,7 @@ impl App {
             // it cannot carry one. "Nothing to paste" sent a reader to look
             // at their clipboard, which is the one place the answer is not.
             if obelus_clipboard::picture().is_some() {
-                self.wrong(match self.conversation_takes_text() {
+                self.wrong(match self.box_takes_a_picture() {
                     // Only reachable once the agent has said so: while
                     // nobody has asked it, a picture is taken.
                     true => "This agent does not take pictures".to_string(),
@@ -616,13 +616,26 @@ impl App {
     /// Whether a picture pasted now would have somewhere to go and somebody
     /// to read it.
     ///
-    /// Two questions that are one: the box has to be taking text -- a card
-    /// over it means the reader is answering something else -- and the
-    /// agent has to have said in the handshake that a prompt may carry a
-    /// picture. The second is what `Carries::image` was put there for.
+    /// Two questions that are one: the box has to be in front of the
+    /// reader, and the agent has to have said in the handshake that a
+    /// prompt may carry a picture. The second is what `Carries::image` was
+    /// put there for.
     #[must_use]
     fn can_take_a_picture(&self) -> bool {
-        self.conversation_takes_text() && self.agent_takes_pictures()
+        self.box_takes_a_picture() && self.agent_takes_pictures()
+    }
+
+    /// Whether the box a message is written in is where the keys are, with
+    /// nothing over it.
+    ///
+    /// Not [`App::conversation_takes_text`], which says yes to a card with
+    /// room for the reader's own words: an answer to a question carries
+    /// words and nothing else, so a picture pasted there went into the box
+    /// behind the card, where nobody could see it arrive.
+    #[must_use]
+    fn box_takes_a_picture(&self) -> bool {
+        self.conversation().is_some_and(|talk| talk.card.is_none())
+            && self.conversation_takes_text()
     }
 
     /// Whether the agent has not said a prompt to it cannot carry a picture.
