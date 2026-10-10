@@ -2402,7 +2402,7 @@ impl Picker {
         // the same rule the key table and the editor's motions follow.
         // Without it `ctrl+pageup` pages the list, which is a different thing
         // from what it should do.
-        let Some(modifiers) = obelus_editing::keymap::modifiers_of(key) else {
+        let Some(modifiers) = obelus_keymap::modifiers_of(key) else {
             return PickerOutcome::Ignored;
         };
         let control = modifiers == KeyModifiers::CONTROL;
@@ -2470,7 +2470,7 @@ impl Picker {
             // list it is part of.
             KeyCode::Esc if bare && self.query.let_go() => PickerOutcome::Consumed,
             KeyCode::Esc if bare => PickerOutcome::Cancelled,
-            _ if self.footed && obelus_editing::keymap::is_keys_card(key) => {
+            _ if self.footed && obelus_keymap::is_keys_card(key) => {
                 self.keys = !self.keys;
                 PickerOutcome::Consumed
             }

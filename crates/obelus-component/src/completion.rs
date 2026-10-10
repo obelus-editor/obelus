@@ -378,7 +378,7 @@ impl Completion {
 
     /// Takes a key, if it is one of the six the panel owns.
     pub fn handle_key(&mut self, key: &KeyEvent) -> CompletionOutcome {
-        let Some(modifiers) = obelus_editing::keymap::modifiers_of(key) else {
+        let Some(modifiers) = obelus_keymap::modifiers_of(key) else {
             return CompletionOutcome::Ignored;
         };
         if modifiers != KeyModifiers::NONE {

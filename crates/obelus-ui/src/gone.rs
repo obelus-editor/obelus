@@ -14,7 +14,7 @@
 
 use crossterm::event::{KeyCode, KeyModifiers};
 use obelus_command::Command;
-use obelus_editing::keymap::{KeyChord, Keymap};
+use obelus_keymap::{KeyChord, Keymap};
 use obelus_theme::Theme;
 use ratatui::{buffer::Buffer as CellBuffer, layout::Rect, style::Style, widgets::Widget};
 

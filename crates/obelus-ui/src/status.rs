@@ -682,7 +682,7 @@ fn how_much(
 /// get the screen back. The cap is the foot's own, so a key looks the same
 /// here as on every page.
 fn read_row(picker: &Picker, area: Rect, cells: &mut CellBuffer, style: Style, theme: &Theme) {
-    let key = obelus_editing::keymap::KeyChord::new(
+    let key = obelus_keymap::KeyChord::new(
         crossterm::event::KeyCode::Esc,
         crossterm::event::KeyModifiers::NONE,
     )

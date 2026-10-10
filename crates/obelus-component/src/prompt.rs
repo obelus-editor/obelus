@@ -316,7 +316,7 @@ impl Prompt {
     /// `ctrl+q` still leaves Obelus from here and a stray `super` disqualifies
     /// a key rather than being ignored.
     pub fn handle_key(&mut self, key: &KeyEvent) -> PromptOutcome {
-        let Some(modifiers) = obelus_editing::keymap::modifiers_of(key) else {
+        let Some(modifiers) = obelus_keymap::modifiers_of(key) else {
             return PromptOutcome::Ignored;
         };
         let bare = modifiers.is_empty();

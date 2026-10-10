@@ -761,7 +761,7 @@ fn the_mnemonic_keys_are_not_a_views_own() {
     let key_for = |app: &App, command: Command| app.keymap().chord_for(command).expect("a key");
     // The chord as it is written, which is the only way it says which key
     // it is: `Ctrl+o`, `Alt+u`.
-    let press_chord = |app: &mut App, chord: obelus_editing::keymap::KeyChord| {
+    let press_chord = |app: &mut App, chord: obelus_keymap::KeyChord| {
         let text = chord.label_in(false);
         let (modifiers, letter) = text.rsplit_once('+').expect("a modifier");
         let modifiers = match modifiers {

@@ -18,6 +18,7 @@ obelus-remote.workspace = true
 obelus-editing.workspace = true
 obelus-git.workspace = true
 obelus-icons.workspace = true
+obelus-keymap.workspace = true
 obelus-lsp.workspace = true
 obelus-markdown.workspace = true
 obelus-row.workspace = true

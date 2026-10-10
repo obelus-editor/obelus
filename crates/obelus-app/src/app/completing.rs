@@ -364,7 +364,7 @@ impl App {
         if self.signature().is_none() {
             return false;
         }
-        let Some(modifiers) = keymap::modifiers_of(key) else {
+        let Some(modifiers) = obelus_keymap::modifiers_of(key) else {
             return false;
         };
         match (modifiers, key.code) {
@@ -833,7 +833,7 @@ impl App {
         if self.filling.is_none() || self.completion.is_some() {
             return false;
         }
-        let Some(modifiers) = keymap::modifiers_of(key) else {
+        let Some(modifiers) = obelus_keymap::modifiers_of(key) else {
             return false;
         };
         match (modifiers, key.code) {

@@ -91,6 +91,7 @@ pub const OURS: &[&str] = &[
     "obelus_editing",
     "obelus_git",
     "obelus_icons",
+    "obelus_keymap",
     "obelus_logging",
     "obelus_lsp",
     "obelus_mcp",

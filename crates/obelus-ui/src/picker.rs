@@ -96,7 +96,7 @@ fn every_hint(picker: &Picker) -> Vec<Hint> {
     if picker.listing_tasks().is_some() {
         return vec![
             Hint::common(
-                obelus_editing::keymap::KeyChord::new(KeyCode::Char('s'), KeyModifiers::ALT),
+                obelus_keymap::KeyChord::new(KeyCode::Char('s'), KeyModifiers::ALT),
                 "Stop",
             )
             .saying("Ask the agent to stop this piece of background work")
@@ -110,7 +110,7 @@ fn every_hint(picker: &Picker) -> Vec<Hint> {
     // the row. Neither is a switch -- what they do depends on the row the
     // reader is on -- so neither draws a setting.
     if picker.rows_open() {
-        let enter = |modifiers| obelus_editing::keymap::KeyChord::new(KeyCode::Enter, modifiers);
+        let enter = |modifiers| obelus_keymap::KeyChord::new(KeyCode::Enter, modifiers);
         return vec![
             Hint::common(enter(KeyModifiers::NONE), "Open")
                 .saying("Show what this row reaches, or hide it again"),
@@ -124,7 +124,7 @@ fn every_hint(picker: &Picker) -> Vec<Hint> {
     // second one. Both say what they do on the row the reader is on.
     if picker.goes_in_place() {
         use obelus_component::picker::WorktreeEnter;
-        let enter = |modifiers| obelus_editing::keymap::KeyChord::new(KeyCode::Enter, modifiers);
+        let enter = |modifiers| obelus_keymap::KeyChord::new(KeyCode::Enter, modifiers);
         let switch = "Put this window on this tree in place of the one it is on";
         let does = picker.worktree_enter();
         let (word, saying) = match does {
@@ -145,8 +145,7 @@ fn every_hint(picker: &Picker) -> Vec<Hint> {
                 .when(picker.switches_here()),
         ];
     }
-    let alt =
-        |letter| obelus_editing::keymap::KeyChord::new(KeyCode::Char(letter), KeyModifiers::ALT);
+    let alt = |letter| obelus_keymap::KeyChord::new(KeyCode::Char(letter), KeyModifiers::ALT);
     if picker.is_searching() {
         let how = picker.looks_how();
         let asked = how.unwrap_or_default();

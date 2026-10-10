@@ -87,7 +87,7 @@ pub struct SettingsView<'a> {
     images: &'a crate::image::Images,
     /// Every command and the key it is on, for the keys page -- under the
     /// layout they start from.
-    keys: Vec<(KeyRow, Option<obelus_editing::keymap::KeyChord>)>,
+    keys: Vec<(KeyRow, Option<obelus_keymap::KeyChord>)>,
     /// What the active agent offers to be set, and what the reader has
     /// said about each. `None` where no agent is active.
     offering: Option<Offering>,
@@ -186,7 +186,7 @@ pub fn footed(area: Rect, settings: &Settings, offering: Option<&Offering>) -> R
 #[must_use]
 pub fn hints(settings: &Settings, offering: Option<&Offering>) -> Vec<Hint> {
     use crossterm::event::{KeyCode, KeyModifiers};
-    let bare = |code| obelus_editing::keymap::KeyChord::new(code, KeyModifiers::NONE);
+    let bare = |code| obelus_keymap::KeyChord::new(code, KeyModifiers::NONE);
     // Which row the reader is on, where that changes what a key does. The
     // agent's rows have a `delete` of their own and Obelus's do not.
     let focused = settings

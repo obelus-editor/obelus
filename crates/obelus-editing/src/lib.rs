@@ -17,13 +17,43 @@
 //! two vocabularies -- a [`Motion`] to move it and a [`Typing`] to change
 //! what it is in.
 
-pub mod keymap;
-
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use obelus_text::{
     Text,
     coordinates::{CharColumn, DisplayColumn, LineNumber, Span},
 };
+
+/// The modifiers a binding can name.
+///
+/// `SUPER`, `HYPER` and `META` are not among them. They do arrive -- Obelus
+/// asks for the kitty keyboard protocol, and under it a key is reported with
+/// every modifier held -- but only from the terminals that speak it, and the
+/// desktop takes them first anyway: super is the window manager's modifier
+/// on every system Obelus runs on. A binding there would be eaten before the
+/// terminal saw it, which looks to a reader like a broken program. The same
+/// reason the key table refuses `ctrl+alt+arrow` (`obelus_keymap::why_not`).
+///
+/// A key arriving with one of them is therefore not a key Obelus understands,
+/// and `obelus_keymap::KeyChord::from_event` gives no chord for it. That is
+/// deliberately different from ignoring the modifier: `ctrl+super+q` is not
+/// `ctrl+q`, and quitting because of the half of the chord we recognize is a
+/// wrong answer rather than a missing one.
+pub const BINDABLE_MODIFIERS: KeyModifiers = KeyModifiers::CONTROL
+    .union(KeyModifiers::ALT)
+    .union(KeyModifiers::SHIFT);
+
+/// The modifiers held down, or `None` if any of them is not [bindable].
+///
+/// Every path that reads a key goes through this — the key table, the editor's
+/// motions, the picker — so all of them draw the line in the same place.
+///
+/// [bindable]: BINDABLE_MODIFIERS
+#[must_use]
+pub fn modifiers_of(event: &KeyEvent) -> Option<KeyModifiers> {
+    (event.modifiers - BINDABLE_MODIFIERS)
+        .is_empty()
+        .then_some(event.modifiers)
+}
 
 /// Which lines a motion steps over without ever stopping on one.
 ///
@@ -511,7 +541,7 @@ fn remember(text: &Text, cursor: &mut Cursor, width: u16) {
 pub fn motion_for(key: &KeyEvent) -> Option<(Motion, bool)> {
     // Judged the same way the key table judges, so a key means the same thing
     // in both places or nothing in both places.
-    let modifiers = crate::keymap::modifiers_of(key)?;
+    let modifiers = modifiers_of(key)?;
 
     match (modifiers, key.code) {
         // Not `ctrl+PageUp`/`ctrl+PageDown`: those mean previous and next tab
@@ -568,7 +598,7 @@ pub fn motion_for(key: &KeyEvent) -> Option<(Motion, bool)> {
 /// somebody else's -- a `ctrl` chord is a command, and typing one would put
 /// a character in where the reader asked for an action.
 pub fn typing_for(key: &KeyEvent) -> Option<Typing> {
-    let modifiers = crate::keymap::modifiers_of(key)?;
+    let modifiers = modifiers_of(key)?;
     // The one pair of `ctrl` chords that type rather than command: they
     // take out a word, which is the pair of `ctrl` with the arrows moving
     // over one. Before the rule below, which is what refuses the rest.

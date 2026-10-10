@@ -441,7 +441,7 @@ fn cap_the_keys(at: u16, y: u16, hints: &[(String, &'static str)], ground: Color
 
 /// A key as it is written.
 fn chord(code: KeyCode, modifiers: KeyModifiers) -> String {
-    obelus_editing::keymap::KeyChord::new(code, modifiers).label()
+    obelus_keymap::KeyChord::new(code, modifiers).label()
 }
 
 /// The same, for a foot of the region with a cap of its own.
@@ -662,7 +662,7 @@ pub struct ChatView<'a> {
     ///
     /// Read from the table, so the row names the key that works: it named
     /// `alt+t` in so many words, and went on naming it when the key moved.
-    back_to_the_note: Option<obelus_editing::keymap::KeyChord>,
+    back_to_the_note: Option<obelus_keymap::KeyChord>,
     /// What Obelus has to say, until the next key.
     ///
     /// A conversation has a status row of its own, so it has to carry this

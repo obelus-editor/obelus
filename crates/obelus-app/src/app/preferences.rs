@@ -159,7 +159,7 @@ pub(super) struct Settled {
     /// Written down where the keymap is built and said where the file is
     /// read: the keymap is built again after every change, and saying it
     /// there would be saying it once per change to a file nobody touched.
-    pub unbound: Vec<obelus_editing::keymap::Unbound>,
+    pub unbound: Vec<obelus_keymap::Unbound>,
     /// Which settings the reader's file named.
     ///
     /// Which, not what they came to: a reader who writes a setting down has
@@ -1108,10 +1108,9 @@ impl App {
         // force.
         // A layout nothing answers to has already been marked where the
         // file was read, and starts from the default like a missing line.
-        let layout = obelus_editing::keymap::Layout::named(&self.settled.config.keys_from)
-            .unwrap_or_default();
-        let (keymap, unbound) =
-            obelus_editing::keymap::Keymap::with(layout, &self.settled.config.keys);
+        let layout =
+            obelus_keymap::Layout::named(&self.settled.config.keys_from).unwrap_or_default();
+        let (keymap, unbound) = obelus_keymap::Keymap::with(layout, &self.settled.config.keys);
         self.keymap = keymap;
         self.settled.unbound = unbound;
         // What a server works out is drawn or it is not, and the switch has
@@ -1416,10 +1415,10 @@ impl App {
                 // Never starting with the name, and saying what Obelus did
                 // rather than what the reader wrote: what is left to say is
                 // the thing they cannot see.
-                obelus_editing::keymap::Unbindable::NoSuchCommand => {
+                obelus_keymap::Unbindable::NoSuchCommand => {
                     format!("No command is called `{}`", one.name)
                 }
-                obelus_editing::keymap::Unbindable::Unreadable => {
+                obelus_keymap::Unbindable::Unreadable => {
                     format!(
                         "Nothing is bound to `{}`: `{}` is not a key",
                         one.name, one.text
@@ -1427,7 +1426,7 @@ impl App {
                 }
                 // The reason the page that binds keys gives, in its own
                 // words, because it is the same judgement.
-                obelus_editing::keymap::Unbindable::NotAllowed(why) => {
+                obelus_keymap::Unbindable::NotAllowed(why) => {
                     format!("Nothing is bound to `{}`: {why}", one.name)
                 }
             };

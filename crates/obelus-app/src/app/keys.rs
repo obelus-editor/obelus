@@ -1,6 +1,6 @@
 //! Which navigation a key means.
 //!
-//! The counterpart of [`obelus_editing::keymap`], which is the table of
+//! The counterpart of [`obelus_keymap`], which is the table of
 //! *commands*: these keys are the high-frequency ones -- the arrows, the paging
 //! keys, the ends of a line -- and they are not commands, because `:cursor.up`
 //! called by name in a palette means nothing.
@@ -88,7 +88,7 @@ impl App {
 /// The arrows, the paging keys and the ends of the document, over a document
 /// whose rows are all there is: no columns, no cursor, nothing to remember.
 pub(super) fn view_step(key: &KeyEvent, height: u16) -> Option<isize> {
-    let modifiers = keymap::modifiers_of(key)?;
+    let modifiers = obelus_keymap::modifiers_of(key)?;
     let page = isize::from(height.max(1) as i16).max(1);
     match (modifiers, key.code) {
         (KeyModifiers::NONE, KeyCode::Down) => Some(1),
@@ -106,7 +106,7 @@ pub(super) fn view_step(key: &KeyEvent, height: u16) -> Option<isize> {
 /// Separate from the motions because paging is not one: what moves is the
 /// window on the file, not the place in it.
 pub(super) fn editor_paging(key: &KeyEvent) -> Option<(isize, bool)> {
-    match (keymap::modifiers_of(key)?, key.code) {
+    match (obelus_keymap::modifiers_of(key)?, key.code) {
         (KeyModifiers::NONE, KeyCode::PageDown) => Some((1, false)),
         (KeyModifiers::NONE, KeyCode::PageUp) => Some((-1, false)),
         (KeyModifiers::SHIFT, KeyCode::PageDown) => Some((1, true)),

@@ -2,7 +2,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use obelus_command::Command;
-use obelus_editing::keymap::{Context, KeyChord, Keymap, Layout, control};
+use obelus_keymap::{Context, KeyChord, Keymap, Layout, control};
 
 fn press(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
     KeyEvent {
@@ -205,7 +205,7 @@ fn a_chord_is_written_with_glyphs_or_spelled_out() {
     );
 
     // And a function key is its name, glyphs or not.
-    let function = obelus_editing::keymap::function(10);
+    let function = obelus_keymap::function(10);
     assert_eq!(function.label_in(false), "F10");
     assert_eq!(function.label_in(true), "F10");
     // Which still reads back as itself, and so does the way it used to be
@@ -281,7 +281,7 @@ fn a_chord_survives_being_written_down() {
 /// bindings are changes over the defaults rather than the whole table.
 #[test]
 fn the_readers_own_bindings_go_over_the_defaults() {
-    use obelus_editing::keymap::Context;
+    use obelus_keymap::Context;
 
     let moved: std::collections::BTreeMap<String, String> = [
         ("close-document".to_string(), "alt+w".to_string()),
@@ -399,9 +399,8 @@ fn copy_and_paste_answer_to_the_chords_a_desktop_sends() {
 /// assertions are for.
 #[test]
 fn only_the_two_chords_a_desktop_sends_are_a_modified_insert() {
-    let may = |modifiers| {
-        obelus_editing::keymap::why_not(KeyChord::new(KeyCode::Insert, modifiers)).is_none()
-    };
+    let may =
+        |modifiers| obelus_keymap::why_not(KeyChord::new(KeyCode::Insert, modifiers)).is_none();
 
     assert!(may(KeyModifiers::CONTROL));
     assert!(may(KeyModifiers::SHIFT));

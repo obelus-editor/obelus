@@ -305,7 +305,7 @@ impl App {
         if self.hover().is_none() {
             return false;
         }
-        let Some(modifiers) = keymap::modifiers_of(key) else {
+        let Some(modifiers) = obelus_keymap::modifiers_of(key) else {
             self.hover = None;
             return false;
         };

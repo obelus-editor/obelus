@@ -65,7 +65,7 @@ use obelus_component::{
     card::Card, chat::Chat, completion::Completion, counts::Counts, hover::Hover, layers,
     prompt::Prompt, settings::Settings, todo::TodoView,
 };
-use obelus_editing::keymap::Keymap;
+use obelus_keymap::Keymap;
 use obelus_syntax::highlight::Highlights;
 use obelus_text::coordinates::{LineNumber, Span};
 
@@ -2167,11 +2167,11 @@ where
 pub struct Hint {
     /// The key, spelled by the key table so that a reader who rebound it
     /// sees what they bound.
-    pub chord: obelus_editing::keymap::KeyChord,
+    pub chord: obelus_keymap::KeyChord,
     /// A second key that does the same thing, for a pair that shares a word:
     /// `alt+up` and `alt+down` are one act in two directions, and two rows
     /// saying "move it up" and "move it down" is the same sentence twice.
-    pub and_also: Option<obelus_editing::keymap::KeyChord>,
+    pub and_also: Option<obelus_keymap::KeyChord>,
     /// What it does, in the one word the foot has room for.
     pub does: Option<&'static str>,
     /// The same thing said properly, for the card, which has room for it.
@@ -2216,7 +2216,7 @@ pub struct Hint {
 impl Hint {
     /// A key that goes at the foot.
     #[must_use]
-    pub const fn common(chord: obelus_editing::keymap::KeyChord, does: &'static str) -> Self {
+    pub const fn common(chord: obelus_keymap::KeyChord, does: &'static str) -> Self {
         Self {
             chord,
             and_also: None,
@@ -2231,7 +2231,7 @@ impl Hint {
 
     /// One that waits in the card.
     #[must_use]
-    pub const fn rare(chord: obelus_editing::keymap::KeyChord, does: &'static str) -> Self {
+    pub const fn rare(chord: obelus_keymap::KeyChord, does: &'static str) -> Self {
         Self {
             common: false,
             ..Self::common(chord, does)
@@ -2247,7 +2247,7 @@ impl Hint {
 
     /// The same act in the other direction, on a key of its own.
     #[must_use]
-    pub const fn or(mut self, chord: obelus_editing::keymap::KeyChord) -> Self {
+    pub const fn or(mut self, chord: obelus_keymap::KeyChord) -> Self {
         self.and_also = Some(chord);
         self
     }
@@ -2551,7 +2551,7 @@ pub fn footed(area: Rect, hints: &[Hint]) -> Rect {
 ///
 /// The common ones that can be pressed at the moment, those a view keeps
 /// there greyed where they cannot ([`Hint::kept`]), and
-/// [`obelus_editing::keymap::keys_card`] at the right-hand end saying there
+/// [`obelus_keymap::keys_card`] at the right-hand end saying there
 /// are more. At the foot rather than beside a
 /// title, because a key needs a word and words need room.
 ///
@@ -2607,7 +2607,7 @@ fn row_of_keys(cells: &mut CellBuffer, area: Rect, hints: &[Hint], theme: &Theme
     // The one at the end first, because it is the one that must not be given
     // up: a foot that ran out of room and dropped the way to the rest of the
     // keys would be a foot that hides the thing it exists to point at.
-    let chord = obelus_editing::keymap::keys_card().label();
+    let chord = obelus_keymap::keys_card().label();
     let width = u16::try_from(cap_width(&chord) + 1 + text_width("Keys")).unwrap_or(0);
     let edge = match area.width.checked_sub(width + 2).filter(|_| card) {
         Some(offset) => {

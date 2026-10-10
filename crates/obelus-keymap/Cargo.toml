@@ -1,6 +1,6 @@
 [package]
-name = "obelus-editing"
-description = "A text with a caret in it"
+name = "obelus-keymap"
+description = "The key table: which chord runs which command"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,5 +10,8 @@ license.workspace = true
 workspace = true
 
 [dependencies]
-obelus-text.workspace = true
+obelus-command.workspace = true
+obelus-editing.workspace = true
+obelus-icons.workspace = true
 crossterm.workspace = true
+tracing.workspace = true

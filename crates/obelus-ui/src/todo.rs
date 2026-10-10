@@ -48,7 +48,7 @@ pub fn hints(notes: &Notes) -> Vec<Hint> {
     // read and copied out of and not changed.
     let elsewhere = notes.selected_is_elsewhere();
     use crossterm::event::{KeyCode, KeyModifiers};
-    let chord = obelus_editing::keymap::KeyChord::new;
+    let chord = obelus_keymap::KeyChord::new;
     let bare = |code| chord(code, KeyModifiers::NONE);
     let alt = |code| chord(code, KeyModifiers::ALT);
     let on = notes.selected_note();

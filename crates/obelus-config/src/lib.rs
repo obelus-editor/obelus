@@ -680,7 +680,7 @@ const WORKFLOWS: &[&str] = &["none", "in-place", "feature-branch"];
 
 /// The tables of keys a reader's own can be laid over, the default first.
 ///
-/// `obelus_editing::keymap::Layout` is what each one binds, and a test in
+/// `obelus_keymap::Layout` is what each one binds, and a test in
 /// `obelus-app` holds the two lists to each other.
 pub const KEY_LAYOUTS: &[&str] = &["classic", "mnemonic"];
 /// How many build jobs at once, as a share of the machine.

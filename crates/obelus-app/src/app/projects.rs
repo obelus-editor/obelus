@@ -735,7 +735,7 @@ impl super::App {
         if self.naming_list.is_none() {
             return false;
         }
-        if obelus_editing::keymap::modifiers_of(key) != Some(KeyModifiers::NONE) {
+        if obelus_keymap::modifiers_of(key) != Some(KeyModifiers::NONE) {
             return false;
         }
         match key.code {

@@ -610,13 +610,15 @@ crates/
   obelus-text/      the Rope wrapper: the only place coordinates convert
   obelus-editing/   a text with a caret in it -- the file being read and the
                     box a note is written in differ in what they are *about*
-                    and not in what down does
-                    · chords, contexts, the default table, modifiers_of;
-                      `why_not` is the one judgement of what may be bound, and
-                      `shift+Insert` is the desktop's name for paste and not
-                      Obelus's; a dialog gets a context, not a fall-through;
-                      keys are rebound on the keys page; modifiers are judged
-                      exactly, in one place (keymap)
+                    and not in what down does -- and `modifiers_of`, the one
+                    judge of which modifiers a key may carry
+  obelus-keymap/    which chord runs which command
+                    · chords, contexts, the default table; `why_not` is the
+                      one judgement of what may be bound, and `shift+Insert` is
+                      the desktop's name for paste and not Obelus's; a dialog
+                      gets a context, not a fall-through; keys are rebound on
+                      the keys page; modifiers are judged exactly, in one
+                      place (lib)
   obelus-buffer/    one open file: text, syntax, cursor, viewport
                     · an edit knows where it happened; do not read over an
                       edit; two modes, and two is enough (lib); a folded line

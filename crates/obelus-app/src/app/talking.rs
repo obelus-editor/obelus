@@ -2269,7 +2269,7 @@ impl App {
         let Some(slash) = self.conversation_mut().and_then(|talk| talk.slash.as_mut()) else {
             return false;
         };
-        let Some(modifiers) = keymap::modifiers_of(key) else {
+        let Some(modifiers) = obelus_keymap::modifiers_of(key) else {
             return false;
         };
         // And `ctrl+enter`, which is enter with the turn stopped first:

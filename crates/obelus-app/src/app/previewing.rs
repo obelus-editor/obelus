@@ -1370,7 +1370,7 @@ fn runs(columns: &[u32]) -> Vec<(usize, usize)> {
 /// away. The same keys with control page the list, for a reader in a list
 /// long enough to need it.
 fn preview_paging(key: &KeyEvent) -> Option<isize> {
-    if !keymap::modifiers_of(key)?.is_empty() {
+    if !obelus_keymap::modifiers_of(key)?.is_empty() {
         return None;
     }
     match key.code {

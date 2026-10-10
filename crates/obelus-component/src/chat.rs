@@ -2712,7 +2712,7 @@ impl Chat {
         settings: &[obelus_agent::acp::Setting],
         tasks: bool,
     ) -> ChatOutcome {
-        let Some(modifiers) = obelus_editing::keymap::modifiers_of(key) else {
+        let Some(modifiers) = obelus_keymap::modifiers_of(key) else {
             return ChatOutcome::Ignored;
         };
         // The line break that every terminal can report. `shift+enter` is

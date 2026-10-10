@@ -84,11 +84,8 @@ use obelus_component::{
     settings::{Settings, SettingsOutcome},
     todo::TodoView,
 };
-use obelus_editing::{
-    keymap,
-    keymap::{Context, KeyChord, Keymap},
-    motion_for,
-};
+use obelus_editing::motion_for;
+use obelus_keymap::{Context, KeyChord, Keymap};
 use obelus_lsp::{
     action,
     action::{Outcome, SymbolAction},
@@ -2454,7 +2451,7 @@ impl App {
     pub fn is_showing_dialog(&self) -> bool {
         self.layers()
             .furthest_first()
-            .any(|layer| matches!(layer.context(), obelus_editing::keymap::Context::Dialog))
+            .any(|layer| matches!(layer.context(), obelus_keymap::Context::Dialog))
     }
 
     /// How far along the welcome screen's colours have travelled, in ticks.

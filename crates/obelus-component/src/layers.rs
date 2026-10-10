@@ -18,7 +18,7 @@
 //! Nothing here draws, and nothing here is a view. A layer says how much
 //! room it takes; the renderer reads that and hands it a rectangle.
 
-use obelus_editing::keymap::Context;
+use obelus_keymap::Context;
 
 /// One thing the reader is *in*, over the file being read.
 ///

@@ -54,44 +54,17 @@
 //! `keys_from`, on the same page: the function keys ([`Layout::Classic`]),
 //! or the same commands on control and alt ([`Layout::Mnemonic`]).
 //!
-//! Modifiers are judged exactly, in one place. `keymap::modifiers_of` is the
-//! only judge; `SUPER`/`HYPER`/`META` disqualify a key rather than being masked
+//! Modifiers are judged exactly, in one place. `modifiers_of` is the
+//! only judge -- it lives in [`obelus_editing`], because the caret asks it too;
+//! `SUPER`/`HYPER`/`META` disqualify a key rather than being masked
 //! away. Masking meant `ctrl+super+q` quit.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use obelus_command::Command;
-
-/// The modifiers a binding can name.
-///
-/// `SUPER`, `HYPER` and `META` are not among them. They do arrive -- Obelus
-/// asks for the kitty keyboard protocol, and under it a key is reported with
-/// every modifier held -- but only from the terminals that speak it, and the
-/// desktop takes them first anyway: super is the window manager's modifier
-/// on every system Obelus runs on. A binding there would be eaten before the
-/// terminal saw it, which looks to a reader like a broken program. The same
-/// reason `ctrl+alt+arrow` is refused further down.
-///
-/// A key arriving with one of them is therefore not a key Obelus understands,
-/// and [`KeyChord::from_event`] gives no chord for it. That is deliberately
-/// different from ignoring the modifier: `ctrl+super+q` is not `ctrl+q`, and
-/// quitting because of the half of the chord we recognize is a wrong answer
-/// rather than a missing one.
-pub const BINDABLE_MODIFIERS: KeyModifiers = KeyModifiers::CONTROL
-    .union(KeyModifiers::ALT)
-    .union(KeyModifiers::SHIFT);
-
-/// The modifiers held down, or `None` if any of them is not [bindable].
-///
-/// Every path that reads a key goes through this — the key table, the editor's
-/// motions, the picker — so all of them draw the line in the same place.
-///
-/// [bindable]: BINDABLE_MODIFIERS
-#[must_use]
-pub fn modifiers_of(event: &KeyEvent) -> Option<KeyModifiers> {
-    (event.modifiers - BINDABLE_MODIFIERS)
-        .is_empty()
-        .then_some(event.modifiers)
-}
+/// Here as well as in [`obelus_editing`], where the motions ask it: the key
+/// table and the caret draw the line in the same place because they ask the
+/// same function.
+pub use obelus_editing::{BINDABLE_MODIFIERS, modifiers_of};
 
 /// A key plus its modifiers, in a form two equivalent presses agree on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

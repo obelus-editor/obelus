@@ -72,7 +72,7 @@ impl Move {
             true => KeyModifiers::CONTROL,
             false => KeyModifiers::NONE,
         };
-        if obelus_editing::keymap::modifiers_of(key) != Some(wanted) {
+        if obelus_keymap::modifiers_of(key) != Some(wanted) {
             return None;
         }
         Self::of(key.code)

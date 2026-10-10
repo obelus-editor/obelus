@@ -4399,6 +4399,7 @@ dependencies = [
  "obelus-git",
  "obelus-icons",
  "obelus-jobs",
+ "obelus-keymap",
  "obelus-logging",
  "obelus-lsp",
  "obelus-markdown",
@@ -4494,6 +4495,7 @@ dependencies = [
  "obelus-editing",
  "obelus-git",
  "obelus-icons",
+ "obelus-keymap",
  "obelus-lsp",
  "obelus-markdown",
  "obelus-reading",
@@ -4520,10 +4522,7 @@ name = "obelus-editing"
 version = "0.12.0"
 dependencies = [
  "crossterm",
- "obelus-command",
- "obelus-icons",
  "obelus-text",
- "tracing",
 ]
 
 [[package]]
@@ -4598,6 +4597,17 @@ dependencies = [
  "obelus-runtime",
  "tracing",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "obelus-keymap"
+version = "0.12.0"
+dependencies = [
+ "crossterm",
+ "obelus-command",
+ "obelus-editing",
+ "obelus-icons",
+ "tracing",
 ]
 
 [[package]]
@@ -4815,9 +4825,9 @@ dependencies = [
  "obelus-command",
  "obelus-component",
  "obelus-config",
- "obelus-editing",
  "obelus-git",
  "obelus-icons",
+ "obelus-keymap",
  "obelus-lsp",
  "obelus-reading",
  "obelus-remote",
