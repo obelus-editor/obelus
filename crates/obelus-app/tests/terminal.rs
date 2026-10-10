@@ -690,15 +690,21 @@ fn a_sign_in_that_is_a_program_is_answered_in_a_terminal() {
 /// not pass on -- a proxy the agent goes through and its sign-in does not
 /// is a sign-in that cannot reach the server.
 ///
+/// And where the two name the same variable, the agent's is the one it
+/// gets: that is what this particular sign-in was said to need.
+///
 /// Broken deliberately by handing the terminal only what the agent asked
-/// for: the sign-in started without the word.
+/// for: the sign-in started without the word. And by putting the agent's
+/// before the reader's: the sign-in got the reader's word in place of the
+/// agent's.
 #[test]
 fn a_sign_in_is_given_what_the_reader_added() {
     let marker = marker("environment");
     let settings = marker.with_extension("toml");
     std::fs::write(
         &settings,
-        "[environment.signing-in]\nOBELUS_FAKE_WORD = \"obelus-heard\"\n",
+        "[environment.signing-in]\nOBELUS_FAKE_WORD = \"obelus-heard\"\n\
+         OBELUS_FAKE_AGENTS_WORD = \"the-readers\"\n",
     )
     .expect("the settings");
     let (mut app, events) = wired();
@@ -727,6 +733,11 @@ fn a_sign_in_is_given_what_the_reader_added() {
     assert!(
         on_the_terminal(&app).contains("Started with obelus-heard"),
         "the sign-in was not given the reader's variable:\n{}",
+        on_the_terminal(&app)
+    );
+    assert!(
+        on_the_terminal(&app).contains("Agent's word the-agents"),
+        "the reader's variable took the place of the agent's own:\n{}",
         on_the_terminal(&app)
     );
 }

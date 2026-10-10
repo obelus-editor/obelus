@@ -269,6 +269,9 @@ options() {
 # that can say whether it arrived.
 if [ -n "$log" ] && [ -n "${OBELUS_FAKE_WORD+set}" ]; then
     printf 'started with %s\n' "$OBELUS_FAKE_WORD" >>"$log"
+    # And where it was told the pool of build jobs is, which the reader can
+    # name too.
+    printf 'pool %s\n' "${CARGO_MAKEFLAGS-}" >>"$log"
 fi
 
 while IFS= read -r line; do

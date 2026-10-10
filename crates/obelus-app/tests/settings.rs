@@ -2793,10 +2793,15 @@ fn a_variable_is_added_by_its_name_and_then_what_it_holds() {
 }
 
 /// A name a shell would not take is refused where it is typed, and one that
-/// starts with a digit is asked for again.
+/// starts with a digit is asked for again, saying why in the question.
 ///
-/// Broken deliberately by letting `name_a_variable` take a name starting
-/// with a digit: the value was asked for, under a name no agent can read.
+/// In the question because the status row is the question's while it is
+/// open: a note would never be seen there.
+///
+/// Broken deliberately twice: letting `name_a_variable` take a name that
+/// starts with a digit (the value was asked for, under a name no agent can
+/// read), and asking again with `again: false` (the same question came back
+/// with nothing to say what was wrong).
 #[test]
 fn a_variable_is_named_the_way_a_shell_names_one() {
     let _turn = SETTINGS
@@ -2814,10 +2819,49 @@ fn a_variable_is_named_the_way_a_shell_names_one() {
     );
     support::press(&mut app, KeyCode::Enter);
     let dump = support::render(&mut app, 66, 12);
-    let text = support::text_block(&dump);
     assert!(
-        text.contains("New variable: 1XY") && !text.contains("1XY: "),
-        "a name starting with a digit was taken:\n{dump}"
+        support::text_block(&dump).contains("A name cannot start with a digit: 1XY"),
+        "a name starting with a digit was taken, or refused without a word:\n{dump}"
+    );
+}
+
+/// A value goes to the agent it was asked for, even where another Obelus
+/// changes which agent is active while the question is open.
+///
+/// Broken deliberately by having the answer look the agent up again rather
+/// than take the one the question carries: the token landed under the
+/// agent chosen in the meantime.
+#[test]
+fn a_variable_goes_to_the_agent_it_was_asked_for() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (scratch, mut app) = with_an_agent("agent-pinned", &[]);
+
+    support::press_control_key(&mut app, KeyCode::End);
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "TOKEN");
+    support::press(&mut app, KeyCode::Enter);
+
+    // Another Obelus chooses another agent, and this one hears the file.
+    let file = settings_file(&scratch);
+    std::fs::write(&file, "agent = \"another-agent\"\n").expect("the settings");
+    app.config_file_for_test(file.clone());
+    assert_eq!(app.config().agent.as_deref(), Some("another-agent"));
+
+    support::type_text(&mut app, "secret");
+    support::press(&mut app, KeyCode::Enter);
+    let read = obelus_config::from_toml(&std::fs::read_to_string(&file).expect("the file"));
+    assert_eq!(
+        read.agent_environment("an-agent")
+            .get("TOKEN")
+            .map(String::as_str),
+        Some("secret"),
+        "the value did not go to the agent it was asked for"
+    );
+    assert!(
+        read.agent_environment("another-agent").is_empty(),
+        "the value went to the agent chosen in the meantime"
     );
 }
 

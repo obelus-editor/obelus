@@ -345,16 +345,27 @@ impl App {
                 self.reach(reaching);
                 true
             }
+            // Each about the agent that is active now, the moment the key
+            // is pressed -- and the questions carry it from here.
             SettingsOutcome::EditVariable(name) => {
-                self.name_a_variable(&name);
+                if let Some(agent) = self.config().agent.clone() {
+                    self.name_a_variable(&agent, &name);
+                }
                 true
             }
             SettingsOutcome::AddVariable => {
-                self.ask_on_the_status_row(Prompt::new(PromptKind::VariableName));
+                if let Some(agent) = self.config().agent.clone() {
+                    self.ask_on_the_status_row(Prompt::new(PromptKind::VariableName {
+                        agent,
+                        again: false,
+                    }));
+                }
                 true
             }
             SettingsOutcome::RemoveVariable(name) => {
-                self.set_agent_variable(&name, None);
+                if let Some(agent) = self.config().agent.clone() {
+                    self.set_agent_variable(&agent, &name, None);
+                }
                 true
             }
             SettingsOutcome::Ignored => false,
@@ -655,20 +666,20 @@ impl App {
         }
     }
 
-    /// Says what one of the active agent's variables is, or with `None`
-    /// takes it away.
+    /// Says what one of an agent's variables is, or with `None` takes it
+    /// away.
+    ///
+    /// For an agent named outright, for the reason `change_agent_default`
+    /// is: the value may arrive from a question asked before another Obelus
+    /// changed which agent is active.
     ///
     /// Nothing is started again: a variable reaches an agent once, when it
     /// starts, and stopping one is stopping every conversation it is in.
-    /// So where one is running the status row says when this will arrive,
-    /// which is the one thing about these rows a reader cannot see.
-    pub(super) fn set_agent_variable(&mut self, name: &str, value: Option<&str>) {
-        let Some(agent) = self.config().agent.clone().filter(|id| !id.is_empty()) else {
-            return;
-        };
+    /// The heading over these rows says so.
+    pub(super) fn set_agent_variable(&mut self, agent: &str, name: &str, value: Option<&str>) {
         match value {
-            Some(value) => self.settled.readers.set_agent_variable(&agent, name, value),
-            None => self.settled.readers.unset_agent_variable(&agent, name),
+            Some(value) => self.settled.readers.set_agent_variable(agent, name, value),
+            None => self.settled.readers.unset_agent_variable(agent, name),
         }
         self.apply_project();
         let Some(path) = self.settled.path.clone() else {
@@ -681,42 +692,39 @@ impl App {
         if let Err(error) = obelus_config::save_to(&path, &self.settled.readers) {
             tracing::warn!(%error, "not saving the configuration");
             self.wrong(format!("Not saved: {error}"));
-            return;
-        }
-        let running = self
-            .talker
-            .as_ref()
-            .is_some_and(|talker| talker.id() == agent && talker.is_alive());
-        if running && let Some(offering) = self.agent_offering() {
-            self.say(format!(
-                "Given to {} the next time it starts",
-                offering.name
-            ));
         }
     }
 
-    /// Hears the name of a variable the reader is adding, and asks for its
-    /// value.
+    /// Hears the name of a variable the reader is adding to an agent's
+    /// environment, and asks for its value.
     ///
     /// One already set is asked for with what it holds, which makes adding
     /// one that is there the same as changing it rather than a second row
     /// of the same name.
-    pub(super) fn name_a_variable(&mut self, name: &str) {
+    pub(super) fn name_a_variable(&mut self, agent: &str, name: &str) {
         if name.starts_with(|character: char| character.is_ascii_digit()) {
-            self.wrong("A variable's name cannot start with a digit");
-            self.ask_on_the_status_row(Prompt::about(PromptKind::VariableName, name.to_string()));
+            self.ask_on_the_status_row(Prompt::about(
+                PromptKind::VariableName {
+                    agent: agent.to_string(),
+                    again: true,
+                },
+                name.to_string(),
+            ));
             return;
         }
-        let Some(agent) = self.config().agent.clone() else {
-            return;
-        };
         let now = self
             .config()
-            .agent_environment(&agent)
+            .agent_environment(agent)
             .get(name)
             .cloned()
             .unwrap_or_default();
-        self.ask_on_the_status_row(Prompt::about(PromptKind::Variable(name.to_string()), now));
+        self.ask_on_the_status_row(Prompt::about(
+            PromptKind::Variable {
+                agent: agent.to_string(),
+                name: name.to_string(),
+            },
+            now,
+        ));
     }
 
     /// Where a theme file may be, nearest first.

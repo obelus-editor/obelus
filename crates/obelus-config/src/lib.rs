@@ -1674,10 +1674,23 @@ pub fn apply(config: &mut Config, table: &toml::Table, whose: Whose) -> Applied 
                 not_a_table.push(format!("environment.{agent}"));
                 continue;
             };
+            // A number or a switch as the words for it: an environment
+            // holds only strings, and `MAX_TOKENS = 32000` is what a reader
+            // writing one by hand would write. Dropped here, it would be a
+            // line that did nothing -- and gone from the file on the next
+            // save, because the table is written from what was read.
             for (name, value) in variables {
-                if let Some(value) = value.as_str() {
-                    config.set_agent_variable(agent, name, value);
-                }
+                let value = match value {
+                    toml::Value::String(value) => value.clone(),
+                    toml::Value::Integer(value) => value.to_string(),
+                    toml::Value::Float(value) => value.to_string(),
+                    toml::Value::Boolean(value) => value.to_string(),
+                    _ => {
+                        tracing::warn!(agent, name, "a variable that is not one value");
+                        continue;
+                    }
+                };
+                config.set_agent_variable(agent, name, &value);
             }
         }
     }
@@ -2300,7 +2313,16 @@ pub fn save_to(path: &Path, config: &Config) -> std::io::Result<()> {
     // two writing at once into one shared name truncate each other's
     // half-written file, and the first rename takes the other's away.
     let beside = path.with_extension(format!("toml.writing.{}", std::process::id()));
+    // And with the old file's permissions, which a new file does not have: a
+    // reader who keeps a token for an agent in here and made the file theirs
+    // alone would otherwise find it readable by everybody after the next
+    // switch they flipped.
+    let kept = std::fs::metadata(path).map(|metadata| metadata.permissions());
     let written = std::fs::write(&beside, over(&existing, config))
+        .and_then(|()| match kept {
+            Ok(permissions) => std::fs::set_permissions(&beside, permissions),
+            Err(_) => Ok(()),
+        })
         .and_then(|()| std::fs::rename(&beside, path));
     if written.is_err() {
         // And not left behind: the name is this process's own, so nobody
@@ -2348,6 +2370,40 @@ mod tests {
             "a setting was written into a project that has gone"
         );
         assert!(!root.exists(), "the project was made again");
+    }
+
+    /// Saving keeps who may read the file.
+    ///
+    /// The file is written beside itself and renamed over, and a new file
+    /// has the default permissions -- so a reader who put an agent's token
+    /// in it and made it theirs alone had that undone by the next save.
+    ///
+    /// Broken deliberately by taking the `set_permissions` out of `save_to`:
+    /// the file came back readable by everybody.
+    #[cfg(unix)]
+    #[test]
+    fn saving_keeps_who_may_read_the_file() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory =
+            std::env::temp_dir().join(format!("obelus-config-mode-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&directory);
+        std::fs::create_dir_all(&directory).expect("a directory");
+        let path = directory.join("config.toml");
+        std::fs::write(&path, "theme = \"dark\"\n").expect("the file");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+            .expect("the reader's alone");
+
+        let mut config = Config::default();
+        config.set_agent_variable("claude-acp", "TOKEN", "secret");
+        save_to(&path, &config).expect("saving");
+
+        let mode = std::fs::metadata(&path)
+            .expect("the file")
+            .permissions()
+            .mode()
+            & 0o777;
+        let _ = std::fs::remove_dir_all(&directory);
+        assert_eq!(mode, 0o600, "saving let everybody read the file: {mode:o}");
     }
 
     /// A path that is a link is written *through*, not over.
@@ -3016,6 +3072,26 @@ mod tests {
             "the file kept a table with nothing in it: {written}"
         );
         assert!(written.contains("[environment.codex-acp]"));
+    }
+
+    /// A number or a switch written by hand is the words for it, rather
+    /// than a line that does nothing and is gone on the next save.
+    ///
+    /// Broken deliberately by reading strings alone: the number never
+    /// reached the config, and the written file no longer had it.
+    #[test]
+    fn a_number_an_agent_is_started_with_is_the_words_for_it() {
+        let read = from_toml("[environment.claude-acp]\nMAX_TOKENS = 32000\nQUIET = true\n");
+        let variables = read.agent_environment("claude-acp");
+        assert_eq!(
+            variables.get("MAX_TOKENS").map(String::as_str),
+            Some("32000")
+        );
+        assert_eq!(variables.get("QUIET").map(String::as_str), Some("true"));
+        assert!(
+            to_toml(&read).contains("MAX_TOKENS"),
+            "the number was gone from the file"
+        );
     }
 
     /// A project may not say what an agent is started with.

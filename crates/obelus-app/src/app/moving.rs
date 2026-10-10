@@ -960,8 +960,10 @@ impl App {
             PromptKind::Told(field) => self.tell_the_remote(field, Some(text)),
             // A variable the reader is adding to the agent's environment:
             // its name, and then what it holds.
-            PromptKind::VariableName => self.name_a_variable(text.trim()),
-            PromptKind::Variable(name) => self.set_agent_variable(&name, Some(text)),
+            PromptKind::VariableName { agent, .. } => self.name_a_variable(&agent, text.trim()),
+            PromptKind::Variable { agent, name } => {
+                self.set_agent_variable(&agent, &name, Some(text));
+            }
             // One of Obelus's own that is typed, from the settings page.
             PromptKind::Setting(key) => {
                 self.change_setting(key, &obelus_config::Value::Text(text.to_string()));
