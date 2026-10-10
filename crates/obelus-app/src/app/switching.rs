@@ -150,7 +150,7 @@ impl App {
                 Command::FileChanged => Listing::Changed,
                 _ => return None,
             };
-            return self.listing.iter().position(|shown| *shown == wanted);
+            return self.files.listing.iter().position(|shown| *shown == wanted);
         }
         if picker.is_searching() {
             let wanted = match command {

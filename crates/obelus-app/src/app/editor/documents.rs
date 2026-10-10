@@ -333,7 +333,7 @@ impl App {
 
     /// Asks git what has changed in the project, or takes what a test said.
     fn gather_statuses(&mut self) {
-        self.statuses = self.project_statuses();
+        self.files.statuses = self.project_statuses();
     }
 
     /// What git says about the project, asked now.
@@ -342,7 +342,7 @@ impl App {
     /// the list of files, and what needs it fresh is the question of
     /// whether there is anything to list at all.
     pub(in crate::app) fn project_statuses(&self) -> HashMap<PathBuf, obelus_git::Standing> {
-        match &self.given_statuses {
+        match &self.files.given_statuses {
             Some(given) => given.clone(),
             None => obelus_git::statuses(&self.working_directory),
         }
@@ -354,7 +354,7 @@ impl App {
     /// `project_statuses` goes through, so a test that sets up a clean project
     /// gets a clean answer here too.
     pub(in crate::app) fn anything_changed(&self) -> bool {
-        match &self.given_statuses {
+        match &self.files.given_statuses {
             Some(given) => !given.is_empty(),
             None => obelus_git::anything_changed(&self.working_directory),
         }
@@ -367,7 +367,7 @@ impl App {
     /// and another while someone is working in it -- and the second is the
     /// one anyone runs them on.
     pub fn statuses_for_test(&mut self, statuses: HashMap<PathBuf, obelus_git::Standing>) {
-        self.given_statuses = Some(statuses);
+        self.files.given_statuses = Some(statuses);
         self.gather_statuses();
     }
 
@@ -386,7 +386,7 @@ impl App {
         self.gather_statuses();
         let listings: Vec<Listing> = Listing::ALL
             .into_iter()
-            .filter(|shown| *shown == Listing::All || !self.statuses.is_empty())
+            .filter(|shown| *shown == Listing::All || !self.files.statuses.is_empty())
             .collect();
         let Some(tab) = listings.iter().position(|shown| *shown == listing) else {
             self.wrong("Nothing has changed".to_string());
@@ -409,7 +409,7 @@ impl App {
         // what the reader just did.
         picker.says_its_keys();
         self.show_list(picker);
-        self.listing = listings;
+        self.files.listing = listings;
         // Open on the file being read, which in a tree means opening every
         // directory above it: a list that opened at the root would make the
         // reader walk down to where they already are.
@@ -418,7 +418,7 @@ impl App {
         // left: a row kept from the last time it was open is about a query
         // the reader has finished with, and the file they are reading is
         // the thing they have in front of them now.
-        self.stood_on = None;
+        self.files.stood_on = None;
         self.reveal_current();
         // Started once, when the list opens, rather than when the reader
         // first types: the tree is what is on screen until they do, and the
@@ -448,7 +448,7 @@ impl App {
             if directory.as_os_str().is_empty() {
                 break;
             }
-            self.opened.insert(directory.to_path_buf());
+            self.files.opened.insert(directory.to_path_buf());
             above = directory.parent();
         }
     }
@@ -462,7 +462,8 @@ impl App {
         let Some(picker) = self.picker.as_ref() else {
             return false;
         };
-        !picker.query().is_empty() && self.listing.get(picker.tab()).copied() == Some(Listing::All)
+        !picker.query().is_empty()
+            && self.files.listing.get(picker.tab()).copied() == Some(Listing::All)
     }
 
     /// Starts the walk whose paths the flat listing is made of.
@@ -471,14 +472,14 @@ impl App {
     /// another opening, another answer about which files to offer -- that
     /// nobody is waiting for it any more.
     pub(in crate::app) fn start_walk(&mut self) {
-        let mine = self.walk_generation.next();
-        self.found.clear();
+        let mine = self.files.walk_generation.next();
+        self.files.found.clear();
         let Some(sender) = self.events.clone() else {
             return;
         };
         obelus_search::spawn_walk(
             &self.working_directory,
-            self.walk_generation.claim(mine),
+            self.files.walk_generation.claim(mine),
             self.config().ignored_files,
             self.config().hidden_files,
             sender,
@@ -565,7 +566,8 @@ impl App {
 
     /// The rows of the flat listing, from what the walk has found.
     fn found_rows(&self) -> Vec<PickerItem> {
-        self.found
+        self.files
+            .found
             .iter()
             .map(|(path, ignored)| PickerItem {
                 prose: false,
@@ -584,6 +586,7 @@ impl App {
                 status: match ignored {
                     true => Some(obelus_git::FileStatus::Ignored),
                     false => self
+                        .files
                         .statuses
                         .get(&self.working_directory.join(path))
                         .map(|standing| standing.status),
@@ -622,7 +625,7 @@ impl App {
         for entry in
             obelus_search::tree::inside(&self.working_directory, directory, ignored, hidden)
         {
-            let open = self.opened.contains(&entry.path);
+            let open = self.files.opened.contains(&entry.path);
             let full = self.working_directory.join(&entry.path);
             let name = entry.path.file_name().map_or_else(
                 || entry.path.display().to_string(),
@@ -655,7 +658,11 @@ impl App {
                 // row that is only there because the reader asked for it.
                 status: match entry.ignored {
                     true => Some(obelus_git::FileStatus::Ignored),
-                    false => self.statuses.get(&full).map(|standing| standing.status),
+                    false => self
+                        .files
+                        .statuses
+                        .get(&full)
+                        .map(|standing| standing.status),
                 },
                 enabled: true,
                 colours: None,
@@ -671,8 +678,8 @@ impl App {
 
     /// Opens a directory of the tree, or closes it again.
     pub(in crate::app) fn open_directory(&mut self, path: &Path) {
-        if !self.opened.remove(path) {
-            self.opened.insert(path.to_path_buf());
+        if !self.files.opened.remove(path) {
+            self.files.opened.insert(path.to_path_buf());
         }
         let row = self.picker.as_ref().map(Picker::selected);
         self.refresh_listing();
@@ -689,7 +696,7 @@ impl App {
         let showing = self
             .picker
             .as_ref()
-            .and_then(|picker| self.listing.get(picker.tab()).copied())
+            .and_then(|picker| self.files.listing.get(picker.tab()).copied())
             .unwrap_or(Listing::All);
         match showing {
             // Nothing typed: the tree of the project, read rather than
@@ -708,7 +715,7 @@ impl App {
                 // still in the tree. By its path rather than by its name,
                 // which is what the tree draws: half the rows in a project
                 // are called `mod.rs`.
-                let back = self.stood_on.take().and_then(|path| {
+                let back = self.files.stood_on.take().and_then(|path| {
                     rows.iter().position(|row| match &row.value {
                         PickerValue::File(at) | PickerValue::Directory(at) => *at == path,
                         _ => false,
@@ -738,7 +745,7 @@ impl App {
             }
             // Something typed: the flat list of everything, which is what a
             // query is asked against.
-            Listing::All if !self.found.is_empty() => {
+            Listing::All if !self.files.found.is_empty() => {
                 let rows = self.found_rows();
                 let ignored = self.config().ignored_files;
                 let hidden = self.config().hidden_files;
@@ -790,6 +797,7 @@ impl App {
                 }
                 let root = self.working_directory.clone();
                 let mut rows: Vec<(String, obelus_git::Standing)> = self
+                    .files
                     .statuses
                     .iter()
                     .map(|(path, standing)| (relative(path, &root), standing.clone()))
@@ -804,6 +812,7 @@ impl App {
                 // times as the tree has changed files.
                 let counts = obelus_git::counted_against_head(
                     &self
+                        .files
                         .statuses
                         .keys()
                         .cloned()
@@ -900,7 +909,7 @@ impl App {
             // Closed slots are holes, not rows.
             .filter_map(|(index, document)| Some((index, document.as_ref()?)));
 
-        let statuses = &self.statuses;
+        let statuses = &self.files.statuses;
         let talker = self.talker.as_ref();
         // A row's count, so having none is an answer this can live with.
         let notes = obelus_todo::read(&self.working_directory)

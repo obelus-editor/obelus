@@ -436,7 +436,8 @@ impl App {
         // among them any more.
         let tree = listing
             && before.1.is_empty()
-            && self.listing.get(before.0).copied() == Some(obelus_component::picker::Listing::All);
+            && self.files.listing.get(before.0).copied()
+                == Some(obelus_component::picker::Listing::All);
         let standing = tree
             .then(|| picker.selected_item())
             .flatten()
@@ -458,7 +459,7 @@ impl App {
                     // is what makes clearing the query put the reader back
                     // rather than move them somewhere new.
                     if tree {
-                        self.stood_on = standing;
+                        self.files.stood_on = standing;
                     }
                     self.refresh_listing();
                 }

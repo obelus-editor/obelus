@@ -163,6 +163,8 @@ struct Dragging {
 /// Everything Obelus is currently showing or remembering.
 #[derive(Debug)]
 pub struct App {
+    /// The project's files, as the lists of them have walked them.
+    files: editor::Files,
     /// What is being searched for, and where.
     search: editor::Search,
     /// What the language server has said about the file being read, and what
@@ -200,11 +202,6 @@ pub struct App {
     ///
     /// One field for all four, because they differ only in what they list.
     picker: Option<Picker>,
-    /// Which file walk the picker is currently expecting batches from.
-    ///
-    /// Bumped every time a file picker opens, so batches from a walk whose
-    /// picker has already closed are recognizable and dropped.
-    walk_generation: obelus_runtime::cancel::Latest,
     /// Which walk of the history the list is expecting batches from.
     ///
     /// Bumped every time a history starts being read -- a key, a tab, a
@@ -404,12 +401,6 @@ pub struct App {
     ///
     /// `None` in a terminal, which is told nothing: see [`App::drawn_by`].
     drawing: Option<std::sync::Arc<dyn Drawing>>,
-    /// What git says about the files in the tree, while a list of them is
-    /// open.
-    ///
-    /// Gathered when a list opens and kept until the next one, because it is
-    /// a walk of the whole tree and the rows arrive in batches afterwards.
-    statuses: std::collections::HashMap<PathBuf, obelus_git::Standing>,
     /// Where an agent reaches what Obelus offers it, if it could listen.
     ///
     /// Taken once per project and kept: every conversation is told an
@@ -479,30 +470,6 @@ pub struct App {
     /// the keys that move about their list have to be told the height that
     /// is actually drawn.
     screen_area: Rect,
-    /// What a test said git would say, instead of asking it.
-    given_statuses: Option<HashMap<PathBuf, obelus_git::Standing>>,
-    /// Which listings the open file list is showing, in tab order.
-    ///
-    /// The changed listing has a tab only when something has changed, so
-    /// which tab is which listing is not fixed.
-    listing: Vec<Listing>,
-    /// Every path the walk behind the open file list has found, and
-    /// whether the tree said to ignore it.
-    ///
-    /// Put away so the flat listing can be shown again without walking
-    /// again: the reader types, the tree is put down and these are picked
-    /// up, and clearing the query puts them back down. With the flag,
-    /// because it is the walk that knows which files are only there
-    /// because the reader asked for them.
-    found: Vec<(PathBuf, bool)>,
-    /// The row the tree was on when the reader started typing.
-    ///
-    /// Typing turns the file list from a tree into the flat list of
-    /// everything, and clearing the query turns it back. The tree either
-    /// side of that is the same tree, so this is what puts the reader back
-    /// on the row they were reading rather than on the file they happen to
-    /// have open.
-    stood_on: Option<PathBuf>,
     /// What will come back for the notes, to write down what was typed.
     ///
     /// Structural changes -- a note added, finished, moved -- are written
@@ -519,12 +486,6 @@ pub struct App {
     syntax_pause: Option<crate::event::Pause>,
     /// What will come back for a document the reader has stopped changing.
     changes_pause: Option<crate::event::Pause>,
-    /// Which directories of the file tree are open, relative to the root.
-    ///
-    /// Beside the list rather than in it, the way a history's opened commit
-    /// and a tree of calls are: the list is rows, and which of them exist
-    /// is worked out from this.
-    opened: std::collections::HashSet<PathBuf>,
     /// The commits an open history view is showing, and what is open in it.
     history: history_view::Showing,
     /// Which agents the open list of conversations is showing, and what
@@ -790,6 +751,7 @@ impl App {
         let documents: Vec<Option<Document>> =
             open.into_iter().map(Document::from).map(Some).collect();
         Self {
+            files: editor::Files::default(),
             search: editor::Search::default(),
             lsp: lsp::State::default(),
             viewport_was: None,
@@ -826,7 +788,6 @@ impl App {
             drawing: None,
             prompt: None,
             changes: None,
-            statuses: std::collections::HashMap::new(),
 
             tools_url: None,
             listening: None,
@@ -845,14 +806,9 @@ impl App {
             settings: None,
             counts: None,
             screen_area: Rect::ZERO,
-            given_statuses: None,
-            listing: Vec::new(),
-            found: Vec::new(),
-            stood_on: None,
             notes_pause: None,
             syntax_pause: None,
             changes_pause: None,
-            opened: std::collections::HashSet::new(),
             history: history_view::Showing::default(),
             conversing: conversations::Conversing::default(),
             watching: [const { conversations::Watched::new() }; conversations::WATCHED],
@@ -867,7 +823,6 @@ impl App {
             theme_before: None,
             taken_from: None,
             note: None,
-            walk_generation: obelus_runtime::cancel::Latest::default(),
             events: None,
             amiss: Vec::new(),
             releases: releases::Releases::default(),

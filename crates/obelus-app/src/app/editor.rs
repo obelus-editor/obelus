@@ -56,3 +56,51 @@ pub(in crate::app) struct Search {
     /// second set of buffers.
     pub(in crate::app) row_syntax: std::collections::HashMap<PathBuf, Buffer>,
 }
+
+/// The project's files as the lists have walked them: the walk under way, what
+/// it has found, which directories of the tree are open, and what git says of
+/// each.
+#[derive(Debug, Default)]
+pub(in crate::app) struct Files {
+    /// Which file walk the picker is currently expecting batches from.
+    ///
+    /// Bumped every time a file picker opens, so batches from a walk whose
+    /// picker has already closed are recognizable and dropped.
+    pub(in crate::app) walk_generation: obelus_runtime::cancel::Latest,
+    /// Which listings the open file list is showing, in tab order.
+    ///
+    /// The changed listing has a tab only when something has changed, so
+    /// which tab is which listing is not fixed.
+    pub(in crate::app) listing: Vec<Listing>,
+    /// Every path the walk behind the open file list has found, and
+    /// whether the tree said to ignore it.
+    ///
+    /// Put away so the flat listing can be shown again without walking
+    /// again: the reader types, the tree is put down and these are picked
+    /// up, and clearing the query puts them back down. With the flag,
+    /// because it is the walk that knows which files are only there
+    /// because the reader asked for them.
+    pub(in crate::app) found: Vec<(PathBuf, bool)>,
+    /// The row the tree was on when the reader started typing.
+    ///
+    /// Typing turns the file list from a tree into the flat list of
+    /// everything, and clearing the query turns it back. The tree either
+    /// side of that is the same tree, so this is what puts the reader back
+    /// on the row they were reading rather than on the file they happen to
+    /// have open.
+    pub(in crate::app) stood_on: Option<PathBuf>,
+    /// Which directories of the file tree are open, relative to the root.
+    ///
+    /// Beside the list rather than in it, the way a history's opened commit
+    /// and a tree of calls are: the list is rows, and which of them exist
+    /// is worked out from this.
+    pub(in crate::app) opened: std::collections::HashSet<PathBuf>,
+    /// What git says about the files in the tree, while a list of them is
+    /// open.
+    ///
+    /// Gathered when a list opens and kept until the next one, because it is
+    /// a walk of the whole tree and the rows arrive in batches afterwards.
+    pub(in crate::app) statuses: std::collections::HashMap<PathBuf, obelus_git::Standing>,
+    /// What a test said git would say, instead of asking it.
+    pub(in crate::app) given_statuses: Option<HashMap<PathBuf, obelus_git::Standing>>,
+}

@@ -395,7 +395,7 @@ impl App {
         }
         // The list is a walk of what is on disk, and what is on disk has
         // changed.
-        if self.picker.is_some() && !self.listing.is_empty() {
+        if self.picker.is_some() && !self.files.listing.is_empty() {
             self.start_walk();
             self.refresh_listing();
         }

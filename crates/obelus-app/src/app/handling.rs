@@ -342,7 +342,7 @@ impl App {
             }) => {
                 // A batch from a walk whose picker is gone, or from one
                 // superseded by a later open.
-                if !self.walk_generation.is_current(generation) {
+                if !self.files.walk_generation.is_current(generation) {
                     return;
                 }
                 // Kept as well as shown. A file list is a tree while
@@ -350,7 +350,8 @@ impl App {
                 // and a reader who types, clears and types again would
                 // otherwise wait for a fresh walk each time -- which is a
                 // walk per first keystroke rather than one per opening.
-                self.found
+                self.files
+                    .found
                     .extend(paths.iter().map(|path| (path.clone(), ignored)));
                 // Drawn only where the flat listing is what is showing: on
                 // the tab these rows are about, with something typed. A
@@ -362,7 +363,7 @@ impl App {
                     return;
                 }
                 if let Some(picker) = self.picker.as_mut() {
-                    let statuses = &self.statuses;
+                    let statuses = &self.files.statuses;
                     let root = &self.working_directory;
                     picker.extend(paths.into_iter().map(|path| {
                         PickerItem {
