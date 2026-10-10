@@ -50,7 +50,7 @@ impl App {
     /// Starts the reader's own shell, and goes to it.
     pub fn open_terminal(&mut self) {
         let from = self.here();
-        let program = match &self.shell {
+        let program = match &self.terminal.shell {
             Some(shell) => Program::Command {
                 program: shell.clone(),
                 arguments: Vec::new(),
@@ -80,10 +80,10 @@ impl App {
         let Some(events) = self.events.clone() else {
             return Err("nothing is listening for what it writes".to_string());
         };
-        self.terminals += 1;
+        self.terminal.terminals += 1;
         let size = (self.editor_area.height, self.editor_area.width);
         match Terminal::start(
-            self.terminals,
+            self.terminal.terminals,
             program,
             &self.working_directory,
             size,
@@ -103,7 +103,7 @@ impl App {
 
     /// Starts this shell for `open-terminal` rather than the reader's own.
     pub fn shell_for_test(&mut self, shell: PathBuf) {
-        self.shell = Some(shell);
+        self.terminal.shell = Some(shell);
     }
 
     /// The terminal being read, if that is what is being read.
@@ -291,6 +291,7 @@ impl App {
                     terminal.end(ended.clone());
                 }
                 if self
+                    .terminal
                     .signing_in
                     .as_ref()
                     .is_some_and(|signing| signing.terminal == id)
@@ -397,7 +398,7 @@ impl App {
             }
         };
         if let Some(terminal) = self.document(id).and_then(Document::terminal) {
-            self.signing_in = Some(SigningIn {
+            self.terminal.signing_in = Some(SigningIn {
                 terminal: terminal.id(),
                 conversation,
                 connection,
@@ -416,7 +417,7 @@ impl App {
     /// with what the program said on it, and the question back up in the
     /// conversation -- the reader is the one who knows whether to try again.
     fn sign_in_ended(&mut self, ended: &Ended) {
-        let Some(signing) = self.signing_in.take() else {
+        let Some(signing) = self.terminal.signing_in.take() else {
             return;
         };
         let whose = talking::Whose::One(signing.conversation);
@@ -479,4 +480,19 @@ impl App {
             section: None,
         }
     }
+}
+
+/// The terminals Obelus has started: the number the next one takes, the
+/// reader's own shell, and the sign-in an agent is waiting on.
+#[derive(Debug, Default)]
+pub(in crate::app) struct Terminals {
+    /// The last number handed to a terminal, which is how what its program
+    /// writes finds it again.
+    pub(in crate::app) terminals: obelus_terminal::Id,
+    /// A sign-in running in a terminal of its own, while it runs.
+    pub(in crate::app) signing_in: Option<terminals::SigningIn>,
+    /// Which shell `open-terminal` starts, where a test has said: the
+    /// reader's own is whatever their environment says, and a test about
+    /// keys is not a test about their prompt.
+    pub(in crate::app) shell: Option<PathBuf>,
 }

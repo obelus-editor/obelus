@@ -163,6 +163,8 @@ struct Dragging {
 /// Everything Obelus is currently showing or remembering.
 #[derive(Debug)]
 pub struct App {
+    /// The terminals Obelus has started, and the one it signs an agent in on.
+    terminal: terminals::Terminals,
     /// The page that asks which project, while it is up.
     which_project: project::Asking,
     /// The project's files, as the lists of them have walked them.
@@ -430,17 +432,8 @@ pub struct App {
     /// This Obelus's place in the machine's pool of build jobs, while the
     /// settings ask for one.
     jobs: Option<obelus_jobs::Pool>,
-    /// The last number handed to a terminal, which is how what its program
-    /// writes finds it again.
-    terminals: obelus_terminal::Id,
-    /// A sign-in running in a terminal of its own, while it runs.
-    signing_in: Option<terminals::SigningIn>,
     /// Whether shift is held, where a window has said so.
     shifted: bool,
-    /// Which shell `open-terminal` starts, where a test has said: the
-    /// reader's own is whatever their environment says, and a test about
-    /// keys is not a test about their prompt.
-    shell: Option<PathBuf>,
     /// Who is waiting to be told a command has ended.
     ///
     /// The agent's `terminal/wait_for_exit`, held until the command does.
@@ -711,6 +704,7 @@ impl App {
         let documents: Vec<Option<Document>> =
             open.into_iter().map(Document::from).map(Some).collect();
         Self {
+            terminal: terminals::Terminals::default(),
             which_project: project::Asking::default(),
             files: editor::Files::default(),
             search: editor::Search::default(),
@@ -756,9 +750,6 @@ impl App {
             ctrl_enter_arrives: true,
             runs: obelus_agent::running::Runs::default(),
             jobs: None,
-            terminals: 0,
-            signing_in: None,
-            shell: None,
             shifted: false,
             waiting_on: Vec::new(),
             settled: preferences::Settled::default(),
