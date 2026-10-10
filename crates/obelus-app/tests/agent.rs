@@ -14769,10 +14769,13 @@ fn the_waiting_mark_turns_through_the_other_list_landing() {
     // One frame, as the loop draws one after an event, and asked before
     // another: a second frame puts the clock back, which is the frame a
     // stopped clock never draws.
-    app.handle(Event::Issues(obelus_app::app::pulls::Listed::Page {
-        rows: Vec::new(),
-        first: true,
-    }));
+    app.handle(Event::Issues(obelus_app::app::pulls::Listed::First(
+        obelus_app::app::pulls::Page {
+            rows: Vec::new(),
+            older: None,
+            total: 0,
+        },
+    )));
     support::lay_out(&mut app, WIDTH, HEIGHT);
     assert!(
         app.is_waking(),
@@ -15247,15 +15250,16 @@ fn one_issue(stamp: &str) -> String {
 /// issue with the reader's first message -- and once the issue has been
 /// commented on, offers a second look and says since when.
 ///
-/// Broken deliberately six ways, each failing here. Not filling the list
+/// Broken deliberately seven ways, each failing here. Not filling the list
 /// again when the tab moves leaves the pull requests' rows under the issues'
 /// tab. Asking for checks on an issue puts a part on its preview that an
 /// issue cannot have. Laying out again only a pull request's preview when
 /// what was said arrives, as this first did, leaves an issue's saying it is
 /// still asking. Answering `None` for an issue in `about_the_topic`
 /// sends the message with nothing about the issue in it. Offering nothing in
-/// `what_the_box_offers` leaves the box empty. And calling a stamp that
-/// differs from the one told "the same" never offers the second look.
+/// `what_the_box_offers` leaves the box empty. Calling a stamp that
+/// differs from the one told "the same" never offers the second look. And
+/// not handing GitHub `since` asks what has changed since nothing.
 #[test]
 fn an_issue_is_answered_on_the_readers_word() {
     let scratch = support::Scratch::new("agent-issue-answer");
@@ -15370,14 +15374,21 @@ fn an_issue_is_answered_on_the_readers_word() {
         "Obelus spoke in the reader's name without saying so:\n{text}"
     );
 
-    // Commented on since, and the list asked again: the same row is the
-    // same answer.
-    std::fs::write(&issues, one_issue("2026-10-09T00:00:00Z")).expect("the second answer");
+    // Commented on since, and the list asked what has changed: the same row
+    // is the same answer.
+    std::fs::write(
+        issues.with_extension("issues.changed"),
+        one_issue("2026-10-09T00:00:00Z").replace(r#""number""#, r#""state":"OPEN","number""#),
+    )
+    .expect("the second answer");
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
     support::press(&mut app, KeyCode::Tab);
     pump(&mut app, &events, "the issues again", |app| {
         answered_with(app, 1)
     });
+    // Asked of GitHub as what has changed since the newest it had, which
+    // for an issue GitHub can filter by itself.
+    assert_eq!(asked_saying(&answer, "since=2026-10-08T00:00:00Z"), 1);
     let documents = app.document_count_for_test();
     support::press(&mut app, KeyCode::Enter);
     assert_eq!(
@@ -15466,6 +15477,12 @@ fn a_query_that_matches_no_pull_request_says_so() {
     // waiting on rows that may match it.
     pump(&mut app, &events, "the list", |app| answered_with(app, 1));
     support::type_text(&mut app, "zzzz");
+    // And GitHub's search done with it too: before, a query that matches
+    // nothing here may match a row not yet fetched.
+    pump(&mut app, &events, "the search", |app| {
+        app.picker()
+            .is_some_and(|picker| picker.is_filling().is_none())
+    });
     let text = screen(&mut app);
     assert!(
         text.contains("No match") && !text.contains("No pull request is open"),
@@ -15473,55 +15490,33 @@ fn a_query_that_matches_no_pull_request_says_so() {
     );
 }
 
-/// The list fills a page at a time: the first page's rows are on screen
-/// while the next is on its way, a query that matches none of them says the
-/// list is still being asked for rather than that nothing matches, and a
-/// row the walk met on two pages is one row.
-///
-/// Broken deliberately three ways. Gathering the pages in `walk` and
-/// sending them once it is over leaves the list empty until the second page
-/// is let go. Taking the `had` filter out of `Listing::answer` counts #124
-/// twice. And `empty` letting a query speak while the list is still being
-/// walked says "No match" about rows not yet fetched.
-#[test]
-fn the_list_fills_a_page_at_a_time() {
-    let scratch = support::Scratch::new("agent-pull-request-pages");
-    let answer = scratch.path().join("gh-answer.json");
-    std::fs::write(&answer, two_pull_requests()).expect("the first page");
-    // #124 again, pushed down a place by something updated mid-walk.
-    std::fs::write(
-        answer.with_extension("json.page2"),
-        r#"[{"number":124,"title":"Pick up the agent's rename in the tab row","author":{"login":"bob"},"headRefName":"rename","baseRefName":"master","headRefOid":"def456","isDraft":false,"reviewDecision":"","updatedAt":"2026-10-07T00:00:00Z"},
-            {"number":122,"title":"An older one","author":{"login":"carol"},"headRefName":"older","baseRefName":"master","headRefOid":"ccc","isDraft":false,"reviewDecision":"","updatedAt":"2026-10-06T00:00:00Z"}]"#,
-    )
-    .expect("the second page");
-    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+/// The rows GitHub sends for the pull requests numbered `numbers`, newest
+/// first -- the higher the number, the later it changed.
+fn many_pull_requests(numbers: impl DoubleEndedIterator<Item = u64>) -> String {
+    let rows: Vec<String> = numbers
+        .rev()
+        .map(|number| {
+            format!(
+                r#"{{"number":{number},"title":"Pull request {number}","author":{{"login":"a"}},"headRefName":"h","baseRefName":"b","headRefOid":"s","isDraft":false,"reviewDecision":"","updatedAt":"2026-10-01T{:02}:{:02}:00Z"}}"#,
+                number / 60,
+                number % 60
+            )
+        })
+        .collect();
+    format!("[{}]", rows.join(","))
+}
 
-    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
-    pump(&mut app, &events, "the first page", |app| {
-        app.picker().is_some_and(|picker| picker.row_count() == 2)
-    });
-    assert!(
-        app.picker()
-            .is_some_and(|picker| picker.is_filling().is_some()),
-        "the list stopped asking with a page still to come"
-    );
-    support::type_text(&mut app, "zzzz");
-    let text = screen(&mut app);
-    assert!(
-        text.contains("Still asking GitHub") && !text.contains("No match"),
-        "a query was answered before the list had every page:\n{text}"
-    );
-    for _ in 0..4 {
-        support::press(&mut app, KeyCode::Backspace);
-    }
+/// What the list showing says about how much of it there is.
+fn tally(app: &App) -> String {
+    app.picker()
+        .and_then(|picker| picker.how_much())
+        .map(|tally| tally.words.clone())
+        .unwrap_or_default()
+}
 
-    std::fs::write(scratch.path().join("gh-answer.json.go"), "").expect("let it go");
-    pump(&mut app, &events, "the second page", |app| {
-        answered_with(app, 3)
-    });
-    let numbers: Vec<u64> = app
-        .picker()
+/// The pull requests the list shows, top to bottom.
+fn shown(app: &App) -> Vec<u64> {
+    app.picker()
         .map(|picker| {
             picker
                 .matches()
@@ -15531,18 +15526,229 @@ fn the_list_fills_a_page_at_a_time() {
                 })
                 .collect()
         })
-        .unwrap_or_default();
-    assert_eq!(numbers, [123, 124, 122]);
+        .unwrap_or_default()
+}
+
+/// How many of the `gh api` calls written down beside `answer` say `words`.
+fn asked_saying(answer: &Path, words: &str) -> usize {
+    std::fs::read_to_string(answer.with_extension("json.log"))
+        .unwrap_or_default()
+        .lines()
+        .filter(|line| line.contains(words))
+        .count()
+}
+
+/// The first page is all the list asks for until its last row is on
+/// screen; then it asks for the next, says so at the foot, and does not
+/// wrap round past a last row with more to come. The foot says how many of
+/// how many there are, and how many once there are no more.
+///
+/// Broken deliberately four ways. Not asking from `reach_further` leaves
+/// the second page never asked for. Asking there without looking at
+/// whether the last row is on screen asks for it before the reader has
+/// read the first. Leaving `unfinished` off the list wraps down from the
+/// last row it has to the top. And taking `how_much` out of the prompt row
+/// leaves the count unsaid.
+#[test]
+fn the_next_page_is_asked_for_when_the_last_row_is_on_screen() {
+    let scratch = support::Scratch::new("agent-pull-request-next-page");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, many_pull_requests(141..201)).expect("the first page");
+    std::fs::write(
+        answer.with_extension("json.page2"),
+        many_pull_requests(131..141),
+    )
+    .expect("the second page");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the first page", |app| {
+        answered_with(app, 60)
+    });
+    // A frame, which is where the end is looked for: asking would have
+    // said so at once.
+    let text = screen(&mut app);
+    assert_eq!(tally(&app), "60 of 70 open");
+    assert!(
+        text.contains("60 of 70 open"),
+        "the foot does not say how many:\n{text}"
+    );
+
+    for _ in 0..59 {
+        support::press(&mut app, KeyCode::Down);
+    }
+    let text = screen(&mut app);
+    assert!(
+        text.contains("Asking GitHub for 100 more"),
+        "the foot does not say the next page is on its way:\n{text}"
+    );
+    support::press(&mut app, KeyCode::Down);
+    assert_eq!(
+        app.picker().map(|picker| picker.selected()),
+        Some(59),
+        "down wrapped round a list with more to come"
+    );
+
+    pump(&mut app, &events, "the second page", |app| {
+        answered_with(app, 70)
+    });
+    let _ = screen(&mut app);
+    assert_eq!(tally(&app), "70 open");
+    assert_eq!(asked_saying(&answer, "cursor=page2"), 1);
+}
+
+/// A page that does not come leaves the rows that did, says why with the
+/// key that tries again, and is not asked for again on its own -- down on
+/// the last row asks again.
+///
+/// Broken deliberately four ways. Clearing the rows on any refusal, as a
+/// first page's does, leaves the list empty. Letting `further` ask with a
+/// refusal standing asks again on the next frame. Not hearing down in
+/// `choosing` leaves the page never asked for again. And dropping words
+/// before a key whole where they do not fit, as a count is, leaves the
+/// eighty columns here with nothing saying how to try again.
+#[test]
+fn a_page_that_did_not_come_is_asked_for_again_by_down() {
+    let scratch = support::Scratch::new("agent-pull-request-page-again");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, many_pull_requests(141..201)).expect("the first page");
+    let second = answer.with_extension("json.page2");
+    std::fs::write(&second, "eof").expect("a page that does not come");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the first page", |app| {
+        answered_with(app, 60)
+    });
+    for _ in 0..59 {
+        support::press(&mut app, KeyCode::Down);
+    }
+    let _ = screen(&mut app);
+    pump(&mut app, &events, "the refusal", |app| {
+        tally(app).starts_with("GitHub would not answer")
+    });
+    let text = screen(&mut app);
+    assert_eq!(app.picker().map(|picker| picker.row_count()), Some(60));
+    assert!(
+        text.contains("GitHub would not answer") && text.contains("Try again"),
+        "the foot does not say why, or how to try again:\n{text}"
+    );
+    assert!(
+        tally(&app).starts_with("GitHub would not answer"),
+        "the page was asked for again with nobody asking"
+    );
+
+    std::fs::write(&second, many_pull_requests(131..141)).expect("the page, this time");
+    support::press(&mut app, KeyCode::Down);
+    let _ = screen(&mut app);
+    pump(&mut app, &events, "the second page", |app| {
+        answered_with(app, 70)
+    });
+}
+
+/// Opened again, the list asks GitHub what has changed since, rather than
+/// for its first page again: what is still open goes to the top, and what
+/// has merged goes.
+///
+/// Broken deliberately two ways. Opening with `Toward::First` every time
+/// asks for the first page again, which still has the merged one in it.
+/// And not taking out what `Changed` says has gone leaves it in the list.
+#[test]
+fn opened_again_the_list_asks_only_what_has_changed() {
+    let scratch = support::Scratch::new("agent-pull-request-changed");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, two_pull_requests()).expect("the answer");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| answered_with(app, 2));
+    support::press(&mut app, KeyCode::Esc);
+
+    std::fs::write(
+        answer.with_extension("json.changed"),
+        r#"[{"state":"OPEN","number":125,"title":"A newer one","author":{"login":"carol"},"headRefName":"newer","baseRefName":"master","headRefOid":"fff","isDraft":false,"reviewDecision":"","updatedAt":"2026-10-09T01:00:00Z"},
+            {"state":"MERGED","number":124,"title":"Pick up the agent's rename in the tab row","author":{"login":"bob"},"headRefName":"rename","baseRefName":"master","headRefOid":"def456","isDraft":false,"reviewDecision":"","updatedAt":"2026-10-09T00:00:00Z"}]"#,
+    )
+    .expect("what has changed");
+    std::fs::write(answer.with_extension("json.changed.total"), "2").expect("how many");
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "what has changed", |app| {
+        answered_with(app, 2)
+    });
+    let _ = screen(&mut app);
+    assert_eq!(shown(&app), [125, 123]);
+    assert_eq!(tally(&app), "2 open");
+    assert_eq!(
+        asked_saying(&answer, "list:pullRequests(states:OPEN,"),
+        1,
+        "the first page was asked for again"
+    );
+}
+
+/// What is typed is matched against the rows here at once, and asked of
+/// GitHub's search once the typing stops -- by title for words and not for
+/// a number -- and what that finds is matched here too: a row it found
+/// that the query does not match here stays out of the list's matches.
+///
+/// Broken deliberately four ways. Asking GitHub from `the_query_has_moved`
+/// rather than once the typing has settled asks once a keystroke. Leaving
+/// `in:title` off the words, and putting it on the number, each fail the
+/// line asked. And not putting what was found in with the list leaves #130
+/// out of it.
+#[test]
+fn a_query_is_asked_of_github_once_the_typing_stops() {
+    let scratch = support::Scratch::new("agent-pull-request-search");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, two_pull_requests()).expect("the answer");
+    std::fs::write(
+        answer.with_extension("json.found"),
+        r#"[{"number":131,"title":"Something else entirely","author":{"login":"dan"},"headRefName":"x","baseRefName":"master","headRefOid":"x","isDraft":false,"reviewDecision":"","updatedAt":"2026-10-02T00:00:00Z"},
+            {"number":130,"title":"Fold the hunks of a file nobody opened","author":{"login":"erin"},"headRefName":"y","baseRefName":"master","headRefOid":"y","isDraft":false,"reviewDecision":"","updatedAt":"2026-10-01T00:00:00Z"}]"#,
+    )
+    .expect("what the search finds");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| answered_with(app, 2));
+    support::type_text(&mut app, "fold");
+    assert_eq!(shown(&app), [123], "the rows here were not matched at once");
+    let _ = screen(&mut app);
+    assert_eq!(tally(&app), "Asking GitHub about \"fold\"");
+
+    pump(&mut app, &events, "the search", |app| {
+        app.picker()
+            .is_some_and(|picker| picker.is_filling().is_none())
+    });
+    let _ = screen(&mut app);
+    assert_eq!(shown(&app), [123, 130]);
+    assert_eq!(tally(&app), "2 match on GitHub");
+    assert_eq!(
+        asked_saying(&answer, "search("),
+        1,
+        "asked once a keystroke"
+    );
+    assert_eq!(asked_saying(&answer, "in:title fold"), 1);
+
+    for _ in 0..4 {
+        support::press(&mut app, KeyCode::Backspace);
+    }
+    support::type_text(&mut app, "130");
+    pump(&mut app, &events, "the search by number", |app| {
+        app.picker()
+            .is_some_and(|picker| picker.is_filling().is_none())
+    });
+    assert_eq!(asked_saying(&answer, "sort:updated-desc 130"), 1);
+    assert_eq!(asked_saying(&answer, "in:title 130"), 0);
 }
 
 /// Opens the list, waits for what #123 says (`view` beside `answer`), then
-/// opens it again -- with `again` as the list, where there is one -- and
-/// walks to #124; and says which were asked about on the way.
+/// opens it again -- with `changed` as what has changed since, where there
+/// is any -- and walks to #124; and says which were asked about on the way.
 ///
 /// Which order they come in is the proof: one is asked about at a time,
 /// and #124 only once the reader is on it, so #123 asked again on this
 /// opening is heard before #124 is.
-fn asked_on_the_second_opening(name: &str, view: &str, again: Option<&str>) -> Vec<u64> {
+fn asked_on_the_second_opening(name: &str, view: &str, changed: Option<&str>) -> Vec<u64> {
     let scratch = support::Scratch::new(name);
     let answer = scratch.path().join("gh-answer.json");
     std::fs::write(&answer, two_pull_requests()).expect("the answer");
@@ -15558,8 +15764,8 @@ fn asked_on_the_second_opening(name: &str, view: &str, again: Option<&str>) -> V
     pump(&mut app, &events, "the list", |app| answered_with(app, 2));
     until_the_screen_says(&mut app, &events, "First.", HEIGHT);
     support::press(&mut app, KeyCode::Esc);
-    if let Some(again) = again {
-        std::fs::write(&answer, again).expect("the second answer");
+    if let Some(changed) = changed {
+        std::fs::write(answer.with_extension("json.changed"), changed).expect("what has changed");
     }
 
     obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
@@ -15606,9 +15812,9 @@ fn what_was_kept_is_asked_again_only_when_it_has_changed() {
         "a pull request nothing had happened on was asked about again"
     );
 
-    let moved = two_pull_requests().replace("2026-10-08T00:00:00Z", "2026-10-09T00:00:00Z");
+    let moved = r#"[{"state":"OPEN","number":123,"title":"Keep the fold when a hunk is reverted","author":{"login":"alice"},"headRefName":"keep-fold","baseRefName":"master","headRefOid":"abc123","isDraft":false,"reviewDecision":"","updatedAt":"2026-10-09T00:00:00Z"}]"#;
     assert_eq!(
-        asked_on_the_second_opening("agent-pull-request-kept-moved", view, Some(&moved)),
+        asked_on_the_second_opening("agent-pull-request-kept-moved", view, Some(moved)),
         [123, 124],
         "a pull request that had changed was not asked about again"
     );

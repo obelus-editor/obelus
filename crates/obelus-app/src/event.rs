@@ -194,11 +194,14 @@ pub enum Event {
     },
     /// What the newest release of Obelus is called, as its tag says it.
     Released(String),
-    /// A page of the repository's open pull requests, or why `gh` would not
-    /// list them.
+    /// A page of the repository's open pull requests, what has changed
+    /// among them, or why `gh` would not say.
     PullRequests(crate::app::pulls::Listed<crate::app::pulls::PullRequest>),
-    /// A page of its open issues, or why `gh` would not list them.
+    /// The same for its open issues.
     Issues(crate::app::pulls::Listed<crate::app::pulls::Issue>),
+    /// The reader's typing in the list of pull requests has stopped long
+    /// enough to ask GitHub's search about it.
+    PullRequestQuerySettled,
     /// What has happened on one pull request or issue, or why `gh` would
     /// not say.
     PullRequestDiscussion {
@@ -272,6 +275,7 @@ impl Event {
             Self::Released(_) => "Released",
             Self::PullRequests(_) => "PullRequests",
             Self::Issues(_) => "Issues",
+            Self::PullRequestQuerySettled => "PullRequestQuerySettled",
             Self::PullRequestDiscussion { .. } => "PullRequestDiscussion",
             Self::Summoned(_) => "Summoned",
             Self::Remote(_) => "Remote",

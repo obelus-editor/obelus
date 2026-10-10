@@ -613,6 +613,16 @@ pub enum PickerOutcome {
     Cancelled,
 }
 
+/// What a list says about how much of it there is: words, and a key that
+/// does something about it where there is one.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Tally {
+    /// What it says.
+    pub words: String,
+    /// The key, as its cap names it, and what pressing it does.
+    pub key: Option<(String, String)>,
+}
+
 /// A prompt and a filtered list.
 pub struct Picker {
     /// Behind an `Arc` so that scoring them somewhere else costs an atomic
@@ -803,6 +813,12 @@ pub struct Picker {
     /// appears and later goes away slides the whole list under the reader
     /// twice. Beside the tabs there is room that is already there.
     filling: Option<String>,
+    /// What the list says about how much of it there is, at the far end of
+    /// the row it is typed into.
+    tally: Option<Tally>,
+    /// Whether there is more of the list than has been fetched, so that a
+    /// step off either end does not wrap round to the other.
+    unfinished: bool,
     /// Whether the list's own order is an answer, so a query filters it
     /// without reordering it.
     ///
@@ -1005,6 +1021,8 @@ impl Picker {
             tasks: None,
             reads: false,
             filling: None,
+            tally: None,
+            unfinished: false,
             ordered: false,
             footed: false,
             keys: false,
@@ -1154,6 +1172,26 @@ impl Picker {
     /// `None` once it is not.
     pub fn filling(&mut self, note: Option<String>) {
         self.filling = note;
+    }
+
+    /// Says how much of it there is, or what is being done about the rest,
+    /// at the far end of the row it is typed into -- `None` for nothing.
+    pub fn tally(&mut self, tally: Option<Tally>) {
+        self.tally = tally;
+    }
+
+    /// What it says about how much of it there is.
+    #[must_use]
+    pub const fn how_much(&self) -> Option<&Tally> {
+        self.tally.as_ref()
+    }
+
+    /// Says whether there is more of the list than it has: a list fetched a
+    /// page at a time has no other end to wrap round to until its last page
+    /// is in, and a step past the last row it has would put the reader at
+    /// the top of a list that goes on below them.
+    pub const fn unfinished(&mut self, unfinished: bool) {
+        self.unfinished = unfinished;
     }
 
     /// What the list is still waiting for, if it is waiting.
@@ -2472,9 +2510,13 @@ impl Picker {
                 && !(bare && matches!(code, KeyCode::Home | KeyCode::End))
                 && let Some(movement) = Move::of(code) =>
             {
+                let wrap = match self.unfinished {
+                    true => Wrap::No,
+                    false => Wrap::Yes,
+                };
                 match movement {
-                    Move::Up => self.move_selection(-1, Wrap::Yes),
-                    Move::Down => self.move_selection(1, Wrap::Yes),
+                    Move::Up => self.move_selection(-1, wrap),
+                    Move::Down => self.move_selection(1, wrap),
                     // Clamped rather than wrapped, unlike a single step:
                     // paging is how you get to the end of a long list, and
                     // a page that wraps past it overshoots the thing you
