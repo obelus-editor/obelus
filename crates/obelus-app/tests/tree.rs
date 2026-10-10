@@ -425,3 +425,48 @@ fn a_press_moves_the_selection_and_the_arrow_opens_a_row() {
         "the press on the arrow did not open the row: {before} rows, then {after}"
     );
 }
+
+/// A second press on a row chooses it, the way enter does.
+///
+/// One press only moves the selection, because the list is drawn over a
+/// file and a mis-aimed press must not take the reader anywhere. Two in
+/// the same cell are not mis-aimed, and a reader who had to reach for
+/// enter after pointing at a row had the pointer doing half a job.
+///
+/// Broken deliberately by dropping `|| twice` from `press_in_picker`: the
+/// file stays shut and the list stays up.
+#[test]
+fn a_double_click_on_a_row_chooses_it() {
+    let (_scratch, mut app) = a_tree("tree-double-click");
+    let _ = support::render(&mut app, 60, 18);
+
+    let file = app
+        .picker()
+        .expect("the tree")
+        .matches()
+        .position(|item| {
+            matches!(&item.value, obelus_component::picker::PickerValue::File(path)
+                if path.ends_with("main.rs"))
+        })
+        .expect("main.rs among the rows");
+    let area = app.editor_area_for_test();
+    let top = obelus_ui::picker::rows_region(app.picker().expect("the tree"), area).y;
+    let press = |app: &mut obelus_app::app::App| {
+        app.handle(obelus_app::event::Event::Pointer {
+            kind: obelus_app::event::Pointer::Pressed,
+            x: area.x + 20,
+            y: top + u16::try_from(file).expect("a row"),
+        });
+    };
+
+    let open_before = app.file_count_for_test();
+    press(&mut app);
+    assert!(app.picker().is_some(), "one press chose the row");
+    press(&mut app);
+    assert!(app.picker().is_none(), "the second press left the list up");
+    assert_eq!(
+        app.file_count_for_test(),
+        open_before + 1,
+        "the second press did not open the file"
+    );
+}

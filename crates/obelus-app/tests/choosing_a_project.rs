@@ -1056,3 +1056,55 @@ fn closing_without_saving_leaves_the_file_as_it_was() {
         "what was unwritten was written"
     );
 }
+
+/// One press stands on a project and a second opens it.
+///
+/// The page took no press at all: it is drawn where the welcome screen
+/// would be, and the pointer went past it to a file that was not there.
+///
+/// Broken deliberately by returning before `press_in_projects` in
+/// `App::on_pointer`, which leaves the reader on the first row; and by
+/// dropping the second press's enter, which leaves them being asked.
+#[test]
+fn a_press_stands_on_a_project_and_a_second_opens_it() {
+    let scratch = support::Scratch::new("choosing-double-click");
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    app.ask_about_these_projects_for_test(vec![
+        known("/tmp/obelus/alpha", Some(2_000)),
+        Known {
+            path: scratch.path().to_path_buf(),
+            shown: scratch.path().display().to_string(),
+            last: Some(1_000),
+        },
+    ]);
+    let dump = support::render(&mut app, 60, 20);
+    // The start of its name, because the name is cut to its column.
+    let y: u16 = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("obelus-choosing"))
+        .and_then(|row| row.split_once('|'))
+        .and_then(|(at, _)| at.trim().parse().ok())
+        .unwrap_or_else(|| panic!("the second project is not on screen:\n{dump}"));
+    let press = |app: &mut App| {
+        app.handle(obelus_app::event::Event::Pointer {
+            kind: obelus_app::event::Pointer::Pressed,
+            x: 6,
+            y,
+        });
+    };
+
+    press(&mut app);
+    assert_eq!(
+        app.choosing().expect("still asking").at,
+        1,
+        "the press did not stand on the project"
+    );
+    press(&mut app);
+    assert!(app.choosing().is_none(), "the second press left it asking");
+    assert_eq!(
+        app.working_directory(),
+        scratch.path(),
+        "the second press did not open the project it was on"
+    );
+}

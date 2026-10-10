@@ -568,3 +568,44 @@ fn a_press_moves_the_selection_and_the_fold_mark_opens_a_row() {
         "the press on the mark did not open the row"
     );
 }
+
+/// A second press on a row does what enter does there, mark or no mark.
+///
+/// Broken deliberately by dropping `|| twice` from `press_in_counts`: the
+/// row stays shut.
+#[test]
+fn a_double_click_on_a_row_opens_it() {
+    let mut app = open(76, 24);
+    press(&mut app, KeyCode::Tab);
+    let _ = support::render(&mut app, 76, 24);
+
+    let directory = app
+        .counts()
+        .expect("the table")
+        .rows()
+        .iter()
+        .position(|row| row.open == Some(false))
+        .expect("a row that is shut");
+    let area = app.editor_area_for_test();
+    let top = obelus_ui::counts::list_region(area, app.counts().expect("the table")).y;
+    let press_on_the_words = |app: &mut App| {
+        app.handle(Event::Pointer {
+            kind: obelus_app::event::Pointer::Pressed,
+            x: area.x + 30,
+            y: top + u16::try_from(directory).expect("a row"),
+        });
+    };
+
+    let before = app.counts().expect("the table").rows().len();
+    press_on_the_words(&mut app);
+    assert_eq!(
+        app.counts().expect("the table").rows().len(),
+        before,
+        "one press opened the row"
+    );
+    press_on_the_words(&mut app);
+    assert!(
+        app.counts().expect("the table").rows().len() > before,
+        "the second press did not open the row"
+    );
+}

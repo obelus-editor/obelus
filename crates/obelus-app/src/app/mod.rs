@@ -3594,9 +3594,10 @@ impl App {
     /// clickable and the list under it was not.
     ///
     /// A press moves the selection and nothing else. What *chooses* a row
-    /// stays on the keyboard, because these lists are opened over a file
+    /// is a second press on it, because these lists are opened over a file
     /// and drawn where a mis-aimed press would otherwise take the reader
-    /// somewhere they did not ask to go. The one exception is a row's own
+    /// somewhere they did not ask to go -- and nobody aims a double click
+    /// badly twice in the same cell. The one exception is a row's own
     /// arrow, which says the row opens: pressing that does what pressing
     /// the arrow means everywhere, and cannot take the reader anywhere,
     /// because the arrow is declared on the rows that open and on no
@@ -3607,6 +3608,13 @@ impl App {
         if kind != Pointer::Pressed {
             return;
         }
+        let twice = self.clicks_at(x, y) == 2;
+        // Spent on what it chose, so that a third press -- on the file the
+        // second may have opened -- is a first press there, and not a line
+        // taken hold of.
+        if twice {
+            self.clicked = None;
+        }
         // Whichever is nearest the reader, which is the one drawn over the
         // others: the same order a key is offered in.
         let Some(layer) = self.layers().nearest_first().next() else {
@@ -3615,15 +3623,15 @@ impl App {
         match layer {
             // The status row, which was asked before this.
             obelus_component::layers::Layer::Prompt => {}
-            obelus_component::layers::Layer::Picker => self.press_in_picker(x, y),
+            obelus_component::layers::Layer::Picker => self.press_in_picker(x, y, twice),
             // Nothing yet: what a press would have to land on is a row of
             // two sections and a boundary between them, and a press that
             // guessed wrong would add a font the reader did not point at.
             // The keys do all of it, and a list nobody can click is not a
             // list that lies about what it does.
             obelus_component::layers::Layer::Names => {}
-            obelus_component::layers::Layer::Counts => self.press_in_counts(x, y),
-            obelus_component::layers::Layer::Settings => self.press_in_settings(x, y),
+            obelus_component::layers::Layer::Counts => self.press_in_counts(x, y, twice),
+            obelus_component::layers::Layer::Settings => self.press_in_settings(x, y, twice),
             // Two keys, and nothing to point at.
             obelus_component::layers::Layer::Gone => {}
         }
@@ -3659,8 +3667,9 @@ impl App {
         }
     }
 
-    /// A press in a list of rows to choose from.
-    fn press_in_picker(&mut self, x: u16, y: u16) {
+    /// A press in a list of rows to choose from, and whether it is the
+    /// second of a double click.
+    fn press_in_picker(&mut self, x: u16, y: u16, twice: bool) {
         // Where the list drew itself, not the room it was given: a compact
         // one takes as many rows as it needs against the foot of that room,
         // so the two are ten rows apart for a palette on a tall screen.
@@ -3693,7 +3702,7 @@ impl App {
         if let Some(picker) = self.picker.as_mut() {
             picker.select_row(at);
         }
-        if arrow {
+        if arrow || twice {
             // Down the same path the key goes down, rather than a second
             // opener of its own: what enter does to the row under the
             // arrow is what the arrow is a picture of, and two of them
@@ -3703,7 +3712,7 @@ impl App {
     }
 
     /// A press in the table of what this project is made of.
-    fn press_in_counts(&mut self, x: u16, y: u16) {
+    fn press_in_counts(&mut self, x: u16, y: u16, twice: bool) {
         let area = self.drawn_in();
         // The tabs are the table's first row.
         let tab = self.counts.as_ref().and_then(|counts| {
@@ -3727,8 +3736,30 @@ impl App {
         if let Some(counts) = self.counts.as_mut() {
             counts.select_row(at);
         }
-        if mark {
+        if mark || twice {
             self.counts_key(&enter());
+        }
+    }
+
+    /// A press on the page that asks which project.
+    ///
+    /// The way every list goes: one press stands on a row and a second
+    /// chooses it. Nothing here is drawn over anything, but choosing a
+    /// project starts everything a project starts, and a press meant to
+    /// look at a path should not.
+    fn press_in_projects(&mut self, x: u16, y: u16) {
+        let Some(at) = self.what_is_being_chosen().and_then(|choosing| {
+            obelus_ui::projects::row_at(self.drawn_in(), &choosing, &self.keymap, x, y)
+        }) else {
+            return;
+        };
+        let twice = self.clicks_at(x, y) == 2;
+        if let Some(chooser) = self.chooser.as_mut() {
+            chooser.select_row(at);
+        }
+        if twice {
+            self.clicked = None;
+            self.choosing_a_project(&enter());
         }
     }
 
@@ -3738,7 +3769,7 @@ impl App {
     /// the switch: a box with a tick in it or without, which is the one
     /// thing on the page that says by its shape that pressing it changes
     /// it.
-    fn press_in_settings(&mut self, x: u16, y: u16) {
+    fn press_in_settings(&mut self, x: u16, y: u16, twice: bool) {
         let area = self.drawn_in();
         // The tabs are the page's first row.
         let tab = self.settings.as_ref().and_then(|settings| {
@@ -3761,7 +3792,7 @@ impl App {
         if let Some(settings) = self.settings.as_mut() {
             settings.select_row(at, offering.as_ref());
         }
-        if switch {
+        if switch || twice {
             self.settings_key(&enter());
         }
     }
@@ -4254,6 +4285,12 @@ impl App {
         // half of it with a caret in it; the transcript has none.
         if self.conversation().is_some() {
             self.pointer_in_chat(kind, x, y);
+            return;
+        }
+        // The page that asks which project, which is drawn where the
+        // welcome screen would be.
+        if kind == Pointer::Pressed && self.reading_nothing() && self.chooser.is_some() {
+            self.press_in_projects(x, y);
             return;
         }
         // The welcome screen's website, the one thing on it a press opens.
