@@ -1145,7 +1145,7 @@ impl App {
         if words.trim().is_empty() {
             return;
         }
-        self.mirror_in(whose, format!("_On this machine:_ {}", words.trim()), false);
+        self.mirror_in(whose, words.trim().to_string(), false);
     }
 
     /// Says in the thread that the conversation was closed here.
