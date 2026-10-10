@@ -50,7 +50,7 @@ impl App {
         // there. Except where the reader turned animation off: then the
         // window turns it a frame a tick, the frame this clock writes.
         let window_turns = obelus_config::in_a_window() && self.settled.config.animation;
-        sheen || self.dragging.is_some() || (!window_turns && self.turning(working))
+        sheen || self.pointing.dragging.is_some() || (!window_turns && self.turning(working))
     }
 
     /// Whether a mark that turns is on the screen -- see `wants_animating`.

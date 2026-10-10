@@ -221,7 +221,7 @@ impl App {
                 }
             }
             Event::Counted(counted) => self.on_counted(*counted),
-            Event::Shifted(held) => self.shifted = held,
+            Event::Shifted(held) => self.pointing.shifted = held,
             Event::Scroll(rows) => self.scroll(rows),
             Event::Pointer { kind, x, y } => self.on_pointer(kind, x, y),
             // One change for the whole of it, so undoing a paste is one
@@ -412,7 +412,7 @@ impl App {
         // but a pointer that leaves the terminal takes its release with
         // it, and a drag nothing ever ended would go on scrolling under
         // whatever the reader did next.
-        self.dragging = None;
+        self.pointing.dragging = None;
 
         // Whatever is in front, and on down only as far as each thing lets
         // a key through -- which for anything the reader is *in* is not at

@@ -378,8 +378,8 @@ impl App {
         self.screen_area = area;
         self.prepare(obelus_ui::editor_room(area, self));
         let left = obelus_ui::draw(cells, area, self);
-        self.bars = left.bars;
-        self.links = left.links;
+        self.pointing.bars = left.bars;
+        self.pointing.links = left.links;
         // With the frame rather than with the key that changed it: what
         // the caret is doing depends on where it ended up, which is not
         // known until the frame has been laid out.

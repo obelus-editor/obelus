@@ -184,7 +184,7 @@ impl App {
             y.clamp(area.y, area.bottom() - 1) - area.y,
             x.clamp(area.x, area.right() - 1) - area.x,
         );
-        let shifted = self.shifted;
+        let shifted = self.pointing.shifted;
         let Some(terminal) = self.terminal_mut() else {
             return;
         };
@@ -210,10 +210,11 @@ impl App {
     pub(super) fn wheel_in_terminal(&mut self, rows: isize) {
         let area = obelus_ui::editor_canvas(self.screen_area);
         let at = self
+            .pointing
             .pointer
             .filter(|(x, y)| area.contains(ratatui::layout::Position::new(*x, *y)))
             .map_or((0, 0), |(x, y)| (y - area.y, x - area.x));
-        let shifted = self.shifted;
+        let shifted = self.pointing.shifted;
         let Some(terminal) = self.terminal_mut() else {
             return;
         };

@@ -232,7 +232,7 @@ impl App {
         // second may have opened -- is a first press there, and not a line
         // taken hold of.
         if twice {
-            self.clicked = None;
+            self.pointing.clicked = None;
         }
         // Whichever is nearest the reader, which is the one drawn over the
         // others: the same order a key is offered in.
@@ -389,7 +389,7 @@ impl App {
             chooser.select_row(at);
         }
         if twice {
-            self.clicked = None;
+            self.pointing.clicked = None;
             self.choosing_a_project(&enter());
         }
     }
@@ -413,7 +413,7 @@ impl App {
             list.select_row(at.0);
         }
         if twice {
-            self.clicked = None;
+            self.pointing.clicked = None;
             self.choosing_a_project(&enter());
         }
         true
@@ -439,7 +439,7 @@ impl App {
             list.select_row(at.0);
         }
         if twice {
-            self.clicked = None;
+            self.pointing.clicked = None;
             self.slash_key(&enter());
         }
         true
@@ -643,11 +643,11 @@ impl App {
         use crate::event::Pointer;
 
         let twice = kind == Pointer::Pressed && self.clicks_at(x, y) == 2;
-        if twice && let Some((place, folded)) = self.pressed_call.take() {
+        if twice && let Some((place, folded)) = self.pointing.pressed_call.take() {
             if let (Some(begins), Some(talk)) = (folded, self.conversation_mut()) {
                 talk.chat.fold(begins);
             }
-            self.clicked = None;
+            self.pointing.clicked = None;
             self.go_to_where_the_agent_was(&place);
             return;
         }
@@ -678,7 +678,7 @@ impl App {
             let folds = row.and_then(|row| row.folds);
             // What the frame drew under the pointer, which is the one
             // answer the underline and a window's hand are also made of.
-            let link = obelus_ui::links::at(&self.links, x, y).map(str::to_string);
+            let link = obelus_ui::links::at(&self.pointing.links, x, y).map(str::to_string);
             // A cursor stands on a row, and the band under the last of them
             // is not one; nor while a card is up, which has the keys -- a
             // cursor moved under it would be found there afterwards.
@@ -694,7 +694,8 @@ impl App {
         let (spot, folds, cursor, link, goes) = found.unwrap_or((None, None, None, None, None));
         // A link is its own thing to press, and opens on the letting go.
         if kind == Pointer::Pressed {
-            self.pressed_call = goes.filter(|_| link.is_none()).map(|place| (place, folds));
+            self.pointing.pressed_call =
+                goes.filter(|_| link.is_none()).map(|place| (place, folds));
         }
         // Where the cursor goes, for a press or a drag: the keys follow
         // the pointer, or the arrows after a press walk something the
@@ -784,7 +785,7 @@ impl App {
     /// end of the selection is put where the pointer is again, against the
     /// edge, because the rows under it have moved.
     pub(super) fn drag_on(&mut self) {
-        let Some(drag) = self.dragging else {
+        let Some(drag) = self.pointing.dragging else {
             return;
         };
         let past = i32::from(drag.past);
@@ -806,7 +807,7 @@ impl App {
         // Which said the drag had come back inside the band, it having
         // been handed a row that is. It has not: the reader is still
         // holding it out there.
-        self.dragging = Some(drag);
+        self.pointing.dragging = Some(drag);
     }
 
     /// Puts the caret of whichever box is on the status row.
@@ -881,12 +882,13 @@ impl App {
 
         match kind {
             Pointer::Moved => false,
-            Pointer::Released => self.holding.take().is_some(),
+            Pointer::Released => self.pointing.holding.take().is_some(),
             Pointer::Pressed => {
                 // A release can go missing -- let go outside the window --
                 // and a press is a fresh start whatever it lands on.
-                self.holding = None;
+                self.pointing.holding = None;
                 let Some(bar) = self
+                    .pointing
                     .bars
                     .iter()
                     .rev()
@@ -896,20 +898,26 @@ impl App {
                 };
                 let grip = bar.grip(y);
                 let (whose, top) = (bar.whose, bar.top_for(y, grip));
-                self.holding = Some((whose, grip));
+                self.pointing.holding = Some((whose, grip));
                 if let Some(top) = top {
                     self.drag_bar(whose, top);
                 }
                 true
             }
             Pointer::Dragged => {
-                let Some((whose, grip)) = self.holding else {
+                let Some((whose, grip)) = self.pointing.holding else {
                     return false;
                 };
                 // The bar as the latest frame drew it, which may be none:
                 // the list it was beside has closed under the pointer.
-                let Some(bar) = self.bars.iter().rev().find(|bar| bar.whose == whose) else {
-                    self.holding = None;
+                let Some(bar) = self
+                    .pointing
+                    .bars
+                    .iter()
+                    .rev()
+                    .find(|bar| bar.whose == whose)
+                else {
+                    self.pointing.holding = None;
                     return true;
                 };
                 if let Some(top) = bar.top_for(y, grip) {
@@ -929,16 +937,16 @@ impl App {
     pub(super) fn on_pointer(&mut self, kind: crate::event::Pointer, x: u16, y: u16) {
         use crate::event::Pointer;
 
-        self.pointer = Some((x, y));
+        self.pointing.pointer = Some((x, y));
         if kind == Pointer::Pressed {
-            self.pressed_in_the_file = false;
+            self.pointing.pressed_in_the_file = false;
         }
         // A bar first, and whatever it is beside: a press on one is about
         // the bar and nothing under it, and while it is held every move is
         // the bar's -- wherever the pointer has wandered, the way a bar
         // held anywhere else behaves.
         if self.pointer_on_a_bar(kind, x, y) {
-            self.dragging = None;
+            self.pointing.dragging = None;
             return;
         }
 
@@ -948,9 +956,9 @@ impl App {
         // all while a held pointer is still.
         match kind {
             Pointer::Dragged => {
-                self.dragging = self.past_the_edge(y).map(|past| Dragging { past, x, y });
+                self.pointing.dragging = self.past_the_edge(y).map(|past| Dragging { past, x, y });
             }
-            Pointer::Pressed | Pointer::Released => self.dragging = None,
+            Pointer::Pressed | Pointer::Released => self.pointing.dragging = None,
             Pointer::Moved => {}
         }
 
@@ -1060,7 +1068,7 @@ impl App {
         self.pointer_rested(x, y);
         let count = match kind {
             Pointer::Pressed => {
-                self.pressed_in_the_file = true;
+                self.pointing.pressed_in_the_file = true;
                 self.clicks_at(x, y)
             }
             _ => 0,
@@ -1068,7 +1076,7 @@ impl App {
         match kind {
             // Nothing but where it is, which was noted above.
             Pointer::Moved => return,
-            Pointer::Dragged if !self.pressed_in_the_file => return,
+            Pointer::Dragged if !self.pointing.pressed_in_the_file => return,
             // Dragging is what a reader does to select, so the place they
             // put the button down stays put.
             Pointer::Dragged => {
@@ -1140,7 +1148,7 @@ impl App {
         const GAP: std::time::Duration = std::time::Duration::from_millis(400);
 
         let now = std::time::Instant::now();
-        let count = match self.clicked {
+        let count = match self.pointing.clicked {
             Some((was_x, was_y, when, count))
                 if (was_x, was_y) == (x, y) && now.duration_since(when) < GAP && count < 3 =>
             {
@@ -1148,7 +1156,69 @@ impl App {
             }
             _ => 1,
         };
-        self.clicked = Some((x, y, now, count));
+        self.pointing.clicked = Some((x, y, now, count));
         count
     }
+}
+
+/// What the pointer is doing -- where it is, what it pressed and how many
+/// times, what it holds, what it drags -- and what the last frame left for it
+/// to land on: the bars and the links.
+#[derive(Debug, Default)]
+pub(in crate::app) struct Pointing {
+    /// Where the pointer was last put down, and how many times in a row.
+    ///
+    /// A terminal reports button presses and nothing about double clicks,
+    /// so the count is Obelus's own: the same cell, pressed again inside
+    /// the time below, is the second press of one gesture.
+    pub(in crate::app) clicked: Option<(u16, u16, std::time::Instant, u8)>,
+    /// The tool call the last press in the transcript was on, where it
+    /// names a file, and what that press folded.
+    ///
+    /// What the second press of a double click is about, wherever it
+    /// lands: the first can open a call, and a transcript at its end moves
+    /// up under the pointer by what opened -- so the same cell is another
+    /// row by the second press, and often another call.
+    pub(in crate::app) pressed_call: Option<(
+        obelus_agent::acp::Place,
+        Option<obelus_component::chat::Folds>,
+    )>,
+    /// Whether the press the button is still down from was in the file.
+    ///
+    /// A drag is the far end of a selection that press began, and one
+    /// begun anywhere else has nothing in the file to extend: a double
+    /// click that opened a file, and a hand that moved before letting go,
+    /// selected from wherever the file opened at.
+    pub(in crate::app) pressed_in_the_file: bool,
+    /// The cell the pointer was last reported over, wherever it was and
+    /// whatever it did there.
+    ///
+    /// Not `resting`, which is the file's alone and is about how long it
+    /// has been still: this is for what is raised under the pointer, which
+    /// has to follow it everywhere and at once. Never forgotten, because a
+    /// terminal says nothing when the pointer leaves it.
+    pub(in crate::app) pointer: Option<(u16, u16)>,
+    /// A drag being held against the edge of what it is selecting in.
+    ///
+    /// The one thing on this screen that moves because of the reader's
+    /// hand rather than because something is happening on its own -- and
+    /// it has to, because a terminal says nothing at all while a held
+    /// pointer is still. Without a tick behind it a reader who dragged to
+    /// the edge and waited would wait for ever: the selection they are
+    /// making stops where the screen does.
+    pub(in crate::app) dragging: Option<Dragging>,
+    /// The bars the last frame left on the page, which is where a press on
+    /// one lands: see `obelus_ui::bars`.
+    pub(in crate::app) bars: Vec<obelus_ui::bars::Drawn>,
+    /// The links the last frame drew, which is what a click follows: see
+    /// `obelus_ui::links`.
+    pub(in crate::app) links: Vec<obelus_ui::links::Drawn>,
+    /// Which bar the pointer has hold of, and where on its mark.
+    ///
+    /// Whose rather than the bar itself: the frames go on being drawn while
+    /// it is held, and what the next move is measured against is the bar
+    /// as the latest of them drew it.
+    pub(in crate::app) holding: Option<(obelus_ui::bars::Whose, u16)>,
+    /// Whether shift is held, where a window has said so.
+    pub(in crate::app) shifted: bool,
 }

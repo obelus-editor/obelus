@@ -163,6 +163,9 @@ struct Dragging {
 /// Everything Obelus is currently showing or remembering.
 #[derive(Debug)]
 pub struct App {
+    /// What the pointer is doing and what the last frame left for it to land
+    /// on.
+    pointing: pointer::Pointing,
     /// What git has said about the files being read, kept until it moves.
     git: git::Said,
     /// The terminals Obelus has started, and the one it signs an agent in on.
@@ -256,39 +259,7 @@ pub struct App {
     /// above is the same news, placed, for the things that have to line up
     /// with characters on screen: the underline, the count, the complaint.
     reported: HashMap<PathBuf, Vec<obelus_lsp::trouble::Reported>>,
-    /// Where the pointer was last put down, and how many times in a row.
-    ///
-    /// A terminal reports button presses and nothing about double clicks,
-    /// so the count is Obelus's own: the same cell, pressed again inside
-    /// the time below, is the second press of one gesture.
-    clicked: Option<(u16, u16, std::time::Instant, u8)>,
-    /// The tool call the last press in the transcript was on, where it
-    /// names a file, and what that press folded.
-    ///
-    /// What the second press of a double click is about, wherever it
-    /// lands: the first can open a call, and a transcript at its end moves
-    /// up under the pointer by what opened -- so the same cell is another
-    /// row by the second press, and often another call.
-    pressed_call: Option<(
-        obelus_agent::acp::Place,
-        Option<obelus_component::chat::Folds>,
-    )>,
-    /// Whether the press the button is still down from was in the file.
-    ///
-    /// A drag is the far end of a selection that press began, and one
-    /// begun anywhere else has nothing in the file to extend: a double
-    /// click that opened a file, and a hand that moved before letting go,
-    /// selected from wherever the file opened at.
-    pressed_in_the_file: bool,
 
-    /// The cell the pointer was last reported over, wherever it was and
-    /// whatever it did there.
-    ///
-    /// Not `resting`, which is the file's alone and is about how long it
-    /// has been still: this is for what is raised under the pointer, which
-    /// has to follow it everywhere and at once. Never forgotten, because a
-    /// terminal says nothing when the pointer leaves it.
-    pointer: Option<(u16, u16)>,
     /// Where the reader has been.
     jumps: JumpList,
     /// The file the picker's selection names, opened so it can be shown.
@@ -341,27 +312,6 @@ pub struct App {
     /// loop's channel, and the decision is the thing worth seeing -- an
     /// application with no loop behind it still makes it.
     waking: bool,
-    /// A drag being held against the edge of what it is selecting in.
-    ///
-    /// The one thing on this screen that moves because of the reader's
-    /// hand rather than because something is happening on its own -- and
-    /// it has to, because a terminal says nothing at all while a held
-    /// pointer is still. Without a tick behind it a reader who dragged to
-    /// the edge and waited would wait for ever: the selection they are
-    /// making stops where the screen does.
-    dragging: Option<Dragging>,
-    /// The bars the last frame left on the page, which is where a press on
-    /// one lands: see `obelus_ui::bars`.
-    bars: Vec<obelus_ui::bars::Drawn>,
-    /// The links the last frame drew, which is what a click follows: see
-    /// `obelus_ui::links`.
-    links: Vec<obelus_ui::links::Drawn>,
-    /// Which bar the pointer has hold of, and where on its mark.
-    ///
-    /// Whose rather than the bar itself: the frames go on being drawn while
-    /// it is held, and what the next move is measured against is the bar
-    /// as the latest of them drew it.
-    holding: Option<(obelus_ui::bars::Whose, u16)>,
     /// What this machine's faces are called, as whatever is drawing
     /// Obelus reported them.
     ///
@@ -416,8 +366,6 @@ pub struct App {
     /// This Obelus's place in the machine's pool of build jobs, while the
     /// settings ask for one.
     jobs: Option<obelus_jobs::Pool>,
-    /// Whether shift is held, where a window has said so.
-    shifted: bool,
     /// Who is waiting to be told a command has ended.
     ///
     /// The agent's `terminal/wait_for_exit`, held until the command does.
@@ -663,6 +611,7 @@ impl App {
         let documents: Vec<Option<Document>> =
             open.into_iter().map(Document::from).map(Some).collect();
         Self {
+            pointing: pointer::Pointing::default(),
             git: git::Said::default(),
             terminal: terminals::Terminals::default(),
             which_project: project::Asking::default(),
@@ -681,10 +630,6 @@ impl App {
             servers: HashMap::new(),
             stopped: HashSet::new(),
             asked: HashMap::new(),
-            clicked: None,
-            pressed_call: None,
-            pressed_in_the_file: false,
-            pointer: None,
             troubles: HashMap::new(),
             reported: HashMap::new(),
             jumps: JumpList::default(),
@@ -692,10 +637,6 @@ impl App {
             phase: 0,
             ticker: None,
             waking: false,
-            dragging: None,
-            bars: Vec::new(),
-            links: Vec::new(),
-            holding: None,
             fonts_here: Vec::new(),
             monospace_here: None,
             names: None,
@@ -709,7 +650,6 @@ impl App {
             ctrl_enter_arrives: true,
             runs: obelus_agent::running::Runs::default(),
             jobs: None,
-            shifted: false,
             waiting_on: Vec::new(),
             settled: preferences::Settled::default(),
             agents: agents::Agents::default(),

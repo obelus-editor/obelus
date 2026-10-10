@@ -119,7 +119,7 @@ impl Screen for App {
         App::phase(self)
     }
     fn pointer(&self) -> Option<(u16, u16)> {
-        self.pointer
+        self.pointing.pointer
     }
     fn picker(&self) -> Option<&Picker> {
         App::picker(self)
