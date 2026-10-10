@@ -286,7 +286,7 @@ impl App {
                 .symbol_actions()
                 .unwrap_or_default()
                 .iter()
-                .any(|action| action.command() == command),
+                .any(|action| semantics::command_of(*action) == command),
             // The one condition that is a walk rather than a field: what
             // has changed in the project is git's to say, with every ignore
             // rule applied. Asked once when the palette opens and once per

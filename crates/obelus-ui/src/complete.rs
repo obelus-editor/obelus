@@ -263,7 +263,9 @@ fn rows(cells: &mut CellBuffer, area: Rect, completion: &Completion, theme: &The
             .kind
             .map_or(theme.foreground, |kind| theme.syntax.colour(kind));
         let mut x = room.x;
-        if let Some(icon) = candidate.icon
+        if let Some(icon) = candidate
+            .category
+            .map(obelus_component::completion::icon_of)
             && obelus_icons::enabled()
         {
             let mut glyph = String::new();

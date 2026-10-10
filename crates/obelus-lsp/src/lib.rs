@@ -55,20 +55,6 @@ pub enum ServerState {
 }
 
 impl ServerState {
-    /// The Nerd Font glyph for the state.
-    ///
-    /// A network icon rather than a shape: what a language server is, to a
-    /// reader, is something at the other end of a pipe that is either
-    /// answering or not.
-    #[must_use]
-    pub const fn glyph(self) -> char {
-        match self {
-            Self::Starting => obelus_icons::ui::SERVER_STARTING,
-            Self::Ready => obelus_icons::ui::SERVER_READY,
-            Self::Gone => obelus_icons::ui::SERVER_GONE,
-        }
-    }
-
     /// The mark that stands for the state.
     ///
     /// Ordinary Unicode, not a Nerd Font glyph: this one is on screen the

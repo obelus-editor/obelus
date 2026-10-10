@@ -33,8 +33,9 @@ pub struct Candidate {
     pub documentation: Option<String>,
     /// What sort of thing it is, as a colour.
     pub kind: Option<SyntaxKind>,
-    /// And as a picture, where there is one that says more than the colour.
-    pub icon: Option<char>,
+    /// And what the protocol says it is, where that says more than the
+    /// colour.
+    pub category: Option<Category>,
     /// What goes into the document.
     pub insert: String,
     /// Whether [`Candidate::insert`] is a snippet rather than plain text.
@@ -217,7 +218,7 @@ fn candidate_of(item: CompletionItem, text: &Text, encoding: &PositionEncodingKi
         detail: detail_of(&item),
         documentation: documentation_of(item.documentation.as_ref()),
         kind: item.kind.and_then(kind_of),
-        icon: item.kind.and_then(icon_of),
+        category: item.kind.and_then(category_of),
         insert,
         snippet: item.insert_text_format == Some(InsertTextFormat::SNIPPET),
         replace,
@@ -289,26 +290,36 @@ fn kind_of(kind: CompletionItemKind) -> Option<SyntaxKind> {
     }
 }
 
-/// The picture for a kind of candidate.
+/// What the protocol says a candidate is, where its colour cannot say it.
 ///
-/// Mostly [`obelus_icons::for_kind`], because a candidate and an outline
-/// row name the same sorts of thing. The exceptions are the kinds the
-/// protocol tells apart and a colour cannot: a module and a keyword are
-/// both keyword-coloured, and drawing them alike would put the same
-/// picture on `mod` and on `pub`. A snippet, a file and a folder have no
-/// colour of their own at all, and a picture is the only thing that says
-/// what they are.
-fn icon_of(kind: CompletionItemKind) -> Option<char> {
+/// A candidate and an outline row name the same sorts of thing, so most of
+/// these are a [`SyntaxKind`]. The exceptions are the kinds the protocol
+/// tells apart and a colour cannot: a module and a keyword are both
+/// keyword-coloured, and drawing them alike would put the same picture on
+/// `mod` and on `pub`. A snippet, a file and a folder have no colour of their
+/// own at all, and a picture is the only thing that says what they are.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Category {
+    /// A word of the language.
+    Keyword,
+    /// A piece of code rather than a name.
+    Snippet,
+    /// A file.
+    File,
+    /// A folder.
+    Folder,
+    /// Whatever its colour says it is.
+    Kind(SyntaxKind),
+}
+
+/// What the protocol's kind of candidate is to Obelus.
+fn category_of(kind: CompletionItemKind) -> Option<Category> {
     match kind {
-        // `md-key`, for the word that is one.
-        CompletionItemKind::KEYWORD => Some('\u{f0306}'),
-        // `md-code_braces`: a snippet is a piece of code rather than a
-        // name.
-        CompletionItemKind::SNIPPET => Some('\u{f0169}'),
-        // `md-file_document` and `md-folder`, which is what they are.
-        CompletionItemKind::FILE => Some('\u{f0219}'),
-        CompletionItemKind::FOLDER => Some('\u{f024b}'),
-        other => kind_of(other).map(obelus_icons::for_kind),
+        CompletionItemKind::KEYWORD => Some(Category::Keyword),
+        CompletionItemKind::SNIPPET => Some(Category::Snippet),
+        CompletionItemKind::FILE => Some(Category::File),
+        CompletionItemKind::FOLDER => Some(Category::Folder),
+        other => kind_of(other).map(Category::Kind),
     }
 }
 
@@ -331,30 +342,33 @@ mod tests {
     use super::*;
 
     /// A module and a keyword are both keyword-coloured, and a snippet is
-    /// not coloured at all: what tells them apart in a list is the
-    /// picture, so it has to be a different one.
+    /// not coloured at all: what tells them apart in a list is something
+    /// other than the colour, so they have to be different categories.
+    ///
+    /// Broken on purpose by sending `KEYWORD` to `kind_of` with the rest: the
+    /// module and the keyword came back as one category.
     #[test]
-    fn the_kinds_a_colour_cannot_tell_apart_have_their_own_pictures() {
-        let module = icon_of(CompletionItemKind::MODULE).expect("a module has a picture");
-        let keyword = icon_of(CompletionItemKind::KEYWORD).expect("a keyword has one");
-        let snippet = icon_of(CompletionItemKind::SNIPPET).expect("a snippet has one");
+    fn the_kinds_a_colour_cannot_tell_apart_are_different_categories() {
+        let module = category_of(CompletionItemKind::MODULE).expect("a module is a category");
+        let keyword = category_of(CompletionItemKind::KEYWORD).expect("a keyword is one");
+        let snippet = category_of(CompletionItemKind::SNIPPET).expect("a snippet is one");
         assert_eq!(
             kind_of(CompletionItemKind::MODULE),
             kind_of(CompletionItemKind::KEYWORD),
             "the two this test is about no longer share a colour"
         );
-        assert_ne!(module, keyword, "`mod` and `pub` are drawn alike");
+        assert_ne!(module, keyword, "`mod` and `pub` are one category");
         assert_ne!(snippet, keyword);
         assert_ne!(snippet, module);
 
-        // A method is a function wherever it appears, so it wears what the
-        // outline gives one rather than a second picture for the same thing.
+        // A method is a function wherever it appears, so it is the category the
+        // outline gives one rather than a second for the same thing.
         assert_eq!(
-            icon_of(CompletionItemKind::METHOD),
-            Some(obelus_icons::for_kind(SyntaxKind::Function))
+            category_of(CompletionItemKind::METHOD),
+            Some(Category::Kind(SyntaxKind::Function))
         );
-        // And a kind Obelus has nothing to say about wears nothing.
-        assert_eq!(icon_of(CompletionItemKind::TEXT), None);
+        // And a kind Obelus has nothing to say about is no category at all.
+        assert_eq!(category_of(CompletionItemKind::TEXT), None);
     }
 
     /// The punctuation that asks a question is the server's to name. A

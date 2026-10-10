@@ -321,7 +321,7 @@ fn server_badge(server: Option<(&'static str, ServerState)>, busy: Option<u32>) 
             match obelus_icons::enabled() {
                 // A blank to read by, after the one a terminal's glyph
                 // bleeds into -- see `after_a_glyph`.
-                true => format!("{}{}{name} ", state.glyph(), crate::after_a_glyph()),
+                true => format!("{}{}{name} ", glyph_of(state), crate::after_a_glyph()),
                 false => format!("{} {name} ", state.mark()),
             }
         })
@@ -1441,6 +1441,19 @@ impl StatusView<'_> {
     }
 }
 
+/// The Nerd Font glyph for a server's state.
+///
+/// A network icon rather than a shape: what a language server is, to a
+/// reader, is something at the other end of a pipe that is either
+/// answering or not.
+const fn glyph_of(state: ServerState) -> char {
+    match state {
+        ServerState::Starting => obelus_icons::ui::SERVER_STARTING,
+        ServerState::Ready => obelus_icons::ui::SERVER_READY,
+        ServerState::Gone => obelus_icons::ui::SERVER_GONE,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use obelus_theme::builtin::DARK;
@@ -1500,7 +1513,7 @@ mod tests {
             assert_eq!(
                 mark,
                 if obelus_icons::enabled() {
-                    state.glyph()
+                    glyph_of(state)
                 } else {
                     state.mark()
                 },
@@ -1517,9 +1530,9 @@ mod tests {
                 ServerState::Gone.mark(),
             ],
             [
-                ServerState::Ready.glyph(),
-                ServerState::Starting.glyph(),
-                ServerState::Gone.glyph(),
+                glyph_of(ServerState::Ready),
+                glyph_of(ServerState::Starting),
+                glyph_of(ServerState::Gone),
             ],
         ] {
             assert_eq!(

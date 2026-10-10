@@ -1,7 +1,6 @@
 //! What can be asked about the symbol under the cursor.
 
 use lsp_types::{OneOf, ServerCapabilities};
-use obelus_command::Command;
 
 /// A question about a symbol whose answer is a set of places.
 ///
@@ -49,39 +48,6 @@ impl SymbolAction {
         }
     }
 
-    /// What to call it, which is what its command is called.
-    ///
-    /// One name, in the command table, so the menu and the palette cannot
-    /// disagree about what a question is called.
-    #[must_use]
-    pub fn title(self) -> &'static str {
-        self.command().spec().title
-    }
-
-    /// The command that asks it.
-    ///
-    /// Each question is a named action, so each is a command: the menu and the
-    /// palette then offer the same things, and whatever shows a key reads the
-    /// same table.
-    #[must_use]
-    pub const fn command(self) -> Command {
-        match self {
-            Self::Definition => Command::SymbolDefinition,
-            Self::TypeDefinition => Command::SymbolTypeDefinition,
-            Self::Implementation => Command::SymbolImplementation,
-            Self::References => Command::SymbolReferences,
-            Self::Calls => Command::SymbolCalls,
-        }
-    }
-
-    /// The question a command asks, if it asks one.
-    #[must_use]
-    pub fn for_command(command: Command) -> Option<Self> {
-        ALL.iter()
-            .copied()
-            .find(|action| action.command() == command)
-    }
-
     /// Whether the server said it can answer.
     ///
     /// A server declares each of these separately, and one that cannot answer
@@ -127,15 +93,6 @@ mod tests {
 
         capabilities.definition_provider = Some(OneOf::Left(true));
         assert!(SymbolAction::Definition.supported(&capabilities));
-    }
-
-    /// The two directions have to agree, or a menu row runs a different
-    /// question from the one it names.
-    #[test]
-    fn a_command_and_its_question_agree() {
-        for action in ALL {
-            assert_eq!(SymbolAction::for_command(action.command()), Some(*action));
-        }
     }
 
     #[test]

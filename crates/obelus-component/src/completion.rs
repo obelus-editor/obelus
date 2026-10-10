@@ -20,7 +20,7 @@ use nucleo_matcher::{
     pattern::{CaseMatching, Normalization, Pattern},
 };
 use obelus_buffer::DocumentId;
-use obelus_lsp::complete::{Candidate, Offer};
+use obelus_lsp::complete::{Candidate, Category, Offer};
 use obelus_row::Row;
 use obelus_text::coordinates::{CharColumn, LineNumber};
 
@@ -498,7 +498,7 @@ impl Completion {
         };
         self.labels = shown()
             .map(|candidate| {
-                usize::from(candidate.icon.is_some()) * ICON_COLUMNS
+                usize::from(candidate.category.is_some()) * ICON_COLUMNS
                     + obelus_text::text_width(&candidate.label)
             })
             .max()
@@ -533,5 +533,51 @@ impl Completion {
             indices.dedup();
             self.indices.push((row, indices));
         }
+    }
+}
+/// The picture for a category of candidate.
+///
+/// Mostly [`obelus_icons::for_kind`], because a candidate and an outline row
+/// name the same sorts of thing; the rest are the sorts a colour cannot tell
+/// apart, and each has a picture of its own.
+#[must_use]
+pub fn icon_of(category: Category) -> char {
+    match category {
+        // `md-key`, for the word that is one.
+        Category::Keyword => '\u{f0306}',
+        // `md-code_braces`: a snippet is a piece of code rather than a name.
+        Category::Snippet => '\u{f0169}',
+        // `md-file_document` and `md-folder`, which is what they are.
+        Category::File => '\u{f0219}',
+        Category::Folder => '\u{f024b}',
+        Category::Kind(kind) => obelus_icons::for_kind(kind),
+    }
+}
+
+#[cfg(test)]
+mod pictures {
+    use obelus_text::kind::SyntaxKind;
+
+    use super::*;
+
+    /// A module is keyword-coloured and so is a keyword, and a snippet is
+    /// not coloured at all: the picture is what tells them apart in a list.
+    ///
+    /// Broken on purpose by drawing `Category::Keyword` as `for_kind(Keyword)`:
+    /// `mod` and `pub` came out alike.
+    #[test]
+    fn the_categories_a_colour_cannot_tell_apart_have_their_own_pictures() {
+        let module = icon_of(Category::Kind(SyntaxKind::Keyword));
+        let keyword = icon_of(Category::Keyword);
+        let snippet = icon_of(Category::Snippet);
+        assert_ne!(module, keyword, "`mod` and `pub` are drawn alike");
+        assert_ne!(snippet, keyword);
+        assert_ne!(snippet, module);
+        // A method is a function wherever it appears, so it wears what the
+        // outline gives one rather than a second picture for the same thing.
+        assert_eq!(
+            icon_of(Category::Kind(SyntaxKind::Function)),
+            obelus_icons::for_kind(SyntaxKind::Function)
+        );
     }
 }

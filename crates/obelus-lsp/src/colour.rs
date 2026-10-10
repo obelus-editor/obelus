@@ -21,7 +21,6 @@
 
 use lsp_types::{ColorInformation, PositionEncodingKind, ServerCapabilities};
 use obelus_text::{Text, coordinates::Span};
-use ratatui::style::Color;
 use serde_json::Value;
 
 /// A colour, and the characters that say it.
@@ -29,8 +28,11 @@ use serde_json::Value;
 pub struct Coloured {
     /// The characters the server pointed at.
     pub span: Span,
-    /// What they mean, ready to paint with.
-    pub colour: Color,
+    /// What they mean: red, green and blue, a byte each.
+    ///
+    /// Bytes rather than a colour type, because what a colour is painted
+    /// with is the drawing's business and this is the protocol's.
+    pub colour: [u8; 3],
 }
 
 /// Whether the server answers `textDocument/documentColor`.
@@ -81,8 +83,8 @@ pub fn in_reply(
 /// the terminal paints one background per cell -- and a half-transparent
 /// colour shown at full strength is nearer the truth than one blended
 /// against a guess about what is underneath.
-fn rgb(colour: lsp_types::Color) -> Color {
-    Color::Rgb(byte(colour.red), byte(colour.green), byte(colour.blue))
+fn rgb(colour: lsp_types::Color) -> [u8; 3] {
+    [byte(colour.red), byte(colour.green), byte(colour.blue)]
 }
 
 /// One channel, as the protocol gives it: a fraction of full.
@@ -124,7 +126,7 @@ mod tests {
             (found[0].span.column.get(), found[0].span.end_column.get()),
             (11, 18)
         );
-        assert_eq!(found[0].colour, Color::Rgb(50, 100, 235));
+        assert_eq!(found[0].colour, [50, 100, 235]);
     }
 
     /// A server with nothing to say says it in several ways, and none of

@@ -279,7 +279,7 @@ impl App {
         let items: Vec<PickerItem> = actions
             .into_iter()
             .map(|action| {
-                let command = action.command();
+                let command = command_of(action);
                 PickerItem {
                     prose: false,
                     marker: None,
@@ -714,7 +714,10 @@ impl App {
                 coloured.span.line,
                 coloured.span.column,
                 obelus_ui::swatch_cells(),
-                obelus_ui::Drawn::Swatch(coloured.colour),
+                obelus_ui::Drawn::Swatch({
+                    let [red, green, blue] = coloured.colour;
+                    ratatui::style::Color::Rgb(red, green, blue)
+                }),
             )
         });
         let worked_out = hints.iter().map(|hint| {
@@ -933,7 +936,7 @@ impl App {
 
     /// Asks whichever question a command names.
     pub fn ask_about_symbol(&mut self, command: obelus_command::Command) {
-        let Some(action) = SymbolAction::for_command(command) else {
+        let Some(action) = action_for(command) else {
             return;
         };
         self.ask(action);
@@ -985,7 +988,7 @@ impl App {
                         version,
                     },
                 );
-                self.say(format!("{}\u{2026}", action.title()));
+                self.say(format!("{}\u{2026}", title_of(action)));
             }
             Err(error) => {
                 tracing::warn!(%error, "could not ask");
@@ -1294,7 +1297,7 @@ impl App {
             Outcome::Failed(message) => self.wrong(message),
             Outcome::NotYet => self.wrong("Still indexing".to_string()),
             Outcome::Nothing => {
-                self.wrong(format!("Nothing for {}", action.title()));
+                self.wrong(format!("Nothing for {}", title_of(action)));
             }
             Outcome::Places(mut places) if places.len() == 1 => {
                 let place = places.remove(0);
@@ -2737,12 +2740,54 @@ pub(super) fn named(language: LanguageId) -> &'static str {
     obelus_lsp::command_for(language).unwrap_or("The language server")
 }
 
+/// The command that asks a question about the symbol under the cursor.
+///
+/// Each question is a named action, so each is a command: the menu and the
+/// palette then offer the same things, and whatever shows a key reads the
+/// same table. Written here rather than on the question, because what a
+/// language server can be asked is the protocol's and what a reader presses
+/// is Obelus's.
+pub(super) const fn command_of(action: SymbolAction) -> Command {
+    match action {
+        SymbolAction::Definition => Command::SymbolDefinition,
+        SymbolAction::TypeDefinition => Command::SymbolTypeDefinition,
+        SymbolAction::Implementation => Command::SymbolImplementation,
+        SymbolAction::References => Command::SymbolReferences,
+        SymbolAction::Calls => Command::SymbolCalls,
+    }
+}
+
+/// The question a command asks, if it asks one.
+fn action_for(command: Command) -> Option<SymbolAction> {
+    obelus_lsp::action::ALL
+        .iter()
+        .copied()
+        .find(|action| command_of(*action) == command)
+}
+
+/// What to call a question, which is what its command is called.
+///
+/// One name, in the command table, so the menu and the palette cannot
+/// disagree about what a question is called.
+fn title_of(action: SymbolAction) -> &'static str {
+    command_of(action).spec().title
+}
+
 #[cfg(test)]
 mod tests {
     use obelus_component::picker::PickerValue;
     use obelus_lsp::action::Place;
 
-    use super::place_rows;
+    use super::{action_for, command_of, place_rows};
+
+    /// The two directions have to agree, or a menu row runs a different
+    /// question from the one it names.
+    #[test]
+    fn a_command_and_its_question_agree() {
+        for action in obelus_lsp::action::ALL {
+            assert_eq!(action_for(command_of(*action)), Some(*action));
+        }
+    }
 
     /// A list of places reads like a list of matches: the line each one
     /// names, and the file after it.
