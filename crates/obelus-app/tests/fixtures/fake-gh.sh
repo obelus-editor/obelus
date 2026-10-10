@@ -75,10 +75,25 @@ if [ -f "$base.page$((at + 1))" ]; then
 else
     more="false,\"endCursor\":null"
 fi
+# Counted a page at a time rather than through `"$base".page*`: on Windows
+# the path is written with backslashes, which a pattern reads as escapes,
+# and the pages past the first went uncounted.
+count() {
+    if [ -f "$1" ]; then
+        grep -o '"number"' "$1" | wc -l | tr -d ' '
+    else
+        echo 0
+    fi
+}
 if [ -f "$base.total" ]; then
     total="$(cat "$base.total")"
 else
-    total="$(cat "$base" "$base".page* 2>/dev/null | grep -o '"number"' | wc -l | tr -d ' ')"
+    total="$(count "$base")"
+    n=2
+    while [ -f "$base.page$n" ]; do
+        total=$((total + $(count "$base.page$n")))
+        n=$((n + 1))
+    done
 fi
 info="\"pageInfo\":{\"hasNextPage\":$more}"
 case "$shape" in
