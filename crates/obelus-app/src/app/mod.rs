@@ -163,6 +163,8 @@ struct Dragging {
 /// Everything Obelus is currently showing or remembering.
 #[derive(Debug)]
 pub struct App {
+    /// What git has said about the files being read, kept until it moves.
+    git: git::Said,
     /// The terminals Obelus has started, and the one it signs an agent in on.
     terminal: terminals::Terminals,
     /// The page that asks which project, while it is up.
@@ -206,15 +208,6 @@ pub struct App {
     ///
     /// One field for all four, because they differ only in what they list.
     picker: Option<Picker>,
-    /// Which walk of the history the list is expecting batches from.
-    ///
-    /// Bumped every time a history starts being read -- a key, a tab, a
-    /// different file -- so the batches of the walk before it are
-    /// recognizable as stale. Shared with the walking thread, which reads it
-    /// to find out that nobody is waiting for it any more: a whole history
-    /// is a walk of the whole project, and there is nothing else to stop it
-    /// with.
-    history_generation: obelus_runtime::cancel::Latest,
     /// Sender for the background walk, once the loop has started.
     events: Option<std::sync::mpsc::Sender<Event>>,
     /// One language server per language, started when a file of that language
@@ -315,15 +308,6 @@ pub struct App {
     /// picker to ask for a line number puts a region of screen over the code
     /// to hold one row that says "type a line number".
     prompt: Option<Prompt>,
-    /// What has changed in the current file since the last commit.
-    ///
-    /// Kept here rather than in the buffer for the same reason the
-    /// highlights are: it is a function of the file's text and nothing else,
-    /// and re-deriving it when the text changes is simpler than keeping a
-    /// buffer's copy of it right. Re-derived means asking git again, so it
-    /// happens when a file is opened or reloaded -- which is exactly when
-    /// what changed can have changed -- and not per frame.
-    changes: Option<Changed>,
     /// The current file laid out as whatever reading it has, if it is being
     /// shown that way.
     ///
@@ -529,31 +513,6 @@ pub struct App {
     ///
     /// And which checkout holds each, where its claim says.
     held_kept: std::collections::BTreeMap<obelus_agent::chats::ChatId, Option<PathBuf>>,
-    /// Who last changed each line, per file that has been asked about.
-    ///
-    /// Kept rather than replaced, because a reader goes back and forth
-    /// between two files and a blame is a walk of history: asking again for
-    /// one they left a moment ago would spend that walk twice. Bounded by
-    /// the files opened in a session, which is tens of them.
-    blames: std::collections::HashMap<
-        (PathBuf, Option<gix::ObjectId>),
-        Vec<Option<obelus_git::Blamed>>,
-    >,
-    /// The committed text the margin's diff is against.
-    ///
-    /// One file's, because one file's diff is drawn: switching to another
-    /// reads that one's. Kept because reading it is opening the repository,
-    /// finding the commit, walking its tree and unpacking the blob -- and
-    /// what it answers changes only when the repository moves, where the
-    /// document it is compared with changes on every keystroke.
-    ///
-    /// `None` inside the answer is a file with nothing committed, which has
-    /// to be remembered too: otherwise every keystroke goes and finds out
-    /// again that there is nothing to find.
-    committed: Option<Committed>,
-    /// Which files have been asked about and have not answered yet, so a
-    /// frame does not start a second walk of the same history.
-    asking_blame: std::collections::HashSet<(PathBuf, Option<gix::ObjectId>)>,
     /// Something to tell the reader, until the next key.
     ///
     /// Half of what a language server does is answer with nothing, and
@@ -704,6 +663,7 @@ impl App {
         let documents: Vec<Option<Document>> =
             open.into_iter().map(Document::from).map(Some).collect();
         Self {
+            git: git::Said::default(),
             terminal: terminals::Terminals::default(),
             which_project: project::Asking::default(),
             files: editor::Files::default(),
@@ -742,7 +702,6 @@ impl App {
             replacing: false,
             drawing: None,
             prompt: None,
-            changes: None,
 
             tools_url: None,
             listening: None,
@@ -767,10 +726,6 @@ impl App {
             sessions_kept: None,
             notes_kept: None,
             held_kept: std::collections::BTreeMap::new(),
-            blames: std::collections::HashMap::new(),
-            committed: None,
-            asking_blame: std::collections::HashSet::new(),
-            history_generation: obelus_runtime::cancel::Latest::default(),
             rendered: None,
             theme_before: None,
             taken_from: None,
@@ -1134,7 +1089,7 @@ impl App {
     /// test that waited for one would be a test that sometimes did not.
     #[must_use]
     pub fn history_walk_for_test(&self) -> u64 {
-        self.history_generation.now()
+        self.git.history_generation.now()
     }
 
     /// Which document is being read, for a test that wants to know whether

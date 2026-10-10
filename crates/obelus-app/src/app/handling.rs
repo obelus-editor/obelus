@@ -314,8 +314,8 @@ impl App {
                 // Kept whether or not the reader is still looking at that
                 // file: they walked away from it while a walk of its history
                 // was running, and they will walk back.
-                self.asking_blame.remove(&(path.clone(), at));
-                self.blames.insert((path, at), lines);
+                self.git.asking_blame.remove(&(path.clone(), at));
+                self.git.blames.insert((path, at), lines);
             }
             Event::Git(obelus_git::Event::Logged {
                 generation,
@@ -325,7 +325,7 @@ impl App {
             }) => {
                 // A batch from a walk whose list is gone, or from one
                 // superseded by another tab, another file, another key.
-                if self.history_generation.is_current(generation) {
+                if self.git.history_generation.is_current(generation) {
                     self.on_logged(commits, walked, done);
                 }
             }

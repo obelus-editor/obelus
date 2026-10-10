@@ -32,7 +32,7 @@ impl App {
     /// What has changed in the current file, if Obelus can tell.
     #[must_use]
     pub fn changes(&self) -> Option<&obelus_git::Changes> {
-        self.changes.as_ref().map(|changed| &changed.changes)
+        self.git.changes.as_ref().map(|changed| &changed.changes)
     }
 
     /// The hunk the reader has opened in place, if any.
@@ -198,7 +198,8 @@ impl App {
     #[must_use]
     pub fn blamed_lines(&self) -> Option<&[Option<obelus_git::Blamed>]> {
         let buffer = self.current_buffer()?;
-        self.blames
+        self.git
+            .blames
             .get(&(buffer.path().to_path_buf(), buffer.content().at()))
             .map(Vec::as_slice)
     }
@@ -240,7 +241,7 @@ impl App {
         else {
             return;
         };
-        if self.blames.contains_key(&asked) || !self.asking_blame.insert(asked.clone()) {
+        if self.git.blames.contains_key(&asked) || !self.git.asking_blame.insert(asked.clone()) {
             return;
         }
         if let Some(sender) = self.events.clone() {
@@ -269,10 +270,10 @@ impl App {
         // header naming one branch and the status row another is two
         // answers about one checkout on one screen.
         self.ask_the_conversations_their_branch();
-        self.changes = None;
-        self.committed = None;
-        self.blames.clear();
-        self.asking_blame.clear();
+        self.git.changes = None;
+        self.git.committed = None;
+        self.git.blames.clear();
+        self.git.asking_blame.clear();
         // And a history on screen is about the repository that moved.
         self.reread_history();
     }
@@ -281,7 +282,7 @@ impl App {
     /// this version of this file.
     pub(in crate::app) fn refresh_changes(&mut self) {
         let Some(buffer) = self.current_buffer() else {
-            self.changes = None;
+            self.git.changes = None;
             return;
         };
         // The content as well as the path and the version: a commit's
@@ -294,6 +295,7 @@ impl App {
             buffer.content().clone(),
         );
         if self
+            .git
             .changes
             .as_ref()
             .is_some_and(|changed| changed.at == at)
@@ -318,6 +320,7 @@ impl App {
         let now = buffer.text().rope().to_string();
         let asked_path = asked.0.clone();
         if self
+            .git
             .committed
             .as_ref()
             .is_none_or(|committed| committed.of != asked)
@@ -332,9 +335,10 @@ impl App {
                 )),
                 None => obelus_git::head(&asked.0),
             };
-            self.committed = Some(crate::app::Committed { of: asked, text });
+            self.git.committed = Some(crate::app::Committed { of: asked, text });
         }
         let before = self
+            .git
             .committed
             .as_mut()
             .and_then(|committed| committed.text.as_mut());
@@ -353,7 +357,7 @@ impl App {
                 "Nothing committed to compare with, so no changes"
             );
         }
-        self.changes = changes;
+        self.git.changes = changes;
         // A hunk that was open belonged to the diff that has just been
         // replaced. Leaving it open would show removed lines that are no
         // longer removed anywhere.

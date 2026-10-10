@@ -114,7 +114,7 @@ impl App {
         // holds the old count: a new one would start where the old one's
         // answers are numbered, and they would arrive as current.
         self.files.walk_generation.next();
-        self.history_generation.next();
+        self.git.history_generation.next();
         self.search.search_generation.next();
         self.worktrees.not_showing();
 
@@ -130,7 +130,7 @@ impl App {
         self.theme = was.theme;
         self.theme_name = was.theme_name;
         self.files.walk_generation = was.files.walk_generation;
-        self.history_generation = was.history_generation;
+        self.git.history_generation = was.git.history_generation;
         self.search.search_generation = was.search.search_generation;
         // The door other windows reach this one by is the process's, and
         // listens for as long as it runs.

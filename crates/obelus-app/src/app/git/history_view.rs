@@ -326,7 +326,7 @@ impl App {
         obelus_git::history::spawn_log(
             &self.working_directory,
             only,
-            self.history_generation.claim(generation),
+            self.git.history_generation.claim(generation),
             sender,
         );
     }
@@ -337,7 +337,7 @@ impl App {
     /// ways that need no walk: a list of refs left the previous tab's walk
     /// running, and its batches would arrive into a list they are not about.
     fn next_history_walk(&mut self) -> u64 {
-        self.history_generation.next()
+        self.git.history_generation.next()
     }
 
     /// Puts a batch of commits into the list waiting for them.
