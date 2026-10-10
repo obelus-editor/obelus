@@ -510,14 +510,6 @@ impl Row {
         here.acts().then(|| row..row + 1)
     }
 
-    /// The link the row's nth character is in, where it is in one.
-    #[must_use]
-    pub fn link_at(&self, characters: usize) -> Option<&Link> {
-        self.links
-            .iter()
-            .find(|link| link.characters.contains(&characters))
-    }
-
     /// How many characters the row draws.
     #[must_use]
     pub fn characters(&self) -> usize {
@@ -812,6 +804,15 @@ pub struct Chat {
     /// is to drop it wherever there is a doubt: laying out again costs
     /// milliseconds and being wrong costs the reader their conversation.
     laid: std::cell::RefCell<Option<(LaidAt, Vec<Row>)>>,
+    /// The links the last frame drew, as the row of the screen, the cells
+    /// across it and where each goes.
+    ///
+    /// Kept by whoever draws them, because what a click follows has to be
+    /// what was on the screen under it: a link's words can be cut short by
+    /// what a row says at its end, and the cells in front of a row's words
+    /// are nobody's. Worked out a second time from the characters, the
+    /// click opened a link from the margin beside it.
+    drawn_links: std::cell::RefCell<Vec<(u16, std::ops::Range<u16>, String)>>,
     /// What is happening now, if anything is.
     ///
     /// One slot rather than a line of the transcript: a state has no
@@ -1102,6 +1103,7 @@ impl Chat {
         Self {
             said: Vec::new(),
             laid: std::cell::RefCell::new(None),
+            drawn_links: std::cell::RefCell::new(Vec::new()),
             doing: None,
             can_send_now: false,
             plan: Vec::new(),
@@ -2517,11 +2519,40 @@ impl Chat {
         self.held = None;
     }
 
-    /// Whether what is held is a press that never became a drag, which is
-    /// what a click leaves.
+    /// Whether what is held is a press at `at` that never became a drag,
+    /// which is what a click there leaves.
+    ///
+    /// At the place it was let go, as well as unmoved: a press on one link
+    /// let go on another, with nothing reported between, is not a click on
+    /// either.
     #[must_use]
-    pub fn clicked(&self) -> bool {
-        self.held.is_some_and(|(from, to)| from == to)
+    pub fn clicked(&self, at: Spot) -> bool {
+        self.held.is_some_and(|(from, to)| from == to && from == at)
+    }
+
+    /// Forgets the links the last frame drew, before a frame draws them
+    /// again.
+    pub fn forget_drawn_links(&self) {
+        self.drawn_links.borrow_mut().clear();
+    }
+
+    /// Says a frame drew the words of a link across these cells of a row
+    /// of the screen.
+    pub fn drew_link(&self, y: u16, cells: std::ops::Range<u16>, to: &str) {
+        self.drawn_links
+            .borrow_mut()
+            .push((y, cells, to.to_string()));
+    }
+
+    /// Where the link the last frame drew at this cell goes, if it drew one
+    /// there.
+    #[must_use]
+    pub fn link_drawn_at(&self, x: u16, y: u16) -> Option<String> {
+        self.drawn_links
+            .borrow()
+            .iter()
+            .find(|(row, cells, _)| *row == y && cells.contains(&x))
+            .map(|(.., to)| to.clone())
     }
 
     /// Lets go of a hold with nothing in it, which is what a press that
@@ -4374,8 +4405,8 @@ mod tests {
     /// Broken deliberately five ways. By leaving markdown's links off its
     /// rows: the link's words are no link. By keeping the full stop on the
     /// written-out address: it goes somewhere else. By answering from the
-    /// row rather than the character in `Row::link_at` (the first link on
-    /// the row wherever the pointer is): the second link is the first. By
+    /// row rather than the characters in `links_on` (every link from the
+    /// row's first character): the second link is the first. By
     /// looking for addresses in a block of code: the code has a link in it.
     /// And by having enter follow the link under the caret: the reader's
     /// own address is no longer a message they can copy back.
@@ -4412,7 +4443,9 @@ mod tests {
         };
         let goes = |at: Place| {
             rows[at.row]
-                .link_at(at.character)
+                .links
+                .iter()
+                .find(|link| link.characters.contains(&at.character))
                 .map(|link| link.to.as_str())
         };
         let (first, second, between) = (on("one"), on("two"), on("and two"));

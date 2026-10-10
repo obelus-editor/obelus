@@ -289,10 +289,11 @@ fn a_conversation_says_where_its_links_are() {
             1,
         )
     };
-    let mut links = heard
+    // That row's: the answer goes on to a call with a link of its own.
+    let mut links: Vec<Rect> = heard
         .links
         .lock()
-        .map(|links| links.clone())
+        .map(|links| links.iter().filter(|area| area.y == y).copied().collect())
         .unwrap_or_default();
     links.sort_by_key(|area| area.x);
     links.dedup();

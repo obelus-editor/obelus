@@ -3948,9 +3948,9 @@ impl App {
             // meant nothing but "let go", so opening it costs the reader
             // nothing they had.
             let folds = row.and_then(|row| row.folds);
-            let link = row
-                .and_then(|row| row.link_at(place.character))
-                .map(|link| link.to.clone());
+            // What the frame drew under the pointer, which is the one
+            // answer the underline and a window's hand are also made of.
+            let link = talk.chat.link_drawn_at(x, y);
             // A cursor stands on a row, and the band under the last of them
             // is not one; nor while a card is up, which has the keys -- a
             // cursor moved under it would be found there afterwards.
@@ -3987,13 +3987,16 @@ impl App {
             // on a link's words, and a drag across one is taking hold of
             // them, not following it.
             Pointer::Released => {
-                let clicked = talk.chat.clicked();
+                let clicked = spot.is_some_and(|spot| talk.chat.clicked(spot));
                 talk.chat.let_go_of_nothing();
                 if clicked && let Some(link) = link {
                     self.open_link(&link);
                 }
             }
-            Pointer::Pressed if folds.is_some() => {
+            // A link on a row that folds is its own thing to press: the
+            // title of a call that fetched a page is often the page's
+            // address, and the rest of the row still folds.
+            Pointer::Pressed if folds.is_some() && link.is_none() => {
                 if let Some(begins) = folds {
                     talk.chat.fold(begins);
                 }

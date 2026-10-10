@@ -740,7 +740,6 @@ impl Showing {
         )
     }
 
-    /// Which cell a place in the window is in.
     /// Makes the pointer a hand over the words of a link, and only there.
     fn point_at_links(&mut self) {
         let over = self
@@ -758,6 +757,7 @@ impl Showing {
         }
     }
 
+    /// Which cell a place in the window is in.
     fn cell_at(&self, at: PhysicalPosition<f64>) -> Option<(u16, u16)> {
         let fonts = self.fonts.as_ref()?;
         let cell = fonts.cell();
@@ -1691,17 +1691,6 @@ impl Drop for Finished {
     }
 }
 
-/// What this window is called by the thing that manages windows.
-///
-/// Not the title, which is what the reader sees: this is the name a
-/// compositor matches its own rules against, and a window that does not
-/// give one is a window nobody can write a rule for -- no size to open at,
-/// no workspace to go to, no icon. It is also how a taskbar finds the
-/// desktop entry.
-///
-/// Lowercase, like every other thing named after Obelus rather than being
-/// the name: the binary, the crates, the config directory.
-#[cfg(all(unix, not(target_os = "macos")))]
 /// Whether a cell is among the words of a link the frame said, and still
 /// is.
 ///
@@ -1720,6 +1709,17 @@ fn on_a_link(linked: &[Rect], page: &Page, x: u16, y: u16) -> bool {
             .contains(ratatui::style::Modifier::UNDERLINED)
 }
 
+/// What this window is called by the thing that manages windows.
+///
+/// Not the title, which is what the reader sees: this is the name a
+/// compositor matches its own rules against, and a window that does not
+/// give one is a window nobody can write a rule for -- no size to open at,
+/// no workspace to go to, no icon. It is also how a taskbar finds the
+/// desktop entry.
+///
+/// Lowercase, like every other thing named after Obelus rather than being
+/// the name: the binary, the crates, the config directory.
+#[cfg(all(unix, not(target_os = "macos")))]
 fn named(attributes: winit::window::WindowAttributes) -> winit::window::WindowAttributes {
     use winit::platform::{wayland::WindowAttributesExtWayland, x11::WindowAttributesExtX11};
 

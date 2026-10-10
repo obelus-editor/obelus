@@ -1461,15 +1461,21 @@ fn something_already_said_answers_enter_from_every_row_of_it() {
 }
 
 /// A click on a link opens it -- the link the pointer is on, of two on
-/// one row -- and a click beside it, or a drag that starts on it, opens
-/// nothing. A link's words are underlined, and the words beside them are
-/// not.
+/// one row, and one in the title of a call whose row folds -- and nothing
+/// else opens one: a click beside a link, in the cells in front of a row
+/// that begins with one, a press on one let go on another, or a drag that
+/// starts on one. A link's words are underlined, and the words beside them
+/// are not.
 ///
-/// Broken deliberately three ways. By opening on a release whether or
-/// not the press moved, in `pointer_in_transcript`: the drag opens the
-/// link it started on. By taking the opening out of that arm: the click
-/// opens nothing. And by leaving the links out of `Drawn::linked`:
-/// nothing is underlined.
+/// Broken deliberately six ways. By asking only where the press was let
+/// go in `Chat::clicked`, and not whether it moved: the drag opens the link
+/// it started on. By asking only that it did not move, and not where it was
+/// let go: the press on one link opens the other. By taking the opening
+/// out of that arm: no click opens anything. By finding the link from the
+/// character under the pointer, as the cursor is found: the cells in
+/// front of the row open its first link. By letting the fold take every
+/// press on a row that folds: the call's address folds the call. And by
+/// leaving the links out of `Drawn::linked`: nothing is underlined.
 #[test]
 fn a_click_on_a_link_opens_it() {
     use obelus_app::event::Pointer;
@@ -1487,55 +1493,99 @@ fn a_click_on_a_link_opens_it() {
     });
 
     let text = screen(&mut app);
-    let row = text
-        .lines()
-        .find(|row| row.contains("the tool calls"))
-        .unwrap_or_else(|| panic!("no link on screen:\n{text}"));
-    let y: u16 = row
-        .split('|')
-        .next()
-        .and_then(|number| number.trim().parse().ok())
-        .expect("a row number");
-    let x = |words: &str| u16::try_from(support::column_of(row, words)).expect("a column");
-    let point = |app: &mut App, kind: Pointer, x: u16| {
-        app.handle(Event::Pointer { kind, x, y });
-        support::lay_out(app, WIDTH, HEIGHT);
+    let row_of = |words: &str| {
+        let row = text
+            .lines()
+            .find(|row| row.contains(words))
+            .unwrap_or_else(|| panic!("no {words:?} on screen:\n{text}"));
+        let y: u16 = row
+            .split('|')
+            .next()
+            .and_then(|number| number.trim().parse().ok())
+            .expect("a row number");
+        let x = u16::try_from(support::column_of(row, words)).expect("a column");
+        (x, y)
     };
+    let click = |app: &mut App, (x, y): (u16, u16)| {
+        for kind in [Pointer::Pressed, Pointer::Released] {
+            app.handle(Event::Pointer { kind, x, y });
+            support::lay_out(app, WIDTH, HEIGHT);
+        }
+    };
+    let opened = || {
+        let it = obelus_clipboard::links::opened();
+        obelus_clipboard::links::use_opener_for_test(obelus_clipboard::links::Opener::Kept);
+        it
+    };
+    let (prompt, tools, and) = (
+        row_of("the prompt turn"),
+        row_of("tool calls"),
+        row_of("and the"),
+    );
 
     let cells = support::cells_of(&mut app, WIDTH, HEIGHT);
-    let underlined = |words: &str| {
-        (x(words)..x(words) + u16::try_from(words.len()).expect("short")).all(|x| {
+    let underlined = |(x, y): (u16, u16), wide: u16| {
+        (x..x + wide).all(|x| {
             cells
                 .cell((x, y))
                 .is_some_and(|cell| cell.modifier.contains(ratatui::style::Modifier::UNDERLINED))
         })
     };
-    assert!(underlined("the prompt turn"), "the link is not underlined");
-    assert!(!underlined("See"), "words that go nowhere are underlined");
+    assert!(underlined(prompt, 15), "the link is not underlined");
+    assert!(!underlined(and, 3), "words that go nowhere are underlined");
 
-    point(&mut app, Pointer::Pressed, x("See"));
-    point(&mut app, Pointer::Released, x("See"));
+    click(&mut app, and);
+    assert_eq!(opened(), None, "a click beside the links opened one");
+    click(&mut app, (1, prompt.1));
     assert_eq!(
-        obelus_clipboard::links::opened(),
+        opened(),
         None,
-        "a click beside the links opened one"
+        "a click in front of the row opened its link"
     );
-
-    point(&mut app, Pointer::Pressed, x("tool calls"));
-    point(&mut app, Pointer::Dragged, x("See"));
-    point(&mut app, Pointer::Released, x("tool calls"));
+    app.handle(Event::Pointer {
+        kind: Pointer::Pressed,
+        x: tools.0,
+        y: tools.1,
+    });
+    app.handle(Event::Pointer {
+        kind: Pointer::Released,
+        x: prompt.0,
+        y: prompt.1,
+    });
     assert_eq!(
-        obelus_clipboard::links::opened(),
+        opened(),
         None,
-        "a drag from a link opened it"
+        "a press on one link let go on another opened it"
     );
+    for (kind, (x, y)) in [
+        (Pointer::Pressed, tools),
+        (Pointer::Dragged, and),
+        (Pointer::Released, tools),
+    ] {
+        app.handle(Event::Pointer { kind, x, y });
+    }
+    assert_eq!(opened(), None, "a drag from a link opened it");
 
-    point(&mut app, Pointer::Pressed, x("tool calls"));
-    point(&mut app, Pointer::Released, x("tool calls"));
-    assert_eq!(
-        obelus_clipboard::links::opened().as_deref(),
-        Some("https://a.example/tools"),
-        "a click on the second link did not open it"
+    for (at, to) in [
+        (prompt, "https://a.example/prompt"),
+        (tools, "https://a.example/tools"),
+        (row_of("a.example/fetched"), "https://a.example/fetched"),
+    ] {
+        click(&mut app, at);
+        assert_eq!(
+            opened().as_deref(),
+            Some(to),
+            "a click on {to} did not open it"
+        );
+    }
+    // And the rest of the call's row still folds it.
+    let before = screen(&mut app);
+    click(&mut app, row_of("Fetch"));
+    assert_eq!(opened(), None, "a click on the call opened its address");
+    assert_ne!(
+        screen(&mut app),
+        before,
+        "a click on the call did not fold it"
     );
 }
 
