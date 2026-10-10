@@ -19,6 +19,7 @@ struct Heard {
     caps: Mutex<Vec<Rect>>,
     keys: Mutex<Vec<(String, Rect)>>,
     scrolls: Mutex<Vec<(Rect, i64)>>,
+    links: Mutex<Vec<Rect>>,
 }
 
 impl obelus_ui::shapes::Shapes for Heard {
@@ -46,6 +47,12 @@ impl obelus_ui::shapes::Shapes for Heard {
     }
 
     fn barred(&self, _bar: obelus_ui::shapes::Bar) {}
+
+    fn linked(&self, area: Rect) {
+        if let Ok(mut links) = self.links.lock() {
+            links.push(area);
+        }
+    }
 
     fn parted(&self, _area: Rect) {}
 
@@ -212,6 +219,84 @@ fn a_conversations_words_begin_one_blank_after_the_speaker() {
         before[1] != ' ' && before[2] == ' ' && before[3] == 'w',
         "not the speaker, one blank and the words: {row:?}"
     );
+}
+
+/// A conversation tells the window where the words of each link are, and
+/// nowhere else, so that the pointer can be a hand over them.
+///
+/// Deliberate breaks: saying nothing in the transcript's drawing leaves
+/// the window no links; and saying each from the start of its row puts
+/// the second link's area over the words before it.
+#[test]
+fn a_conversation_says_where_its_links_are() {
+    use crossterm::event::KeyCode;
+
+    let _turn = turn();
+    obelus_config::drawn_in_a_window();
+    let heard = heard();
+
+    let (sender, events) = std::sync::mpsc::channel();
+    let mut app = App::new(Vec::new());
+    app.events_for_test(sender);
+    app.agents_root_for_test(
+        std::env::temp_dir().join(format!("obelus-window-links-{}", std::process::id())),
+    );
+    let (width, height) = (76, 24);
+    support::lay_out(&mut app, width, height);
+    app.talk_to(
+        "fake",
+        std::path::Path::new(support::sh()),
+        &["tests/fixtures/fake-agent.sh".to_string()],
+    );
+    app.new_conversation();
+    app.open_a_session_for_test();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    let mut said = false;
+    let row = loop {
+        if let Ok(mut links) = heard.links.lock() {
+            links.clear();
+        }
+        let dump = support::render(&mut app, width, height);
+        if let Some(row) = support::text_block(&dump)
+            .lines()
+            .find(|row| row.contains("the tool calls"))
+        {
+            break row.to_string();
+        }
+        if !said && app.talking() == obelus_agent::Talking::Ready {
+            support::type_text(&mut app, "/links");
+            support::press(&mut app, KeyCode::Enter);
+            said = true;
+            continue;
+        }
+        let left = deadline.saturating_duration_since(std::time::Instant::now());
+        assert!(!left.is_zero(), "the answer never arrived:\n{dump}");
+        let event = events
+            .recv_timeout(left)
+            .unwrap_or_else(|_| panic!("nothing arrived, and the screen is:\n{dump}"));
+        app.handle(event);
+    };
+    let y: u16 = row
+        .split('|')
+        .next()
+        .and_then(|number| number.trim().parse().ok())
+        .expect("a row number");
+    let at = |words: &str| {
+        Rect::new(
+            u16::try_from(support::column_of(&row, words)).expect("a column"),
+            y,
+            u16::try_from(words.len()).expect("short"),
+            1,
+        )
+    };
+    let mut links = heard
+        .links
+        .lock()
+        .map(|links| links.clone())
+        .unwrap_or_default();
+    links.sort_by_key(|area| area.x);
+    links.dedup();
+    assert_eq!(links, [at("the prompt turn"), at("the tool calls")]);
 }
 
 /// An agent at work does not run the application's clock where a window

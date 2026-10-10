@@ -1330,6 +1330,13 @@ impl ChatView<'_> {
                     linked: &linked,
                 },
             );
+            for link in &row.links {
+                let from = cell_at(row, link.characters.start, area);
+                let to = cell_at(row, link.characters.end, area).min(ended);
+                if from < to {
+                    crate::shapes::linked(Rect::new(from, y, to - from, 1));
+                }
+            }
             // Said where they stop, rather than simply running out: a row
             // that ends mid-word at the edge of the screen reads as the
             // terminal having cut it off, not as there being more.

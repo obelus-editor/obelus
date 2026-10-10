@@ -373,6 +373,18 @@ pub trait Shapes: Send + Sync {
     ///
     /// Said once per run rather than once per row -- see [`Stroke`].
     fn stroked(&self, stroke: Stroke);
+
+    /// These cells are the words of a link, and a click on them follows it.
+    ///
+    /// A terminal says it in the underline the view wrote, and a click
+    /// follows it there too. What a window has that a terminal has not is
+    /// the pointer's own shape, which the window keeps and the application
+    /// never sees -- so the view says where, and the window says what the
+    /// pointer looks like over it.
+    ///
+    /// One row at a time: a link that wraps is said once for each row its
+    /// words are on.
+    fn linked(&self, area: Rect);
 }
 
 /// Who is drawing, where it is somebody who wants to be told.
@@ -456,6 +468,13 @@ pub(crate) fn parted(area: Rect) {
 pub(crate) fn sheened(area: Rect, from: Color, to: Color) {
     if let Some(shapes) = DRAWING.get() {
         shapes.sheened(area, from, to);
+    }
+}
+
+/// Tells whoever is drawing that the words of a link are here.
+pub(crate) fn linked(area: Rect) {
+    if let Some(shapes) = DRAWING.get() {
+        shapes.linked(area);
     }
 }
 
