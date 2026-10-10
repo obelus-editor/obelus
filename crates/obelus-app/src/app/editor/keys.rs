@@ -321,140 +321,26 @@ impl App {
         self.change(span, &with, doing);
     }
 
-    /// Moves the lines the reader is on one step in or out.
-    ///
-    /// The lines a selection touches, whole, or the line the cursor is on
-    /// when nothing is selected -- and one change rather than one per line,
-    /// so that putting a block right takes one `ctrl+z` to put back.
-    ///
-    /// The selection comes out over the same lines, whole: a reader lining
-    /// a block up presses this more than once, and a selection that went
-    /// with the first press would make the second press about something
-    /// else.
+    /// Moves the lines the reader is on one step in or out: see
+    /// [`obelus_buffer::changes::shift_indent`].
     pub(in crate::app) fn shift_indent(&mut self, deeper: bool) {
-        let Some(buffer) = self.current_buffer() else {
-            return;
-        };
-        let indent = buffer.indent();
-        let text = buffer.text();
-        let (first, last) = match buffer.selection() {
-            Some(span) => (span.line, span.end_line),
-            None => (buffer.cursor().line, buffer.cursor().line),
-        };
-        let mut lines = Vec::new();
-        for line in first.get()..=last.get() {
-            let line = LineNumber::new(line);
-            let was = text.line(line).to_string();
-            lines.push(match deeper {
-                // Nothing to put in front of a line with nothing on it: an
-                // indent on an empty line is trailing blanks, which is what
-                // every other tool in the reader's way then takes back out.
-                true if was.trim().is_empty() => was,
-                true => indent.clone() + &was,
-                false => outdented(&was, &indent),
-            });
-        }
-        let span = obelus_text::coordinates::Span {
-            line: first,
-            column: CharColumn::new(0),
-            end_line: last,
-            end_column: text.line_length(last),
-        };
-        let with = lines.join("\n");
-        if with == text.text_in(span) {
-            return;
-        }
-        self.change(span, &with, obelus_buffer::undo::Doing::Whole);
-        if let Some(buffer) = self.current_buffer_mut() {
-            let end = buffer.text().line_length(last);
-            buffer.select(obelus_text::coordinates::Span {
-                line: first,
-                column: CharColumn::new(0),
-                end_line: last,
-                end_column: end,
-            });
-        }
+        let change = self
+            .current_buffer()
+            .and_then(|buffer| obelus_buffer::changes::shift_indent(buffer, deeper));
+        self.make(change);
     }
 
-    /// Moves the lines the reader is on up or down by one.
-    ///
-    /// The lines a selection touches, whole, or the line the cursor is on.
-    /// One change rather than two, so a line walked three rows down is
-    /// three steps back rather than six -- and the lines go as they are,
-    /// without being re-indented: a reader moving a line has a place in
-    /// mind for it, and a line that changed shape on the way is a line they
-    /// have to look at again.
+    /// Moves the lines the reader is on up or down by one: see
+    /// [`obelus_buffer::changes::move_lines`].
     pub fn move_lines(&mut self, up: bool) {
-        let Some(buffer) = self.current_buffer() else {
-            return;
-        };
-        let text = buffer.text();
-        let (first, last) = lines_in_hand(buffer);
-        // Nowhere to go: the block is already against the end it is being
-        // moved towards.
-        let last_line = text.last_line();
-        if (up && first.get() == 0) || (!up && last >= last_line) {
-            return;
-        }
-        // The line it swaps with, and the two spans that make it one edit:
-        // everything from the first line to the last, in the order the move
-        // puts them.
-        let (from, to) = match up {
-            true => (first.saturating_sub(1), last),
-            false => (first, last.saturating_add(1)),
-        };
-        let span = obelus_text::coordinates::Span {
-            line: from,
-            column: CharColumn::new(0),
-            end_line: to,
-            end_column: text.line_length(to),
-        };
-        let lines: Vec<String> = (from.get()..=to.get())
-            .map(|line| text.line(LineNumber::new(line)).to_string())
-            .collect();
-        let with = match up {
-            true => lines[1..].join("\n") + "\n" + &lines[0],
-            false => {
-                let end = lines.len() - 1;
-                lines[end].clone() + "\n" + &lines[..end].join("\n")
-            }
-        };
-        let cursor = buffer.cursor();
-        let selected = buffer.selection().is_some();
-        self.change(span, &with, obelus_buffer::undo::Doing::Whole);
-
-        // The reader keeps hold of what they moved: the lines under the
-        // selection, or the cursor on the line it was on.
-        let moved = |line: LineNumber| match up {
-            true => line.saturating_sub(1),
-            false => line.saturating_add(1),
-        };
-        if let Some(buffer) = self.current_buffer_mut() {
-            match selected {
-                true => {
-                    let end = moved(last);
-                    buffer.select(obelus_text::coordinates::Span {
-                        line: moved(first),
-                        column: CharColumn::new(0),
-                        end_line: end,
-                        end_column: buffer.text().line_length(end),
-                    });
-                }
-                false => buffer.place_cursor(moved(cursor.line), cursor.column),
-            }
-        }
+        let change = self
+            .current_buffer()
+            .and_then(|buffer| obelus_buffer::changes::move_lines(buffer, up));
+        self.make(change);
     }
 
-    /// Comments the lines the reader is on out, or takes the comment off.
-    ///
-    /// Off where every line that has anything on it is already commented,
-    /// and on otherwise: a block half commented is a block somebody was in
-    /// the middle of commenting, and finishing it is what they meant.
-    ///
-    /// The token goes at the shallowest indentation of the lines it is
-    /// about, so that the marks line up under each other rather than
-    /// stepping in and out with the code. Blank lines are left alone --
-    /// a comment on one is trailing blanks.
+    /// Comments the lines the reader is on out, or takes the comment off:
+    /// see [`obelus_buffer::changes::toggle_comment`].
     pub fn toggle_comment(&mut self) {
         let Some(buffer) = self.current_buffer() else {
             return;
@@ -466,77 +352,25 @@ impl App {
             self.wrong("No line comment in this language".to_string());
             return;
         };
-        let text = buffer.text();
-        let (first, last) = lines_in_hand(buffer);
-        let rows: Vec<String> = (first.get()..=last.get())
-            .map(|line| text.line(LineNumber::new(line)).to_string())
-            .collect();
+        let change = obelus_buffer::changes::toggle_comment(buffer, token);
+        self.make(change);
+    }
 
-        // Three passes' worth of questions, asked in one: whether every
-        // line with anything on it is already commented, how far in the
-        // shallowest of them starts, and whether every mark is followed by
-        // a blank -- because where one is not, taking a blank off the rest
-        // would eat a character somebody wrote.
-        let mut commented = true;
-        let mut margin = true;
-        let mut indent = usize::MAX;
-        for row in rows.iter().filter(|row| !row.trim().is_empty()) {
-            let at = row
-                .chars()
-                .take_while(|character| character.is_whitespace())
-                .count();
-            indent = indent.min(at);
-            let rest: String = row.chars().skip(at).collect();
-            match rest.strip_prefix(token) {
-                Some(after) => margin &= after.starts_with(' '),
-                None => commented = false,
-            }
-        }
-        if indent == usize::MAX {
+    /// Makes a change a command about lines worked out, as one step of undo,
+    /// and leaves the reader holding what it says.
+    fn make(&mut self, change: Option<obelus_buffer::changes::Change>) {
+        use obelus_buffer::changes::After;
+
+        let Some(change) = change else {
             return;
-        }
-
-        let with: Vec<String> = rows
-            .iter()
-            .map(|row| {
-                if row.trim().is_empty() {
-                    return row.clone();
-                }
-                if !commented {
-                    let (before, after): (String, String) = (
-                        row.chars().take(indent).collect(),
-                        row.chars().skip(indent).collect(),
-                    );
-                    return format!("{before}{token} {after}");
-                }
-                let at = row
-                    .chars()
-                    .take_while(|character| character.is_whitespace())
-                    .count();
-                let kept: String = row
-                    .chars()
-                    .skip(at + token.chars().count() + usize::from(margin))
-                    .collect();
-                row.chars().take(at).collect::<String>() + &kept
-            })
-            .collect();
-
-        let span = obelus_text::coordinates::Span {
-            line: first,
-            column: CharColumn::new(0),
-            end_line: last,
-            end_column: text.line_length(last),
         };
-        let selected = buffer.selection().is_some();
-        self.change(span, &with.join("\n"), obelus_buffer::undo::Doing::Whole);
-        if selected && let Some(buffer) = self.current_buffer_mut() {
-            let end = buffer.text().line_length(last);
-            buffer.select(obelus_text::coordinates::Span {
-                line: first,
-                column: CharColumn::new(0),
-                end_line: last,
-                end_column: end,
-            });
+        self.change(change.span, &change.with, obelus_buffer::undo::Doing::Whole);
+        if let Some(buffer) = self.current_buffer_mut() {
+            match change.after {
+                After::Select(span) => buffer.select(span),
+                After::Cursor(line, column) => buffer.place_cursor(line, column),
+                After::Kept => {}
+            }
         }
     }
 
@@ -740,34 +574,6 @@ impl App {
         }
         changed
     }
-}
-
-/// The lines a command about lines is about: the ones a selection touches,
-/// or the one the cursor is on.
-fn lines_in_hand(buffer: &obelus_buffer::Buffer) -> (LineNumber, LineNumber) {
-    match buffer.selection() {
-        Some(span) => (span.line, span.end_line),
-        None => (buffer.cursor().line, buffer.cursor().line),
-    }
-}
-
-/// A line with one step of its indentation taken off.
-///
-/// A tab where the line begins with one, and otherwise up to a step's worth
-/// of spaces -- fewer where there are fewer, because a line indented by two
-/// spaces in a file of four should come out at the margin rather than stay
-/// where it is.
-fn outdented(line: &str, indent: &str) -> String {
-    if let Some(rest) = line.strip_prefix('\t') {
-        return rest.to_string();
-    }
-    let blanks = line
-        .chars()
-        .take_while(|character| *character == ' ')
-        .count();
-    line.chars()
-        .skip(blanks.min(indent.chars().count()))
-        .collect()
 }
 
 /// The half that closes what a character opens.

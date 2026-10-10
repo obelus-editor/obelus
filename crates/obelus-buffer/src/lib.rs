@@ -15,6 +15,7 @@
 //! somebody has edited that is losing their work. Mark it and stop at the save,
 //! which is where the two versions meet.
 
+pub mod changes;
 pub mod folds;
 mod moving;
 pub mod undo;
