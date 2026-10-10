@@ -803,7 +803,7 @@ fn closes_something(character: char) -> bool {
 /// unusable for prose.
 fn worth_closing(character: char, before: Option<char>, after: Option<char>) -> bool {
     let quote = matches!(character, '"' | '\'' | '`');
-    if quote && before.is_some_and(|character| character.is_alphanumeric() || character == '_') {
+    if quote && before.is_some_and(obelus_editing::wordish) {
         return false;
     }
     if quote && before == Some(character) {

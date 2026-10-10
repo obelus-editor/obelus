@@ -62,26 +62,16 @@ impl App {
     fn word_at_cursor(&self) -> Option<String> {
         let buffer = self.current_buffer()?;
         let cursor = buffer.cursor();
-        let characters: Vec<char> = buffer.text().line(cursor.line).chars().collect();
-        let word = |at: usize| {
-            characters
-                .get(at)
-                .copied()
-                .is_some_and(|character| character.is_alphanumeric() || character == '_')
-        };
-        let at = cursor.column.get().min(characters.len());
-        if !word(at) && !(at > 0 && word(at - 1)) {
-            return None;
-        }
-        let mut from = at;
-        while from > 0 && word(from - 1) {
-            from -= 1;
-        }
-        let mut to = at;
-        while word(to) {
-            to += 1;
-        }
-        (from < to).then(|| characters[from..to].iter().collect())
+        let (from, to) = obelus_editing::word_around(buffer.text(), cursor.line, cursor.column)?;
+        Some(
+            buffer
+                .text()
+                .line(cursor.line)
+                .chars()
+                .skip(from.get())
+                .take(to.since(from))
+                .collect(),
+        )
     }
 
     /// Asks the server to rename it.

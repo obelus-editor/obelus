@@ -17,26 +17,10 @@ use obelus_text::coordinates::CharOffset;
 
 use super::*;
 
-/// Whether a character is part of a word Obelus would complete.
-///
-/// What starts the asking and what ends it. Deliberately not the language's
-/// own idea of an identifier: Obelus asks servers about twenty-five languages
-/// and has no table of what each calls a word, and every one of them agrees
-/// about letters, digits and an underscore.
-#[must_use]
-pub(super) fn is_word(character: char) -> bool {
-    character.is_alphanumeric() || character == '_'
-}
-
-/// Where the word the cursor is in begins.
+/// Where the word the cursor is in begins, or the cursor where it is in none:
+/// what a completion would replace starts there.
 fn word_start(text: &obelus_text::Text, line: LineNumber, column: CharColumn) -> CharColumn {
-    let characters: Vec<char> = text.line(line).chars().take(column.get()).collect();
-    let back = characters
-        .iter()
-        .rev()
-        .take_while(|character| is_word(**character))
-        .count();
-    column.saturating_sub(back)
+    obelus_editing::word_around(text, line, column).map_or(column, |(from, _)| from)
 }
 
 impl App {
@@ -504,7 +488,7 @@ impl App {
             .skip(from.1.get())
             .take(cursor.column.since(from.1))
             .collect();
-        query.chars().all(is_word).then_some(query)
+        query.chars().all(obelus_editing::wordish).then_some(query)
     }
 
     /// Takes an answer, if the reader is still in the word it is about.
@@ -910,7 +894,7 @@ impl App {
             // rather than on the next frame, because the next key may be
             // the one that accepts -- and it has to accept a row of the
             // list the reader can see.
-            keys::Typing::Character(character) if is_word(character) => {
+            keys::Typing::Character(character) if obelus_editing::wordish(character) => {
                 self.settle_completion();
                 // Nothing left that matches, or nothing was open: either
                 // way the server is the only one who can say what a longer

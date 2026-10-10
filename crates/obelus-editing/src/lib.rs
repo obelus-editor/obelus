@@ -403,8 +403,42 @@ fn first_written(text: &Text, line: LineNumber, first: CharColumn, end: CharColu
 }
 
 /// Whether a character is part of a word rather than between words.
+///
+/// Deliberately not a language's own idea of an identifier: Obelus asks
+/// servers about twenty-five languages and has no table of what each calls a
+/// word, and every one of them agrees about letters, digits and an
+/// underscore.
+#[must_use]
 pub fn wordish(character: char) -> bool {
     character.is_alphanumeric() || character == '_'
+}
+
+/// The word a column is in or just after, as the column it starts at and
+/// the one after its end.
+///
+/// Just after as well, because a caret at the end of a name is on that name
+/// as far as a reader is concerned: they have just typed it.
+#[must_use]
+pub fn word_around(
+    text: &Text,
+    line: LineNumber,
+    column: CharColumn,
+) -> Option<(CharColumn, CharColumn)> {
+    let characters: Vec<char> = text.line(line).chars().collect();
+    let word = |at: usize| characters.get(at).copied().is_some_and(wordish);
+    let at = column.get().min(characters.len());
+    if !word(at) && !(at > 0 && word(at - 1)) {
+        return None;
+    }
+    let mut from = at;
+    while from > 0 && word(from - 1) {
+        from -= 1;
+    }
+    let mut to = at;
+    while word(to) {
+        to += 1;
+    }
+    (from < to).then(|| (CharColumn::new(from), CharColumn::new(to)))
 }
 
 /// Which end of a selection a motion collapses it to, if it collapses it.
@@ -959,5 +993,29 @@ impl Editing {
             },
             width,
         );
+    }
+}
+
+#[cfg(test)]
+mod words {
+    use super::*;
+
+    /// A caret in a name, at its start, or just after its end is on that
+    /// name; one with nothing of a word on either side is on none.
+    ///
+    /// Broken deliberately by asking only about the character under the
+    /// caret: the caret just after `name` found nothing.
+    #[test]
+    fn a_caret_just_after_a_word_is_on_it() {
+        let text = Text::from_string("let name = 1;");
+        let around = |column| {
+            word_around(&text, LineNumber::new(0), CharColumn::new(column))
+                .map(|(from, to)| (from.get(), to.get()))
+        };
+        assert_eq!(around(4), Some((4, 8)), "at its start");
+        assert_eq!(around(6), Some((4, 8)), "inside it");
+        assert_eq!(around(8), Some((4, 8)), "just after it");
+        assert_eq!(around(10), None, "between a space and an `=`");
+        assert_eq!(around(99), None, "past the end of the line");
     }
 }
