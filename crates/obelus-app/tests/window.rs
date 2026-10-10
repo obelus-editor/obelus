@@ -300,6 +300,51 @@ fn a_conversation_says_where_its_links_are() {
     assert_eq!(links, [at("the prompt turn"), at("the tool calls")]);
 }
 
+/// The welcome screen tells the window where its website's address is, so
+/// that the pointer is a hand over it as it is over a conversation's links.
+///
+/// Deliberate breaks: saying nothing in `site` leaves the window no link;
+/// and saying the whole of `at` puts the blanks round the address in it.
+#[test]
+fn the_welcome_screen_says_where_its_address_is() {
+    let _turn = turn();
+    obelus_config::drawn_in_a_window();
+    let heard = heard();
+
+    let mut app = App::new(Vec::new());
+    app.working_directory_for_test(std::path::PathBuf::from("/tmp/obelus"));
+    if let Ok(mut links) = heard.links.lock() {
+        links.clear();
+    }
+    let dump = support::render(&mut app, 80, 24);
+    let address = "obelus-editor.github.io/obelus";
+    let row = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains(address))
+        .unwrap_or_else(|| panic!("no address on the welcome screen:\n{dump}"))
+        .to_string();
+    let y: u16 = row
+        .split('|')
+        .next()
+        .and_then(|number| number.trim().parse().ok())
+        .expect("a row number");
+    let mut links = heard
+        .links
+        .lock()
+        .map(|links| links.clone())
+        .unwrap_or_default();
+    links.dedup();
+    assert_eq!(
+        links,
+        [Rect::new(
+            u16::try_from(support::column_of(&row, address)).expect("a column"),
+            y,
+            u16::try_from(address.len()).expect("short"),
+            1,
+        )]
+    );
+}
+
 /// An agent at work does not run the application's clock where a window
 /// is drawing its mark, and does again where the reader turned animation
 /// off.
