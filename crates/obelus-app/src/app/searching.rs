@@ -224,10 +224,11 @@ impl App {
         let contents = text.line(line).to_string();
         let indent = contents.chars().take_while(|c| c.is_whitespace()).count();
         let mut runs: Vec<Colouring> = Vec::new();
-        let mut byte = start.get() + contents.char_indices().nth(indent).map_or(0, |(at, _)| at);
+        let mut byte =
+            start.saturating_add(contents.char_indices().nth(indent).map_or(0, |(at, _)| at));
         for (column, character) in contents.chars().skip(indent).enumerate() {
-            let kind = highlights.kind_at(ByteOffset::new(byte));
-            byte += character.len_utf8();
+            let kind = highlights.kind_at(byte);
+            byte = byte.saturating_add(character.len_utf8());
             let Ok(column) = u16::try_from(column) else {
                 break;
             };

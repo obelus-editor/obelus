@@ -720,7 +720,7 @@ fn line_of_row(text: &Text, width: u16, row: usize) -> Option<(LineNumber, usize
 /// and a selection that stopped one character short in a note and not in a
 /// file is exactly the kind of thing nobody would find.
 fn held_in(span: Span, line: LineNumber, first: CharColumn, shown: usize) -> Option<Range<usize>> {
-    let mut held = (0..shown).filter(|at| span.contains(line, CharColumn::new(first.get() + at)));
+    let mut held = (0..shown).filter(|at| span.contains(line, first.saturating_add(*at)));
     let from = held.next()?;
     Some(from..held.next_back().map_or(from + 1, |last| last + 1))
 }

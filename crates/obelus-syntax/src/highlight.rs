@@ -111,7 +111,7 @@ impl Highlights {
     #[must_use]
     pub fn kind_at(&self, byte: ByteOffset) -> Option<SyntaxKind> {
         self.kinds
-            .get(byte.get().checked_sub(self.start)?)
+            .get(byte.checked_sub(self.start)?.get())
             .copied()
             .flatten()
     }

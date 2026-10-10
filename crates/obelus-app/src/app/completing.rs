@@ -36,7 +36,7 @@ fn word_start(text: &obelus_text::Text, line: LineNumber, column: CharColumn) ->
         .rev()
         .take_while(|character| is_word(**character))
         .count();
-    CharColumn::new(column.get() - back)
+    column.saturating_sub(back)
 }
 
 impl App {
@@ -502,7 +502,7 @@ impl App {
             .line(from.0)
             .chars()
             .skip(from.1.get())
-            .take(cursor.column.get() - from.1.get())
+            .take(cursor.column.since(from.1))
             .collect();
         query.chars().all(is_word).then_some(query)
     }

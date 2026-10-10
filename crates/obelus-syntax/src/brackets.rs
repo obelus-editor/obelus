@@ -116,7 +116,7 @@ fn step(
     let rope = text.rope();
     if forward {
         let width = char_at(text, from)?.len_utf8();
-        let next = ByteOffset::new(from.get().saturating_add(width));
+        let next = from.saturating_add(width);
         (next < within.end).then_some(next)
     } else {
         if from <= within.start {

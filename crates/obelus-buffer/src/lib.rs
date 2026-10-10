@@ -1401,7 +1401,7 @@ impl Buffer {
     fn spanning(&self, at: CharOffset, characters: usize) -> Span {
         let text = self.editing.text();
         let (line, column) = text.position(at);
-        let (end_line, end_column) = text.position(CharOffset::new(at.get() + characters));
+        let (end_line, end_column) = text.position(at.saturating_add(characters));
         Span {
             line,
             column,
@@ -1487,10 +1487,7 @@ impl Buffer {
         // where every editor leaves them and saves the caller doing this
         // arithmetic a second time. `place_cursor` clears the selection,
         // which an edit has just consumed.
-        let (line, column) = self
-            .editing
-            .text()
-            .position(CharOffset::new(at.get() + with.chars().count()));
+        let (line, column) = self.editing.text().position(at.after(with));
         self.place_cursor(line, column);
         self.viewport.top = self.editing.text().clamp_line(self.viewport.top);
         Some(undo::Step {

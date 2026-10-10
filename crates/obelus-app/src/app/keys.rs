@@ -704,7 +704,7 @@ impl App {
             let to = text.char_offset(span.end_line, span.end_column);
             obelus_text::coordinates::Replacement {
                 at,
-                removed: to.get().saturating_sub(at.get()),
+                removed: to.since(at),
                 inserted: with.chars().count(),
             }
         });

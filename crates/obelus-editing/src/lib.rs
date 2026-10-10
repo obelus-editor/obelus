@@ -22,7 +22,7 @@ pub mod keymap;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use obelus_text::{
     Text,
-    coordinates::{CharColumn, CharOffset, DisplayColumn, LineNumber, Span},
+    coordinates::{CharColumn, DisplayColumn, LineNumber, Span},
 };
 
 /// Which lines a motion steps over without ever stopping on one.
@@ -480,21 +480,21 @@ pub fn word_right(
 
 /// The line above, skipping whatever a fold has hidden.
 fn previous_line(folds: &dyn Hides, line: LineNumber) -> Option<LineNumber> {
-    let mut above = line.get().checked_sub(1)?;
-    while folds.hides(LineNumber::new(above)) {
+    let mut above = line.checked_sub(1)?;
+    while folds.hides(above) {
         above = above.checked_sub(1)?;
     }
-    Some(LineNumber::new(above))
+    Some(above)
 }
 
 /// The line below, likewise.
 fn next_line(text: &Text, folds: &dyn Hides, line: LineNumber) -> Option<LineNumber> {
-    let last = text.last_line().get();
-    let mut below = line.get() + 1;
-    while below <= last && folds.hides(LineNumber::new(below)) {
-        below += 1;
+    let last = text.last_line();
+    let mut below = line.saturating_add(1);
+    while below <= last && folds.hides(below) {
+        below = below.saturating_add(1);
     }
-    (below <= last).then(|| LineNumber::new(below))
+    (below <= last).then_some(below)
 }
 
 /// Records the cell a cursor is at, as the column to aim for later.
@@ -906,9 +906,7 @@ impl Editing {
     fn put(&mut self, what: &str, width: u16) {
         let at = self.text.char_offset(self.cursor.line, self.cursor.column);
         self.text.insert(at, what);
-        let (line, column) = self
-            .text
-            .position(CharOffset::new(at.get() + what.chars().count()));
+        let (line, column) = self.text.position(at.after(what));
         self.anchor = None;
         self.place(line, column, width);
     }
