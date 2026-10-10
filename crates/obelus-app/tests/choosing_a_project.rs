@@ -1157,3 +1157,41 @@ fn a_double_click_on_what_could_finish_a_path_puts_it_in_the_box() {
         "the second press did not put the row in the box: {typed:?}\n{dump}"
     );
 }
+
+/// While a path is being named, a double click on a project above the box
+/// does nothing: enter is the box's then, and the press is not an answer
+/// to it.
+///
+/// Broken deliberately by taking the `is_naming` return out of
+/// `press_in_projects`: the double click sends enter to the box, which
+/// puts the candidate the list is on into it.
+#[test]
+fn a_double_click_on_a_project_while_naming_a_path_does_nothing() {
+    let scratch = support::Scratch::new("choosing-double-click-naming");
+    std::fs::create_dir_all(scratch.path().join("inner")).expect("directories");
+    let mut app = asking();
+    open_another(&mut app);
+    for character in format!("{}/", scratch.path().display()).chars() {
+        press(&mut app, KeyCode::Char(character));
+    }
+    assert!(app.naming_list().is_some(), "the directory offered nothing");
+
+    let dump = support::render(&mut app, 60, 20);
+    let y: u16 = support::text_block(&dump)
+        .lines()
+        .find(|row| row.contains("alpha"))
+        .and_then(|row| row.split_once('|'))
+        .and_then(|(at, _)| at.trim().parse().ok())
+        .unwrap_or_else(|| panic!("the project is not on screen:\n{dump}"));
+    let before = app.choosing().expect("asking").typed;
+    for _ in 0..2 {
+        app.handle(obelus_app::event::Event::Pointer {
+            kind: obelus_app::event::Pointer::Pressed,
+            x: 6,
+            y,
+        });
+    }
+    let choosing = app.choosing().expect("still asking");
+    assert!(choosing.naming, "the press left the path box");
+    assert_eq!(choosing.typed, before, "the press changed the box:\n{dump}");
+}

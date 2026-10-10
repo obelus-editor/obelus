@@ -277,6 +277,17 @@ pub struct App {
     /// so the count is Obelus's own: the same cell, pressed again inside
     /// the time below, is the second press of one gesture.
     clicked: Option<(u16, u16, std::time::Instant, u8)>,
+    /// The tool call the last press in the transcript was on, where it
+    /// names a file, and what that press folded.
+    ///
+    /// What the second press of a double click is about, wherever it
+    /// lands: the first can open a call, and a transcript at its end moves
+    /// up under the pointer by what opened -- so the same cell is another
+    /// row by the second press, and often another call.
+    pressed_call: Option<(
+        obelus_agent::acp::Place,
+        Option<obelus_component::chat::Folds>,
+    )>,
     /// What could be typed next, while a server's answer is on screen.
     ///
     /// Beside the cursor rather than in a region of its own, and its own
@@ -925,6 +936,7 @@ impl App {
             stopped: HashSet::new(),
             asked: HashMap::new(),
             clicked: None,
+            pressed_call: None,
             signature: None,
             signature_pause: None,
             hover: None,
@@ -3752,7 +3764,18 @@ impl App {
     /// chooses it. Nothing here is drawn over anything, but choosing a
     /// project starts everything a project starts, and a press meant to
     /// look at a path should not.
+    ///
+    /// Nothing while a path is being named: the rows are still drawn, but
+    /// enter is the box's then, and a press on a project is not an answer
+    /// to it.
     fn press_in_projects(&mut self, x: u16, y: u16) {
+        if self
+            .chooser
+            .as_ref()
+            .is_some_and(obelus_component::chooser::Chooser::is_naming)
+        {
+            return;
+        }
         let Some(at) = self.what_is_being_chosen().and_then(|choosing| {
             obelus_ui::projects::row_at(self.drawn_in(), &choosing, &self.keymap, x, y)
         }) else {
@@ -4010,13 +4033,21 @@ impl App {
     ///
     /// A double click on a tool call that names a file goes to the file.
     /// Not enter's answer on a call with something behind it, which is to
-    /// fold -- a single press already folds, and the second press of a
-    /// double click folds it back, so going is the one thing left for the
-    /// pair of them to mean.
+    /// fold -- a single press already folds, so going is the one thing
+    /// left for the pair of them to mean, and the call is folded back the
+    /// way it was before the first.
     fn pointer_in_transcript(&mut self, kind: crate::event::Pointer, x: u16, y: u16) {
         use crate::event::Pointer;
 
         let twice = kind == Pointer::Pressed && self.clicks_at(x, y) == 2;
+        if twice && let Some((place, folded)) = self.pressed_call.take() {
+            if let (Some(begins), Some(talk)) = (folded, self.conversation_mut()) {
+                talk.chat.fold(begins);
+            }
+            self.clicked = None;
+            self.go_to_where_the_agent_was(&place);
+            return;
+        }
         let area = self.editor_area;
         let width = obelus_ui::chat::reading_width(area);
         // Laid out once, and every question below asked of the one place.
@@ -4059,7 +4090,9 @@ impl App {
         });
         let (spot, folds, cursor, link, goes) = found.unwrap_or((None, None, None, None, None));
         // A link is its own thing to press, and opens on the letting go.
-        let goes = goes.filter(|_| link.is_none());
+        if kind == Pointer::Pressed {
+            self.pressed_call = goes.filter(|_| link.is_none()).map(|place| (place, folds));
+        }
         // Where the cursor goes, for a press or a drag: the keys follow
         // the pointer, or the arrows after a press walk something the
         // reader had not pointed at.
@@ -4117,10 +4150,6 @@ impl App {
                     talk.chat.hold_to(spot);
                 }
             }
-        }
-        if twice && let Some(place) = goes {
-            self.clicked = None;
-            self.go_to_where_the_agent_was(&place);
         }
     }
 

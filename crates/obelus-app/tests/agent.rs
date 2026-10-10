@@ -16342,3 +16342,74 @@ fn a_double_click_on_the_list_of_commands_chooses_from_it() {
         "the second press did not choose from the list"
     );
 }
+
+/// The same in a transcript longer than its band, sitting at the end --
+/// the ordinary state, and where the newest call is.
+///
+/// The first press opens the call, and the next frame moves everything up
+/// by what opened, so the second press lands on another row in the same
+/// cell. It went by that row: what it found there was the call's own
+/// output, which names no file, so nothing was opened and the call was
+/// left open.
+///
+/// Broken deliberately by going by the row the second press landed on
+/// rather than by `pressed_call`.
+#[test]
+fn a_double_click_on_a_call_that_opens_goes_where_the_first_press_was() {
+    const SHORT: u16 = 12;
+    let (mut app, events) = talking();
+    support::type_text(&mut app, "what is this file");
+    support::press(&mut app, KeyCode::Enter);
+    pump(
+        &mut app,
+        &events,
+        "the permission request",
+        App::is_asking_permission,
+    );
+    support::press(&mut app, KeyCode::Enter);
+    pump(&mut app, &events, "the end of the turn", |app| {
+        app.talking() == obelus_agent::Talking::Ready
+    });
+
+    let rows_of = |app: &mut App| {
+        let dump = support::render(app, WIDTH, SHORT);
+        support::text_block(&dump).to_string()
+    };
+    let text = rows_of(&mut app);
+    let (x, y) = text
+        .lines()
+        .find_map(|row| {
+            let (at, cells) = row.split_once('|')?;
+            let x = cells.find("Run the tests")?;
+            Some((u16::try_from(x + 2).ok()?, at.trim().parse::<u16>().ok()?))
+        })
+        .unwrap_or_else(|| panic!("the call is not on screen:\n{text}"));
+    let was = text.contains("--all-features");
+    let press = |app: &mut App| {
+        app.handle(Event::Pointer {
+            kind: obelus_app::event::Pointer::Pressed,
+            x,
+            y,
+        });
+    };
+
+    press(&mut app);
+    let moved = rows_of(&mut app);
+    assert!(
+        !moved
+            .lines()
+            .any(|row| row.starts_with(&format!("{y:2}|")) && row.contains("Run the tests")),
+        "the call did not move from under the pointer, so this proves nothing:\n{moved}"
+    );
+    press(&mut app);
+    let text = rows_of(&mut app);
+    assert!(
+        text.contains("Could not open"),
+        "the double click did not go to the file the call named:\n{text}"
+    );
+    assert_eq!(
+        text.contains("--all-features"),
+        was,
+        "the double click left the call folded otherwise:\n{text}"
+    );
+}
