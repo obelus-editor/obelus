@@ -1067,17 +1067,14 @@ fn a_conversation_and_its_thread_say_the_same_things() {
         support::lay_out(&mut app, 76, 24);
     }
 
-    // What the reader types here goes there, marked as said here.
+    // What the reader types here goes there, as they typed it.
     support::type_text(&mut app, "what is this file");
     support::press(&mut app, KeyCode::Enter);
     let said = said_until(&mut app, &events, "the question in the thread", |said| {
         asked_with(said, "T1", "Allow once").is_some()
     });
     let asked = asked_with(&said, "T1", "Allow once").expect("asked");
-    assert!(
-        in_thread(&said, "T1", "On this machine:_ what is this file"),
-        "{said:#?}"
-    );
+    assert!(in_thread(&said, "T1", "what is this file"), "{said:#?}");
     // And what the agent said before it asked, whole, ahead of the
     // question.
     assert!(in_thread(&said, "T1", "it is a rust file"), "{said:#?}");
@@ -1090,9 +1087,7 @@ fn a_conversation_and_its_thread_say_the_same_things() {
                 text,
                 notify,
                 ..
-            } if thread == "T1" && !text.contains("On this machine") => {
-                Some((text.as_str(), *notify))
-            }
+            } if thread == "T1" && text != "what is this file" => Some((text.as_str(), *notify)),
             _ => None,
         })
         .collect();
@@ -2497,13 +2492,9 @@ fn words_from_the_chat_taken_back_here_are_the_readers() {
         app.talking() == obelus_agent::Talking::Ready
     });
     support::press(&mut app, KeyCode::Enter);
-    let said = said_until(&mut app, &events, "the words in the thread", |said| {
+    said_until(&mut app, &events, "the words in the thread", |said| {
         in_thread(said, "F1", "and later")
     });
-    assert!(
-        in_thread(&said, "F1", "On this machine:_ and later"),
-        "{said:#?}"
-    );
     let until = std::time::Instant::now() + std::time::Duration::from_secs(30);
     let prompt = loop {
         let logged = std::fs::read_to_string(&log).unwrap_or_default();
