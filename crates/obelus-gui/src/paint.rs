@@ -34,12 +34,13 @@ use std::{collections::HashMap, ops::Range, sync::Arc};
 
 use bytemuck::{Pod, Zeroable};
 use cosmic_text::CacheKey;
+use obelus_font::CellSize;
 use obelus_ui::{image::Palette, shapes::Joined};
 use ratatui::{layout::Rect, style::Color};
 use winit::window::Window;
 
 use self::setup::{Seen, Whole};
-use crate::{font::CellSize, grid::Behind};
+use crate::grid::Behind;
 
 /// How much of the glass is the pane's own colour, before the shader
 /// adds to it where what is behind would leave the text nothing to stand
@@ -1057,16 +1058,14 @@ mod tests {
     use super::glass::mark_behind;
 
     mod stacked {
+        use obelus_font::CellSize;
         use ratatui::{layout::Rect, style::Color};
 
         use super::super::{
             GLASS, HANGING, Level, Placed, Quad, Reads, SOLID, box_of, casts, catching,
             glass::kept_still, on_the_screen, put_over, uncovered,
         };
-        use crate::{
-            font::CellSize,
-            grid::{Behind, Page, Rolled},
-        };
+        use crate::grid::{Behind, Page, Rolled};
 
         fn pane(area: Rect, joined: obelus_ui::shapes::Joined) -> Behind {
             Behind {
@@ -1487,7 +1486,7 @@ mod tests {
     /// the next or stops short of it: the stripe again, a row in five.
     #[test]
     fn a_column_of_blocks_has_no_seams() {
-        let cell = crate::font::CellSize {
+        let cell = obelus_font::CellSize {
             width: 8.4,
             height: 16.8,
             baseline: 13.0,

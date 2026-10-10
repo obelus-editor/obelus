@@ -4538,6 +4538,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "obelus-font"
+version = "0.12.0"
+dependencies = [
+ "cosmic-text",
+ "obelus-text",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-core-text",
+ "sys-locale",
+ "tracing",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "obelus-git"
 version = "0.12.0"
 dependencies = [
@@ -4573,6 +4587,7 @@ dependencies = [
  "obelus-clipboard",
  "obelus-component",
  "obelus-config",
+ "obelus-font",
  "obelus-icons",
  "obelus-logging",
  "obelus-program",
@@ -4581,12 +4596,8 @@ dependencies = [
  "obelus-ui",
  "objc2 0.6.4",
  "objc2-app-kit 0.3.2",
- "objc2-core-foundation",
- "objc2-core-graphics",
- "objc2-core-text",
  "pollster",
  "ratatui",
- "sys-locale",
  "tokio",
  "tracing",
  "wayland-client",

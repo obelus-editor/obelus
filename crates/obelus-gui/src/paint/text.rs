@@ -2,14 +2,12 @@
 //! the atlas, or standing where a letter would.
 
 use obelus_app::app::Caret;
+use obelus_font::{Fonts, Size};
 use obelus_ui::image::SLOT;
 use ratatui::style::Modifier;
 
 use super::*;
-use crate::{
-    font::{Fonts, Size},
-    grid::{Capped, Look, Marked, Page, Said, Spelling},
-};
+use crate::grid::{Capped, Look, Marked, Page, Said, Spelling};
 
 impl Painter {
     /// The text.
@@ -167,7 +165,7 @@ impl Painter {
     /// Made here, at the moment of drawing, rather than by the view,
     /// because how many pixels a mark is depends on how big a cell is --
     /// which the reader changes.
-    pub(super) fn marks(&mut self, marked: &[Marked], cell: crate::font::CellSize) {
+    pub(super) fn marks(&mut self, marked: &[Marked], cell: obelus_font::CellSize) {
         for mark in marked {
             let key = (mark.id.clone(), mark.focused);
             let spot = match self.atlas.mark(&key) {
@@ -524,7 +522,7 @@ pub(super) fn pieces(text: &str) -> Option<&'static [[f32; 4]]> {
 /// whose height was rounded starts where the one above it ended only by
 /// luck, and the stripe `pieces` is there to take away comes back as a
 /// pixel of overlap or of gap every few rows.
-pub(super) fn snapped(at: (f32, f32), cell: crate::font::CellSize, piece: [f32; 4]) -> [f32; 4] {
+pub(super) fn snapped(at: (f32, f32), cell: obelus_font::CellSize, piece: [f32; 4]) -> [f32; 4] {
     let [from_x, from_y, to_x, to_y] = piece;
     let left = cell.width.mul_add(from_x, at.0).round();
     let top = cell.height.mul_add(from_y, at.1).round();

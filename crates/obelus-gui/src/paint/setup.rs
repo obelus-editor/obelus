@@ -7,10 +7,10 @@
 use std::time::Instant;
 
 use anyhow::{Context, Result};
+use obelus_font::Fonts;
 
 use super::*;
 use crate::{
-    font::Fonts,
     grid::{Going, Page, Said, Spelling},
     motion::Moving,
 };

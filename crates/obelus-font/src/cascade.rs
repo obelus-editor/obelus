@@ -285,7 +285,7 @@ mod tests {
     fn a_name_is_kept_once_and_only_where_there_is_a_face() {
         let mut db = fontdb::Database::new();
         db.load_font_data(include_bytes!("../fonts/SymbolsNerdFontMono-Regular.ttf").to_vec());
-        let name = crate::font::SYMBOLS_FAMILY;
+        let name = crate::SYMBOLS_FAMILY;
         assert_eq!(
             kept(
                 &db,

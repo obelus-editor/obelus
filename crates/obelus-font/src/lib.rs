@@ -44,6 +44,11 @@
 //! is an allocation per cell per frame for a screenful that was already
 //! in it.
 
+mod cascade;
+mod coretext;
+mod faces;
+mod monospace;
+
 use std::{collections::HashMap, sync::Arc};
 
 use cosmic_text::{
@@ -60,7 +65,7 @@ use cosmic_text::{
 const SYMBOLS: &[u8] = include_bytes!("../fonts/SymbolsNerdFontMono-Regular.ttf");
 
 /// What the symbols face is called, once it is loaded.
-pub(crate) const SYMBOLS_FAMILY: &str = "Symbols Nerd Font Mono";
+pub const SYMBOLS_FAMILY: &str = "Symbols Nerd Font Mono";
 
 /// The selector that asks for the character before it to be drawn as a
 /// picture.
@@ -89,13 +94,13 @@ const LINE_HEIGHT: f32 = 1.2;
 
 /// One glyph, ready to be asked for by picture.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Placed {
+pub struct Placed {
     /// What to ask the cache for.
-    pub(crate) key: CacheKey,
+    pub key: CacheKey,
     /// Where it goes, from the cell's own corner.
-    pub(crate) x: i32,
+    pub x: i32,
     /// And how far down, from the cell's baseline.
-    pub(crate) y: i32,
+    pub y: i32,
     /// The baseline this glyph's own layout asked for, where that is not
     /// the one the grid is counted in.
     ///
@@ -118,23 +123,23 @@ pub(crate) struct Placed {
     /// The face says all of this; nothing here measures pixels to find it
     /// out. Sideways the same question was settled the same way: `shape`
     /// puts a mark in the middle of the room it was given.
-    pub(crate) baseline: Option<f32>,
+    pub baseline: Option<f32>,
 }
 
 /// How big a cell is, in real pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub(crate) struct CellSize {
+pub struct CellSize {
     /// How wide.
-    pub(crate) width: f32,
+    pub width: f32,
     /// How tall.
-    pub(crate) height: f32,
+    pub height: f32,
     /// How far down a cell the baseline sits, which is where a glyph is
     /// drawn from.
-    pub(crate) baseline: f32,
+    pub baseline: f32,
 }
 
 /// Every face this machine can draw with, and what they measure.
-pub(crate) struct Fonts {
+pub struct Fonts {
     system: FontSystem,
     pictures: SwashCache,
     metrics: Metrics,
@@ -203,7 +208,7 @@ impl Fonts {
     ///
     /// `size` is in real pixels, which is the size in points multiplied by
     /// whatever the window says the screen's scale is.
-    pub(crate) fn new(size: f32) -> Self {
+    pub fn new(size: f32) -> Self {
         let mut system = FontSystem::new();
         let by_coretext = crate::faces::settle(system.db_mut());
         // Loaded into the same database the system's own faces are in, so
@@ -261,7 +266,7 @@ impl Fonts {
     /// Nothing is refused: a name this machine does not have is stepped
     /// over when it comes to be drawn with, because one settings file is
     /// read on every machine the reader uses.
-    pub(crate) fn use_families(&mut self, names: &[String]) {
+    pub fn use_families(&mut self, names: &[String]) {
         let wanted = chain(names, self.otherwise.as_deref());
         if self.families == wanted {
             return;
@@ -330,7 +335,7 @@ impl Fonts {
     }
 
     /// What this machine calls its monospaced face, where it said.
-    pub(crate) fn otherwise(&self) -> Option<&str> {
+    pub fn otherwise(&self) -> Option<&str> {
         self.otherwise.as_deref()
     }
 
@@ -340,7 +345,7 @@ impl Fonts {
     /// One name per family rather than one per face: what a reader picks
     /// is `JetBrains Mono`, and the four files behind it are the weights
     /// and the slants of the same face.
-    pub(crate) fn here(&self) -> Vec<String> {
+    pub fn here(&self) -> Vec<String> {
         let mut names: Vec<String> = self
             .system
             .db()
@@ -354,14 +359,14 @@ impl Fonts {
 
     /// Draws at a different size from now on, which is a new window scale
     /// or a reader changing it.
-    pub(crate) fn resize(&mut self, size: f32) {
+    pub fn resize(&mut self, size: f32) {
         self.metrics = Metrics::new(size, (size * LINE_HEIGHT).round());
         self.shaped.clear();
         self.measure();
     }
 
     /// How big a cell is.
-    pub(crate) const fn cell(&self) -> CellSize {
+    pub const fn cell(&self) -> CellSize {
         self.cell
     }
 
@@ -408,7 +413,7 @@ impl Fonts {
     ///
     /// Shaped once per distinct string and kept: a screenful is a few
     /// hundred different cells however many rows it has.
-    pub(crate) fn glyphs(&mut self, text: &str, bold: bool, italic: bool, size: Size) -> &[Placed] {
+    pub fn glyphs(&mut self, text: &str, bold: bool, italic: bool, size: Size) -> &[Placed] {
         let face = Face {
             weight: match bold {
                 true => Weight::BOLD,
@@ -460,7 +465,7 @@ impl Fonts {
     }
 
     /// The pixels of one glyph, or nothing where the face has none.
-    pub(crate) fn picture(&mut self, key: CacheKey) -> Option<&SwashImage> {
+    pub fn picture(&mut self, key: CacheKey) -> Option<&SwashImage> {
         match self.by_coretext.get(&key.font_id) {
             Some(names) => self
                 .drawn_by_coretext
@@ -486,11 +491,11 @@ struct Face {
 /// there is, and for the same reason here: a letter drawn the full height
 /// of the row fills the cap to its edges and its descender hangs out of the
 /// bottom, which is a cap the key is too big for.
-pub(crate) const SMALLER: f32 = 0.74;
+pub const SMALLER: f32 = 0.74;
 
 /// How big a cell's text is drawn.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum Size {
+pub enum Size {
     /// The size the row is written in.
     Cell,
     /// Smaller, on a line of its own: what goes in a key's cap.

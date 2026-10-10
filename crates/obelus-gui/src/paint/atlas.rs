@@ -2,9 +2,9 @@
 //! them.
 
 use cosmic_text::SwashContent;
+use obelus_font::Fonts;
 
 use super::*;
-use crate::font::Fonts;
 
 impl Atlas {
     /// Both textures, with nothing in them but the white pixel.

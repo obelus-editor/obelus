@@ -1,11 +1,10 @@
 //! The panes and boxes: their glass, what slides under it while one
 //! arrives, and the shadows they cast.
 
+use obelus_font::{Fonts, Size};
+
 use super::{ground::runs_from, setup::halved, *};
-use crate::{
-    font::{Fonts, Size},
-    grid::{Barred, Capped, Look, Page, Rolled, Ruled},
-};
+use crate::grid::{Barred, Capped, Look, Page, Rolled, Ruled};
 
 impl Painter {
     /// The bands drawn behind where their lists have got to.

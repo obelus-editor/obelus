@@ -90,6 +90,7 @@ pub const OURS: &[&str] = &[
     "obelus_component",
     "obelus_config",
     "obelus_editing",
+    "obelus_font",
     "obelus_git",
     "obelus_icons",
     "obelus_keymap",

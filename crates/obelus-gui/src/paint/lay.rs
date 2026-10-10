@@ -1,12 +1,13 @@
 //! A frame, laid out: every quad in the order it is drawn, which is what
 //! puts each thing over what it is over.
 
+use obelus_font::Fonts;
+
 use super::{
     glass::{casting, reached},
     *,
 };
 use crate::{
-    font::Fonts,
     grid::{Capped, Marked, Page, Said, Spelling, Spun, Ticked},
     motion::Moving,
 };

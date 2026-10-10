@@ -2,14 +2,12 @@
 //! drawn as itself rather than spelled in the characters a terminal would
 //! use.
 
+use obelus_font::{self as font, Fonts, Size};
 use obelus_ui::shapes::{About, Side};
 use ratatui::style::Modifier;
 
 use super::*;
-use crate::{
-    font::{self, Fonts, Size},
-    grid::{Barred, Capped, Look, Page, Parted, Ruled, Spun, Stroked, Ticked},
-};
+use crate::grid::{Barred, Capped, Look, Page, Parted, Ruled, Spun, Stroked, Ticked};
 
 impl Painter {
     /// The line under every cell a view underlined.

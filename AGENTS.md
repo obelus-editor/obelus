@@ -820,14 +820,6 @@ crates/
                       that has gone leaves out of a picture of the screen it
                       went from, and every pane and every box is glass over
                       everything said before it (paint); a
-                      mark is one cell here and two in a terminal, so a column
-                      asks which front end it is for, and a key's cap is the
-                      one place the grid is not what a cell is measured in
-                      (font); a face Obelus cannot draw is not a face it has
-                      (faces); a face only CoreText can draw is drawn by
-                      CoreText, in the face CoreText itself would choose
-                      (coretext); what comes after the monospaced face is the
-                      machine's own answer, asked of the machine (cascade); a
                       window owns the selection and hands the words
                       over on the way out (clipboard); a thread that borrows
                       somebody else's connection stops before the owner takes
@@ -835,6 +827,17 @@ crates/
                       there too (clipboard/wayland); a window may not put itself
                       in front of the reader, so whatever comes forward comes
                       on the permission of the window they are in (elsewhere)
+  obelus-font/      the faces a window draws Obelus in, the size of a cell,
+                    and where a glyph's pixels come from -- the half of `obg`
+                    that knows nothing of the window
+                    · a mark is one cell here and two in a terminal, so a
+                      column asks which front end it is for, and a key's cap is
+                      the one place the grid is not what a cell is measured in
+                      (lib); a face Obelus cannot draw is not a face it has
+                      (faces); a face only CoreText can draw is drawn by
+                      CoreText, in the face CoreText itself would choose
+                      (coretext); what comes after the monospaced face is the
+                      machine's own answer, asked of the machine (cascade)
   */tests/          integration tests, most of them `obelus-app`'s, plus
                     obelus-app/tests/fixtures/*.txt golden grids
                     · why the fake agent is `sh`, and what it checks back

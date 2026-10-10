@@ -1,0 +1,30 @@
+[package]
+name = "obelus-font"
+description = "The faces a window draws Obelus in, the size of a cell, and a glyph's pixels"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Cargo inherits nothing here on its own; every member says it.
+[lints]
+workspace = true
+
+[dependencies]
+# How many cells a cell's text takes, which is the application's own answer:
+# the window draws the character where the application put the one after it.
+obelus-text.workspace = true
+cosmic-text.workspace = true
+tracing.workspace = true
+
+# The fonts the machine has, draws code in and falls back to, which only
+# CoreText can say: see `faces.rs`, `monospace.rs` and `cascade.rs` -- and
+# the glyphs only CoreText can draw, in `coretext.rs`.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-core-foundation.workspace = true
+objc2-core-graphics.workspace = true
+objc2-core-text.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+# Which language the reader reads: see `cascade.rs`.
+sys-locale.workspace = true
+windows-sys.workspace = true
