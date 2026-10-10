@@ -9815,6 +9815,37 @@ fn choosing_another_agent_stops_the_one_that_was_running() {
     );
 }
 
+/// What the reader added to an agent's environment is what it starts with.
+///
+/// Broken deliberately by taking the reader's variables back out of what
+/// `link::start` hands the process: the agent started without the word.
+#[test]
+fn an_agent_starts_with_what_the_reader_added() {
+    let scratch = agents_root_for("environment");
+    std::fs::create_dir_all(&scratch).expect("a scratch directory");
+    let settings = scratch.join("config.toml");
+    std::fs::write(
+        &settings,
+        "[environment.fake]\nOBELUS_FAKE_WORD = \"obelus-heard\"\n",
+    )
+    .expect("the settings");
+    let log = scratch.join("asked.log");
+
+    let (mut app, events) = wired();
+    app.config_file_for_test(settings);
+    app.talk_to(
+        "fake",
+        Path::new(support::sh()),
+        &[
+            "tests/fixtures/fake-agent.sh".to_string(),
+            format!("log={}", log.display()),
+        ],
+    );
+    app.new_conversation();
+    app.open_a_session_for_test();
+    asked(&mut app, &events, &log, "started with obelus-heard");
+}
+
 /// A note whose conversation another Obelus has open says so, and the key
 /// does not open a second one.
 ///

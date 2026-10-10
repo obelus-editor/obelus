@@ -30,6 +30,12 @@ marker=$1
 log="$marker.log"
 
 if [ "$2" = '--login' ]; then
+    # And what it was started with, where a test gave it a word to look
+    # for: Obelus runs this, not the agent, so the word arriving here is
+    # Obelus passing on what the reader added.
+    if [ -n "${OBELUS_FAKE_WORD+set}" ]; then
+        printf 'Started with %s\n' "$OBELUS_FAKE_WORD"
+    fi
     printf 'Code: '
     read -r code
     if [ "$code" = 'right' ]; then

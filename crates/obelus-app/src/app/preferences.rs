@@ -345,6 +345,18 @@ impl App {
                 self.reach(reaching);
                 true
             }
+            SettingsOutcome::EditVariable(name) => {
+                self.name_a_variable(&name);
+                true
+            }
+            SettingsOutcome::AddVariable => {
+                self.ask_on_the_status_row(Prompt::new(PromptKind::VariableName));
+                true
+            }
+            SettingsOutcome::RemoveVariable(name) => {
+                self.set_agent_variable(&name, None);
+                true
+            }
             SettingsOutcome::Ignored => false,
         }
     }
@@ -641,6 +653,70 @@ impl App {
             tracing::warn!(%error, "not saving the configuration");
             self.wrong(format!("Not saved: {error}"));
         }
+    }
+
+    /// Says what one of the active agent's variables is, or with `None`
+    /// takes it away.
+    ///
+    /// Nothing is started again: a variable reaches an agent once, when it
+    /// starts, and stopping one is stopping every conversation it is in.
+    /// So where one is running the status row says when this will arrive,
+    /// which is the one thing about these rows a reader cannot see.
+    pub(super) fn set_agent_variable(&mut self, name: &str, value: Option<&str>) {
+        let Some(agent) = self.config().agent.clone().filter(|id| !id.is_empty()) else {
+            return;
+        };
+        match value {
+            Some(value) => self.settled.readers.set_agent_variable(&agent, name, value),
+            None => self.settled.readers.unset_agent_variable(&agent, name),
+        }
+        self.apply_project();
+        let Some(path) = self.settled.path.clone() else {
+            return;
+        };
+        if !self.settled.readable {
+            self.wrong("Not saved: the settings will not read".to_string());
+            return;
+        }
+        if let Err(error) = obelus_config::save_to(&path, &self.settled.readers) {
+            tracing::warn!(%error, "not saving the configuration");
+            self.wrong(format!("Not saved: {error}"));
+            return;
+        }
+        let running = self
+            .talker
+            .as_ref()
+            .is_some_and(|talker| talker.id() == agent && talker.is_alive());
+        if running && let Some(offering) = self.agent_offering() {
+            self.say(format!(
+                "Given to {} the next time it starts",
+                offering.name
+            ));
+        }
+    }
+
+    /// Hears the name of a variable the reader is adding, and asks for its
+    /// value.
+    ///
+    /// One already set is asked for with what it holds, which makes adding
+    /// one that is there the same as changing it rather than a second row
+    /// of the same name.
+    pub(super) fn name_a_variable(&mut self, name: &str) {
+        if name.starts_with(|character: char| character.is_ascii_digit()) {
+            self.wrong("A variable's name cannot start with a digit");
+            self.ask_on_the_status_row(Prompt::about(PromptKind::VariableName, name.to_string()));
+            return;
+        }
+        let Some(agent) = self.config().agent.clone() else {
+            return;
+        };
+        let now = self
+            .config()
+            .agent_environment(&agent)
+            .get(name)
+            .cloned()
+            .unwrap_or_default();
+        self.ask_on_the_status_row(Prompt::about(PromptKind::Variable(name.to_string()), now));
     }
 
     /// Where a theme file may be, nearest first.

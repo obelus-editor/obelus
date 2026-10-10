@@ -23,7 +23,7 @@ use crate::field::Field;
 /// differ per question -- the label and which characters are allowed -- are
 /// methods on this rather than fields of the prompt: a search takes any
 /// character and says `find: `, and that is the whole of the difference.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PromptKind {
     /// A line to go to.
     Line,
@@ -49,6 +49,15 @@ pub enum PromptKind {
     /// What one of Obelus's own settings is, where it is typed rather than
     /// chosen: by the setting's key.
     Setting(&'static str),
+    /// What a variable the reader is adding to the active agent's
+    /// environment is called. Its value is the next question.
+    VariableName,
+    /// What one of the active agent's variables is, by its name.
+    ///
+    /// Named rather than numbered: the name is what the row says and what
+    /// the file is keyed by, and it is the one thing the reader has just
+    /// read off the screen.
+    Variable(String),
 }
 
 impl PromptKind {
@@ -57,11 +66,13 @@ impl PromptKind {
     /// Part of the question: a bare caret on the status bar says something
     /// is being asked without saying what.
     #[must_use]
-    pub fn label(self) -> std::borrow::Cow<'static, str> {
+    pub fn label(&self) -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed(match self {
             Self::Told(field) => return format!("{}: ", field.name).into(),
+            Self::Variable(name) => return format!("{name}: ").into(),
+            Self::VariableName => "New variable: ",
             Self::Setting(key) => {
-                let name = obelus_config::Setting::named(key).map_or(key, |setting| setting.name);
+                let name = obelus_config::Setting::named(key).map_or(*key, |setting| setting.name);
                 return format!("{name}: ").into();
             }
             Self::Line => "Line: ",
@@ -88,7 +99,7 @@ impl PromptKind {
     /// Per kind, because this is the part that differs: searching a file
     /// will accept anything that can be typed.
     #[must_use]
-    pub const fn accepts(self, character: char) -> bool {
+    pub const fn accepts(&self, character: char) -> bool {
         match self {
             Self::Line => character.is_ascii_digit(),
             // Whatever a name can be, which differs by language and is the
@@ -108,6 +119,13 @@ impl PromptKind {
             // agent to be "the assistant" -- and only the key that answers
             // is refused.
             Self::Setting(_) => character != '\n' && character != '\r',
+            // What a shell would take as a variable's name: letters, digits
+            // and the underscore. A digit first is refused at the answer,
+            // which is the one place that knows it is first.
+            Self::VariableName => character.is_ascii_alphanumeric() || character == '_',
+            // A value may be anything a line can hold: a path with a blank
+            // in it is a value.
+            Self::Variable(_) => character != '\n' && character != '\r',
         }
     }
 
@@ -116,13 +134,16 @@ impl PromptKind {
     /// A line takes a function rather than an enum, because the rules do
     /// not fall into kinds: the next question asked will have its own.
     #[must_use]
-    pub const fn accepts_fn(self) -> crate::field::Accepts {
+    pub const fn accepts_fn(&self) -> crate::field::Accepts {
         match self {
             Self::Line => |character| character.is_ascii_digit(),
             Self::Name => |character| !character.is_whitespace(),
             Self::Path | Self::NewPath => |character| character != '\n' && character != '\r',
             Self::Told(_) => |character| !character.is_whitespace(),
-            Self::Setting(_) => |character| character != '\n' && character != '\r',
+            Self::Setting(_) | Self::Variable(_) => {
+                |character| character != '\n' && character != '\r'
+            }
+            Self::VariableName => |character| character.is_ascii_alphanumeric() || character == '_',
         }
     }
 }
@@ -177,8 +198,8 @@ impl Prompt {
     #[must_use]
     pub fn new(kind: PromptKind) -> Self {
         Self {
-            kind,
             text: Field::taking(kind.accepts_fn()),
+            kind,
         }
     }
 
@@ -190,15 +211,15 @@ impl Prompt {
     #[must_use]
     pub fn about(kind: PromptKind, text: String) -> Self {
         Self {
-            kind,
             text: Field::about(&text, kind.accepts_fn()),
+            kind,
         }
     }
 
     /// What it is asking for.
     #[must_use]
-    pub const fn kind(&self) -> PromptKind {
-        self.kind
+    pub const fn kind(&self) -> &PromptKind {
+        &self.kind
     }
 
     /// What has been typed.
@@ -260,7 +281,7 @@ impl Prompt {
     #[must_use]
     pub fn shown(&self) -> String {
         let said = self.text.said();
-        let PromptKind::Told(field) = self.kind else {
+        let PromptKind::Told(field) = &self.kind else {
             return said;
         };
         let obelus_remote::platform::FieldKind::Secret { looks_like } = field.kind else {

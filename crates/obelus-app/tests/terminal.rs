@@ -683,6 +683,54 @@ fn a_sign_in_that_is_a_program_is_answered_in_a_terminal() {
     });
 }
 
+/// The program that signs an agent in is given what the reader added to
+/// that agent's environment, the same as the agent.
+///
+/// Obelus runs it, not the agent, so nothing reaches it that Obelus does
+/// not pass on -- a proxy the agent goes through and its sign-in does not
+/// is a sign-in that cannot reach the server.
+///
+/// Broken deliberately by handing the terminal only what the agent asked
+/// for: the sign-in started without the word.
+#[test]
+fn a_sign_in_is_given_what_the_reader_added() {
+    let marker = marker("environment");
+    let settings = marker.with_extension("toml");
+    std::fs::write(
+        &settings,
+        "[environment.signing-in]\nOBELUS_FAKE_WORD = \"obelus-heard\"\n",
+    )
+    .expect("the settings");
+    let (mut app, events) = wired();
+    app.config_file_for_test(settings);
+    app.talk_to(
+        "signing-in",
+        Path::new(support::sh()),
+        &[
+            "tests/fixtures/signing-in-agent.sh".to_string(),
+            marker.display().to_string(),
+        ],
+    );
+    app.new_conversation();
+    app.open_a_session_for_test();
+    pump(&mut app, &events, "the sign-in card", |app| {
+        app.card().is_some_and(|card| {
+            card.choices()
+                .iter()
+                .any(|choice| choice.name == "Type a code")
+        })
+    });
+    choose(&mut app, "Type a code");
+    pump(&mut app, &events, "the sign-in to ask for a code", |app| {
+        on_the_terminal(app).contains("Code:")
+    });
+    assert!(
+        on_the_terminal(&app).contains("Started with obelus-heard"),
+        "the sign-in was not given the reader's variable:\n{}",
+        on_the_terminal(&app)
+    );
+}
+
 /// A sign-in that fails stays where the reader can read why, and the
 /// question goes back up in the conversation.
 ///

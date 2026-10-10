@@ -905,7 +905,7 @@ impl App {
         let Some(prompt) = self.prompt.as_mut() else {
             return false;
         };
-        let kind = prompt.kind();
+        let kind = prompt.kind().clone();
         match prompt.handle_key(key) {
             PromptOutcome::Consumed => true,
             PromptOutcome::Cancelled => {
@@ -958,6 +958,10 @@ impl App {
             PromptKind::NewPath => self.make_file(std::path::Path::new(text.trim())),
             // What one of a chat's fields is, from the remote page.
             PromptKind::Told(field) => self.tell_the_remote(field, Some(text)),
+            // A variable the reader is adding to the agent's environment:
+            // its name, and then what it holds.
+            PromptKind::VariableName => self.name_a_variable(text.trim()),
+            PromptKind::Variable(name) => self.set_agent_variable(&name, Some(text)),
             // One of Obelus's own that is typed, from the settings page.
             PromptKind::Setting(key) => {
                 self.change_setting(key, &obelus_config::Value::Text(text.to_string()));

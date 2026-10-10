@@ -425,7 +425,11 @@ fn every_setting_is_on_one_page_under_a_heading() {
         .iter()
         .map(|shown| match shown {
             Shown::Obelus { opens, .. } => opens.map(obelus_config::Group::label),
-            Shown::Agent { .. } | Shown::Silent { .. } | Shown::Remote { .. } => None,
+            Shown::Agent { .. }
+            | Shown::Silent { .. }
+            | Shown::Remote { .. }
+            | Shown::Variable { .. }
+            | Shown::AddVariable { .. } => None,
         })
         .collect();
     assert_eq!(opens[0], Some("Appearance"));
@@ -2676,12 +2680,181 @@ fn an_agent_that_has_not_said_what_it_offers_says_so_rather_than_nothing() {
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let (_scratch, mut app) = with_an_agent("agent-silence", &[]);
 
-    // The group is last, so the end of the page is where it is.
+    // The group is last but for what the agent is started with, whose
+    // last row adds a variable: so the end of the page and one up.
     support::press_control_key(&mut app, KeyCode::End);
+    support::press(&mut app, KeyCode::Up);
     let dump = support::render(&mut app, 66, 12);
     assert!(
         support::text_block(&dump).contains("Nothing has been heard"),
         "an agent that has said nothing says nothing:\n{dump}"
+    );
+}
+
+/// What the active agent is started with is a group of its own, after its
+/// settings, under a heading saying when it arrives.
+///
+/// Not among the agent's settings: those are said to each conversation as
+/// it opens, and these reach the process once, when it starts. A variable
+/// drawn as one more of them would be read as taking effect at their
+/// moment, which it does not.
+///
+/// Broken deliberately by giving the first variable no heading of its own
+/// (`opens: None` in `Settings::rows`): the variables ran on under the
+/// agent's settings, and the page said nothing about when they arrive.
+#[test]
+fn what_an_agent_is_started_with_is_a_group_of_its_own() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (_scratch, mut app) = with_an_agent_set(
+        "agent-environment",
+        &[offered(
+            "way",
+            "Way of working",
+            &[("ask", "Ask first"), ("code", "Write code")],
+        )],
+        "[environment.an-agent]\nHTTPS_PROXY = \"http://127.0.0.1:7890\"\n",
+    );
+
+    support::press_control_key(&mut app, KeyCode::End);
+    let dump = support::render(&mut app, 66, 24);
+    let text = support::text_block(&dump);
+    let heading = text
+        .find("an-agent \u{b7} Environment")
+        .unwrap_or_else(|| panic!("no heading for what it is started with:\n{dump}"));
+    assert!(
+        text.contains("What it is started with, from the next time it starts"),
+        "the heading does not say when it arrives:\n{dump}"
+    );
+    let way = text
+        .find("Way of working")
+        .unwrap_or_else(|| panic!("the agent's own setting is not on the page:\n{dump}"));
+    assert!(
+        way < heading,
+        "the variables are not after the agent's settings:\n{dump}"
+    );
+    let variable = text
+        .find("HTTPS_PROXY")
+        .unwrap_or_else(|| panic!("no row for the variable:\n{dump}"));
+    assert!(
+        heading < variable,
+        "the variable is not under its heading:\n{dump}"
+    );
+    assert!(
+        text.contains("http://127.0.0.1:7890"),
+        "the row does not say what it holds:\n{dump}"
+    );
+    assert!(
+        text.contains("Add a variable"),
+        "no row to add one:\n{dump}"
+    );
+}
+
+/// A variable is added by its name and then what it holds, and goes in the
+/// reader's file under the agent.
+///
+/// Broken deliberately by having the answer to the name ask nothing next
+/// (`name_a_variable` returning at once): the second question never came
+/// and the file had nothing in it.
+#[test]
+fn a_variable_is_added_by_its_name_and_then_what_it_holds() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (scratch, mut app) = with_an_agent("agent-adding", &[]);
+
+    support::press_control_key(&mut app, KeyCode::End);
+    support::press(&mut app, KeyCode::Enter);
+    let dump = support::render(&mut app, 66, 12);
+    assert!(
+        support::text_block(&dump).contains("New variable:"),
+        "enter on the last row asked for nothing:\n{dump}"
+    );
+    support::type_text(&mut app, "HTTPS_PROXY");
+    support::press(&mut app, KeyCode::Enter);
+    let dump = support::render(&mut app, 66, 12);
+    assert!(
+        support::text_block(&dump).contains("HTTPS_PROXY:"),
+        "the name was not followed by a question about its value:\n{dump}"
+    );
+    support::type_text(&mut app, "http://127.0.0.1:7890");
+    support::press(&mut app, KeyCode::Enter);
+
+    let written = std::fs::read_to_string(settings_file(&scratch)).expect("the file was written");
+    let read = obelus_config::from_toml(&written);
+    assert_eq!(
+        read.agent_environment("an-agent")
+            .get("HTTPS_PROXY")
+            .map(String::as_str),
+        Some("http://127.0.0.1:7890"),
+        "{written}"
+    );
+}
+
+/// A name a shell would not take is refused where it is typed, and one that
+/// starts with a digit is asked for again.
+///
+/// Broken deliberately by letting `name_a_variable` take a name starting
+/// with a digit: the value was asked for, under a name no agent can read.
+#[test]
+fn a_variable_is_named_the_way_a_shell_names_one() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (_scratch, mut app) = with_an_agent("agent-naming", &[]);
+
+    support::press_control_key(&mut app, KeyCode::End);
+    support::press(&mut app, KeyCode::Enter);
+    support::type_text(&mut app, "1 X-Y");
+    let dump = support::render(&mut app, 66, 12);
+    assert!(
+        support::text_block(&dump).contains("New variable: 1XY"),
+        "a character no name can have was taken:\n{dump}"
+    );
+    support::press(&mut app, KeyCode::Enter);
+    let dump = support::render(&mut app, 66, 12);
+    let text = support::text_block(&dump);
+    assert!(
+        text.contains("New variable: 1XY") && !text.contains("1XY: "),
+        "a name starting with a digit was taken:\n{dump}"
+    );
+}
+
+/// Enter on a variable asks for what it holds, starting from what it holds
+/// now; delete takes it away.
+///
+/// Broken deliberately twice: `EditVariable` asking from nothing (the
+/// question came empty), and `RemoveVariable` doing nothing (the file kept
+/// the variable).
+#[test]
+fn a_variable_is_changed_with_enter_and_taken_away_with_delete() {
+    let _turn = SETTINGS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let (scratch, mut app) = with_an_agent_set(
+        "agent-removing",
+        &[],
+        "[environment.an-agent]\nHTTPS_PROXY = \"http://127.0.0.1:7890\"\n",
+    );
+
+    support::press_control_key(&mut app, KeyCode::End);
+    support::press(&mut app, KeyCode::Up);
+    support::press(&mut app, KeyCode::Enter);
+    let dump = support::render(&mut app, 66, 12);
+    assert!(
+        support::text_block(&dump).contains("HTTPS_PROXY: http://127.0.0.1:7890"),
+        "the question did not start from what it holds:\n{dump}"
+    );
+    support::press(&mut app, KeyCode::Esc);
+
+    support::press(&mut app, KeyCode::Delete);
+    let written = std::fs::read_to_string(settings_file(&scratch)).expect("the file was written");
+    assert!(
+        obelus_config::from_toml(&written)
+            .agent_environment("an-agent")
+            .is_empty(),
+        "the variable is still in the file:\n{written}"
     );
 }
 

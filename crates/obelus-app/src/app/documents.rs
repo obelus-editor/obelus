@@ -1405,7 +1405,7 @@ impl App {
     /// path -- there is no shorter way to say it that is still true.
     pub fn making_in(&self) -> Option<String> {
         let prompt = self.prompt.as_ref()?;
-        if prompt.kind() != obelus_component::prompt::PromptKind::NewPath {
+        if *prompt.kind() != obelus_component::prompt::PromptKind::NewPath {
             return None;
         }
         let typed = prompt.text();

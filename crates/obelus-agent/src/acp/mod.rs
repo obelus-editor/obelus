@@ -347,11 +347,15 @@ impl std::fmt::Debug for Talk {
 
 impl Talk {
     /// Starts an agent and returns the handle to it.
+    ///
+    /// `environment` is what the reader said it is to be started with, on
+    /// top of Obelus's own.
     #[must_use]
     pub fn start(
         id: &str,
         command: &Path,
         arguments: &[String],
+        environment: &[(String, String)],
         root: &Path,
         events: impl Sink<crate::Event> + Clone,
     ) -> Self {
@@ -360,7 +364,7 @@ impl Talk {
             inner: events,
             from: connection,
         };
-        let (asks, stop) = link::start(command, arguments, root, events);
+        let (asks, stop) = link::start(command, arguments, environment, root, events);
         Self {
             id: id.to_string(),
             asks,

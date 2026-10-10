@@ -119,6 +119,12 @@ pub enum SettingsOutcome {
     UnsetForAgent(String),
     /// Something on the remote page wants doing.
     Remote(Reaching),
+    /// One of the active agent's variables wants a new value, by its name.
+    EditVariable(String),
+    /// The reader is adding a variable to the active agent's environment.
+    AddVariable,
+    /// One of them should go, by its name.
+    RemoveVariable(String),
     /// The reader is done with the view.
     Cancelled,
 }
@@ -332,6 +338,8 @@ pub struct Offering {
     /// simply was not drawn would say the second. So the group is drawn,
     /// with this in it instead of rows.
     pub silence: Option<String>,
+    /// What the reader has added to what it is started with, by name.
+    pub environment: Vec<(String, String)>,
 }
 
 /// One row of the settings page, and the heading it sits under if it opens
@@ -374,6 +382,28 @@ pub enum Shown<'a> {
         /// none -- where it is the first row.
         opens: Option<&'static str>,
     },
+    /// One of the variables the active agent is started with.
+    ///
+    /// A group of its own, under the agent's settings rather than among
+    /// them: those are said to every conversation as it opens, and these
+    /// reach the process once, when it starts -- two different moments,
+    /// and a row that looked like its neighbours would be read as taking
+    /// effect at theirs.
+    Variable {
+        /// What it is called.
+        name: &'a str,
+        /// What it holds.
+        value: &'a str,
+        /// The agent whose environment this row opens the heading of,
+        /// where it is the first of them.
+        opens: Option<&'a str>,
+    },
+    /// The row a variable is added from, last in the agent's environment.
+    AddVariable {
+        /// The agent whose environment it opens the heading of, where there
+        /// is nothing above it in the group.
+        opens: Option<&'a str>,
+    },
     /// The agent's group, with nothing in it but the reason why.
     ///
     /// A row so that the window, the heights and the headings are the ones
@@ -395,7 +425,11 @@ impl Shown<'_> {
     pub const fn setting(&self) -> Option<&'static Setting> {
         match self {
             Self::Obelus { setting, .. } => Some(*setting),
-            Self::Agent { .. } | Self::Silent { .. } | Self::Remote { .. } => None,
+            Self::Agent { .. }
+            | Self::Silent { .. }
+            | Self::Remote { .. }
+            | Self::Variable { .. }
+            | Self::AddVariable { .. } => None,
         }
     }
 
@@ -405,6 +439,8 @@ impl Shown<'_> {
         match self {
             Self::Obelus { setting, .. } => setting.name,
             Self::Agent { offer, .. } => &offer.name,
+            Self::Variable { name, .. } => name,
+            Self::AddVariable { .. } => "Add a variable",
             Self::Silent { .. } => "",
             Self::Remote { row, .. } => match row {
                 RemoteRow::Platform => "Platform",
@@ -422,6 +458,12 @@ impl Shown<'_> {
         match self {
             Self::Obelus { setting, .. } => setting.about,
             Self::Agent { offer, .. } => offer.about.as_deref().unwrap_or_default(),
+            // What it holds, under its name where a gloss goes, and whole:
+            // the column the controls are in is the width of a word, and
+            // a proxy's address or a token cut down to that is a value the
+            // reader cannot check.
+            Self::Variable { value, .. } => value,
+            Self::AddVariable { .. } => "A name and then what it holds",
             Self::Silent { saying, .. } => saying,
             Self::Remote { row, .. } => match row {
                 RemoteRow::Platform => "Which chat a note can be worked on from",
@@ -446,7 +488,11 @@ impl Shown<'_> {
     #[must_use]
     pub fn warning(&self) -> Option<String> {
         match self {
-            Self::Obelus { .. } | Self::Silent { .. } | Self::Remote { .. } => None,
+            Self::Obelus { .. }
+            | Self::Silent { .. }
+            | Self::Remote { .. }
+            | Self::Variable { .. }
+            | Self::AddVariable { .. } => None,
             // A choice the agent has stopped offering is a line in the
             // settings file that does nothing: a new conversation is left
             // on whatever the agent opens on.
@@ -1019,6 +1065,27 @@ impl Settings {
         {
             rows.push(Shown::Silent { saying, opens });
         }
+        // And what it is started with, as a group of its own after them --
+        // see `Shown::Variable`. The row that adds one is there whatever
+        // the agent has said, because this is the reader's and not the
+        // agent's: an agent that never answered can still be given a proxy
+        // to answer through.
+        let mut opens = Some(offering.name.as_str());
+        for (name, value) in &offering.environment {
+            if !(query.is_empty() || name.to_lowercase().contains(&query)) {
+                continue;
+            }
+            rows.push(Shown::Variable {
+                name,
+                value,
+                opens: opens.take(),
+            });
+        }
+        if query.is_empty() || "add a variable".contains(&query) {
+            rows.push(Shown::AddVariable {
+                opens: opens.take(),
+            });
+        }
         rows
     }
 
@@ -1386,6 +1453,23 @@ impl Settings {
                     _ => SettingsOutcome::Consumed,
                 }
             }
+            // A variable is changed by typing what it holds, and the row
+            // under them adds one.
+            KeyCode::Enter
+                if bare
+                    && let Some(Shown::Variable { name, .. }) = rows.get(self.window.focus()) =>
+            {
+                SettingsOutcome::EditVariable((*name).to_string())
+            }
+            KeyCode::Enter
+                if bare
+                    && matches!(
+                        rows.get(self.window.focus()),
+                        Some(Shown::AddVariable { .. })
+                    ) =>
+            {
+                SettingsOutcome::AddVariable
+            }
             KeyCode::Enter if bare => {
                 match rows.get(self.window.focus()).and_then(Shown::setting) {
                     Some(setting) => Self::change(setting, config),
@@ -1415,6 +1499,15 @@ impl Settings {
                     // to the filter would put a character in it.
                     None => SettingsOutcome::Consumed,
                 }
+            }
+            // A variable taken away, which is what `delete` means on the
+            // agent's other rows too: this one is not said any more.
+            KeyCode::Delete
+                if bare
+                    && !self.query.takes_a_delete()
+                    && let Some(Shown::Variable { name, .. }) = rows.get(self.window.focus()) =>
+            {
+                SettingsOutcome::RemoveVariable((*name).to_string())
             }
             // A field the reader set, forgotten: what `delete` means
             // everywhere else on this page.
@@ -1593,6 +1686,9 @@ impl Settings {
             Shown::Obelus { opens, .. } => u16::from(opens.is_some()) * 2,
             Shown::Agent { opens, .. } => u16::from(opens.is_some()) * HEADING_ROWS,
             Shown::Silent { .. } => HEADING_ROWS,
+            Shown::Variable { opens, .. } | Shown::AddVariable { opens } => {
+                u16::from(opens.is_some()) * HEADING_ROWS
+            }
             Shown::Remote { opens, .. } => u16::from(opens.is_some()) * 2,
         };
         // A row with no name is its prose and the blank after it: there is
