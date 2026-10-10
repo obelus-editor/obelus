@@ -692,13 +692,13 @@ impl<'a> ChatView<'a> {
     #[must_use]
     pub fn new(app: &'a impl Screen) -> Option<Self> {
         Some(Self {
-            chat: app.chat()?,
+            chat: app.shown().chat()?,
             theme: app.theme(),
             state: app.talking(),
             name: app.agent_name(),
             title: app.what_this_conversation_is_called(),
             settings: app.agent_settings(),
-            focus: app.chat()?.focus(),
+            focus: app.shown().chat()?.focus(),
             card: app.card(),
             in_front: crate::in_front(app, None),
             pointer: app.pointer(),

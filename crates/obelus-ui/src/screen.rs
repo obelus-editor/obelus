@@ -163,6 +163,58 @@ pub struct Complained<'a> {
     pub others: usize,
 }
 
+/// The document on screen, under whatever is open over it.
+///
+/// One answer, matched wherever a view has to know which: the frame that
+/// draws it, the caret, the room the document has and the status row each
+/// used to ask four questions of their own, in four different orders, and
+/// a fifth kind of document would have been a fifth question to remember in
+/// every one of them. Here it is an arm the compiler asks for.
+#[derive(Clone, Copy, Debug)]
+pub enum Shown<'a> {
+    /// A file, as its text.
+    File(&'a Buffer),
+    /// A file shown some other way: these rows, laid out from it.
+    Reading(&'a [obelus_row::Row]),
+    /// A conversation.
+    Chat(&'a Chat),
+    /// The notes.
+    Notes(&'a TodoView),
+    /// A terminal.
+    Terminal(&'a obelus_terminal::Terminal),
+    /// Nothing is open.
+    Nothing,
+}
+
+impl<'a> Shown<'a> {
+    /// The conversation, if that is what is on screen.
+    #[must_use]
+    pub const fn chat(self) -> Option<&'a Chat> {
+        match self {
+            Self::Chat(chat) => Some(chat),
+            _ => None,
+        }
+    }
+
+    /// The notes, if they are what is on screen.
+    #[must_use]
+    pub const fn notes(self) -> Option<&'a TodoView> {
+        match self {
+            Self::Notes(notes) => Some(notes),
+            _ => None,
+        }
+    }
+
+    /// The terminal, if that is what is on screen.
+    #[must_use]
+    pub const fn terminal(self) -> Option<&'a obelus_terminal::Terminal> {
+        match self {
+            Self::Terminal(terminal) => Some(terminal),
+            _ => None,
+        }
+    }
+}
+
 /// Everything a frame is drawn from.
 ///
 /// The renderer used to take `&App`, and this is the list of what it
@@ -212,8 +264,6 @@ pub trait Screen {
     fn card(&self) -> Option<&Card>;
     /// What has changed in the current file, if Obelus can tell.
     fn changes(&self) -> Option<&obelus_git::Changes>;
-    /// The conversation, while it is what the reader is looking at.
-    fn chat(&self) -> Option<&Chat>;
     /// What could be typed next, while a server's answer is on screen.
     fn completion(&self) -> Option<&Completion>;
     /// What the reader has decided.
@@ -252,10 +302,8 @@ pub trait Screen {
     fn marked_runs(&self) -> &[obelus_text::coordinates::Span];
     /// What Obelus has to say, until the next key.
     fn note(&self) -> Option<&str>;
-    /// The notes, while the reader is in them.
-    fn notes(&self) -> Option<&TodoView>;
-    /// The terminal, while the reader is in one.
-    fn terminal(&self) -> Option<&obelus_terminal::Terminal>;
+    /// The document on screen, which is one kind of thing and never two.
+    fn shown(&self) -> Shown<'_>;
     /// Whether each note has a conversation, by the note's place in the
     /// list -- which is what a row of the notes names.
     fn talked_about(&self) -> Vec<obelus_component::todo::Talked>;
@@ -318,8 +366,6 @@ pub trait Screen {
     fn registry_failure(&self) -> Option<&str>;
     /// How many rows it has, for the keys that scroll it.
     fn rendered_rows(&self) -> Option<usize>;
-    /// The reading on screen, if the current file is being shown as one.
-    fn rendering(&self) -> Option<&[obelus_row::Row]>;
     /// The server for the file being read, and what it is doing.
     fn server_state(&self) -> Option<(&'static str, obelus_lsp::ServerState)>;
     /// Whether the server behind the file being read is busy with something.

@@ -44,9 +44,6 @@ impl Screen for App {
     fn changes(&self) -> Option<&obelus_git::Changes> {
         App::changes(self)
     }
-    fn chat(&self) -> Option<&Chat> {
-        App::chat(self)
-    }
     fn completion(&self) -> Option<&Completion> {
         App::completion(self)
     }
@@ -92,11 +89,23 @@ impl Screen for App {
     fn talked_about(&self) -> Vec<obelus_component::todo::Talked> {
         App::talked_about(self)
     }
-    fn notes(&self) -> Option<&TodoView> {
-        App::notes(self)
-    }
-    fn terminal(&self) -> Option<&obelus_terminal::Terminal> {
-        App::terminal(self)
+    fn shown(&self) -> obelus_ui::Shown<'_> {
+        use obelus_ui::Shown;
+
+        // The kind of document is the variant, so these cannot be two at
+        // once; and a reading is only ever of a file. Broken deliberately by
+        // never answering a reading: `tests/rendering.rs` drew the file's
+        // bytes for three readings.
+        match self.current.and_then(|id| self.document(id)) {
+            Some(Document::Chat(talk)) => Shown::Chat(&talk.chat),
+            Some(Document::Notes(notes)) => Shown::Notes(notes),
+            Some(Document::Terminal(terminal)) => Shown::Terminal(terminal),
+            Some(Document::File(buffer)) => match App::rendering(self) {
+                Some(rows) => Shown::Reading(rows),
+                None => Shown::File(buffer),
+            },
+            None => Shown::Nothing,
+        }
     }
     fn opened_hunks(&self) -> Vec<LineNumber> {
         App::opened_hunks(self)
@@ -157,9 +166,6 @@ impl Screen for App {
     }
     fn rendered_rows(&self) -> Option<usize> {
         App::rendered_rows(self)
-    }
-    fn rendering(&self) -> Option<&[obelus_row::Row]> {
-        App::rendering(self)
     }
     fn server_state(&self) -> Option<(&'static str, obelus_lsp::ServerState)> {
         App::server_state(self)

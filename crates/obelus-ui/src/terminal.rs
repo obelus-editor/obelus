@@ -31,7 +31,7 @@ impl<'a> TerminalView<'a> {
     #[must_use]
     pub fn new(app: &'a impl Screen) -> Option<Self> {
         Some(Self {
-            terminal: app.terminal()?,
+            terminal: app.shown().terminal()?,
             theme: app.theme(),
         })
     }

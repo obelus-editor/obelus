@@ -400,7 +400,7 @@ impl<'a> TodoUi<'a> {
     #[must_use]
     pub fn new(app: &'a impl Screen) -> Option<Self> {
         Some(Self {
-            notes: app.notes()?,
+            notes: app.shown().notes()?,
             theme: app.theme(),
             talked: app.talked_about(),
             phase: app.phase(),

@@ -78,8 +78,7 @@ pub struct StatusView<'a> {
     /// go, which is the ink it is drawn in.
     note_is_wrong: bool,
     /// The notes, while they are what is being read.
-    notes: Option<&'a obelus_component::todo::TodoView>,
-    terminal: Option<&'a obelus_terminal::Terminal>,
+    shown: crate::Shown<'a>,
     /// Which of them is nearest the reader, and so whose row this is.
     ///
     /// The same question the caret asks. Three of these can be on screen
@@ -135,8 +134,7 @@ impl<'a> StatusView<'a> {
             prompt: app.prompt(),
             making_in: app.making_in(),
             note_is_wrong: app.note_is_wrong(),
-            notes: app.notes(),
-            terminal: app.terminal(),
+            shown: app.shown(),
             choosing: app.choosing(),
             nearest: app.layers().nearest(),
             replacing: app.replacing(),
@@ -214,41 +212,46 @@ impl Widget for StatusView<'_> {
             // does not call this at all then. The arms that were here drew
             // a picker's prompt, a list-being-built's and the settings'
             // filter, each of them a dialog's row written by Obelus.
-            _ => {
-                if let Some(notes) = self.notes {
-                    self.render_notes(notes, area, cells, style);
-                } else if let Some(terminal) = self.terminal {
+            _ => match self.shown {
+                crate::Shown::Notes(notes) => self.render_notes(notes, area, cells, style),
+                crate::Shown::Terminal(terminal) => {
                     self.render_terminal(terminal, area, cells, style);
-                } else if let Some(buffer) = self.buffer {
-                    self.render_file(buffer, area, cells, style);
-                } else if let Some(note) = self.middle {
-                    // Nothing open, so the row has nothing else to say --
-                    // and what Obelus has just said still has to reach
-                    // somebody. It was drawn only beside a file's name,
-                    // which left the one reader most likely to be told
-                    // something watching a key do nothing: `ob
-                    // some-directory` opens on the welcome screen, and
-                    // making the first file in a project is a command
-                    // offered right there.
-                    //
-                    // Left of the row and in its own ink, which is what a
-                    // conversation does with the same sentence: beside a
-                    // path it is an aside and goes in the dim one, and
-                    // alone on the row it is the row. Truncated rather
-                    // than dropped, for the same reason -- there is
-                    // nothing here it could be crowding.
-                    let end = self.remote_at_end(area, cells, style);
-                    write(
-                        cells,
-                        area.x + 1,
-                        area.y,
-                        &truncate_from_right(note, end.saturating_sub(1)),
-                        self.wrong_ink().map_or(style, |ink| style.fg(ink)),
-                    );
-                } else {
-                    self.render_project(area, cells, style);
                 }
-            }
+                crate::Shown::File(_)
+                | crate::Shown::Reading(_)
+                | crate::Shown::Chat(_)
+                | crate::Shown::Nothing => {
+                    if let Some(buffer) = self.buffer {
+                        self.render_file(buffer, area, cells, style);
+                    } else if let Some(note) = self.middle {
+                        // Nothing open, so the row has nothing else to say --
+                        // and what Obelus has just said still has to reach
+                        // somebody. It was drawn only beside a file's name,
+                        // which left the one reader most likely to be told
+                        // something watching a key do nothing: `ob
+                        // some-directory` opens on the welcome screen, and
+                        // making the first file in a project is a command
+                        // offered right there.
+                        //
+                        // Left of the row and in its own ink, which is what a
+                        // conversation does with the same sentence: beside a
+                        // path it is an aside and goes in the dim one, and
+                        // alone on the row it is the row. Truncated rather
+                        // than dropped, for the same reason -- there is
+                        // nothing here it could be crowding.
+                        let end = self.remote_at_end(area, cells, style);
+                        write(
+                            cells,
+                            area.x + 1,
+                            area.y,
+                            &truncate_from_right(note, end.saturating_sub(1)),
+                            self.wrong_ink().map_or(style, |ink| style.fg(ink)),
+                        );
+                    } else {
+                        self.render_project(area, cells, style);
+                    }
+                }
+            },
         }
     }
 }

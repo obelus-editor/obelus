@@ -79,8 +79,9 @@ pub fn editor_room(area: Rect, app: &impl Screen) -> Rect {
     // told it is smaller for as long as the palette is open -- which would
     // make a shell draw its prompt again under a list the reader is about
     // to close.
-    if app.chat().is_some() || app.terminal().is_some() {
-        return editor;
+    match app.shown() {
+        Shown::Chat(_) | Shown::Terminal(_) => return editor,
+        Shown::File(_) | Shown::Reading(_) | Shown::Notes(_) | Shown::Nothing => {}
     }
     picker::room_above(list, editor)
 }
@@ -243,16 +244,15 @@ pub fn cursor_position(area: Rect, app: &impl Screen) -> Option<Position> {
             // A conversation is written into, and its caret is in the box
             // rather than on the status bar: a message is a paragraph, and
             // a paragraph does not fit on one row.
-            if let Some(chat) = app.chat() {
-                return chat::ChatView::caret(regions.editor, chat, app.card());
-            }
-            // And the notes, which are written into the same way.
-            if let Some(notes) = app.notes() {
-                return todo::caret(regions.editor, notes);
-            }
-            // And a terminal, whose caret is its program's cursor.
-            if let Some(terminal) = app.terminal() {
-                return terminal::caret(regions.editor, terminal);
+            match app.shown() {
+                Shown::Chat(chat) => {
+                    return chat::ChatView::caret(regions.editor, chat, app.card());
+                }
+                // And the notes, which are written into the same way.
+                Shown::Notes(notes) => return todo::caret(regions.editor, notes),
+                // And a terminal, whose caret is its program's cursor.
+                Shown::Terminal(terminal) => return terminal::caret(regions.editor, terminal),
+                Shown::File(_) | Shown::Reading(_) | Shown::Nothing => {}
             }
         }
     }
@@ -350,34 +350,42 @@ fn draw_the_frame(cells: &mut CellBuffer, area: Rect, app: &impl Screen) {
     // bottom third is behind a list is a scrollbar that cannot be read.
     let room = editor_room(area, app);
     let canvas = editor_canvas(area);
-    if let Some(view) = todo::TodoUi::new(app) {
-        bars::of(Whose::Notes, || view.render(canvas, cells));
-    } else if let Some(view) = terminal::TerminalView::new(app) {
+    match app.shown() {
+        Shown::Notes(_) => {
+            if let Some(view) = todo::TodoUi::new(app) {
+                bars::of(Whose::Notes, || view.render(canvas, cells));
+            }
+        }
         // No bar: what scrolled off the top is the program's, and how far
         // back the reader is is said on the status row instead.
-        view.render(canvas, cells);
-    } else {
-        match chat::ChatView::new(app) {
-            Some(view) => bars::of(Whose::Conversation, || view.render(regions.editor, cells)),
-            None => bars::of(Whose::Document, || match app.rendering() {
-                Some(rows) => {
-                    let top = app
-                        .current_buffer()
-                        .map_or(0, |buffer| buffer.viewport().top.get());
-                    reading::draw(
-                        cells,
-                        canvas,
-                        rows,
-                        top,
-                        app.theme(),
-                        app.theme().background,
-                    );
-                }
-                None => editor::EditorView::new(app)
-                    .the_reader_has(room.height)
-                    .render(canvas, cells),
-            }),
+        Shown::Terminal(_) => {
+            if let Some(view) = terminal::TerminalView::new(app) {
+                view.render(canvas, cells);
+            }
         }
+        Shown::Chat(_) => {
+            if let Some(view) = chat::ChatView::new(app) {
+                bars::of(Whose::Conversation, || view.render(regions.editor, cells));
+            }
+        }
+        Shown::Reading(rows) => bars::of(Whose::Document, || {
+            let top = app
+                .current_buffer()
+                .map_or(0, |buffer| buffer.viewport().top.get());
+            reading::draw(
+                cells,
+                canvas,
+                rows,
+                top,
+                app.theme(),
+                app.theme().background,
+            );
+        }),
+        Shown::File(_) | Shown::Nothing => bars::of(Whose::Document, || {
+            editor::EditorView::new(app)
+                .the_reader_has(room.height)
+                .render(canvas, cells);
+        }),
     }
     // Nothing open and nothing to open: the one moment a reader needs
     // telling what the keys are. Not while something has taken the region,
@@ -714,7 +722,8 @@ pub(crate) fn turning_at(x: u16, y: u16, said: &str) {
 /// a list drawn over the box would cover the thing the reader is typing
 /// into to find it.
 fn room_for_the_commands(app: &impl Screen, editor: Rect) -> Rect {
-    app.chat()
+    app.shown()
+        .chat()
         .map_or(editor, |chat| chat::above_writing(editor, chat, app.card()))
 }
 

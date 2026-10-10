@@ -59,7 +59,7 @@ use obelus_buffer::{Buffer, Cursor, DocumentId, Mode, Motion, TextArea};
 use obelus_command::{Command, Requires};
 use obelus_component::{
     card::Card,
-    chat::{Chat, ChatOutcome, Room as ChatRoom},
+    chat::{ChatOutcome, Room as ChatRoom},
     completion::Completion,
     counts::Counts,
     hover::Hover,
@@ -70,7 +70,6 @@ use obelus_component::{
     },
     prompt::{Prompt, PromptKind, PromptOutcome},
     settings::{Settings, SettingsOutcome},
-    todo::TodoView,
 };
 use obelus_editing::motion_for;
 use obelus_keymap::{Context, KeyChord, Keymap};
