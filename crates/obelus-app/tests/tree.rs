@@ -345,8 +345,8 @@ fn it_goes_back_to_the_row_and_not_to_the_name() {
 ///
 /// A press moves the selection and nothing else. These are drawn over
 /// something the reader was reading, and a mis-aimed press that *chose* a
-/// row would take them somewhere they never asked to go; choosing stays on
-/// the keyboard.
+/// row would take them somewhere they never asked to go; choosing is a
+/// second press on the row, which nobody aims badly twice.
 ///
 /// Except a row's own arrow, which says the row opens. Pressing that does
 /// what pressing an arrow means everywhere, and it cannot take the reader
@@ -437,7 +437,14 @@ fn a_press_moves_the_selection_and_the_arrow_opens_a_row() {
 /// file stays shut and the list stays up.
 #[test]
 fn a_double_click_on_a_row_chooses_it() {
-    let (_scratch, mut app) = a_tree("tree-double-click");
+    let (scratch, mut app) = a_tree("tree-double-click");
+    // Words on every row, so that a press on the file once it is open
+    // lands on some.
+    std::fs::write(
+        scratch.path().join("src/main.rs"),
+        "let words_long_enough_to_reach_the_pointer = 1;\n".repeat(30),
+    )
+    .expect("writing it");
     let _ = support::render(&mut app, 60, 18);
 
     let file = app
@@ -468,5 +475,18 @@ fn a_double_click_on_a_row_chooses_it() {
         app.file_count_for_test(),
         open_before + 1,
         "the second press did not open the file"
+    );
+
+    // And a third, landing on the file the second one opened, is a first
+    // press there: not the third of a click that would take a whole line.
+    //
+    // Broken deliberately by not forgetting the count in
+    // `pointer_in_a_layer`: the line under the pointer is taken.
+    press(&mut app);
+    assert!(
+        app.current_buffer()
+            .and_then(obelus_buffer::Buffer::selection)
+            .is_none(),
+        "the press after a double click took hold of a line"
     );
 }

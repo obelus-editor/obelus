@@ -500,7 +500,7 @@ fn the_counts_say_what_their_keys_do() {
 ///
 /// Moving the selection and nothing else, because a row here is a file to
 /// open or a language to look inside, and a mis-aimed press that *chose*
-/// one would take the reader off this page. Choosing stays on the keyboard.
+/// one would take the reader off this page. Choosing is a second press.
 ///
 /// Except the fold mark, which says the row opens. Pressing it does what
 /// pressing an arrow means everywhere, and cannot take the reader anywhere:
