@@ -15685,6 +15685,125 @@ fn opened_again_the_list_asks_only_what_has_changed() {
     );
 }
 
+/// A search that did not come, over a list nothing here matches, says why
+/// where the rows would be -- not "No match" -- and down asks it again,
+/// though there is no row for down to move to.
+///
+/// Broken deliberately two ways. Letting the empty line fall through to
+/// the query's own words says "No match". And asking `further` only for a
+/// page after one that came leaves down asking nothing.
+#[test]
+fn a_search_that_did_not_come_is_asked_again_from_an_empty_list() {
+    let scratch = support::Scratch::new("agent-pull-request-search-again");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, two_pull_requests()).expect("the answer");
+    let found = answer.with_extension("json.found");
+    std::fs::write(&found, "eof").expect("a search that does not come");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| answered_with(app, 2));
+    support::type_text(&mut app, "zzzz");
+    pump(&mut app, &events, "the refusal", |app| {
+        tally(app).starts_with("GitHub would not answer")
+    });
+    let text = screen(&mut app);
+    assert!(
+        !text.contains("No match"),
+        "a search nothing came back from said there was no match:\n{text}"
+    );
+
+    std::fs::write(&found, "[]").expect("the search, this time");
+    support::press(&mut app, KeyCode::Down);
+    let _ = screen(&mut app);
+    pump(&mut app, &events, "the search again", |app| {
+        tally(app) == "0 match"
+    });
+}
+
+/// A pull request as GitHub sends it among what has changed: `state`
+/// first, numbered `number`, changed at `stamp`.
+fn changed(state: &str, number: u64, stamp: &str) -> String {
+    format!(
+        r#"{{"state":"{state}","number":{number},"title":"Pull request {number}","author":{{"login":"a"}},"headRefName":"h","baseRefName":"b","headRefOid":"s","isDraft":false,"reviewDecision":"","updatedAt":"{stamp}"}}"#
+    )
+}
+
+/// What has changed is walked newest first only as far as the first pull
+/// request older than the newest the list had seen -- one changed at that
+/// very moment is a change -- and not a page past it.
+///
+/// Broken deliberately two ways. Never stopping walks on to the next page,
+/// which brings #125. And stopping at one changed at that very moment, `<=`
+/// where it is `<`, leaves #124 open after it merged.
+#[test]
+fn what_has_changed_stops_at_the_first_older_than_the_last_look() {
+    let scratch = support::Scratch::new("agent-pull-request-changed-stops");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, two_pull_requests()).expect("the answer");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| answered_with(app, 2));
+    support::press(&mut app, KeyCode::Esc);
+
+    // #123 changed at 2026-10-08T00:00:00Z, the newest the list saw.
+    std::fs::write(
+        answer.with_extension("json.changed"),
+        format!(
+            "[{},{}]",
+            changed("MERGED", 124, "2026-10-08T00:00:00Z"),
+            changed("OPEN", 120, "2026-10-01T00:00:00Z")
+        ),
+    )
+    .expect("what has changed");
+    std::fs::write(
+        answer.with_extension("json.changed.page2"),
+        format!("[{}]", changed("OPEN", 125, "2026-10-09T00:00:00Z")),
+    )
+    .expect("a page past it");
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "what has changed", |app| {
+        answered_with(app, 1)
+    });
+    assert_eq!(shown(&app), [123]);
+    assert_eq!(asked_saying(&answer, "cursor=page2"), 0);
+}
+
+/// More changed than three pages' worth is asked for again from the top,
+/// which the list gives way to.
+///
+/// Broken deliberately by taking out the arm that stops at
+/// `CHANGED_PAGES`, which walks on to the fourth page and keeps the list.
+#[test]
+fn too_much_changed_is_asked_for_again_from_the_top() {
+    let scratch = support::Scratch::new("agent-pull-request-changed-too-much");
+    let answer = scratch.path().join("gh-answer.json");
+    std::fs::write(&answer, two_pull_requests()).expect("the answer");
+    let (mut app, events) = with_a_fake_gh(&scratch, &answer);
+
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the list", |app| answered_with(app, 2));
+    support::press(&mut app, KeyCode::Esc);
+
+    let newer = |number: u64| format!("[{}]", changed("OPEN", number, "2026-10-09T00:00:00Z"));
+    std::fs::write(answer.with_extension("json.changed"), newer(201)).expect("a page");
+    for page in 2..=4 {
+        std::fs::write(
+            answer.with_extension(format!("json.changed.page{page}")),
+            newer(200 + page),
+        )
+        .expect("another page");
+    }
+    std::fs::write(&answer, many_pull_requests(300..303)).expect("the top, now");
+    obelus_app::app::dispatch::dispatch(&mut app, obelus_command::Command::PullRequestReview);
+    pump(&mut app, &events, "the top again", |app| {
+        answered_with(app, 3)
+    });
+    assert_eq!(shown(&app), [302, 301, 300]);
+    assert_eq!(asked_saying(&answer, "cursor=page4"), 0);
+}
+
 /// What is typed is matched against the rows here at once, and asked of
 /// GitHub's search once the typing stops -- by title for words and not for
 /// a number -- and what that finds is matched here too: a row it found

@@ -64,6 +64,14 @@ const ISSUE_FIELDS: &str = "number title author{login} labels(first:100){nodes{n
 /// counts: past this there is no next page to ask for.
 const SEARCH_GIVES: usize = 1000;
 
+/// How many rows a page holds.
+const PAGE: usize = 100;
+
+/// How many pages of what has changed are walked before the list is asked
+/// for again from the top instead: a window left open for a week on a busy
+/// repository has more to catch up on than a first page is worth.
+const CHANGED_PAGES: usize = 3;
+
 /// How long the reader's typing has to stop for before GitHub is asked
 /// about it: a question a keystroke would be a question about half a word,
 /// and GitHub matches whole ones.
@@ -186,9 +194,16 @@ pub enum Toward {
     Older(String),
     /// Everything that has changed since this `updatedAt`.
     Newer(String),
-    /// A page of what GitHub's search finds for this query, after this
-    /// cursor where there is one.
-    Found(String, Option<String>),
+    /// A page of what GitHub's search finds for a query.
+    Found {
+        /// The query.
+        query: String,
+        /// Which asking of it: a query typed away from and back to is asked
+        /// again, and the first asking's answers are not the second's.
+        asking: u64,
+        /// The cursor it comes after, where there is one.
+        after: Option<String>,
+    },
 }
 
 /// A page of a list, as GitHub sent it.
@@ -224,6 +239,8 @@ pub enum Listed<T> {
     Found {
         /// The query.
         query: String,
+        /// Which asking of it.
+        asking: u64,
         /// What it found.
         page: Page<T>,
     },
@@ -275,18 +292,37 @@ impl Listable for Issue {
 struct Search {
     /// The query, as it was asked.
     query: String,
+    /// Which asking of it this is.
+    which: u64,
     /// Whether a page of it is on its way.
     asking: bool,
     /// Whether any of it has come.
     answered: bool,
-    /// How many rows it has brought.
-    found: usize,
+    /// Which rows it has brought: a first page landing after them keeps
+    /// them, because nothing will ask GitHub for them again.
+    found: std::collections::HashSet<u64>,
     /// How many GitHub says match.
     total: u64,
     /// Where its next page starts, while there is one.
     older: Option<String>,
     /// Why the last page asked for did not come.
     stalled: Option<Unlisted>,
+}
+
+impl Search {
+    /// The asking `which` of `query`, before anything has been asked.
+    fn new(query: String, which: u64) -> Self {
+        Self {
+            query,
+            which,
+            asking: false,
+            answered: false,
+            found: std::collections::HashSet::new(),
+            total: 0,
+            older: None,
+            stalled: None,
+        }
+    }
 }
 
 /// One of the list's tabs, as `gh` last answered it.
@@ -298,8 +334,12 @@ struct Listing<T> {
     /// Whether `listed` is an answer at all: none of it before `gh` has
     /// first answered, and none of it after an answer that was a refusal.
     answered: bool,
-    /// Which way an answer on its way is growing the list.
+    /// What is on its way from the top -- the first page, or what has
+    /// changed. Apart from `paging`, so that an opening while a page is on
+    /// its way still asks what has changed.
     asking: Option<Toward>,
+    /// Whether the next older page is on its way.
+    paging: bool,
     /// Why the first page was no list, where it was.
     unlisted: Option<Unlisted>,
     /// Where the next older page starts, while GitHub has one.
@@ -310,9 +350,13 @@ struct Listing<T> {
     /// opening asks what has changed since. Not the newest row's: a search
     /// can bring one in from above a stretch nobody has asked about since.
     newest: String,
-    /// Why the last page past the first did not come, with what came
-    /// before it kept: those rows are still true.
+    /// Why the last older page did not come, with what came before it
+    /// kept: those rows are still true.
     stalled: Option<Unlisted>,
+    /// Why what has changed could not be asked: the rows are what they
+    /// were, and may no longer be what is open. The next opening asks
+    /// again.
+    stale: Option<Unlisted>,
     /// What GitHub's search found for the query in the box.
     search: Option<Search>,
 }
@@ -323,11 +367,13 @@ impl<T> Default for Listing<T> {
             listed: Vec::new(),
             answered: false,
             asking: None,
+            paging: false,
             unlisted: None,
             older: None,
             total: None,
             newest: String::new(),
             stalled: None,
+            stale: None,
             search: None,
         }
     }
@@ -349,7 +395,7 @@ struct Saying {
 impl<T: Listable> Listing<T> {
     /// Which way to ask as the list opens: what has changed since it was
     /// last answered, or its first page where it never has been -- and
-    /// nothing while an asking is already on its way.
+    /// nothing while either is already on its way.
     fn opening(&self) -> Option<Toward> {
         match (&self.asking, self.answered && !self.newest.is_empty()) {
             (Some(_), _) => None,
@@ -358,16 +404,39 @@ impl<T: Listable> Listing<T> {
         }
     }
 
+    /// The search for `query`, where there is one.
+    fn search_for(&self, query: &str) -> Option<&Search> {
+        self.search.as_ref().filter(|search| search.query == query)
+    }
+
+    /// Whether a query typed here is worth asking GitHub's search about:
+    /// not where the list itself was refused, for the same reason.
+    fn searchable(&self) -> bool {
+        self.answered || self.unlisted.is_none()
+    }
+
     /// Puts `rows` in with what is listed, once each and newest first.
     ///
-    /// What is listed stays where both have a row: a page and a search can
-    /// both bring one, and the copy already on screen is the one the
-    /// reader may be standing on.
+    /// Where both have a row, the one that changed later is kept: a page
+    /// and a search can both bring one, and the older copy's `updatedAt`
+    /// is what a preview kept about it would be checked against.
     fn merge(&mut self, rows: Vec<T>) {
-        let mut had: std::collections::HashSet<u64> =
-            self.listed.iter().map(Listable::number).collect();
-        self.listed
-            .extend(rows.into_iter().filter(|row| had.insert(row.number())));
+        let mut at: std::collections::HashMap<u64, usize> = self
+            .listed
+            .iter()
+            .enumerate()
+            .map(|(at, row)| (row.number(), at))
+            .collect();
+        for row in rows {
+            match at.get(&row.number()) {
+                Some(&was) if row.updated() > self.listed[was].updated() => self.listed[was] = row,
+                Some(_) => {}
+                None => {
+                    at.insert(row.number(), self.listed.len());
+                    self.listed.push(row);
+                }
+            }
+        }
         self.listed
             .sort_by_key(|row| std::cmp::Reverse(row.updated()));
     }
@@ -377,7 +446,12 @@ impl<T: Listable> Listing<T> {
         match answer {
             Listed::First(page) => {
                 self.asking = None;
-                self.listed.clear();
+                // Nothing of a last answer -- it is only asked for where
+                // there was none -- but what a search found while it was on
+                // its way stays: nothing will ask for those again.
+                let found = self.search.as_ref().map(|search| &search.found);
+                self.listed
+                    .retain(|row| found.is_some_and(|found| found.contains(&row.number())));
                 self.newest = page
                     .rows
                     .iter()
@@ -390,9 +464,10 @@ impl<T: Listable> Listing<T> {
                 self.answered = true;
                 self.unlisted = None;
                 self.stalled = None;
+                self.stale = None;
             }
             Listed::Older(page) => {
-                self.asking = None;
+                self.paging = false;
                 self.merge(page.rows);
                 self.older = page.older;
                 self.total = Some(page.total);
@@ -417,17 +492,25 @@ impl<T: Listable> Listing<T> {
                 self.merge(open);
                 self.newest = self.newest.clone().max(newest);
                 self.total = Some(total);
-                self.stalled = None;
+                self.stale = None;
             }
-            Listed::Found { query, page } => {
-                let Some(search) = self.search.as_mut().filter(|search| search.query == query)
+            Listed::Found {
+                query,
+                asking,
+                page,
+            } => {
+                let Some(search) = self
+                    .search
+                    .as_mut()
+                    .filter(|search| search.query == query && search.which == asking)
                 else {
-                    // A query the reader has typed past.
+                    // A query the reader has typed past, or an asking of it
+                    // from before they typed it again.
                     return;
                 };
                 search.asking = false;
                 search.answered = true;
-                search.found += page.rows.len();
+                search.found.extend(page.rows.iter().map(Listable::number));
                 search.older = page.older;
                 search.total = page.total;
                 search.stalled = None;
@@ -445,13 +528,19 @@ impl<T: Listable> Listing<T> {
                         self.answered = false;
                         self.unlisted = Some(why);
                     }
-                    Toward::Older(_) | Toward::Newer(_) => {
-                        self.asking = None;
+                    Toward::Older(_) => {
+                        self.paging = false;
                         self.stalled = Some(why);
                     }
-                    Toward::Found(query, _) => {
-                        if let Some(search) =
-                            self.search.as_mut().filter(|search| search.query == query)
+                    Toward::Newer(_) => {
+                        self.asking = None;
+                        self.stale = Some(why);
+                    }
+                    Toward::Found { query, asking, .. } => {
+                        if let Some(search) = self
+                            .search
+                            .as_mut()
+                            .filter(|search| search.query == query && search.which == asking)
                         {
                             search.asking = false;
                             search.stalled = Some(why);
@@ -462,25 +551,69 @@ impl<T: Listable> Listing<T> {
         }
     }
 
+    /// Writes down that `toward` has been asked for.
+    fn asked(&mut self, toward: &Toward) {
+        match toward {
+            Toward::First | Toward::Newer(_) => self.asking = Some(toward.clone()),
+            Toward::Older(_) => self.paging = true,
+            Toward::Found { query, asking, .. } => {
+                if let Some(search) = self
+                    .search
+                    .as_mut()
+                    .filter(|search| &search.query == query && search.which == *asking)
+                {
+                    search.asking = true;
+                }
+            }
+        }
+    }
+
+    /// Lets what did not come for `query` be asked for again.
+    fn try_again(&mut self, query: &str) {
+        match query.is_empty() {
+            true => self.stalled = None,
+            false => {
+                if let Some(search) = self.search.as_mut().filter(|search| search.query == query) {
+                    search.stalled = None;
+                }
+            }
+        }
+    }
+
+    /// Whether what did not come for `query` is waiting on the reader to
+    /// say try again.
+    fn stuck(&self, query: &str) -> bool {
+        match query.is_empty() {
+            true => self.stalled.is_some(),
+            false => self
+                .search_for(query)
+                .is_some_and(|search| search.stalled.is_some()),
+        }
+    }
+
     /// Which way to ask now that the last row is on screen, with `query`
     /// in the box: the next page of the list, or of what GitHub's search
-    /// found for it -- and nothing while one is on its way, or after one
-    /// that did not come, until the reader says to try again.
+    /// found for it -- its first, where that did not come -- and nothing
+    /// while one is on its way, or after one that did not come, until the
+    /// reader says to try again.
     fn further(&self, query: &str) -> Option<Toward> {
         if query.is_empty() {
-            let ready = self.answered && self.asking.is_none() && self.stalled.is_none();
+            let ready = self.answered && !self.paging && self.stalled.is_none();
             return self.older.clone().filter(|_| ready).map(Toward::Older);
         }
-        let search = self
-            .search
-            .as_ref()
-            .filter(|search| search.query == query)?;
-        let ready = search.answered && !search.asking && search.stalled.is_none();
-        search
-            .older
-            .clone()
-            .filter(|_| ready)
-            .map(|older| Toward::Found(query.to_string(), Some(older)))
+        let search = self.search_for(query)?;
+        if search.asking || search.stalled.is_some() {
+            return None;
+        }
+        let after = match search.answered {
+            true => Some(search.older.clone()?),
+            false => None,
+        };
+        Some(Toward::Found {
+            query: query.to_string(),
+            asking: search.which,
+            after,
+        })
     }
 
     /// What the tab says about itself, with `query` in the box, the
@@ -502,34 +635,45 @@ impl<T: Listable> Listing<T> {
                 key: Some(("\u{2193}".to_string(), "Try again".to_string())),
             })
         };
-        let search = self.search.as_ref().filter(|search| search.query == query);
-        let searching =
-            !query.is_empty() && (settling || search.is_some_and(|search| search.asking));
+        let search = self.search_for(query);
+        // Settling only where this tab has not asked about the query yet: a
+        // tab walked back onto has, and nothing more will be asked.
+        let searching = !query.is_empty()
+            && self.searchable()
+            && search.map_or(settling, |search| search.asking);
         let matching = match matched {
             1 => "1 matches".to_string(),
             matched => format!("{matched} match"),
         };
         let tally = match (query.is_empty(), search) {
+            (false, _) if !self.searchable() => None,
             (false, _) if searching => words(format!("Asking GitHub about \"{query}\"")),
             (false, Some(search)) => match (&search.stalled, &search.older) {
                 (Some(why), _) => stuck(why),
+                (None, _) if !search.answered => None,
                 (None, Some(_)) => words(format!("{matching} so far")),
                 // GitHub's search stops at a thousand, whatever it counts.
                 (None, None)
-                    if search.found >= SEARCH_GIVES && search.total > search.found as u64 =>
+                    if search.found.len() >= SEARCH_GIVES
+                        && search.total > search.found.len() as u64 =>
                 {
                     words(format!("{matching} \u{b7} GitHub gives no more"))
                 }
                 (None, None) => words(matching),
             },
             (false, None) => None,
-            (true, _) => match (&self.asking, &self.stalled) {
-                (Some(Toward::Older(_)), _) => words("Asking GitHub for 100 more".to_string()),
-                (Some(Toward::Newer(_)), _) => words("Asking GitHub what has changed".to_string()),
-                (Some(_), _) => None,
-                (None, Some(why)) => stuck(why),
-                (None, None) if !self.answered => None,
-                (None, None) => {
+            (true, _) => match (&self.asking, self.paging, &self.stalled, &self.stale) {
+                (_, true, ..) => words(format!("Asking GitHub for {PAGE} more")),
+                (Some(Toward::Newer(_)), ..) => words("Asking GitHub what has changed".to_string()),
+                (Some(_), ..) => None,
+                (None, false, Some(why), _) => stuck(why),
+                _ if !self.answered => None,
+                // Nothing to press: the rows are what they were, and the
+                // next opening asks again.
+                (None, false, None, Some(why)) => {
+                    words(format!("May be out of date \u{b7} {}", why.said()))
+                }
+                (None, false, None, None) => {
                     let listed = self.listed.len();
                     match (self.older.is_some(), self.total) {
                         (true, Some(total)) => words(format!("{listed} of {total} open")),
@@ -542,9 +686,13 @@ impl<T: Listable> Listing<T> {
         // match" would be a fact about a query nothing was asked of. With a
         // list, and GitHub done with the query, a query that matches none of
         // it is the query's to say.
-        let empty = match (&self.asking, &self.unlisted) {
-            (Some(Toward::First), _) => ("Still asking GitHub".to_string(), true),
-            (_, Some(why)) if !self.answered => (why.said(), true),
+        let unasked = search
+            .filter(|search| !search.answered)
+            .and_then(|search| search.stalled.as_ref());
+        let empty = match (&self.asking, &self.unlisted, unasked) {
+            (Some(Toward::First), ..) => ("Still asking GitHub".to_string(), true),
+            (_, Some(why), _) if !self.answered => (why.said(), true),
+            (_, _, Some(why)) if !query.is_empty() => (why.said(), true),
             _ if searching => ("Still asking GitHub".to_string(), true),
             _ => (none.to_string(), false),
         };
@@ -554,7 +702,7 @@ impl<T: Listable> Listing<T> {
         };
         Saying {
             tally,
-            turning: self.asking.is_some() || searching,
+            turning: self.asking.is_some() || self.paging || searching,
             empty,
             unfinished,
         }
@@ -674,6 +822,8 @@ pub(super) struct Pulls {
     /// The clock on the reader's typing, while it runs: GitHub is asked
     /// about the query once it has stopped moving.
     settling: Option<crate::event::Pause>,
+    /// How many searches this window has asked, which numbers each.
+    searches: u64,
 }
 
 impl App {
@@ -806,19 +956,9 @@ impl App {
     /// Asks `gh`, on the blocking pool, for one tab's list to grow
     /// `toward` wherever it is asked to, and sends what it said to the loop.
     fn ask_for_the_list(&mut self, issues: bool, toward: Toward) {
-        match (&toward, issues) {
-            (Toward::Found(..), true) => {
-                if let Some(search) = self.pulls.issues.search.as_mut() {
-                    search.asking = true;
-                }
-            }
-            (Toward::Found(..), false) => {
-                if let Some(search) = self.pulls.pulls.search.as_mut() {
-                    search.asking = true;
-                }
-            }
-            (_, true) => self.pulls.issues.asking = Some(toward.clone()),
-            (_, false) => self.pulls.pulls.asking = Some(toward.clone()),
+        match issues {
+            true => self.pulls.issues.asked(&toward),
+            false => self.pulls.pulls.asked(&toward),
         }
         let Some(sender) = self.events.clone() else {
             // No loop to answer into: a test hands the answer over itself.
@@ -891,7 +1031,13 @@ impl App {
                 *search = None;
             }
         }
-        self.pulls.settling = match query.is_empty() {
+        // Nothing to wait for where this tab has already asked: walking
+        // back onto it is not typing.
+        let asked = match self.showing_issues() {
+            true => self.pulls.issues.search_for(&query).is_some(),
+            false => self.pulls.pulls.search_for(&query).is_some(),
+        };
+        self.pulls.settling = match query.is_empty() || asked {
             true => None,
             false => self.come_back_in(SETTLES_AFTER, Event::PullRequestQuerySettled),
         };
@@ -899,7 +1045,8 @@ impl App {
     }
 
     /// Asks GitHub's search about the query in the box, which has stopped
-    /// moving, for the tab showing -- unless it already has.
+    /// moving, for the tab showing -- unless it already has, or the list
+    /// itself was refused.
     pub(super) fn on_the_query_settled(&mut self) {
         self.pulls.settling = None;
         if !self.listing_pull_requests() {
@@ -913,51 +1060,44 @@ impl App {
             return;
         };
         let issues = self.showing_issues();
-        let search = match issues {
-            true => &mut self.pulls.issues.search,
-            false => &mut self.pulls.pulls.search,
+        let (searchable, search) = match issues {
+            true => (
+                self.pulls.issues.searchable(),
+                &mut self.pulls.issues.search,
+            ),
+            false => (self.pulls.pulls.searchable(), &mut self.pulls.pulls.search),
         };
-        if query.is_empty() || search.as_ref().is_some_and(|search| search.query == query) {
+        let asked = search.as_ref().is_some_and(|search| search.query == query);
+        if query.is_empty() || asked || !searchable {
             self.say_how_much();
             return;
         }
-        *search = Some(Search {
-            query: query.clone(),
-            asking: false,
-            answered: false,
-            found: 0,
-            total: 0,
-            older: None,
-            stalled: None,
-        });
-        self.ask_for_the_list(issues, Toward::Found(query, None));
+        self.pulls.searches += 1;
+        let which = self.pulls.searches;
+        *search = Some(Search::new(query.clone(), which));
+        self.ask_for_the_list(
+            issues,
+            Toward::Found {
+                query,
+                asking: which,
+                after: None,
+            },
+        );
         self.say_how_much();
     }
 
-    /// Lets the page that did not come be asked for again, the next time
-    /// the last row is on screen -- which it is, because this is the
-    /// reader pressing down on it.
+    /// Lets what did not come be asked for again, the next time the last
+    /// row is on screen -- which it is, because this is the reader pressing
+    /// down on it.
     pub(super) fn try_the_next_page_again(&mut self) {
         let query = self
             .picker
             .as_ref()
             .map(|picker| picker.query().trim().to_string())
             .unwrap_or_default();
-        let listing_stalled =
-            |stalled: &mut Option<Unlisted>, search: &mut Option<Search>| match query.is_empty() {
-                true => *stalled = None,
-                false => {
-                    if let Some(search) = search.as_mut().filter(|search| search.query == query) {
-                        search.stalled = None;
-                    }
-                }
-            };
         match self.showing_issues() {
-            true => listing_stalled(
-                &mut self.pulls.issues.stalled,
-                &mut self.pulls.issues.search,
-            ),
-            false => listing_stalled(&mut self.pulls.pulls.stalled, &mut self.pulls.pulls.search),
+            true => self.pulls.issues.try_again(&query),
+            false => self.pulls.pulls.try_again(&query),
         }
         self.say_how_much();
     }
@@ -969,15 +1109,9 @@ impl App {
             return false;
         };
         let query = picker.query().trim().to_string();
-        let stalled = |stalled: &Option<Unlisted>, search: &Option<Search>| match query.is_empty() {
-            true => stalled.is_some(),
-            false => search
-                .as_ref()
-                .is_some_and(|search| search.query == query && search.stalled.is_some()),
-        };
         let stuck = match self.showing_issues() {
-            true => stalled(&self.pulls.issues.stalled, &self.pulls.issues.search),
-            false => stalled(&self.pulls.pulls.stalled, &self.pulls.pulls.search),
+            true => self.pulls.issues.stuck(&query),
+            false => self.pulls.pulls.stuck(&query),
         };
         stuck && picker.selected() + 1 >= picker.match_count()
     }
@@ -1664,26 +1798,21 @@ fn fetched<T>(
             .as_ref()
             .map(|cursor| ("-f", format!("cursor={cursor}")))
     };
+    // A page of what is open, after `cursor` where there is one.
+    let open_page = |instead: Option<(std::path::PathBuf, Vec<String>)>, cursor: Option<String>| {
+        let query = format!(
+            "query($owner:String!,$name:String!,$cursor:String){{repository(owner:$owner,\
+             name:$name){{list:{connection}(states:OPEN,first:{PAGE},after:$cursor,{order}){{\
+             totalCount nodes{{{fields}}} pageInfo{{hasNextPage endCursor}}}}}}}}"
+        );
+        let mut variables = repository();
+        variables.extend(after(&cursor));
+        let said = asked(root, instead, &query, &variables)?;
+        page(&said, "/data/repository/list", read)
+    };
     match toward {
-        Toward::First | Toward::Older(_) => {
-            let query = format!(
-                "query($owner:String!,$name:String!,$cursor:String){{repository(owner:$owner,\
-                 name:$name){{list:{connection}(states:OPEN,first:100,after:$cursor,{order}){{\
-                 totalCount nodes{{{fields}}} pageInfo{{hasNextPage endCursor}}}}}}}}"
-            );
-            let cursor = match toward {
-                Toward::Older(cursor) => Some(cursor.clone()),
-                _ => None,
-            };
-            let mut variables = repository();
-            variables.extend(after(&cursor));
-            let said = asked(root, instead, &query, &variables)?;
-            let page = page(&said, "/data/repository/list", read)?;
-            Ok(match toward {
-                Toward::First => Listed::First(page),
-                _ => Listed::Older(page),
-            })
-        }
+        Toward::First => Ok(Listed::First(open_page(instead, None)?)),
+        Toward::Older(cursor) => Ok(Listed::Older(open_page(instead, Some(cursor.clone()))?)),
         Toward::Newer(since) => {
             // Closed and merged as well as open, because closing one is a
             // change to it: what has gone is what this is asked to find. An
@@ -1701,7 +1830,8 @@ fn fetched<T>(
             let query = format!(
                 "query($owner:String!,$name:String!,$cursor:String{declared}){{repository(\
                  owner:$owner,name:$name){{open:{connection}(states:OPEN){{totalCount}} \
-                 list:{connection}({states}{filter}first:100,after:$cursor,{order}){{nodes{{state \
+                 list:{connection}({states}{filter}first:{PAGE},after:$cursor,{order}){{nodes{{\
+                 state 
                  {fields}}} pageInfo{{hasNextPage endCursor}}}}}}}}"
             );
             let mut open = Vec::new();
@@ -1709,7 +1839,9 @@ fn fetched<T>(
             let mut newest = String::new();
             let mut total = 0;
             let mut cursor = None;
+            let mut walked = 0;
             loop {
+                walked += 1;
                 let mut variables = repository();
                 if issues {
                     variables.push(("-f", format!("since={since}")));
@@ -1745,6 +1877,12 @@ fn fetched<T>(
                     }
                 }
                 cursor = match (past, next(list)) {
+                    // More changed than is worth catching up on a page at a
+                    // time: the newest page instead, which the list gives way
+                    // to.
+                    (false, Some(_)) if walked >= CHANGED_PAGES => {
+                        return Ok(Listed::First(open_page(instead, None)?));
+                    }
                     (false, Some(next)) => Some(next),
                     _ => break,
                 };
@@ -1756,36 +1894,52 @@ fn fetched<T>(
                 total,
             })
         }
-        Toward::Found(words, cursor) => {
+        Toward::Found {
+            query: words,
+            asking,
+            after: cursor,
+        } => {
             let (kind, on) = match issues {
                 true => ("issue", "Issue"),
                 false => ("pr", "PullRequest"),
             };
-            // By title where the reader typed words, which is what the list
-            // matches them against -- the body and the comments would bring
-            // rows the list then hides. Not where they typed a number,
-            // which `in:title` stops GitHub finding by.
-            let number = words.trim_start_matches('#');
-            let looked = match !number.is_empty() && number.chars().all(|c| c.is_ascii_digit()) {
-                true => number.to_string(),
-                false => format!("in:title {words}"),
-            };
             let query = format!(
-                "query($q:String!,$cursor:String){{search(type:ISSUE,query:$q,first:100,\
+                "query($q:String!,$cursor:String){{search(type:ISSUE,query:$q,first:{PAGE},\
                  after:$cursor){{issueCount nodes{{... on {on}{{{fields}}}}} pageInfo{{\
                  hasNextPage endCursor}}}}}}"
             );
             let mut variables = vec![(
                 "-F",
-                format!("q=repo:{{owner}}/{{repo}} is:{kind} is:open sort:updated-desc {looked}"),
+                format!(
+                    "q=repo:{{owner}}/{{repo}} is:{kind} is:open sort:updated-desc {}",
+                    looked_for(words)
+                ),
             )];
             variables.extend(after(cursor));
             let said = asked(root, instead, &query, &variables)?;
             Ok(Listed::Found {
                 query: words.clone(),
+                asking: *asking,
                 page: page(&said, "/data/search", read)?,
             })
         }
+    }
+}
+
+/// What GitHub's search is asked for when the reader typed `words`.
+///
+/// By title where they typed words, which is what the list matches them
+/// against -- the body and the comments would bring rows the list then
+/// hides. Not where they typed a number, which `in:title` stops GitHub
+/// finding by. And without braces, which `gh` would read as a place to put
+/// the branch in -- failing outright on a detached `HEAD` -- and which
+/// GitHub's search does not look at anyway.
+fn looked_for(words: &str) -> String {
+    let words: String = words.chars().filter(|c| !matches!(c, '{' | '}')).collect();
+    let number = words.trim_start_matches('#');
+    match !number.is_empty() && number.chars().all(|c| c.is_ascii_digit()) {
+        true => number.to_string(),
+        false => format!("in:title {words}"),
     }
 }
 
@@ -2205,11 +2359,12 @@ mod tests {
     /// and whether GitHub has more, or stopped at its thousand -- and why a
     /// page did not come with the key that tries again.
     ///
-    /// Broken deliberately three ways. Dropping the `older` test from the
+    /// Broken deliberately four ways. Dropping the `older` test from the
     /// count says "of 70" about a list that has every row. Letting the
     /// thousand GitHub stops at read as every match says nothing about the
-    /// rest. And counting by GitHub's number, as this first did, says 438
-    /// over 97 rows.
+    /// rest. Counting by GitHub's number, as this first did, says 438 over
+    /// 97 rows. And letting the typing settle on a tab that has already
+    /// asked turns the mark for a question nobody will ask.
     #[test]
     fn the_foot_says_how_much_there_is() {
         let words = |listing: &super::Listing<super::PullRequest>, query: &str, matched| {
@@ -2225,17 +2380,15 @@ mod tests {
         assert_eq!(words(&tab, "", 2), "2 open");
 
         tab.search = Some(super::Search {
-            query: "fold".to_string(),
-            asking: false,
             answered: true,
-            found: 100,
+            found: (0..100).collect(),
             total: 438,
             older: Some("next".to_string()),
-            stalled: None,
+            ..super::Search::new("fold".to_string(), 1)
         });
         assert_eq!(words(&tab, "fold", 97), "97 match so far");
         if let Some(search) = tab.search.as_mut() {
-            search.found = 1000;
+            search.found = (0..1000).collect();
             search.total = 4210;
             search.older = None;
         }
@@ -2248,6 +2401,16 @@ mod tests {
         }
         assert_eq!(words(&tab, "fold", 97), "97 match");
         assert_eq!(words(&tab, "fold", 1), "1 matches");
+        // The typing settling says GitHub is about to be asked -- but not on
+        // a tab that has asked already, which walking back onto is.
+        assert_eq!(words(&tab, "fold", 97), "97 match");
+        assert_eq!(
+            tab.says("fold", true, 97, "None")
+                .tally
+                .map(|tally| tally.words),
+            Some("97 match".to_string())
+        );
+        tab.search = None;
         assert_eq!(
             tab.says("fold", true, 97, "None")
                 .tally
@@ -2297,6 +2460,197 @@ mod tests {
             "a page that did not come took the rows"
         );
         assert_eq!(tab.further(""), None);
+    }
+
+    /// A tab whose search for "fold" is asking `which`, before anything of
+    /// it has come.
+    fn searching(numbers: &[u64], which: u64) -> super::Listing<super::PullRequest> {
+        let mut tab = listing(numbers);
+        tab.search = Some(super::Search::new("fold".to_string(), which));
+        tab.asked(&super::Toward::Found {
+            query: "fold".to_string(),
+            asking: which,
+            after: None,
+        });
+        tab
+    }
+
+    /// A page of what the search for "fold" found, for asking `which`.
+    fn found(numbers: &[u64], which: u64) -> super::Listed<super::PullRequest> {
+        super::Listed::Found {
+            query: "fold".to_string(),
+            asking: which,
+            page: super::Page {
+                rows: numbers
+                    .iter()
+                    .map(|number| pull(*number, &format!("2026-09-0{}T00:00:00Z", number % 10)))
+                    .collect(),
+                older: None,
+                total: numbers.len() as u64,
+            },
+        }
+    }
+
+    /// What a search found before the first page landed is still in the
+    /// list after it: nothing will ask for it again, and "No match" would be
+    /// a lie about a row GitHub sent.
+    ///
+    /// Broken deliberately by clearing the list in `First` whatever was
+    /// found, as it first did.
+    #[test]
+    fn a_first_page_after_a_search_keeps_what_it_found() {
+        let mut tab = super::Listing {
+            search: Some(super::Search::new("fold".to_string(), 1)),
+            ..super::Listing::default()
+        };
+        tab.answer(found(&[5], 1));
+        tab.answer(super::Listed::First(super::Page {
+            rows: vec![pull(9, "2026-10-09T00:00:00Z")],
+            older: None,
+            total: 1,
+        }));
+        let numbers: Vec<u64> = tab.listed.iter().map(|pull| pull.number).collect();
+        assert_eq!(numbers, [9, 5]);
+    }
+
+    /// A search whose first page did not come says why where the rows
+    /// would be, rather than "No match", and is asked again once the reader
+    /// says to.
+    ///
+    /// Broken deliberately two ways. Letting the empty line fall through to
+    /// the query's own words says "No match" about a search nothing came
+    /// back from. And asking `further` only for a page after one that came
+    /// leaves the first never asked again.
+    #[test]
+    fn a_search_that_did_not_come_says_so_and_is_asked_again() {
+        let mut tab = searching(&[3], 1);
+        tab.answer(super::Listed::Refused {
+            toward: super::Toward::Found {
+                query: "fold".to_string(),
+                asking: 1,
+                after: None,
+            },
+            why: super::Unlisted::Failed("EOF".to_string()),
+        });
+        let said = tab.says("fold", false, 0, "None");
+        assert_eq!(
+            said.empty,
+            ("GitHub would not answer: EOF".to_string(), true)
+        );
+        assert_eq!(tab.further("fold"), None, "asked again with nobody asking");
+        tab.try_again("fold");
+        assert_eq!(
+            tab.further("fold"),
+            Some(super::Toward::Found {
+                query: "fold".to_string(),
+                asking: 1,
+                after: None,
+            })
+        );
+    }
+
+    /// What has changed not coming leaves the list saying it may be out of
+    /// date, with no key that would ask for something else -- and does not
+    /// stop the next page being asked for.
+    ///
+    /// Broken deliberately by writing that refusal down where an older
+    /// page's goes, as it first was: the foot offers a key that asks for
+    /// the wrong thing, and the paging stops.
+    #[test]
+    fn what_has_changed_not_coming_says_the_list_may_be_out_of_date() {
+        let mut tab = listing(&[3, 2]);
+        tab.asked(&super::Toward::Newer("2026-10-03T00:00:00Z".to_string()));
+        tab.answer(super::Listed::Refused {
+            toward: super::Toward::Newer("2026-10-03T00:00:00Z".to_string()),
+            why: super::Unlisted::Failed("EOF".to_string()),
+        });
+        let tally = tab.says("", false, 2, "None").tally.expect("a tally");
+        assert_eq!(
+            tally.words,
+            "May be out of date \u{b7} GitHub would not answer: EOF"
+        );
+        assert_eq!(tally.key, None);
+        assert_eq!(
+            tab.further(""),
+            Some(super::Toward::Older("next".to_string()))
+        );
+    }
+
+    /// An answer to an asking of a query from before the reader typed it
+    /// again is not taken for the asking now.
+    ///
+    /// Broken deliberately by matching an answer to its search by the
+    /// query alone.
+    #[test]
+    fn an_answer_to_an_earlier_asking_of_the_same_query_is_let_go() {
+        let mut tab = searching(&[3], 2);
+        tab.answer(found(&[7], 1));
+        let search = tab.search.as_ref().expect("the search");
+        assert!(search.asking, "the asking now was taken as answered");
+        assert!(!tab.listed.iter().any(|pull| pull.number == 7));
+    }
+
+    /// An opening while an older page is on its way still asks what has
+    /// changed.
+    ///
+    /// Broken deliberately by keeping the page's asking where the top's is,
+    /// as it first was.
+    #[test]
+    fn an_opening_while_a_page_is_on_its_way_asks_what_has_changed() {
+        let mut tab = listing(&[3, 2]);
+        tab.asked(&super::Toward::Older("next".to_string()));
+        assert!(matches!(tab.opening(), Some(super::Toward::Newer(_))));
+    }
+
+    /// A query typed over a list GitHub refused is not said to be asked
+    /// about, nor offered a key to try again: the refusal where the rows
+    /// would be is the whole of the answer.
+    ///
+    /// Broken deliberately by taking out the arm that says nothing where
+    /// the list is not `searchable`.
+    #[test]
+    fn a_query_over_a_refused_list_says_only_the_refusal() {
+        let mut tab: super::Listing<super::PullRequest> = super::Listing::default();
+        tab.answer(super::Listed::Refused {
+            toward: super::Toward::First,
+            why: super::Unlisted::SignedOut,
+        });
+        tab.search = Some(super::Search::new("fold".to_string(), 1));
+        tab.answer(super::Listed::Refused {
+            toward: super::Toward::Found {
+                query: "fold".to_string(),
+                asking: 1,
+                after: None,
+            },
+            why: super::Unlisted::SignedOut,
+        });
+        let said = tab.says("fold", true, 0, "None");
+        assert_eq!(said.tally, None);
+        assert!(!said.turning);
+        assert_eq!(said.empty.0, super::Unlisted::SignedOut.said());
+    }
+
+    /// Of two copies of a row, the one that changed later is kept.
+    ///
+    /// Broken deliberately by keeping whichever was listed first.
+    #[test]
+    fn the_later_copy_of_a_row_is_kept() {
+        let mut tab = listing(&[3]);
+        tab.merge(vec![pull(3, "2026-10-09T00:00:00Z")]);
+        assert_eq!(tab.listed[0].stamp, "2026-10-09T00:00:00Z");
+    }
+
+    /// What GitHub's search is asked: by title for words, not for a
+    /// number, and never with a brace `gh` would try to fill.
+    ///
+    /// Broken deliberately by leaving the braces in.
+    #[test]
+    fn a_query_is_asked_by_title_without_braces() {
+        use super::looked_for;
+
+        assert_eq!(looked_for("fold"), "in:title fold");
+        assert_eq!(looked_for("#130"), "130");
+        assert_eq!(looked_for("{branch} fold"), "in:title branch fold");
     }
 
     /// A description written in GitHub's own box arrives with `\r\n`, and
