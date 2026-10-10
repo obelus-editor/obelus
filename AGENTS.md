@@ -601,7 +601,7 @@ crates/
                       conversation's is, a claim appears already held, and a
                       tree that has gone is nowhere to go (app/worktrees); a
                       window whose project went starts again without starting
-                      again (app/mod); a
+                      again (app/lifecycle); a
                       conversation takes one prompt turn at a time, what is
                       waiting waits where the reader's words live, and it goes
                       as one prompt (conversation); nothing but the animation
