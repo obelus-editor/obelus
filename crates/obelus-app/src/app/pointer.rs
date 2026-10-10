@@ -49,7 +49,7 @@ impl App {
                 .as_ref()
                 .map(|picker| obelus_ui::status::typed_inset(picker.question()))
         } else {
-            self.chooser.as_ref().map(|chooser| {
+            self.which_project.chooser.as_ref().map(|chooser| {
                 obelus_ui::status::typed_inset(Some(obelus_ui::status::choosing_question(
                     chooser.is_naming(),
                 )))
@@ -372,6 +372,7 @@ impl App {
     /// to it.
     fn press_in_projects(&mut self, x: u16, y: u16) {
         if self
+            .which_project
             .chooser
             .as_ref()
             .is_some_and(obelus_component::chooser::Chooser::is_naming)
@@ -384,7 +385,7 @@ impl App {
             return;
         };
         let twice = self.clicks_at(x, y) == 2;
-        if let Some(chooser) = self.chooser.as_mut() {
+        if let Some(chooser) = self.which_project.chooser.as_mut() {
             chooser.select_row(at);
         }
         if twice {
@@ -401,14 +402,14 @@ impl App {
     /// Answers whether the press was the list's, so that one beside it
     /// goes on to the page.
     fn press_in_the_naming_list(&mut self, x: u16, y: u16) -> bool {
-        let Some(at) = self.naming_list.as_ref().and_then(|list| {
+        let Some(at) = self.which_project.naming_list.as_ref().and_then(|list| {
             let region = obelus_ui::picker::region(list, self.drawn_in());
             obelus_ui::picker::row_at(list, region, x, y)
         }) else {
             return false;
         };
         let twice = self.clicks_at(x, y) == 2;
-        if let Some(list) = self.naming_list.as_mut() {
+        if let Some(list) = self.which_project.naming_list.as_mut() {
             list.select_row(at.0);
         }
         if twice {
@@ -818,7 +819,7 @@ impl App {
             settings.place_in_query(cell, extend);
         } else if let Some(picker) = self.picker.as_mut() {
             picker.place_in_query(cell, extend);
-        } else if let Some(chooser) = self.chooser.as_mut() {
+        } else if let Some(chooser) = self.which_project.chooser.as_mut() {
             chooser.place_in_typing(cell, extend);
         }
     }
@@ -833,7 +834,7 @@ impl App {
             settings.hold_in_query(all);
         } else if let Some(picker) = self.picker.as_mut() {
             picker.hold_in_query(all);
-        } else if let Some(chooser) = self.chooser.as_mut() {
+        } else if let Some(chooser) = self.which_project.chooser.as_mut() {
             chooser.hold_in_typing(all);
         }
     }
@@ -998,7 +999,10 @@ impl App {
         }
         // The page that asks which project, which is drawn where the
         // welcome screen would be.
-        if kind == Pointer::Pressed && self.reading_nothing() && self.chooser.is_some() {
+        if kind == Pointer::Pressed
+            && self.reading_nothing()
+            && self.which_project.chooser.is_some()
+        {
             if !self.press_in_the_naming_list(x, y) {
                 self.press_in_projects(x, y);
             }

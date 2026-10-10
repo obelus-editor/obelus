@@ -1147,7 +1147,7 @@ impl App {
     /// that takes no words -- and is refused everywhere else.
     pub(in crate::app) fn dropped(&mut self, path: &std::path::Path) {
         let into_a_conversation = self.layers().nearest().is_none()
-            && self.chooser.is_none()
+            && self.which_project.chooser.is_none()
             && self
                 .conversation()
                 .is_some_and(|talk| talk.card.as_ref().is_none_or(Card::takes_words));

@@ -36,7 +36,7 @@ impl App {
         // Nor while Obelus is asking which project: that screen is not the
         // welcome screen and has no mark to run a sheen across.
         let sheen = self.current.is_none()
-            && self.chooser.is_none()
+            && self.which_project.chooser.is_none()
             && !self.layers().filling()
             && !obelus_config::in_a_window();
         // And a drag held against an edge, which is the one of these that

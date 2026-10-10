@@ -17,7 +17,7 @@ impl App {
         // act on what the reader has hold of -- a box they can select in
         // and not paste into is half a box. Everything else in Obelus is
         // about a project, and `Requires::AProject` is what refuses it.
-        if self.chooser.is_some() {
+        if self.which_project.chooser.is_some() {
             return Context::Dialog;
         }
         // A list whose rows are open files is the list of open files, and

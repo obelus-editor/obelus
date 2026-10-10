@@ -105,7 +105,7 @@ impl Screen for App {
         self.what_is_being_chosen()
     }
     fn naming_list(&self) -> Option<&Picker> {
-        self.naming_list.as_ref()
+        self.which_project.naming_list.as_ref()
     }
 
     fn version(&self) -> &str {

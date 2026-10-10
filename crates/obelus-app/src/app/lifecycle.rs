@@ -40,7 +40,7 @@ impl App {
     /// which is what a requirement has to be.
     #[must_use]
     pub fn has_a_project(&self) -> bool {
-        self.chooser.is_none() && !self.gone
+        self.which_project.chooser.is_none() && !self.gone
     }
 
     /// Whether the tree Obelus was put on has gone from disk.
@@ -201,7 +201,7 @@ impl App {
         // the directory the process happened to begin in, which from a
         // desktop launcher is the home directory, and nothing would move
         // them when the reader answered. `settle_on` does them then.
-        if self.chooser.is_none() {
+        if self.which_project.chooser.is_none() {
             self.offer_the_tools();
             self.watch_the_project();
             self.say_where_this_window_is();
@@ -217,7 +217,7 @@ impl App {
         // connect to is one of. And not before there is a project, like
         // the tools above: a conversation begun from the chat would be
         // rooted at wherever the process began. `settle_on` connects.
-        if self.remote_at_start && self.chooser.is_none() {
+        if self.remote_at_start && self.which_project.chooser.is_none() {
             self.connect_remote_at_start(self.reading_nothing());
         }
         // What went wrong on the way up, over whatever the first screen is,

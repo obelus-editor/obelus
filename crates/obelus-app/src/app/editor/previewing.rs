@@ -656,7 +656,7 @@ impl App {
                 }
             }
             Whose::Projects => {
-                if let Some(chooser) = self.chooser.as_mut() {
+                if let Some(chooser) = self.which_project.chooser.as_mut() {
                     chooser.drag_to(top);
                 }
             }
@@ -666,7 +666,7 @@ impl App {
                 }
             }
             Whose::Naming => {
-                if let Some(list) = self.naming_list.as_mut() {
+                if let Some(list) = self.which_project.naming_list.as_mut() {
                     list.drag_to(top);
                 }
             }

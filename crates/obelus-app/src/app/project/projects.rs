@@ -386,7 +386,7 @@ impl crate::app::App {
                 last: project.last,
             })
             .collect();
-        self.chooser = Some(obelus_component::chooser::Chooser::new(known));
+        self.which_project.chooser = Some(obelus_component::chooser::Chooser::new(known));
     }
 
     /// Lets go of this project and asks which one next.
@@ -455,7 +455,7 @@ impl crate::app::App {
         &mut self,
         known: Vec<obelus_component::chooser::Known>,
     ) {
-        self.chooser = Some(obelus_component::chooser::Chooser::new(known));
+        self.which_project.chooser = Some(obelus_component::chooser::Chooser::new(known));
     }
 
     /// A key, while the reader is being asked which project.
@@ -478,7 +478,7 @@ impl crate::app::App {
         }
         // What a page key moves by, which is what the page has room for.
         let rows = self.chooser_rows();
-        let Some(chooser) = &mut self.chooser else {
+        let Some(chooser) = &mut self.which_project.chooser else {
             return false;
         };
         let before = chooser.named();
@@ -489,7 +489,7 @@ impl crate::app::App {
     /// Text pasted while the reader is being asked which project -- or a
     /// word an input method committed, which arrives the same way.
     pub(in crate::app) fn paste_into_the_chooser(&mut self, what: &str) {
-        let Some(chooser) = &mut self.chooser else {
+        let Some(chooser) = &mut self.which_project.chooser else {
             return;
         };
         let before = chooser.named();
@@ -499,7 +499,7 @@ impl crate::app::App {
 
     /// A copy out of whichever box the page is showing.
     pub(in crate::app) fn copy_from_the_chooser(&mut self) {
-        let Some(chooser) = &self.chooser else {
+        let Some(chooser) = &self.which_project.chooser else {
             return;
         };
         let (text, what) = chooser.copied();
@@ -508,7 +508,7 @@ impl crate::app::App {
 
     /// And a cut, which moves the box the way a paste does.
     pub(in crate::app) fn cut_from_the_chooser(&mut self) {
-        let Some(chooser) = &mut self.chooser else {
+        let Some(chooser) = &mut self.which_project.chooser else {
             return;
         };
         let before = chooser.named();
@@ -540,8 +540,8 @@ impl crate::app::App {
         // comes back: what they said no to was what was in it then. The
         // same rule `component::completion` follows -- escape takes the
         // panel away and the next letter asks again.
-        if self.chooser.as_ref().and_then(Chooser::named) != before {
-            self.naming_shut = false;
+        if self.which_project.chooser.as_ref().and_then(Chooser::named) != before {
+            self.which_project.naming_shut = false;
         }
         self.note_what_the_box_names();
         // And what is typed narrows whatever the last read found, which
@@ -558,7 +558,8 @@ impl crate::app::App {
     /// keys -- what the reader types, and what the list puts in -- and
     /// the second one forgot.
     fn note_what_the_box_names(&mut self) {
-        self.named_is_there = self
+        self.which_project.named_is_there = self
+            .which_project
             .chooser
             .as_ref()
             .and_then(Chooser::named)
@@ -636,7 +637,7 @@ impl crate::app::App {
         // Kept, rather than turned straight into a list: the list goes
         // whenever the reader shuts it or types past what it holds, and
         // both have to be undoable without asking the disk again.
-        self.naming_read = match items.is_empty() {
+        self.which_project.naming_read = match items.is_empty() {
             true => None,
             false => Some((directory.to_path_buf(), items)),
         };
@@ -644,7 +645,7 @@ impl crate::app::App {
         // it would be narrowed by letters belonging to a name in a
         // different place -- which is what it did: typing the separator
         // that walks into a directory left the one above it on screen.
-        self.naming_list = None;
+        self.which_project.naming_list = None;
         self.settle_the_naming_list();
     }
 
@@ -661,25 +662,30 @@ impl crate::app::App {
     /// allowed to type, and a list that stayed would swallow the enter
     /// that opens it.
     pub(in crate::app) fn settle_the_naming_list(&mut self) {
-        let Some(chooser) = self.chooser.as_ref().filter(|chooser| chooser.is_naming()) else {
+        let Some(chooser) = self
+            .which_project
+            .chooser
+            .as_ref()
+            .filter(|chooser| chooser.is_naming())
+        else {
             // Not naming a path at all, so what a directory held a
             // moment ago is nobody's: left here, going back into the box
             // would open on the last directory's names under an empty
             // one.
-            self.naming_list = None;
-            self.naming_read = None;
-            self.naming_shut = false;
+            self.which_project.naming_list = None;
+            self.which_project.naming_read = None;
+            self.which_project.naming_shut = false;
             return;
         };
         // Shut by the reader, on the box as it stands. Not forgotten --
         // the next letter is a new question and brings it back.
-        if self.naming_shut {
-            self.naming_list = None;
+        if self.which_project.naming_shut {
+            self.which_project.naming_list = None;
             return;
         }
         let segment = chooser.segment();
-        let Some((read, items)) = &self.naming_read else {
-            self.naming_list = None;
+        let Some((read, items)) = &self.which_project.naming_read else {
+            self.which_project.naming_list = None;
             return;
         };
         // What was read has to be what the box is still about. It is not
@@ -687,15 +693,15 @@ impl crate::app::App {
         // rubs out everything -- and offering it then is a list of
         // somewhere they have left.
         if chooser.directory_named().as_deref() != Some(read.as_path()) {
-            self.naming_list = None;
-            self.naming_read = None;
+            self.which_project.naming_list = None;
+            self.which_project.naming_read = None;
             return;
         }
         // Made again from what the directory read found rather than kept
         // across keys: it costs one build of a list of names and it is
         // what lets a list that matched nothing come back when the
         // letter that emptied it is rubbed out.
-        let mut list = match self.naming_list.take() {
+        let mut list = match self.which_project.naming_list.take() {
             Some(list) => list,
             None => {
                 let mut made = Picker::new(
@@ -716,13 +722,13 @@ impl crate::app::App {
         // allowed to do, and a list that stayed would swallow the enter
         // that opens it.
         if list.match_count() == 0 {
-            self.naming_list = None;
+            self.which_project.naming_list = None;
             return;
         }
         let room = self.editor_area;
         let rows = obelus_ui::picker::rows_drawn(&list, room);
         list.refresh_indices(rows, room.width);
-        self.naming_list = Some(list);
+        self.which_project.naming_list = Some(list);
     }
 
     /// Whatever a key means to that list, if it means anything.
@@ -732,7 +738,7 @@ impl crate::app::App {
     /// every other key belongs to the box, which is what makes this a
     /// list of what is being typed rather than a mode the reader is in.
     pub(in crate::app) fn naming_list_key(&mut self, key: &KeyEvent) -> bool {
-        if self.naming_list.is_none() {
+        if self.which_project.naming_list.is_none() {
             return false;
         }
         if obelus_keymap::modifiers_of(key) != Some(KeyModifiers::NONE) {
@@ -747,7 +753,7 @@ impl crate::app::App {
                     KeyCode::Up => -1,
                     _ => 1,
                 };
-                if let Some(list) = self.naming_list.as_mut() {
+                if let Some(list) = self.which_project.naming_list.as_mut() {
                     list.move_selection_by(by);
                 }
                 true
@@ -758,6 +764,7 @@ impl crate::app::App {
             // which is what escape below leaves behind.
             KeyCode::Enter => {
                 let chosen = self
+                    .which_project
                     .naming_list
                     .as_ref()
                     .and_then(Picker::selected_item)
@@ -768,8 +775,9 @@ impl crate::app::App {
                     _ => None,
                 };
                 if let Some((path, directory)) = put {
-                    self.naming_list = None;
+                    self.which_project.naming_list = None;
                     let outcome = self
+                        .which_project
                         .chooser
                         .as_mut()
                         .map(|chooser| chooser.put(&path, directory));
@@ -794,8 +802,8 @@ impl crate::app::App {
             // the reader types their way into somewhere else, which is
             // a new question.
             KeyCode::Esc => {
-                self.naming_shut = true;
-                self.naming_list = None;
+                self.which_project.naming_shut = true;
+                self.which_project.naming_list = None;
                 true
             }
             _ => false,
@@ -834,7 +842,7 @@ impl crate::app::App {
             // And off the file, for the reason the screen forgets one
             // when it opens: a path typed into the box is not on the list,
             // and taking it off that is nothing written.
-            if let Some(chooser) = &mut self.chooser {
+            if let Some(chooser) = &mut self.which_project.chooser {
                 chooser.forget(path);
             }
             forget(std::slice::from_ref(&path.to_path_buf()));
@@ -847,10 +855,10 @@ impl crate::app::App {
         // The chooser goes first, so that `work_in` and everything it
         // starts runs with a project settled rather than with the screen
         // still saying there is none.
-        self.chooser = None;
-        self.naming_list = None;
-        self.naming_read = None;
-        self.naming_shut = false;
+        self.which_project.chooser = None;
+        self.which_project.naming_list = None;
+        self.which_project.naming_read = None;
+        self.which_project.naming_shut = false;
         self.settle(root, &opening.files);
         // A directory is a reader saying which project and asking which
         // file, which is the list -- the same thing `ob some-directory`
@@ -914,7 +922,7 @@ impl crate::app::App {
     /// hours ago is called. What is cut to fit is the drawing's, and it
     /// needs a width this does not have.
     pub(in crate::app) fn what_is_being_chosen(&self) -> Option<obelus_ui::Choosing> {
-        let chooser = self.chooser.as_ref()?;
+        let chooser = self.which_project.chooser.as_ref()?;
         let now = std::time::SystemTime::now();
         Some(obelus_ui::Choosing {
             known: chooser
@@ -935,8 +943,8 @@ impl crate::app::App {
             caret: chooser.typing().caret().get(),
             held: chooser.typing().held(),
             naming: chooser.is_naming(),
-            there: self.named_is_there,
-            offering: self.naming_list.is_some(),
+            there: self.which_project.named_is_there,
+            offering: self.which_project.naming_list.is_some(),
         })
     }
 }
@@ -1300,7 +1308,13 @@ mod tests {
 
         let mut app = crate::app::App::new(Vec::new());
         app.ask_which_project();
-        let offered = app.chooser.as_ref().expect("asking").rows().len();
+        let offered = app
+            .which_project
+            .chooser
+            .as_ref()
+            .expect("asking")
+            .rows()
+            .len();
         let kept = read().rows().len();
         std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755))
             .expect("giving it back");
@@ -1350,6 +1364,7 @@ mod tests {
         let mut app = crate::app::App::new(Vec::new());
         app.ask_which_project();
         let offered: Vec<PathBuf> = app
+            .which_project
             .chooser
             .as_ref()
             .expect("asking")

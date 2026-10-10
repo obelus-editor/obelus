@@ -224,9 +224,9 @@ impl App {
         // The window over the projects, while Obelus is asking which: the
         // rule every window follows, on the page's own count of the rows it
         // has.
-        if self.chooser.is_some() {
+        if self.which_project.chooser.is_some() {
             let rows = self.chooser_rows();
-            if let Some(chooser) = self.chooser.as_mut() {
+            if let Some(chooser) = self.which_project.chooser.as_mut() {
                 chooser.settle(rows);
             }
         }

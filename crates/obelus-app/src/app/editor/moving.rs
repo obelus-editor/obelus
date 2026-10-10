@@ -260,8 +260,8 @@ impl App {
                 return;
             }
             Some(Layer::Counts | Layer::Gone) => return,
-            None if self.chooser.is_some() => {
-                if let Some(chooser) = self.chooser.as_mut() {
+            None if self.which_project.chooser.is_some() => {
+                if let Some(chooser) = self.which_project.chooser.as_mut() {
                     chooser.hold_in_typing(true);
                 }
                 return;
@@ -362,7 +362,7 @@ impl App {
             Some(Layer::Counts | Layer::Gone) => return,
             // Being asked which project, which is a page of its own and not
             // a layer, with a box on it like any other.
-            None if self.chooser.is_some() => {
+            None if self.which_project.chooser.is_some() => {
                 self.copy_from_the_chooser();
                 return;
             }
@@ -498,7 +498,7 @@ impl App {
                 return;
             }
             Some(Layer::Counts | Layer::Gone) => return,
-            None if self.chooser.is_some() => {
+            None if self.which_project.chooser.is_some() => {
                 self.cut_from_the_chooser();
                 return;
             }
@@ -638,7 +638,7 @@ impl App {
     #[must_use]
     fn box_takes_a_picture(&self) -> bool {
         self.layers().nearest().is_none()
-            && self.chooser.is_none()
+            && self.which_project.chooser.is_none()
             && self.conversation().is_some_and(|talk| talk.card.is_none())
             && self.conversation_takes_text()
     }
@@ -677,7 +677,7 @@ impl App {
     #[must_use]
     pub(in crate::app) fn somewhere_to_type(&self) -> bool {
         self.prompt.is_some()
-            || self.chooser.is_some()
+            || self.which_project.chooser.is_some()
             || self.notes().is_some()
             || self.settings.is_some()
             || self.picker.is_some()
@@ -736,7 +736,7 @@ impl App {
             Some(Layer::Counts | Layer::Gone) => false,
             // Being asked which project, which is a page of its own and
             // typed into whichever box it is showing.
-            None if self.chooser.is_some() => true,
+            None if self.which_project.chooser.is_some() => true,
             None => {
                 if self.conversation().is_some() {
                     return self.conversation_takes_text();
@@ -811,7 +811,7 @@ impl App {
             // Being asked which project, which is a page of its own and not
             // a layer -- so this fell through to a file there is none of,
             // and a path pasted or spelled into its box went nowhere.
-            None if self.chooser.is_some() => {
+            None if self.which_project.chooser.is_some() => {
                 self.paste_into_the_chooser(what);
                 return;
             }

@@ -71,7 +71,7 @@ impl App {
     /// which says itself whether it is up.
     fn hearers(&self) -> Vec<Hearer> {
         let mut hearers: Vec<Hearer> = self.layers().nearest_first().map(Hearer::Layer).collect();
-        if self.chooser.is_some() {
+        if self.which_project.chooser.is_some() {
             hearers.push(Hearer::Chooser);
         } else if self.conversation().is_some() {
             hearers.push(Hearer::Chat);

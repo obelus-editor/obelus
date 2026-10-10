@@ -163,6 +163,8 @@ struct Dragging {
 /// Everything Obelus is currently showing or remembering.
 #[derive(Debug)]
 pub struct App {
+    /// The page that asks which project, while it is up.
+    which_project: project::Asking,
     /// The project's files, as the lists of them have walked them.
     files: editor::Files,
     /// What is being searched for, and where.
@@ -619,48 +621,6 @@ pub struct App {
     /// A number to be *compared* rather than read -- see
     /// `note_where_the_view_has_got_to`.
     travelled: i64,
-    /// The question "which project", while nobody has answered it.
-    ///
-    /// `Some` on a start with nothing to go on: no argument, and a
-    /// directory git has never heard of -- a desktop launcher, which
-    /// begins the process in the home directory. And once more after the
-    /// project has gone and the reader has said so, which leaves the window
-    /// where such a start began. It is the whole screen until it is
-    /// answered, and `None` otherwise: a reader on a project does not go
-    /// back to being asked, and the way to another one is a second Obelus,
-    /// which is how Obelus is used anyway.
-    chooser: Option<obelus_component::chooser::Chooser>,
-    /// What could finish the path being named, while one is.
-    ///
-    /// Here rather than inside the chooser for the reason the agent's own
-    /// commands are here: a list is built out of what the application
-    /// knows -- a directory it read -- and `obelus-component` draws and
-    /// walks lists rather than looking at disks.
-    naming_list: Option<Picker>,
-    /// What the last directory read found, and which directory that was.
-    ///
-    /// Kept apart from the list above, because the list *goes* for two
-    /// ordinary reasons -- the reader shut it, or what they have typed
-    /// since matches none of it -- and both of those have to be
-    /// undoable by typing another letter. Held together they were not:
-    /// once the list was gone there was nothing left to make it from, so
-    /// escape shut it for good and a letter too many could not be rubbed
-    /// out. The disk is read when the *directory* moves and never again.
-    naming_read: Option<(PathBuf, Vec<obelus_component::picker::PickerItem>)>,
-    /// Whether the reader shut the list on what is in the box now.
-    ///
-    /// Cleared the moment the box moves, which is the rule
-    /// `component::completion` follows: escape takes the panel away, and
-    /// typing is a new question rather than the same one asked twice.
-    naming_shut: bool,
-    /// Whether what is in the path box names something that is there.
-    ///
-    /// Kept rather than asked for: the row is drawn on every frame and
-    /// the answer moves only when the box does, so it is worked out on
-    /// the key that moved it. What it is for is the ink -- a reader has
-    /// to see that enter will refuse before they press it, which is the
-    /// rule the palette follows for a command it will not run.
-    named_is_there: bool,
     working_directory: PathBuf,
     /// What this window knows about its tree's record of what was open.
     reopening: reopening::Reopening,
@@ -751,6 +711,7 @@ impl App {
         let documents: Vec<Option<Document>> =
             open.into_iter().map(Document::from).map(Some).collect();
         Self {
+            which_project: project::Asking::default(),
             files: editor::Files::default(),
             search: editor::Search::default(),
             lsp: lsp::State::default(),
@@ -839,11 +800,6 @@ impl App {
             // that builds an `App` without going through it -- every test
             // -- has a directory already and is not a reader standing in
             // front of a launcher.
-            chooser: None,
-            naming_list: None,
-            naming_read: None,
-            naming_shut: false,
-            named_is_there: false,
             working_directory: std::env::current_dir().unwrap_or_default(),
             reopening: reopening::Reopening::default(),
             // Not read here. Which branch the tree is on is a fact about
