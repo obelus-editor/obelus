@@ -76,11 +76,12 @@ pub fn is_server(target: &str) -> bool {
 /// nothing reports: the log is not empty, it is just missing the half of
 /// Obelus that was left out of it.
 ///
-/// `ob` is the binary rather than a library: the lines main writes -- what
-/// started, and that it left -- carry the target of the crate the `ob`
-/// target is compiled as.
+/// `ob` and `obg` are the binaries rather than libraries: the lines a main
+/// writes -- what started, and that it left -- carry the target of the crate
+/// the binary is compiled as.
 pub const OURS: &[&str] = &[
     "ob",
+    "obg",
     "obelus_agent",
     "obelus_app",
     "obelus_buffer",
@@ -92,20 +93,27 @@ pub const OURS: &[&str] = &[
     "obelus_editing",
     "obelus_font",
     "obelus_git",
+    "obelus_github",
     "obelus_icons",
+    "obelus_jobs",
     "obelus_keymap",
     "obelus_logging",
     "obelus_lsp",
+    "obelus_markdown",
     "obelus_mcp",
     "obelus_program",
     "obelus_reading",
+    "obelus_remote",
+    "obelus_row",
     "obelus_runtime",
     "obelus_search",
     "obelus_sink",
     "obelus_syntax",
+    "obelus_terminal",
     "obelus_text",
     "obelus_theme",
     "obelus_todo",
+    "obelus_ui",
     "obelus_watch",
 ];
 
@@ -510,6 +518,45 @@ mod tests {
             );
         }
         let _ = super::ours_at_info();
+    }
+
+    /// Every crate of the workspace is on the list, as the target its code
+    /// logs under: a library by its name, a binary by the binary's. Nine of
+    /// them were off it, and nothing they said above `warn` was ever written.
+    ///
+    /// Broken deliberately by taking `obelus_ui` off the list: the test names
+    /// it.
+    #[test]
+    fn no_crate_of_the_workspace_is_left_off() {
+        let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("the crates directory");
+        let mut missing = Vec::new();
+        for entry in std::fs::read_dir(crates).expect("the crates are there") {
+            let path = entry.expect("a crate").path();
+            let Ok(manifest) = std::fs::read_to_string(path.join("Cargo.toml")) else {
+                continue;
+            };
+            // A binary logs under the binary's name, and a library under its
+            // own, with the underscores a module path has.
+            let target = match manifest.split_once("[[bin]]") {
+                Some((_, bin)) => bin
+                    .lines()
+                    .find_map(|line| line.trim().strip_prefix("name = "))
+                    .expect("a binary has a name")
+                    .trim_matches('"')
+                    .to_string(),
+                None => path
+                    .file_name()
+                    .expect("a crate has a name")
+                    .to_string_lossy()
+                    .replace('-', "_"),
+            };
+            if !super::OURS.contains(&target.as_str()) {
+                missing.push(target);
+            }
+        }
+        assert!(missing.is_empty(), "left off the list: {missing:?}");
     }
 
     use std::{fs, time::Duration};
